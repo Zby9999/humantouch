@@ -1,0 +1,46 @@
+import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PREVIEW_URL, TOGGLE_LABEL } from "../playwright.config";
+
+const example = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
+
+function expectNoEditorLayerCode(dist: string) {
+  const files = readdirSync(dist, { recursive: true, encoding: "utf8" }).filter((f) =>
+    /\.(js|css|html)$/.test(f),
+  );
+  expect(files.some((f) => f.endsWith(".js"))).toBe(true);
+
+  for (const file of files) {
+    const content = readFileSync(path.join(dist, file), "utf8");
+    for (const residue of ["vernier-kit", "data-vk-", TOGGLE_LABEL]) {
+      expect(content.includes(residue), `${file} contains "${residue}"`).toBe(false);
+    }
+  }
+}
+
+test("the production page has no toggle and no markers", async ({ page }) => {
+  await page.goto(PREVIEW_URL);
+  await expect(page.locator("h1")).toBeVisible();
+
+  await expect(page.getByRole("button", { name: /Vernier Kit/ })).toHaveCount(0);
+  await expect(page.locator("vernier-kit")).toHaveCount(0);
+  await expect(page.locator("[data-vk-loc]")).toHaveCount(0);
+});
+
+test("the production build output contains no editor layer code", () => {
+  expectNoEditorLayerCode(path.join(example, "dist"));
+});
+
+test("a build in development mode contains no editor layer code either", () => {
+  const outDir = mkdtempSync(path.join(tmpdir(), "vernierkit-build-"));
+  execFileSync("pnpm", ["exec", "vite", "build", "--mode", "development", "--outDir", outDir], {
+    cwd: example,
+    stdio: "pipe",
+  });
+
+  expectNoEditorLayerCode(outDir);
+});

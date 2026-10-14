@@ -1,0 +1,11 @@
+{
+  "name": "acme-ui",
+  "version": "1.0.0",
+  "description": "Stand-in for a third-party component library (used to check that dependencies are not marked).",
+  "type": "module",
+  "main": "./index.jsx",
+  "types": "./index.d.ts",
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

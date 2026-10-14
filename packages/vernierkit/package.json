@@ -1,0 +1,48 @@
+{
+  "name": "vernierkit",
+  "version": "0.0.0",
+  "description": "A Framer-style editor layer for your local dev server. Edit the page, hand the changes to your Agent.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "development": "./dist/react.dev.js",
+      "default": "./dist/react.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@babel/parser": "^8.0.7",
+    "magic-string": "^1.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "preact": "^11.0.1",
+    "react": "^19.3.0",
+    "tsup": "^9.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "vite": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "vernierkit-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter vernierkit build",
+    "typecheck": "pnpm -r typecheck && tsc --noEmit -p e2e",
+    "test": "pnpm --filter vernierkit test",
+    "test:e2e": "pnpm build && playwright test -c e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "typescript": "^6.0.3"
+  }
+}

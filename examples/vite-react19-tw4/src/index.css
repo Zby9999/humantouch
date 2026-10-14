@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+/* Deliberately loud page styles: none of these may reach the editor layer. */
+body {
+  font-family: Georgia, "Times New Roman", serif;
+  color: rgb(68, 64, 60);
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+}
+
+button {
+  background: rgb(220, 38, 38);
+  border-radius: 0;
+}
