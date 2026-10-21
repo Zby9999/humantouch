@@ -42,6 +42,25 @@ async function pointOn(page: Page, selector: string) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
+/** The middle of a run of text on the canvas, in page coordinates. */
+async function pointOnText(page: Page, text: string) {
+  const iframe = page.locator('iframe[title="Canvas"]');
+  const box = (await iframe.boundingBox())!;
+  const rect = await iframe.evaluate((frame: HTMLIFrameElement, text) => {
+    const doc = frame.contentDocument!;
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      if (walker.currentNode.textContent!.trim() !== text) continue;
+      const range = doc.createRange();
+      range.selectNodeContents(walker.currentNode);
+      const r = range.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height, zoom: frame.getBoundingClientRect().width / frame.offsetWidth };
+    }
+    throw new Error(`${text} not found on the canvas`);
+  }, text);
+  return { x: box.x + (rect.x + rect.width / 2) * rect.zoom, y: box.y + (rect.y + rect.height / 2) * rect.zoom, width: rect.width * rect.zoom };
+}
+
 async function clickOn(page: Page, selector: string, modifier?: "Meta" | "Control") {
   const { x, y } = await pointOn(page, selector);
   if (modifier) await page.keyboard.down(modifier);
@@ -83,7 +102,9 @@ test("the layer tree shows the page structure, named after components and text",
     "5 Vernier Kit — Text",
     "5 Badge — Locked",
     "4 A Framer-style editor layer for any page. — Text",
-    "4 Get started — Text",
+    "4 Stack — Horizontal Stack",
+    "5 Get started — Text",
+    "5 Vector — Image",
     "3 Grid — Grid",
     "4 Card — Vertical Stack",
     "5 Freeze — Text",
@@ -244,11 +265,27 @@ test.describe("the Design panel says where the selected layer comes from", () =>
       Type: "Text",
       Component: "Card",
       Source: locate("src/components/Card.tsx", "<h3"),
+      // Written once in Card, repeated in each card the loop renders; the card written on its own is another usage.
+      Repeated: "In 3 instances",
+    });
+  });
+
+  test("an instance: where the component is used, and how many instances that usage renders", async ({ page }) => {
+    await enterEditMode(page);
+
+    await clickOn(page, "article h3", "Meta");
+    await page.keyboard.press("Escape");
+
+    expect(await layerInfo(page)).toEqual({
+      Type: "Vertical Stack",
+      Component: "Card",
+      Source: locate("src/components/Card.tsx", "<article"),
+      Usage: locate("src/App.tsx", "<Card"),
       Instances: "3",
     });
   });
 
-  test("a component usage", async ({ page }) => {
+  test("an instance its usage renders only once", async ({ page }) => {
     await enterEditMode(page);
 
     await clickOn(page, "article:nth-of-type(4) h3", "Meta");
@@ -274,12 +311,53 @@ test.describe("the Design panel says where the selected layer comes from", () =>
     });
   });
 
+  test("a dependency component that passes its props on: edited like project code, where it is used", async ({ page }) => {
+    await enterEditMode(page);
+
+    await clickOn(page, "article h3", "Meta");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+
+    await expect(selectedRow(page)).toHaveText("Grid");
+    expect(await layerInfo(page)).toEqual({ Type: "Grid", Component: "App", Source: locate("src/App.tsx", "<Surface") });
+  });
+
   test("a layer without a source marker is not located", async ({ page }) => {
     await enterEditMode(page);
 
     await clickOn(page, "h1");
 
     expect(await layerInfo(page)).toEqual({ Type: "Vertical Stack", Source: "Not located" });
+  });
+});
+
+test.describe("text beside other layers", () => {
+  test("is a text layer of its own, whose text styles apply to the layer it sits in", async ({ page }) => {
+    await enterEditMode(page);
+    const text = await pointOnText(page, "Get started");
+
+    await page.keyboard.down("Meta");
+    await page.mouse.click(text.x, text.y);
+    await page.keyboard.up("Meta");
+
+    await expect(selectedRow(page)).toHaveText("Get started");
+    expect(await layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
+    await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Stack.");
+    // Outlines the text only, not the whole button.
+    const outline = (await page.locator(".vk-selection").boundingBox())!;
+    expect(outline.width).toBeCloseTo(text.width, 0);
+  });
+
+  test("a click on the space around it selects the layer it sits in", async ({ page }) => {
+    await enterEditMode(page);
+    await page.keyboard.down("Meta");
+    const text = await pointOnText(page, "Get started");
+    const button = (await canvas(page).getByRole("button", { name: "Get started" }).boundingBox())!;
+    await page.mouse.click(text.x, button.y + 2);
+    await page.keyboard.up("Meta");
+
+    await expect(selectedRow(page)).toHaveText("Stack");
+    await expect(selectedRow(page)).toHaveAttribute("aria-level", "4");
   });
 });
 
@@ -297,7 +375,7 @@ test.describe("the selection box", () => {
     for (const key of ["x", "y", "width", "height"] as const) expect(outline[key]).toBeCloseTo(h1[key], 0);
   });
 
-  test("is purple on a component usage", async ({ page }) => {
+  test("is purple on an instance", async ({ page }) => {
     await enterEditMode(page);
 
     await clickOn(page, "article h3", "Meta");

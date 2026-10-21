@@ -13,7 +13,7 @@ describe("source marker", () => {
     const code = `export function App() {\n  return <div className="app">Hi</div>;\n}\n`;
 
     expect(mark(code)?.code).toBe(
-      `export function App() {\n  return <div data-vk-loc="src/App.tsx:2:10" className="app">Hi</div>;\n}\n`,
+      `export function App() {\n  return <div className="app" data-vk-loc="src/App.tsx:2:10">Hi</div>;\n}\n`,
     );
   });
 
@@ -21,8 +21,22 @@ describe("source marker", () => {
     const code = `import { Card } from "./Card";\nexport const App = () => (\n  <main>\n    <Card title="One" />\n  </main>\n);\n`;
 
     expect(mark(code)?.code).toBe(
-      `import { Card } from "./Card";\nexport const App = () => (\n  <main data-vk-loc="src/App.tsx:3:3">\n    <Card data-vk-usage="src/App.tsx:4:5" title="One" />\n  </main>\n);\n`,
+      `import { Card } from "./Card";\nexport const App = () => (\n  <main data-vk-loc="src/App.tsx:3:3">\n    <Card title="One" data-vk-usage="src/App.tsx:4:5" />\n  </main>\n);\n`,
     );
+  });
+
+  test("writes the marker after spread props, so a marker passed down in them cannot override it", () => {
+    const code = `export const Button = (props) => <Pressable {...props} />;\n`;
+
+    expect(mark(code)?.code).toBe(
+      `export const Button = (props) => <Pressable {...props} data-vk-usage="src/App.tsx:1:34" />;\n`,
+    );
+  });
+
+  test("marks a component written with type arguments", () => {
+    const code = `export const A = () => <List<string> />;\n`;
+
+    expect(mark(code)?.code).toBe(`export const A = () => <List<string> data-vk-usage="src/App.tsx:1:24" />;\n`);
   });
 
   test("does not mark fragments, which accept no extra props", () => {

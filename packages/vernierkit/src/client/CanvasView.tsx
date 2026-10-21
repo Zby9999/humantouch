@@ -3,7 +3,7 @@ import type { TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { freeze, type Canvas } from "./freezer";
 import { Icon } from "./icons";
-import { role, type Layer, type LayerTree } from "./layers";
+import { boxOf, role, type Layer, type LayerTree } from "./layers";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParent } from "./selection";
 
 /** Where the canvas sits in the viewport: its top-left corner and its scale. */
@@ -143,8 +143,7 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
     const x = (event.clientX - area.left - view.x) / view.zoom;
     const y = (event.clientY - area.top - view.y) / view.zoom;
     if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
-    const el = canvas.document.elementFromPoint(x, y);
-    return el && tree.layerOf(el);
+    return tree.layerAt(x, y);
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
@@ -208,9 +207,9 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
   );
 }
 
-/** Drawn above the canvas, so its lines stay 1px at any zoom. Blue, purple for a component usage, gray for a locked layer. */
+/** Drawn above the canvas, so its lines stay 1px at any zoom. Blue, purple for an instance, gray for a locked layer. */
 function SelectionBox({ layer, view }: { layer: Layer; view: View }) {
-  const r = layer.el.getBoundingClientRect();
+  const r = boxOf(layer);
   const kind = role(layer);
   return (
     <div

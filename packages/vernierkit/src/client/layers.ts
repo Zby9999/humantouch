@@ -1,16 +1,19 @@
 /**
  * The layer model: translates the canvas copy into a tree of layers in design
  * language (Stack, Grid, Frame, text, …), with where each layer comes from in
- * the source and which layers are instances of the same usage.
+ * the source and which layers repeat across the instances of one usage.
  */
-import { LOC_ATTR } from "../markers";
+import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { FROZEN } from "./freezer";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
 export type LayerKind = "stack" | "grid" | "frame" | "text" | "image" | "still" | "locked";
 
 export interface Layer {
+  /** The element the layer is; for text beside other layers, the element it sits in, which holds its styles. */
   el: Element;
+  /** Text beside other layers: the run of text the layer is. It has no element of its own. */
+  text: Text[] | null;
   kind: LayerKind;
   /** Stacks only: the direction children are laid out in. */
   direction: "horizontal" | "vertical" | null;
@@ -23,9 +26,9 @@ export interface Layer {
   loc: string | null;
   /** Usage chain, innermost component first. */
   chain: UsageLevel[];
-  /** The layer is a component usage: the outermost element a component renders. */
-  isUsage: boolean;
-  /** For a component usage: `file:line:column` of the JSX that uses the component. */
+  /** The layer is an instance: the outermost layer a component renders from a usage. */
+  isInstance: boolean;
+  /** For an instance: `file:line:column` of its usage, the JSX that uses the component. */
   usageLoc: string | null;
   parent: Layer | null;
   children: Layer[];
@@ -34,10 +37,13 @@ export interface Layer {
 export interface LayerTree {
   /** The page itself. Its children are the outermost layers. */
   root: Layer;
-  /** The layer an element of the canvas shows up as: itself, or the text or locked layer it is inside. */
-  layerOf(el: Element): Layer | null;
-  /** Layers with the same element location and usage chain, in page order; `layer` itself included. */
-  instancesOf(layer: Layer): Layer[];
+  /** The deepest layer at a point of the canvas, in canvas px. */
+  layerAt(x: number, y: number): Layer | null;
+  /**
+   * This layer in every instance of its usage, in page order, `layer` itself included: layers
+   * with the same element location and usage chain. For an instance, all instances of its usage.
+   */
+  acrossInstances(layer: Layer): Layer[];
 }
 
 /** Elements that never draw a box of their own. */
@@ -53,13 +59,19 @@ export function buildLayerTree(doc: Document): LayerTree {
   const view = doc.defaultView!;
   const layers = new Map<Element, Layer>();
   const groups = new Map<string, Layer[]>();
+  const origins = new Map<Element, Origin>();
+  const origin = (el: Element) => {
+    let o = origins.get(el);
+    if (!o) origins.set(el, (o = originOf(el)));
+    return o;
+  };
 
   const make = (el: Element, parent: Layer | null): Layer => {
-    const loc = el.getAttribute(LOC_ATTR);
-    const chain = chainOf(el);
+    const { loc, chain } = origin(el);
     const style = view.getComputedStyle(el);
     const layer: Layer = {
       el,
+      text: null,
       kind: "frame",
       direction: null,
       absolute: style.position === "absolute" || style.position === "fixed",
@@ -67,22 +79,22 @@ export function buildLayerTree(doc: Document): LayerTree {
       component: chain[0]?.component ?? null,
       loc,
       chain,
-      isUsage: false,
+      isInstance: false,
       usageLoc: null,
       parent,
       children: [],
     };
     layers.set(el, layer);
     const set = (patch: Partial<Layer>) => Object.assign(layer, patch);
-    if (parent && isUsageRoot(chain, el.parentElement ? chainOf(el.parentElement) : [])) {
-      set({ isUsage: true, usageLoc: chain[0].usage });
+    if (parent && isInstanceRoot(chain, el.parentElement ? origin(el.parentElement).chain : [])) {
+      set({ isInstance: true, usageLoc: chain[0].usage });
     }
     if (!loc && chain[0]?.thirdParty) {
       // The whole dependency is one locked layer, named after its outermost component.
       const outer = chain.findIndex((level) => !level.thirdParty);
       const dependency = chain[(outer < 0 ? chain.length : outer) - 1];
       const { component, usage } = dependency;
-      set({ kind: "locked", name: component, component, isUsage: true, usageLoc: usage });
+      set({ kind: "locked", name: component, component, isInstance: true, usageLoc: usage });
     } else if (el.hasAttribute(FROZEN) || STILLS.has(el.localName)) {
       set({ kind: "still", name: stillName(el) });
     } else if (IMAGES.has(el.localName)) {
@@ -90,9 +102,11 @@ export function buildLayerTree(doc: Document): LayerTree {
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
     } else if (isText(el, view)) {
-      set({ kind: "text", name: textName(el) });
+      set({ kind: "text", name: textName(el.textContent!) });
     } else {
-      for (const child of drawnChildren(el, view)) layer.children.push(make(child, layer));
+      for (const child of drawnChildren(el, view)) {
+        layer.children.push(Array.isArray(child) ? makeText(child, layer) : make(child, layer));
+      }
       const display = style.display;
       if (/flex$/.test(display)) {
         set({ kind: "stack", name: "Stack", direction: style.flexDirection.startsWith("row") ? "horizontal" : "vertical" });
@@ -104,41 +118,85 @@ export function buildLayerTree(doc: Document): LayerTree {
         set({ name: "Frame" });
       }
     }
-    if (role(layer) === "component") layer.name = layer.component!;
-    const key = instanceKey(layer);
-    if (key) {
-      const group = groups.get(key) ?? [];
-      group.push(layer);
-      groups.set(key, group);
-    }
+    if (role(layer) === "instance") layer.name = layer.component!;
     return layer;
   };
+
+  const makeText = (run: Text[], parent: Layer): Layer => ({
+    ...parent,
+    text: run,
+    kind: "text",
+    direction: null,
+    absolute: false,
+    name: textName(run.map((node) => node.textContent).join("")),
+    isInstance: false,
+    usageLoc: null,
+    parent,
+    children: [],
+  });
 
   const root = make(doc.body, null);
   root.name = "Page";
 
+  const keys = new Map<Layer, string>();
+  const group = (layer: Layer) => {
+    let runs = 0;
+    for (const child of layer.children) {
+      let key = repeatKey(child);
+      // Runs of text share their element's origin: the nth run of one instance goes with the nth run of the others.
+      if (key && child.text) key += ` text ${runs++}`;
+      if (key) {
+        keys.set(child, key);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(child);
+      }
+      group(child);
+    }
+  };
+  group(root);
+
   return {
     root,
-    layerOf(el) {
-      for (let e: Element | null = el; e; e = e.parentElement) {
-        const layer = layers.get(e);
-        if (layer) return layer;
-      }
-      return null;
+    layerAt(x, y) {
+      let layer: Layer | undefined;
+      for (let e = doc.elementFromPoint(x, y); e && !layer; e = e.parentElement) layer = layers.get(e);
+      if (!layer) return null;
+      // Text is not an element, so the point lands on the layer the text sits in.
+      return layer.children.find((child) => child.text && [...rangeOf(child).getClientRects()].some((r) => contains(r, x, y))) ?? layer;
     },
-    instancesOf(layer) {
-      const key = instanceKey(layer);
+    acrossInstances(layer) {
+      const key = keys.get(layer);
       return (key && groups.get(key)) || [layer];
     },
   };
 }
 
 /**
- * What selecting the layer means: an ordinary layer, a component usage (edits
- * apply to that usage), or a locked layer (moved and resized as a whole only).
+ * What selecting the layer means: an ordinary layer, an instance (edits apply
+ * to its usage), or a locked layer (moved and resized as a whole only).
  */
-export function role(layer: Layer): "layer" | "component" | "locked" {
-  return layer.kind === "locked" ? "locked" : layer.isUsage ? "component" : "layer";
+export function role(layer: Layer): "layer" | "instance" | "locked" {
+  return layer.kind === "locked" ? "locked" : layer.isInstance ? "instance" : "layer";
+}
+
+/** Where the layer is on the canvas, in canvas px. */
+export function boxOf(layer: Layer): DOMRect {
+  return layer.text ? rangeOf(layer).getBoundingClientRect() : layer.el.getBoundingClientRect();
+}
+
+/** The text of a run, without the white space around it. */
+function rangeOf(layer: Layer): Range {
+  const run = layer.text!;
+  const range = run[0].ownerDocument.createRange();
+  const first = run[0].textContent!;
+  const last = run.at(-1)!.textContent!;
+  range.setStart(run[0], first.length - first.trimStart().length);
+  range.setEnd(run.at(-1)!, last.trimEnd().length);
+  return range;
+}
+
+function contains(r: DOMRect, x: number, y: number): boolean {
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
 /** Description of a layer's type in design language, e.g. "Vertical Stack". */
@@ -155,10 +213,28 @@ export function typeLabel(layer: Layer): string {
   return layer.absolute ? `${type} · Absolute` : type;
 }
 
-/** Instances share a location (a locked layer has only its usage's) and a usage chain. */
-function instanceKey(layer: Layer): string | null {
+/** The same layer across instances shares a location (a locked layer has only its usage's) and a usage chain. */
+function repeatKey(layer: Layer): string | null {
   const loc = layer.kind === "locked" ? layer.usageLoc : layer.loc;
   return loc && `${loc} ${JSON.stringify(layer.chain)}`;
+}
+
+/** Where an element comes from: its element location and usage chain. */
+interface Origin {
+  loc: string | null;
+  chain: UsageLevel[];
+}
+
+function originOf(el: Element): Origin {
+  const loc = el.getAttribute(LOC_ATTR);
+  const chain = chainOf(el);
+  // A dependency component that passes the usage's props on to the element it renders
+  // (as motion.div and Radix primitives do) leaves that element to the code at the usage.
+  if (!loc && chain[0]?.thirdParty && el.hasAttribute(USAGE_ATTR)) {
+    const project = chain.findIndex((level) => !level.thirdParty);
+    if (project > 0 && chain[project - 1].usage) return { loc: chain[project - 1].usage, chain: chain.slice(project) };
+  }
+  return { loc, chain };
 }
 
 function chainOf(el: Element): UsageLevel[] {
@@ -172,22 +248,35 @@ function chainOf(el: Element): UsageLevel[] {
 }
 
 /** A component's outermost element: its parent belongs to the components further up the chain only. */
-function isUsageRoot(chain: UsageLevel[], parentChain: UsageLevel[]): boolean {
+function isInstanceRoot(chain: UsageLevel[], parentChain: UsageLevel[]): boolean {
   if (chain.length <= parentChain.length) return false;
   const tail = chain.slice(chain.length - parentChain.length);
   return tail.every((level, i) => level.component === parentChain[i].component && level.usage === parentChain[i].usage);
 }
 
-/** Children that draw a box. `display: contents` passes its children through. */
-function drawnChildren(el: Element, view: Window): Element[] {
-  const children: Element[] = [];
-  for (const child of el.children) {
-    if (NOT_DRAWN.has(child.localName)) continue;
-    const display = view.getComputedStyle(child).display;
+/** Children that draw a box, and runs of text between them. `display: contents` passes its children through. */
+function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
+  const children: (Element | Text[])[] = [];
+  let run: Text[] = [];
+  const endRun = () => {
+    if (run.some((node) => node.textContent!.trim())) children.push(run);
+    run = [];
+  };
+  for (const child of el.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      run.push(child as Text);
+      continue;
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) continue;
+    const e = child as Element;
+    if (NOT_DRAWN.has(e.localName)) continue;
+    const display = view.getComputedStyle(e).display;
     if (display === "none") continue;
-    if (display === "contents") children.push(...drawnChildren(child, view));
-    else children.push(child);
+    endRun();
+    if (display === "contents") children.push(...drawnChildren(e, view));
+    else children.push(e);
   }
+  endRun();
   return children;
 }
 
@@ -220,6 +309,7 @@ function flowsTopToBottom(children: Layer[], view: Window): boolean {
   return (
     inFlow.length > 0 &&
     inFlow.every((child) => {
+      if (child.text) return false; // Text runs on in a line.
       const style = view.getComputedStyle(child.el);
       return !style.display.startsWith("inline") && style.float === "none";
     })
@@ -234,7 +324,7 @@ function stillName(el: Element): string {
 
 const MAX_NAME = 100;
 
-function textName(el: Element): string {
-  const text = el.textContent!.replace(/\s+/g, " ").trim();
+function textName(content: string): string {
+  const text = content.replace(/\s+/g, " ").trim();
   return text.length > MAX_NAME ? `${text.slice(0, MAX_NAME - 1)}…` : text;
 }

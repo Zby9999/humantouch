@@ -10,7 +10,7 @@ const PATHS: Record<string, string> = {
   text: "M3.5 4h9M8 4v8.5",
   image: "M3 3.5h10v9H3zM3 10.5l3-3 2.5 2.5 1.5-1.5 3 3",
   still: "M3 3.5h10v9H3zM6.5 6v4l3.5-2z",
-  component: "M8 2.5l2 2-2 2-2-2zM8 9.5l2 2-2 2-2-2zM4.5 6l2 2-2 2-2-2zM11.5 6l2 2-2 2-2-2z",
+  instance: "M8 2.5l2 2-2 2-2-2zM8 9.5l2 2-2 2-2-2zM4.5 6l2 2-2 2-2-2zM11.5 6l2 2-2 2-2-2z",
   lock: "M4.5 7.5h7v5.5h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2",
 };
 
@@ -24,7 +24,7 @@ export function Icon({ name }: { name: keyof typeof PATHS }) {
 
 export function LayerIcon({ layer }: { layer: Layer }) {
   if (role(layer) === "locked") return <Icon name="lock" />;
-  if (role(layer) === "component") return <Icon name="component" />;
+  if (role(layer) === "instance") return <Icon name="instance" />;
   if (layer.kind === "stack") return <Icon name={layer.direction === "horizontal" ? "stack-horizontal" : "stack-vertical"} />;
   return <Icon name={layer.kind} />;
 }

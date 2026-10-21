@@ -13,26 +13,26 @@ export function Gallery({ items, footer }: { items: Item[]; footer?: ReactNode }
   const rest = { role: "list" };
 
   return (
-    <section data-vk-loc="src/Gallery.tsx:16:5"
+    <section
       id="gallery"
-      className="grid gap-4"
+      className="grid gap-4" data-vk-loc="src/Gallery.tsx:16:5"
     >
       {/* a comment between elements */}
       <h2 data-vk-loc="src/Gallery.tsx:21:7">Gallery</h2>
-      <img data-vk-loc="src/Gallery.tsx:22:7" src="/hero.png" alt="" />
-      <ul data-vk-loc="src/Gallery.tsx:23:7" {...rest}>
+      <img src="/hero.png" alt="" data-vk-loc="src/Gallery.tsx:22:7" />
+      <ul {...rest} data-vk-loc="src/Gallery.tsx:23:7">
         {items.map((item) => (
-          <li data-vk-loc="src/Gallery.tsx:25:11" key={item.id}>
-            <Card data-vk-usage="src/Gallery.tsx:26:13" title={item.title} icon={<svg data-vk-loc="src/Gallery.tsx:26:44" viewBox="0 0 8 8"><circle data-vk-loc="src/Gallery.tsx:26:67" r="4" /></svg>} />
+          <li key={item.id} data-vk-loc="src/Gallery.tsx:25:11">
+            <Card title={item.title} icon={<svg viewBox="0 0 8 8" data-vk-loc="src/Gallery.tsx:26:44"><circle r="4" data-vk-loc="src/Gallery.tsx:26:67" /></svg>} data-vk-usage="src/Gallery.tsx:26:13" />
           </li>
         ))}
       </ul>
-      {open && <p data-vk-loc="src/Gallery.tsx:30:16" className="note">Opened</p>}
+      {open && <p className="note" data-vk-loc="src/Gallery.tsx:30:16">Opened</p>}
       {open ? <span data-vk-loc="src/Gallery.tsx:31:15">yes</span> : <span data-vk-loc="src/Gallery.tsx:31:34">no</span>}
-      <Dialog.Root data-vk-usage="src/Gallery.tsx:32:7" open={open}>
-        <Dialog.Trigger data-vk-usage="src/Gallery.tsx:33:9" onClick={() => setOpen(identity(true))}>Open</Dialog.Trigger>
+      <Dialog.Root open={open} data-vk-usage="src/Gallery.tsx:32:7">
+        <Dialog.Trigger onClick={() => setOpen(identity(true))} data-vk-usage="src/Gallery.tsx:33:9">Open</Dialog.Trigger>
       </Dialog.Root>
-      <my-element data-vk-loc="src/Gallery.tsx:35:7" data-x="1"></my-element>
+      <my-element data-x="1" data-vk-loc="src/Gallery.tsx:35:7"></my-element>
       <div data-vk-loc="already/marked.tsx:1:1">kept</div>
       {footer as ReactNode}
     </section>

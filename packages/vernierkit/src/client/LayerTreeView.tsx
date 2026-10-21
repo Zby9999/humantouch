@@ -45,7 +45,7 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
         return (
           <div
             key={i}
-            class={`vk-tree-row${layer === selected ? " is-selected" : ""}${role(layer) === "component" ? " is-component" : ""}`}
+            class={`vk-tree-row${layer === selected ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}`}
             role="treeitem"
             aria-level={level}
             aria-selected={layer === selected}

@@ -39,7 +39,9 @@ export function markSource(code: string, options: MarkSourceOptions) {
     );
     if (marked) return;
     const { line, column } = node.loc!.start;
-    s.appendLeft(name.end!, ` ${attr}="${file}:${line}:${column + 1}"`);
+    // Last, so spread props cannot override it; after any type arguments, which follow the name.
+    const after = node.attributes.at(-1) ?? node.typeArguments ?? node.typeParameters ?? name;
+    s.appendLeft(after.end!, ` ${attr}="${file}:${line}:${column + 1}"`);
   });
 
   return { code: s.toString(), map: s.generateMap({ source: filePath, hires: true }) };

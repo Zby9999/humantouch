@@ -1,4 +1,4 @@
-import { Badge } from "acme-ui";
+import { Badge, Surface } from "acme-ui";
 import { useState } from "react";
 import { Vernier } from "vernierkit/react";
 import { Card } from "./components/Card";
@@ -24,16 +24,23 @@ export function App() {
         <p className="mt-4 text-stone-600">
           A Framer-style editor layer for <strong>any</strong> page.
         </p>
-        <button type="button" className="mt-6 self-start px-4 py-2 text-white" onClick={() => setDialogOpen(true)}>
+        <button
+          type="button"
+          className="mt-6 flex items-center gap-2 self-start px-4 py-2 text-white"
+          onClick={() => setDialogOpen(true)}
+        >
           Get started
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+            <path d="M3 8h10M9 4l4 4-4 4" />
+          </svg>
         </button>
       </section>
-      <section className="grid grid-cols-3 gap-4 pb-16">
+      <Surface className="grid grid-cols-3 gap-4 pb-16">
         {features.map((feature) => (
           <Card key={feature.title} title={feature.title} body={feature.body} />
         ))}
         <Card title="Your turn" body="Open the editor and try it." />
-      </section>
+      </Surface>
       {dialogOpen && <Dialog onClose={() => setDialogOpen(false)} />}
       <Vernier />
     </main>
