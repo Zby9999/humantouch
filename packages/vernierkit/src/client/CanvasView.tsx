@@ -2,6 +2,9 @@
 import type { TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { freeze, type Canvas } from "./freezer";
+import { Icon } from "./icons";
+import { role, type Layer, type LayerTree } from "./layers";
+import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParent } from "./selection";
 
 /** Where the canvas sits in the viewport: its top-left corner and its scale. */
 interface View {
@@ -20,8 +23,17 @@ const MAX_ZOOM_STEP = 30;
 /** Performance entries: a mark when the designer asks for edit mode, a measure once the canvas is on screen. */
 export const ENTER_MARK = "vernierkit:enter-edit-mode";
 
+interface Props {
+  /** Called once the page is frozen and laid out. */
+  onCanvas(canvas: Canvas): void;
+  /** The canvas's layers, once there is a canvas. */
+  tree: LayerTree | null;
+  selected: Layer | null;
+  onSelect(layer: Layer | null): void;
+}
+
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView() {
+export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
   const [canvas, setCanvas] = useState<Canvas | null>(null);
@@ -42,6 +54,7 @@ export function CanvasView() {
     frozen.then((frozen) => {
       if (!mounted) return;
       setCanvas(frozen);
+      onCanvas(frozen);
       setView(initialView(frozen, viewport.current!.getBoundingClientRect()));
       // The task after the next frame: the canvas has been painted by then.
       requestAnimationFrame(() =>
@@ -63,8 +76,13 @@ export function CanvasView() {
     };
   }, []);
 
+  // Effects run after paint; a key pressed right after a click must still see that click's selection.
+  const latest = useRef({ canvas, selected, onSelect });
+  latest.current = { canvas, selected, onSelect };
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      const { canvas, selected, onSelect } = latest.current;
       if (isEditable(event.composedPath()[0])) return;
       if (event.code === "Space") {
         // Swallow repeats and key-up too: a focused button would otherwise click on Space.
@@ -74,6 +92,12 @@ export function CanvasView() {
         return;
       }
       if (event.type !== "keydown") return;
+      if (event.key === "Escape" && selected) {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect(selectParent(selected));
+        return;
+      }
       if (event.code === "Digit1" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         event.stopPropagation();
@@ -89,7 +113,7 @@ export function CanvasView() {
       window.removeEventListener("keyup", onKey, true);
       window.removeEventListener("blur", release);
     };
-  }, [canvas]);
+  }, []);
 
   // Registered by hand: it has to be non-passive to keep the page underneath from scrolling.
   useEffect(() => {
@@ -112,7 +136,23 @@ export function CanvasView() {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /** The deepest layer under the pointer. The canvas itself takes no pointer input, so this asks its document. */
+  const layerAt = (event: MouseEvent): Layer | null => {
+    if (!canvas || !tree) return null;
+    const area = viewport.current!.getBoundingClientRect();
+    const x = (event.clientX - area.left - view.x) / view.zoom;
+    const y = (event.clientY - area.top - view.y) / view.zoom;
+    if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
+    const el = canvas.document.elementFromPoint(x, y);
+    return el && tree.layerOf(el);
+  };
+
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (event.button === 0 && !spaceHeld) {
+      const hit = layerAt(event);
+      onSelect(hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, selected)));
+      return;
+    }
     // Space + drag, or the middle button, pans.
     if (!(spaceHeld && event.button === 0) && event.button !== 1) return;
     event.preventDefault();
@@ -148,6 +188,10 @@ export function CanvasView() {
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
       onPointerCancel={endPan}
+      onDblClick={(event) => {
+        const hit = layerAt(event);
+        if (hit && !event.metaKey && !event.ctrlKey) onSelect(selectOnDoubleClick(hit, selected));
+      }}
     >
       <div
         class="vk-stage"
@@ -158,7 +202,33 @@ export function CanvasView() {
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
+      {canvas && selected && <SelectionBox layer={selected} view={view} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
+    </div>
+  );
+}
+
+/** Drawn above the canvas, so its lines stay 1px at any zoom. Blue, purple for a component usage, gray for a locked layer. */
+function SelectionBox({ layer, view }: { layer: Layer; view: View }) {
+  const r = layer.el.getBoundingClientRect();
+  const kind = role(layer);
+  return (
+    <div
+      class="vk-selection"
+      data-kind={kind}
+      aria-hidden="true"
+      style={{
+        left: `${view.x + r.left * view.zoom}px`,
+        top: `${view.y + r.top * view.zoom}px`,
+        width: `${r.width * view.zoom}px`,
+        height: `${r.height * view.zoom}px`,
+      }}
+    >
+      {kind === "locked" && (
+        <span class="vk-selection-lock">
+          <Icon name="lock" />
+        </span>
+      )}
     </div>
   );
 }

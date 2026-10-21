@@ -1,11 +1,7 @@
 import { parse } from "@babel/parser";
 import MagicString from "magic-string";
 import path from "node:path";
-
-/** Element location marker: `file:line:column` of the JSX that wrote an HTML element. */
-export const LOC_ATTR = "data-vk-loc";
-/** Usage location marker: `file:line:column` of the JSX that uses a component. */
-export const USAGE_ATTR = "data-vk-usage";
+import { LOC_ATTR, USAGE_ATTR } from "./markers";
 
 export interface MarkSourceOptions {
   /** Absolute path of the module (Vite module id; a query string is allowed). */

@@ -21,7 +21,9 @@ export function App() {
           <h1 className="font-display text-4xl font-bold text-stone-900">Vernier Kit</h1>
           <Badge>Beta</Badge>
         </header>
-        <p className="mt-4 text-stone-600">A Framer-style editor layer for any page.</p>
+        <p className="mt-4 text-stone-600">
+          A Framer-style editor layer for <strong>any</strong> page.
+        </p>
         <button type="button" className="mt-6 self-start px-4 py-2 text-white" onClick={() => setDialogOpen(true)}>
           Get started
         </button>
@@ -30,6 +32,7 @@ export function App() {
         {features.map((feature) => (
           <Card key={feature.title} title={feature.title} body={feature.body} />
         ))}
+        <Card title="Your turn" body="Open the editor and try it." />
       </section>
       {dialogOpen && <Dialog onClose={() => setDialogOpen(false)} />}
       <Vernier />

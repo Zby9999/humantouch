@@ -5,6 +5,7 @@
  */
 import { HOST_TAG } from "./host";
 import { FONT_STACK } from "./styles";
+import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
 
 export interface Canvas {
   /** The frozen copy. Lives in the iframe that was passed to `freeze`. */
@@ -24,14 +25,18 @@ interface Viewport {
   scrollY: number;
 }
 
-/** Added to every canvas: style changes made while editing apply at once. */
+/**
+ * Added to every canvas: style changes made while editing apply at once, and
+ * every layer can be hit-tested, even ones the page lets clicks pass through.
+ */
 const CANVAS_STYLES = `
 *, *::before, *::after { transition: none !important; }
+* { pointer-events: auto !important; }
 html { scrollbar-width: none !important; }
 `;
 
-/** Marks what the canvas shows in place of content it cannot copy. */
-const FROZEN = "data-vk-frozen";
+/** Marks what the canvas shows in place of content it cannot copy: `video`, `iframe`. */
+export const FROZEN = "data-vk-frozen";
 
 /** How long to wait at most for the copy's fonts and cross-origin stylesheets. */
 const SETTLE_TIMEOUT_MS = 500;
@@ -79,6 +84,9 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
         if (!(from as HTMLIFrameElement).contentDocument) to = placeholderFor(from as HTMLIFrameElement, to);
         break;
     }
+    // Read once, here on the live page: editing reads only the copy.
+    const chain = readUsageChain(from);
+    if (chain.length) to.setAttribute(CHAIN_ATTR, JSON.stringify(chain));
     const ends = animationEnds.get(from);
     if (ends) for (const [name, value] of ends) setImportant(to, name, value);
     if (to.hasAttribute("style")) resolveViewportUnits(to.style, viewport);

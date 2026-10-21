@@ -22,7 +22,7 @@ test("elements written by project source carry their element location", async ({
   await expect(page.locator("h1")).toHaveAttribute("data-vk-loc", locate("src/App.tsx", "<h1"));
 
   const cards = page.locator("article");
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(4);
   for (const card of await cards.all()) {
     await expect(card).toHaveAttribute("data-vk-loc", locate("src/components/Card.tsx", "<article"));
   }
