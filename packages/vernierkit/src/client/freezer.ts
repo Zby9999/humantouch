@@ -14,6 +14,23 @@ export interface Canvas {
   height: number;
   /** How far the page was scrolled down when it was frozen. */
   scrollY: number;
+  /** Fixed layers that covered the whole screen, like a dialog's dimming. */
+  backdrops: Backdrop[];
+}
+
+/**
+ * A fixed layer that covered the whole screen when the page was frozen. On the
+ * canvas it still covers only that screen (so what it centers stays put); the
+ * canvas view paints its look over the rest of the page.
+ */
+export interface Backdrop {
+  /** The screen it covered, in page px. */
+  top: number;
+  height: number;
+  /** Its background color, backdrop filter and effective opacity. */
+  color: string;
+  filter: string;
+  opacity: number;
 }
 
 /** The window the designer was looking at when the page was frozen. */
@@ -54,6 +71,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   const copyEls = [copy, ...copy.getElementsByTagName("*")];
   const scrolled: [Element, number, number][] = [];
   const topLayer: [HTMLElement, "modal" | "popover"][] = [];
+  const backdrops: Backdrop[] = [];
   for (let i = 0; i < liveEls.length; i++) {
     const from = liveEls[i] as HTMLElement;
     let to = copyEls[i] as HTMLElement;
@@ -82,7 +100,8 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     const ends = animationEnds.get(from);
     if (ends) for (const [name, value] of ends) setImportant(to, name, value);
     if (to.hasAttribute("style")) resolveViewportUnits(to.style, viewport);
-    pinToViewport(from, to, viewport);
+    const backdrop = pinToViewport(from, to, viewport);
+    if (backdrop) backdrops.push(backdrop);
     // The document's own scroll is shown by the canvas view instead.
     if ((from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
       scrolled.push([to, from.scrollLeft, from.scrollTop]);
@@ -134,7 +153,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     const height = Math.max(viewport.height, doc.documentElement.scrollHeight);
     iframe.style.height = `${height}px`;
     for (const [el, left, top] of scrolled) el.scrollTo(left, top);
-    return { document: doc, width, height, scrollY: viewport.scrollY };
+    return { document: doc, width, height, scrollY: viewport.scrollY, backdrops };
   });
 }
 
@@ -368,12 +387,13 @@ function toPx(n: number, unit: string, { width, height }: Viewport): string {
 /**
  * The canvas has no viewport of its own. Elements placed against the viewport
  * (fixed, or absolute with no positioned ancestor) are pinned where the
- * designer saw them, margins included (auto margins center dialogs).
+ * designer saw them, margins included (auto margins center dialogs). Returns
+ * the element as a backdrop when it covered the whole screen.
  */
-function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
+function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport): Backdrop | null {
   const style = getComputedStyle(from);
   const fixed = style.position === "fixed" && fixedToViewport(from);
-  if (!fixed && !(style.position === "absolute" && absoluteToViewport(from))) return;
+  if (!fixed && !(style.position === "absolute" && absoluteToViewport(from))) return null;
   const top = parseFloat(style.top) + (fixed ? viewport.scrollY : 0);
   const left = parseFloat(style.left) + (fixed ? viewport.scrollX : 0);
   setImportant(to, "top", `${top}px`);
@@ -383,6 +403,23 @@ function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
   for (const name of ["width", "height", "margin-top", "margin-right", "margin-bottom", "margin-left"]) {
     setImportant(to, name, style.getPropertyValue(name));
   }
+  return fixed ? backdropOf(from, style, viewport) : null;
+}
+
+function backdropOf(el: HTMLElement, style: CSSStyleDeclaration, viewport: Viewport): Backdrop | null {
+  const r = el.getBoundingClientRect();
+  const coversScreen = r.left <= 0 && r.top <= 0 && r.right >= viewport.width && r.bottom >= viewport.height;
+  const paints = !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(style.backgroundColor) || style.backdropFilter !== "none";
+  if (!coversScreen || !paints) return null;
+  let opacity = 1;
+  for (let a: Element | null = el; a; a = a.parentElement) opacity *= Number(getComputedStyle(a).opacity);
+  return {
+    top: viewport.scrollY,
+    height: viewport.height,
+    color: style.backgroundColor,
+    filter: style.backdropFilter,
+    opacity,
+  };
 }
 
 /** False when a transformed (or similar) ancestor holds the fixed element instead of the viewport. */

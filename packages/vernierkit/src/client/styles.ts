@@ -121,6 +121,12 @@ export const styles = /* css */ `
   left: 0;
   transform-origin: 0 0;
 }
+/* Paints a full-screen backdrop over the parts of the page it did not cover. Outside the canvas, so not a layer. */
+.vk-backdrop-extension {
+  position: absolute;
+  left: 0;
+  pointer-events: none;
+}
 .vk-canvas {
   display: block;
   border: 0;
