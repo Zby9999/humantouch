@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "example-vite",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "examples/vite-react19-tw4", "exec", "vite", "--port", "5173", "--strictPort"],
+      "port": 5173
+    },
+    {
+      "name": "portfolio-turbopack",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--prefix", "playground/portfolio", "next", "dev", "playground/portfolio", "--turbopack", "--port", "3100"],
+      "port": 3100
+    }
+  ]
+}

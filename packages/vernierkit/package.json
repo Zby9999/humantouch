@@ -12,6 +12,7 @@
       "types": "./dist/vite.d.ts",
       "default": "./dist/vite.js"
     },
+    "./next-loader": "./dist/next-loader.cjs",
     "./react": {
       "types": "./dist/react.d.ts",
       "development": "./dist/react.dev.js",
