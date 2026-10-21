@@ -50,13 +50,7 @@ test("the toggle can be dragged to any corner, and stays there after a reload", 
   await page.reload();
   await expectAt(toggle, left, bottom);
 
-  // A drag is not a click: no placeholder feedback.
-  await expect(page.getByRole("status")).toBeHidden();
-});
-
-test("clicking the toggle gives placeholder feedback for now", async ({ page }) => {
-  await page.goto(DEV_URL);
-  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
-
-  await expect(page.getByRole("status")).toHaveText("Edit mode is coming soon");
+  // A drag is not a click: still in preview mode.
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 });

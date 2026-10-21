@@ -6,6 +6,7 @@ const example = fileURLToPath(new URL("../examples/vite-react19-tw4", import.met
 export const DEV_URL = "http://localhost:5310";
 export const PREVIEW_URL = "http://localhost:5311";
 export const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
+export const EXIT_LABEL = "Vernier Kit: back to preview mode";
 
 export default defineConfig({
   testDir: "./tests",

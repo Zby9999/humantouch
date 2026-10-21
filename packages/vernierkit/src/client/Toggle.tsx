@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import type { TargetedPointerEvent } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
@@ -8,7 +8,6 @@ const CORNER_KEY = "vernierkit:toggle-corner";
 const CORNERS: Corner[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
 /** Pointer travel (px) before a press counts as a drag instead of a click. */
 const DRAG_THRESHOLD = 4;
-const HINT_MS = 2000;
 
 interface Drag {
   pointerId: number;
@@ -17,11 +16,10 @@ interface Drag {
   moved: boolean;
 }
 
-/** The single control in preview mode. Drag it to any corner; click it to toggle modes. */
-export function Toggle({ onToggle }: { onToggle: () => void }) {
+/** The single control in preview mode, and the way back from edit mode. Drag it to any corner; click it to switch modes. */
+export function Toggle({ editing, onToggle }: { editing: boolean; onToggle: () => void }) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
-  const [hint, setHint] = useState(false);
   const [settles, setSettles] = useState(0);
   const dock = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -41,12 +39,6 @@ export function Toggle({ onToggle }: { onToggle: () => void }) {
     el.style.transition = "";
     el.style.transform = "";
   }, [settles]);
-
-  useEffect(() => {
-    if (!hint) return;
-    const timer = setTimeout(() => setHint(false), HINT_MS);
-    return () => clearTimeout(timer);
-  }, [hint]);
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
@@ -68,7 +60,6 @@ export function Toggle({ onToggle }: { onToggle: () => void }) {
     if (!d.moved) {
       d.moved = true;
       setDragging(true);
-      setHint(false);
     }
     dock.current.style.transform = `translate(${dx}px, ${dy}px)`;
   };
@@ -96,8 +87,6 @@ export function Toggle({ onToggle }: { onToggle: () => void }) {
       return;
     }
     onToggle();
-    // Placeholder until edit mode exists.
-    setHint(true);
   };
 
   return (
@@ -105,7 +94,7 @@ export function Toggle({ onToggle }: { onToggle: () => void }) {
       <button
         type="button"
         class="vk-toggle"
-        aria-label="Vernier Kit: enter edit mode"
+        aria-label={editing ? "Vernier Kit: back to preview mode" : "Vernier Kit: enter edit mode"}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -122,9 +111,6 @@ export function Toggle({ onToggle }: { onToggle: () => void }) {
           <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
         </svg>
       </button>
-      <div class="vk-hint" role="status" hidden={!hint}>
-        Edit mode is coming soon
-      </div>
     </div>
   );
 }

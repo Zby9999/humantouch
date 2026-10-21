@@ -32,10 +32,10 @@ test("page styles do not reach the editor layer", async ({ page }) => {
   expect(toggleStyle).toEqual({ background: "rgb(30, 30, 30)", radius: "50%", padding: "0px", width: "40px" });
 
   await toggle.click();
-  const hint = page.getByRole("status");
-  await expect(hint).toBeVisible();
+  const panelTitle = page.getByRole("complementary", { name: "Layers" }).getByRole("heading");
+  await expect(panelTitle).toBeVisible();
 
-  const hintStyle = await hint.evaluate((el) => {
+  const titleStyle = await panelTitle.evaluate((el) => {
     const s = getComputedStyle(el);
     return {
       fontStyle: s.fontStyle,
@@ -47,13 +47,13 @@ test("page styles do not reach the editor layer", async ({ page }) => {
       serif: s.fontFamily.includes("Georgia"),
     };
   });
-  expect(hintStyle).toEqual({
+  expect(titleStyle).toEqual({
     fontStyle: "normal",
-    fontSize: "12px",
+    fontSize: "11px",
     lineHeight: "16px",
-    letterSpacing: "normal",
+    letterSpacing: "0.055px",
     textTransform: "none",
-    color: "rgb(255, 255, 255)",
+    color: "rgb(30, 30, 30)",
     serif: false,
   });
 });

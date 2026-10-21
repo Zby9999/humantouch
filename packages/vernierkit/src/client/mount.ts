@@ -1,8 +1,7 @@
 import { h, render } from "preact";
 import { styles } from "./styles";
-import { Toggle } from "./Toggle";
-
-const HOST_TAG = "vernier-kit";
+import { EditorLayer } from "./EditorLayer";
+import { HOST_TAG } from "./host";
 
 /**
  * Mounts the editor layer in its own Shadow DOM so page styles and editor
@@ -20,7 +19,7 @@ export function mountEditorLayer(): () => void {
   // Outside <body>, so page transforms on body cannot break fixed positioning.
   document.documentElement.append(host);
 
-  render(h(Toggle, { onToggle: () => {} }), container);
+  render(h(EditorLayer, null), container);
 
   return () => {
     render(null, container);

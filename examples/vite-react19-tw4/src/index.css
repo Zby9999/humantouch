@@ -1,4 +1,9 @@
+@import "@fontsource/space-grotesk/700.css";
 @import "tailwindcss";
+
+@theme {
+  --font-display: "Space Grotesk", sans-serif;
+}
 
 /* Deliberately loud page styles: none of these may reach the editor layer. */
 body {

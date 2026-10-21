@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/space-grotesk": "^5.3.0",
     "acme-ui": "file:./vendor/acme-ui",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
