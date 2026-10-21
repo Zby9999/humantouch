@@ -157,27 +157,6 @@ export function CanvasView() {
         }}
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
-        {canvas?.backdrops.flatMap((backdrop, i) =>
-          [
-            [0, backdrop.top],
-            [backdrop.top + backdrop.height, canvas.height],
-          ]
-            .filter(([top, bottom]) => bottom > top)
-            .map(([top, bottom]) => (
-              <div
-                key={`${i}:${top}`}
-                class="vk-backdrop-extension"
-                style={{
-                  top: `${top}px`,
-                  height: `${bottom - top}px`,
-                  width: `${canvas.width}px`,
-                  background: backdrop.color,
-                  backdropFilter: backdrop.filter,
-                  opacity: backdrop.opacity,
-                }}
-              />
-            )),
-        )}
       </div>
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>

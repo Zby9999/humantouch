@@ -334,42 +334,6 @@ test("the page underneath is paused while editing", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-/** The color on screen at page point (`x`, `y`) of the canvas. */
-async function canvasPixel(page: Page, x: number, y: number) {
-  const iframe = canvasIframe(page);
-  const box = (await iframe.boundingBox())!;
-  const width = await iframe.evaluate((el: HTMLElement) => el.offsetWidth);
-  const zoom = box.width / width;
-  const shot = await page.screenshot({ clip: { x: box.x + x * zoom, y: box.y + y * zoom, width: 1, height: 1 } });
-  return page.evaluate(async (png) => {
-    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
-    const ctx = new OffscreenCanvas(1, 1).getContext("2d")!;
-    ctx.drawImage(bitmap, 0, 0);
-    return [...ctx.getImageData(0, 0, 1, 1).data];
-  }, shot.toString("base64"));
-}
-
-test("a full-screen backdrop open when frozen dims the whole canvas, not just the screen it covered", async ({ page }) => {
-  await page.evaluate(() => scrollTo(0, 150));
-  await page.getByRole("button", { name: "Get started" }).click();
-  const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-
-  await enterEditMode(page);
-  await page.keyboard.press("Shift+Digit1");
-
-  // The white page margin, inside the screen the backdrop covered, above it, and below it.
-  const covered = await canvasPixel(page, 20, 400);
-  expect(covered).not.toEqual([255, 255, 255, 255]);
-  expect(await canvasPixel(page, 20, 50)).toEqual(covered);
-  expect(await canvasPixel(page, 20, pageHeight - 10)).toEqual(covered);
-});
-
-test("without a backdrop the canvas is not dimmed", async ({ page }) => {
-  await enterEditMode(page);
-
-  expect(await canvasPixel(page, 20, 50)).toEqual([255, 255, 255, 255]);
-});
-
 test("toggling back to preview mode makes the page interactive again", async ({ page }) => {
   await page.getByRole("button", { name: "Get started" }).click();
   await enterEditMode(page);
