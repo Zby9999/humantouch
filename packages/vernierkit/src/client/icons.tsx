@@ -12,9 +12,14 @@ const PATHS: Record<string, string> = {
   still: "M3 3.5h10v9H3zM6.5 6v4l3.5-2z",
   instance: "M8 2.5l2 2-2 2-2-2zM8 9.5l2 2-2 2-2-2zM4.5 6l2 2-2 2-2-2zM11.5 6l2 2-2 2-2-2z",
   lock: "M4.5 7.5h7v5.5h-7zM6 7.5V5.5a2 2 0 0 1 4 0v2",
+  radius: "M3.5 12.5V8a4.5 4.5 0 0 1 4.5-4.5h4.5",
+  plus: "M8 3.5v9M3.5 8h9",
+  minus: "M3.5 8h9",
 };
 
-export function Icon({ name }: { name: keyof typeof PATHS }) {
+export type IconName = keyof typeof PATHS;
+
+export function Icon({ name }: { name: IconName }) {
   return (
     <svg class="vk-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <path d={PATHS[name]} fill="none" stroke="currentColor" stroke-width="1" stroke-linejoin="round" />

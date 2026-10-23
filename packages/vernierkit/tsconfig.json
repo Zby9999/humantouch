@@ -12,6 +12,6 @@
     "verbatimModuleSyntax": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "tsup.config.ts"],
+  "include": ["src", "test", "tsup.config.ts", "vitest.config.ts"],
   "exclude": ["test/fixtures", "test/__snapshots__"]
 }

@@ -1,9 +1,12 @@
 /** @jsxImportSource preact */
-import { useState } from "preact/hooks";
+import { useReducer, useState } from "preact/hooks";
 import { CanvasView } from "./CanvasView";
+import { createChangeSet } from "./changeset";
+import { createEditor, type Editor } from "./edits";
 import { buildLayerTree, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
+import { Properties } from "./Properties";
 
 interface Props {
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
@@ -16,7 +19,10 @@ interface Props {
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
 export function Shell({ leaving, animate, onLeft }: Props) {
   const [tree, setTree] = useState<LayerTree | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
   const [selected, setSelected] = useState<Layer | null>(null);
+  /** Bumped on each edit: the panel reads its values from the canvas. */
+  const [, edited] = useReducer((n: number) => n + 1, 0);
 
   return (
     <div class="vk-shell">
@@ -25,7 +31,12 @@ export function Shell({ leaving, animate, onLeft }: Props) {
         {tree && <LayerTreeView tree={tree} selected={selected} onSelect={setSelected} />}
       </aside>
       <CanvasView
-        onCanvas={(canvas) => setTree(buildLayerTree(canvas.document))}
+        onCanvas={(canvas) => {
+          const layers = buildLayerTree(canvas.document);
+          setTree(layers);
+          // The ChangeSet lives in memory for now, so it goes with the canvas.
+          setEditor(createEditor(layers, createChangeSet()));
+        }}
         tree={tree}
         selected={selected}
         onSelect={setSelected}
@@ -35,8 +46,11 @@ export function Shell({ leaving, animate, onLeft }: Props) {
       />
       <aside class="vk-panel" aria-label="Design">
         <h2 class="vk-panel-title">Design</h2>
-        {tree && selected ? (
-          <LayerInfo tree={tree} layer={selected} />
+        {tree && editor && selected ? (
+          <>
+            <LayerInfo tree={tree} layer={selected} />
+            <Properties editor={editor} layer={selected} onEdit={() => edited(undefined)} />
+          </>
         ) : (
           <p class="vk-panel-empty">Select a layer to see its properties.</p>
         )}
