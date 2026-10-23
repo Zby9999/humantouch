@@ -16,18 +16,23 @@ export const test = base.extend<{ keepRoundInMemory: boolean }>({
   },
 });
 
-/** Stands in for the local service's `/round`, in memory. */
+/** Stands in for the local service, in memory: a round that is only ever edited, never claimed. */
 async function keepRoundIn(context: BrowserContext) {
   let saved: string | null = null;
   await context.route(
-    (url) => url.hostname === "127.0.0.1" && url.pathname === "/round",
+    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/unlock"].includes(url.pathname),
     (route) => {
       const request = route.request();
       const headers = {
         "Access-Control-Allow-Origin": request.headers().origin ?? "*",
-        "Access-Control-Allow-Methods": "GET, PUT, DELETE",
+        "Access-Control-Allow-Methods": "GET, PUT, DELETE, POST",
         "Access-Control-Allow-Headers": "X-Vernier-Token, Content-Type",
       };
+      const { pathname } = new URL(request.url());
+      if (pathname === "/events") {
+        return route.fulfill({ status: 200, headers, contentType: "application/x-ndjson", body: `${JSON.stringify({ status: "editing" })}\n` });
+      }
+      if (pathname === "/unlock") return route.fulfill({ status: 409, headers });
       if (request.method() === "GET" && saved) {
         return route.fulfill({ status: 200, headers, contentType: "application/json", body: saved });
       }

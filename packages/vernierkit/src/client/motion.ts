@@ -7,6 +7,8 @@ export const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
 
 /** The page shrinking into the canvas when edit mode starts, and growing back when it ends. */
 export const MODE_SWITCH_MS = 240;
+/** How long the locked toggle is pressed and held to unlock it; a ring runs out meanwhile. */
+export const UNLOCK_HOLD_MS = 1000;
 /** With reduced motion, the editor fades in and out instead. */
 export const MODE_FADE_MS = 150;
 

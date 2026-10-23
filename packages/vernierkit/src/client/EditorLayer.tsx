@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
-import { useEffect, useLayoutEffect, useState } from "preact/hooks";
-import type { SavedRound } from "../service-protocol";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import type { RoundStatus, SavedRound } from "../service-protocol";
 import { ENTER_MARK } from "./CanvasView";
 import { canPreview, startChangePreview } from "./change-preview";
 import { PreviewSwitch } from "./PreviewSwitch";
@@ -18,6 +18,8 @@ const PREVIEW_KEY = "vernierkit:change-preview";
  * canvas. A round with changes not yet applied keeps its canvas: edit mode
  * comes back to it, after a reload too. With none, edit mode freezes the page afresh.
  * Meanwhile the page shows the round's changes, unless switched to how it is now.
+ * Once the Agent claims the round, the editor folds into the toggle, locked
+ * until the round ends.
  */
 export function EditorLayer() {
   const [mode, setMode] = useState<Mode>("preview");
@@ -31,7 +33,10 @@ export function EditorLayer() {
   const [preview] = useState(() => startChangePreview(document));
   useEffect(() => () => preview.stop(), []);
 
-  useEffect(() => {
+  const [status, setStatus] = useState<RoundStatus>({ status: "editing" });
+  const claimed = status.status === "claimed" ? status : null;
+
+  const load = () =>
     store?.load().then((saved) => {
       setRound(saved);
       setChangeCount(saved?.changeSet.changes.length ?? 0);
@@ -39,7 +44,26 @@ export function EditorLayer() {
       console.warn(error);
       setRound(null);
     });
-  }, []);
+  useEffect(() => void load(), []);
+
+  const lastStatus = useRef(status);
+  useEffect(
+    () =>
+      store?.watch((next) => {
+        // The round has ended: what is left of it, nothing once archived, is the round now.
+        if (lastStatus.current.status === "claimed" && next.status === "editing") void load();
+        lastStatus.current = next;
+        setStatus(next);
+      }),
+    [],
+  );
+  // Claimed: the canvas is out of date as the code changes, so editing stops.
+  useEffect(() => {
+    if (claimed && mode === "edit") {
+      setAnimate(true);
+      setMode("leaving");
+    }
+  }, [claimed !== null, mode]);
 
   const changes = round?.changeSet.changes ?? [];
   // Before paint: a canvas leaving at once must find its changes on the page.
@@ -69,7 +93,9 @@ export function EditorLayer() {
       )}
       <Toggle
         editing={mode === "edit"}
-        changeCount={changeCount}
+        changeCount={claimed ? changes.filter((change) => !claimed.done.includes(change.id)).length : changeCount}
+        applying={claimed && { done: claimed.done.length, total: changes.length }}
+        onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
         onToggle={(animate) => {
           setAnimate(animate);
           if (mode === "preview") performance.mark(ENTER_MARK);

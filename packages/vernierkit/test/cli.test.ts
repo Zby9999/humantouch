@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -128,5 +128,127 @@ describe("claim", () => {
 
     expect(notes).toContain("- **Location:** `src/components/Card.tsx:3:5`");
     expect(notes).toContain("- **Scope:** **Usage not determined.**");
+  });
+});
+
+describe("done", () => {
+  test("marks one change of the claimed round applied, and says how far the round is", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+
+    const { code, output } = await cli("done", "2");
+
+    expect(code).toBe(0);
+    expect(state()).toEqual({ status: "claimed", done: [2] });
+    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\n");
+  });
+
+  test("refuses a number that is not a change of the round, or a round not claimed", async () => {
+    saveRound(redFill);
+    expect(await cli("done", "1")).toEqual({ code: 1, output: "The round is not claimed: run `npx vernierkit claim` first.\n" });
+    await cli("claim");
+
+    expect(await cli("done", "7")).toEqual({ code: 1, output: "There is no change 7 in this round. Its changes are: 1.\n" });
+    expect(state()).toEqual({ status: "claimed", done: [] });
+  });
+});
+
+/** The rounds archived in `.vernier/history/`, oldest first: their ChangeSets and how each ended. */
+function history() {
+  const dir = join(project, ".vernier/history");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .sort()
+    .map((round) => ({
+      changeSet: JSON.parse(readFileSync(join(dir, round, "changeset.json"), "utf8")),
+      result: JSON.parse(readFileSync(join(dir, round, "result.json"), "utf8")),
+    }));
+}
+
+describe("finish", () => {
+  test("archives the round with what was done, and leaves no round behind, so the designer can start the next", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1");
+    await cli("done", "2");
+
+    const { code, output } = await cli("finish");
+
+    expect(code).toBe(0);
+    expect(output).toBe("Round finished: 2 of 2 changes applied.\n");
+    expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
+    expect(history()).toEqual([
+      {
+        changeSet: { lastId: 2, changes: [redFill, smallRadius] },
+        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+      },
+    ]);
+  });
+
+  test("names the changes not marked done, for the report", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "2");
+
+    const { output } = await cli("finish");
+
+    expect(output).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report why in your reply.\n");
+    expect(history()[0].result.done).toEqual([2]);
+  });
+
+  test("refuses a round that is not claimed", async () => {
+    saveRound(redFill);
+
+    expect(await cli("finish")).toEqual({ code: 1, output: "The round is not claimed: run `npx vernierkit claim` first.\n" });
+    expect(history()).toEqual([]);
+  });
+});
+
+describe("last", () => {
+  test("prints the change notes of the last round, with which changes were applied, to undo it by", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+
+    const { code, output } = await cli("last");
+
+    expect(code).toBe(0);
+    expect(output).toMatch(/^# Last round of design changes\n/);
+    expect(section(output, 1)).toContain("- **Status:** Applied\n");
+    expect(section(output, 1)).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000 at 50% opacity.\n");
+    expect(section(output, 2)).toContain("- **Status:** Not applied\n");
+  });
+
+  test("of two rounds, the later one", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    await cli("finish");
+    saveRound(smallRadius);
+    await cli("claim");
+    await cli("finish");
+
+    const { output } = await cli("last");
+
+    expect(section(output, 2)).toContain("Corner radius");
+    expect(section(output, 1)).toBe("");
+  });
+
+  test("with no round before, says so", async () => {
+    expect(await cli("last")).toEqual({ code: 0, output: "No earlier round of design changes to undo.\n" });
+  });
+});
+
+describe("claim, again", () => {
+  test("prints the notes once more, with the changes done so far, and keeps them done", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1");
+
+    const { output } = await cli("claim");
+
+    expect(state()).toEqual({ status: "claimed", done: [1] });
+    expect(section(output, 1)).toContain("- **Status:** Done\n");
+    expect(section(output, 2)).toContain("- **Status:** Not done yet\n");
   });
 });

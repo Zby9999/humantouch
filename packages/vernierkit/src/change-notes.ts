@@ -6,20 +6,37 @@
 import type { Change, Target } from "./client/changeset";
 import type { Fill, Radius } from "./client/edits";
 
-export function describeChanges(changes: Change[]): string {
+export interface NotesOptions {
+  /** The notes' title. */
+  heading: string;
+  /** What the Agent is to do with them; `count` is "1 change", "3 changes". */
+  intro(count: string): string;
+  /** A status line for each change, when there is one to give. */
+  status?(change: Change): string;
+}
+
+/** For a round to apply. */
+export const TO_APPLY: NotesOptions = {
+  heading: "Design changes to apply",
+  intro: (count) =>
+    `${count}, made by the designer in Vernier Kit. Apply each one to the source as the project already writes styles, and run \`npx vernierkit done <number>\` after each. When you are through them, run \`npx vernierkit finish\`.`,
+};
+
+export function describeChanges(changes: Change[], options: NotesOptions = TO_APPLY): string {
   const count = changes.length === 1 ? "1 change" : `${changes.length} changes`;
-  let notes = `# Design changes to apply\n\n${count}, made by the designer in Vernier Kit. Apply each one to the source as the project already writes styles.\n\n`;
-  for (const change of changes) notes += section(change);
+  let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
+  for (const change of changes) notes += section(change, options.status?.(change));
   return notes;
 }
 
 const KINDS: Record<Change["kind"], string> = { style: "Style" };
 const PROPERTIES: Record<string, string> = { fill: "Fill", radius: "Corner radius" };
 
-function section(change: Change): string {
+function section(change: Change, status: string | undefined): string {
   const { target } = change;
   const property = PROPERTIES[change.property] ?? change.property;
   const lines = [
+    ...(status ? [`**Status:** ${status}`] : []),
     `**Kind:** ${KINDS[change.kind]}`,
     `**Layer:** ${layer(target)}`,
     `**Location:** ${target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,

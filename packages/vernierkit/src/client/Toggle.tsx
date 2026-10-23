@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
-import type { ComponentChildren, TargetedPointerEvent } from "preact";
-import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import type { ComponentChildren, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { UNLOCK_HOLD_MS } from "./motion";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
@@ -16,18 +17,26 @@ interface Drag {
   moved: boolean;
 }
 
-/** The single control in preview mode, and the way back from edit mode. Drag it to any corner; click it to switch modes. */
+/**
+ * The single control in preview mode, and the way back from edit mode. Drag it
+ * to any corner; click it to switch modes. While the Agent applies the round
+ * it is locked, its ring fills as changes are done, and pressing and holding
+ * it unlocks it.
+ */
 interface Props {
   editing: boolean;
   /** Changes not yet applied, shown as a badge. */
   changeCount: number;
+  /** The Agent is applying the round: how many of its changes are done. */
+  applying: { done: number; total: number } | null;
+  onUnlock(): void;
   /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
   onToggle(animate: boolean): void;
   /** Shown beside the toggle. */
   children?: ComponentChildren;
 }
 
-export function Toggle({ editing, changeCount, onToggle, children }: Props) {
+export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, children }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -35,6 +44,29 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
   const drag = useRef<Drag | null>(null);
   const dropFrom = useRef<DOMRect | null>(null);
   const suppressClick = useRef(false);
+  const [holding, setHolding] = useState(false);
+  const hold = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const latestOnUnlock = useRef(onUnlock);
+  latestOnUnlock.current = onUnlock;
+  const startHold = () => {
+    clearTimeout(hold.current);
+    setHolding(true);
+    hold.current = setTimeout(() => {
+      setHolding(false);
+      // Letting go clicks, and by then the toggle may be unlocked: that click is not a switch.
+      suppressClick.current = true;
+      latestOnUnlock.current();
+    }, UNLOCK_HOLD_MS);
+  };
+  const endHold = () => {
+    clearTimeout(hold.current);
+    setHolding(false);
+  };
+  useEffect(() => endHold, []);
+  // Unlocked some other way while held: nothing left to unlock.
+  useEffect(() => {
+    if (!applying) endHold();
+  }, [!applying]);
 
   // After a drop, slide from where the pointer let go into the new corner.
   useLayoutEffect(() => {
@@ -53,6 +85,8 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
   const onPointerDown = (event: TargetedPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    suppressClick.current = false;
+    if (applying) startHold();
     drag.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -70,6 +104,7 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
     if (!d.moved) {
       d.moved = true;
       setDragging(true);
+      endHold(); // A drag, not a hold.
     }
     dock.current.style.transform = `translate(${dx}px, ${dy}px)`;
   };
@@ -78,6 +113,7 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
     const d = drag.current;
     if (!d || d.pointerId !== event.pointerId) return;
     drag.current = null;
+    endHold();
     if (!d.moved || !dock.current) return;
     suppressClick.current = true;
     const rect = dock.current.getBoundingClientRect();
@@ -96,22 +132,44 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
       suppressClick.current = false;
       return;
     }
+    if (applying) return;
     // A click from Enter or Space carries no click count.
     onToggle(event.detail > 0);
   };
 
+  // Held from the keyboard too.
+  const onKeyDown = (event: TargetedKeyboardEvent<HTMLButtonElement>) => {
+    if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return;
+    suppressClick.current = false;
+    if (applying) startHold();
+  };
+  const onKeyUp = (event: TargetedKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Enter" || event.key === " ") endHold();
+  };
+
+  const label = applying
+    ? "Vernier Kit: applying design changes. Press and hold to unlock."
+    : editing
+      ? "Vernier Kit: back to preview mode"
+      : "Vernier Kit: enter edit mode";
+
   return (
     <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner}>
-      <div class="vk-toggle-wrap">
+      <div class={holding ? "vk-toggle-wrap is-holding" : "vk-toggle-wrap"}>
         <button
           type="button"
           class="vk-toggle"
-          aria-label={editing ? "Vernier Kit: back to preview mode" : "Vernier Kit: enter edit mode"}
+          aria-label={label}
+          title={applying ? "Applying design changes. Press and hold to unlock." : undefined}
+          aria-disabled={applying ? "true" : undefined}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onClick={onClick}
+          onKeyDown={onKeyDown}
+          onKeyUp={onKeyUp}
+          onBlur={endHold}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
@@ -123,6 +181,7 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
             <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
           </svg>
         </button>
+        {applying && <ProgressRing {...applying} />}
         {changeCount > 0 && (
           <span class="vk-badge" role="status" aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}>
             {changeCount}
@@ -131,6 +190,25 @@ export function Toggle({ editing, changeCount, onToggle, children }: Props) {
       </div>
       {children}
     </div>
+  );
+}
+
+/** Around the locked toggle: fills as the Agent applies the round, and with a hold, shows how long is left to hold. */
+function ProgressRing({ done, total }: { done: number; total: number }) {
+  return (
+    <svg
+      class="vk-progress"
+      viewBox="0 0 48 48"
+      role="progressbar"
+      aria-label="Applying design changes"
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={done}
+    >
+      <circle class="vk-progress-track" cx="24" cy="24" r="22" pathLength={1} />
+      <circle class="vk-progress-done" cx="24" cy="24" r="22" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
+      <circle class="vk-progress-hold" cx="24" cy="24" r="22" pathLength={1} />
+    </svg>
   );
 }
 

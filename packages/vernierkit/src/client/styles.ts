@@ -1,4 +1,4 @@
-import { EASE_OUT } from "./motion";
+import { EASE_OUT, UNLOCK_HOLD_MS } from "./motion";
 
 export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -11,6 +11,7 @@ export const styles = /* css */ `
 
 .vk-dock {
   --vk-gap: 16px;
+  --vk-hold: ${UNLOCK_HOLD_MS}ms;
   position: fixed;
   z-index: 2147483647;
   display: flex;
@@ -53,6 +54,29 @@ export const styles = /* css */ `
 .vk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
 
 .vk-toggle-wrap { position: relative; }
+
+/* Locked while the Agent applies the round: a ring fills as changes are done. */
+.vk-toggle[aria-disabled="true"] { cursor: progress; color: rgb(255 255 255 / 0.5); }
+.vk-toggle[aria-disabled="true"]:hover { background: #1e1e1e; }
+.vk-progress {
+  position: absolute;
+  inset: -4px;
+  width: 48px;
+  height: 48px;
+  rotate: -90deg;
+  pointer-events: none;
+}
+.vk-progress circle { fill: none; stroke-width: 2.5; stroke-dasharray: 1; }
+.vk-progress-track { stroke: rgb(30 30 30 / 0.16); }
+.vk-progress-done {
+  stroke: #0d99ff;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 240ms ${EASE_OUT};
+}
+/* Pressed and held: the ring that runs out when the toggle unlocks. */
+.vk-progress-hold { stroke: #fff; stroke-dashoffset: 1; opacity: 0; }
+.is-holding .vk-progress-hold { opacity: 1; animation: vk-hold var(--vk-hold) linear forwards; }
+@keyframes vk-hold { to { stroke-dashoffset: 0; } }
 
 /* Change Preview: "Changed / Now" beside the toggle, dark like it. */
 .vk-preview {
@@ -389,6 +413,6 @@ export const styles = /* css */ `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vk-dock, .vk-toggle, .vk-segment, .vk-selection { transition: none; }
+  .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
 }
 `;

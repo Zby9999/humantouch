@@ -15,7 +15,9 @@ From the project root, run:
 npx vernierkit claim
 ```
 
-It claims the round, so the designer cannot edit while you work, and prints the change notes: one section per change. If it says there are no design changes to apply, tell the designer and stop.
+It claims the round and prints the change notes: one section per change, numbered. The designer's editor locks while you work, and a ring on its toggle fills as you report changes done. If it says there are no design changes to apply, tell the designer and stop.
+
+Running `claim` again prints the notes once more, with the changes done so far.
 
 ## 2. Read each change
 
@@ -30,8 +32,54 @@ Every section has:
 - **Design intent**: what the designer wants, in design terms. This is the goal.
 - **Reference style**: the CSS that showed the change on the canvas. Use it to understand the intent, not as code to paste.
 
-## 3. Apply them
+## 3. Apply them, one at a time
+
+For each change, in order:
+
+1. Make the change in the source.
+2. Right away, run `npx vernierkit done <number>` with the change's number. Do this after every change, not all at the end: it is how the designer sees your progress, and how the page stops previewing a change once it is in the code.
+
+If a change cannot be applied exactly as asked, apply the closest you can and still run `done`; or leave it out and do not run `done` for it. Either way, report it (step 5).
+
+While you apply them:
 
 - **Follow how the project already writes styles.** With Tailwind, change the classes (`bg-red-500`, `rounded-sm`, an arbitrary value only when no class fits). With CSS files or CSS Modules, change the CSS rule that styles the element. Do not add inline styles unless the project already styles that element inline.
 - **Change exactly the scope given**, no more and no less.
 - **Never modify third-party dependencies** (anything in `node_modules`, or vendored packages). If a change can only be made inside one, do not make it: report it.
+
+## 4. Finish
+
+When you have been through every change, run:
+
+```sh
+npx vernierkit finish
+```
+
+It ends the round: the editor unlocks, and the page shows the code as it now is. It tells you which changes were never marked done.
+
+## 5. Report
+
+End your reply with this report, in this form:
+
+```
+✓ Applied
+- 1. Fill: the cards of the feature grid, white → red
+- 2. Corner radius: …
+
+⚠️ Not applied 1:1
+- 3. Corner radius: <which layer>
+  Why: <the reason, e.g. the component library sets it and cannot be changed from the usage>
+  Instead: <what you did, or "left as it was">
+```
+
+List every change under one of the two. Leave out the ⚠️ section only when every change was applied exactly. Keep each line short: the designer reads only the exceptions.
+
+## Undoing the last round
+
+When the designer asks to undo the last round of design changes, run:
+
+```sh
+npx vernierkit last
+```
+
+It prints the notes of the round before, with each change marked **Applied** or **Not applied**. Take the applied ones back out of the source, as they were before (the notes give the earlier value as the design intent's "from"); leave the others alone. Then tell the designer what you reverted. There is nothing to claim or finish for an undo.
