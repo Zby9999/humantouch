@@ -64,7 +64,7 @@ function find(layer: Layer, match: (layer: Layer) => boolean): Layer | undefined
 const style = (el: Element) => getComputedStyle(el);
 
 describe("solid fill", () => {
-  test("paints every instance of the usage, and the change records target, scope, before and after", () => {
+  test("paints every instance of the usage, and the change records target, scope, before, after and reference style", () => {
     const { editor, changes, cards, layerOf } = openCanvas();
 
     editor.set(layerOf(cards[1]), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
@@ -92,6 +92,7 @@ describe("solid fill", () => {
         property: "fill",
         before: { type: "solid", color: "#FFFFFF", opacity: 1 },
         after: { type: "solid", color: "#FF0000", opacity: 1 },
+        style: { "background-color": "rgb(255 0 0 / 1)" },
       },
     ]);
   });

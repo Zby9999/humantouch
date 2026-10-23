@@ -29,6 +29,8 @@ export interface Change {
   property: string;
   before: unknown;
   after: unknown;
+  /** Reference style: the CSS that shows `after` on the canvas. */
+  style: Record<string, string>;
 }
 
 export interface ChangeSet {
@@ -37,7 +39,7 @@ export interface ChangeSet {
    * `after`. A property changed before keeps its first `before`; one that ends
    * up where it started is no longer a change.
    */
-  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after">): void;
+  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style">): void;
   /** The changes, oldest first. */
   list(): Change[];
   /** The ChangeSet as plain data, to save with the canvas. */
@@ -62,7 +64,7 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
-      else if (earlier) earlier.after = change.after;
+      else if (earlier) Object.assign(earlier, { after: change.after, style: change.style });
       else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
     },
     list: () => [...changes.values()],

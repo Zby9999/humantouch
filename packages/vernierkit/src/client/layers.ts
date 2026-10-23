@@ -62,7 +62,7 @@ export function buildLayerTree(doc: Document): LayerTree {
   const origins = new Map<Element, Origin>();
   const origin = (el: Element) => {
     let o = origins.get(el);
-    if (!o) origins.set(el, (o = originOf(el)));
+    if (!o) origins.set(el, (o = originOf(el, chainOf(el))));
     return o;
   };
 
@@ -216,18 +216,23 @@ export function typeLabel(layer: Layer): string {
 /** The same layer across instances shares a location (a locked layer has only its usage's) and a usage chain. */
 function repeatKey(layer: Layer): string | null {
   const loc = layer.kind === "locked" ? layer.usageLoc : layer.loc;
-  return loc && `${loc} ${JSON.stringify(layer.chain)}`;
+  return loc && usageKey(loc, layer.chain);
+}
+
+/** Elements with the same key are one layer across the instances of a usage. */
+export function usageKey(loc: string, chain: UsageLevel[]): string {
+  return `${loc} ${JSON.stringify(chain)}`;
 }
 
 /** Where an element comes from: its element location and usage chain. */
-interface Origin {
+export interface Origin {
   loc: string | null;
   chain: UsageLevel[];
 }
 
-function originOf(el: Element): Origin {
+/** Where `el`, with usage chain `chain`, comes from: on the canvas and on the live page alike. */
+export function originOf(el: Element, chain: UsageLevel[]): Origin {
   const loc = el.getAttribute(LOC_ATTR);
-  const chain = chainOf(el);
   // A dependency component that passes the usage's props on to the element it renders
   // (as motion.div and Radix primitives do) leaves that element to the code at the usage.
   if (!loc && chain[0]?.thirdParty && el.hasAttribute(USAGE_ATTR)) {

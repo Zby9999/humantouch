@@ -3,7 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { HOST_TAG } from "./host";
+import { HOST_TAG, PREVIEW_ATTR, PREVIEW_STYLES_ATTR } from "./host";
 import { FONT_STACK } from "./styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
 
@@ -77,7 +77,8 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
         to.remove();
         continue;
       case "style":
-        copyStyleRules(from as HTMLStyleElement, to);
+        if (from.hasAttribute(PREVIEW_STYLES_ATTR)) to.remove();
+        else copyStyleRules(from as HTMLStyleElement, to);
         continue;
       case "link":
         inlineStylesheet(from as HTMLLinkElement, to, page);
@@ -92,6 +93,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
         if (!(from as HTMLIFrameElement).contentDocument) to = placeholderFor(from as HTMLIFrameElement, to);
         break;
     }
+    to.removeAttribute(PREVIEW_ATTR);
     // Read once, here on the live page: editing reads only the copy.
     const chain = readUsageChain(from);
     if (chain.length) to.setAttribute(CHAIN_ATTR, JSON.stringify(chain));

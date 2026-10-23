@@ -2,6 +2,7 @@
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
 import { CanvasView } from "./CanvasView";
+import { canPreview } from "./change-preview";
 import { createChangeSet, type ChangeSet } from "./changeset";
 import { createEditor, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
@@ -17,6 +18,8 @@ interface Props {
   onSave(round: SavedRound | null): void;
   /** How many changes the round has, right after each edit. */
   onChangeCount(count: number): void;
+  /** The Change Preview is on: back in preview mode, the page shows the changes it can. */
+  previewing: boolean;
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -30,7 +33,7 @@ const ADJUSTING_MS = 200;
 const AUTOSAVE_MS = 500;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ saved, onSave, onChangeCount, leaving, animate, onLeft }: Props) {
+export function Shell({ saved, onSave, onChangeCount, previewing, leaving, animate, onLeft }: Props) {
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
@@ -97,7 +100,7 @@ export function Shell({ saved, onSave, onChangeCount, leaving, animate, onLeft }
         onSelect={select}
         leaving={leaving}
         animate={animate}
-        changed={!!round.current?.changeSet.list().length}
+        changed={!!round.current?.changeSet.list().some((change) => !previewing || !canPreview(change))}
         onLeft={onLeft}
       />
       <aside class="vk-panel" aria-label="Design">

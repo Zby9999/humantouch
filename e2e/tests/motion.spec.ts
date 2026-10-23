@@ -69,19 +69,55 @@ test("going back to preview grows the canvas back over the page before the edito
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
-test("with changes not yet applied, the canvas fades into the page once it has grown back over it", async ({ page }) => {
-  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
-  await expectSettled(page);
+/** Gives the three cards of the loop a red fill. */
+async function fillCardsRed(page: Page) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   const hex = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Fill color", exact: true });
   await hex.fill("ff0000");
   await hex.press("Enter");
+}
+
+/** The lowest opacity the editor shell shows from now until it is gone. */
+function lowestShellOpacity(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        let lowest = 1;
+        const look = () => {
+          const shell = document.querySelector("vernier-kit")!.shadowRoot!.querySelector(".vk-shell");
+          if (!shell) return resolve(lowest);
+          lowest = Math.min(lowest, Number(getComputedStyle(shell).opacity));
+          requestAnimationFrame(look);
+        };
+        look();
+      }),
+  );
+}
+
+test("with the Change Preview on, the page already shows the changes: the editor goes as soon as the canvas is back over it", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await fillCardsRed(page);
+  await playbackRate(cdp, 0.1);
+
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+
+  expect(await lowestShellOpacity(page)).toBe(1);
+  await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 0, 0)");
+});
+
+test("with the Change Preview switched to Now, the canvas fades into the page once it has grown back over it", async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem("vernierkit:change-preview", "off"));
+  await page.reload();
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await fillCardsRed(page);
   const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
   await playbackRate(cdp, 0.1);
 
   await page.getByRole("button", { name: EXIT_LABEL }).click();
 
-  // The page has none of the changes yet: rather than cut to it, the editor dissolves into it, the canvas at full size.
+  // The page shows none of the changes: rather than cut to it, the editor dissolves into it, the canvas at full size.
   const shell = page.locator(".vk-shell");
   await expect.poll(() => shell.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(0.9);
   const grown = await box(page);

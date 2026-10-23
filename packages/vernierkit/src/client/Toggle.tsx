@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import type { TargetedPointerEvent } from "preact";
+import type { ComponentChildren, TargetedPointerEvent } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -23,9 +23,11 @@ interface Props {
   changeCount: number;
   /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
   onToggle(animate: boolean): void;
+  /** Shown beside the toggle. */
+  children?: ComponentChildren;
 }
 
-export function Toggle({ editing, changeCount, onToggle }: Props) {
+export function Toggle({ editing, changeCount, onToggle, children }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -100,31 +102,34 @@ export function Toggle({ editing, changeCount, onToggle }: Props) {
 
   return (
     <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner}>
-      <button
-        type="button"
-        class="vk-toggle"
-        aria-label={editing ? "Vernier Kit: back to preview mode" : "Vernier Kit: enter edit mode"}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onClick={onClick}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
-            stroke="currentColor"
-            stroke-width="1.75"
-            stroke-linecap="round"
-          />
-          <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-        </svg>
-      </button>
-      {changeCount > 0 && (
-        <span class="vk-badge" role="status" aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}>
-          {changeCount}
-        </span>
-      )}
+      <div class="vk-toggle-wrap">
+        <button
+          type="button"
+          class="vk-toggle"
+          aria-label={editing ? "Vernier Kit: back to preview mode" : "Vernier Kit: enter edit mode"}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onClick={onClick}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+            />
+            <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          </svg>
+        </button>
+        {changeCount > 0 && (
+          <span class="vk-badge" role="status" aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}>
+            {changeCount}
+          </span>
+        )}
+      </div>
+      {children}
     </div>
   );
 }

@@ -96,6 +96,7 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
         property,
         before,
         after: value,
+        style: declarations,
       });
     },
   };
