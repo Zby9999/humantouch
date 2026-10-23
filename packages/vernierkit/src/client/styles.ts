@@ -171,6 +171,9 @@ export const styles = /* css */ `
   overflow: hidden;
   outline: none;
   touch-action: none;
+  /* Clicks here select layers, never the page's text. */
+  user-select: none;
+  -webkit-user-select: none;
   background: var(--vk-canvas);
 }
 .vk-viewport.is-pan-ready { cursor: grab; }

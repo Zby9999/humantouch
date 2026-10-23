@@ -197,6 +197,15 @@ test.describe("selecting layers on the canvas", () => {
     await expect(selectedRow(page)).toHaveText("Vernier Kit");
   });
 
+  test("double clicks do not select the page's text the way a browser would", async ({ page }) => {
+    await enterEditMode(page);
+
+    await doubleClickOn(page, "h1");
+    await doubleClickOn(page, "h1");
+
+    expect(await page.evaluate(() => getSelection()!.type)).not.toBe("Range");
+  });
+
   test("once inside, a click selects the layer beside the selection", async ({ page }) => {
     await enterEditMode(page);
     await clickOn(page, "article h3", "Meta");
