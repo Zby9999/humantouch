@@ -3,6 +3,7 @@
  * language, for the Agent to apply. Adjusting one property of one layer again
  * and again stays a single change, from the first value to the latest.
  */
+import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
 
 /** The layer a change is made to, as the Agent finds it in the source. */
@@ -38,6 +39,8 @@ export interface Change {
   after: unknown;
   /** Reference style: the CSS that shows `after` on the canvas. */
   style: Record<string, string>;
+  /** What set the value before the change, in the page's styles. */
+  sources: StyleSource[];
 }
 
 export interface ChangeSet {
@@ -46,7 +49,7 @@ export interface ChangeSet {
    * `after`. A property changed before keeps its first `before`; one that ends
    * up where it started is no longer a change.
    */
-  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style">): void;
+  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources">): void;
   /** The changes, oldest first. */
   list(): Change[];
   /** The ChangeSet as plain data, to save with the canvas. */

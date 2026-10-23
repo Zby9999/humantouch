@@ -25,23 +25,24 @@ export interface Io {
 /** Runs one command; resolves with the exit code. */
 export async function run(args: string[], io: Io): Promise<number> {
   const [command, ...rest] = args;
-  const folder = vernierFolder(findProject(io.cwd));
+  const root = findProject(io.cwd);
+  const folder = vernierFolder(root);
   switch (command) {
     case "claim":
-      return claim(folder, io);
+      return claim(folder, root, io);
     case "done":
       return done(folder, rest[0], io);
     case "finish":
       return finish(folder, io);
     case "last":
-      return last(folder, io);
+      return last(folder, root, io);
     default:
       io.write(`Unknown command: ${command ?? "(none)"}\n`);
       return 1;
   }
 }
 
-async function claim(folder: VernierFolder, io: Io): Promise<number> {
+async function claim(folder: VernierFolder, root: string, io: Io): Promise<number> {
   const changeSet = await readChangeSet(folder);
   if (!changeSet?.changes.length) {
     io.write("No design changes to apply: the designer has not changed anything in Vernier Kit since the last round.\n");
@@ -51,7 +52,7 @@ async function claim(folder: VernierFolder, io: Io): Promise<number> {
   const state = await readState(folder);
   if (!state) await writeState(folder, { status: "claimed", done: [] });
   const status = state && ((change: Change) => (state.done.includes(change.id) ? "Done" : "Not done yet"));
-  io.write(describeChanges(changeSet.changes, status ? { ...TO_APPLY, status } : TO_APPLY));
+  io.write(describeChanges(changeSet.changes, root, status ? { ...TO_APPLY, status } : TO_APPLY));
   return 0;
 }
 
@@ -91,7 +92,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   return 0;
 }
 
-async function last(folder: VernierFolder, io: Io): Promise<number> {
+async function last(folder: VernierFolder, root: string, io: Io): Promise<number> {
   const round = await readLastRound(folder);
   if (!round) {
     io.write("No earlier round of design changes to undo.\n");
@@ -99,7 +100,7 @@ async function last(folder: VernierFolder, io: Io): Promise<number> {
   }
   const { done } = round.result;
   io.write(
-    describeChanges(round.changeSet.changes, {
+    describeChanges(round.changeSet.changes, root, {
       heading: "Last round of design changes",
       intro: (count) =>
         `${count} from the round before, as the designer asked for them. To undo the round, take the applied ones back out of the source; those not applied never went in.`,

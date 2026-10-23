@@ -5,6 +5,7 @@
  */
 import type { ChangeSet, Target } from "./changeset";
 import type { Layer, LayerKind, LayerTree } from "./layers";
+import { ORIGINAL_STYLE_ATTR, sourcesOf } from "./style-source";
 
 /** A solid fill: a color as `#RRGGBB`, and its opacity from 0 to 1. */
 export interface Fill {
@@ -44,7 +45,11 @@ interface Definition<P extends Property> {
   read(el: Element, colors: ColorReader): PropertyValues[P];
   /** CSS declarations that show the value on the canvas. */
   write(value: PropertyValues[P]): Record<string, string>;
+  /** The CSS properties the value is read from, to find what sets them now. */
+  sets: string[];
 }
+
+const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
 
 const PROPERTIES: { [P in Property]: Definition<P> } = {
   fill: {
@@ -53,11 +58,13 @@ const PROPERTIES: { [P in Property]: Definition<P> } = {
     applies: (el) => getComputedStyle(el).backgroundImage === "none",
     read: (el, colors) => colors.fill(getComputedStyle(el).backgroundColor),
     write: (fill) => ({ "background-color": fill ? cssColor(fill) : "transparent" }),
+    sets: ["background-color"],
   },
   radius: {
     kinds: ["stack", "grid", "frame", "image", "still"],
     read: readRadius,
     write: (radius) => ({ "border-radius": typeof radius === "number" ? `${radius}px` : radius.map((r) => `${r}px`).join(" ") }),
+    sets: CORNERS.map((corner) => `border-${corner}-radius`),
   },
 };
 
@@ -85,9 +92,12 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
     set(layer, property, value) {
       if (!editor.can(layer, property)) throw new Error(`Vernier Kit: ${property} cannot be edited on a ${layer.kind} layer`);
       const before = editor.read(layer, property);
+      const sources = sourcesOf(layer.el, PROPERTIES[property].sets);
       const instances = tree.acrossInstances(layer);
       const declarations = PROPERTIES[property].write(value);
       for (const instance of instances) {
+        // Kept before the first edit: what sets a value is looked up in the page's own styles.
+        if (!instance.el.hasAttribute(ORIGINAL_STYLE_ATTR)) instance.el.setAttribute(ORIGINAL_STYLE_ATTR, instance.el.getAttribute("style") ?? "");
         for (const name in declarations) (instance.el as HTMLElement).style.setProperty(name, declarations[name], "important");
       }
       changes.record(idOf(layer, instances), {
@@ -97,6 +107,7 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
         before,
         after: value,
         style: declarations,
+        sources,
       });
     },
   };
@@ -155,7 +166,6 @@ function cssColor({ color, opacity }: Fill): string {
   return `rgb(${r} ${g} ${b} / ${opacity})`;
 }
 
-const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
 
 /** Larger radii (Tailwind v4's rounded-full is infinite) read as this: still a pill, and still a number. */
 const MAX_RADIUS = 9999;

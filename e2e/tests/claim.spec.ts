@@ -30,12 +30,17 @@ test("claim takes the designer's changes and prints change notes for the Agent",
   // React's root element, from index.html: no source marker.
   await layers.getByRole("treeitem").first().click();
   await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(3);
+  // The "Get started" button: the row just above its text.
+  const getStarted = layers.getByRole("treeitem");
+  const labels = await getStarted.allInnerTexts();
+  await getStarted.nth(labels.findIndex((label) => label.trim() === "Get started") - 1).click();
+  await setField(page, "Fill color", "2563eb");
+  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(4);
 
   const notes = await vernierkit("claim");
 
   expect(readVernier("state.json")).toEqual({ status: "claimed", done: [] });
-  const [, fill, radius, root] = notes.split(/^## /m);
+  const [, fill, radius, root, button] = notes.split(/^## /m);
   expect(fill).toMatch(/^1\. Fill\n/);
   expect(fill).toContain("- **Kind:** Style\n");
   expect(fill).toMatch(/- \*\*Location:\*\* `src\/components\/Card\.tsx:\d+:\d+`\n/);
@@ -45,6 +50,11 @@ test("claim takes the designer's changes and prints change notes for the Agent",
   expect(radius).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
   expect(root).toContain("- **Location:** **Not located.**");
   expect(root).toContain('`<div id="root">`');
+  expect(root).toContain("- **Currently set by:** nothing: the browser default applies\n");
+  // Tailwind's utilities are in a CSS layer; the example's own rule for buttons is not, and wins.
+  expect(fill).toMatch(/- \*\*Currently set by:\*\* class `bg-white`: rule `\.bg-white` in CSS layer `utilities` of `src\/index\.css`, `background-color: var\(--color-white\)`\n/);
+  expect(radius).toContain("class `rounded-xl`: rule `.rounded-xl` in CSS layer `utilities`");
+  expect(button).toContain("- **Currently set by:** rule `button` in no CSS layer, of `src/index.css`, `background: rgb(220, 38, 38)`\n");
 });
 
 test("with no changes, claim says so and leaves the round as it is", async () => {

@@ -37,13 +37,13 @@ let iframe: HTMLIFrameElement | undefined;
 
 afterEach(() => iframe?.remove());
 
-function openCanvas() {
+function openCanvas(page = PAGE) {
   iframe = document.createElement("iframe");
   iframe.style.width = "800px";
   document.body.append(iframe);
   const doc = iframe.contentDocument!;
   doc.open();
-  doc.write(PAGE);
+  doc.write(page);
   doc.close();
   const tree = buildLayerTree(doc);
   const changes = createChangeSet();
@@ -64,7 +64,7 @@ function find(layer: Layer, match: (layer: Layer) => boolean): Layer | undefined
 const style = (el: Element) => getComputedStyle(el);
 
 describe("solid fill", () => {
-  test("paints every instance of the usage, and the change records target, scope, before, after and reference style", () => {
+  test("paints every instance of the usage, and the change records target, scope, before, after, reference style and source", () => {
     const { editor, changes, cards, layerOf } = openCanvas();
 
     editor.set(layerOf(cards[1]), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
@@ -94,6 +94,18 @@ describe("solid fill", () => {
         before: { type: "solid", color: "#FFFFFF", opacity: 1 },
         after: { type: "solid", color: "#FF0000", opacity: 1 },
         style: { "background-color": "rgb(255 0 0 / 1)" },
+        sources: [
+          {
+            properties: ["background-color"],
+            kind: "inline",
+            selector: null,
+            file: null,
+            layer: null,
+            important: false,
+            className: null,
+            declaration: "background-color: rgb(255, 255, 255)",
+          },
+        ],
       },
     ]);
   });
@@ -240,5 +252,118 @@ describe("reading values in design language", () => {
     editor.set(box, "radius", 99);
 
     expect(editor.read(box, "radius")).toBe(99);
+  });
+});
+
+/**
+ * Styles as a Vite + Tailwind v4 page has them: utilities in a CSS layer,
+ * the page's own CSS not in one, each stylesheet carrying the file it comes from.
+ */
+const STYLED_PAGE = `<!DOCTYPE html>
+<style data-vite-dev-id="/project/src/index.css">
+  @layer theme, base, components, utilities;
+  @layer utilities {
+    .bg-white { background-color: var(--color-white, #fff); }
+    .rounded-xl { border-radius: 12px; }
+    .rounded-sm { border-radius: 4px; }
+    .card { &:hover { background-color: red; } }
+  }
+  button { background: rgb(220, 38, 38); border-radius: 0; }
+  @media (min-width: 1px) { .wide { border-top-left-radius: 2px !important; } }
+  @media (max-width: 1px) { .wide { border-top-left-radius: 1px !important; } }
+</style>
+<body style="margin: 0">
+  <main data-vk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: flex; flex-direction: column; gap: 8px">
+    <article data-vk-loc="src/Card.tsx:3:5" class="card bg-white rounded-xl" style="height: 40px"></article>
+    <button data-vk-loc="src/App.tsx:9:7" class="bg-white rounded-xl" style="display: flex; height: 40px"></button>
+    <section data-vk-loc="src/App.tsx:12:7" class="rounded-sm wide" style="height: 40px; border-radius: 8px"></section>
+    <div data-vk-loc="src/App.tsx:14:7" style="display: flex; height: 40px"></div>
+  </main>
+</body>`;
+
+describe("where the value comes from", () => {
+  const openStyled = () => {
+    const canvas = openCanvas(STYLED_PAGE);
+    const at = (selector: string) => canvas.layerOf(canvas.doc.querySelector(selector)!);
+    return { ...canvas, at };
+  };
+
+  test("a class in a CSS layer: its rule, layer, file and class name", () => {
+    const { editor, changes, at } = openStyled();
+
+    editor.set(at("article"), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+
+    expect(changes.list()[0].sources).toEqual([
+      {
+        properties: ["background-color"],
+        kind: "rule",
+        selector: ".bg-white",
+        file: "/project/src/index.css",
+        layer: "utilities",
+        important: false,
+        className: "bg-white",
+        declaration: "background-color: var(--color-white, #fff)",
+      },
+    ]);
+  });
+
+  test("importance, media queries and the style attribute rank as the browser has them; corners set alike are grouped", () => {
+    const { editor, changes, at } = openStyled();
+
+    editor.set(at("section"), "radius", 0);
+
+    const sources = changes.list()[0].sources;
+    expect(sources.map(({ properties, kind, selector, important, declaration }) => ({ properties, kind, selector, important, declaration }))).toEqual([
+      { properties: ["border-top-left-radius"], kind: "rule", selector: ".wide", important: true, declaration: "border-top-left-radius: 2px" },
+      {
+        properties: ["border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"],
+        kind: "inline",
+        selector: null,
+        important: false,
+        declaration: "border-radius: 8px",
+      },
+    ]);
+  });
+
+  test("with nothing setting it, the browser default; a nested rule for another state does not count", () => {
+    const { editor, changes, at } = openStyled();
+
+    editor.set(at("div"), "fill", { type: "solid", color: "#000000", opacity: 1 });
+    editor.set(at("article"), "radius", 2);
+
+    expect(changes.list()[0].sources).toEqual([
+      { properties: ["background-color"], kind: "none", selector: null, file: null, layer: null, important: false, className: null, declaration: null },
+    ]);
+    expect(changes.list()[1].sources[0]).toMatchObject({ selector: ".rounded-xl", className: "rounded-xl", layer: "utilities" });
+  });
+
+  test("edited, set back and edited again, the source is still the page's, not the edit's", () => {
+    const { editor, changes, at } = openStyled();
+    const red = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+
+    editor.set(at("article"), "fill", red);
+    editor.set(at("article"), "fill", { type: "solid", color: "#FFFFFF", opacity: 1 });
+    editor.set(at("article"), "fill", red);
+
+    expect(changes.list()[0].sources[0]).toMatchObject({ kind: "rule", selector: ".bg-white" });
+  });
+
+  test("a rule not in a layer wins over a class in one, as the browser has it", () => {
+    const { editor, changes, at } = openStyled();
+
+    editor.set(at("button"), "fill", { type: "solid", color: "#2563EB", opacity: 1 });
+
+    expect(changes.list()[0].sources).toEqual([
+      {
+        properties: ["background-color"],
+        kind: "rule",
+        selector: "button",
+        file: "/project/src/index.css",
+        layer: null,
+        important: false,
+        className: null,
+        declaration: "background: rgb(220, 38, 38)",
+      },
+    ]);
   });
 });

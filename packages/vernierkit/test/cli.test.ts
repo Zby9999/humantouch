@@ -35,6 +35,7 @@ const redFill = {
   before: { type: "solid", color: "#FFFFFF", opacity: 1 },
   after: { type: "solid", color: "#FF0000", opacity: 0.5 },
   style: { "background-color": "rgb(255 0 0 / 0.5)" },
+  sources: [] as object[],
 };
 
 const smallRadius = {
@@ -95,6 +96,7 @@ describe("claim", () => {
 - **Scope:** This usage only: Card used at \`src/App.tsx:40:11\`, inside App used at \`src/main.tsx:8:5\`. It renders 3 instances, which change together. Other usages of Card stay as they are.
 - **Design intent:** Change the fill from #FFFFFF to #FF0000 at 50% opacity.
 - **Reference style:** \`background-color: rgb(255 0 0 / 0.5)\`
+- **Currently set by:** unknown
 
 `);
     expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
@@ -128,6 +130,47 @@ describe("claim", () => {
 
     expect(notes).toContain("- **Location:** `src/components/Card.tsx:3:5`");
     expect(notes).toContain("- **Scope:** **Usage not determined.**");
+  });
+});
+
+describe("claim, where each value comes from", () => {
+  const rule = { kind: "rule", important: false, className: null };
+
+  test("names the class, rule, CSS layer and file that set the value now, with paths from the project", async () => {
+    const sources = [
+      {
+        ...rule,
+        properties: ["background-color"],
+        selector: ".bg-white",
+        file: join(project, "src/index.css"),
+        layer: "utilities",
+        className: "bg-white",
+        declaration: "background-color: var(--color-white)",
+      },
+    ];
+    saveRound({ ...redFill, sources });
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain(
+      "- **Currently set by:** class `bg-white`: rule `.bg-white` in CSS layer `utilities` of `src/index.css`, `background-color: var(--color-white)`\n",
+    );
+  });
+
+  test("says when a rule is in no CSS layer, or important; an inline style; or nothing at all", async () => {
+    const button = { ...rule, properties: ["background-color"], selector: "button", file: join(project, "src/index.css"), layer: null, declaration: "background: red" };
+    const important = { ...rule, properties: ["border-top-left-radius"], selector: ".wide", file: null, layer: null, important: true, declaration: "border-top-left-radius: 2px" };
+    const inline = { ...rule, kind: "inline", properties: ["border-top-right-radius"], selector: null, file: null, layer: null, declaration: "border-radius: 8px" };
+    const none = { ...rule, kind: "none", properties: ["background-color"], selector: null, file: null, layer: null, declaration: null };
+    saveRound({ ...redFill, sources: [button] }, { ...smallRadius, sources: [important, inline] }, { ...redFill, id: 3, sources: [none] });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Currently set by:** rule `button` in no CSS layer, of `src/index.css`, `background: red`\n");
+    expect(section(notes, 2)).toContain(
+      "- **Currently set by:** `border-top-left-radius`: rule `.wide` in no CSS layer, `border-top-left-radius: 2px !important`; `border-top-right-radius`: the element's style attribute, `border-radius: 8px`\n",
+    );
+    expect(section(notes, 3)).toContain("- **Currently set by:** nothing: the browser default applies\n");
   });
 });
 

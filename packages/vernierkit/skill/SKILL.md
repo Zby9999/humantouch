@@ -31,6 +31,7 @@ Every section has:
   - **Usage not determined**: the component's usage could not be located. Find the usage the layer is in from its place on the page, and change only that one.
 - **Design intent**: what the designer wants, in design terms. This is the goal.
 - **Reference style**: the CSS that showed the change on the canvas. Use it to understand the intent, not as code to paste.
+- **Currently set by**: what sets the value now, as the browser resolves the page's styles: a class and its rule, a rule (with its CSS layer and file), the element's style attribute, or nothing (the browser default). Start from it: it tells you what to change.
 
 ## 3. Apply them, one at a time
 
@@ -44,7 +45,9 @@ If a change cannot be applied exactly as asked, apply the closest you can and st
 While you apply them:
 
 - **Follow how the project already writes styles.** With Tailwind, change the classes (`bg-red-500`, `rounded-sm`, an arbitrary value only when no class fits). With CSS files or CSS Modules, change the CSS rule that styles the element. Do not add inline styles unless the project already styles that element inline.
-- **Change exactly the scope given**, no more and no less.
+- **Change what sets the value now.** If it is a class, replace that class. If it is a rule, change the rule, or, when the rule is shared with elements outside the scope, override it for this layer only.
+- **A rule in no CSS layer beats every class in a layer**, whatever their specificity. Tailwind v4 puts its utilities in a layer, so when the value is set by a rule in no CSS layer, adding a utility class will not show: change that rule, narrow it, or use the class's important form (`bg-blue-600!`) as a last resort.
+- **Change exactly the scope given**, no more and no less. When the value is set by a class inside a component used in several places and the scope is one usage, do not add a second, conflicting class at the usage (`rounded-xl rounded-sm`): make the component's class a default the usage can replace (a prop, or merging with the project's class-merging helper if it has one).
 - **Never modify third-party dependencies** (anything in `node_modules`, or vendored packages). If a change can only be made inside one, do not make it: report it.
 
 ## 4. Finish

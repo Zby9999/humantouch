@@ -1,10 +1,13 @@
 /**
  * The change notes: the ChangeSet as Markdown written for the Agent, one
  * section per change with its kind, where it is in the source, its scope, the
- * design intent and the style that showed it on the canvas.
+ * design intent, the style that showed it on the canvas and what sets the
+ * value now.
  */
+import { isAbsolute, relative } from "node:path";
 import type { Change, Target } from "./client/changeset";
 import type { Fill, Radius } from "./client/edits";
+import type { StyleSource } from "./client/style-source";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -27,17 +30,18 @@ export function changes(count: number): string {
   return count === 1 ? "1 change" : `${count} changes`;
 }
 
-export function describeChanges(list: Change[], options: NotesOptions = TO_APPLY): string {
+/** `root`: the project's folder, which file paths are given from. */
+export function describeChanges(list: Change[], root: string, options: NotesOptions = TO_APPLY): string {
   const count = changes(list.length);
   let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
-  for (const change of list) notes += section(change, options.status?.(change));
+  for (const change of list) notes += section(change, root, options.status?.(change));
   return notes;
 }
 
 const KINDS: Record<Change["kind"], string> = { style: "Style" };
 const PROPERTIES: Record<string, string> = { fill: "Fill", radius: "Corner radius" };
 
-function section(change: Change, status: string | undefined): string {
+function section(change: Change, root: string, status: string | undefined): string {
   const { target } = change;
   const property = PROPERTIES[change.property] ?? change.property;
   const lines = [
@@ -48,6 +52,7 @@ function section(change: Change, status: string | undefined): string {
     `**Scope:** ${scope(target)}`,
     `**Design intent:** Change the ${property.toLowerCase()} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`,
     `**Reference style:** ${Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``).join(", ")}`,
+    `**Currently set by:** ${setBy(change.sources ?? [], root)}`,
   ];
   return `## ${change.id}. ${property}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
@@ -72,6 +77,29 @@ function scope({ chain, instances, locked }: Target): string {
   text += ` Other usages of ${own.component} stay as they are.`;
   if (locked) text += " The layer is drawn by a dependency: change it from the usage, never inside the dependency.";
   return text;
+}
+
+/** What sets the value now, so the Agent knows which class or rule to change; per property when it differs. */
+function setBy(sources: StyleSource[], root: string): string {
+  if (!sources.length) return "unknown";
+  const one = (source: StyleSource) => {
+    if (source.kind === "none") return "nothing: the browser default applies";
+    const declaration = source.declaration && `\`${source.declaration}${source.important ? " !important" : ""}\``;
+    if (source.kind === "inline") return `the element's style attribute, ${declaration}`;
+    let text = `rule \`${source.selector}\` ${source.layer ? `in CSS layer \`${source.layer}\`` : "in no CSS layer"}`;
+    if (source.file) text += `${source.layer ? "" : ","} of \`${projectPath(source.file, root)}\``;
+    if (source.className) text = `class \`${source.className}\`: ${text}`;
+    return `${text}, ${declaration}`;
+  };
+  if (sources.length === 1) return one(sources[0]);
+  return sources.map((source) => `${source.properties.map((p) => `\`${p}\``).join(", ")}: ${one(source)}`).join("; ");
+}
+
+/** A stylesheet's file as the dev server names it (a path, or a URL), from the project's folder. */
+function projectPath(file: string, root: string): string {
+  const path = file.replace(/[?#].*$/, "");
+  if (/^[a-z]+:\/\//i.test(path)) return new URL(path).pathname.replace(/^\//, "");
+  return isAbsolute(path) && !relative(root, path).startsWith("..") ? relative(root, path) : path;
 }
 
 function value(property: string, v: unknown): string {

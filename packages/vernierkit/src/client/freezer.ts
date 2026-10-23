@@ -4,6 +4,7 @@
  * The live page itself is left untouched.
  */
 import { HOST_TAG, PREVIEW_ATTR, PREVIEW_STYLES_ATTR } from "./host";
+import { SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
 
@@ -383,6 +384,8 @@ function inlineStylesheet(from: HTMLLinkElement, to: Element, page: Window) {
   const style = to.ownerDocument.createElement("style");
   if (from.media) style.media = VIEWPORT_MEDIA.test(from.media) ? frozenMedia(from.media, page) : from.media;
   style.textContent = serialize(rules, from.sheet.href);
+  // Still known by the file it was loaded from, for the Agent.
+  if (from.sheet.href) style.setAttribute(SHEET_HREF_ATTR, from.sheet.href);
   to.replaceWith(style);
 }
 
