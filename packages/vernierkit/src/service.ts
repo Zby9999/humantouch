@@ -1,26 +1,38 @@
 /**
  * The local service: runs in the dev server process and keeps the round in
  * `.vernier/`. It tells the editor layer how the round stands as the Agent
- * claims and applies it, and ends it when the designer unlocks it. It
+ * claims and applies it, has open pages check each change the Agent reports
+ * done, and ends the round when the designer unlocks it. It
  * listens on 127.0.0.1 only and answers only requests that carry the random
  * token made at start, so other sites open in the browser cannot reach the
  * project's files.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { unwatchFile, watchFile } from "node:fs";
+import { existsSync, unwatchFile, watchFile } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  CHECKS_PATH,
   EVENTS_PATH,
   ROUND_PATH,
   TOKEN_HEADER,
   UNLOCK_PATH,
+  type CheckReport,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
 } from "./service-protocol";
-import { archiveRound, readIfThere, readState, vernierFolder, writeAtomically } from "./vernier-folder";
+import {
+  archiveRound,
+  readChecks,
+  readIfThere,
+  readState,
+  vernierFolder,
+  writeAtomically,
+  writeChecks,
+  type Checks,
+} from "./vernier-folder";
 
 /** A saved canvas carries the page's styles inline; this leaves plenty of room. */
 const MAX_BODY = 64 * 1024 * 1024;
@@ -52,6 +64,18 @@ export async function startService({ root }: { root: string }): Promise<Service>
   };
   watchFile(files.state, { interval: WATCH_MS }, broadcast);
 
+  /** `checks.json`, with the pages open now: the command line asks them through it. Only beside a round. */
+  const updateChecks = async (change: (checks: Checks) => void = () => {}) => {
+    if (!existsSync(files.dir)) return;
+    const checks = (await readChecks(files)) ?? { pages: 0, results: {} };
+    checks.pages = listeners.size;
+    change(checks);
+    await writeChecks(files, checks);
+  };
+  const countPages = () => {
+    queue = queue.then(() => updateChecks()).catch((error) => console.error("Vernier Kit:", error));
+  };
+
   /** `body`: read in full before the request takes its turn, so a slow one holds up no other. */
   const handle = async (req: IncomingMessage, res: ServerResponse, path: string, body: string) => {
     const route = `${req.method} ${path}`;
@@ -71,6 +95,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
         await mkdir(files.dir, { recursive: true });
         await writeAtomically(files.canvas, round.canvas);
         await writeAtomically(files.changeSet, `${JSON.stringify(round.changeSet, null, 2)}\n`);
+        await updateChecks();
         return send(res, 204);
       }
       case `DELETE ${ROUND_PATH}`:
@@ -82,12 +107,28 @@ export async function startService({ root }: { root: string }): Promise<Service>
         res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" });
         res.write(`${JSON.stringify(await status())}\n`);
         listeners.add(res);
-        res.on("close", () => listeners.delete(res));
+        countPages();
+        res.on("close", () => {
+          listeners.delete(res);
+          countPages();
+        });
         return;
+      case `POST ${CHECKS_PATH}`: {
+        if ((await status()).status !== "claimed") return send(res, 409);
+        const { id, ...result } = JSON.parse(body) as CheckReport;
+        if (typeof id !== "number" || typeof result.at !== "string") return send(res, 400);
+        await updateChecks((checks) => {
+          // Of two pages, the one that could check has the say.
+          const earlier = checks.results[id];
+          if (earlier?.at === result.at && earlier.outcome !== "unchecked" && result.outcome === "unchecked") return;
+          checks.results[id] = result;
+        });
+        return send(res, 204);
+      }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH].includes(path) ? 405 : 404);
     }
   };
 

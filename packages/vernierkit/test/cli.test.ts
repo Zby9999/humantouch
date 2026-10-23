@@ -182,8 +182,8 @@ describe("done", () => {
     const { code, output } = await cli("done", "2");
 
     expect(code).toBe(0);
-    expect(state()).toEqual({ status: "claimed", done: [2] });
-    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\n");
+    expect(state()).toMatchObject({ status: "claimed", done: [2] });
+    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with Vernier Kit is open.\n");
   });
 
   test("refuses a number that is not a change of the round, or a round not claimed", async () => {
@@ -208,6 +208,84 @@ function history() {
     }));
 }
 
+/**
+ * Stands in for an open page: answers each check `done` asks for with
+ * `answer(id)`, as the editor layer does through the local service.
+ */
+function openPage(answer: (id: number) => object | null) {
+  const dir = join(project, ".vernier");
+  const write = (results: object) => writeFileSync(join(dir, "checks.json"), JSON.stringify({ pages: 1, results }));
+  let results: Record<string, object> = {};
+  write(results);
+  const timer = setInterval(() => {
+    const check = state()?.check;
+    if (!check || (results[check.id] as { at?: string } | undefined)?.at === check.at) return;
+    const result = answer(check.id);
+    if (!result) return;
+    results = { ...results, [check.id]: { at: check.at, ...result } };
+    write(results);
+  }, 20);
+  return () => clearInterval(timer);
+}
+
+describe("done, checked on the page", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+
+  test("says when the page shows the change", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "shown" }));
+
+    const { code, output } = await cli("done", "1");
+
+    expect(code).toBe(0);
+    expect(output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+  });
+
+  test("says when it does not, with what the page shows instead, and checks again on the next done", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    let fixed = false;
+    closePage = openPage(() => (fixed ? { outcome: "shown" } : { outcome: "not shown", actual: { type: "solid", color: "#DC2626", opacity: 1 } }));
+
+    const first = await cli("done", "1");
+    fixed = true;
+    const again = await cli("done", "1");
+
+    expect(first.output).toBe(
+      "Change 1 done: 1 of 2 changes applied.\n" +
+        "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity. " +
+        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 1` again.\n",
+    );
+    expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+  });
+
+  test("says why when the page could not check it", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "unchecked", reason: "the layer is not on the page now" }));
+
+    expect((await cli("done", "1")).output).toContain("\nNot checked on the page: the layer is not on the page now.\n");
+  });
+
+  test("finish names the changes the page did not show, and archives the checks", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage((id) => (id === 2 ? { outcome: "not shown", actual: 12 } : { outcome: "shown" }));
+    await cli("done", "1");
+    await cli("done", "2");
+
+    const { output } = await cli("finish");
+
+    expect(output).toBe(
+      "Round finished: 2 of 2 changes applied. The page did not show: 2. Report them as not applied 1:1, with why.\n",
+    );
+    expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
+    expect(existsSync(join(project, ".vernier/checks.json"))).toBe(false);
+  });
+});
+
 describe("finish", () => {
   test("archives the round with what was done, and leaves no round behind, so the designer can start the next", async () => {
     saveRound(redFill, smallRadius);
@@ -223,7 +301,7 @@ describe("finish", () => {
     expect(history()).toEqual([
       {
         changeSet: { lastId: 2, changes: [redFill, smallRadius] },
-        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {} },
       },
     ]);
   });
@@ -290,7 +368,7 @@ describe("claim, again", () => {
 
     const { output } = await cli("claim");
 
-    expect(state()).toEqual({ status: "claimed", done: [1] });
+    expect(state()).toMatchObject({ status: "claimed", done: [1] });
     expect(section(output, 1)).toContain("- **Status:** Done\n");
     expect(section(output, 2)).toContain("- **Status:** Not done yet\n");
   });

@@ -7,7 +7,7 @@
  * on undisturbed, and elements it renders later are marked as they come.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import type { Change } from "./changeset";
+import type { Change, Target } from "./changeset";
 import { PREVIEW_ATTR, PREVIEW_STYLES_ATTR } from "./host";
 import { originOf, usageKey } from "./layers";
 import { readUsageChain } from "./usage-chain";
@@ -33,12 +33,8 @@ export function startChangePreview(doc: Document): ChangePreview {
   let locs = new Set<string>();
 
   const mark = (root: Element) => {
-    for (const el of [root, ...root.querySelectorAll(`[${LOC_ATTR}], [${USAGE_ATTR}]`)]) {
-      const own = el.getAttribute(LOC_ATTR);
-      // Without a location of its own, it may pass a usage's props on; its origin says.
-      if (own ? !locs.has(own) : !el.hasAttribute(USAGE_ATTR)) continue;
-      const { loc, chain } = originOf(el, readUsageChain(el));
-      const ids = loc && layers.get(usageKey(loc, chain));
+    for (const [el, key] of keysIn(root, locs)) {
+      const ids = layers.get(key);
       if (ids) el.setAttribute(PREVIEW_ATTR, ids.join(" "));
     }
   };
@@ -91,6 +87,24 @@ export function startChangePreview(doc: Document): ChangePreview {
       shownKeys = "";
     },
   };
+}
+
+/** The elements of the layer a change is made to, on the live page now: every instance of its usage. */
+export function elementsOf(doc: Document, target: Target): Element[] {
+  if (!target.loc) return [];
+  const key = usageKey(target.loc, target.chain);
+  return [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([, k]) => k === key).map(([el]) => el);
+}
+
+/** Elements in `root` (itself included) that may be layers at `locs`, with their usage keys. */
+function* keysIn(root: Element, locs: Set<string>): Generator<[Element, string]> {
+  for (const el of [root, ...root.querySelectorAll(`[${LOC_ATTR}], [${USAGE_ATTR}]`)]) {
+    const own = el.getAttribute(LOC_ATTR);
+    // Without a location of its own, it may pass a usage's props on; its origin says.
+    if (own ? !locs.has(own) : !el.hasAttribute(USAGE_ATTR)) continue;
+    const { loc, chain } = originOf(el, readUsageChain(el));
+    if (loc) yield [el, usageKey(loc, chain)];
+  }
 }
 
 /**

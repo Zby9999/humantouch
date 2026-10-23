@@ -1,15 +1,17 @@
 /**
  * The command line, run by the Agent as the Skill tells it: `claim` takes the
  * round to apply and prints the change notes, `done <number>` reports each
- * change applied, `finish` ends the round, and `last` prints the round before,
- * to undo it by.
+ * change applied and has the page check it, `finish` ends the round, and
+ * `last` prints the round before, to undo it by.
  */
-import { changes, describeChanges, TO_APPLY } from "./change-notes";
+import { changes, describeChanges, propertyName, TO_APPLY, value } from "./change-notes";
 import type { Change } from "./client/changeset";
+import type { CheckResult } from "./service-protocol";
 import {
   archiveRound,
   findProject,
   readChangeSet,
+  readChecks,
   readLastRound,
   readState,
   vernierFolder,
@@ -72,9 +74,42 @@ async function done(folder: VernierFolder, arg: string | undefined, io: Io): Pro
     return 1;
   }
   const doneIds = state.done.includes(id) ? state.done : [...state.done, id];
-  await writeState(folder, { ...state, done: doneIds });
+  const check = { id, at: new Date().toISOString() };
+  await writeState(folder, { ...state, done: doneIds, check });
   io.write(`Change ${id} done: ${doneIds.length} of ${changes(ids.length)} applied.\n`);
+  const change = changeSet.changes.find((c) => c.id === id)!;
+  const result = await waitForCheck(folder, check);
+  switch (result.outcome) {
+    case "shown":
+      io.write("Checked on the page: it shows the change.\n");
+      break;
+    case "not shown":
+      io.write(
+        `Checked on the page: it does not show the change. The ${propertyName(change.property)} is ${value(change.property, result.actual)}, not ${value(change.property, change.after)}. ` +
+          `Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run \`npx vernierkit done ${id}\` again.\n`,
+      );
+      break;
+    case "unchecked":
+      io.write(`Not checked on the page: ${result.reason}.\n`);
+  }
   return 0;
+}
+
+/** Longest wait for a page's answer: it waits up to 2 s itself for the dev server to bring the edit in. */
+const CHECK_WAIT_MS = 4000;
+const CHECK_POLL_MS = 50;
+
+/** The open page's answer to `check`, through the local service's `checks.json`. */
+async function waitForCheck(folder: VernierFolder, check: { id: number; at: string }): Promise<CheckResult> {
+  const until = Date.now() + CHECK_WAIT_MS;
+  for (;;) {
+    const checks = await readChecks(folder);
+    if (!checks?.pages) return { outcome: "unchecked", reason: "no page with Vernier Kit is open" };
+    const result = checks.results[check.id];
+    if (result?.at === check.at) return result;
+    if (Date.now() > until) return { outcome: "unchecked", reason: "the page did not answer in time" };
+    await new Promise((resolve) => setTimeout(resolve, CHECK_POLL_MS));
+  }
 }
 
 async function finish(folder: VernierFolder, io: Io): Promise<number> {
@@ -86,8 +121,10 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   }
   const ids = changeSet.changes.map((change) => change.id);
   const missing = ids.filter((id) => !result.done.includes(id));
+  const notShown = result.done.filter((id) => result.checks[id]?.outcome === "not shown");
   let text = `Round finished: ${result.done.length} of ${changes(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}. Report why in your reply.`;
+  if (notShown.length) text += ` The page did not show: ${notShown.join(", ")}. Report them as not applied 1:1, with why.`;
   io.write(`${text}\n`);
   return 0;
 }

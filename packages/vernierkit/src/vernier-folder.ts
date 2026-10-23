@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { SavedChangeSet } from "./client/changeset";
-import type { RoundStatus } from "./service-protocol";
+import type { CheckResult, RoundStatus } from "./service-protocol";
 
 export const VERNIER_DIR = ".vernier";
 
@@ -19,6 +19,16 @@ export interface VernierFolder {
   state: string;
   /** One folder per round that ended, named after when it ended. */
   history: string;
+  /** Written by the local service: how many pages listen, and how they answered each check. */
+  checks: string;
+}
+
+/** What `checks.json` holds. */
+export interface Checks {
+  /** Pages with the editor layer open now: with none, there is no one to check. */
+  pages: number;
+  /** The latest answer for each change id, and the ask it answers. */
+  results: Record<string, CheckResult & { at: string }>;
 }
 
 /** A round being edited has no state file; claiming it adds one. */
@@ -26,7 +36,7 @@ export type RoundState = Extract<RoundStatus, { status: "claimed" }>;
 
 export function vernierFolder(root: string): VernierFolder {
   const dir = join(root, VERNIER_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.vernier/`, else `cwd` itself. */
@@ -70,6 +80,8 @@ export interface RoundResult {
   done: number[];
   /** When, as an ISO date. */
   at: string;
+  /** How the page answered the last check of each change. */
+  checks: Checks["results"];
 }
 
 /**
@@ -80,7 +92,7 @@ export interface RoundResult {
 export async function archiveRound(folder: VernierFolder, ended: RoundResult["ended"]): Promise<RoundResult | null> {
   const [state, changeSet] = await Promise.all([readState(folder), readIfThere(folder.changeSet)]);
   if (!state || changeSet === null) return null;
-  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString() };
+  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString(), checks: (await readChecks(folder))?.results ?? {} };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
   await writeFile(join(archive, "changeset.json"), changeSet);
@@ -88,8 +100,18 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
   // The state goes last: once it is gone, the round is over for whoever watches it.
   await rm(folder.changeSet, { force: true });
   await rm(folder.canvas, { force: true });
+  await rm(folder.checks, { force: true });
   await rm(folder.state, { force: true });
   return result;
+}
+
+export async function readChecks(folder: VernierFolder): Promise<Checks | null> {
+  const text = await readIfThere(folder.checks);
+  return text === null ? null : (JSON.parse(text) as Checks);
+}
+
+export async function writeChecks(folder: VernierFolder, checks: Checks) {
+  await writeAtomically(folder.checks, `${JSON.stringify(checks, null, 2)}\n`);
 }
 
 /** The round that ended last, as archived; null when none has. */

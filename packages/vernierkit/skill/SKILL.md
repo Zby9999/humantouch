@@ -39,6 +39,10 @@ For each change, in order:
 
 1. Make the change in the source.
 2. Right away, run `npx vernierkit done <number>` with the change's number. Do this after every change, not all at the end: it is how the designer sees your progress, and how the page stops previewing a change once it is in the code.
+3. Read what `done` says. It checks the change on the designer's open page:
+   - **it shows the change**: go on to the next one.
+   - **it does not show the change**: something overrides your edit; the output says what the page shows instead. Look again at **Currently set by**, fix it, and run `done` with the same number again. Go on only once it shows, or once you know it cannot: then report it.
+   - **Not checked**: no page could check it (none is open, or the layer is not on it now). Go on; it is not an error.
 
 If a change cannot be applied exactly as asked, apply the closest you can and still run `done`; or leave it out and do not run `done` for it. Either way, report it (step 5).
 
@@ -58,7 +62,7 @@ When you have been through every change, run:
 npx vernierkit finish
 ```
 
-It ends the round: the editor unlocks, and the page shows the code as it now is. It tells you which changes were never marked done.
+It ends the round: the editor unlocks, and the page shows the code as it now is. It tells you which changes were never marked done, and which the page did not show: report both under ⚠️.
 
 ## 5. Report
 

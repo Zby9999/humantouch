@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { readVernier, VERNIER, vernierkit } from "./project-files";
+import { EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
 
 /** These tests save into the example project's `.vernier/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -181,4 +181,44 @@ test("after unlocking by hand, neither the done changes nor the others are previ
   await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   expect(await cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
   await expect(page.locator("[data-vk-preview]")).toHaveCount(0);
+});
+
+test.describe("done checks the change on the page", () => {
+  const APP = `${EXAMPLE}src/App.tsx`;
+  const CSS = `${EXAMPLE}src/index.css`;
+  const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8") };
+  test.afterEach(() => {
+    for (const [file, text] of Object.entries(originals)) writeFileSync(file, text);
+  });
+
+  /** As the Agent does: an edit to the example's source, which the dev server brings into the page. */
+  function editSource(file: string, from: string, to: string) {
+    const text = readFileSync(file, "utf8");
+    expect(text).toContain(from);
+    writeFileSync(file, text.replace(from, to));
+  }
+
+  test("a change the code really makes is shown; one a page rule overrides is not, until it is fixed", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    const rows = page.getByRole("tree", { name: "Layers" }).getByRole("treeitem");
+    const labels = await rows.allInnerTexts();
+    await rows.nth(labels.findIndex((label) => label.trim() === "Get started") - 1).click();
+    await setField(page, "Fill color", "2563eb");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
+
+    // A utility class: the example's own `button` rule, in no CSS layer, beats it.
+    editSource(APP, 'className="mt-6 flex items-center gap-2 self-start px-4 py-2 text-white"', 'className="mt-6 flex items-center gap-2 self-start bg-[#2563eb] px-4 py-2 text-white"');
+    const overridden = await vernierkit("done", "1");
+    expect(overridden).toContain("Checked on the page: it does not show the change. The fill is #DC2626, not #2563EB.");
+
+    editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
+    const fixed = await vernierkit("done", "1");
+    expect(fixed).toContain("Checked on the page: it shows the change.");
+
+    expect(await vernierkit("finish")).toBe("Round finished: 1 of 1 change applied.\n");
+    expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
+  });
 });

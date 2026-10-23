@@ -1,10 +1,12 @@
 /** The editor layer's side of the local service: where the round is kept between page loads, and how it stands. */
 import {
+  CHECKS_PATH,
   EVENTS_PATH,
   ROUND_PATH,
   SERVICE_GLOBAL,
   TOKEN_HEADER,
   UNLOCK_PATH,
+  type CheckReport,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -22,6 +24,8 @@ export interface RoundStore {
   watch(onStatus: (status: RoundStatus) => void): () => void;
   /** Ends a claimed round as it is. */
   unlock(): Promise<void>;
+  /** Answers the check `done` asked for. */
+  report(check: CheckReport): Promise<void>;
 }
 
 /** The store the dev server set up for this page, or null when it set up none. */
@@ -70,6 +74,9 @@ export function connectRoundStore(): RoundStore | null {
     },
     async unlock() {
       await request("POST", { path: UNLOCK_PATH });
+    },
+    async report(check) {
+      await request("POST", { path: CHECKS_PATH, body: JSON.stringify(check) });
     },
   };
 }

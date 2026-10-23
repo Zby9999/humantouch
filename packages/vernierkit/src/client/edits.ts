@@ -68,6 +68,11 @@ const PROPERTIES: { [P in Property]: Definition<P> } = {
   },
 };
 
+/** `property` of an element as it is now, in design language: on the canvas, or on the live page. */
+export function readValue<P extends Property>(el: Element, property: P): PropertyValues[P] {
+  return PROPERTIES[property].read(el, colorReader(el.ownerDocument));
+}
+
 export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
   const doc = tree.root.el.ownerDocument;
   const colors = colorReader(doc);

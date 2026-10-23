@@ -8,10 +8,31 @@
 
 **Status:** ready-for-agent
 
-- [ ] 源码改对了时，`done` 说明页面显示了这条改动
-- [ ] 修改被别的样式盖住时，`done` 说明页面没有显示，并给出页面上实际的值
-- [ ] 修好后再运行一次 `done`，重新核对
-- [ ] 没有打开的页面时，`done` 不等待，照常记进度并说明没能核对
-- [ ] 核对结果随本轮归档；`finish` 列出最后一次核对没有显示出来的改动
-- [ ] Skill 补充：读 `done` 的输出，没显示出来时先修好再继续
-- [ ] 主接缝：示例项目中真的改源码，一次改对、一次被 `index.css` 的规则盖住，断言 `done` 的输出与归档
+- [x] 源码改对了时，`done` 说明页面显示了这条改动
+- [x] 修改被别的样式盖住时，`done` 说明页面没有显示，并给出页面上实际的值
+- [x] 修好后再运行一次 `done`，重新核对
+- [x] 没有打开的页面时，`done` 不等待，照常记进度并说明没能核对
+- [x] 核对结果随本轮归档；`finish` 列出最后一次核对没有显示出来的改动
+- [x] Skill 补充：读 `done` 的输出，没显示出来时先修好再继续
+- [x] 主接缝：示例项目中真的改源码，一次改对、一次被 `index.css` 的规则盖住，断言 `done` 的输出与归档
+
+## Comments
+
+**实现记录（2026-10-23）**
+
+- 流程：`done <编号>` 把进度和一个核对请求 `check: { id, at }` 一起写进状态文件 → 本机服务照常推送状态 → 编辑层撤下这条的预览（布局 effect），再在真实页面上找到这个图层的所有实例（`change-preview.ts` 的 `elementsOf`，和改动预览同一套匹配），用编辑命令的读取方式（`edits.ts` 的 `readValue`）读出设计语言的值，与改后值比较 → `POST /checks` 交回结果 → 本机服务写进 `.vernier/checks.json` → 命令行读到对应 `at` 的结果后输出。
+  - 每次 `done` 的 `at` 不同，同一条改动再 `done` 一次就会重新核对。
+  - 值对不上时，编辑层每 100ms 再读一次，最多 2 秒，等开发服务器热更新；命令行最多等 4 秒。
+  - 三种结果：`shown`；`not shown`（附页面上实际的值）；`unchecked`（附原因：没有源码标记、图层此刻不在页面上、页面没有这一轮）。
+- `checks.json`：`{ pages, results }`。`pages` 是此刻连着 `/events` 的页面数，本机服务在页面连上、断开和保存本轮时更新（只在 `.vernier/` 已存在时写，没有本轮就不建目录）。`pages` 为 0 或文件不存在时，`done` 不等待，直接说明 "no page with Vernier Kit is open"。多个页面都回答时，能核对的那个说了算。
+- 本轮结束时（`finish` 或手动解锁）核对结果写进归档的 `result.json`（`checks`），`checks.json` 删除。`finish` 列出最后一次核对没有显示出来的改动。
+- 编辑层刷新后若状态里还有一个请求，会再核对一次，正在等待的 `done` 也能拿到结果。
+- Skill：读 `done` 的输出；没显示出来时按 Currently set by 修好，再 `done` 一次；Not checked 不是错误。
+- 测试：
+  - 命令行接缝 `test/cli.test.ts` "done, checked on the page"：测试自己扮演打开的页面，按 `checks.json` 回答，覆盖显示、未显示和再次核对、没能核对、`finish` 的列出与归档。
+  - 主接缝 `round.spec.ts` "done checks the change on the page"：真的改示例项目的源码。先给按钮加 Tailwind 类，被 `index.css` 中不在 layer 的 `button` 规则盖住，`done` 报告 "The fill is #DC2626, not #2563EB"；再改那条规则，`done` 报告显示了。测试结束后还原源码。
+
+**已知限制**
+
+- 页面上没有、但其他页面状态下才出现的图层（例如关着的弹窗）只能报告 "not on the page now"。
+- 其他 e2e 测试里源码没有真的改，`done` 会等满约 2 秒才得到 "not shown"，测试因此慢了十几秒。

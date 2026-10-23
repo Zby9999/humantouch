@@ -20,7 +20,7 @@ export const test = base.extend<{ keepRoundInMemory: boolean }>({
 async function keepRoundIn(context: BrowserContext) {
   let saved: string | null = null;
   await context.route(
-    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/unlock"].includes(url.pathname),
+    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/unlock", "/checks"].includes(url.pathname),
     (route) => {
       const request = route.request();
       const headers = {
@@ -32,7 +32,7 @@ async function keepRoundIn(context: BrowserContext) {
       if (pathname === "/events") {
         return route.fulfill({ status: 200, headers, contentType: "application/x-ndjson", body: `${JSON.stringify({ status: "editing" })}\n` });
       }
-      if (pathname === "/unlock") return route.fulfill({ status: 409, headers });
+      if (pathname === "/unlock" || pathname === "/checks") return route.fulfill({ status: 409, headers });
       if (request.method() === "GET" && saved) {
         return route.fulfill({ status: 200, headers, contentType: "application/json", body: saved });
       }

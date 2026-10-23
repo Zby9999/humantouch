@@ -102,7 +102,12 @@ function projectPath(file: string, root: string): string {
   return isAbsolute(path) && !relative(root, path).startsWith("..") ? relative(root, path) : path;
 }
 
-function value(property: string, v: unknown): string {
+/** A property's name in the notes: "fill", "corner radius". */
+export function propertyName(property: string): string {
+  return (PROPERTIES[property] ?? property).toLowerCase();
+}
+
+export function value(property: string, v: unknown): string {
   switch (property) {
     case "fill": {
       const fill = v as Fill | null;

@@ -14,9 +14,25 @@ export const ROUND_PATH = "/round";
 export const EVENTS_PATH = "/events";
 /** `POST`: the designer unlocks a claimed round by hand. It ends as it is. */
 export const UNLOCK_PATH = "/unlock";
+/** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */
+export const CHECKS_PATH = "/checks";
 
-/** Edited by the designer, or claimed and being applied by the Agent, with the ids of the changes done so far. */
-export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[] };
+/**
+ * Edited by the designer, or claimed and being applied by the Agent, with the
+ * ids of the changes done so far, and the change the last `done` asks the
+ * page to check (`at` tells one ask from the next).
+ */
+export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; check?: { id: number; at: string } };
+
+/** Whether the live page shows a change the Agent has done: its value there is the value the change sets. */
+export type CheckResult =
+  | { outcome: "shown" }
+  /** `actual`: the value the page shows instead, in design language. */
+  | { outcome: "not shown"; actual: unknown }
+  | { outcome: "unchecked"; reason: string };
+
+/** A page's answer to a check. */
+export type CheckReport = { id: number; at: string } & CheckResult;
 
 export interface ServiceConfig {
   /** `http://127.0.0.1:<port>` */

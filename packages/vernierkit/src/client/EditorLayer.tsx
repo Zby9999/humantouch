@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { RoundStatus, SavedRound } from "../service-protocol";
 import { ENTER_MARK } from "./CanvasView";
 import { canPreview, startChangePreview } from "./change-preview";
+import { checkChange } from "./check";
 import { PreviewSwitch } from "./PreviewSwitch";
 import { connectRoundStore } from "./service";
 import { Shell } from "./Shell";
@@ -19,7 +20,8 @@ const PREVIEW_KEY = "vernierkit:change-preview";
  * comes back to it, after a reload too. With none, edit mode freezes the page afresh.
  * Meanwhile the page shows the round's changes, unless switched to how it is now.
  * Once the Agent claims the round, the editor folds into the toggle, locked
- * until the round ends, and each change it applies leaves the preview.
+ * until the round ends, and each change it applies leaves the preview and is
+ * checked on the page.
  */
 export function EditorLayer() {
   const [mode, setMode] = useState<Mode>("preview");
@@ -52,6 +54,17 @@ export function EditorLayer() {
   const pending = claimed ? changes.filter((change) => !claimed.done.includes(change.id)) : changes;
   // Before paint: a canvas leaving at once must find its changes on the page.
   useLayoutEffect(() => preview.show(previewing ? pending : []), [round, previewing, status]);
+
+  // A done change is checked once its preview is off, which the layout effect above has seen to.
+  const checked = useRef<string | null>(null);
+  const check = claimed?.check;
+  useEffect(() => {
+    if (!check || !store || round === undefined || checked.current === check.at) return;
+    checked.current = check.at;
+    const change = round?.changeSet.changes.find((c) => c.id === check.id);
+    const result = change ? checkChange(document, change) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
+    void result.then((result) => store.report({ ...check, ...result })).catch((error: unknown) => console.warn(error));
+  }, [check?.at, round]);
 
   const lastStatus = useRef(status);
   useEffect(
