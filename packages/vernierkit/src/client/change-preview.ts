@@ -19,9 +19,13 @@ export interface ChangePreview {
   stop(): void;
 }
 
-/** Whether the live page can show the change before it is applied. A layer with no source marker cannot be found there. */
+/**
+ * Whether the live page can show the change before it is applied. A layer with
+ * no source marker cannot be found there; a move changes the page's structure,
+ * which the preview does not touch.
+ */
 export function canPreview(change: Change): boolean {
-  return change.target.loc !== null;
+  return change.kind === "style" && change.target.loc !== null;
 }
 
 export function startChangePreview(doc: Document): ChangePreview {

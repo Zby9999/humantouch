@@ -547,6 +547,21 @@ export const styles = /* css */ `
   color: #fff;
 }
 
+/* Dragging: where the layer would go in a Stack, and loose text, which has no element to move, following the pointer. */
+.vk-drop-line {
+  position: absolute;
+  border-radius: 1px;
+  background: var(--vk-accent);
+  pointer-events: none;
+}
+.vk-drag-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--vk-accent);
+  background: var(--vk-accent-soft);
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
 }

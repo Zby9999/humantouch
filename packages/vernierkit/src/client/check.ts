@@ -12,6 +12,7 @@ import type { Change } from "./changeset";
 import { readValue, type Property } from "./edits";
 
 export function checkChange(doc: Document, change: Change): Promise<CheckResult> {
+  if (change.kind === "move") return Promise.resolve({ outcome: "unchecked", reason: "only style changes are checked on the page so far, not moves" });
   if (!canPreview(change)) return Promise.resolve({ outcome: "unchecked", reason: "the layer has no source marker, so the page cannot find it" });
   const look = (): CheckResult => {
     const els = elementsOf(doc, change.target);

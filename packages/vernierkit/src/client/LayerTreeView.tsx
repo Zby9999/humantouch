@@ -17,6 +17,13 @@ const MAX_OPEN_ROWS = 200;
 export function LayerTreeView({ tree, selected, onSelect }: Props) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => initiallyCollapsed(tree.root));
   const list = useRef<HTMLDivElement>(null);
+  // Built anew after a move: the same layers stay collapsed.
+  const shown = useRef(tree);
+  if (shown.current !== tree) {
+    shown.current = tree;
+    const next = new Set([...collapsed].map((layer) => tree.layerOf(layer.el)).filter((layer) => layer !== null));
+    if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
+  }
 
   // The selected layers are always in view: open everything around them.
   useEffect(() => {

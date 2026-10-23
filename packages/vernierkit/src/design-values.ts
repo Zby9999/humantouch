@@ -1,5 +1,5 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
-import type { Change } from "./client/changeset";
+import type { Change, Place } from "./client/changeset";
 import type { Align, Fill, Padding, Radius, Size } from "./client/edits";
 
 const PROPERTIES: Record<string, string> = {
@@ -35,14 +35,39 @@ export function propertyName(property: string): string {
   return IN_A_SENTENCE[property] ?? propertyTitle(property).toLowerCase();
 }
 
-/** What a change is, as a title: "Fill". */
+/** What a change is, as a title: "Fill", "Reorder". */
 export function changeTitle(change: Change): string {
-  return propertyTitle(change.property);
+  return change.kind === "move" ? moveKind(change) : propertyTitle(change.property);
 }
 
-/** A change's values, from the first to the latest: "#FFFFFF → #FF0000". */
+/** A change's values, from the first to the latest: "#FFFFFF → #FF0000", "3rd → 1st". */
 export function changeValues(change: Change): string {
+  if (change.kind === "move") {
+    const [before, after] = [change.before, change.after] as Place[];
+    const name = (place: Place) => place.container.target.context.path.at(-1);
+    if (after.absolute) return `X ${after.absolute.x}px, Y ${after.absolute.y}px in ${name(after)}`;
+    if (moveKind(change) === "Reorder") return `${ordinal(before.nth)} → ${ordinal(after.nth)}`;
+    return `${name(before)} → ${name(after)}`;
+  }
   return `${value(change.property, change.before)} → ${value(change.property, change.after)}`;
+}
+
+/**
+ * The kind of a move: to another place among its container's layers
+ * (Reorder), into another container's layout or back into one (Move), or
+ * placed absolute (Absolute).
+ */
+export function moveKind(change: Change): "Reorder" | "Move" | "Absolute" {
+  const [before, after] = [change.before, change.after] as Place[];
+  if (after.absolute) return "Absolute";
+  return before.container.layer === after.container.layer && !before.absolute ? "Reorder" : "Move";
+}
+
+/** 1st, 2nd, 3rd, 4th, … */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${suffix}`;
 }
 
 /** The name of the layer a change is made to, as the layer tree showed it. */

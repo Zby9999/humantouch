@@ -3,9 +3,13 @@
  * recorded in the ChangeSet. An edit to a layer is an edit to its usage, so
  * it shows up in every instance of that usage. Every edit can be undone.
  */
-import type { Change, ChangeSet, Target } from "./changeset";
-import type { Layer, LayerKind, LayerTree } from "./layers";
-import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, sourcesOf } from "./style-source";
+import { AS_STACK_ATTR, declare, keepOriginal, LAYER_ID_ATTR, restoreStyle } from "./canvas-style";
+import { MOVE, type Change, type ChangeSet, type Place, type Target } from "./changeset";
+import { buildLayerTree, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { relocate, slotsOf } from "./moves";
+import { PIN_OFFSET_ATTR, pinnedOf, sourcesOf } from "./style-source";
+
+export { LAYER_ID_ATTR };
 
 /** A solid fill: a color as `#RRGGBB`, and its opacity from 0 to 1. */
 export interface Fill {
@@ -67,6 +71,9 @@ export interface PropertyValues {
 
 export type Property = keyof PropertyValues;
 
+/** Where a layer is moved to: a place among a Stack's layers, or absolute, at `left` and `top` in px, in a Frame. */
+export type Destination = { parent: Layer; index: number } | { parent: Layer; x: number; y: number };
+
 export interface SetOptions {
   /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
   continues?: boolean;
@@ -87,6 +94,22 @@ export interface Editor {
   redo(): Layer[];
   /** Takes change `id` back out of the ChangeSet, its layer back to where it started, as an edit that can be undone. */
   revert(id: number): Layer | null;
+  /** The canvas's layers as they are now: a move builds them anew. */
+  tree(): LayerTree;
+  /** Whether the layer can be moved at all. The page cannot. */
+  canMove(layer: Layer): boolean;
+  /**
+   * Whether the layer can go into `container`: a Stack or a Frame, outside
+   * the layer itself, that repeats with the layer's own container (each
+   * instance of the layer has a container to go to).
+   */
+  canDrop(layer: Layer, container: Layer): boolean;
+  /**
+   * Moves the layer, across the instances of its container, and records the
+   * move: one per layer, from where it was to where it is. Loose text first
+   * gets an element of its own. Returns the layer where it is now.
+   */
+  move(layer: Layer, to: Destination): Layer;
 }
 
 /**
@@ -101,10 +124,6 @@ interface Step {
   redo(): void;
 }
 
-/** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
-export const LAYER_ID_ATTR = "data-vk-layer";
-/** On a plain top-to-bottom flow an edit has made a real Stack. */
-const AS_STACK_ATTR = "data-vk-as-stack";
 
 interface Definition<V> {
   /** Layers the property applies to. */
@@ -238,7 +257,8 @@ export function readValue<P extends Property>(el: Element, property: P): Propert
   return PROPERTIES[property].read(el, colorReader(el.ownerDocument));
 }
 
-export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
+export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor {
+  let tree = initialTree;
   const doc = tree.root.el.ownerDocument;
   const colors = colorReader(doc);
   let lastId = 0;
@@ -270,8 +290,7 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
       ...definition.write(value, layer.el),
     };
     for (const instance of instances) {
-      // Kept before the first edit: what sets a value is looked up in the page's own styles.
-      if (!instance.el.hasAttribute(ORIGINAL_STYLE_ATTR)) instance.el.setAttribute(ORIGINAL_STYLE_ATTR, instance.el.getAttribute("style") ?? "");
+      keepOriginal(instance.el);
       if (asStack) instance.el.setAttribute(AS_STACK_ATTR, "");
       declare(instance.el, declarations);
     }
@@ -289,7 +308,7 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property)) {
       const others = changes.list().filter((change) => change.layer === id);
-      for (const instance of instances) restoreStyle(instance.el, property, others);
+      for (const instance of instances) restoreStyle(instance.el, cssOf(property), others);
     }
     return id;
   };
@@ -323,7 +342,103 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
     push({ layers: [id], key: `${id} ${property}`, undo: to(before), redo: to(value) }, continues);
   };
 
+  /**
+   * The layer's place now. Its `slot` is where it would go back to with the
+   * layer itself taken out first, as a move takes it out before putting it in.
+   */
+  const placeOf = (layer: Layer): Place => {
+    const parent = layer.parent!;
+    const container = { layer: idOf(parent, tree.acrossInstances(parent)), target: targetOf(parent, tree.acrossInstances(parent).length) };
+    const absolute = layer.absolute ? { x: PROPERTIES.x.read(layer.el, colors), y: PROPERTIES.y.read(layer.el, colors) } : null;
+    return { container, nth: parent.children.indexOf(layer) + 1, slot: slotsOf(parent.el).indexOf(layer.el), absolute };
+  };
+
+  /** The layer's place at `to`, worked out before it moves. */
+  const placeAt = (layer: Layer, to: Destination): Place => {
+    const parent = to.parent;
+    const container = { layer: idOf(parent, tree.acrossInstances(parent)), target: targetOf(parent, tree.acrossInstances(parent).length) };
+    const others = parent.children.filter((child) => child !== layer);
+    const nodes = slotsOf(parent.el).filter((node) => node !== layer.el);
+    if ("x" in to) return { container, nth: others.length + 1, slot: nodes.length, absolute: { x: round(to.x), y: round(to.y) } };
+    const next = others[to.index];
+    const slot = next ? nodes.indexOf(next.text ? next.text.find((node) => node.textContent!.trim())! : next.el) : nodes.length;
+    return { container, nth: to.index + 1, slot, absolute: null };
+  };
+
+  /** Gives loose text an element of its own, in each instance: a `<span>`. Returns the layer it now is. */
+  const wrap = (layer: Layer): Layer => {
+    const runs = tree.acrossInstances(layer);
+    const spans = runs.map((run) => {
+      const span = doc.createElement("span");
+      run.text![0].before(span);
+      span.append(...run.text!);
+      return span;
+    });
+    const id = String(++lastId);
+    for (const span of spans) span.setAttribute(LAYER_ID_ATTR, id);
+    tree = buildLayerTree(doc);
+    return tree.layerOf(spans[runs.indexOf(layer)])!;
+  };
+
+  /** A move that can be undone. `start`: where the layer was before any move, where its own style is enough. */
+  const moveStep = (id: string, from: Place, to: Place, start: Place, size: Record<string, string>, record: MoveRecord) => {
+    const styleAt = (place: Place): Record<string, string> => {
+      if (same(place, start)) return {};
+      if (place.absolute) return { position: "absolute", left: `${place.absolute.x}px`, top: `${place.absolute.y}px`, right: "auto", bottom: "auto", ...size };
+      // An absolute layer put into a layout leaves its own position.
+      return start.absolute ? { position: "static" } : {};
+    };
+    moveTo(id, from, to, styleAt(to), record);
+    push(
+      {
+        layers: [id],
+        key: `${id} ${MOVE}`,
+        undo: () => moveTo(id, to, from, styleAt(from), record),
+        redo: () => moveTo(id, from, to, styleAt(to), record),
+      },
+      false,
+    );
+  };
+
+  /** Puts a moved layer at `to`, on the canvas and in the ChangeSet, and builds the layers anew. */
+  const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
+    changes.record(id, { ...record, before: from, after: to, style });
+    relocate(doc, id, from, to, style, changes.list());
+    tree = buildLayerTree(doc);
+  };
+
   const editor: Editor = {
+    tree: () => tree,
+    canMove: (layer) => layer.parent !== null,
+    canDrop(layer, container) {
+      if (!editor.canMove(layer) || !["stack", "frame"].includes(container.kind)) return false;
+      for (let c: Layer | null = container; c; c = c.parent) if (c === layer) return false;
+      return tree.acrossInstances(container).length === tree.acrossInstances(layer.parent!).length;
+    },
+    move(layer, to) {
+      if (!editor.canDrop(layer, to.parent)) throw new Error(`Vernier Kit: ${layer.name} cannot go into ${to.parent.name}`);
+      // Absolute already, and staying in its container: only its position changes, as X and Y do.
+      if ("x" in to && layer.absolute && !layer.text && to.parent === layer.parent) {
+        const [dx, dy] = (layer.el.getAttribute(PIN_OFFSET_ATTR) ?? "0 0").split(" ").map(Number);
+        editor.batch(() => {
+          editor.set(layer, "x", round(to.x - dx));
+          editor.set(layer, "y", round(to.y - dy));
+        });
+        return layer;
+      }
+      const target = targetOf(layer, tree.acrossInstances(layer).length);
+      const loop = isLoop(tree.acrossInstances(layer));
+      const text = !!layer.text;
+      if (text) layer = wrap(layer);
+      const id = idOf(layer, tree.acrossInstances(layer));
+      const from = placeOf(layer);
+      const after = placeAt(layer, to);
+      if (same(from, after)) return layer;
+      const earlier = changes.list().find((change) => change.layer === id && change.property === MOVE);
+      const record: MoveRecord = { kind: "move", target, scope: "usage", property: MOVE, sources: [], ...(loop && { data: true }), ...(text && { wrap: true }) };
+      moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, sizeOf(layer.el), record);
+      return layerById(id) ?? layer;
+    },
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
       if (layer.text || !kinds.includes(layer.kind)) return false;
@@ -374,6 +489,12 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
       const change = changes.list().find((c) => c.id === id);
       const layer = change && layerById(change.layer);
       if (!change || !layer) return null;
+      if (change.kind === "move") {
+        const { kind, target, scope, property, data, wrap } = change;
+        const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }) };
+        moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(layer.el), record);
+        return layerById(change.layer);
+      }
       // Whatever the layer offers now (a hidden one offers only Visible), a change of its own can always go.
       edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.after as PropertyValues[Property]);
       return layer;
@@ -382,44 +503,24 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
   return editor;
 }
 
-/** Writes declarations onto a canvas element, over the page's: where the freezer pinned it, shifted as it was. */
-function declare(el: Element, declarations: Record<string, string>) {
-  const [dx, dy] = (el.getAttribute(PIN_OFFSET_ATTR) ?? "0 0").split(" ").map(Number);
-  const shift = { left: dx, top: dy } as Record<string, number>;
-  for (const name in declarations) {
-    let value = declarations[name];
-    if (shift[name] && value.endsWith("px")) value = `${parseFloat(value) + shift[name]}px`;
-    (el as HTMLElement).style.setProperty(name, value, "important");
-  }
+/** What a move records besides where the layer was and is. */
+type MoveRecord = Omit<Parameters<ChangeSet["record"]>[1], "before" | "after" | "style">;
+
+/** An element's size as CSS sets it now: what keeps it as large once it is absolute. */
+function sizeOf(el: Element): Record<string, string> {
+  const style = getComputedStyle(el);
+  return { width: `${round(parseFloat(style.width))}px`, height: `${round(parseFloat(style.height))}px` };
 }
 
-/**
- * Puts back the page's own declarations of `property` on an element, as its
- * style attribute had them before the first edit, and keeps the layer's other
- * changes, `others`, on: they may declare some of the same CSS properties.
- * With no other change left, the whole attribute goes back as it was.
- */
-export function restoreStyle<P extends Property>(el: Element, property: P, others: Change[]) {
-  const original = el.getAttribute(ORIGINAL_STYLE_ATTR);
-  if (original === null) return;
-  if (!others.length) {
-    if (original) el.setAttribute("style", original);
-    else el.removeAttribute("style");
-    el.removeAttribute(AS_STACK_ATTR);
-    return;
-  }
-  const { writes, sets, stack }: Definition<PropertyValues[P]> = PROPERTIES[property];
-  const names = [...writes, ...sets, ...(stack ? ["display", "flex-direction"] : [])];
-  const style = (el as HTMLElement).style;
-  const page = el.ownerDocument.createElement("div").style;
-  page.cssText = original;
-  for (const name of names) style.removeProperty(name);
-  for (const name of names) {
-    const value = page.getPropertyValue(name);
-    if (value) style.setProperty(name, value, page.getPropertyPriority(name));
-  }
-  for (const change of others) declare(el, change.style);
-  if (!others.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
+/** Instances a loop renders: several, side by side in one container. */
+function isLoop(instances: Layer[]): boolean {
+  return instances.length > 1 && instances.every((instance) => instance.el.parentElement === instances[0].el.parentElement);
+}
+
+/** The CSS properties a property may declare, and the ones it is read from: what taking it off the canvas puts back. */
+export function cssOf(property: Property): string[] {
+  const { writes, sets, stack }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
+  return [...writes, ...sets, ...(stack ? ["display", "flex-direction"] : [])];
 }
 
 /**

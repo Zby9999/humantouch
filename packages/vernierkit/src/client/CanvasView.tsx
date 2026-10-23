@@ -1,6 +1,8 @@
 /** @jsxImportSource preact */
 import type { TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { findDrop, type Drop } from "./drag";
+import type { Destination, Editor } from "./edits";
 import { freeze, restore, type Canvas } from "./freezer";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
@@ -36,6 +38,10 @@ interface Props {
   /** Keep the selection box out of the way, as while a value is being adjusted. */
   hideSelection: boolean;
   onSelect(layers: Layer[]): void;
+  /** What a dragged layer can be moved into; null until there is a canvas to edit. */
+  editor: Editor | null;
+  /** A dragged layer let go where it can go. */
+  onMove(layer: Layer, to: Destination): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -46,7 +52,7 @@ interface Props {
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, leaving, animate, changed, onLeft }: Props) {
+export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, leaving, animate, changed, onLeft }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -58,6 +64,11 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   const [hover, setHover] = useState<{ hit: Layer; deep: boolean } | null>(null);
   const pan = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [panning, setPanning] = useState(false);
+  /** A press on a layer that a move of the pointer turns into a drag. */
+  const press = useRef<{ pointerId: number; layer: Layer; x: number; y: number } | null>(null);
+  const dragging = useRef<DragSession | null>(null);
+  /** The drag under way: how far the layer has gone, in canvas px, and where it would go. */
+  const [drag, setDrag] = useState<{ layer: Layer; box: DOMRect; drop: Drop | null } | null>(null);
   const modeSwitch = useRef<Animation | null>(null);
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
@@ -172,12 +183,12 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ canvas, selected, onSelect });
-  latest.current = { canvas, selected, onSelect };
+  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {} });
+  latest.current = { canvas, selected, onSelect, endDrag };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { canvas, selected, onSelect } = latest.current;
+      const { canvas, selected, onSelect, endDrag } = latest.current;
       if (event.key === "Meta" || event.key === "Control") {
         const deep = event.metaKey || event.ctrlKey;
         setHover((h) => h && { ...h, deep });
@@ -193,6 +204,12 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
         return;
       }
       if (event.type !== "keydown") return;
+      if (event.key === "Escape" && dragging.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        endDrag(false);
+        return;
+      }
       if (event.key === "Escape" && selected.length) {
         event.preventDefault();
         event.stopPropagation();
@@ -258,6 +275,11 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       if (event.shiftKey) {
         if (layer) onSelect(toggleIn(selected, layer));
       } else onSelect(layer ? [layer] : []);
+      // Pressed on a layer it can move: moving the pointer drags it.
+      if (layer && !event.shiftKey && editor?.canMove(layer)) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        press.current = { pointerId: event.pointerId, layer, x: event.clientX, y: event.clientY };
+      }
       return;
     }
     // Space + drag, or the middle button, pans.
@@ -269,6 +291,13 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    const pressed = press.current;
+    if (pressed?.pointerId === event.pointerId) {
+      if (!dragging.current && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < DRAG_THRESHOLD) return;
+      dragging.current ??= startDrag(pressed.layer);
+      moveDrag(dragging.current, event, pressed);
+      return;
+    }
     const p = pan.current;
     if (!p) {
       if (event.buttons) return;
@@ -286,14 +315,75 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (press.current?.pointerId === event.pointerId) {
+      press.current = null;
+      endDrag(event.type === "pointerup");
+      return;
+    }
     if (pan.current?.pointerId !== event.pointerId) return;
     pan.current = null;
     setPanning(false);
   };
 
-  // Nothing to point out while panning or while a value is being adjusted.
+  /** Where the pointer is on the canvas, in canvas px. */
+  const toCanvas = (event: MouseEvent) => {
+    const area = viewport.current!.getBoundingClientRect();
+    return { x: (event.clientX - area.left - view.x) / view.zoom, y: (event.clientY - area.top - view.y) / view.zoom };
+  };
+
+  /** Starts dragging: the layer stops taking the pointer, and where its neighbours are is noted before any of them shifts. */
+  const startDrag = (layer: Layer): DragSession => {
+    const session: DragSession = { layer, start: boxOf(layer), rects: new Map(), touched: new Map(), drop: null };
+    for (const child of layer.parent!.children) if (!child.text) session.rects.set(child.el, child.el.getBoundingClientRect());
+    if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
+    return session;
+  };
+
+  const moveDrag = (session: DragSession, event: MouseEvent, from: { x: number; y: number }) => {
+    const dx = (event.clientX - from.x) / view.zoom;
+    const dy = (event.clientY - from.y) / view.zoom;
+    const { layer, start } = session;
+    const box = new DOMRect(start.x + dx, start.y + dy, start.width, start.height);
+    const rectOf = (l: Layer) => {
+      if (l.text) return boxOf(l);
+      let r = session.rects.get(l.el);
+      if (!r) session.rects.set(l.el, (r = l.el.getBoundingClientRect()));
+      return r;
+    };
+    const drop = editor && findDrop(editor, layer, toCanvas(event), box, rectOf);
+    session.drop = drop;
+    // Only shifted while dragging: the layer, and the layers making room for it.
+    const shifts = new Map(drop?.shifts);
+    if (!layer.text) shifts.set(layer.el, { x: dx, y: dy });
+    for (const [el, saved] of session.touched) {
+      if (!shifts.has(el) && saved.translate) setStyles(session, el, { translate: null, transition: null });
+    }
+    for (const [el, { x, y }] of shifts) {
+      setStyles(session, el, { translate: `${x}px ${y}px`, transition: el === layer.el ? "none" : `translate 150ms ${EASE_OUT}` });
+    }
+    setDrag({ layer, box, drop });
+  };
+
+  /** Ends the drag: everything shifted goes back, and, let go where it can go, the layer moves there. */
+  function endDrag(commit: boolean) {
+    const session = dragging.current;
+    if (!session) return;
+    dragging.current = null;
+    press.current = null;
+    for (const [el, saved] of session.touched) {
+      for (const [name, [value, priority]] of Object.entries(saved.original)) {
+        if (value) (el as HTMLElement).style.setProperty(name, value, priority);
+        else (el as HTMLElement).style.removeProperty(name);
+      }
+    }
+    setDrag(null);
+    if (commit && session.drop) onMove(session.layer, session.drop.to);
+  }
+
+  // Nothing to point out while panning, dragging or while a value is being adjusted.
+  // A move builds the layers anew: a layer pointed at before it is gone.
   const hovered =
-    hover && !spaceHeld && !panning && !hideSelection
+    hover && !spaceHeld && !panning && !drag && !hideSelection && tree && inTree(tree, hover.hit)
       ? hover.deep
         ? selectDeepest(hover.hit)
         : selectOnClick(hover.hit, primary)
@@ -329,6 +419,9 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       </div>
       {canvas && hovered && !selected.includes(hovered) && !travelling && <Outline layer={hovered} view={view} hover />}
       {canvas && !travelling && selected.map((layer, i) => <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
+      {drag?.drop && <Outline layer={drag.drop.container} view={view} hover />}
+      {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
+      {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
@@ -370,6 +463,47 @@ function Outline({ layer, view, hover, hidden }: OutlineProps) {
       )}
     </div>
   );
+}
+
+/** Whether a layer is one of the tree's, not of one built before it. */
+function inTree(tree: LayerTree, layer: Layer): boolean {
+  return tree.layerOf(layer.text ? layer.text.find((node) => node.textContent!.trim())! : layer.el) === layer;
+}
+
+/** Pointer travel (px) before a press on a layer counts as a drag. */
+const DRAG_THRESHOLD = 3;
+
+/** A drag under way, and the canvas styles it has changed, to put back. */
+interface DragSession {
+  layer: Layer;
+  /** Where the layer was when the drag began. */
+  start: DOMRect;
+  /** Where layers were laid out before anything shifted, by element. */
+  rects: Map<Element, DOMRect>;
+  touched: Map<Element, { original: Record<string, [string, string]>; translate: boolean }>;
+  drop: Drop | null;
+}
+
+/** Sets (or, with null, takes off) inline styles on a canvas element for the drag, noting what they were. */
+function setStyles(session: DragSession, el: Element, styles: Record<string, string | null>) {
+  const style = (el as HTMLElement).style;
+  let saved = session.touched.get(el);
+  if (!saved) session.touched.set(el, (saved = { original: {}, translate: false }));
+  for (const name in styles) {
+    saved.original[name] ??= [style.getPropertyValue(name), style.getPropertyPriority(name)];
+    const value = styles[name];
+    if (value === null) {
+      const [original, priority] = saved.original[name];
+      if (original) style.setProperty(name, original, priority);
+      else style.removeProperty(name);
+    } else style.setProperty(name, value, "important");
+  }
+  if ("translate" in styles) saved.translate = styles.translate !== null;
+}
+
+/** A box on the canvas, placed over it in the viewport. */
+function place(r: { x: number; y: number; width: number; height: number }, view: View) {
+  return { left: `${view.x + r.x * view.zoom}px`, top: `${view.y + r.y * view.zoom}px`, width: `${r.width * view.zoom}px`, height: `${r.height * view.zoom}px` };
 }
 
 function transformOf({ x, y, zoom }: View): string {

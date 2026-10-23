@@ -38,8 +38,10 @@ export interface Layer {
 export interface LayerTree {
   /** The page itself. Its children are the outermost layers. */
   root: Layer;
-  /** The deepest layer at a point of the canvas, in canvas px. */
-  layerAt(x: number, y: number): Layer | null;
+  /** The deepest layer at a point of the canvas, in canvas px; with `skip`, past the elements it skips (and what is in them). */
+  layerAt(x: number, y: number, skip?: Element): Layer | null;
+  /** The layer an element is, or the run of loose text a text node starts. */
+  layerOf(node: Element | Text): Layer | null;
   /**
    * This layer in every instance of its usage, in page order, `layer` itself included: layers
    * with the same element location and usage chain. For an instance, all instances of its usage.
@@ -176,12 +178,18 @@ export function buildLayerTree(doc: Document): LayerTree {
 
   return {
     root,
-    layerAt(x, y) {
+    layerAt(x, y, skip) {
       let layer: Layer | undefined;
-      for (let e = doc.elementFromPoint(x, y); e && !layer; e = e.parentElement) layer = layers.get(e);
+      const hit = skip ? doc.elementsFromPoint(x, y).find((e) => !skip.contains(e)) : doc.elementFromPoint(x, y);
+      for (let e = hit ?? null; e && !layer; e = e.parentElement) layer = layers.get(e);
       if (!layer) return null;
       // Text is not an element, so the point lands on the layer the text sits in.
       return layer.children.find((child) => child.text && [...rangeOf(child).getClientRects()].some((r) => contains(r, x, y))) ?? layer;
+    },
+    layerOf(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) return layers.get(node as Element) ?? null;
+      const parent = node.parentElement && layers.get(node.parentElement);
+      return parent?.children.find((child) => child.text?.[0] === node) ?? null;
     },
     acrossInstances(layer) {
       const key = keys.get(layer);

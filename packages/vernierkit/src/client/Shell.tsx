@@ -4,7 +4,7 @@ import type { SavedRound } from "../service-protocol";
 import { CanvasView, isEditable } from "./CanvasView";
 import { canPreview } from "./change-preview";
 import { createChangeSet, type Change, type ChangeSet } from "./changeset";
-import { createEditor, type Editor } from "./edits";
+import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { buildLayerTree, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
@@ -83,6 +83,12 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
   );
 
   const onEdit = () => {
+    // A move builds the layers anew: the selection is found again in them.
+    const next = editor?.tree();
+    if (next && next !== tree) {
+      setTree(next);
+      setSelected((layers) => layers.map((layer) => next.layerOf(layer.text ? layer.text.find((node) => node.textContent!.trim())! : layer.el)).filter((layer) => layer !== null));
+    }
     clearTimeout(pendingSave.current);
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
     if (round.current) onChanges(round.current.changeSet.list());
@@ -151,6 +157,12 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
         selected={selected}
         hideSelection={adjusting}
         onSelect={select}
+        editor={editor}
+        onMove={(layer: Layer, to: Destination) => {
+          const moved = editor!.move(layer, to);
+          onEdit();
+          select([moved]);
+        }}
         leaving={leaving}
         animate={animate}
         changed={!!round.current?.changeSet.list().some((change) => !previewing || !canPreview(change))}

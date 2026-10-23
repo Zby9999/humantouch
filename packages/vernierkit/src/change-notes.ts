@@ -5,9 +5,9 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import type { Change, Target } from "./client/changeset";
+import type { Change, Place, Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
-import { propertyName, propertyTitle, value } from "./design-values";
+import { changeTitle, moveKind, ordinal, propertyName, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -38,24 +38,51 @@ export function describeChanges(list: Change[], root: string, options: NotesOpti
   return notes;
 }
 
-const KINDS: Record<Change["kind"], string> = { style: "Style" };
-
 function section(change: Change, root: string, status: string | undefined): string {
   const { target } = change;
-  const property = propertyTitle(change.property);
+  const move = change.kind === "move";
+  const style = Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``);
   const lines = [
     ...(status ? [`**Status:** ${status}`] : []),
-    `**Kind:** ${KINDS[change.kind]}`,
+    `**Kind:** ${move ? moveKind(change) : "Style"}`,
     `**Layer:** ${layer(target)}`,
     `**Location:** ${target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
-    `**Design intent:** Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`,
+    `**Design intent:** ${move ? moveIntent(change) : `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`}`,
     ...(change.asStack ? [AS_STACK] : []),
-    `**Reference style:** ${Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``).join(", ")}`,
-    `**Currently set by:** ${setBy(change.sources ?? [], root)}`,
+    ...(change.data ? [dataChange(target)] : []),
+    ...(change.wrap ? [WRAP] : []),
+    `**Reference style:** ${style.length ? style.join(", ") : "none: only its place changes"}`,
+    ...(move ? [] : [`**Currently set by:** ${setBy(change.sources ?? [], root)}`]),
   ];
-  return `## ${change.id}. ${property}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
+  return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
+
+/** Where a move takes the layer from, and to. */
+function moveIntent(change: Change): string {
+  const [before, after] = [change.before, change.after] as Place[];
+  const kind = moveKind(change);
+  if (kind === "Reorder") {
+    return `Move it from ${ordinal(before.nth)} to ${ordinal(after.nth)} place among the layers of its container, ${container(after)}.`;
+  }
+  const from = before.absolute ? `out of where it is placed in ${container(before)}` : `out of the layout of ${container(before)}, where it is ${ordinal(before.nth)}`;
+  if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer.`;
+  const { x, y } = after.absolute!;
+  const into = after.container.layer === before.container.layer ? "in the same container" : `in ${container(after)}`;
+  return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the container's top left (CSS \`left\` and \`top\`). Make the container its positioning reference (\`position: relative\`) if it is not one already.`;
+}
+
+/** A container, as the Agent finds it: its name and element, and where it is written. */
+function container({ container: { target } }: Place): string {
+  const where = target.loc ? `at \`${target.loc}\`` : `not located, at ${target.context.path.join(" › ")} on the page`;
+  return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${where})`;
+}
+
+function dataChange({ instances }: Target): string {
+  return `**Data change:** the layer is one of the ${instances} instances a loop renders, so its place comes from the order of the data the loop goes through. Reorder the data where it is written in the code; if it comes from outside the code (an API, a CMS), say so in the report.`;
+}
+
+const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
 
 const AS_STACK =
   "**Make it a Stack:** the layer lays its children out as plain blocks, top to bottom, which the editor shows as a vertical Stack. Make it a real Stack, a flex column (as the reference style shows), so the change applies.";

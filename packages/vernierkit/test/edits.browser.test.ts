@@ -807,3 +807,164 @@ describe("several layers at once", () => {
     expect(cards.map((card) => style(card).opacity)).toEqual(["1", "1", "1", "1"]);
   });
 });
+
+/**
+ * Moves: a vertical Stack of three, a horizontal Stack of one, an empty
+ * Frame, and a paragraph with loose text beside an element.
+ */
+const at = (loc: string) => `data-vk-loc="src/App.tsx:${loc}" ${chain(APP)}`;
+const MOVES = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="list" ${at("5:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
+    <div id="a" ${at("6:7")} style="height: 20px">A</div>
+    <div id="b" ${at("7:7")} style="height: 20px">B</div>
+    <div id="c" ${at("8:7")} style="height: 20px">C</div>
+  </div>
+  <div id="row" ${at("10:5")} style="display: flex; gap: 8px; height: 40px">
+    <div id="d" ${at("11:7")} style="width: 30px">D</div>
+  </div>
+  <div id="board" ${at("13:5")} style="width: 300px; height: 200px"></div>
+  <p id="mixed" ${at("15:5")}>Loose text <span ${at("15:20")} style="display: inline-block">pill</span> more</p>
+</body>`;
+
+describe("moving layers", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = (id: string) => [...canvas.doc.getElementById(id)!.children].map((el) => el.id);
+    return { ...canvas, layer, order };
+  };
+
+  test("within a Stack, to another place among its layers, recorded from where it was to where it is", () => {
+    const { editor, changes, layer, order } = open();
+
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+
+    expect(order("list")).toEqual(["c", "a", "b"]);
+    expect(editor.tree().root.children[0].children.map((l) => l.name)).toEqual(["C", "A", "B"]);
+    const [change] = changes.list();
+    expect(change).toMatchObject({
+      kind: "move",
+      property: "move",
+      target: { loc: "src/App.tsx:8:7", context: { path: ["Page", "App", "C"] } },
+      before: { container: { target: { loc: "src/App.tsx:5:5" } }, nth: 3, absolute: null },
+      after: { container: { target: { loc: "src/App.tsx:5:5" } }, nth: 1, absolute: null },
+      style: {},
+    });
+  });
+
+  test("moved back where it was, it is no longer a change; undo and redo move it again", () => {
+    const { editor, changes, layer, order } = open();
+
+    editor.move(layer("a"), { parent: layer("list"), index: 2 });
+    expect(order("list")).toEqual(["b", "c", "a"]);
+    editor.move(layer("a"), { parent: layer("list"), index: 0 });
+    expect(changes.list()).toEqual([]);
+
+    editor.undo();
+    expect(order("list")).toEqual(["b", "c", "a"]);
+    editor.undo();
+    expect(order("list")).toEqual(["a", "b", "c"]);
+    expect(editor.redo().map((l) => l.name)).toEqual(["A"]);
+    expect(order("list")).toEqual(["b", "c", "a"]);
+    expect(changes.list()).toHaveLength(1);
+  });
+
+  test("into another Stack, at the place it is dropped", () => {
+    const { editor, changes, layer, order } = open();
+
+    editor.move(layer("b"), { parent: layer("row"), index: 1 });
+
+    expect(order("list")).toEqual(["a", "c"]);
+    expect(order("row")).toEqual(["d", "b"]);
+    expect(changes.list()[0]).toMatchObject({
+      before: { container: { target: { loc: "src/App.tsx:5:5" } }, nth: 2 },
+      after: { container: { target: { loc: "src/App.tsx:10:5" } }, nth: 2 },
+    });
+  });
+
+  test("into a Frame, absolute where it is dropped: the Frame becomes its positioning reference, and undo puts all back", () => {
+    const { doc, editor, changes, layer, order } = open();
+    const board = doc.getElementById("board")!;
+    const b = doc.getElementById("b")!;
+
+    editor.move(layer("b"), { parent: layer("board"), x: 40, y: 30 });
+
+    expect(b.parentElement).toBe(board);
+    expect(b.getBoundingClientRect().left - board.getBoundingClientRect().left).toBe(40);
+    expect(b.getBoundingClientRect().top - board.getBoundingClientRect().top).toBe(30);
+    // It keeps the size it had in the Stack.
+    expect(b.getBoundingClientRect().width).toBe(200);
+    expect(style(board).position).toBe("relative");
+    expect(editor.tree().root.children[2].children.map((l) => [l.name, l.absolute])).toEqual([["B", true]]);
+    expect(changes.list()[0]).toMatchObject({
+      after: { container: { target: { loc: "src/App.tsx:13:5" } }, nth: 1, absolute: { x: 40, y: 30 } },
+      style: { position: "absolute", left: "40px", top: "30px", width: "200px", height: "20px" },
+    });
+
+    editor.undo();
+    expect(order("list")).toEqual(["a", "b", "c"]);
+    expect(style(b).position).toBe("static");
+    expect(style(board).position).toBe("static");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("taken back from a saved round with no canvas open, it goes back where it was", () => {
+    const opened = open();
+    opened.editor.move(opened.layer("c"), { parent: opened.layer("list"), index: 0 });
+    opened.editor.move(opened.layer("b"), { parent: opened.layer("board"), x: 10, y: 10 });
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+
+    const reverted = revertSaved(revertSaved(saved, 2)!, 1);
+
+    expect(reverted).toBeNull();
+    const doc = new DOMParser().parseFromString(revertSaved(saved, 2)!.canvas, "text/html");
+    expect([...doc.getElementById("list")!.children].map((el) => el.id)).toEqual(["c", "a", "b"]);
+    expect(doc.getElementById("b")!.getAttribute("style")).toBe("height: 20px");
+    expect(doc.getElementById("board")!.hasAttribute("style")).toBe(true);
+    expect(doc.getElementById("board")!.style.position).toBe("");
+  });
+
+  test("loose text is wrapped in an element of its own to move, and the change says so", () => {
+    const { doc, editor, changes, order } = open();
+    const run = find(editor.tree().root, (l) => l.name === "more")!;
+
+    editor.move(run, { parent: find(editor.tree().root, (l) => l.el.id === "row")!, index: 0 });
+
+    const wrapped = doc.getElementById("row")!.firstElementChild!;
+    expect(wrapped.localName).toBe("span");
+    expect(wrapped.textContent!.trim()).toBe("more");
+    expect(order("row")).toEqual(["", "d"]);
+    expect(changes.list()[0]).toMatchObject({ wrap: true, target: { loc: "src/App.tsx:15:5" } });
+  });
+
+  test("an instance a loop renders, moved among its siblings, is a change to the data the loop goes through", () => {
+    const item = `data-vk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html>
+      <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column">
+        <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
+      </ul>`);
+    const second = find(editor.tree().root, (l) => l.el === doc.querySelectorAll("li")[1])!;
+
+    editor.move(second, { parent: layer("list"), index: 0 });
+
+    expect([...doc.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Two", "One", "Three"]);
+    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 } });
+  });
+
+  test("where a layer can go: not into itself, into a locked layer, or into a usage it does not repeat with", () => {
+    const { doc, editor, cards } = open(PAGE);
+    const tree = editor.tree();
+    const layerOf = (el: Element) => find(tree.root, (l) => l.el === el && !l.text)!;
+    const badge = layerOf(doc.querySelector("span")!);
+    const title = layerOf(doc.querySelector("h3")!);
+
+    expect(editor.canMove(badge)).toBe(true);
+    expect(editor.canDrop(layerOf(cards[3]), badge)).toBe(false);
+    expect(editor.canDrop(layerOf(cards[0]), layerOf(cards[0]))).toBe(false);
+    // A card's title, in each of the three cards of the loop: into one card of another usage, it could not follow.
+    expect(editor.canDrop(title, layerOf(cards[3]))).toBe(false);
+    expect(editor.canDrop(title, layerOf(cards[2]))).toBe(true);
+    expect(editor.canMove(tree.root)).toBe(false);
+  });
+});

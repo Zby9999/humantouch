@@ -75,6 +75,47 @@ test("layout changes are told in design language; a plain flow given a gap is to
   expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 8px`\n");
 });
 
+test("a reorder and an absolute placement are told apart, with where each goes; done does not check moves on the page", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await page.evaluate(() => {
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "height: 240px";
+    document.querySelector("main")!.append(board);
+  });
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const layers = page.getByRole("tree", { name: "Layers" });
+  const hero = canvas(page).getByTestId("hero");
+  const dragTo = async (name: string, selector: string, to: () => Promise<{ x: number; y: number }>) => {
+    await layers.getByRole("treeitem", { name, exact: true }).click();
+    const start = (await hero.locator(selector).boundingBox())!;
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.down();
+    const end = await to();
+    await page.mouse.move(end.x, end.y, { steps: 8 });
+    await page.mouse.up();
+  };
+  // The header after the paragraph; the button into the board.
+  await dragTo("Header", "> header", async () => {
+    const p = (await hero.locator("> p").boundingBox())!;
+    return { x: p.x + p.width / 2, y: p.y + p.height - 2 };
+  });
+  await dragTo("Button", "> button", async () => {
+    const board = (await canvas(page).locator("#board").boundingBox())!;
+    return { x: board.x + board.width / 2, y: board.y + board.height / 2 };
+  });
+  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
+
+  const [, reorder, absolute] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(reorder).toMatch(/^1\. Reorder\n/);
+  expect(reorder).toMatch(/- \*\*Design intent:\*\* Move it from 1st to 2nd place among the layers of its container, Stack \(`<section class="flex h-screen flex-col justify-center">`, at `src\/App\.tsx:\d+:\d+`\)\.\n/);
+  expect(absolute).toMatch(/^2\. Absolute\n/);
+  expect(absolute).toContain("place it absolute in Frame (`<div id=\"board\">`, not located");
+  expect(absolute).toContain("- **Reference style:** `position: absolute`");
+  expect(await vernierkit("done", "1")).toContain("Not checked on the page: only style changes are checked on the page so far, not moves.");
+});
+
 test("with no changes, claim says so and leaves the round as it is", async () => {
   expect(await vernierkit("claim")).toMatch(/^No design changes to apply/);
   expect(readVernier("state.json")).toBeNull();

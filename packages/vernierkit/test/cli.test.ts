@@ -186,6 +186,46 @@ describe("claim, layout changes", () => {
   });
 });
 
+describe("claim, moves", () => {
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const board = { ...list, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="h-64">' } };
+  const place = (container: object, layer: string, nth: number, absolute: object | null = null) => ({ container: { layer, target: container }, nth, slot: nth - 1, absolute });
+  const move = (id: number, before: object, after: object, more: object = {}) => ({ ...redFill, id, kind: "move", property: "move", before, after, style: {}, sources: [], ...more });
+
+  test("tell a reorder, a move into another container and an absolute placement apart, with where it goes", async () => {
+    saveRound(
+      move(1, place(list, "4", 3), place(list, "4", 1)),
+      move(2, place(list, "4", 2), place(board, "9", 1)),
+      move(3, place(list, "4", 1), place(board, "9", 2, { x: 40, y: 12 }), { style: { position: "absolute", left: "40px", top: "12px" } }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Reorder\n/);
+    expect(section(output, 1)).toContain("- **Kind:** Reorder\n");
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Move it from 3rd to 1st place among the layers of its container, Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`).\n",
+    );
+    expect(section(output, 1)).toContain("- **Reference style:** none: only its place changes\n");
+    expect(section(output, 1)).not.toContain("Currently set by");
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Move it out of the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), where it is 2nd, into the layout of Frame (`<div class=\"h-64\">`, at `src/App.tsx:30:7`), as its 1st layer.\n",
+    );
+    expect(section(output, 3)).toMatch(/^3\. Absolute\n/);
+    expect(section(output, 3)).toContain("place it absolute in Frame (`<div class=\"h-64\">`, at `src/App.tsx:30:7`), at X 40px and Y 12px from the container's top left");
+    expect(section(output, 3)).toContain("Make the container its positioning reference (`position: relative`)");
+  });
+
+  test("a loop's instance moved is a data change; loose text moved is to be wrapped", async () => {
+    saveRound(move(1, place(list, "4", 2), place(list, "4", 1), { data: true }), move(2, place(list, "4", 3), place(board, "9", 1), { wrap: true }));
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders");
+    expect(section(output, 2)).toContain("- **Wrap it:** the text has no element of its own");
+  });
+});
+
 describe("claim, where each value comes from", () => {
   const rule = { kind: "rule", important: false, className: null };
 

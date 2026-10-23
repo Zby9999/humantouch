@@ -26,9 +26,22 @@ export interface Target {
   };
 }
 
+/** Where a moved layer is: the container it is in, its place there, and its position when absolute. */
+export interface Place {
+  /** The container: its id on the canvas, and how the Agent finds it in the source. */
+  container: { layer: string; target: Target };
+  /** Its place among the container's layers, from 1. */
+  nth: number;
+  /** Its place among the container element's child nodes on the canvas, to put it back by. */
+  slot: number;
+  /** Absolute: `left` and `top` in the container, in px. Null: in the container's layout. */
+  absolute: { x: number; y: number } | null;
+}
+
 export interface Change {
   id: number;
-  kind: "style";
+  /** `style`: a property of the layer changes. `move`: the layer goes to another place; `before` and `after` are `Place`s. */
+  kind: "style" | "move";
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
@@ -46,7 +59,14 @@ export interface Change {
    * change (to its gap, alignment, direction or wrap) makes it a real Stack.
    */
   asStack?: true;
+  /** A move of one of the instances a loop renders: in the code, the data the loop goes through changes. */
+  data?: true;
+  /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
+  wrap?: true;
 }
+
+/** The property a move is recorded under: one move per layer, from where it was to where it is. */
+export const MOVE = "move";
 
 export interface ChangeSet {
   /**
@@ -54,7 +74,10 @@ export interface ChangeSet {
    * `after`. A property changed before keeps its first `before`; one that ends
    * up where it started is no longer a change.
    */
-  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack">): void;
+  record(
+    layerId: string,
+    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap"> & { kind?: Change["kind"] },
+  ): void;
   /** Takes change `id` out: the designer no longer wants it. */
   remove(id: number): void;
   /** Whether `property` of the layer with id `layerId` is changed already. */
