@@ -14,6 +14,7 @@ import {
   readChecks,
   readLastRound,
   readState,
+  snapshotCode,
   vernierFolder,
   writeState,
   type VernierFolder,
@@ -22,6 +23,8 @@ import {
 export interface Io {
   cwd: string;
   write(text: string): void;
+  /** For what went wrong: the command was not run. */
+  error(text: string): void;
 }
 
 /** Runs one command; resolves with the exit code. */
@@ -39,7 +42,7 @@ export async function run(args: string[], io: Io): Promise<number> {
     case "last":
       return last(folder, root, io);
     default:
-      io.write(`Unknown command: ${command ?? "(none)"}\n`);
+      io.error(`Unknown command: ${command ?? "(none)"}\n`);
       return 1;
   }
 }
@@ -52,7 +55,8 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   }
   // Claimed already: the Agent may have lost the notes. What it did so far stays done.
   const state = await readState(folder);
-  if (!state) await writeState(folder, { status: "claimed", done: [] });
+  // The code as it was before the Agent changed anything, to undo the round by.
+  if (!state) await writeState(folder, { status: "claimed", done: [], code: await snapshotCode(root) });
   const status = state && ((change: Change) => (state.done.includes(change.id) ? "Done" : "Not done yet"));
   io.write(describeChanges(changeSet.changes, root, status ? { ...TO_APPLY, status } : TO_APPLY));
   return 0;
@@ -63,14 +67,14 @@ const NOT_CLAIMED = "The round is not claimed: run `npx vernierkit claim` first.
 async function done(folder: VernierFolder, arg: string | undefined, io: Io): Promise<number> {
   const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
   if (!state || !changeSet) {
-    io.write(NOT_CLAIMED);
+    io.error(NOT_CLAIMED);
     return 1;
   }
   const ids = changeSet.changes.map((change) => change.id);
   const id = Number(arg);
   if (!ids.includes(id)) {
     const which = arg === undefined ? "Give the number of the change you applied: `npx vernierkit done <number>`." : `There is no change ${arg} in this round.`;
-    io.write(`${which} Its changes are: ${ids.join(", ")}.\n`);
+    io.error(`${which} Its changes are: ${ids.join(", ")}.\n`);
     return 1;
   }
   const doneIds = state.done.includes(id) ? state.done : [...state.done, id];
@@ -116,7 +120,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   const changeSet = await readChangeSet(folder);
   const result = changeSet && (await archiveRound(folder, "finished"));
   if (!result) {
-    io.write(NOT_CLAIMED);
+    io.error(NOT_CLAIMED);
     return 1;
   }
   const ids = changeSet.changes.map((change) => change.id);
@@ -135,12 +139,21 @@ async function last(folder: VernierFolder, root: string, io: Io): Promise<number
     io.write("No earlier round of design changes to undo.\n");
     return 0;
   }
-  const { done } = round.result;
+  const { done, code } = round.result;
+  const intro = (count: string) => {
+    const text = `${count} from the round before, as the designer asked for them.`;
+    if (!code) return `${text} To undo the round, take the applied ones back out of the source; those not applied never went in.`;
+    const git = `git -C "${code.repository}"`;
+    return (
+      `${text} The code changes made while it was applied: \`${git} diff ${code.before} ${code.after}\`. ` +
+      `To undo the round, take them back out: \`${git} diff ${code.after} ${code.before} | ${git} apply\`. ` +
+      "Check the diff first: anything else edited meanwhile is in it too."
+    );
+  };
   io.write(
     describeChanges(round.changeSet.changes, root, {
       heading: "Last round of design changes",
-      intro: (count) =>
-        `${count} from the round before, as the designer asked for them. To undo the round, take the applied ones back out of the source; those not applied never went in.`,
+      intro,
       status: (change) => (done.includes(change.id) ? "Applied" : "Not applied"),
     }),
   );

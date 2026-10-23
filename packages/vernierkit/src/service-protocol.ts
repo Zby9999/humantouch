@@ -22,7 +22,17 @@ export const CHECKS_PATH = "/checks";
  * ids of the changes done so far, and the change the last `done` asks the
  * page to check (`at` tells one ask from the next).
  */
-export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; check?: { id: number; at: string } };
+export type RoundStatus =
+  | { status: "editing" }
+  | { status: "claimed"; done: number[]; check?: { id: number; at: string }; code?: CodeSnapshot | null };
+
+/** The project's code at one moment, as a git tree, to take a round's changes back out by. */
+export interface CodeSnapshot {
+  /** The git repository's top folder. */
+  repository: string;
+  /** The tree, as `git write-tree` gives it. */
+  tree: string;
+}
 
 /** Whether the live page shows a change the Agent has done: its value there is the value the change sets. */
 export type CheckResult =

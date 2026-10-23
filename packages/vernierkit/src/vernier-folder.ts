@@ -3,11 +3,14 @@
  * ChangeSet), its state while the Agent applies it, and the rounds before it.
  * The local service and the command line both work through this module.
  */
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import type { SavedChangeSet } from "./client/changeset";
-import type { CheckResult, RoundStatus } from "./service-protocol";
+import type { CheckResult, CodeSnapshot, RoundStatus } from "./service-protocol";
 
 export const VERNIER_DIR = ".vernier";
 
@@ -82,6 +85,8 @@ export interface RoundResult {
   at: string;
   /** How the page answered the last check of each change. */
   checks: Checks["results"];
+  /** In a git repository: the code as the round found it and as it left it. */
+  code: { repository: string; before: string; after: string } | null;
 }
 
 /**
@@ -92,7 +97,9 @@ export interface RoundResult {
 export async function archiveRound(folder: VernierFolder, ended: RoundResult["ended"]): Promise<RoundResult | null> {
   const [state, changeSet] = await Promise.all([readState(folder), readIfThere(folder.changeSet)]);
   if (!state || changeSet === null) return null;
-  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString(), checks: (await readChecks(folder))?.results ?? {} };
+  const after = state.code && (await snapshotCode(dirname(folder.dir)));
+  const code = state.code && after?.repository === state.code.repository ? { repository: after.repository, before: state.code.tree, after: after.tree } : null;
+  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString(), checks: (await readChecks(folder))?.results ?? {}, code };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
   await writeFile(join(archive, "changeset.json"), changeSet);
@@ -121,6 +128,30 @@ export async function readLastRound(folder: VernierFolder): Promise<{ changeSet:
   if (!last) return null;
   const read = async (file: string) => JSON.parse(await readFile(join(folder.history, last, file), "utf8"));
   return { changeSet: await read("changeset.json"), result: await read("result.json") };
+}
+
+/**
+ * The project's code as it is now, untracked files included, as a git tree;
+ * null outside a git repository. It goes through an index of its own, so
+ * what is staged stays as it is.
+ */
+export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
+  const index = join(tmpdir(), `vernierkit-index-${process.pid}-${Date.now()}`);
+  const git = (args: string[], env?: NodeJS.ProcessEnv) => promisify(execFile)("git", args, { cwd: root, env: { ...process.env, ...env } });
+  try {
+    const { stdout: top } = await git(["rev-parse", "--show-toplevel"]);
+    const { stdout: realIndex } = await git(["rev-parse", "--git-path", "index"]);
+    // Starting from the real index, git rehashes only the files that changed.
+    await copyFile(resolve(root, realIndex.trim()), index).catch(() => {});
+    const own = { GIT_INDEX_FILE: index };
+    await git(["-C", top.trim(), "add", "--all"], own);
+    const { stdout: tree } = await git(["write-tree"], own);
+    return { repository: top.trim(), tree: tree.trim() };
+  } catch {
+    return null; // Not a git repository, or no git.
+  } finally {
+    await rm(index, { force: true });
+  }
 }
 
 export async function readIfThere(file: string): Promise<string | null> {

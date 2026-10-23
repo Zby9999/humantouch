@@ -30,16 +30,13 @@ test("claim takes the designer's changes and prints change notes for the Agent",
   // React's root element, from index.html: no source marker.
   await layers.getByRole("treeitem").first().click();
   await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
-  // The "Get started" button: the row just above its text.
-  const getStarted = layers.getByRole("treeitem");
-  const labels = await getStarted.allInnerTexts();
-  await getStarted.nth(labels.findIndex((label) => label.trim() === "Get started") - 1).click();
+  await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
   await setField(page, "Fill color", "2563eb");
   await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(4);
 
   const notes = await vernierkit("claim");
 
-  expect(readVernier("state.json")).toEqual({ status: "claimed", done: [] });
+  expect(readVernier("state.json")).toMatchObject({ status: "claimed", done: [] });
   const [, fill, radius, root, button] = notes.split(/^## /m);
   expect(fill).toMatch(/^1\. Fill\n/);
   expect(fill).toContain("- **Kind:** Style\n");

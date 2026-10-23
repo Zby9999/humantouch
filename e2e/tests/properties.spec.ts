@@ -91,7 +91,7 @@ test("a uniform corner radius, typed or stepped with the arrow keys", async ({ p
 });
 
 test("a radius past half the shorter side shows as set, and steps on from there", async ({ page }) => {
-  await selectRow(page, "Stack", 3); // The Get started button: 44.8px tall, so a pill from 22.4 up.
+  await selectRow(page, "Button"); // The Get started button: 44.8px tall, so a pill from 22.4 up.
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
 
   await radius.fill("99");

@@ -134,7 +134,7 @@ test("a short press on the locked toggle does nothing", async ({ page }) => {
   await toggle.click({ force: true });
 
   await expect(toggle).toHaveAttribute("aria-disabled", "true");
-  expect(readVernier("state.json")).toEqual({ status: "claimed", done: [] });
+  expect(readVernier("state.json")).toMatchObject({ status: "claimed", done: [] });
 });
 
 /** A computed style of every card on the live page, in page order. */
@@ -201,9 +201,7 @@ test.describe("done checks the change on the page", () => {
   test("a change the code really makes is shown; one a page rule overrides is not, until it is fixed", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
-    const rows = page.getByRole("tree", { name: "Layers" }).getByRole("treeitem");
-    const labels = await rows.allInnerTexts();
-    await rows.nth(labels.findIndex((label) => label.trim() === "Get started") - 1).click();
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
     await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
     await vernierkit("claim");

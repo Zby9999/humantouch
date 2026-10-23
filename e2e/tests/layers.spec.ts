@@ -91,18 +91,18 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("h1")).toBeVisible();
 });
 
-test("the layer tree shows the page structure, named after components and text", async ({ page }) => {
+test("the layer tree shows the page structure, named after components, text and what elements are for", async ({ page }) => {
   await enterEditMode(page);
 
   expect(await treeRows(page)).toEqual([
     "1 Stack — Vertical Stack",
     "2 App — Vertical Stack",
     "3 Stack — Vertical Stack",
-    "4 Stack — Horizontal Stack",
+    "4 Header — Horizontal Stack",
     "5 Vernier Kit — Text",
     "5 Badge — Locked",
     "4 A Framer-style editor layer for any page. — Text",
-    "4 Stack — Horizontal Stack",
+    "4 Button — Horizontal Stack",
     "5 Get started — Text",
     "5 Vector — Image",
     "3 Grid — Grid",
@@ -351,7 +351,7 @@ test.describe("text beside other layers", () => {
 
     await expect(selectedRow(page)).toHaveText("Get started");
     expect(await layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
-    await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Stack.");
+    await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Button.");
     // Outlines the text only, not the whole button.
     const outline = (await page.locator(".vk-selection").boundingBox())!;
     expect(outline.width).toBeCloseTo(text.width, 0);
@@ -365,7 +365,7 @@ test.describe("text beside other layers", () => {
     await page.mouse.click(text.x, button.y + 2);
     await page.keyboard.up("Meta");
 
-    await expect(selectedRow(page)).toHaveText("Stack");
+    await expect(selectedRow(page)).toHaveText("Button");
     await expect(selectedRow(page)).toHaveAttribute("aria-level", "4");
   });
 });

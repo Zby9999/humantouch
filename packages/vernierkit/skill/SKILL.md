@@ -89,4 +89,11 @@ When the designer asks to undo the last round of design changes, run:
 npx vernierkit last
 ```
 
-It prints the notes of the round before, with each change marked **Applied** or **Not applied**. Take the applied ones back out of the source, as they were before (the notes give the earlier value as the design intent's "from"); leave the others alone. Then tell the designer what you reverted. There is nothing to claim or finish for an undo.
+It prints the notes of the round before, with each change marked **Applied** or **Not applied**. In a git repository it also gives the exact code changes of that round, and a command that takes them back out:
+
+1. Look at the diff first (the command it gives). It holds everything edited while the round was applied, so leave out anything that was not part of the design changes.
+2. Apply the reverse, with the command it gives, or by hand for the parts you keep.
+
+Without a diff, take the applied changes back out of the source by hand, as they were before (the notes give the earlier value as the design intent's "from"); leave the others alone.
+
+Then tell the designer what you reverted. There is nothing to claim or finish for an undo.

@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -64,11 +65,12 @@ function section(notes: string, id: number) {
   return notes.split(/^## /m).find((part) => part.startsWith(`${id}. `)) ?? "";
 }
 
-/** Runs the command line in the project, as an Agent would. */
+/** Runs the command line in the project, as an Agent would: what it prints, and its errors apart. */
 async function cli(...args: string[]) {
   let output = "";
-  const code = await run(args, { cwd: project, write: (text) => (output += text) });
-  return { code, output };
+  let errors = "";
+  const code = await run(args, { cwd: project, write: (text) => (output += text), error: (text) => (errors += text) });
+  return { code, output, errors };
 }
 
 describe("claim", () => {
@@ -86,7 +88,8 @@ describe("claim", () => {
     const { code, output } = await cli("claim");
 
     expect(code).toBe(0);
-    expect(state()).toEqual({ status: "claimed", done: [] });
+    // Outside a git repository: no snapshot of the code.
+    expect(state()).toEqual({ status: "claimed", done: [], code: null });
     expect(output).toMatch(/^# Design changes to apply/);
     expect(section(output, 1)).toBe(`1. Fill
 
@@ -119,6 +122,15 @@ describe("claim", () => {
 
     expect(notes).toContain("- **Location:** **Not located.**");
     expect(notes).toContain('- **Layer:** Stack, `<div id="root">` (Page › Stack)');
+  });
+
+  test("a layer the outermost component writes is changed where it is written, with no other usages to spare", async () => {
+    const inApp = { ...cards, loc: "src/App.tsx:27:9", chain: [APP], component: "App", instances: 1 };
+    saveRound({ ...redFill, target: inApp });
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Scope:** Change it where it is written, at Location. App, which writes it, is used at `src/main.tsx:8:5`, outside any other component.\n");
   });
 
   test("marks a change in a component whose usage could not be located as usage not determined", async () => {
@@ -188,11 +200,11 @@ describe("done", () => {
 
   test("refuses a number that is not a change of the round, or a round not claimed", async () => {
     saveRound(redFill);
-    expect(await cli("done", "1")).toEqual({ code: 1, output: "The round is not claimed: run `npx vernierkit claim` first.\n" });
+    expect(await cli("done", "1")).toEqual({ code: 1, output: "", errors: "The round is not claimed: run `npx vernierkit claim` first.\n" });
     await cli("claim");
 
-    expect(await cli("done", "7")).toEqual({ code: 1, output: "There is no change 7 in this round. Its changes are: 1.\n" });
-    expect(state()).toEqual({ status: "claimed", done: [] });
+    expect(await cli("done", "7")).toEqual({ code: 1, output: "", errors: "There is no change 7 in this round. Its changes are: 1.\n" });
+    expect(state()).toEqual({ status: "claimed", done: [], code: null });
   });
 });
 
@@ -301,7 +313,7 @@ describe("finish", () => {
     expect(history()).toEqual([
       {
         changeSet: { lastId: 2, changes: [redFill, smallRadius] },
-        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {} },
+        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {}, code: null },
       },
     ]);
   });
@@ -320,7 +332,7 @@ describe("finish", () => {
   test("refuses a round that is not claimed", async () => {
     saveRound(redFill);
 
-    expect(await cli("finish")).toEqual({ code: 1, output: "The round is not claimed: run `npx vernierkit claim` first.\n" });
+    expect(await cli("finish")).toEqual({ code: 1, output: "", errors: "The round is not claimed: run `npx vernierkit claim` first.\n" });
     expect(history()).toEqual([]);
   });
 });
@@ -356,7 +368,7 @@ describe("last", () => {
   });
 
   test("with no round before, says so", async () => {
-    expect(await cli("last")).toEqual({ code: 0, output: "No earlier round of design changes to undo.\n" });
+    expect(await cli("last")).toEqual({ code: 0, output: "No earlier round of design changes to undo.\n", errors: "" });
   });
 });
 
@@ -383,5 +395,45 @@ describe("a claimed state left without its round", () => {
     expect((await cli("done", "1")).code).toBe(1);
     expect((await cli("claim")).output).toMatch(/^No design changes to apply/);
     expect(state()).toBeNull();
+  });
+});
+
+describe("undoing the last round, in a git repository", () => {
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: project, encoding: "utf8" });
+
+  test("last gives the exact code changes of the round, and the command that takes them back out; nothing is staged meanwhile", async () => {
+    git("init", "-q");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    writeFileSync(join(project, ".gitignore"), ".vernier/\n");
+    writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-white" />;\n');
+    git("add", "-A");
+    git("commit", "-qm", "start");
+    saveRound(redFill);
+    await cli("claim");
+
+    // The Agent applies the change, and adds a file.
+    writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-red-500/50" />;\n');
+    writeFileSync(join(project, "fill.css"), ".x {}\n");
+    await cli("done", "1");
+    await cli("finish");
+    expect(git("diff", "--cached", "--name-only")).toBe("");
+
+    const { output } = await cli("last");
+    const undo = /`(git -C [^`]+ apply)`/.exec(output)?.[1];
+    expect(output).toMatch(/`git -C "[^`"]+" diff \w+ \w+`/);
+    expect(undo).toBeDefined();
+    execFileSync("sh", ["-c", undo!], { cwd: project });
+
+    expect(readFileSync(join(project, "Card.tsx"), "utf8")).toContain('className="bg-white"');
+    expect(existsSync(join(project, "fill.css"))).toBe(false);
+  });
+
+  test("outside a git repository, last gives the notes only", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    await cli("finish");
+
+    expect((await cli("last")).output).not.toContain("git ");
   });
 });

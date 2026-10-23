@@ -52,6 +52,21 @@ const NOT_DRAWN = new Set(["head", "script", "style", "link", "meta", "template"
 const IMAGES = new Set(["img", "svg", "picture"]);
 const STILLS = new Set(["canvas", "video"]);
 const LEAVES = new Set(["input", "textarea", "select", "hr", "iframe", "object", "embed", "audio", "progress", "meter", "math"]);
+/** Elements named after what they are for, as a designer would call them. */
+const PURPOSES: Record<string, string> = {
+  button: "Button",
+  a: "Link",
+  input: "Input",
+  textarea: "Text Area",
+  select: "Select",
+  form: "Form",
+  nav: "Navigation",
+  header: "Header",
+  footer: "Footer",
+  dialog: "Dialog",
+};
+const ROLES: Record<string, string> = { button: "Button", link: "Link", dialog: "Dialog", navigation: "Navigation" };
+
 /** Inner display types laid out top to bottom when every child is a block. */
 const FLOW = /^(block|flow-root|list-item|inline-block)$/;
 
@@ -118,6 +133,9 @@ export function buildLayerTree(doc: Document): LayerTree {
         set({ name: "Frame" });
       }
     }
+    // A container (or a field) is named for what it is for; text keeps its words, an instance its component.
+    const purpose = ROLES[el.getAttribute("role") ?? ""] ?? (el.localName === "a" && !el.hasAttribute("href") ? undefined : PURPOSES[el.localName]);
+    if (purpose && ["stack", "grid", "frame"].includes(layer.kind)) layer.name = purpose;
     if (role(layer) === "instance") layer.name = layer.component!;
     return layer;
   };

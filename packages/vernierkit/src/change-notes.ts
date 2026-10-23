@@ -68,6 +68,9 @@ function layer({ context }: Target): string {
 function scope({ chain, instances, locked }: Target): string {
   if (!chain.length) return "This layer only.";
   const [own, ...outer] = chain;
+  if (!outer.length && own.usage) {
+    return `Change it where it is written, at Location. ${own.component}, which writes it, is used at \`${own.usage}\`, outside any other component.${instances > 1 ? ` It renders ${instances} instances, which change together.` : ""}`;
+  }
   if (own.usage === null && !own.thirdParty) {
     return `**Usage not determined.** ${own.component} is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page, and leave the other usages of ${own.component} as they are.`;
   }
