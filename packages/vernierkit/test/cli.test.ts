@@ -212,8 +212,15 @@ describe("claim, moves", () => {
       "- **Design intent:** Move it out of the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), where it is 2nd, into the layout of Frame (`<div class=\"h-64\">`, at `src/App.tsx:30:7`), as its 1st layer.\n",
     );
     expect(section(output, 3)).toMatch(/^3\. Absolute\n/);
-    expect(section(output, 3)).toContain("place it absolute in Frame (`<div class=\"h-64\">`, at `src/App.tsx:30:7`), at X 40px and Y 12px from the container's top left");
-    expect(section(output, 3)).toContain("Make the container its positioning reference (`position: relative`)");
+    expect(section(output, 3)).toContain("place it absolute in Frame (`<div class=\"h-64\">`, at `src/App.tsx:30:7`), at X 40px and Y 12px from the Frame's top left");
+    expect(section(output, 3)).toContain("Make the Frame its positioning reference (`position: relative`)");
+  });
+
+  test("a container inside a component says which usage of it", async () => {
+    const inCard = { ...list, chain: [CARD_IN_LOOP, APP], component: "Card" };
+    saveRound(move(1, place(inCard, "4", 2), place(inCard, "4", 1)));
+
+    expect(section((await cli("claim")).output, 1)).toContain("at `src/App.tsx:20:7`, in Card used at `src/App.tsx:40:11`).");
   });
 
   test("a loop's instance moved is a data change; loose text moved is to be wrapped", async () => {

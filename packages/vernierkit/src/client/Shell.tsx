@@ -6,7 +6,7 @@ import { canPreview } from "./change-preview";
 import { createChangeSet, type Change, type ChangeSet } from "./changeset";
 import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
-import { buildLayerTree, type Layer, type LayerTree } from "./layers";
+import { buildLayerTree, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -87,7 +87,7 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
     const next = editor?.tree();
     if (next && next !== tree) {
       setTree(next);
-      setSelected((layers) => layers.map((layer) => next.layerOf(layer.text ? layer.text.find((node) => node.textContent!.trim())! : layer.el)).filter((layer) => layer !== null));
+      setSelected((layers) => layers.map((layer) => next.layerOf(nodeOf(layer))).filter((layer) => layer !== null));
     }
     clearTimeout(pendingSave.current);
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
@@ -110,8 +110,10 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select } = latest.current;
       if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || isEditable(event.composedPath()[0])) return;
-      const redo = event.code === "KeyY" ? !event.metaKey && !event.shiftKey : event.code === "KeyZ" && event.shiftKey;
-      if (event.code !== "KeyZ" && !redo) return;
+      // By the letter typed, wherever the keyboard has it.
+      const key = event.key.toLowerCase();
+      const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
+      if (key !== "z" && !redo) return;
       event.preventDefault();
       event.stopPropagation();
       const layers = redo ? editor.redo() : editor.undo();

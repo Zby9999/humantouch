@@ -968,3 +968,73 @@ describe("moving layers", () => {
     expect(editor.canMove(tree.root)).toBe(false);
   });
 });
+
+describe("moves, taken back in any order", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = (id: string) => [...canvas.doc.getElementById(id)!.children].map((el) => el.id);
+    return { ...canvas, layer, order };
+  };
+
+  test("a move taken back from the change list after a later one still puts its layer back, on the canvas and the saved round", () => {
+    const opened = open();
+    const { editor, changes, layer, order } = opened;
+    editor.move(layer("a"), { parent: layer("list"), index: 2 });
+    editor.move(layer("b"), { parent: layer("list"), index: 2 });
+    expect(order("list")).toEqual(["c", "a", "b"]);
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.revert(changes.list()[0].id);
+    expect(order("list")[0]).toBe("a");
+    expect(changes.list()).toHaveLength(1);
+
+    const doc = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect([...doc.getElementById("list")!.children].map((el) => el.id)[0]).toBe("a");
+  });
+
+  test("two instances a loop renders, moved one after the other, are two changes", () => {
+    const item = `data-vk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html>
+      <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column">
+        <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
+      </ul>`);
+    const li = (text: string) => find(editor.tree().root, (l) => l.el.textContent === text && l.el.localName === "li")!;
+
+    editor.move(li("Three"), { parent: layer("list"), index: 0 });
+    editor.move(li("One"), { parent: layer("list"), index: 2 });
+
+    expect([...doc.querySelectorAll("li")].map((el) => el.textContent)).toEqual(["Three", "Two", "One"]);
+    expect(changes.list().map((change) => [change.before, change.after].map((place) => (place as { nth: number }).nth))).toEqual([
+      [3, 1],
+      // "One" is 2nd once "Three" has gone first.
+      [2, 3],
+    ]);
+  });
+
+  test("a Frame stays the positioning reference of what was moved into it when a change of its own is undone", () => {
+    const { doc, editor, layer } = open();
+    editor.move(layer("b"), { parent: layer("board"), x: 10, y: 10 });
+    editor.set(layer("board"), "opacity", 0.5);
+
+    editor.undo();
+
+    expect(style(doc.getElementById("board")!).position).toBe("relative");
+  });
+
+  test("dragged again in the Frame it was moved into, it is still one move, to where it is now", () => {
+    const { editor, changes, layer } = open();
+    editor.move(layer("b"), { parent: layer("board"), x: 10, y: 10 });
+    editor.move(layer("b"), { parent: layer("board"), x: 50, y: 20 });
+
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ kind: "move", after: { absolute: { x: 50, y: 20 } }, style: { left: "50px", top: "20px" } });
+  });
+
+  test("a layer the freezer pinned to the window stays in its container", () => {
+    const { doc, editor, layer } = open(MOVES.replace("<p id", `<div id="pinned" data-vk-pin-offset="0 250" style="position: fixed; top: 300px; left: 0; width: 20px; height: 20px"></div><p id`));
+
+    expect(editor.canDrop(layer("pinned"), layer("board"))).toBe(false);
+    expect(editor.canDrop(layer("pinned"), find(editor.tree().root, (l) => l.el === doc.body)!)).toBe(true);
+  });
+});

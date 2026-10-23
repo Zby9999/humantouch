@@ -215,6 +215,12 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
   return [...sources.values()];
 }
 
+/** How far the freezer shifted a pinned element with the page's scroll: `[x, y]`, px. */
+export function pinOffsetOf(el: Element): [number, number] {
+  const [x = 0, y = 0] = (el.getAttribute(PIN_OFFSET_ATTR) ?? "").split(" ").map(Number);
+  return [x || 0, y || 0];
+}
+
 /** The CSS properties the freezer pinned on `el`. */
 export function pinnedOf(el: Element): string[] {
   return el.getAttribute(PINNED_ATTR)?.split(" ") ?? [];

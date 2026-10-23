@@ -40,7 +40,7 @@
   - 混排的裸文字先在每个实例里包一层 `<span>`（带同一个图层 id），再移动；改动说明写明由 Agent 包一层。
   - 移动后图层树重建（`buildLayerTree`），`LayerTree.layerOf` 按元素（或文字节点）找回图层；`Shell` 据此找回选中、图层树找回折叠状态，画布的悬停若指向旧树里的图层则忽略。
   - 撤销（21）：移动是一步，撤销 / 重做按 `Place` 来回移动；改动列表的逐条撤销在编辑模式中走 `editor.revert`，在预览模式中走 `revertSaved` 移回原处。
-- 拖动（`drag.ts`、`CanvasView.tsx`）：在可移动的图层上按下并移动 3px 以上开始拖动（没有选中时按下选中的是最外层，和 Figma 一样）。拖动中只用 `translate` 位移：被拖的图层跟着指针（`pointer-events: none`，命中测试跳过它），让位的图层带 150ms 过渡；容器取指针下最深的、能放入的 Stack 或 Frame，同级的 Stack 只有指针在它中间一半时才进入，靠边时仍算在外层 Stack 里重排。Stack 里按各图层主轴中点算插入位置，画插入线并高亮目标容器；Frame 里按松手时的位置成为自由定位。松手才改结构；Esc 取消，全部复原。裸文字没有元素可移，拖动时画一个跟随的框。
+- 拖动（`drag.ts`、`CanvasView.tsx`）：在可移动的图层上按下并移动 3px 以上开始拖动（没有选中时按下选中的是最外层，和 Figma 一样）。拖动中只用 `translate` 位移：被拖的图层跟着指针（`pointer-events: none`，命中测试跳过它），让位的图层带 150ms 过渡；容器取指针下最深的、能放入的 Stack 或 Frame，同级的 Stack 或 Frame 只有指针在它中间一半时才进入，靠边时仍算在外层 Stack 里重排。Stack 里按各图层主轴中点算插入位置，画插入线并高亮目标容器；Frame 里按松手时的位置成为自由定位。松手才改结构；Esc 取消，全部复原。裸文字没有元素可移，拖动时画一个跟随的框。
 - 改动说明（`change-notes.ts`、`design-values.ts`）：种类为 Reorder / Move / Absolute；设计意图写从第几个到第几个、从哪个容器到哪个容器（名称、开始标签、源码位置或页面位置）、自由定位的 X / Y 并要求把容器设为定位参照；数据改动、包一层 `<span>` 各有一行；参考样式为空时写 "none: only its place changes"；移动不写 "Currently set by"。改动列表显示如 "Reorder · Button  3rd → 2nd"。
 - Skill：说明三种移动；移动 JSX 本身，数据改动改数据；自由定位的图层用 `position: absolute` 和给出的 `left` / `top`，容器未定位时设为 `position: relative`。
 - 改动预览与核对：`canPreview` 对移动返回 false（计入 "N changes show once applied"，离开编辑模式时照旧淡出）；`done` 对移动返回 "unchecked"（"only style changes are checked on the page so far, not moves"），待 27。
@@ -53,3 +53,19 @@
 - 同一容器里先后移动了几个图层后，在改动列表里单独撤回较早的一个时，按记下的位置放回，可能与其他已移动图层的相对顺序有出入（按时间顺序 ⌘Z 撤销没有这个问题）。
 - 图层被放进 Frame 后宽高固定为拖动前的大小；原来是 Fill / Hug 的，落地时 Agent 可能需要按设计判断。
 - 注入到页面、React 之外的元素没有使用链，读作外层组件的实例（只影响测试里手工加的 Frame）。
+
+**代码审查后的修正（2026-10-23）**
+
+- 移动的元素记 `data-vk-move`（它所属改动的属性名），`relocate` 按图层 id 和它在容器里找元素，不再按记下的位置：先后移动了几个图层后，在改动列表里单独撤回较早的一个也能放回去（原来会什么都不动却删掉改动）。
+- 循环渲染的实例各自一条移动改动（属性名 `move 2` 这样带编号）：先后移动同一组里的两张卡片，不再合并成一条、甚至互相抵消。
+- 被移动进来的图层所在的 Frame，撤销它自己的样式改动时仍保持 `position: relative`（`restoreStyle` 认 `data-vk-reference`）。
+- 已经移进 Frame 的图层在这个 Frame 里再拖动，仍是同一条移动改动，记到新位置（原来会另记 X / Y 样式改动）。只有页面上原本就自由定位的图层在自己的容器里拖动才是改 X / Y。
+- 冻结器钉在窗口位置的元素只能在自己的容器里移动（原来拖进别的容器时滚动偏移会被加两次）。列入已知限制。
+- 拖动中测量的位置去掉了正在让位的图层的位移（含过渡中途），插入位置和插入线不再偏；让位的过渡在减少动态效果时关闭。
+- 改动说明里的容器带上它所在的使用处（"in Card used at …"）；自由定位的说法改用 Frame（GLOSSARY 中 Frame 避免说 Container）。
+- 小的整理：`pinOffsetOf`、`nodeOf` 共用，`StackLayout` 类型，`Drop` 去掉多余的 `container`。
+- 测试：辅接缝 1 新增乱序撤回移动（画布和保存的本轮）、循环实例的两次移动、Frame 保持定位参照、在 Frame 里再拖动、钉住的元素；命令行接缝新增容器的使用处。
+
+**已知限制（补充）**
+
+- 冻结时钉在窗口位置的元素（固定定位）不能拖进别的容器。

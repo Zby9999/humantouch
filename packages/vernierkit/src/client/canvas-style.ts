@@ -4,12 +4,16 @@
  * a saved one alike.
  */
 import type { Change } from "./changeset";
-import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR } from "./style-source";
+import { ORIGINAL_STYLE_ATTR, pinOffsetOf } from "./style-source";
 
 /** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
 export const LAYER_ID_ATTR = "data-vk-layer";
 /** On a plain top-to-bottom flow an edit has made a real Stack. */
 export const AS_STACK_ATTR = "data-vk-as-stack";
+/** On a Frame a move made the positioning reference of a layer placed absolute in it. */
+export const REFERENCE_ATTR = "data-vk-reference";
+/** On moved elements: the change (its property) they move under. */
+export const MOVE_ATTR = "data-vk-move";
 
 /** The canvas elements of the layer with id `id`, in page order: one per instance. */
 export function elementsOf(doc: Document, id: string): Element[] {
@@ -23,7 +27,7 @@ export function keepOriginal(el: Element) {
 
 /** Writes declarations onto a canvas element, over the page's: where the freezer pinned it, shifted as it was. */
 export function declare(el: Element, declarations: Record<string, string>) {
-  const [dx, dy] = (el.getAttribute(PIN_OFFSET_ATTR) ?? "0 0").split(" ").map(Number);
+  const [dx, dy] = pinOffsetOf(el);
   const shift = { left: dx, top: dy } as Record<string, number>;
   for (const name in declarations) {
     let value = declarations[name];
@@ -37,6 +41,7 @@ export function declare(el: Element, declarations: Record<string, string>) {
  * element, as its style attribute had them before the first edit, and keeps
  * the element's other changes, `others`, on: they may declare some of the
  * same CSS properties. With no other change left, the whole attribute goes back as it was.
+ * A Frame something was moved into stays its positioning reference.
  */
 export function restoreStyle(el: Element, names: string[], others: Change[]) {
   const original = el.getAttribute(ORIGINAL_STYLE_ATTR);
@@ -45,6 +50,7 @@ export function restoreStyle(el: Element, names: string[], others: Change[]) {
     if (original) el.setAttribute("style", original);
     else el.removeAttribute("style");
     el.removeAttribute(AS_STACK_ATTR);
+    if (el.hasAttribute(REFERENCE_ATTR)) declare(el, { position: "relative" });
     return;
   }
   const style = (el as HTMLElement).style;
@@ -57,4 +63,5 @@ export function restoreStyle(el: Element, names: string[], others: Change[]) {
   }
   for (const change of others) declare(el, change.style);
   if (!others.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
+  if (el.hasAttribute(REFERENCE_ATTR)) declare(el, { position: "relative" });
 }

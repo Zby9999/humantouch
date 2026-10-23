@@ -206,6 +206,11 @@ export function role(layer: Layer): "layer" | "instance" | "locked" {
   return layer.kind === "locked" ? "locked" : layer.isInstance ? "instance" : "layer";
 }
 
+/** The node a layer starts at: its element, or for loose text, its first text with something in it. */
+export function nodeOf(layer: Layer): Element | Text {
+  return layer.text ? layer.text.find((node) => node.textContent!.trim())! : layer.el;
+}
+
 /** Where the layer is on the canvas, in canvas px. */
 export function boxOf(layer: Layer): DOMRect {
   return layer.text ? rangeOf(layer).getBoundingClientRect() : layer.el.getBoundingClientRect();

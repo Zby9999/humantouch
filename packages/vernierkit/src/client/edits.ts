@@ -3,11 +3,11 @@
  * recorded in the ChangeSet. An edit to a layer is an edit to its usage, so
  * it shows up in every instance of that usage. Every edit can be undone.
  */
-import { AS_STACK_ATTR, declare, keepOriginal, LAYER_ID_ATTR, restoreStyle } from "./canvas-style";
+import { AS_STACK_ATTR, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, restoreStyle } from "./canvas-style";
 import { MOVE, type Change, type ChangeSet, type Place, type Target } from "./changeset";
-import { buildLayerTree, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { buildLayerTree, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf } from "./moves";
-import { PIN_OFFSET_ATTR, pinnedOf, sourcesOf } from "./style-source";
+import { PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 
 export { LAYER_ID_ATTR };
 
@@ -263,6 +263,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const colors = colorReader(doc);
   let lastId = 0;
   for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}]`)) lastId = Math.max(lastId, Number(el.getAttribute(LAYER_ID_ATTR)) || 0);
+  let lastMove = 0;
+  for (const el of doc.querySelectorAll(`[${MOVE_ATTR}]`)) lastMove = Math.max(lastMove, Number(el.getAttribute(MOVE_ATTR)!.split(" ")[1]) || 0);
 
   const idOf = (layer: Layer, instances: Layer[]) => {
     let id = layer.el.getAttribute(LAYER_ID_ATTR);
@@ -361,7 +363,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     const nodes = slotsOf(parent.el).filter((node) => node !== layer.el);
     if ("x" in to) return { container, nth: others.length + 1, slot: nodes.length, absolute: { x: round(to.x), y: round(to.y) } };
     const next = others[to.index];
-    const slot = next ? nodes.indexOf(next.text ? next.text.find((node) => node.textContent!.trim())! : next.el) : nodes.length;
+    const slot = next ? nodes.indexOf(nodeOf(next)) : nodes.length;
     return { container, nth: to.index + 1, slot, absolute: null };
   };
 
@@ -392,7 +394,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     push(
       {
         layers: [id],
-        key: `${id} ${MOVE}`,
+        key: `${id} ${record.property}`,
         undo: () => moveTo(id, to, from, styleAt(from), record),
         redo: () => moveTo(id, from, to, styleAt(to), record),
       },
@@ -403,7 +405,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   /** Puts a moved layer at `to`, on the canvas and in the ChangeSet, and builds the layers anew. */
   const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
     changes.record(id, { ...record, before: from, after: to, style });
-    relocate(doc, id, from, to, style, changes.list());
+    relocate(doc, id, record.property, from, to, style, changes.list());
     tree = buildLayerTree(doc);
   };
 
@@ -412,14 +414,17 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     canMove: (layer) => layer.parent !== null,
     canDrop(layer, container) {
       if (!editor.canMove(layer) || !["stack", "frame"].includes(container.kind)) return false;
+      // Pinned where the designer saw it, against a window the canvas has none of: it stays in its container.
+      if (!layer.text && layer.el.hasAttribute(PIN_OFFSET_ATTR) && container !== layer.parent) return false;
       for (let c: Layer | null = container; c; c = c.parent) if (c === layer) return false;
       return tree.acrossInstances(container).length === tree.acrossInstances(layer.parent!).length;
     },
     move(layer, to) {
       if (!editor.canDrop(layer, to.parent)) throw new Error(`Vernier Kit: ${layer.name} cannot go into ${to.parent.name}`);
-      // Absolute already, and staying in its container: only its position changes, as X and Y do.
-      if ("x" in to && layer.absolute && !layer.text && to.parent === layer.parent) {
-        const [dx, dy] = (layer.el.getAttribute(PIN_OFFSET_ATTR) ?? "0 0").split(" ").map(Number);
+      // Absolute as the page has it, and staying in its container: only its position changes, as X and Y do.
+      const moved = !layer.text && layer.el.hasAttribute(MOVE_ATTR);
+      if ("x" in to && layer.absolute && !layer.text && !moved && to.parent === layer.parent) {
+        const [dx, dy] = pinOffsetOf(layer.el);
         editor.batch(() => {
           editor.set(layer, "x", round(to.x - dx));
           editor.set(layer, "y", round(to.y - dy));
@@ -434,10 +439,17 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       const from = placeOf(layer);
       const after = placeAt(layer, to);
       if (same(from, after)) return layer;
-      const earlier = changes.list().find((change) => change.layer === id && change.property === MOVE);
-      const record: MoveRecord = { kind: "move", target, scope: "usage", property: MOVE, sources: [], ...(loop && { data: true }), ...(text && { wrap: true }) };
-      moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, sizeOf(layer.el), record);
-      return layerById(id) ?? layer;
+      // The elements that move, marked with the change they move under: a loop's instance alone, under one of its own.
+      let property = layer.el.getAttribute(MOVE_ATTR);
+      if (!property) {
+        property = loop ? `${MOVE} ${++lastMove}` : MOVE;
+        for (const el of loop ? [layer.el] : elementsOf(doc, id)) el.setAttribute(MOVE_ATTR, property);
+      }
+      const el = layer.el;
+      const earlier = changes.list().find((change) => change.layer === id && change.property === property);
+      const record: MoveRecord = { kind: "move", target, scope: "usage", property, sources: [], ...(loop && { data: true }), ...(text && { wrap: true }) };
+      moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, sizeOf(el), record);
+      return tree.layerOf(el) ?? layer;
     },
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
@@ -492,8 +504,9 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       if (change.kind === "move") {
         const { kind, target, scope, property, data, wrap } = change;
         const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }) };
-        moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(layer.el), record);
-        return layerById(change.layer);
+        const el = elementsOf(doc, change.layer).find((e) => e.getAttribute(MOVE_ATTR) === property) ?? layer.el;
+        moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(el), record);
+        return tree.layerOf(el);
       }
       // Whatever the layer offers now (a hidden one offers only Visible), a change of its own can always go.
       edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.after as PropertyValues[Property]);
@@ -523,11 +536,17 @@ export function cssOf(property: Property): string[] {
   return [...writes, ...sets, ...(stack ? ["display", "flex-direction"] : [])];
 }
 
+/** How a Stack lays its layers out: in which direction, and whether as flex (or as a plain flow). */
+interface StackLayout {
+  direction: "horizontal" | "vertical";
+  flex: boolean;
+}
+
 /**
  * The automatic layout an element lays its children out in, as the layer
  * model has it: a flex container, or a plain flow, top to bottom.
  */
-function stackOf(el: Element): { direction: "horizontal" | "vertical"; flex: boolean } {
+function stackOf(el: Element): StackLayout {
   const style = getComputedStyle(el);
   if (/flex$/.test(style.display)) return { direction: style.flexDirection.startsWith("row") ? "horizontal" : "vertical", flex: true };
   return { direction: "vertical", flex: false };
@@ -537,7 +556,7 @@ function stackOf(el: Element): { direction: "horizontal" | "vertical"; flex: boo
 const FLOW = /^(block|flow-root|list-item)$/;
 
 /** The Stack `el` is laid out in, if it is: in its parent's flex layout, or down its plain flow. Absolute layers are in none. */
-function stackAround(el: Element): { direction: "horizontal" | "vertical"; flex: boolean } | null {
+function stackAround(el: Element): StackLayout | null {
   const style = getComputedStyle(el);
   if (absolute(el)) return null;
   let parent = el.parentElement;
@@ -639,8 +658,7 @@ function declaredValue(el: Element, property: string): string {
   const inline = (el as HTMLElement).style;
   // Edits are important declarations in the style attribute; what the freezer pinned is not the page's.
   if (inline.getPropertyPriority(property) === "important" && !pinnedOf(el).includes(property)) return inline.getPropertyValue(property);
-  const [source] = sourcesOf(el, [property]);
-  return source.declaration ? source.declaration.slice(source.declaration.indexOf(":") + 1).trim() : "auto";
+  return pageValue(el, property) || "auto";
 }
 
 /** An absolute layer's place along one axis: where its edge is from its parent's, as CSS sets it. */
@@ -649,7 +667,7 @@ function position(start: "left" | "top", end: "right" | "bottom", axis: 0 | 1): 
     kinds: EVERY_KIND,
     applies: absolute,
     // Where the freezer pinned it, it was shifted with the page's scroll: shifted back, it reads as the page has it.
-    read: (el) => round(parseFloat(getComputedStyle(el).getPropertyValue(start)) - Number((el.getAttribute(PIN_OFFSET_ATTR) ?? "0 0").split(" ")[axis])),
+    read: (el) => round(parseFloat(getComputedStyle(el).getPropertyValue(start)) - pinOffsetOf(el)[axis]),
     write: (value) => ({ [start]: `${value}px`, [end]: "auto" }),
     writes: [start, end],
     sets: [start],
@@ -685,7 +703,7 @@ function writeAlign(align: Align, el: Element): Record<string, string> {
   };
 }
 
-/** The value the page itself declares for `property`, edits aside: empty when nothing does. */
+/** The value the page itself declares for `property`, as written, edits aside: empty when nothing does. */
 function pageValue(el: Element, property: string): string {
   const [source] = sourcesOf(el, [property]);
   return source.declaration ? source.declaration.slice(source.declaration.indexOf(":") + 1).trim() : "";

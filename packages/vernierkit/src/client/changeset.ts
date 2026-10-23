@@ -65,7 +65,11 @@ export interface Change {
   wrap?: true;
 }
 
-/** The property a move is recorded under: one move per layer, from where it was to where it is. */
+/**
+ * The property a move is recorded under: one move per layer, from where it
+ * was to where it is. An instance a loop renders moves alone, under a property
+ * of its own (`move 2`).
+ */
 export const MOVE = "move";
 
 export interface ChangeSet {

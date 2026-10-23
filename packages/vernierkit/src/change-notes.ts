@@ -68,14 +68,16 @@ function moveIntent(change: Change): string {
   const from = before.absolute ? `out of where it is placed in ${container(before)}` : `out of the layout of ${container(before)}, where it is ${ordinal(before.nth)}`;
   if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer.`;
   const { x, y } = after.absolute!;
-  const into = after.container.layer === before.container.layer ? "in the same container" : `in ${container(after)}`;
-  return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the container's top left (CSS \`left\` and \`top\`). Make the container its positioning reference (\`position: relative\`) if it is not one already.`;
+  const into = after.container.layer === before.container.layer ? "in the same Frame" : `in ${container(after)}`;
+  return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the Frame's top left (CSS \`left\` and \`top\`). Make the Frame its positioning reference (\`position: relative\`) if it is not one already.`;
 }
 
-/** A container, as the Agent finds it: its name and element, and where it is written. */
+/** A Stack or Frame a move takes a layer from or to, as the Agent finds it: its name and element, where it is written, and in which usage. */
 function container({ container: { target } }: Place): string {
   const where = target.loc ? `at \`${target.loc}\`` : `not located, at ${target.context.path.join(" › ")} on the page`;
-  return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${where})`;
+  const [own] = target.chain;
+  const usage = own?.usage && target.chain.length > 1 ? `, in ${own.component} used at \`${own.usage}\`` : "";
+  return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${where}${usage})`;
 }
 
 function dataChange({ instances }: Target): string {

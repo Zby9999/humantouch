@@ -6,7 +6,7 @@ import type { Destination, Editor } from "./edits";
 import { freeze, restore, type Canvas } from "./freezer";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
-import { boxOf, role, type Layer, type LayerTree } from "./layers";
+import { boxOf, nodeOf, role, type Layer, type LayerTree } from "./layers";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 
 /** Where the canvas sits in the viewport: its top-left corner and its scale. */
@@ -347,7 +347,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
     const rectOf = (l: Layer) => {
       if (l.text) return boxOf(l);
       let r = session.rects.get(l.el);
-      if (!r) session.rects.set(l.el, (r = l.el.getBoundingClientRect()));
+      if (!r) session.rects.set(l.el, (r = unshifted(session, l.el)));
       return r;
     };
     const drop = editor && findDrop(editor, layer, toCanvas(event), box, rectOf);
@@ -359,7 +359,8 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       if (!shifts.has(el) && saved.translate) setStyles(session, el, { translate: null, transition: null });
     }
     for (const [el, { x, y }] of shifts) {
-      setStyles(session, el, { translate: `${x}px ${y}px`, transition: el === layer.el ? "none" : `translate 150ms ${EASE_OUT}` });
+      const slide = el !== layer.el && !prefersReducedMotion();
+      setStyles(session, el, { translate: `${x}px ${y}px`, transition: slide ? `translate 150ms ${EASE_OUT}` : "none" });
     }
     setDrag({ layer, box, drop });
   };
@@ -419,7 +420,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       </div>
       {canvas && hovered && !selected.includes(hovered) && !travelling && <Outline layer={hovered} view={view} hover />}
       {canvas && !travelling && selected.map((layer, i) => <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
-      {drag?.drop && <Outline layer={drag.drop.container} view={view} hover />}
+      {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
       {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
@@ -467,7 +468,7 @@ function Outline({ layer, view, hover, hidden }: OutlineProps) {
 
 /** Whether a layer is one of the tree's, not of one built before it. */
 function inTree(tree: LayerTree, layer: Layer): boolean {
-  return tree.layerOf(layer.text ? layer.text.find((node) => node.textContent!.trim())! : layer.el) === layer;
+  return tree.layerOf(nodeOf(layer)) === layer;
 }
 
 /** Pointer travel (px) before a press on a layer counts as a drag. */
@@ -482,6 +483,22 @@ interface DragSession {
   rects: Map<Element, DOMRect>;
   touched: Map<Element, { original: Record<string, [string, string]>; translate: boolean }>;
   drop: Drop | null;
+}
+
+/**
+ * Where an element is laid out, as if nothing had shifted: the layers making
+ * room (and what is in them) may be partway through sliding aside.
+ */
+function unshifted(session: DragSession, el: Element): DOMRect {
+  const r = el.getBoundingClientRect();
+  let [x, y] = [r.x, r.y];
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    if (e === session.layer.el || !session.touched.get(e)?.translate) continue;
+    const [dx = 0, dy = 0] = getComputedStyle(e).translate.split(" ").map((v) => parseFloat(v) || 0);
+    x -= dx;
+    y -= dy;
+  }
+  return new DOMRect(x, y, r.width, r.height);
 }
 
 /** Sets (or, with null, takes off) inline styles on a canvas element for the drag, noting what they were. */

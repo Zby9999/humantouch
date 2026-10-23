@@ -18,7 +18,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   if (!change) return round;
   changes.remove(id);
   const doc = new DOMParser().parseFromString(round.canvas, "text/html");
-  if (change.kind === "move") relocate(doc, change.layer, change.after as Place, change.before as Place, {}, changes.list());
+  if (change.kind === "move") relocate(doc, change.layer, change.property, change.after as Place, change.before as Place, {}, changes.list());
   else {
     const others = changes.list().filter((c) => c.layer === change.layer);
     for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), others);

@@ -7,8 +7,7 @@ import type { Destination, Editor } from "./edits";
 import type { Layer } from "./layers";
 
 export interface Drop {
-  /** The Stack or Frame the layer would go into. */
-  container: Layer;
+  /** The Stack or Frame the layer would go into, and where in it. */
   to: Destination;
   /** Where in a Stack the layer would go, drawn as a line, in canvas px. None for an absolute place. */
   line: { x: number; y: number; width: number; height: number } | null;
@@ -18,9 +17,9 @@ export interface Drop {
 
 /**
  * Where a dragged layer would go: into the Stack or Frame under the pointer
- * that can take it, outside the layer itself. A Stack beside the layer is
- * entered from its middle only; near its edges, the pointer is still in the
- * layout around it, so the layer goes beside it. `box`: the layer where it is
+ * that can take it, outside the layer itself. A Stack or Frame beside the
+ * layer is entered from its middle only; near its edges, the pointer is still
+ * in the layout around it, so the layer goes beside it. `box`: the layer where it is
  * dragged to; `rectOf`: where a layer was laid out before anything shifted.
  */
 export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: number }, box: DOMRect, rectOf: (layer: Layer) => DOMRect): Drop | null {
@@ -35,11 +34,11 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
 
   const area = rectOf(container);
   if (container.kind === "frame") {
-    // Placed where it is let go: its left and top in the container, margins aside.
+    // Placed where it is let go: its left and top in the Frame, margins aside.
     const margins = layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(layer.el);
     const x = box.left - area.left - container.el.clientLeft - parseFloat(margins.marginLeft);
     const y = box.top - area.top - container.el.clientTop - parseFloat(margins.marginTop);
-    return { container, to: { parent: container, x: Math.round(x), y: Math.round(y) }, line: null, shifts: new Map() };
+    return { to: { parent: container, x: Math.round(x), y: Math.round(y) }, line: null, shifts: new Map() };
   }
 
   const horizontal = container.direction === "horizontal";
@@ -83,7 +82,7 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
           ? area.left + parseFloat(style.paddingLeft)
           : area.top + parseFloat(style.paddingTop);
   const line = horizontal ? { x: main - 1, y: area.top, width: 2, height: area.height } : { x: area.left, y: main - 1, width: area.width, height: 2 };
-  return { container, to: { parent: container, index }, line, shifts };
+  return { to: { parent: container, index }, line, shifts };
 }
 
 /** The space between a Stack's layers, along it. */
