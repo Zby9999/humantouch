@@ -120,9 +120,15 @@ test("the selection box steps aside while a value changes, so the change can be 
   await selectRow(page, "Card");
   const box = page.locator(".vk-selection");
   await expect(box).toBeVisible();
+  // It is gone only briefly, so watch for it rather than poll.
+  await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => {
+    new MutationObserver(() => {
+      if (getComputedStyle(el).opacity === "0") el.stepsAside = true;
+    }).observe(el, { attributes: true });
+  });
 
   await design(page).getByRole("textbox", { name: "Corner radius" }).press("ArrowUp");
-  await expect(box).toHaveCSS("opacity", "0");
 
   await expect(box).toHaveCSS("opacity", "1");
+  expect(await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => el.stepsAside)).toBe(true);
 });

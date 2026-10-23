@@ -17,7 +17,7 @@ interface Props {
 }
 
 /** How long after the last edit the selection box comes back. */
-const ADJUSTING_MS = 800;
+const ADJUSTING_MS = 200;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
 export function Shell({ leaving, animate, onLeft }: Props) {
