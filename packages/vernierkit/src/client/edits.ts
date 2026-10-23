@@ -142,14 +142,22 @@ function cssColor({ color, opacity }: Fill): string {
 
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
 
-/** The radius each corner is drawn with: percentages resolved, and no more than half the shorter side. */
+/** Larger radii (Tailwind v4's rounded-full is infinite) read as this: still a pill, and still a number. */
+const MAX_RADIUS = 9999;
+
+/**
+ * The radius set on each corner, in px, as Figma shows it: past half the
+ * shorter side it draws no rounder, but it reads as set. A percentage is
+ * resolved against each side, and an elliptical corner reads as its smaller radius.
+ */
 function readRadius(el: Element): Radius {
   const style = getComputedStyle(el);
   const { width, height } = el.getBoundingClientRect();
+  const resolve = (value: string, side: number) => (value.endsWith("%") ? (parseFloat(value) / 100) * side : parseFloat(value) || 0);
   const corners = CORNERS.map((corner) => {
-    const value = style.getPropertyValue(`border-${corner}-radius`).split(" ")[0];
-    const px = value.endsWith("%") ? (parseFloat(value) / 100) * width : parseFloat(value) || 0;
-    return Math.round(Math.min(px, Math.min(width, height) / 2) * 100) / 100;
+    const [x, y = x] = style.getPropertyValue(`border-${corner}-radius`).split(" ");
+    const px = Math.min(resolve(x, width), resolve(y, height), MAX_RADIUS);
+    return Math.round(px * 100) / 100;
   }) as [number, number, number, number];
   return corners.every((r) => r === corners[0]) ? corners[0] : corners;
 }

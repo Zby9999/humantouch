@@ -210,7 +210,7 @@ describe("reading values in design language", () => {
     expect(read("transparent")).toBeNull();
   });
 
-  test("a radius reads as drawn: a pill as half its height, a percentage in px, uneven corners one by one", () => {
+  test("a radius reads as set, even past half the shorter side; a percentage in px; uneven corners one by one", () => {
     const { doc, editor, layerOf } = openCanvas();
     const box = doc.getElementById("unmarked")!;
     const read = (css: string) => {
@@ -218,10 +218,23 @@ describe("reading values in design language", () => {
       return editor.read(layerOf(box), "radius");
     };
 
-    expect(read("9999px")).toBe(20);
-    expect(read("calc(infinity * 1px)")).toBe(20);
-    expect(read("5%")).toBe(20);
+    // The box is 800 × 40: anything from 20 up draws the same pill.
+    expect(read("99px")).toBe(99);
+    expect(read("9999px")).toBe(9999);
+    // Tailwind v4's rounded-full.
+    expect(read("calc(infinity * 1px)")).toBe(9999);
+    // 50% of each side, 400 × 20: the shorter one.
+    expect(read("50%")).toBe(20);
     expect(read("0")).toBe(0);
     expect(read("8px 8px 0 0")).toEqual([8, 8, 0, 0]);
+  });
+
+  test("a radius set past half the shorter side reads back as set", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = layerOf(doc.getElementById("unmarked")!);
+
+    editor.set(box, "radius", 99);
+
+    expect(editor.read(box, "radius")).toBe(99);
   });
 });

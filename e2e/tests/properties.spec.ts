@@ -90,6 +90,20 @@ test("a uniform corner radius, typed or stepped with the arrow keys", async ({ p
   await expect(radius).toHaveValue("15");
 });
 
+test("a radius past half the shorter side shows as set, and steps on from there", async ({ page }) => {
+  await selectRow(page, "Stack", 3); // The Get started button: 44.8px tall, so a pill from 22.4 up.
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+
+  await radius.fill("99");
+  await radius.press("Enter");
+  await expect(radius).toHaveValue("99");
+
+  await radius.press("ArrowUp");
+  await expect(radius).toHaveValue("100");
+  const button = canvas(page).getByRole("button", { name: "Get started" });
+  await expect(button).toHaveCSS("border-radius", "100px");
+});
+
 test("a value typed and left without Enter still applies to the layer it was typed for", async ({ page }) => {
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
