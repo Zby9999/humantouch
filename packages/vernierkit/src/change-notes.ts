@@ -6,8 +6,8 @@
  */
 import { isAbsolute, relative } from "node:path";
 import type { Change, Target } from "./client/changeset";
-import type { Fill, Radius } from "./client/edits";
 import type { StyleSource } from "./client/style-source";
+import { propertyTitle, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -39,11 +39,10 @@ export function describeChanges(list: Change[], root: string, options: NotesOpti
 }
 
 const KINDS: Record<Change["kind"], string> = { style: "Style" };
-const PROPERTIES: Record<string, string> = { fill: "Fill", radius: "Corner radius" };
 
 function section(change: Change, root: string, status: string | undefined): string {
   const { target } = change;
-  const property = PROPERTIES[change.property] ?? change.property;
+  const property = propertyTitle(change.property);
   const lines = [
     ...(status ? [`**Status:** ${status}`] : []),
     `**Kind:** ${KINDS[change.kind]}`,
@@ -104,27 +103,4 @@ function projectPath(file: string, root: string): string {
   const path = file.replace(/[?#].*$/, "");
   if (/^[a-z]+:\/\//i.test(path)) return new URL(path).pathname.replace(/^\//, "");
   return isAbsolute(path) && !relative(root, path).startsWith("..") ? relative(root, path) : path;
-}
-
-/** A property's name in the notes: "fill", "corner radius". */
-export function propertyName(property: string): string {
-  return (PROPERTIES[property] ?? property).toLowerCase();
-}
-
-export function value(property: string, v: unknown): string {
-  switch (property) {
-    case "fill": {
-      const fill = v as Fill | null;
-      if (!fill) return "no fill";
-      return fill.opacity === 1 ? fill.color : `${fill.color} at ${Math.round(fill.opacity * 100)}% opacity`;
-    }
-    case "radius": {
-      const radius = v as Radius;
-      if (typeof radius === "number") return `${radius}px`;
-      const corners = ["top-left", "top-right", "bottom-right", "bottom-left"];
-      return radius.map((r, i) => `${corners[i]} ${r}px`).join(", ");
-    }
-    default:
-      return JSON.stringify(v);
-  }
 }

@@ -121,8 +121,9 @@ export const styles = /* css */ `
   white-space: nowrap;
 }
 
-/* Changes not yet applied, on the toggle's top-right edge. Clicks go through to the toggle. */
+/* Changes not yet applied, on the toggle's top-right edge. It opens the change list. */
 .vk-badge {
+  all: unset;
   position: absolute;
   top: -4px;
   right: -4px;
@@ -137,10 +138,70 @@ export const styles = /* css */ `
   font: 600 11px/18px ${FONT_STACK};
   font-variant-numeric: tabular-nums;
   text-align: center;
-  pointer-events: none;
+  cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
 }
+/* A larger target than it looks. */
+.vk-badge::before { content: ""; position: absolute; inset: -6px; }
+.vk-badge:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
+
+/* The change list: dark like the toggle, opening toward the middle of the window. */
+.vk-changes {
+  --vk-text: #fff;
+  --vk-field: #383838;
+  --vk-accent: #0d99ff;
+  position: absolute;
+  box-sizing: border-box;
+  width: 280px;
+  max-height: min(400px, calc(100vh - 96px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+  border-radius: 12px;
+  background: #1e1e1e;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 8px 24px rgb(0 0 0 / 0.24);
+  color: #fff;
+  font: 400 11px/16px ${FONT_STACK};
+  outline: none;
+}
+.vk-dock[data-corner^="bottom"] .vk-changes { bottom: calc(100% + 8px); }
+.vk-dock[data-corner^="top"] .vk-changes { top: calc(100% + 8px); }
+.vk-dock[data-corner$="right"] .vk-changes { right: 0; }
+.vk-dock[data-corner$="left"] .vk-changes { left: 0; }
+.vk-changes-title { margin: 0; padding: 8px 12px; font: inherit; font-weight: 600; }
+.vk-changes-note { margin: 0; padding: 0 12px 8px; color: rgb(255 255 255 / 0.6); }
+.vk-changes-list { margin: 0; padding: 0; list-style: none; }
+.vk-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 12px;
+}
+.vk-change:hover { background: rgb(255 255 255 / 0.06); }
+.vk-change-text { display: grid; flex: 1; min-width: 0; }
+.vk-change-name, .vk-change-values { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vk-change-values { color: rgb(255 255 255 / 0.6); }
+.vk-changes-confirm { padding: 8px 12px 0; border-top: 1px solid rgb(255 255 255 / 0.08); }
+.vk-changes-confirm p { margin: 0; }
+.vk-changes-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; }
+.vk-button {
+  all: unset;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: #383838;
+  font: 500 11px/24px ${FONT_STACK};
+  cursor: default;
+}
+.vk-button:hover { background: #444444; }
+.vk-button:focus-visible { outline: 2px solid #0d99ff; outline-offset: 1px; }
+.vk-button.is-danger { background: #f24822; }
+.vk-button.is-danger:hover { background: #dc3412; }
 
 /* Edit mode shell. Figma-like; follows the system light / dark setting. */
 .vk-shell {

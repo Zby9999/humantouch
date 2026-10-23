@@ -181,7 +181,9 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
         const deep = event.metaKey || event.ctrlKey;
         setHover((h) => h && { ...h, deep });
       }
-      if (isEditable(event.composedPath()[0])) return;
+      const target = event.composedPath()[0];
+      // A field, or a dialog over the canvas (the change list), keeps its keys.
+      if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       if (event.code === "Space") {
         // Swallow repeats and key-up too: a focused button would otherwise click on Space.
         event.preventDefault();
@@ -400,6 +402,6 @@ function clamp(zoom: number): number {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
-function isEditable(target: EventTarget | undefined): boolean {
+export function isEditable(target: EventTarget | undefined): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName));
 }

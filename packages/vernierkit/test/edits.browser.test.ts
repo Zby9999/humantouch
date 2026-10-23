@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { createChangeSet } from "../src/client/changeset";
 import { createEditor } from "../src/client/edits";
+import { serializeCanvas } from "../src/client/freezer";
 import { buildLayerTree, type Layer } from "../src/client/layers";
+import { revertSaved } from "../src/client/saved-round";
 
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
@@ -176,6 +178,132 @@ describe("the ChangeSet", () => {
     editor.set(layerOf(cards[3]), "radius", 4);
 
     expect(changes.list().map((change) => change.target.chain[0].usage)).toEqual(["src/App.tsx:6:9", "src/App.tsx:8:7"]);
+  });
+});
+
+describe("undo and redo", () => {
+  const red = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  const summary = (changes: ReturnType<typeof openCanvas>["changes"]) => changes.list().map(({ property, after }) => ({ property, after }));
+
+  test("go back and forth through the edits in the order they were made, across layers, on the canvas and the ChangeSet alike", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(box), "radius", 8);
+    editor.set(layerOf(cards[0]), "radius", 6);
+
+    expect(editor.undo()).toBe(layerOf(cards[0]));
+    expect(style(cards[0]).borderRadius).toBe("4px");
+    expect(summary(changes)).toEqual([
+      { property: "radius", after: 4 },
+      { property: "radius", after: 8 },
+    ]);
+    expect(editor.undo()).toBe(layerOf(box));
+    expect(style(box).borderRadius).toBe("0px");
+    editor.undo();
+    expect(cards.map((card) => style(card).borderRadius)).toEqual(["12px", "12px", "12px", "12px"]);
+    expect(changes.list()).toEqual([]);
+    expect(editor.undo()).toBeNull();
+
+    editor.redo();
+    editor.redo();
+    expect(style(box).borderRadius).toBe("8px");
+    expect(summary(changes)).toEqual([
+      { property: "radius", after: 4 },
+      { property: "radius", after: 8 },
+    ]);
+    editor.redo();
+    expect(style(cards[2]).borderRadius).toBe("6px");
+    expect(editor.redo()).toBeNull();
+  });
+
+  test("back where it started, the layer has the page's own style again, as if never edited", () => {
+    const { editor, cards, layerOf } = openCanvas();
+    const before = cards[1].getAttribute("style");
+
+    editor.set(layerOf(cards[0]), "fill", red);
+    editor.undo();
+
+    expect(cards[1].getAttribute("style")).toBe(before);
+  });
+
+  test("a new edit after undoing drops what could be redone", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.undo();
+    editor.set(layerOf(cards[0]), "fill", red);
+
+    expect(editor.redo()).toBeNull();
+    expect(summary(changes)).toEqual([{ property: "fill", after: red }]);
+  });
+
+  test("the steps of one adjustment, as a drag on a number makes them, are undone together", () => {
+    const { editor, cards, layerOf } = openCanvas();
+
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "radius", 5);
+    editor.set(layerOf(cards[0]), "radius", 6, { continues: true });
+    editor.set(layerOf(cards[0]), "radius", 7, { continues: true });
+    editor.undo();
+
+    expect(style(cards[0]).borderRadius).toBe("4px");
+  });
+
+  test("a change taken back from the change list is undone like any edit, and comes back with redo", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "fill", red);
+
+    expect(editor.revert(changes.list()[0].id)).toBe(layerOf(cards[0]));
+    expect(style(cards[0]).borderRadius).toBe("12px");
+    expect(summary(changes)).toEqual([{ property: "fill", after: red }]);
+
+    editor.undo();
+    expect(style(cards[0]).borderRadius).toBe("4px");
+    expect(summary(changes)).toEqual([
+      { property: "fill", after: red },
+      { property: "radius", after: 4 },
+    ]);
+  });
+});
+
+describe("taking a change back from a saved round, with no canvas open", () => {
+  const save = ({ doc, changes }: ReturnType<typeof openCanvas>) => ({
+    canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }),
+    changeSet: changes.save(),
+  });
+  const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
+
+  test("puts the layer back as the page had it on the saved canvas, and drops the change; the others stay", () => {
+    const opened = openCanvas();
+    const { editor, changes, cards, layerOf } = opened;
+    const before = cards.map((card) => card.getAttribute("style"));
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+    editor.set(layerOf(cards[3]), "radius", 2);
+    const [radius, fill] = changes.list();
+
+    const once = revertSaved(save(opened), radius.id)!;
+    expect(once.changeSet.changes.map((change) => change.id)).toEqual([fill.id, 3]);
+    const saved = parse(once.canvas).querySelectorAll<HTMLElement>("article");
+    expect([...saved].slice(0, 3).map((card) => [card.style.borderRadius, card.style.backgroundColor])).toEqual(
+      Array(3).fill(["12px", "rgb(255, 0, 0)"]),
+    );
+    expect(saved[3].style.borderRadius).toBe("2px");
+    expect(once.canvas).toMatch(/^<!DOCTYPE html>/);
+
+    const twice = revertSaved(once, fill.id)!;
+    expect([...parse(twice.canvas).querySelectorAll("article")].slice(0, 3).map((card) => card.getAttribute("style"))).toEqual(before.slice(0, 3));
+    expect(twice.changeSet.lastId).toBe(3);
+  });
+
+  test("with no change left, there is no round to keep", () => {
+    const opened = openCanvas();
+    opened.editor.set(opened.layerOf(opened.cards[0]), "radius", 4);
+
+    expect(revertSaved(save(opened), 1)).toBeNull();
   });
 });
 

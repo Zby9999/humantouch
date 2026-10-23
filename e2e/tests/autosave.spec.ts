@@ -161,7 +161,7 @@ test("with no changes left, edit mode freezes the page afresh", async ({ page })
 
 test("a badge on the toggle counts the changes not yet applied", async ({ page }) => {
   await page.goto(DEV_URL);
-  const badge = page.getByRole("status", { name: /not applied yet/ });
+  const badge = page.getByRole("button", { name: /not applied yet/ });
   await expect(badge).toHaveCount(0);
 
   await enterEditMode(page);

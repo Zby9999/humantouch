@@ -25,18 +25,21 @@ interface Drag {
  */
 interface Props {
   editing: boolean;
-  /** Changes not yet applied, shown as a badge. */
+  /** Changes not yet applied, shown as a badge, which opens the change list. */
   changeCount: number;
+  /** The change list is open. */
+  changesOpen: boolean;
+  onShowChanges(): void;
   /** The Agent is applying the round: how many of its changes are done. */
   applying: { done: number; total: number } | null;
   onUnlock(): void;
   /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
   onToggle(animate: boolean): void;
-  /** Shown beside the toggle. */
+  /** Shown beside the toggle, and the change list above or below it. */
   children?: ComponentChildren;
 }
 
-export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, children }: Props) {
+export function Toggle({ editing, changeCount, changesOpen, onShowChanges, applying, onUnlock, onToggle, children }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -192,9 +195,16 @@ export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, chi
         </button>
         {applying && <ProgressRing {...applying} />}
         {changeCount > 0 && (
-          <span class="vk-badge" role="status" aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}>
+          <button
+            type="button"
+            class="vk-badge"
+            aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}
+            aria-haspopup="dialog"
+            aria-expanded={changesOpen}
+            onClick={onShowChanges}
+          >
             {changeCount}
-          </span>
+          </button>
         )}
       </div>
       {children}

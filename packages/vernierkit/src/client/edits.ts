@@ -25,13 +25,36 @@ export interface PropertyValues {
 
 export type Property = keyof PropertyValues;
 
+export interface SetOptions {
+  /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
+  continues?: boolean;
+}
+
 export interface Editor {
   /** Whether `property` can be edited on the layer. */
   can(layer: Layer, property: Property): boolean;
   /** The layer's current value. */
   read<P extends Property>(layer: Layer, property: P): PropertyValues[P];
-  /** Changes the layer, across the instances of its usage, and records the change. */
-  set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P]): void;
+  /** Changes the layer, across the instances of its usage, and records the change. It can be undone. */
+  set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
+  /** Takes back the latest edit not yet undone. Returns the layer it was made to; null when there is none. */
+  undo(): Layer | null;
+  /** Makes again the latest edit undone. Returns the layer it was made to; null when there is none. */
+  redo(): Layer | null;
+  /** Takes change `id` back out of the ChangeSet, its layer back to where it started, as an edit that can be undone. */
+  revert(id: number): Layer | null;
+}
+
+/**
+ * One edit, as undo and redo replay it: the layer it was made to, by id, so
+ * it is found again however the layer tree changes meanwhile.
+ */
+interface Step {
+  layer: string;
+  /** Steps of one adjustment are one step: they are made to the same property of the same layer. */
+  property: string;
+  undo(): void;
+  redo(): void;
 }
 
 /** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
@@ -43,7 +66,7 @@ interface Definition<P extends Property> {
   /** Further, whether the layer as it is now can take the property. */
   applies?(el: Element): boolean;
   read(el: Element, colors: ColorReader): PropertyValues[P];
-  /** CSS declarations that show the value on the canvas. */
+  /** CSS declarations that show the value on the canvas: the same properties whatever the value, so each edit overrides the one before. */
   write(value: PropertyValues[P]): Record<string, string>;
   /** The CSS properties the value is read from, to find what sets them now. */
   sets: string[];
@@ -88,37 +111,130 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
     return id;
   };
 
+  const layerById = (id: string) => find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
+
+  /** The edit itself: on the canvas and in the ChangeSet. */
+  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P]) => {
+    const definition = PROPERTIES[property];
+    const before = definition.read(layer.el, colors);
+    // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
+    const known = layer.el.getAttribute(LAYER_ID_ATTR);
+    const sources = known && changes.has(known, property) ? [] : sourcesOf(layer.el, definition.sets);
+    const instances = tree.acrossInstances(layer);
+    const declarations = definition.write(value);
+    for (const instance of instances) {
+      // Kept before the first edit: what sets a value is looked up in the page's own styles.
+      if (!instance.el.hasAttribute(ORIGINAL_STYLE_ATTR)) instance.el.setAttribute(ORIGINAL_STYLE_ATTR, instance.el.getAttribute("style") ?? "");
+      for (const name in declarations) (instance.el as HTMLElement).style.setProperty(name, declarations[name], "important");
+    }
+    const id = idOf(layer, instances);
+    changes.record(id, {
+      target: targetOf(layer, instances.length),
+      scope: "usage",
+      property,
+      before,
+      after: value,
+      style: declarations,
+      sources,
+    });
+    // Back where it started: the page's own style again, as if never edited.
+    if (!changes.has(id, property)) {
+      const untouched = !changes.list().some((change) => change.layer === id);
+      for (const instance of instances) restoreStyle(instance.el, property, untouched);
+    }
+    return id;
+  };
+
+  const past: Step[] = [];
+  const future: Step[] = [];
+  /** Replays a step's way, on the layer as it is now. */
+  const replay = (step: Step, way: "undo" | "redo") => {
+    step[way]();
+    return layerById(step.layer);
+  };
+
   const editor: Editor = {
     can(layer, property) {
       const { kinds, applies } = PROPERTIES[property];
       return !layer.text && kinds.includes(layer.kind) && (!applies || applies(layer.el));
     },
     read: (layer, property) => PROPERTIES[property].read(layer.el, colors),
-    set(layer, property, value) {
+    set(layer, property, value, { continues = false } = {}) {
       if (!editor.can(layer, property)) throw new Error(`Vernier Kit: ${property} cannot be edited on a ${layer.kind} layer`);
       const before = editor.read(layer, property);
-      // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
-      const id = layer.el.getAttribute(LAYER_ID_ATTR);
-      const sources = id && changes.has(id, property) ? [] : sourcesOf(layer.el, PROPERTIES[property].sets);
-      const instances = tree.acrossInstances(layer);
-      const declarations = PROPERTIES[property].write(value);
-      for (const instance of instances) {
-        // Kept before the first edit: what sets a value is looked up in the page's own styles.
-        if (!instance.el.hasAttribute(ORIGINAL_STYLE_ATTR)) instance.el.setAttribute(ORIGINAL_STYLE_ATTR, instance.el.getAttribute("style") ?? "");
-        for (const name in declarations) (instance.el as HTMLElement).style.setProperty(name, declarations[name], "important");
-      }
-      changes.record(idOf(layer, instances), {
-        target: targetOf(layer, instances.length),
-        scope: "usage",
-        property,
-        before,
-        after: value,
-        style: declarations,
-        sources,
-      });
+      if (same(before, value)) return;
+      const id = apply(layer, property, value);
+      const to = (v: PropertyValues[typeof property]) => () => {
+        const target = layerById(id);
+        if (target) apply(target, property, v);
+      };
+      future.length = 0;
+      const last = past.at(-1);
+      if (continues && last?.layer === id && last.property === property) last.redo = to(value);
+      else past.push({ layer: id, property, undo: to(before), redo: to(value) });
+    },
+    undo() {
+      const step = past.pop();
+      if (!step) return null;
+      future.push(step);
+      return replay(step, "undo");
+    },
+    redo() {
+      const step = future.pop();
+      if (!step) return null;
+      past.push(step);
+      return replay(step, "redo");
+    },
+    revert(id) {
+      const change = changes.list().find((c) => c.id === id);
+      const layer = change && layerById(change.layer);
+      if (!change || !layer) return null;
+      editor.set(layer, change.property as Property, change.before as PropertyValues[Property]);
+      return layer;
     },
   };
   return editor;
+}
+
+/**
+ * Puts back the page's own declarations of `property` on an element, as its
+ * style attribute had them before the first edit. `untouched`: no edit is left
+ * on the element, so the whole attribute goes back as it was.
+ */
+export function restoreStyle<P extends Property>(el: Element, property: P, untouched = false) {
+  const original = el.getAttribute(ORIGINAL_STYLE_ATTR);
+  if (original === null) return;
+  if (untouched) {
+    if (original) el.setAttribute("style", original);
+    else el.removeAttribute("style");
+    return;
+  }
+  const { write, sets }: Definition<P> = PROPERTIES[property];
+  const style = (el as HTMLElement).style;
+  const page = el.ownerDocument.createElement("div").style;
+  page.cssText = original;
+  for (const name of [...Object.keys(write(defaults[property])), ...sets]) style.removeProperty(name);
+  for (const name of sets) {
+    const value = page.getPropertyValue(name);
+    if (value) style.setProperty(name, value, page.getPropertyPriority(name));
+  }
+}
+
+/** Any value of each property: what it writes names the CSS properties it sets. */
+const defaults: PropertyValues = { fill: null, radius: 0 };
+
+function find(layer: Layer, match: (layer: Layer) => boolean): Layer | null {
+  if (match(layer)) return layer;
+  for (const child of layer.children) {
+    const found = find(child, match);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Values are plain data in design language. */
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function targetOf(layer: Layer, instances: number): Target {

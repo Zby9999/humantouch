@@ -36,7 +36,7 @@ async function changeTheCards(page: Page) {
 }
 
 const progress = (page: Page) => page.getByRole("progressbar", { name: "Applying design changes" });
-const badge = (page: Page) => page.getByRole("status", { name: /not applied yet/ });
+const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
 
 /** How each archived round ended. */
 function results() {
@@ -88,6 +88,21 @@ test("an edit not yet saved when the Agent claims stays out of the round, on the
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
   expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
   expect(readVernier("changeset.json").changes[1].after).toBe(2);
+});
+
+test("while the round is being applied, the change list only shows what is left to do", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  await vernierkit("claim");
+  await vernierkit("done", "1");
+  await expect(badge(page)).toHaveText("1");
+
+  await badge(page).click();
+  const list = page.getByRole("dialog", { name: "Changes" });
+
+  await expect(list.getByText("The Agent is applying these changes.")).toBeVisible();
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card.*12px → 2px/]);
+  await expect(list.getByRole("button")).toHaveCount(0);
 });
 
 test("a page loaded while the round is being applied shows it locked", async ({ page }) => {

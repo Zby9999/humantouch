@@ -3,10 +3,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { RoundStatus, SavedRound } from "../service-protocol";
 import { ENTER_MARK } from "./CanvasView";
 import { canPreview, startChangePreview } from "./change-preview";
+import { ChangeList } from "./ChangeList";
+import type { Change } from "./changeset";
 import { checkChange } from "./check";
 import { PreviewSwitch } from "./PreviewSwitch";
+import { revertSaved } from "./saved-round";
 import { connectRoundStore } from "./service";
-import { Shell } from "./Shell";
+import { Shell, type RoundControl } from "./Shell";
 import { Toggle } from "./Toggle";
 
 /** `leaving`: back in preview mode, while the canvas grows back over the page. */
@@ -21,7 +24,8 @@ const PREVIEW_KEY = "vernierkit:change-preview";
  * Meanwhile the page shows the round's changes, unless switched to how it is now.
  * Once the Agent claims the round, the editor folds into the toggle, locked
  * until the round ends, and each change it applies leaves the preview and is
- * checked on the page.
+ * checked on the page. The toggle's badge opens the change list, where changes
+ * are undone one by one, or all discarded, in either mode.
  */
 export function EditorLayer() {
   const [mode, setMode] = useState<Mode>("preview");
@@ -29,8 +33,11 @@ export function EditorLayer() {
   const [store] = useState(connectRoundStore);
   /** Undefined until the saved round, if any, has loaded. */
   const [round, setRound] = useState<SavedRound | null | undefined>(store ? undefined : null);
-  /** Changes not yet applied, for the toggle's badge. */
-  const [changeCount, setChangeCount] = useState(0);
+  /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
+  const [live, setLive] = useState<Change[] | null>(null);
+  const [listOpen, setListOpen] = useState(false);
+  /** The canvas, while edit mode is up: the change list works on it then. */
+  const control = useRef<RoundControl | null>(null);
   const [previewing, setPreviewing] = useState(readPreviewing);
   const [preview] = useState(() => startChangePreview(document));
   useEffect(() => () => preview.stop(), []);
@@ -40,10 +47,7 @@ export function EditorLayer() {
   const claimed = status?.status === "claimed" ? status : null;
 
   const load = () =>
-    store?.load().then((saved) => {
-      setRound(saved);
-      setChangeCount(saved?.changeSet.changes.length ?? 0);
-    }, (error: unknown) => {
+    store?.load().then(setRound, (error: unknown) => {
       console.warn(error);
       setRound(null);
     });
@@ -94,10 +98,26 @@ export function EditorLayer() {
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
   };
+  /** From the change list. With no canvas up, the saved canvas is changed and saved at once. */
+  const revert = (id: number) => {
+    if (control.current) control.current.revert(id);
+    else if (round) save(revertSaved(round, id));
+  };
+  const discard = () => {
+    setListOpen(false);
+    control.current?.discard();
+    setLive(null);
+    save(null);
+    // The canvas goes with the round: back to the page, which edit mode freezes afresh.
+    if (mode === "edit") setMode(shellShown.current ? "leaving" : "preview");
+  };
+
   const switchPreview = (on: boolean) => {
     setPreviewing(on);
     writePreviewing(on);
   };
+
+  const listed = claimed ? pending : (live ?? changes);
 
   // A shell already up folds away once claimed; none starts while claimed.
   shellShown.current = mode !== "preview" && ready && (shellShown.current || !claimed);
@@ -107,16 +127,22 @@ export function EditorLayer() {
         <Shell
           saved={round!}
           onSave={save}
-          onChangeCount={setChangeCount}
+          onChanges={setLive}
+          control={control}
           previewing={previewing}
           leaving={mode === "leaving"}
           animate={animate}
-          onLeft={() => setMode("preview")}
+          onLeft={() => {
+            setMode("preview");
+            setLive(null);
+          }}
         />
       )}
       <Toggle
         editing={mode === "edit"}
-        changeCount={claimed ? pending.length : changeCount}
+        changeCount={listed.length}
+        changesOpen={listOpen && listed.length > 0}
+        onShowChanges={() => setListOpen(!listOpen)}
         applying={claimed && { done: claimed.done.length, total: changes.length }}
         onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
         onToggle={(animate) => {
@@ -128,6 +154,9 @@ export function EditorLayer() {
       >
         {mode !== "edit" && pending.length > 0 && (
           <PreviewSwitch on={previewing} onChange={switchPreview} unseen={pending.filter((change) => !canPreview(change)).length} />
+        )}
+        {listOpen && listed.length > 0 && (
+          <ChangeList changes={listed} readOnly={!!claimed} onRevert={revert} onDiscard={discard} onClose={() => setListOpen(false)} />
         )}
       </Toggle>
     </>

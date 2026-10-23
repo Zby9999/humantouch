@@ -20,8 +20,9 @@ export function Properties({ editor, layer, onEdit }: Props) {
   if (layer.kind === "locked") {
     return <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>;
   }
-  const set = <P extends Property>(property: P) => (value: PropertyValues[P]) => {
-    editor.set(layer, property, value);
+  /** `continues`: one more step of an adjustment under way, undone with the steps before it. */
+  const set = <P extends Property>(property: P) => (value: PropertyValues[P], continues = false) => {
+    editor.set(layer, property, value, { continues });
     onEdit();
   };
   const radius = editor.can(layer, "radius") && editor.read(layer, "radius");
@@ -45,7 +46,9 @@ export function Properties({ editor, layer, onEdit }: Props) {
   );
 }
 
-function FillSection({ fill, onChange }: { fill: Fill | null; onChange(fill: Fill | null): void }) {
+function FillSection({ fill, onChange }: { fill: Fill | null; onChange(fill: Fill | null, continues?: boolean): void }) {
+  /** The color picker is open and has moved: the colors it goes through are one adjustment. */
+  const picking = useRef(false);
   return (
     <section class="vk-section" role="group" aria-label="Fill">
       <div class="vk-section-header">
@@ -64,7 +67,11 @@ function FillSection({ fill, onChange }: { fill: Fill | null; onChange(fill: Fil
               class="vk-swatch"
               aria-label="Pick fill color"
               value={fill.color.toLowerCase()}
-              onInput={(event) => onChange({ ...fill, color: event.currentTarget.value.toUpperCase() })}
+              onInput={(event) => {
+                onChange({ ...fill, color: event.currentTarget.value.toUpperCase() }, picking.current);
+                picking.current = true;
+              }}
+              onChange={() => (picking.current = false)}
             />
             <TextField label="Fill color" value={fill.color.slice(1)} parse={parseHex} onChange={(color) => onChange({ ...fill, color })} />
             <TextField
@@ -93,7 +100,8 @@ interface NumberFieldProps {
   /** Null: the value differs from part to part, shown as Mixed. */
   value: number | null;
   min?: number;
-  onChange(value: number): void;
+  /** `continues`: one more step of a drag on the icon. */
+  onChange(value: number, continues?: boolean): void;
 }
 
 /** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
@@ -117,9 +125,9 @@ function NumberField({ label, icon, value, min = -Infinity, onChange }: NumberFi
  * px (10 with ⇧), as in Figma. The pointer is locked while dragging, so it
  * never runs into the edge of the screen.
  */
-function Scrub({ icon, value, min, onChange }: { icon: IconName; value: number | null; min: number; onChange(value: number): void }) {
-  /** The drag under way: the value so far, and movement of less than 1px not yet counted. */
-  const drag = useRef<{ pointerId: number; value: number; rest: number } | null>(null);
+function Scrub({ icon, value, min, onChange }: { icon: IconName; value: number | null; min: number; onChange(value: number, continues: boolean): void }) {
+  /** The drag under way: the value so far, movement of less than 1px not yet counted, and whether it has changed the value yet. */
+  const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean } | null>(null);
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
@@ -127,7 +135,7 @@ function Scrub({ icon, value, min, onChange }: { icon: IconName; value: number |
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     Promise.resolve(handle.requestPointerLock()).catch(() => {}); // Without the lock, the drag still works.
-    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0 };
+    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false };
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLSpanElement>) => {
@@ -140,7 +148,8 @@ function Scrub({ icon, value, min, onChange }: { icon: IconName; value: number |
     const next = Math.max(min, d.value + px * (event.shiftKey ? 10 : 1));
     if (next === d.value) return;
     d.value = next;
-    onChange(next);
+    onChange(next, d.moved);
+    d.moved = true;
   };
 
   const end = (event: TargetedPointerEvent<HTMLSpanElement>) => {

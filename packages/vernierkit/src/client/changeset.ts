@@ -50,6 +50,8 @@ export interface ChangeSet {
    * up where it started is no longer a change.
    */
   record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources">): void;
+  /** Takes change `id` out: the designer no longer wants it. */
+  remove(id: number): void;
   /** Whether `property` of the layer with id `layerId` is changed already. */
   has(layerId: string, property: string): boolean;
   /** The changes, oldest first. */
@@ -78,6 +80,9 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       if (same(before, change.after)) changes.delete(key);
       else if (earlier) Object.assign(earlier, { after: change.after, style: change.style });
       else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
+    },
+    remove(id) {
+      for (const [key, change] of changes) if (change.id === id) changes.delete(key);
     },
     has: (layerId, property) => changes.has(keyOf(layerId, property)),
     list: () => [...changes.values()],

@@ -1,9 +1,9 @@
 /** @jsxImportSource preact */
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
-import { CanvasView } from "./CanvasView";
+import { CanvasView, isEditable } from "./CanvasView";
 import { canPreview } from "./change-preview";
-import { createChangeSet, type ChangeSet } from "./changeset";
+import { createChangeSet, type Change, type ChangeSet } from "./changeset";
 import { createEditor, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { buildLayerTree, type Layer, type LayerTree } from "./layers";
@@ -11,13 +11,23 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 
+/** What the change list does to the round while edit mode is up: on the canvas, as edits. */
+export interface RoundControl {
+  /** Takes change `id` back out, as an edit that can be undone. */
+  revert(id: number): void;
+  /** Takes every change back out and stops saving: the round is being discarded. */
+  discard(): void;
+}
+
 interface Props {
   /** The round to come back to, canvas and ChangeSet; null to freeze the page afresh. */
   saved: SavedRound | null;
   /** The round, saved a moment after the last edit; null once it has no changes left. */
   onSave(round: SavedRound | null): void;
-  /** How many changes the round has, right after each edit. */
-  onChangeCount(count: number): void;
+  /** The round's changes, right after each edit. */
+  onChanges(changes: Change[]): void;
+  /** Set once there is a canvas, for the change list to reach it. */
+  control: { current: RoundControl | null };
   /** The Change Preview is on: back in preview mode, the page shows the changes it can. */
   previewing: boolean;
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
@@ -33,7 +43,7 @@ const ADJUSTING_MS = 200;
 const AUTOSAVE_MS = 500;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ saved, onSave, onChangeCount, previewing, leaving, animate, onLeft }: Props) {
+export function Shell({ saved, onSave, onChanges, control, previewing, leaving, animate, onLeft }: Props) {
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
@@ -62,12 +72,18 @@ export function Shell({ saved, onSave, onChangeCount, previewing, leaving, anima
   useEffect(() => {
     if (leaving) flush();
   }, [leaving]);
-  useEffect(() => flush, []);
+  useEffect(
+    () => () => {
+      flush();
+      control.current = null;
+    },
+    [],
+  );
 
   const onEdit = () => {
     clearTimeout(pendingSave.current);
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
-    if (round.current) onChangeCount(round.current.changeSet.list().length);
+    if (round.current) onChanges(round.current.changeSet.list());
     edited(undefined);
     setAdjusting(true);
     clearTimeout(settle.current);
@@ -78,6 +94,26 @@ export function Shell({ saved, onSave, onChangeCount, previewing, leaving, anima
     setAdjusting(false);
     setSelected(layer);
   };
+
+  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own.
+  const latest = useRef({ editor, onEdit, select });
+  latest.current = { editor, onEdit, select };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const { editor, onEdit, select } = latest.current;
+      if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || isEditable(event.composedPath()[0])) return;
+      const redo = event.code === "KeyY" ? !event.metaKey && !event.shiftKey : event.code === "KeyZ" && event.shiftKey;
+      if (event.code !== "KeyZ" && !redo) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const layer = redo ? editor.redo() : editor.undo();
+      if (!layer) return;
+      select(layer);
+      onEdit();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   return (
     <div class="vk-shell">
@@ -91,8 +127,21 @@ export function Shell({ saved, onSave, onChangeCount, previewing, leaving, anima
           const layers = buildLayerTree(canvas.document);
           const changeSet = createChangeSet(restoreFrom?.changeSet);
           round.current = { canvas, changeSet };
+          const editor = createEditor(layers, changeSet);
           setTree(layers);
-          setEditor(createEditor(layers, changeSet));
+          setEditor(editor);
+          control.current = {
+            revert(id) {
+              if (editor.revert(id)) latest.current.onEdit();
+            },
+            discard() {
+              for (const change of changeSet.list()) editor.revert(change.id);
+              clearTimeout(pendingSave.current);
+              pendingSave.current = undefined;
+              round.current = null;
+              edited(undefined);
+            },
+          };
         }}
         tree={tree}
         selected={selected}

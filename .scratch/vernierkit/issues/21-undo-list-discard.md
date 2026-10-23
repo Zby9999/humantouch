@@ -6,13 +6,13 @@
 
 **Blocked by:** 07, 25
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 撤销与重做同时作用于画布与改动单
-- [ ] 改动列表逐条撤销后画布与改动单一致
-- [ ] Discard all 需二次确认，确认后改动单清空、画布丢弃
-- [ ] 刷新浏览器后撤销历史不保留，但改动列表的逐条撤销仍可用
-- [ ] 在预览模式中逐条撤销或 Discard all 后，真实页面上的改动预览立即更新
+- [x] 撤销与重做同时作用于画布与改动单
+- [x] 改动列表逐条撤销后画布与改动单一致
+- [x] Discard all 需二次确认，确认后改动单清空、画布丢弃
+- [x] 刷新浏览器后撤销历史不保留，但改动列表的逐条撤销仍可用
+- [x] 在预览模式中逐条撤销或 Discard all 后，真实页面上的改动预览立即更新
 
 ## Comments
 
@@ -36,3 +36,19 @@
 - **角标现在不接收点击**（`.vk-badge` 是 `pointer-events: none`，点击穿到切换按钮）。做成可点开改动列表时，要保持点切换按钮本身仍是切换模式，键盘也能打开列表。
 - **已认领时**本机服务对 `PUT` / `DELETE /round` 回 409。落地期间改动列表应只读，Discard all 和逐条撤销不可用。
 - **Discard all**：`DELETE /round` 之后本轮为空，改动预览清空，下次进入编辑模式重新冻结（`EditorLayer` 在 `round` 为 null 时冻结）。这也是设计师想在另一个页面状态（例如打开的弹窗）下编辑时的正当出路，目前只能手动删 `.vernier/`。
+
+**实现记录（2026-10-23）**
+
+- 撤销（`edits.ts`）：编辑命令自己带撤销历史。`Editor` 多了 `undo()`、`redo()`、`revert(id)`，前两者返回这一步改的图层（`Shell` 选中它，属性面板跟着显示），没有可撤销的返回 null。历史中的每一步（`Step`）记图层 id（`data-vk-layer`）、属性和 `undo` / `redo` 两个闭包；回放时按 id 在图层树里找回图层，再用改前值或改后值执行同一条编辑（不压栈），改动单的合并规则照常处理。10、15 的新命令只要往 `past` 里压自己的 `Step` 就能接上，移动也是。
+  - 新编辑会清空重做栈；把属性设成它现在的值不算一步，也不记改动。
+  - 一次调整的多步（拖数字图标、拖取色器）是一步：`set(..., { continues: true })` 与上一步同图层同属性时合并，撤销回到调整开始前。`Properties` 里数字图标拖动的第二步起、取色器 `input` 的第二次起带这个标记（取色器在 `change` 时结束一次调整）。
+  - 回到起点（改动单里这条改动没了）时，画布上恢复页面原来的内联样式（`restoreStyle`，按 `data-vk-original-style`）；这个元素上已经没有任何改动时，`style` 属性整个恢复原样。属性的 `write` 约定为不论取值都写同一组 CSS 属性，这样恢复时知道要去掉哪些。
+- 快捷键（`Shell.tsx`）：编辑模式中 ⌘Z / Ctrl+Z 撤销，⇧⌘Z / Ctrl+Shift+Z / Ctrl+Y 重做；焦点在输入框里时让给输入框自己。刷新后历史不保留（只在编辑命令的内存里）。
+- 改动列表（`ChangeList.tsx`）：角标改成按钮（`aria-haspopup="dialog"`，名称仍是 "N changes not applied yet"），点击或回车打开，Esc、点别处或再点角标关闭；Esc 关闭后焦点回到角标。列表是 `role="dialog"`，每行 "属性 · 图层名" 和 "改前 → 改后"，右侧撤销按钮（"Undo the fill of Card"）。底部 Discard all，点了先变成确认（"Discard all 3 changes? …"，焦点在 Cancel），再点 Discard 才放弃。面板朝窗口中间打开（按切换按钮所在的角）。
+  - 编辑模式中：逐条撤销走画布（`Shell` 通过 `RoundControl` 交给 `editor.revert`），它也是一步编辑，⌘Z 能撤回来；列表随每次编辑实时更新（`Shell` 的 `onChanges`）。
+  - 预览模式中、刷新后：没有画布，`saved-round.ts` 的 `revertSaved` 直接改保存的本轮：`DOMParser` 解析 `canvas.html`，按 `data-vk-layer` 找到各实例的元素，用 `restoreStyle` 恢复，`ChangeSet.remove(id)` 删掉改动再保存；没有改动剩下时整轮丢掉（与编辑中改回原样一致）。`round` 一更新，改动预览立即跟着变。
+  - 已认领时列表只读：只列还没做完的改动，注明 "The Agent is applying these changes."，没有撤销和 Discard all。
+- Discard all：`DELETE /round`，改动预览清空。在编辑模式中先在画布上撤回全部改动、停止自动保存，再回到预览模式（画布与页面一致，不用淡出）；下次进入编辑模式重新冻结。
+- 画布的键盘处理（`CanvasView.tsx`）不再拦截来自对话框（改动列表）里的按键，Esc、空格留给列表。
+- 改动的说法（`design-values.ts`）：属性名表和 `value()` 从 `change-notes.ts` 移到这里，改动说明与改动列表共用（客户端不能引入 `node:path`）。
+- 测试：辅接缝 1 `edits.browser.test.ts`（跨图层按时间撤销 / 重做、回到起点恢复原内联样式、新编辑清空重做、一次调整合并、列表撤销可再撤销、保存的本轮上逐条撤销）；主接缝新增 `undo.spec.ts`（快捷键、输入框里的 ⌘Z、编辑模式与预览模式中的列表、键盘打开与 Esc、刷新后、两种模式下的 Discard all）、`round.spec.ts` 已认领时只读。原测试里的角标改按按钮查找。

@@ -4,7 +4,8 @@
  * change applied and has the page check it, `finish` ends the round, and
  * `last` prints the round before, to undo it by.
  */
-import { changes, describeChanges, propertyName, TO_APPLY, value } from "./change-notes";
+import { changes, describeChanges, TO_APPLY } from "./change-notes";
+import { propertyName, value } from "./design-values";
 import type { Change } from "./client/changeset";
 import { CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
