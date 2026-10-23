@@ -269,15 +269,18 @@ const STYLED_PAGE = `<!DOCTYPE html>
     .card { &:hover { background-color: red; } }
   }
   button { background: rgb(220, 38, 38); border-radius: 0; }
+  .nested-state { @media (min-width: 1px) { border-radius: 6px; } }
   @media (min-width: 1px) { .wide { border-top-left-radius: 2px !important; } }
   @media (max-width: 1px) { .wide { border-top-left-radius: 1px !important; } }
 </style>
+<style media="print">button { background: black; }</style>
 <body style="margin: 0">
   <main data-vk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: flex; flex-direction: column; gap: 8px">
     <article data-vk-loc="src/Card.tsx:3:5" class="card bg-white rounded-xl" style="height: 40px"></article>
     <button data-vk-loc="src/App.tsx:9:7" class="bg-white rounded-xl" style="display: flex; height: 40px"></button>
     <section data-vk-loc="src/App.tsx:12:7" class="rounded-sm wide" style="height: 40px; border-radius: 8px"></section>
     <div data-vk-loc="src/App.tsx:14:7" style="display: flex; height: 40px"></div>
+    <aside data-vk-loc="src/App.tsx:16:7" class="nested-state" style="display: flex; height: 40px"></aside>
   </main>
 </body>`;
 
@@ -346,6 +349,16 @@ describe("where the value comes from", () => {
     editor.set(at("article"), "fill", red);
 
     expect(changes.list()[0].sources[0]).toMatchObject({ kind: "rule", selector: ".bg-white" });
+  });
+
+  test("declarations nested in a condition count; a stylesheet for another medium does not", () => {
+    const { editor, changes, at } = openStyled();
+
+    editor.set(at("aside"), "radius", 1);
+    editor.set(at("button"), "radius", 1);
+
+    expect(changes.list()[0].sources[0]).toMatchObject({ kind: "rule", selector: ".nested-state", declaration: "border-radius: 6px" });
+    expect(changes.list()[1].sources[0]).toMatchObject({ selector: "button", declaration: "border-radius: 0px" });
   });
 
   test("a rule not in a layer wins over a class in one, as the browser has it", () => {

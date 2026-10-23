@@ -56,9 +56,10 @@ export function EditorLayer() {
   useLayoutEffect(() => preview.show(previewing ? pending : []), [round, previewing, status]);
 
   // A done change is checked once its preview is off, which the layout effect above has seen to.
+  // A layout effect too: an effect would wait for a frame, which a background tab may not draw for a while.
   const checked = useRef<string | null>(null);
   const check = claimed?.check;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!check || !store || round === undefined || checked.current === check.at) return;
     checked.current = check.at;
     const change = round?.changeSet.changes.find((c) => c.id === check.id);

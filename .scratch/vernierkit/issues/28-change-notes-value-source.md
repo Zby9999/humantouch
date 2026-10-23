@@ -35,3 +35,11 @@
 
 - 跨域样式表读不到规则，其中的声明不参与比较。
 - 用户代理样式（浏览器默认）不区分具体规则，统一写 "nothing: the browser default applies"；继承来的属性（填充和圆角都不继承）暂不处理。
+
+**代码审查后的修正（2026-10-23）**
+
+- 样式表自身的媒体条件（`<style media="print">`、`<link media>`、`@import … screen`）和 `@import … supports()` 不成立时，其中的规则不参与比较。
+- 嵌套在条件里、或写在嵌套规则之后的声明（`CSSNestedDeclarations`）按所在规则计入。
+- 有读不到的跨域样式表、又没有可读的样式设定这项属性时，来源写 unknown（"a stylesheet from another origin may"），不再断言是浏览器默认值。
+- 同一属性反复调整时只在第一次走层叠，拖动数值不再每一步都遍历样式表。
+- `@scope` 规则暂不处理，其中的声明被忽略。

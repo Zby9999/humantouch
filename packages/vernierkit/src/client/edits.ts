@@ -97,7 +97,9 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
     set(layer, property, value) {
       if (!editor.can(layer, property)) throw new Error(`Vernier Kit: ${property} cannot be edited on a ${layer.kind} layer`);
       const before = editor.read(layer, property);
-      const sources = sourcesOf(layer.el, PROPERTIES[property].sets);
+      // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
+      const id = layer.el.getAttribute(LAYER_ID_ATTR);
+      const sources = id && changes.has(id, property) ? [] : sourcesOf(layer.el, PROPERTIES[property].sets);
       const instances = tree.acrossInstances(layer);
       const declarations = PROPERTIES[property].write(value);
       for (const instance of instances) {

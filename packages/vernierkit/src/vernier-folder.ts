@@ -30,12 +30,18 @@ export interface VernierFolder {
 export interface Checks {
   /** Pages with the editor layer open now: with none, there is no one to check. */
   pages: number;
+  /** The process of the local service that counts them: once it is gone, so are they. */
+  service: number;
   /** The latest answer for each change id, and the ask it answers. */
   results: Record<string, CheckResult & { at: string }>;
 }
 
-/** A round being edited has no state file; claiming it adds one. */
-export type RoundState = Extract<RoundStatus, { status: "claimed" }>;
+/**
+ * A round being edited has no state file; claiming it adds one. Besides the
+ * status, it keeps what only the command line needs: when the round was
+ * claimed, and the code as it was then.
+ */
+export type RoundState = Extract<RoundStatus, { status: "claimed" }> & { claimedAt?: string; code?: CodeSnapshot | null };
 
 export function vernierFolder(root: string): VernierFolder {
   const dir = join(root, VERNIER_DIR);
@@ -99,7 +105,9 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
   if (!state || changeSet === null) return null;
   const after = state.code && (await snapshotCode(dirname(folder.dir)));
   const code = state.code && after?.repository === state.code.repository ? { repository: after.repository, before: state.code.tree, after: after.tree } : null;
-  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString(), checks: (await readChecks(folder))?.results ?? {}, code };
+  // Only this round's checks: an earlier round's could have been written back after it ended.
+  const results = Object.entries((await readChecks(folder))?.results ?? {}).filter(([, r]) => !state.claimedAt || r.at >= state.claimedAt);
+  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString(), checks: Object.fromEntries(results), code };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
   await writeFile(join(archive, "changeset.json"), changeSet);
@@ -144,7 +152,8 @@ export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
     // Starting from the real index, git rehashes only the files that changed.
     await copyFile(resolve(root, realIndex.trim()), index).catch(() => {});
     const own = { GIT_INDEX_FILE: index };
-    await git(["-C", top.trim(), "add", "--all"], own);
+    // `.vernier/` itself is no code of the round, ignored or not.
+    await git(["-C", top.trim(), "add", "--all", "--", ".", ":(exclude,glob)**/.vernier/**"], own);
     const { stdout: tree } = await git(["write-tree"], own);
     return { repository: top.trim(), tree: tree.trim() };
   } catch {

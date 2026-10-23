@@ -47,7 +47,11 @@ export async function startService({ root }: { root: string }): Promise<Service>
   const files = vernierFolder(root);
   const token = randomBytes(32).toString("hex");
 
-  const status = async (): Promise<RoundStatus> => (await readState(files)) ?? { status: "editing" };
+  /** What the editor layer is told: the state file's status, without what only the command line needs. */
+  const status = async (): Promise<RoundStatus> => {
+    const state = await readState(files);
+    return state ? { status: state.status, done: state.done, ...(state.check && { check: state.check }) } : { status: "editing" };
+  };
 
   /** Answers to `GET /events`, kept open: each gets a line when the status changes. */
   const listeners = new Set<ServerResponse>();
@@ -66,9 +70,10 @@ export async function startService({ root }: { root: string }): Promise<Service>
 
   /** `checks.json`, with the pages open now: the command line asks them through it. Only beside a round. */
   const updateChecks = async (change: (checks: Checks) => void = () => {}) => {
-    if (!existsSync(files.dir)) return;
-    const checks = (await readChecks(files)) ?? { pages: 0, results: {} };
+    if (!existsSync(files.changeSet)) return;
+    const checks = (await readChecks(files)) ?? { pages: 0, service: process.pid, results: {} };
     checks.pages = listeners.size;
+    checks.service = process.pid;
     change(checks);
     await writeChecks(files, checks);
   };
@@ -95,7 +100,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
         await mkdir(files.dir, { recursive: true });
         await writeAtomically(files.canvas, round.canvas);
         await writeAtomically(files.changeSet, `${JSON.stringify(round.changeSet, null, 2)}\n`);
-        await updateChecks();
+        // Not claimed: no checks yet, whatever an earlier round left.
+        await updateChecks((checks) => void (checks.results = {}));
         return send(res, 204);
       }
       case `DELETE ${ROUND_PATH}`:

@@ -89,7 +89,7 @@ describe("claim", () => {
 
     expect(code).toBe(0);
     // Outside a git repository: no snapshot of the code.
-    expect(state()).toEqual({ status: "claimed", done: [], code: null });
+    expect(state()).toEqual({ status: "claimed", done: [], claimedAt: expect.any(String), code: null });
     expect(output).toMatch(/^# Design changes to apply/);
     expect(section(output, 1)).toBe(`1. Fill
 
@@ -204,7 +204,7 @@ describe("done", () => {
     await cli("claim");
 
     expect(await cli("done", "7")).toEqual({ code: 1, output: "", errors: "There is no change 7 in this round. Its changes are: 1.\n" });
-    expect(state()).toEqual({ status: "claimed", done: [], code: null });
+    expect(state()).toEqual({ status: "claimed", done: [], claimedAt: expect.any(String), code: null });
   });
 });
 
@@ -224,17 +224,19 @@ function history() {
  * Stands in for an open page: answers each check `done` asks for with
  * `answer(id)`, as the editor layer does through the local service.
  */
-function openPage(answer: (id: number) => object | null) {
+function openPage(answer: (id: number) => object | null, pages = 1) {
   const dir = join(project, ".vernier");
-  const write = (results: object) => writeFileSync(join(dir, "checks.json"), JSON.stringify({ pages: 1, results }));
+  // The local service runs in this very process, as far as the command line can tell.
+  const write = (results: object) => writeFileSync(join(dir, "checks.json"), JSON.stringify({ pages, service: process.pid, results }));
   let results: Record<string, object> = {};
   write(results);
   const timer = setInterval(() => {
     const check = state()?.check;
-    if (!check || (results[check.id] as { at?: string } | undefined)?.at === check.at) return;
-    const result = answer(check.id);
+    const result = check && answer(check.id);
     if (!result) return;
-    results = { ...results, [check.id]: { at: check.at, ...result } };
+    const next = { at: check.at, ...result };
+    if (JSON.stringify(results[check.id]) === JSON.stringify(next)) return;
+    results = { ...results, [check.id]: next };
     write(results);
   }, 20);
   return () => clearInterval(timer);
@@ -279,6 +281,42 @@ describe("done, checked on the page", () => {
     closePage = openPage(() => ({ outcome: "unchecked", reason: "the layer is not on the page now" }));
 
     expect((await cli("done", "1")).output).toContain("\nNot checked on the page: the layer is not on the page now.\n");
+  });
+
+  test("of two pages, waits for the one that can check, while the other cannot", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    const since = Date.now();
+    // The page that shows the layer needs a moment for the dev server; the other answers at once.
+    closePage = openPage(() => (Date.now() - since > 300 ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" }), 2);
+
+    expect((await cli("done", "1")).output).toContain("Checked on the page: it shows the change.");
+  });
+
+  test("does not wait for pages of a local service that is no longer running", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    writeFileSync(join(project, ".vernier/checks.json"), JSON.stringify({ pages: 1, service: 999999, results: {} }));
+
+    const started = Date.now();
+    const { output } = await cli("done", "1");
+
+    expect(output).toContain("Not checked on the page: no page with Vernier Kit is open.");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  test("a check left from an earlier round does not count in this one", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    // As if the service wrote it back just as the round before was archived.
+    writeFileSync(
+      join(project, ".vernier/checks.json"),
+      JSON.stringify({ pages: 0, service: process.pid, results: { 1: { at: "2000-01-01T00:00:00.000Z", outcome: "not shown", actual: null } } }),
+    );
+    await cli("done", "1");
+
+    expect((await cli("finish")).output).toBe("Round finished: 1 of 1 change applied.\n");
+    expect(history()[0].result.checks).toEqual({});
   });
 
   test("finish names the changes the page did not show, and archives the checks", async () => {
@@ -405,8 +443,9 @@ describe("undoing the last round, in a git repository", () => {
     git("init", "-q");
     git("config", "user.email", "test@example.com");
     git("config", "user.name", "Test");
-    writeFileSync(join(project, ".gitignore"), ".vernier/\n");
+    // `.vernier/` is not ignored here, and a binary file changes too.
     writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-white" />;\n');
+    writeFileSync(join(project, "icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3]));
     git("add", "-A");
     git("commit", "-qm", "start");
     saveRound(redFill);
@@ -415,6 +454,7 @@ describe("undoing the last round, in a git repository", () => {
     // The Agent applies the change, and adds a file.
     writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-red-500/50" />;\n');
     writeFileSync(join(project, "fill.css"), ".x {}\n");
+    writeFileSync(join(project, "icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 9, 9, 9]));
     await cli("done", "1");
     await cli("finish");
     expect(git("diff", "--cached", "--name-only")).toBe("");
@@ -427,6 +467,7 @@ describe("undoing the last round, in a git repository", () => {
 
     expect(readFileSync(join(project, "Card.tsx"), "utf8")).toContain('className="bg-white"');
     expect(existsSync(join(project, "fill.css"))).toBe(false);
+    expect([...readFileSync(join(project, "icon.png"))]).toEqual([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3]);
   });
 
   test("outside a git repository, last gives the notes only", async () => {

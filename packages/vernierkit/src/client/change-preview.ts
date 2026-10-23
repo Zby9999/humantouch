@@ -29,6 +29,8 @@ export function startChangePreview(doc: Document): ChangePreview {
   sheet.setAttribute(PREVIEW_STYLES_ATTR, "");
   /** Layer ids by usage key: the layers the changes shown are made to. */
   let layers = new Map<string, string[]>();
+  /** One target for each of those layers, to find it by when its markers have moved. */
+  let targets = new Map<string, Target>();
   /** Their element locations, to pass over most elements without reading their usage chain. */
   let locs = new Set<string>();
 
@@ -40,6 +42,13 @@ export function startChangePreview(doc: Document): ChangePreview {
   };
   const unmark = () => {
     for (const el of doc.querySelectorAll(`[${PREVIEW_ATTR}]`)) el.removeAttribute(PREVIEW_ATTR);
+  };
+  // While the Agent edits a file, the markers of the file's other layers move: those are found where they went.
+  const markMoved = () => {
+    for (const [key, ids] of layers) {
+      if (doc.querySelector(`[${PREVIEW_ATTR}~="${CSS.escape(ids[0])}"]`)) continue;
+      for (const el of movedElementsOf(doc, targets.get(key)!)) el.setAttribute(PREVIEW_ATTR, ids.join(" "));
+    }
   };
 
   // Called before the browser renders what React added: new elements never show without the changes.
@@ -53,6 +62,7 @@ export function startChangePreview(doc: Document): ChangePreview {
       }
       for (const node of record.addedNodes) if (node.nodeType === Node.ELEMENT_NODE) mark(node as Element);
     }
+    markMoved();
   });
   observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: [LOC_ATTR, USAGE_ATTR] });
 
@@ -61,19 +71,23 @@ export function startChangePreview(doc: Document): ChangePreview {
     show(changes) {
       const shown = changes.filter(canPreview);
       const next = new Map<string, string[]>();
+      const nextTargets = new Map<string, Target>();
       for (const { layer, target } of shown) {
         const key = usageKey(target.loc!, target.chain);
         const ids = next.get(key) ?? [];
         if (!ids.includes(layer)) next.set(key, [...ids, layer]);
+        nextTargets.set(key, target);
       }
       // Only a different set of layers needs the page marked again; new values need a new stylesheet only.
       const keys = JSON.stringify([...next]);
       if (keys !== shownKeys) {
         shownKeys = keys;
         layers = next;
+        targets = nextTargets;
         locs = new Set(shown.map((change) => change.target.loc!));
         unmark();
         if (layers.size) mark(doc.documentElement);
+        markMoved();
       }
       sheet.textContent = shown.map(ruleOf).join("\n");
       if (!shown.length) sheet.remove();
@@ -84,16 +98,61 @@ export function startChangePreview(doc: Document): ChangePreview {
       sheet.remove();
       unmark();
       layers = new Map();
+      targets = new Map();
       shownKeys = "";
     },
   };
 }
 
-/** The elements of the layer a change is made to, on the live page now: every instance of its usage. */
+/**
+ * The elements of the layer a change is made to, on the live page now: every
+ * instance of its usage. Where its markers have moved, as an edit to its file
+ * moves them, where they went.
+ */
 export function elementsOf(doc: Document, target: Target): Element[] {
   if (!target.loc) return [];
   const key = usageKey(target.loc, target.chain);
-  return [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([, k]) => k === key).map(([el]) => el);
+  const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([, k]) => k === key).map(([el]) => el);
+  return els.length ? els : movedElementsOf(doc, target);
+}
+
+/**
+ * A layer whose markers no longer match, found among the elements of the same
+ * tag written in the same file, by the same components: the one whose
+ * locations moved least. None when two are as near.
+ */
+function movedElementsOf(doc: Document, target: Target): Element[] {
+  const at = parseLoc(target.loc);
+  const tag = /^<([\w-]+)/.exec(target.context?.element ?? "")?.[1];
+  if (!at || !tag) return [];
+  const components = JSON.stringify(target.chain.map(({ component, thirdParty }) => [component, thirdParty]));
+  const groups = new Map<string, { distance: number; els: Element[] }>();
+  for (const el of doc.querySelectorAll(`${tag}[${LOC_ATTR}^="${CSS.escape(at.file)}:"]`)) {
+    const { loc, chain } = originOf(el, readUsageChain(el));
+    if (!loc || JSON.stringify(chain.map(({ component, thirdParty }) => [component, thirdParty])) !== components) continue;
+    const distance = [distanceOf(target.loc, loc), ...chain.map((level, i) => distanceOf(target.chain[i].usage, level.usage))].reduce((a, b) => a + b, 0);
+    if (!Number.isFinite(distance)) continue;
+    const key = usageKey(loc, chain);
+    const group = groups.get(key) ?? { distance, els: [] };
+    group.els.push(el);
+    groups.set(key, group);
+  }
+  const ranked = [...groups.values()].sort((a, b) => a.distance - b.distance);
+  return ranked.length && (ranked.length === 1 || ranked[0].distance < ranked[1].distance) ? ranked[0].els : [];
+}
+
+/** How far a location moved: lines, a little more for another column; infinitely far in another file. */
+function distanceOf(from: string | null, to: string | null): number {
+  if (from === to) return 0;
+  const a = parseLoc(from);
+  const b = parseLoc(to);
+  if (!a || !b || a.file !== b.file) return Infinity;
+  return Math.abs(a.line - b.line) + (a.column === b.column ? 0 : 0.5);
+}
+
+function parseLoc(loc: string | null): { file: string; line: number; column: number } | null {
+  const match = loc && /^(.*):(\d+):(\d+)$/.exec(loc);
+  return match ? { file: match[1], line: Number(match[2]), column: Number(match[3]) } : null;
 }
 
 /** Elements in `root` (itself included) that may be layers at `locs`, with their usage keys. */

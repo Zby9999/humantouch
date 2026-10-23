@@ -17,14 +17,20 @@ export const UNLOCK_PATH = "/unlock";
 /** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */
 export const CHECKS_PATH = "/checks";
 
+/** `done` asking the page to check change `id`; `at` tells one ask from the next. */
+export interface CheckAsk {
+  id: number;
+  at: string;
+}
+
 /**
  * Edited by the designer, or claimed and being applied by the Agent, with the
- * ids of the changes done so far, and the change the last `done` asks the
- * page to check (`at` tells one ask from the next).
+ * ids of the changes done so far, and the check the last `done` asks for.
  */
-export type RoundStatus =
-  | { status: "editing" }
-  | { status: "claimed"; done: number[]; check?: { id: number; at: string }; code?: CodeSnapshot | null };
+export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; check?: CheckAsk };
+
+/** How long a page waits for the dev server to bring an edit in before it says a change does not show. */
+export const CHECK_SETTLE_MS = 3000;
 
 /** The project's code at one moment, as a git tree, to take a round's changes back out by. */
 export interface CodeSnapshot {
@@ -42,7 +48,7 @@ export type CheckResult =
   | { outcome: "unchecked"; reason: string };
 
 /** A page's answer to a check. */
-export type CheckReport = { id: number; at: string } & CheckResult;
+export type CheckReport = CheckAsk & CheckResult;
 
 export interface ServiceConfig {
   /** `http://127.0.0.1:<port>` */

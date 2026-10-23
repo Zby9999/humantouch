@@ -1,5 +1,7 @@
 import { defineConfig } from "tsup";
 
+// The configs build side by side, so none of them cleans `dist/`: that would race the others' output. `pnpm build` cleans first.
+
 export default defineConfig([
   {
     entry: { vite: "src/vite.ts" },
@@ -7,7 +9,6 @@ export default defineConfig([
     platform: "node",
     target: "node20",
     dts: true,
-    clean: true,
   },
   {
     entry: { cli: "src/bin.ts" },

@@ -10,8 +10,12 @@
 export interface StyleSource {
   /** The CSS properties it sets, of those asked about. */
   properties: string[];
-  /** `rule`: a rule of a stylesheet; `inline`: the element's style attribute; `none`: nothing, the browser default applies. */
-  kind: "rule" | "inline" | "none";
+  /**
+   * `rule`: a rule of a stylesheet; `inline`: the element's style attribute;
+   * `none`: nothing, the browser default applies; `unknown`: nothing readable
+   * sets it, but a stylesheet from another origin, which cannot be read, may.
+   */
+  kind: "rule" | "inline" | "none" | "unknown";
   selector: string | null;
   /** The file the stylesheet comes from, when the dev server says (a path, or a URL); else null. */
   file: string | null;
@@ -61,7 +65,36 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
   const doc = el.ownerDocument;
   const candidates = new Map<string, Candidate[]>(properties.map((p) => [p, []]));
   const layers = new LayerOrder();
+  const view = doc.defaultView!;
   let order = 0;
+  let unreadable = false;
+
+  /** The declarations of a style rule, or of a nested block of them, for `selector`. */
+  const declare = (style: CSSStyleDeclaration, selector: string, file: string | null, layer: string[]) => {
+    const match = bestMatch(el, selector);
+    if (!match) return;
+    const position = order++;
+    for (const property of properties) {
+      const declared = declarationIn(style, property);
+      if (!declared) continue;
+      candidates.get(property)!.push({
+        key: `rule ${position}`,
+        source: {
+          kind: "rule",
+          selector: match.selector,
+          file,
+          layer: layer.length ? layer.join(".") : null,
+          important: declared.important,
+          className: classNameOf(el, match.selector),
+          declaration: declared.text,
+        },
+        inline: false,
+        layerPath: layers.path(layer),
+        specificity: match.specificity,
+        order: position,
+      });
+    }
+  };
 
   const visit = (rules: CSSRuleList, file: string | null, layer: string[], parent: string | null) => {
     for (const rule of rules) {
@@ -69,35 +102,16 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
         case "CSSStyleRule": {
           const style = rule as CSSStyleRule;
           const selector = parent === null ? style.selectorText : nest(style.selectorText, parent);
-          const match = bestMatch(el, selector);
-          if (match) {
-            const position = order++;
-            for (const property of properties) {
-              const declared = declarationIn(style.style, property);
-              if (!declared) continue;
-              candidates.get(property)!.push({
-                key: `rule ${position}`,
-                source: {
-                  kind: "rule",
-                  selector: match.selector,
-                  file,
-                  layer: layer.length ? layer.join(".") : null,
-                  important: declared.important,
-                  className: classNameOf(el, match.selector),
-                  declaration: declared.text,
-                },
-                inline: false,
-                layerPath: layers.path(layer),
-                specificity: match.specificity,
-                order: position,
-              });
-            }
-          }
+          declare(style.style, selector, file, layer);
           if (style.cssRules?.length) visit(style.cssRules, file, layer, selector);
           break;
         }
+        // Declarations nested in a condition, or after a nested rule, apply to the rule they sit in.
+        case "CSSNestedDeclarations":
+          if (parent !== null) declare((rule as CSSStyleRule).style, parent, file, layer);
+          break;
         case "CSSMediaRule":
-          if (doc.defaultView!.matchMedia((rule as CSSMediaRule).media.mediaText).matches) visit((rule as CSSMediaRule).cssRules, file, layer, parent);
+          if (matchesMedia((rule as CSSMediaRule).media)) visit((rule as CSSMediaRule).cssRules, file, layer, parent);
           break;
         case "CSSSupportsRule":
           if (CSS.supports((rule as CSSSupportsRule).conditionText)) visit((rule as CSSSupportsRule).cssRules, file, layer, parent);
@@ -117,7 +131,10 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
         }
         case "CSSImportRule": {
           const imported = (rule as CSSImportRule).styleSheet;
+          const condition = (rule as CSSImportRule & { supportsText?: string | null }).supportsText;
+          if (!matchesMedia((rule as CSSImportRule).media) || (condition && !CSS.supports(condition))) break;
           const rules = imported && readRules(imported);
+          if (imported && !rules) unreadable = true;
           const name = (rule as CSSImportRule).layerName;
           const inner = name === null ? layer : [...layer, ...(name ? name.split(".") : [layers.anonymous()])];
           if (name !== null) layers.declare(inner);
@@ -128,11 +145,15 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     }
   };
 
+  /** Media that do not match (print, another width) leave their rules out. */
+  const matchesMedia = (media: MediaList) => !media.mediaText || view.matchMedia(media.mediaText).matches;
+
   for (const sheet of doc.styleSheets) {
     const owner = sheet.ownerNode as Element | null;
-    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || sheet.disabled) continue;
+    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
     const rules = readRules(sheet);
-    if (rules) visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
+    if (!rules) unreadable = true;
+    else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
   }
 
   // The style attribute as the page wrote it, before any edit added to it.
@@ -161,7 +182,10 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     const source = sources.get(key);
     if (source) source.properties.push(property);
     else if (winner) sources.set(key, { properties: [property], ...winner.source });
-    else sources.set(key, { properties: [property], kind: "none", selector: null, file: null, layer: null, important: false, className: null, declaration: null });
+    else {
+      const kind = unreadable ? "unknown" : "none";
+      sources.set(key, { properties: [property], kind, selector: null, file: null, layer: null, important: false, className: null, declaration: null });
+    }
   }
   return [...sources.values()];
 }

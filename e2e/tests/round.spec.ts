@@ -219,4 +219,26 @@ test.describe("done checks the change on the page", () => {
     expect(await vernierkit("finish")).toBe("Round finished: 1 of 1 change applied.\n");
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
+
+  test("an edit that moves the layer's lines in its file: the check still finds it, and the file's other changes stay previewed", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    const layers = page.getByRole("tree", { name: "Layers" });
+    await layers.getByRole("treeitem", { name: "Header", exact: true }).click();
+    await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
+    await setField(page, "Fill color", "e8f0ff");
+    await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
+    await setField(page, "Fill color", "2563eb");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
+    await vernierkit("claim");
+    const header = page.locator("header");
+    await expect(header).toHaveCSS("background-color", "rgb(232, 240, 255)");
+
+    // Applying the button's fill, the Agent adds a line at the top of App.tsx: every marker below moves.
+    editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
+    editSource(APP, 'import { Badge, Surface } from "acme-ui";', '// Buttons are blue now.\nimport { Badge, Surface } from "acme-ui";');
+
+    expect(await vernierkit("done", "2")).toContain("Checked on the page: it shows the change.");
+    await expect(header).toHaveCSS("background-color", "rgb(232, 240, 255)");
+  });
 });

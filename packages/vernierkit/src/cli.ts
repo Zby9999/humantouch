@@ -6,7 +6,7 @@
  */
 import { changes, describeChanges, propertyName, TO_APPLY, value } from "./change-notes";
 import type { Change } from "./client/changeset";
-import type { CheckResult } from "./service-protocol";
+import { CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
   archiveRound,
   findProject,
@@ -56,7 +56,7 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   // Claimed already: the Agent may have lost the notes. What it did so far stays done.
   const state = await readState(folder);
   // The code as it was before the Agent changed anything, to undo the round by.
-  if (!state) await writeState(folder, { status: "claimed", done: [], code: await snapshotCode(root) });
+  if (!state) await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) });
   const status = state && ((change: Change) => (state.done.includes(change.id) ? "Done" : "Not done yet"));
   io.write(describeChanges(changeSet.changes, root, status ? { ...TO_APPLY, status } : TO_APPLY));
   return 0;
@@ -99,20 +99,38 @@ async function done(folder: VernierFolder, arg: string | undefined, io: Io): Pro
   return 0;
 }
 
-/** Longest wait for a page's answer: it waits up to 2 s itself for the dev server to bring the edit in. */
-const CHECK_WAIT_MS = 4000;
+/** Longest wait for a page's answer: the page waits for the dev server itself, and a page in a background tab is slow. */
+const CHECK_WAIT_MS = CHECK_SETTLE_MS + 3000;
 const CHECK_POLL_MS = 50;
 
-/** The open page's answer to `check`, through the local service's `checks.json`. */
-async function waitForCheck(folder: VernierFolder, check: { id: number; at: string }): Promise<CheckResult> {
+/**
+ * The open pages' answer to `check`, through the local service's
+ * `checks.json`. With several pages, one that cannot check (it does not show
+ * the layer) does not stand in for one that can and is still at it.
+ */
+async function waitForCheck(folder: VernierFolder, check: CheckAsk): Promise<CheckResult> {
   const until = Date.now() + CHECK_WAIT_MS;
+  let unchecked: CheckResult | null = null;
   for (;;) {
     const checks = await readChecks(folder);
-    if (!checks?.pages) return { outcome: "unchecked", reason: "no page with Vernier Kit is open" };
+    if (!checks?.pages || !isRunning(checks.service)) return { outcome: "unchecked", reason: "no page with Vernier Kit is open" };
     const result = checks.results[check.id];
-    if (result?.at === check.at) return result;
-    if (Date.now() > until) return { outcome: "unchecked", reason: "the page did not answer in time" };
+    if (result?.at === check.at) {
+      if (result.outcome !== "unchecked" || checks.pages === 1) return result;
+      unchecked = result;
+    }
+    if (Date.now() > until) return unchecked ?? { outcome: "unchecked", reason: "the page did not answer in time" };
     await new Promise((resolve) => setTimeout(resolve, CHECK_POLL_MS));
+  }
+}
+
+function isRunning(pid: number | undefined): boolean {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 
@@ -146,7 +164,7 @@ async function last(folder: VernierFolder, root: string, io: Io): Promise<number
     const git = `git -C "${code.repository}"`;
     return (
       `${text} The code changes made while it was applied: \`${git} diff ${code.before} ${code.after}\`. ` +
-      `To undo the round, take them back out: \`${git} diff ${code.after} ${code.before} | ${git} apply\`. ` +
+      `To undo the round, take them back out: \`${git} diff --binary ${code.after} ${code.before} | ${git} apply\`. ` +
       "Check the diff first: anything else edited meanwhile is in it too."
     );
   };

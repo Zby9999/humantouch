@@ -87,6 +87,7 @@ function setBy(sources: StyleSource[], root: string): string {
   if (!sources.length) return "unknown";
   const one = (source: StyleSource) => {
     if (source.kind === "none") return "nothing: the browser default applies";
+    if (source.kind === "unknown") return "unknown: no readable style sets it, but a stylesheet from another origin may";
     const declaration = source.declaration && `\`${source.declaration}${source.important ? " !important" : ""}\``;
     if (source.kind === "inline") return `the element's style attribute, ${declaration}`;
     let text = `rule \`${source.selector}\` ${source.layer ? `in CSS layer \`${source.layer}\`` : "in no CSS layer"}`;

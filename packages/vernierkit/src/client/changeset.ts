@@ -50,6 +50,8 @@ export interface ChangeSet {
    * up where it started is no longer a change.
    */
   record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources">): void;
+  /** Whether `property` of the layer with id `layerId` is changed already. */
+  has(layerId: string, property: string): boolean;
   /** The changes, oldest first. */
   list(): Change[];
   /** The ChangeSet as plain data, to save with the canvas. */
@@ -77,6 +79,7 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       else if (earlier) Object.assign(earlier, { after: change.after, style: change.style });
       else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
     },
+    has: (layerId, property) => changes.has(keyOf(layerId, property)),
     list: () => [...changes.values()],
     save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
