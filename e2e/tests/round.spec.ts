@@ -77,6 +77,19 @@ test("claim folds the editor into a locked toggle; each done fills the ring and 
   expect(results()).toMatchObject([{ ended: "finished", done: [1, 2] }]);
 });
 
+test("an edit not yet saved when the Agent claims stays out of the round, on the toggle and the page alike", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  // Claimed well within the autosave delay of this edit.
+  await setField(page, "Corner radius", "6");
+  await vernierkit("claim");
+
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+  await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
+  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
+  expect(readVernier("changeset.json").changes[1].after).toBe(2);
+});
+
 test("a page loaded while the round is being applied shows it locked", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);

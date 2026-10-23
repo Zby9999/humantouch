@@ -1,9 +1,10 @@
 /**
  * The local service: runs in the dev server process and keeps the round in
  * `.vernier/`. It tells the editor layer how the round stands as the Agent
- * claims and applies it, and ends it when the designer unlocks it. It listens on 127.0.0.1 only and answers only requests that
- * carry the random token made at start, so other sites open in the browser
- * cannot reach the project's files.
+ * claims and applies it, and ends it when the designer unlocks it. It
+ * listens on 127.0.0.1 only and answers only requests that carry the random
+ * token made at start, so other sites open in the browser cannot reach the
+ * project's files.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { unwatchFile, watchFile } from "node:fs";
@@ -38,14 +39,18 @@ export async function startService({ root }: { root: string }): Promise<Service>
 
   /** Answers to `GET /events`, kept open: each gets a line when the status changes. */
   const listeners = new Set<ServerResponse>();
-  let last = "";
-  const broadcast = async () => {
-    const line = `${JSON.stringify(await status())}\n`;
-    if (line === last) return;
-    last = line;
-    for (const res of listeners) res.write(line);
+  let lastSent = "";
+  // One read after another, so an older status never goes out after a newer one.
+  let reading = Promise.resolve();
+  const broadcast = () => {
+    reading = reading.then(async () => {
+      const line = `${JSON.stringify(await status())}\n`;
+      if (line === lastSent) return;
+      lastSent = line;
+      for (const res of listeners) res.write(line);
+    }).catch((error) => console.error("Vernier Kit:", error));
   };
-  watchFile(files.state, { interval: WATCH_MS }, () => void broadcast().catch((error) => console.error("Vernier Kit:", error)));
+  watchFile(files.state, { interval: WATCH_MS }, broadcast);
 
   /** `body`: read in full before the request takes its turn, so a slow one holds up no other. */
   const handle = async (req: IncomingMessage, res: ServerResponse, path: string, body: string) => {

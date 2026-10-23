@@ -22,10 +22,15 @@ export const TO_APPLY: NotesOptions = {
     `${count}, made by the designer in Vernier Kit. Apply each one to the source as the project already writes styles, and run \`npx vernierkit done <number>\` after each. When you are through them, run \`npx vernierkit finish\`.`,
 };
 
-export function describeChanges(changes: Change[], options: NotesOptions = TO_APPLY): string {
-  const count = changes.length === 1 ? "1 change" : `${changes.length} changes`;
+/** "1 change", "3 changes". */
+export function changes(count: number): string {
+  return count === 1 ? "1 change" : `${count} changes`;
+}
+
+export function describeChanges(list: Change[], options: NotesOptions = TO_APPLY): string {
+  const count = changes(list.length);
   let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
-  for (const change of changes) notes += section(change, options.status?.(change));
+  for (const change of list) notes += section(change, options.status?.(change));
   return notes;
 }
 
@@ -56,7 +61,7 @@ function layer({ context }: Target): string {
 
 /** Which instances the change is for: those of the usage the layer sits in. */
 function scope({ chain, instances, locked }: Target): string {
-  if (!chain.length) return "This element only.";
+  if (!chain.length) return "This layer only.";
   const [own, ...outer] = chain;
   if (own.usage === null && !own.thirdParty) {
     return `**Usage not determined.** ${own.component} is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page, and leave the other usages of ${own.component} as they are.`;

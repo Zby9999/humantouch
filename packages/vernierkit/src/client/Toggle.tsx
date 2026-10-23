@@ -46,6 +46,8 @@ export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, chi
   const suppressClick = useRef(false);
   const [holding, setHolding] = useState(false);
   const hold = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** Enter or Space is down: a held Enter repeats clicks, none of which is a switch. */
+  const keyHeld = useRef(false);
   const latestOnUnlock = useRef(onUnlock);
   latestOnUnlock.current = onUnlock;
   const startHold = () => {
@@ -132,7 +134,7 @@ export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, chi
       suppressClick.current = false;
       return;
     }
-    if (applying) return;
+    if (applying || keyHeld.current) return;
     // A click from Enter or Space carries no click count.
     onToggle(event.detail > 0);
   };
@@ -141,10 +143,14 @@ export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, chi
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLButtonElement>) => {
     if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return;
     suppressClick.current = false;
-    if (applying) startHold();
+    if (!applying) return;
+    keyHeld.current = true;
+    startHold();
   };
   const onKeyUp = (event: TargetedKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Enter" || event.key === " ") endHold();
+    if (event.key !== "Enter" && event.key !== " ") return;
+    keyHeld.current = false;
+    endHold();
   };
 
   const label = applying
@@ -169,7 +175,10 @@ export function Toggle({ editing, changeCount, applying, onUnlock, onToggle, chi
           onClick={onClick}
           onKeyDown={onKeyDown}
           onKeyUp={onKeyUp}
-          onBlur={endHold}
+          onBlur={() => {
+            keyHeld.current = false;
+            endHold();
+          }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path

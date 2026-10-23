@@ -28,7 +28,7 @@ export interface RoundStore {
 export function connectRoundStore(): RoundStore | null {
   const config = (window as unknown as Record<string, ServiceConfig | undefined>)[SERVICE_GLOBAL];
   if (!config) return null;
-  const request = async (method: string, body?: string, path = ROUND_PATH, signal?: AbortSignal) => {
+  const request = async (method: string, { path = ROUND_PATH, body, signal }: { path?: string; body?: string; signal?: AbortSignal } = {}) => {
     const headers: Record<string, string> = { [TOKEN_HEADER]: config.token };
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(`${config.url}${path}`, { method, headers, body, signal });
@@ -43,18 +43,18 @@ export function connectRoundStore(): RoundStore | null {
       return response.status === 204 ? null : ((await response.json()) as SavedRound);
     },
     save(round) {
-      const next = saving.then(() => (round ? request("PUT", JSON.stringify(round)) : request("DELETE")));
+      const next = saving.then(() => (round ? request("PUT", { body: JSON.stringify(round) }) : request("DELETE")));
       saving = next.catch(() => {});
       return next.then(() => {});
     },
     watch(onStatus) {
       const stop = new AbortController();
       const listen = async () => {
-        const response = await request("GET", undefined, EVENTS_PATH, stop.signal);
-        const lines = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+        const response = await request("GET", { path: EVENTS_PATH, signal: stop.signal });
+        const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
         let buffer = "";
         for (;;) {
-          const { value, done } = await lines.read();
+          const { value, done } = await reader.read();
           if (done) return;
           buffer += value;
           const parts = buffer.split("\n");
@@ -62,14 +62,14 @@ export function connectRoundStore(): RoundStore | null {
           for (const line of parts) if (line) onStatus(JSON.parse(line) as RoundStatus);
         }
       };
-      const again = () => {
-        if (!stop.signal.aborted) setTimeout(() => void listen().then(again, again), RECONNECT_MS);
+      const reconnect = () => {
+        if (!stop.signal.aborted) setTimeout(() => void listen().then(reconnect, reconnect), RECONNECT_MS);
       };
-      void listen().then(again, again);
+      void listen().then(reconnect, reconnect);
       return () => stop.abort();
     },
     async unlock() {
-      await request("POST", undefined, UNLOCK_PATH);
+      await request("POST", { path: UNLOCK_PATH });
     },
   };
 }

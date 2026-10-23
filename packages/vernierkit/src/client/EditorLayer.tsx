@@ -33,8 +33,9 @@ export function EditorLayer() {
   const [preview] = useState(() => startChangePreview(document));
   useEffect(() => () => preview.stop(), []);
 
-  const [status, setStatus] = useState<RoundStatus>({ status: "editing" });
-  const claimed = status.status === "claimed" ? status : null;
+  /** Undefined until the local service has said: edit mode waits for it, as it may be claimed. */
+  const [status, setStatus] = useState<RoundStatus | undefined>(store ? undefined : { status: "editing" });
+  const claimed = status?.status === "claimed" ? status : null;
 
   const load = () =>
     store?.load().then((saved) => {
@@ -56,23 +57,26 @@ export function EditorLayer() {
   useEffect(
     () =>
       store?.watch((next) => {
-        // The round has ended: what is left of it, nothing once archived, is the round now.
-        if (lastStatus.current.status === "claimed" && next.status === "editing") void load();
+        // Claimed: the round is what the Agent got. Ended: what is left of it, nothing once archived.
+        if (lastStatus.current && lastStatus.current.status !== next.status) void load();
         lastStatus.current = next;
         setStatus(next);
       }),
     [],
   );
+  const ready = round !== undefined && status !== undefined;
+  /** Whether the shell was up at the last render: before that, there is no canvas to leave. */
+  const shellShown = useRef(false);
   // Claimed: the canvas is out of date as the code changes, so editing stops.
   useEffect(() => {
-    if (claimed && mode === "edit") {
-      setAnimate(true);
-      setMode("leaving");
-    }
+    if (!claimed || mode !== "edit") return;
+    setAnimate(true);
+    setMode(shellShown.current ? "leaving" : "preview");
   }, [claimed !== null, mode]);
 
-
   const save = (next: SavedRound | null) => {
+    // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
+    if (lastStatus.current?.status === "claimed") return;
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
   };
@@ -81,11 +85,13 @@ export function EditorLayer() {
     writePreviewing(on);
   };
 
+  // A shell already up folds away once claimed; none starts while claimed.
+  shellShown.current = mode !== "preview" && ready && (shellShown.current || !claimed);
   return (
     <>
-      {mode !== "preview" && round !== undefined && (
+      {shellShown.current && (
         <Shell
-          saved={round}
+          saved={round!}
           onSave={save}
           onChangeCount={setChangeCount}
           previewing={previewing}

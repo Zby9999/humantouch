@@ -43,10 +43,19 @@ export async function readChangeSet(folder: VernierFolder): Promise<SavedChangeS
   return text === null ? null : (JSON.parse(text) as SavedChangeSet);
 }
 
-/** The round's state; null while it is being edited. */
+/**
+ * The round's state; null while it is being edited. A state left behind by a
+ * round that is gone (`done` writing it back just after an unlock, say) is
+ * cleared: it would keep the designer locked out for good.
+ */
 export async function readState(folder: VernierFolder): Promise<RoundState | null> {
   const text = await readIfThere(folder.state);
-  return text === null ? null : (JSON.parse(text) as RoundState);
+  if (text === null) return null;
+  if (!existsSync(folder.changeSet)) {
+    await rm(folder.state, { force: true });
+    return null;
+  }
+  return JSON.parse(text) as RoundState;
 }
 
 export async function writeState(folder: VernierFolder, state: RoundState) {

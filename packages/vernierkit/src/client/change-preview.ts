@@ -47,13 +47,18 @@ export function startChangePreview(doc: Document): ChangePreview {
   };
 
   // Called before the browser renders what React added: new elements never show without the changes.
+  // React may also reuse an element for other JSX, changing its markers: it is marked again.
   const observer = new MutationObserver((records) => {
     if (!layers.size) return;
     for (const record of records) {
+      if (record.type === "attributes") {
+        (record.target as Element).removeAttribute(PREVIEW_ATTR);
+        mark(record.target as Element);
+      }
       for (const node of record.addedNodes) if (node.nodeType === Node.ELEMENT_NODE) mark(node as Element);
     }
   });
-  observer.observe(doc.documentElement, { childList: true, subtree: true });
+  observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: [LOC_ATTR, USAGE_ATTR] });
 
   let shownKeys = "";
   return {

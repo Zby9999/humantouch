@@ -4,7 +4,7 @@
  * change applied, `finish` ends the round, and `last` prints the round before,
  * to undo it by.
  */
-import { describeChanges, TO_APPLY } from "./change-notes";
+import { changes, describeChanges, TO_APPLY } from "./change-notes";
 import type { Change } from "./client/changeset";
 import {
   archiveRound,
@@ -72,7 +72,7 @@ async function done(folder: VernierFolder, arg: string | undefined, io: Io): Pro
   }
   const doneIds = state.done.includes(id) ? state.done : [...state.done, id];
   await writeState(folder, { ...state, done: doneIds });
-  io.write(`Change ${id} done: ${doneIds.length} of ${ids.length} ${ids.length === 1 ? "change" : "changes"} applied.\n`);
+  io.write(`Change ${id} done: ${doneIds.length} of ${changes(ids.length)} applied.\n`);
   return 0;
 }
 
@@ -85,7 +85,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   }
   const ids = changeSet.changes.map((change) => change.id);
   const missing = ids.filter((id) => !result.done.includes(id));
-  let text = `Round finished: ${result.done.length} of ${ids.length} ${ids.length === 1 ? "change" : "changes"} applied.`;
+  let text = `Round finished: ${result.done.length} of ${changes(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}. Report why in your reply.`;
   io.write(`${text}\n`);
   return 0;

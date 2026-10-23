@@ -252,3 +252,15 @@ describe("claim, again", () => {
     expect(section(output, 2)).toContain("- **Status:** Not done yet\n");
   });
 });
+
+describe("a claimed state left without its round", () => {
+  // As when `done` writes the state back just after the designer unlocked the round.
+  test("does not keep the round claimed", async () => {
+    mkdirSync(join(project, ".vernier"), { recursive: true });
+    writeFileSync(join(project, ".vernier/state.json"), JSON.stringify({ status: "claimed", done: [1] }));
+
+    expect((await cli("done", "1")).code).toBe(1);
+    expect((await cli("claim")).output).toMatch(/^No design changes to apply/);
+    expect(state()).toBeNull();
+  });
+});
