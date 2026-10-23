@@ -69,6 +69,28 @@ test("going back to preview grows the canvas back over the page before the edito
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
+test("with changes not yet applied, the canvas fades into the page once it has grown back over it", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const hex = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Fill color", exact: true });
+  await hex.fill("ff0000");
+  await hex.press("Enter");
+  const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+  await playbackRate(cdp, 0.1);
+
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+
+  // The page has none of the changes yet: rather than cut to it, the editor dissolves into it, the canvas at full size.
+  const shell = page.locator(".vk-shell");
+  await expect.poll(() => shell.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(0.9);
+  const grown = await box(page);
+  expect(grown.x).toBeCloseTo(0, 0);
+  expect(grown.width).toBeCloseTo(pageWidth, 0);
+  await playbackRate(cdp, 1);
+  await expect(canvasIframe(page)).toHaveCount(0);
+});
+
 test("a click while going back to preview turns around to the same canvas", async ({ page }) => {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expectSettled(page);

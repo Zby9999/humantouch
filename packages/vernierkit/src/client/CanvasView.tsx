@@ -39,11 +39,13 @@ interface Props {
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
   animate: boolean;
+  /** The canvas has changes the page does not: on leaving, it fades into the page instead of cutting to it. */
+  changed: boolean;
   onLeft(): void;
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, leaving, animate, onLeft }: Props) {
+export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, leaving, animate, changed, onLeft }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -59,12 +61,21 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
 
-  /** Plays a mode switch animation, taking over from one still running. */
-  const play = (el: HTMLElement, keyframes: Keyframe[], options: KeyframeAnimationOptions, done?: () => void) => {
+  /**
+   * Plays a mode switch animation, taking over from one still running.
+   * `travelling`: the canvas is out of its place in the viewport meanwhile.
+   */
+  const play = (
+    el: HTMLElement,
+    keyframes: Keyframe[],
+    options: KeyframeAnimationOptions,
+    done?: () => void,
+    travelling = el === stage.current,
+  ) => {
     modeSwitch.current?.cancel();
     const animation = el.animate(keyframes, options);
     modeSwitch.current = animation;
-    setTravelling(el === stage.current);
+    setTravelling(travelling);
     animation.finished.then(
       () => {
         if (modeSwitch.current !== animation) return;
@@ -150,7 +161,13 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
     }
     const from = transformOf(currentView(stage.current!));
     const to = leaving ? overPage() : transformOf(view);
-    play(stage.current!, [{ transform: from }, { transform: to }], { ...options, duration: MODE_SWITCH_MS, easing: EASE_IN_OUT }, done);
+    // Over the page, a changed canvas would cut to a page without the changes.
+    const fadeIntoPage = () => {
+      const shell = viewport.current!.parentElement!;
+      play(shell, [{ opacity: 1 }, { opacity: 0 }], { ...options, duration: MODE_FADE_MS }, done, true);
+    };
+    const grown = leaving && changed ? fadeIntoPage : done;
+    play(stage.current!, [{ transform: from }, { transform: to }], { ...options, duration: MODE_SWITCH_MS, easing: EASE_IN_OUT }, grown);
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.

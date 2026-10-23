@@ -97,6 +97,7 @@ export function Shell({ saved, onSave, onChangeCount, leaving, animate, onLeft }
         onSelect={select}
         leaving={leaving}
         animate={animate}
+        changed={!!round.current?.changeSet.list().length}
         onLeft={onLeft}
       />
       <aside class="vk-panel" aria-label="Design">
