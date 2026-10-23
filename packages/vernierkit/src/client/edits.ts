@@ -105,7 +105,21 @@ export function createEditor(tree: LayerTree, changes: ChangeSet): Editor {
 
 function targetOf(layer: Layer, instances: number): Target {
   const { loc, chain, component } = layer;
-  return { loc, chain, component, instances, locked: layer.kind === "locked", unlocated: !loc };
+  const path: string[] = [];
+  for (let l: Layer | null = layer; l; l = l.parent) path.unshift(l.name);
+  const context = { path, element: openingTag(layer.el) };
+  return { loc, chain, component, instances, locked: layer.kind === "locked", unlocated: !loc, context };
+}
+
+const MAX_CLASSES = 200;
+
+/** `<div id="root" class="…">`: what of the element the Agent can search the source for. */
+function openingTag(el: Element): string {
+  let tag = `<${el.localName}`;
+  if (el.id) tag += ` id="${el.id}"`;
+  const classes = el.getAttribute("class")?.trim();
+  if (classes) tag += ` class="${classes.length > MAX_CLASSES ? `${classes.slice(0, MAX_CLASSES - 1)}…` : classes}"`;
+  return `${tag}>`;
 }
 
 interface ColorReader {

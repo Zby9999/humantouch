@@ -5,15 +5,11 @@
  * cannot reach the project's files.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 import { ROUND_PATH, TOKEN_HEADER, type SavedRound, type ServiceConfig } from "./service-protocol";
-
-const VERNIER_DIR = ".vernier";
-const CANVAS_FILE = "canvas.html";
-const CHANGESET_FILE = "changeset.json";
+import { readIfThere, vernierFolder, writeAtomically } from "./vernier-folder";
 /** A saved canvas carries the page's styles inline; this leaves plenty of room. */
 const MAX_BODY = 64 * 1024 * 1024;
 
@@ -22,12 +18,8 @@ export interface Service extends ServiceConfig {
 }
 
 export async function startService({ root }: { root: string }): Promise<Service> {
-  const dir = join(root, VERNIER_DIR);
+  const files = vernierFolder(root);
   const token = randomBytes(32).toString("hex");
-  const files = {
-    canvas: join(dir, CANVAS_FILE),
-    changeSet: join(dir, CHANGESET_FILE),
-  };
 
   /** `body`: read in full before the request takes its turn, so a slow one holds up no other. */
   const handle = async (req: IncomingMessage, res: ServerResponse, body: string) => {
@@ -42,7 +34,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
       case "PUT": {
         const round = JSON.parse(body) as SavedRound;
         if (typeof round.canvas !== "string" || !Array.isArray(round.changeSet?.changes)) return send(res, 400);
-        await mkdir(dir, { recursive: true });
+        await mkdir(files.dir, { recursive: true });
         await writeAtomically(files.canvas, round.canvas);
         await writeAtomically(files.changeSet, `${JSON.stringify(round.changeSet, null, 2)}\n`);
         return send(res, 204);
@@ -117,15 +109,6 @@ function send(res: ServerResponse, status: number, json?: string) {
   res.writeHead(status).end(json);
 }
 
-async function readIfThere(file: string): Promise<string | null> {
-  try {
-    return await readFile(file, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -142,11 +125,4 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
-}
-
-/** Written in full or not at all: a reader never sees half a file. */
-async function writeAtomically(file: string, text: string) {
-  const temporary = `${file}.${process.pid}.tmp`;
-  await writeFile(temporary, text);
-  await rename(temporary, file);
 }

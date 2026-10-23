@@ -5,8 +5,12 @@
   "license": "MIT",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "skill"
   ],
+  "bin": {
+    "vernierkit": "./dist/cli.js"
+  },
   "exports": {
     "./vite": {
       "types": "./dist/vite.d.ts",

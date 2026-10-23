@@ -10,6 +10,13 @@ export default defineConfig([
     clean: true,
   },
   {
+    entry: { cli: "src/bin.ts" },
+    format: "esm",
+    platform: "node",
+    target: "node20",
+    banner: { js: "#!/usr/bin/env node" },
+  },
+  {
     entry: { react: "src/react.ts", "react.dev": "src/react.dev.ts" },
     format: "esm",
     platform: "browser",

@@ -8,12 +8,19 @@ export const PREVIEW_URL = "http://localhost:5311";
 export const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
 export const EXIT_LABEL = "Vernier Kit: back to preview mode";
 
+/** Tests that work with the example project's real `.vernier/` folder: one at a time, across files too. */
+const PROJECT_FILES = /(autosave|claim|round)\.spec\.ts$/;
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   reporter: process.env.CI ? "github" : "list",
   // Mode switches animate; tests that measure the canvas want it to settle at once. motion.spec.ts opts back in.
   use: { ...devices["Desktop Chrome"], channel: "chrome", trace: "retain-on-failure", reducedMotion: "reduce" },
+  projects: [
+    { name: "page", testIgnore: PROJECT_FILES },
+    { name: "project files", testMatch: PROJECT_FILES, workers: 1 },
+  ],
   webServer: [
     {
       name: "dev",

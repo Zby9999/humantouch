@@ -87,6 +87,7 @@ describe("solid fill", () => {
           instances: 3,
           locked: false,
           unlocated: false,
+          context: { path: ["Page", "App", "Card"], element: "<article>" },
         },
         scope: "usage",
         property: "fill",
@@ -152,6 +153,7 @@ describe("the ChangeSet", () => {
       instances: 1,
       locked: false,
       unlocated: true,
+      context: { path: ["Page", "Frame"], element: '<div id="unmarked">' },
     });
   });
 

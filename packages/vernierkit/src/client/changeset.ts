@@ -16,6 +16,13 @@ export interface Target {
   instances: number;
   locked: boolean;
   unlocated: boolean;
+  /** Where the layer is on the page, for the Agent to find it by when its source is not known. */
+  context: {
+    /** Layer names from the page down to the layer itself. */
+    path: string[];
+    /** The layer's element as an opening tag, with its id and classes. */
+    element: string;
+  };
 }
 
 export interface Change {
