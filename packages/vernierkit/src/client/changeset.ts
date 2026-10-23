@@ -21,6 +21,8 @@ export interface Target {
 export interface Change {
   id: number;
   kind: "style";
+  /** Id of the layer on the canvas (`data-vk-layer`). */
+  layer: string;
   target: Target;
   /** `usage`: this usage of the component only. */
   scope: "usage";
@@ -38,23 +40,39 @@ export interface ChangeSet {
   record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after">): void;
   /** The changes, oldest first. */
   list(): Change[];
+  /** The ChangeSet as plain data, to save with the canvas. */
+  save(): SavedChangeSet;
 }
 
-export function createChangeSet(): ChangeSet {
-  const changes = new Map<string, Change>();
-  let lastId = 0;
+/** A ChangeSet as saved in `.vernier/changeset.json`. */
+export interface SavedChangeSet {
+  /** The last id handed out, so a restored ChangeSet never hands it out again. */
+  lastId: number;
+  changes: Change[];
+}
+
+/** A new ChangeSet, or the one `saved` was saved from. */
+export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
+  const changes = new Map<string, Change>(saved?.changes.map((change) => [keyOf(change.layer, change.property), change]));
+  let lastId = saved?.lastId ?? 0;
   return {
     record(layerId, change) {
-      const key = `${layerId} ${change.property}`;
+      const key = keyOf(layerId, change.property);
       const earlier = changes.get(key);
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
       else if (earlier) earlier.after = change.after;
-      else changes.set(key, { id: ++lastId, kind: "style", ...change });
+      else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
     },
     list: () => [...changes.values()],
+    save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
+}
+
+/** One change per property of a layer. */
+function keyOf(layerId: string, property: string): string {
+  return `${layerId} ${property}`;
 }
 
 /** Values are plain data in design language. */

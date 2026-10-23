@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { freeze, type Canvas } from "./freezer";
+import { freeze, restore, type Canvas } from "./freezer";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { boxOf, role, type Layer, type LayerTree } from "./layers";
@@ -25,7 +25,9 @@ const MAX_ZOOM_STEP = 30;
 export const ENTER_MARK = "vernierkit:enter-edit-mode";
 
 interface Props {
-  /** Called once the page is frozen and laid out. */
+  /** A saved canvas to put back; null to freeze the page. */
+  restoreFrom: string | null;
+  /** Called once the page is frozen, or the saved canvas restored, and laid out. */
   onCanvas(canvas: Canvas): void;
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
@@ -41,7 +43,7 @@ interface Props {
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, leaving, animate, onLeft }: Props) {
+export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, leaving, animate, onLeft }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -86,7 +88,7 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
     // The shell around the canvas. It stays see-through until there is a canvas, so the page shows until it can turn into one.
     const shell = viewport.current!.parentElement!;
     shell.style.opacity = "0";
-    const frozen = freeze(window, iframe.current!);
+    const frozen = restoreFrom === null ? freeze(window, iframe.current!) : restore(restoreFrom, iframe.current!);
     // Pause the page underneath, now that it has been copied: no focus, no clicks.
     const body = document.body;
     const wasInert = body.inert;

@@ -19,11 +19,13 @@ interface Drag {
 /** The single control in preview mode, and the way back from edit mode. Drag it to any corner; click it to switch modes. */
 interface Props {
   editing: boolean;
+  /** Changes not yet applied, shown as a badge. */
+  changeCount: number;
   /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
   onToggle(animate: boolean): void;
 }
 
-export function Toggle({ editing, onToggle }: Props) {
+export function Toggle({ editing, changeCount, onToggle }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -118,6 +120,11 @@ export function Toggle({ editing, onToggle }: Props) {
           <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
         </svg>
       </button>
+      {changeCount > 0 && (
+        <span class="vk-badge" role="status" aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}>
+          {changeCount}
+        </span>
+      )}
     </div>
   );
 }

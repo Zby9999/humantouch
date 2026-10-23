@@ -37,6 +37,16 @@ html { scrollbar-width: none !important; }
 
 /** Marks what the canvas shows in place of content it cannot copy: `video`, `iframe`. */
 export const FROZEN = "data-vk-frozen";
+/** On the canvas's own style element: added to every canvas, never saved with it. */
+const CANVAS_STYLES_ATTR = "data-vk-canvas-styles";
+/** An element scrolled when the page was frozen: `left top`. */
+const SCROLL_ATTR = "data-vk-scroll";
+/** An element in the top layer when the page was frozen: `modal` or `popover`. */
+const TOP_LAYER_ATTR = "data-vk-top-layer";
+/** On a saved canvas: its pixels, as a data URL. */
+const PIXELS_ATTR = "data-vk-pixels";
+/** On a saved canvas's root: its size and scroll, as JSON. */
+const LAYOUT_ATTR = "data-vk-layout";
 
 /** How long to wait at most for the copy's fonts and cross-origin stylesheets. */
 const SETTLE_TIMEOUT_MS = 500;
@@ -57,8 +67,6 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   // The clone has the same tree as the page, so the two lists line up one to one.
   const liveEls = [root, ...root.getElementsByTagName("*")];
   const copyEls = [copy, ...copy.getElementsByTagName("*")];
-  const scrolled: [Element, number, number][] = [];
-  const topLayer: [HTMLElement, "modal" | "popover"][] = [];
   for (let i = 0; i < liveEls.length; i++) {
     const from = liveEls[i] as HTMLElement;
     let to = copyEls[i] as HTMLElement;
@@ -93,10 +101,10 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     pinToViewport(from, to, viewport);
     // The document's own scroll is shown by the canvas view instead.
     if ((from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
-      scrolled.push([to, from.scrollLeft, from.scrollTop]);
+      to.setAttribute(SCROLL_ATTR, `${from.scrollLeft} ${from.scrollTop}`);
     }
-    if (from.matches(":modal")) topLayer.push([to, "modal"]);
-    else if (from.matches(":popover-open")) topLayer.push([to, "popover"]);
+    if (from.matches(":modal")) to.setAttribute(TOP_LAYER_ATTR, "modal");
+    else if (from.matches(":popover-open")) to.setAttribute(TOP_LAYER_ATTR, "popover");
   }
   // Constructable stylesheets come after all the others in the cascade.
   for (const sheet of live.adoptedStyleSheets) {
@@ -109,14 +117,104 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   if (!doc) return Promise.reject(new Error("Vernier Kit: the canvas iframe is not in the document"));
   // Writing a doctype puts the copy in the same rendering mode as the page.
   doc.open();
-  doc.write(live.compatMode === "CSS1Compat" ? "<!DOCTYPE html>" : "");
+  doc.write(doctypeOf(live));
   doc.close();
   doc.replaceChild(doc.adoptNode(copy), doc.documentElement);
-  doc.head.append(Object.assign(doc.createElement("style"), { textContent: CANVAS_STYLES }));
-  for (const [el, kind] of topLayer) {
+  for (const sheet of doc.styleSheets) {
+    const rules = readRules(sheet);
+    if (rules && VIEWPORT_DEPENDENT.test(sheet.ownerNode?.textContent ?? "")) resolveViewport(rules, page, viewport);
+  }
+  return present(doc, iframe, { width: root.clientWidth, height: viewport.height, scrollY: viewport.scrollY });
+}
+
+/**
+ * The canvas as an HTML document, edits included, to save with the round.
+ * What lives outside the markup goes in with it: rules changed through the
+ * CSSOM, the pixels of stills, the values of form fields.
+ */
+export function serializeCanvas(canvas: Canvas): string {
+  const doc = canvas.document;
+  const root = doc.documentElement;
+  const copy = root.cloneNode(true) as HTMLElement;
+  const els = [root, ...root.getElementsByTagName("*")];
+  const copyEls = [copy, ...copy.getElementsByTagName("*")];
+  for (let i = 0; i < els.length; i++) {
+    const from = els[i];
+    const to = copyEls[i];
+    switch (from.localName) {
+      case "style": {
+        if (from.hasAttribute(CANVAS_STYLES_ATTR)) {
+          to.remove();
+          break;
+        }
+        const rules = readRules((from as HTMLStyleElement).sheet);
+        if (rules) to.textContent = serialize(rules, null);
+        break;
+      }
+      case "canvas":
+        try {
+          to.setAttribute(PIXELS_ATTR, (from as HTMLCanvasElement).toDataURL());
+        } catch {} // Painted from another origin: it cannot be read back.
+        break;
+      case "input": {
+        const input = from as HTMLInputElement;
+        if (input.type === "checkbox" || input.type === "radio") to.toggleAttribute("checked", input.checked);
+        else if (input.type !== "file") to.setAttribute("value", input.value);
+        break;
+      }
+      case "textarea":
+        to.textContent = (from as HTMLTextAreaElement).value;
+        break;
+      case "option":
+        to.toggleAttribute("selected", (from as HTMLOptionElement).selected);
+        break;
+    }
+  }
+  const layout: Layout = { width: canvas.width, height: canvas.height, scrollY: canvas.scrollY };
+  copy.setAttribute(LAYOUT_ATTR, JSON.stringify(layout));
+  return doctypeOf(doc) + copy.outerHTML;
+}
+
+/** The doctype that puts a document in `doc`'s rendering mode. */
+function doctypeOf(doc: Document): string {
+  return doc.compatMode === "CSS1Compat" ? "<!DOCTYPE html>" : "";
+}
+
+/** Puts a canvas saved by `serializeCanvas` back into `iframe`, as `freeze` would. */
+export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas> {
+  const doc = iframe.contentDocument;
+  if (!doc) return Promise.reject(new Error("Vernier Kit: the canvas iframe is not in the document"));
+  doc.open();
+  doc.write(html);
+  doc.close();
+  const root = doc.documentElement;
+  const layout = JSON.parse(root.getAttribute(LAYOUT_ATTR) ?? "null") as Layout | null;
+  if (!layout) return Promise.reject(new Error("Vernier Kit: the saved canvas has no layout"));
+  root.removeAttribute(LAYOUT_ATTR);
+  const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
+    const image = new Image();
+    image.src = still.getAttribute(PIXELS_ATTR)!;
+    still.removeAttribute(PIXELS_ATTR);
+    return image.decode().then(
+      () => drawInto(still, image),
+      () => {},
+    );
+  });
+  return present(doc, iframe, layout, pixels);
+}
+
+/** How a canvas is laid out: its width, its height at least, and how far down the designer was. */
+type Layout = Pick<Canvas, "width" | "height" | "scrollY">;
+
+/** Brings a copy written into `iframe` to rest, sized to the whole page. */
+function present(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
+  const styles = Object.assign(doc.createElement("style"), { textContent: CANVAS_STYLES });
+  styles.setAttribute(CANVAS_STYLES_ATTR, "");
+  doc.head.append(styles);
+  for (const el of doc.querySelectorAll<HTMLElement>(`[${TOP_LAYER_ATTR}]`)) {
     try {
-      if (kind === "modal") {
-        (el as HTMLDialogElement).removeAttribute("open");
+      if (el.getAttribute(TOP_LAYER_ATTR) === "modal") {
+        el.removeAttribute("open");
         (el as HTMLDialogElement).showModal();
       } else el.showPopover();
     } catch {}
@@ -129,20 +227,19 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
       animation.cancel(); // Infinite: no end state, so it rests at its base style.
     }
   }
-  for (const sheet of doc.styleSheets) {
-    const rules = readRules(sheet);
-    if (rules && VIEWPORT_DEPENDENT.test(sheet.ownerNode?.textContent ?? "")) resolveViewport(rules, page, viewport);
-  }
 
-  const width = root.clientWidth;
+  const { width } = layout;
   iframe.style.width = `${width}px`;
-  iframe.style.height = `${viewport.height}px`;
+  iframe.style.height = `${layout.height}px`;
 
-  return settle(doc).then(() => {
-    const height = Math.max(viewport.height, doc.documentElement.scrollHeight);
+  return Promise.all([settle(doc), ...loading]).then(() => {
+    const height = Math.max(layout.height, doc.documentElement.scrollHeight);
     iframe.style.height = `${height}px`;
-    for (const [el, left, top] of scrolled) el.scrollTo(left, top);
-    return { document: doc, width, height, scrollY: viewport.scrollY };
+    for (const el of doc.querySelectorAll(`[${SCROLL_ATTR}]`)) {
+      const [left, top] = el.getAttribute(SCROLL_ATTR)!.split(" ").map(Number);
+      el.scrollTo(left, top);
+    }
+    return { document: doc, width, height, scrollY: layout.scrollY };
   });
 }
 

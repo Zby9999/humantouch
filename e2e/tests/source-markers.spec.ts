@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { readFileSync } from "node:fs";
 import { DEV_URL } from "../playwright.config";
 
@@ -29,7 +29,7 @@ test("elements written by project source carry their element location", async ({
 });
 
 /** The props of the nearest component that rendered the element matching `selector`. */
-function ownerProps(page: import("@playwright/test").Page, selector: string) {
+function ownerProps(page: import("./fixtures").Page, selector: string) {
   return page.evaluate((selector) => {
     const el = document.querySelector(selector)!;
     const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"))!;

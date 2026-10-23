@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 test.beforeEach(async ({ page }) => {

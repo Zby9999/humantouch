@@ -1,4 +1,4 @@
-import { expect, test, type Frame, type Page } from "@playwright/test";
+import { expect, test, type Frame, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvasIframe(page: Page) {

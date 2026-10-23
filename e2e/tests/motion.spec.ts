@@ -1,4 +1,4 @@
-import { expect, test, type CDPSession, type Page } from "@playwright/test";
+import { expect, test, type CDPSession, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 test.use({ reducedMotion: "no-preference" });

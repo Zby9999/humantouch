@@ -52,6 +52,27 @@ export const styles = /* css */ `
 .vk-dock.is-dragging .vk-toggle { cursor: grabbing; scale: 1.04; }
 .vk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
 
+/* Changes not yet applied, on the toggle's top-right edge. Clicks go through to the toggle. */
+.vk-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #0d99ff;
+  box-shadow: 0 0 0 2px #fff;
+  color: #fff;
+  font: 600 11px/18px ${FONT_STACK};
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* Edit mode shell. Figma-like; follows the system light / dark setting. */
 .vk-shell {
   --vk-panel: #ffffff;

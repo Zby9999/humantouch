@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 test("the toggle appears on the page in development", async ({ page }) => {

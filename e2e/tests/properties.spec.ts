@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvas(page: Page) {

@@ -79,6 +79,7 @@ describe("solid fill", () => {
       {
         id: 1,
         kind: "style",
+        layer: "1",
         target: {
           loc: "src/Card.tsx:3:5",
           chain: cardAt("src/App.tsx:6:9"),
