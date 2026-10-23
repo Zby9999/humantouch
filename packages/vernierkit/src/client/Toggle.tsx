@@ -17,7 +17,13 @@ interface Drag {
 }
 
 /** The single control in preview mode, and the way back from edit mode. Drag it to any corner; click it to switch modes. */
-export function Toggle({ editing, onToggle }: { editing: boolean; onToggle: () => void }) {
+interface Props {
+  editing: boolean;
+  /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
+  onToggle(animate: boolean): void;
+}
+
+export function Toggle({ editing, onToggle }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -81,12 +87,13 @@ export function Toggle({ editing, onToggle }: { editing: boolean; onToggle: () =
     writeCorner(next);
   };
 
-  const onClick = () => {
+  const onClick = (event: MouseEvent) => {
     if (suppressClick.current) {
       suppressClick.current = false;
       return;
     }
-    onToggle();
+    // A click from Enter or Space carries no click count.
+    onToggle(event.detail > 0);
   };
 
   return (

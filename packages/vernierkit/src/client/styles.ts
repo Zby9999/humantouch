@@ -186,6 +186,8 @@ export const styles = /* css */ `
   color: var(--vk-text-muted);
 }
 .vk-viewport.is-panning { cursor: grabbing; }
+/* While the page shrinks into the canvas or grows back, it passes over the panels. */
+.vk-viewport.is-travelling { overflow: visible; }
 .vk-stage {
   position: absolute;
   top: 0;

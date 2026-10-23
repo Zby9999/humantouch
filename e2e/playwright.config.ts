@@ -12,7 +12,8 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   reporter: process.env.CI ? "github" : "list",
-  use: { ...devices["Desktop Chrome"], channel: "chrome", trace: "retain-on-failure" },
+  // Mode switches animate; tests that measure the canvas want it to settle at once. motion.spec.ts opts back in.
+  use: { ...devices["Desktop Chrome"], channel: "chrome", trace: "retain-on-failure", reducedMotion: "reduce" },
   webServer: [
     {
       name: "dev",

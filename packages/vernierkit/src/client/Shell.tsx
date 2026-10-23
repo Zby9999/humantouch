@@ -5,8 +5,16 @@ import { buildLayerTree, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 
+interface Props {
+  /** Edit mode has ended; the shell goes once the canvas is back over the page. */
+  leaving: boolean;
+  /** False: switch modes instantly (the toggle was pressed from the keyboard). */
+  animate: boolean;
+  onLeft(): void;
+}
+
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell() {
+export function Shell({ leaving, animate, onLeft }: Props) {
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [selected, setSelected] = useState<Layer | null>(null);
 
@@ -21,6 +29,9 @@ export function Shell() {
         tree={tree}
         selected={selected}
         onSelect={setSelected}
+        leaving={leaving}
+        animate={animate}
+        onLeft={onLeft}
       />
       <aside class="vk-panel" aria-label="Design">
         <h2 class="vk-panel-title">Design</h2>

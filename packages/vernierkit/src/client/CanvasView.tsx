@@ -3,6 +3,7 @@ import type { TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { freeze, type Canvas } from "./freezer";
 import { Icon } from "./icons";
+import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { boxOf, role, type Layer, type LayerTree } from "./layers";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParent } from "./selection";
 
@@ -30,11 +31,17 @@ interface Props {
   tree: LayerTree | null;
   selected: Layer | null;
   onSelect(layer: Layer | null): void;
+  /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
+  leaving: boolean;
+  /** False: switch modes instantly (the toggle was pressed from the keyboard). */
+  animate: boolean;
+  onLeft(): void;
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
+export function CanvasView({ onCanvas, tree, selected, onSelect, leaving, animate, onLeft }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [failed, setFailed] = useState(false);
@@ -42,10 +49,39 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
   const [spaceHeld, setSpaceHeld] = useState(false);
   const pan = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [panning, setPanning] = useState(false);
+  const modeSwitch = useRef<Animation | null>(null);
+  /** The canvas is travelling between the page and its place in the viewport, unclipped. */
+  const [travelling, setTravelling] = useState(false);
+
+  /** Plays a mode switch animation, taking over from one still running. */
+  const play = (el: HTMLElement, keyframes: Keyframe[], options: KeyframeAnimationOptions, done?: () => void) => {
+    modeSwitch.current?.cancel();
+    const animation = el.animate(keyframes, options);
+    modeSwitch.current = animation;
+    setTravelling(el === stage.current);
+    animation.finished.then(
+      () => {
+        if (modeSwitch.current !== animation) return;
+        modeSwitch.current = null;
+        setTravelling(false);
+        done?.();
+      },
+      () => {}, // Cancelled: a newer switch took over.
+    );
+  };
+
+  /** The stage transform that puts the canvas exactly where the page is in the window. */
+  const overPage = () => {
+    const area = viewport.current!.getBoundingClientRect();
+    return transformOf({ x: -area.left - scrollX, y: -area.top - scrollY, zoom: 1 });
+  };
 
   // A layout effect, so freezing starts in the same task as the click.
   useLayoutEffect(() => {
     let mounted = true;
+    // The shell around the canvas. It stays see-through until there is a canvas, so the page shows until it can turn into one.
+    const shell = viewport.current!.parentElement!;
+    shell.style.opacity = "0";
     const frozen = freeze(window, iframe.current!);
     // Pause the page underneath, now that it has been copied: no focus, no clicks.
     const body = document.body;
@@ -55,7 +91,18 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
       if (!mounted) return;
       setCanvas(frozen);
       onCanvas(frozen);
-      setView(initialView(frozen, viewport.current!.getBoundingClientRect()));
+      const start = initialView(frozen, viewport.current!.getBoundingClientRect());
+      setView(start);
+      shell.style.opacity = "";
+      if (animate && prefersReducedMotion()) {
+        play(shell, [{ opacity: 0 }, { opacity: 1 }], { duration: MODE_FADE_MS, easing: EASE_OUT });
+      } else if (animate) {
+        // The page shrinks from where it is in the window into its place on the canvas.
+        play(stage.current!, [{ transform: overPage() }, { transform: transformOf(start) }], {
+          duration: MODE_SWITCH_MS,
+          easing: EASE_IN_OUT,
+        });
+      }
       // The task after the next frame: the canvas has been painted by then.
       requestAnimationFrame(() =>
         setTimeout(() => {
@@ -66,6 +113,7 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
       );
     }, (error: unknown) => {
       console.error(error);
+      shell.style.opacity = "";
       if (mounted) setFailed(true);
     });
     // Take focus from the toggle, so keys like Space act on the canvas.
@@ -75,6 +123,29 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
       body.inert = wasInert;
     };
   }, []);
+
+  // Leaving grows the canvas back over the page; a click on the way turns it around.
+  const wasLeaving = useRef(false);
+  useLayoutEffect(() => {
+    if (leaving === wasLeaving.current) return;
+    wasLeaving.current = leaving;
+    const done = leaving ? onLeft : undefined;
+    if (!canvas) {
+      done?.(); // Nothing frozen yet, so nothing to grow.
+      return;
+    }
+    // Leaving holds its last frame until the shell is gone.
+    const options = { easing: EASE_OUT, fill: leaving ? "forwards" : "none" } as const;
+    if (prefersReducedMotion()) {
+      const shell = viewport.current!.parentElement!;
+      const from = getComputedStyle(shell).opacity;
+      play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
+      return;
+    }
+    const from = transformOf(currentView(stage.current!));
+    const to = leaving ? overPage() : transformOf(view);
+    play(stage.current!, [{ transform: from }, { transform: to }], { ...options, duration: MODE_SWITCH_MS, easing: EASE_IN_OUT }, done);
+  }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
   const latest = useRef({ canvas, selected, onSelect });
@@ -179,7 +250,7 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
   return (
     <div
       ref={viewport}
-      class={`vk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : ""}`}
+      class={`vk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : ""}${travelling ? " is-travelling" : ""}`}
       role="region"
       aria-label="Canvas viewport"
       tabIndex={-1}
@@ -193,15 +264,16 @@ export function CanvasView({ onCanvas, tree, selected, onSelect }: Props) {
       }}
     >
       <div
+        ref={stage}
         class="vk-stage"
         style={{
-          transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+          transform: transformOf(view),
           visibility: canvas ? "visible" : "hidden",
         }}
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
-      {canvas && selected && <SelectionBox layer={selected} view={view} />}
+      {canvas && selected && !travelling && <SelectionBox layer={selected} view={view} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
@@ -230,6 +302,16 @@ function SelectionBox({ layer, view }: { layer: Layer; view: View }) {
       )}
     </div>
   );
+}
+
+function transformOf({ x, y, zoom }: View): string {
+  return `translate(${x}px, ${y}px) scale(${zoom})`;
+}
+
+/** Where the stage is right now, partway through an animation included. */
+function currentView(stage: HTMLElement): View {
+  const m = new DOMMatrix(getComputedStyle(stage).transform);
+  return { x: m.e, y: m.f, zoom: m.a };
 }
 
 /** At most 100%, the full width in view, and the part of the page the designer was looking at on top. */
