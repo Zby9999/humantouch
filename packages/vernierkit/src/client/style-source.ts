@@ -30,6 +30,14 @@ export interface StyleSource {
 
 /** Before any edit, the element's own style attribute: edits write theirs into it. */
 export const ORIGINAL_STYLE_ATTR = "data-vk-original-style";
+/**
+ * On an element the freezer pinned where the designer saw it (placed against
+ * the viewport, which the canvas has none of): the CSS properties it wrote into
+ * the style attribute. They are the freezer's, not the page's.
+ */
+export const PINNED_ATTR = "data-vk-pinned";
+/** On a pinned element, how far (`x y`, px) it was shifted with the page's scroll: the canvas has it there, the page does not. */
+export const PIN_OFFSET_ATTR = "data-vk-pin-offset";
 /** On a stylesheet the freezer inlined from a `<link>`: where it was loaded from. */
 export const SHEET_HREF_ATTR = "data-vk-href";
 /** Where Vite's dev server says a stylesheet comes from. */
@@ -40,6 +48,21 @@ const CANVAS_STYLES_ATTR = "data-vk-canvas-styles";
 /** The shorthands that can set a longhand, as written in a rule. */
 const SHORTHANDS: Record<string, string[]> = {
   "background-color": ["background"],
+  "flex-grow": ["flex"],
+  "flex-shrink": ["flex"],
+  "flex-basis": ["flex"],
+  "flex-direction": ["flex-flow"],
+  "flex-wrap": ["flex-flow"],
+  "row-gap": ["gap"],
+  "column-gap": ["gap"],
+  "justify-content": ["place-content"],
+  "align-items": ["place-items"],
+  "align-self": ["place-self"],
+  "overflow-x": ["overflow"],
+  "overflow-y": ["overflow"],
+  top: ["inset", "inset-block", "inset-block-start"],
+  left: ["inset", "inset-inline", "inset-inline-start"],
+  ...Object.fromEntries(["top", "right", "bottom", "left"].map((side) => [`padding-${side}`, ["padding"]])),
   "border-top-left-radius": ["border-radius"],
   "border-top-right-radius": ["border-radius"],
   "border-bottom-right-radius": ["border-radius"],
@@ -156,12 +179,14 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
   }
 
-  // The style attribute as the page wrote it, before any edit added to it.
+  // The style attribute as the page wrote it, before any edit added to it, and without what the freezer pinned.
   const original = el.getAttribute(ORIGINAL_STYLE_ATTR) ?? el.getAttribute("style");
   if (original) {
     const style = doc.createElement("div").style;
     style.cssText = original;
+    const pinned = pinnedOf(el);
     for (const property of properties) {
+      if (pinned.includes(property)) continue;
       const declared = declarationIn(style, property);
       if (!declared) continue;
       candidates.get(property)!.push({
@@ -188,6 +213,11 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     }
   }
   return [...sources.values()];
+}
+
+/** The CSS properties the freezer pinned on `el`. */
+export function pinnedOf(el: Element): string[] {
+  return el.getAttribute(PINNED_ATTR)?.split(" ") ?? [];
 }
 
 /** The cascade, for declarations of one origin: importance, the style attribute, layers, specificity, order. */

@@ -7,7 +7,7 @@
 import { isAbsolute, relative } from "node:path";
 import type { Change, Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
-import { propertyTitle, value } from "./design-values";
+import { propertyName, propertyTitle, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -49,12 +49,16 @@ function section(change: Change, root: string, status: string | undefined): stri
     `**Layer:** ${layer(target)}`,
     `**Location:** ${target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
-    `**Design intent:** Change the ${property.toLowerCase()} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`,
+    `**Design intent:** Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`,
+    ...(change.asStack ? [AS_STACK] : []),
     `**Reference style:** ${Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``).join(", ")}`,
     `**Currently set by:** ${setBy(change.sources ?? [], root)}`,
   ];
   return `## ${change.id}. ${property}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
+
+const AS_STACK =
+  "**Make it a Stack:** the layer lays its children out as plain blocks, top to bottom, which the editor shows as a vertical Stack. Make it a real Stack, a flex column (as the reference style shows), so the change applies.";
 
 const NOT_LOCATED =
   "**Not located.** The layer carries no source marker: it may be markup outside the components (such as `index.html`) or code written without JSX. Find it in the source from its place on the page, above.";

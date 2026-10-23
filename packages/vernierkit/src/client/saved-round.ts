@@ -16,8 +16,8 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   if (!change) return round;
   changes.remove(id);
   const doc = new DOMParser().parseFromString(round.canvas, "text/html");
-  const untouched = !changes.list().some((c) => c.layer === change.layer);
-  for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}="${CSS.escape(change.layer)}"]`)) restoreStyle(el, change.property as Property, untouched);
+  const others = changes.list().filter((c) => c.layer === change.layer);
+  for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}="${CSS.escape(change.layer)}"]`)) restoreStyle(el, change.property as Property, others);
   if (!changes.list().length) return null;
   const doctype = /^<!DOCTYPE html>/i.test(round.canvas) ? "<!DOCTYPE html>" : "";
   return { canvas: doctype + doc.documentElement.outerHTML, changeSet: changes.save() };

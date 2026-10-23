@@ -193,18 +193,18 @@ describe("undo and redo", () => {
     editor.set(layerOf(box), "radius", 8);
     editor.set(layerOf(cards[0]), "radius", 6);
 
-    expect(editor.undo()).toBe(layerOf(cards[0]));
+    expect(editor.undo()).toEqual([layerOf(cards[0])]);
     expect(style(cards[0]).borderRadius).toBe("4px");
     expect(summary(changes)).toEqual([
       { property: "radius", after: 4 },
       { property: "radius", after: 8 },
     ]);
-    expect(editor.undo()).toBe(layerOf(box));
+    expect(editor.undo()).toEqual([layerOf(box)]);
     expect(style(box).borderRadius).toBe("0px");
     editor.undo();
     expect(cards.map((card) => style(card).borderRadius)).toEqual(["12px", "12px", "12px", "12px"]);
     expect(changes.list()).toEqual([]);
-    expect(editor.undo()).toBeNull();
+    expect(editor.undo()).toEqual([]);
 
     editor.redo();
     editor.redo();
@@ -215,7 +215,7 @@ describe("undo and redo", () => {
     ]);
     editor.redo();
     expect(style(cards[2]).borderRadius).toBe("6px");
-    expect(editor.redo()).toBeNull();
+    expect(editor.redo()).toEqual([]);
   });
 
   test("back where it started, the layer has the page's own style again, as if never edited", () => {
@@ -235,7 +235,7 @@ describe("undo and redo", () => {
     editor.undo();
     editor.set(layerOf(cards[0]), "fill", red);
 
-    expect(editor.redo()).toBeNull();
+    expect(editor.redo()).toEqual([]);
     expect(summary(changes)).toEqual([{ property: "fill", after: red }]);
   });
 
@@ -506,5 +506,304 @@ describe("where the value comes from", () => {
         declaration: "background: rgb(220, 38, 38)",
       },
     ]);
+  });
+});
+
+/**
+ * Layouts in design language: a horizontal Stack (flex row) holding a fixed, a
+ * hugging and a filling layer; a vertical Stack (flex column); a plain
+ * top-to-bottom flow; a Frame holding an absolute layer; and a fixed element
+ * the freezer pinned where the designer saw it, 250px down the page.
+ */
+const LAYOUT = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="row" style="display: flex; width: 600px; gap: 10px; padding: 4px 8px; align-items: center">
+    <div id="fixed" style="width: 120px; height: 40px; flex: none"></div>
+    <div id="hug" style="height: 40px; padding: 0 20px"></div>
+    <div id="grow" style="flex: 1; height: 40px"></div>
+  </div>
+  <div id="column" style="display: flex; flex-direction: column; width: 300px">
+    <div id="stretched" style="height: 20px"></div>
+    <div id="centered" style="height: 20px; width: 50px; align-self: center"></div>
+    <div id="narrow" style="height: 20px; width: fit-content; padding: 0 30px"></div>
+    <div id="boxed" style="height: 20px; width: 50px; padding: 0 10px; border: 5px solid; box-sizing: content-box"></div>
+  </div>
+  <section id="flow" style="width: 300px">
+    <div id="block" style="height: 30px"></div>
+    <div style="height: 30px; margin-top: 10px"></div>
+  </section>
+  <div id="frame" style="position: relative; width: 300px; height: 200px">
+    <div id="badge" style="position: absolute; left: 12px; top: 8px; width: 30px; height: 20px"></div>
+  </div>
+  <div id="pinned" data-vk-pinned="top left bottom right width height" data-vk-pin-offset="0 250"
+    style="position: fixed; top: 300px !important; left: 20px !important; bottom: auto !important; right: auto !important; width: 50px !important; height: 10px !important"></div>
+</body>`;
+
+describe("size: Fixed, Hug and Fill", () => {
+  const open = () => {
+    const canvas = openCanvas(LAYOUT);
+    return { ...canvas, at: (id: string) => canvas.layerOf(canvas.doc.getElementById(id)!), el: (id: string) => canvas.doc.getElementById(id)! };
+  };
+  const width = (el: Element) => el.getBoundingClientRect().width;
+
+  test("read from what the page declares, not from the size it comes to", () => {
+    const { editor, at } = open();
+    const sizes = (id: string) => [editor.read(at(id), "width"), editor.read(at(id), "height")];
+
+    // In a horizontal Stack, width runs along it: Fill grows into the room left.
+    expect(sizes("fixed")).toEqual([{ type: "fixed", value: 120 }, { type: "fixed", value: 40 }]);
+    expect(editor.read(at("hug"), "width")).toEqual({ type: "hug" });
+    expect(editor.read(at("grow"), "width")).toEqual({ type: "fill" });
+    // In a vertical Stack, width runs across it: Fill stretches.
+    expect(editor.read(at("stretched"), "width")).toEqual({ type: "fill" });
+    expect(editor.read(at("centered"), "width")).toEqual({ type: "fixed", value: 50 });
+    expect(editor.read(at("narrow"), "width")).toEqual({ type: "hug" });
+    // Fixed is the size the layer takes up, border and padding included.
+    expect(editor.read(at("boxed"), "width")).toEqual({ type: "fixed", value: 80 });
+    // A plain flow: a block fills the width and hugs its content down.
+    expect(sizes("flow")).toEqual([{ type: "fixed", value: 300 }, { type: "hug" }]);
+    expect(editor.read(at("block"), "width")).toEqual({ type: "fill" });
+    expect(sizes("badge")).toEqual([{ type: "fixed", value: 30 }, { type: "fixed", value: 20 }]);
+  });
+
+  test("Fill, Hug and Fixed in a horizontal Stack, with the style that shows each", () => {
+    const { editor, changes, at, el } = open();
+
+    editor.set(at("fixed"), "width", { type: "fill" });
+    // 600px inside the padding, 20 of gaps, 40 hugging: two layers share 540.
+    expect(width(el("fixed"))).toBe(270);
+    expect(changes.list()[0].style).toEqual({ width: "auto", "flex-grow": "1", "flex-shrink": "1", "flex-basis": "0%" });
+
+    editor.set(at("grow"), "width", { type: "fixed", value: 100 });
+    expect(width(el("grow"))).toBe(100);
+    expect(width(el("fixed"))).toBe(440);
+    editor.set(at("fixed"), "width", { type: "hug" });
+    expect(width(el("fixed"))).toBe(0);
+    expect(editor.read(at("fixed"), "width")).toEqual({ type: "hug" });
+  });
+
+  test("across a vertical Stack, Fill stretches and Hug shrinks to the content; Fixed counts border and padding in", () => {
+    const { editor, at, el } = open();
+
+    editor.set(at("centered"), "width", { type: "fill" });
+    expect(width(el("centered"))).toBe(300);
+    editor.set(at("stretched"), "width", { type: "hug" });
+    expect(width(el("stretched"))).toBe(0);
+    editor.set(at("boxed"), "width", { type: "fixed", value: 100 });
+    expect(width(el("boxed"))).toBe(100);
+    expect(editor.read(at("boxed"), "width")).toEqual({ type: "fixed", value: 100 });
+  });
+
+  test("Fill is there only where a Stack has room to give", () => {
+    const { editor, at } = open();
+    const fill = { type: "fill" } as const;
+
+    expect(editor.can(at("hug"), "width", fill)).toBe(true);
+    expect(editor.can(at("stretched"), "width", fill)).toBe(true);
+    expect(editor.can(at("block"), "width", fill)).toBe(true);
+    // Absolute, or down a plain flow, there is no room to fill.
+    expect(editor.can(at("badge"), "width", fill)).toBe(false);
+    expect(editor.can(at("block"), "height", fill)).toBe(false);
+    expect(editor.can(at("badge"), "width", { type: "hug" })).toBe(true);
+    expect(() => editor.set(at("badge"), "width", fill)).toThrow();
+  });
+
+  test("minimum and maximum sizes, none when not set", () => {
+    const { editor, at, el } = open();
+
+    expect(editor.read(at("grow"), "minWidth")).toBeNull();
+    expect(editor.read(at("grow"), "maxWidth")).toBeNull();
+    editor.set(at("grow"), "maxWidth", 200);
+    expect(width(el("grow"))).toBe(200);
+    editor.set(at("hug"), "minWidth", 90);
+    expect(width(el("hug"))).toBe(90);
+    editor.set(at("grow"), "maxWidth", null);
+    expect(width(el("grow"))).toBe(370);
+  });
+});
+
+describe("Stack", () => {
+  const open = () => {
+    const canvas = openCanvas(LAYOUT);
+    return { ...canvas, at: (id: string) => canvas.layerOf(canvas.doc.getElementById(id)!), el: (id: string) => canvas.doc.getElementById(id)! };
+  };
+
+  test("direction, gap, padding, alignment and wrap, read in design language", () => {
+    const { editor, at } = open();
+    const row = at("row");
+
+    expect(editor.read(row, "direction")).toBe("horizontal");
+    expect(editor.read(row, "gap")).toBe(10);
+    expect(editor.read(row, "padding")).toEqual([4, 8, 4, 8]);
+    expect(editor.read(row, "align")).toEqual({ x: "start", y: "center", distribute: false });
+    expect(editor.read(row, "wrap")).toBe(false);
+    expect(editor.read(at("column"), "align")).toEqual({ x: "start", y: "start", distribute: false });
+  });
+
+  test("alignment on the nine-point grid maps to the axes of the Stack's direction", () => {
+    const { editor, changes, at, el } = open();
+
+    editor.set(at("row"), "align", { x: "end", y: "start", distribute: false });
+    expect(style(el("row")).justifyContent).toBe("flex-end");
+    expect(style(el("row")).alignItems).toBe("flex-start");
+    editor.set(at("column"), "align", { x: "center", y: "end", distribute: false });
+    expect(style(el("column")).justifyContent).toBe("flex-end");
+    expect(style(el("column")).alignItems).toBe("center");
+    expect(changes.list()[1].style).toEqual({ "justify-content": "flex-end", "align-items": "center" });
+
+    editor.set(at("row"), "align", { x: "start", y: "center", distribute: true });
+    expect(style(el("row")).justifyContent).toBe("space-between");
+    expect(editor.read(at("row"), "align")).toEqual({ x: "start", y: "center", distribute: true });
+  });
+
+  test("direction, gap, padding and wrap", () => {
+    const { editor, at, el } = open();
+
+    editor.set(at("row"), "direction", "vertical");
+    editor.set(at("row"), "gap", 24);
+    editor.set(at("row"), "padding", [0, 16, 8, 16]);
+    editor.set(at("column"), "wrap", true);
+
+    expect(style(el("row")).flexDirection).toBe("column");
+    expect(el("hug").getBoundingClientRect().top - el("fixed").getBoundingClientRect().bottom).toBe(24);
+    expect(style(el("row")).padding).toBe("0px 16px 8px");
+    expect(style(el("column")).flexWrap).toBe("wrap");
+  });
+
+  test("a plain flow becomes a real Stack once its gap or alignment changes, and the change says so", () => {
+    const { editor, changes, at, el } = open();
+    const flow = at("flow");
+    expect([flow.kind, flow.direction]).toEqual(["stack", "vertical"]);
+
+    editor.set(flow, "padding", [8, 8, 8, 8]);
+    expect(style(el("flow")).display).toBe("block");
+    editor.set(flow, "gap", 16);
+
+    expect(style(el("flow")).display).toBe("flex");
+    expect(style(el("flow")).flexDirection).toBe("column");
+    expect(editor.read(flow, "gap")).toBe(16);
+    expect(changes.list().map(({ property, asStack }) => ({ property, asStack }))).toEqual([
+      { property: "padding", asStack: undefined },
+      { property: "gap", asStack: true },
+    ]);
+    expect(changes.list()[1].style).toEqual({ display: "flex", "flex-direction": "column", gap: "16px" });
+  });
+
+  test("Stack properties are for Stacks", () => {
+    const { editor, at } = open();
+
+    expect(editor.can(at("frame"), "gap")).toBe(false);
+    expect(editor.can(at("badge"), "align")).toBe(false);
+    expect(editor.can(at("row"), "gap")).toBe(true);
+  });
+});
+
+describe("absolute layers", () => {
+  const open = () => {
+    const canvas = openCanvas(LAYOUT);
+    return { ...canvas, at: (id: string) => canvas.layerOf(canvas.doc.getElementById(id)!), el: (id: string) => canvas.doc.getElementById(id)! };
+  };
+
+  test("X and Y place an absolute layer in its parent; other layers have none", () => {
+    const { editor, changes, at, el } = open();
+
+    expect([editor.read(at("badge"), "x"), editor.read(at("badge"), "y")]).toEqual([12, 8]);
+    editor.set(at("badge"), "x", 40);
+    editor.set(at("badge"), "y", 0);
+
+    expect(el("badge").getBoundingClientRect().left - el("frame").getBoundingClientRect().left).toBe(40);
+    expect(changes.list().map((change) => change.style)).toEqual([
+      { left: "40px", right: "auto" },
+      { top: "0px", bottom: "auto" },
+    ]);
+    expect(editor.can(at("fixed"), "x")).toBe(false);
+  });
+
+  test("a layer the freezer pinned where the designer saw it reads and writes the page's own position", () => {
+    const { editor, changes, at, el } = open();
+
+    expect(editor.read(at("pinned"), "y")).toBe(50);
+    editor.set(at("pinned"), "y", 60);
+
+    expect(style(el("pinned")).top).toBe("310px");
+    expect(editor.read(at("pinned"), "y")).toBe(60);
+    expect(changes.list()[0].style).toEqual({ top: "60px", bottom: "auto" });
+    // What the freezer pinned is not the page's: nothing in the page sets it.
+    expect(changes.list()[0].sources.map((source) => source.kind)).toEqual(["none"]);
+  });
+});
+
+describe("opacity, visibility and clipping", () => {
+  const open = () => {
+    const canvas = openCanvas(LAYOUT);
+    return { ...canvas, at: (id: string) => canvas.layerOf(canvas.doc.getElementById(id)!), el: (id: string) => canvas.doc.getElementById(id)! };
+  };
+
+  test("opacity and clipping", () => {
+    const { editor, at, el } = open();
+
+    expect(editor.read(at("hug"), "opacity")).toBe(1);
+    editor.set(at("hug"), "opacity", 0.4);
+    expect(style(el("hug")).opacity).toBe("0.4");
+    expect(editor.read(at("frame"), "clip")).toBe(false);
+    editor.set(at("frame"), "clip", true);
+    expect(style(el("frame")).overflow).toBe("hidden");
+    expect(editor.read(at("frame"), "clip")).toBe(true);
+  });
+
+  test("a hidden layer stays in the layer tree, to be shown again", () => {
+    const { doc, editor, at, el } = open();
+    const before = el("hug").getAttribute("style");
+
+    editor.set(at("hug"), "visible", false);
+    expect(style(el("hug")).display).toBe("none");
+    const rebuilt = buildLayerTree(doc);
+    const hidden = find(rebuilt.root, (layer) => layer.el === el("hug"))!;
+    expect(hidden).toBeDefined();
+    expect(createEditor(rebuilt, createChangeSet()).read(hidden, "visible")).toBe(false);
+
+    editor.set(at("hug"), "visible", true);
+    expect(el("hug").getAttribute("style")).toBe(before);
+  });
+
+  test("undoing one change to a layer leaves its other changes on, though they set the same style", () => {
+    const { editor, at, el } = open();
+
+    editor.set(at("flow"), "gap", 16);
+    editor.set(at("flow"), "visible", false);
+    editor.undo();
+    expect(style(el("flow")).display).toBe("flex");
+    editor.redo();
+    editor.revert(1);
+
+    expect(style(el("flow")).display).toBe("none");
+    expect(style(el("flow")).rowGap).toBe("normal");
+  });
+});
+
+describe("what a locked layer offers", () => {
+  test("its position and outer size only", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const badge = layerOf(doc.querySelector("span")!);
+
+    expect(editor.can(badge, "width")).toBe(true);
+    expect(editor.can(badge, "height")).toBe(true);
+    for (const property of ["opacity", "visible", "clip", "minWidth", "gap", "padding"] as const) expect(editor.can(badge, property)).toBe(false);
+  });
+});
+
+describe("several layers at once", () => {
+  test("are changed in one step, undone together", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.batch(() => {
+      editor.set(layerOf(cards[0]), "opacity", 0.5);
+      editor.set(layerOf(cards[3]), "opacity", 0.5);
+    });
+    expect(changes.list()).toHaveLength(2);
+
+    expect(editor.undo()).toEqual([layerOf(cards[0]), layerOf(cards[3])]);
+    expect(changes.list()).toEqual([]);
+    expect(cards.map((card) => style(card).opacity)).toEqual(["1", "1", "1", "1"]);
   });
 });

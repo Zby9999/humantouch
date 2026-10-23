@@ -4,7 +4,7 @@
  * The live page itself is left untouched.
  */
 import { HOST_TAG, PREVIEW_ATTR, PREVIEW_STYLES_ATTR } from "./host";
-import { SHEET_HREF_ATTR } from "./style-source";
+import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
 
@@ -475,10 +475,15 @@ function toPx(n: number, unit: string, { width, height }: Viewport): string {
   return `${Math.round(((n * base) / 100) * 1000) / 1000}px`;
 }
 
+/** What the freezer pins on an element placed against the viewport. */
+const PINNED = ["top", "left", "bottom", "right", "width", "height", "margin-top", "margin-right", "margin-bottom", "margin-left"];
+
 /**
  * The canvas has no viewport of its own. Elements placed against the viewport
  * (fixed, or absolute with no positioned ancestor) are pinned where the
- * designer saw them, margins included (auto margins center dialogs).
+ * designer saw them, margins included (auto margins center dialogs). What is
+ * pinned is marked, so it is not taken for the page's own style, and so is how
+ * far a fixed element moved with the page's scroll.
  */
 function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
   const style = getComputedStyle(from);
@@ -490,9 +495,9 @@ function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
   setImportant(to, "left", `${left}px`);
   setImportant(to, "bottom", "auto");
   setImportant(to, "right", "auto");
-  for (const name of ["width", "height", "margin-top", "margin-right", "margin-bottom", "margin-left"]) {
-    setImportant(to, name, style.getPropertyValue(name));
-  }
+  for (const name of PINNED.slice(4)) setImportant(to, name, style.getPropertyValue(name));
+  to.setAttribute(PINNED_ATTR, PINNED.join(" "));
+  if (fixed && (viewport.scrollX || viewport.scrollY)) to.setAttribute(PIN_OFFSET_ATTR, `${viewport.scrollX} ${viewport.scrollY}`);
 }
 
 /** False when a transformed (or similar) ancestor holds the fixed element instead of the viewport. */

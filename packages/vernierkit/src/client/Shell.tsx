@@ -10,6 +10,7 @@ import { buildLayerTree, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
+import { toggleIn } from "./selection";
 
 /** What the change list does to the round while edit mode is up: on the canvas, as edits. */
 export interface RoundControl {
@@ -48,7 +49,8 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [selected, setSelected] = useState<Layer | null>(null);
+  /** The selected layers, the one selected last at the end. */
+  const [selected, setSelected] = useState<Layer[]>([]);
   /** Bumped on each edit: the panel reads its values from the canvas. */
   const [, edited] = useReducer((n: number) => n + 1, 0);
   /** Values are being adjusted: the selection box steps aside so the change shows. */
@@ -89,10 +91,10 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
     clearTimeout(settle.current);
     settle.current = setTimeout(() => setAdjusting(false), ADJUSTING_MS);
   };
-  const select = (layer: Layer | null) => {
+  const select = (layers: Layer[]) => {
     clearTimeout(settle.current);
     setAdjusting(false);
-    setSelected(layer);
+    setSelected(layers);
   };
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own.
@@ -106,9 +108,9 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
       if (event.code !== "KeyZ" && !redo) return;
       event.preventDefault();
       event.stopPropagation();
-      const layer = redo ? editor.redo() : editor.undo();
-      if (!layer) return;
-      select(layer);
+      const layers = redo ? editor.redo() : editor.undo();
+      if (!layers.length) return;
+      select(layers);
       onEdit();
     };
     window.addEventListener("keydown", onKey, true);
@@ -119,7 +121,9 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
     <div class="vk-shell">
       <aside class="vk-panel" aria-label="Layers">
         <h2 class="vk-panel-title">Layers</h2>
-        {tree && <LayerTreeView tree={tree} selected={selected} onSelect={select} />}
+        {tree && (
+          <LayerTreeView tree={tree} selected={selected} onSelect={(layer, extend) => select(extend ? toggleIn(selected, layer) : [layer])} />
+        )}
       </aside>
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
@@ -154,10 +158,10 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
       />
       <aside class="vk-panel" aria-label="Design">
         <h2 class="vk-panel-title">Design</h2>
-        {tree && editor && selected ? (
+        {tree && editor && selected.length ? (
           <>
-            <LayerInfo tree={tree} layer={selected} />
-            <Properties editor={editor} layer={selected} onEdit={onEdit} />
+            <LayerInfo tree={tree} layers={selected} />
+            <Properties editor={editor} layers={selected} onEdit={onEdit} />
           </>
         ) : (
           <p class="vk-panel-empty">Select a layer to see its properties.</p>

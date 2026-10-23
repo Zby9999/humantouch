@@ -5,7 +5,7 @@ import { freeze, restore, type Canvas } from "./freezer";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { boxOf, role, type Layer, type LayerTree } from "./layers";
-import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParent } from "./selection";
+import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 
 /** Where the canvas sits in the viewport: its top-left corner and its scale. */
 interface View {
@@ -31,10 +31,11 @@ interface Props {
   onCanvas(canvas: Canvas): void;
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
-  selected: Layer | null;
+  /** The selected layers, the one selected last at the end: clicks go on from its depth. */
+  selected: Layer[];
   /** Keep the selection box out of the way, as while a value is being adjusted. */
   hideSelection: boolean;
-  onSelect(layer: Layer | null): void;
+  onSelect(layers: Layer[]): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -192,10 +193,10 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
         return;
       }
       if (event.type !== "keydown") return;
-      if (event.key === "Escape" && selected) {
+      if (event.key === "Escape" && selected.length) {
         event.preventDefault();
         event.stopPropagation();
-        onSelect(selectParent(selected));
+        onSelect(selectParents(selected));
         return;
       }
       if (event.code === "Digit1" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -239,6 +240,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  const primary = selected.at(-1) ?? null;
   /** The deepest layer under the pointer. The canvas itself takes no pointer input, so this asks its document. */
   const layerAt = (event: MouseEvent): Layer | null => {
     if (!canvas || !tree) return null;
@@ -252,7 +254,10 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (event.button === 0 && !spaceHeld) {
       const hit = layerAt(event);
-      onSelect(hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, selected)));
+      const layer = hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, primary));
+      if (event.shiftKey) {
+        if (layer) onSelect(toggleIn(selected, layer));
+      } else onSelect(layer ? [layer] : []);
       return;
     }
     // Space + drag, or the middle button, pans.
@@ -291,7 +296,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
     hover && !spaceHeld && !panning && !hideSelection
       ? hover.deep
         ? selectDeepest(hover.hit)
-        : selectOnClick(hover.hit, selected)
+        : selectOnClick(hover.hit, primary)
       : null;
 
   return (
@@ -308,7 +313,8 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       onPointerLeave={() => setHover(null)}
       onDblClick={(event) => {
         const hit = layerAt(event);
-        if (hit && !event.metaKey && !event.ctrlKey) onSelect(selectOnDoubleClick(hit, selected));
+        const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
+        if (layer) onSelect([layer]);
       }}
     >
       <div
@@ -321,8 +327,8 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
-      {canvas && hovered && hovered !== selected && !travelling && <Outline layer={hovered} view={view} hover />}
-      {canvas && selected && !travelling && <Outline layer={selected} view={view} hidden={hideSelection} />}
+      {canvas && hovered && !selected.includes(hovered) && !travelling && <Outline layer={hovered} view={view} hover />}
+      {canvas && !travelling && selected.map((layer, i) => <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );

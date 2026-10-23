@@ -41,6 +41,11 @@ export interface Change {
   style: Record<string, string>;
   /** What set the value before the change, in the page's styles. */
   sources: StyleSource[];
+  /**
+   * The layer is a plain top-to-bottom flow, shown as a vertical Stack: the
+   * change (to its gap, alignment, direction or wrap) makes it a real Stack.
+   */
+  asStack?: true;
 }
 
 export interface ChangeSet {
@@ -49,7 +54,7 @@ export interface ChangeSet {
    * `after`. A property changed before keeps its first `before`; one that ends
    * up where it started is no longer a change.
    */
-  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources">): void;
+  record(layerId: string, change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack">): void;
   /** Takes change `id` out: the designer no longer wants it. */
   remove(id: number): void;
   /** Whether `property` of the layer with id `layerId` is changed already. */

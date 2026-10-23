@@ -5,8 +5,9 @@ import { LayerIcon } from "./icons";
 
 interface Props {
   tree: LayerTree;
-  selected: Layer | null;
-  onSelect(layer: Layer): void;
+  selected: Layer[];
+  /** `extend`: ⇧ held, the layer joins the selection or leaves it. */
+  onSelect(layer: Layer, extend: boolean): void;
 }
 
 /** Rows shown open at first. Deeper levels start collapsed, so a large page's tree is quick to show. */
@@ -17,10 +18,10 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => initiallyCollapsed(tree.root));
   const list = useRef<HTMLDivElement>(null);
 
-  // The selected layer is always in view: open everything around it.
+  // The selected layers are always in view: open everything around them.
   useEffect(() => {
-    if (!selected) return;
-    const closed = [...collapsed].filter((layer) => isAncestor(layer, selected));
+    if (!selected.length) return;
+    const closed = [...collapsed].filter((layer) => selected.some((s) => isAncestor(layer, s)));
     if (closed.length) setCollapsed(new Set([...collapsed].filter((layer) => !closed.includes(layer))));
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selected, collapsed]);
@@ -39,21 +40,21 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
   };
 
   return (
-    <div ref={list} class="vk-tree" role="tree" aria-label="Layers">
+    <div ref={list} class="vk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
       {rows.map(({ layer, level }, i) => {
         const open = layer.children.length ? !collapsed.has(layer) : undefined;
         return (
           <div
             key={i}
-            class={`vk-tree-row${layer === selected ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}`}
+            class={`vk-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}`}
             role="treeitem"
             aria-level={level}
-            aria-selected={layer === selected}
+            aria-selected={selected.includes(layer)}
             aria-expanded={open}
             aria-description={typeLabel(layer)}
             style={{ paddingLeft: `${8 + (level - 1) * 12}px` }}
             onPointerDown={(event) => {
-              if (event.button === 0) onSelect(layer);
+              if (event.button === 0) onSelect(layer, event.shiftKey);
             }}
           >
             <span

@@ -28,9 +28,14 @@ export function selectDeepest(hit: Layer): Layer | null {
   return selectable(hit);
 }
 
-/** Esc: up to the parent. The page itself is not selectable, so from an outermost layer it clears the selection. */
-export function selectParent(selected: Layer): Layer | null {
-  return selectable(selected.parent);
+/** Esc: up to the parents. The page itself is not selectable, so from outermost layers it clears the selection. */
+export function selectParents(selected: Layer[]): Layer[] {
+  return [...new Set(selected.map((layer) => selectable(layer.parent)))].filter((layer) => layer !== null);
+}
+
+/** ⇧ + click: the layer joins the selection, or leaves it if it was in it. */
+export function toggleIn(selected: Layer[], layer: Layer): Layer[] {
+  return selected.includes(layer) ? selected.filter((l) => l !== layer) : [...selected, layer];
 }
 
 /** The page, then every layer down to `layer`. */

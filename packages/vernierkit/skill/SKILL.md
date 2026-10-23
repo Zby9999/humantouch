@@ -29,7 +29,8 @@ Every section has:
 - **Scope**: which instances the change is for.
   - **This usage only**: change the layer where the component is used at the given place, and nowhere else. When the layer's code is inside a component used in several places, do not edit the component for everyone: change it at that usage (a prop, a `className` passed in, a variant), so the component's other usages stay as they are. All instances rendered from that one usage (a list, a loop) change together.
   - **Usage not determined**: the component's usage could not be located. Find the usage the layer is in from its place on the page, and change only that one.
-- **Design intent**: what the designer wants, in design terms. This is the goal.
+- **Design intent**: what the designer wants, in design terms. This is the goal. Sizes are **Fixed** (a set size, border and padding included), **Hug** (fits its content) or **Fill** (takes the room its Stack gives it: grows along the Stack, stretches across it). A **Stack** lays its children out in a row or a column, with a gap, padding and alignment: a flex container.
+- **Make it a Stack** (only on some changes): the layer is a plain top-to-bottom flow of blocks, which the editor shows as a vertical Stack. Turn it into a real Stack (a flex column, as in the reference style) as part of the change, and keep its children looking as they did: their margins no longer collapse in a flex container, so the spacing between them may need adjusting.
 - **Reference style**: the CSS that showed the change on the canvas. Use it to understand the intent, not as code to paste.
 - **Currently set by**: what sets the value now, as the browser resolves the page's styles: a class and its rule, a rule (with its CSS layer and file), the element's style attribute, or nothing (the browser default). Start from it: it tells you what to change.
 

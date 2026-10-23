@@ -54,6 +54,27 @@ test("claim takes the designer's changes and prints change notes for the Agent",
   expect(button).toContain("- **Currently set by:** rule `button` in no CSS layer, of `src/index.css`, `background: rgb(220, 38, 38)`\n");
 });
 
+test("layout changes are told in design language; a plain flow given a gap is to be made a real Stack", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const layers = page.getByRole("tree", { name: "Layers" });
+  await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
+  await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
+  await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Gap", "8");
+  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
+
+  const [, width, gap] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(width).toMatch(/^1\. Width\n/);
+  expect(width).toContain("- **Design intent:** Change the width from Hug to Fill.\n");
+  expect(width).toContain("- **Reference style:** `width: auto`, `align-self: stretch`\n");
+  expect(width).toContain("class `self-start`");
+  expect(gap).toContain("- **Design intent:** Change the gap from 0px to 8px.\n- **Make it a Stack:**");
+  expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 8px`\n");
+});
+
 test("with no changes, claim says so and leaves the round as it is", async () => {
   expect(await vernierkit("claim")).toMatch(/^No design changes to apply/);
   expect(readVernier("state.json")).toBeNull();

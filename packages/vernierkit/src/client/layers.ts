@@ -5,6 +5,7 @@
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { FROZEN } from "./freezer";
+import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
 export type LayerKind = "stack" | "grid" | "frame" | "text" | "image" | "still" | "locked";
@@ -294,13 +295,19 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
     const e = child as Element;
     if (NOT_DRAWN.has(e.localName)) continue;
     const display = view.getComputedStyle(e).display;
-    if (display === "none") continue;
+    if (display === "none" && !hiddenByEdit(e)) continue;
     endRun();
     if (display === "contents") children.push(...drawnChildren(e, view));
     else children.push(e);
   }
   endRun();
   return children;
+}
+
+/** Hidden by the designer, rather than by the page: still a layer, to be shown again. */
+function hiddenByEdit(el: Element): boolean {
+  const style = (el as HTMLElement).style;
+  return el.hasAttribute(ORIGINAL_STYLE_ATTR) && style.getPropertyValue("display") === "none" && style.getPropertyPriority("display") === "important";
 }
 
 /** Only text, with inline pieces (bold, links, …) counted as part of it. */

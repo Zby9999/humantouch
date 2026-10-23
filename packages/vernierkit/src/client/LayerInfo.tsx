@@ -2,8 +2,16 @@
 import { LayerIcon } from "./icons";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
 
-/** Top of the Design panel: what the selected layer is and where it comes from in the source. */
-export function LayerInfo({ tree, layer }: { tree: LayerTree; layer: Layer }) {
+/** Top of the Design panel: what the selected layer is and where it comes from in the source; with several, how many. */
+export function LayerInfo({ tree, layers }: { tree: LayerTree; layers: Layer[] }) {
+  if (layers.length > 1) {
+    return (
+      <section class="vk-layer-info" aria-label="Selected layers">
+        <h3 class="vk-layer-name">{layers.length} layers</h3>
+      </section>
+    );
+  }
+  const [layer] = layers;
   const repeats = tree.acrossInstances(layer).length;
   return (
     <section class="vk-layer-info" aria-label="Selected layer">

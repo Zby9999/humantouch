@@ -145,6 +145,47 @@ describe("claim", () => {
   });
 });
 
+describe("claim, layout changes", () => {
+  test("say sizes, spacing and alignment in design language", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown) => ({ ...redFill, id, property, before, after, style: {} });
+    saveRound(
+      change(1, "width", { type: "hug" }, { type: "fixed", value: 120 }),
+      change(2, "height", { type: "fixed", value: 40 }, { type: "fill" }),
+      change(3, "padding", [8, 8, 8, 8], [0, 16, 0, 16]),
+      change(4, "align", { x: "start", y: "start", distribute: false }, { x: "center", y: "end", distribute: true }),
+      change(5, "maxWidth", null, 480),
+      change(6, "visible", true, false),
+      change(7, "x", 12, 40),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the width from Hug to Fixed 120px.\n");
+    expect(section(output, 2)).toContain("- **Design intent:** Change the height from Fixed 40px to Fill.\n");
+    expect(section(output, 3)).toContain("- **Design intent:** Change the padding from 8px to 0px top and bottom, 16px left and right.\n");
+    expect(section(output, 4)).toContain("- **Design intent:** Change the alignment from top left to bottom center, spread evenly.\n");
+    expect(section(output, 5)).toContain("- **Design intent:** Change the max width from none to 480px.\n");
+    expect(section(output, 6)).toMatch(/^6\. Visibility\n[^]*- \*\*Design intent:\*\* Change the visibility from shown to hidden\.\n/);
+    expect(section(output, 7)).toContain("- **Design intent:** Change the X position from 12px to 40px.\n");
+  });
+
+  test("a plain top-to-bottom flow whose gap changes is to be made a real Stack", async () => {
+    saveRound({
+      ...redFill,
+      property: "gap",
+      before: 0,
+      after: 16,
+      style: { display: "flex", "flex-direction": "column", gap: "16px" },
+      asStack: true,
+    });
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Design intent:** Change the gap from 0px to 16px.\n- **Make it a Stack:** the layer lays its children out as plain blocks, top to bottom");
+    expect(notes).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 16px`\n");
+  });
+});
+
 describe("claim, where each value comes from", () => {
   const rule = { kind: "rule", important: false, className: null };
 

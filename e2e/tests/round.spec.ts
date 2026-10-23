@@ -235,6 +235,20 @@ test.describe("done checks the change on the page", () => {
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
 
+  test("a layout change is checked in design language: the button fills its Stack once the code stretches it", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
+    await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
+
+    editSource(APP, "flex items-center gap-2 self-start px-4", "flex items-center gap-2 self-stretch px-4");
+
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+  });
+
   test("an edit that moves the layer's lines in its file: the check still finds it, and the file's other changes stay previewed", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);

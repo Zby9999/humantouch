@@ -163,7 +163,7 @@ export function Toggle({ editing, changeCount, changesOpen, onShowChanges, apply
       : "Vernier Kit: enter edit mode";
 
   return (
-    <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner}>
+    <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner} data-editing={editing || undefined}>
       <div class={holding ? "vk-toggle-wrap is-holding" : "vk-toggle-wrap"}>
         <button
           type="button"
