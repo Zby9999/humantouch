@@ -49,6 +49,8 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
   const [failed, setFailed] = useState(false);
   const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 });
   const [spaceHeld, setSpaceHeld] = useState(false);
+  /** The deepest layer under the pointer, and whether ⌘ / Ctrl is held: the layer a click would select is outlined. */
+  const [hover, setHover] = useState<{ hit: Layer; deep: boolean } | null>(null);
   const pan = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [panning, setPanning] = useState(false);
   const modeSwitch = useRef<Animation | null>(null);
@@ -156,6 +158,10 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { canvas, selected, onSelect } = latest.current;
+      if (event.key === "Meta" || event.key === "Control") {
+        const deep = event.metaKey || event.ctrlKey;
+        setHover((h) => h && { ...h, deep });
+      }
       if (isEditable(event.composedPath()[0])) return;
       if (event.code === "Space") {
         // Swallow repeats and key-up too: a focused button would otherwise click on Space.
@@ -177,7 +183,10 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
         if (canvas) setView(fitView(canvas, viewport.current!.getBoundingClientRect()));
       }
     };
-    const release = () => setSpaceHeld(false);
+    const release = () => {
+      setSpaceHeld(false);
+      setHover((h) => h && { ...h, deep: false });
+    };
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("keyup", onKey, true);
     window.addEventListener("blur", release);
@@ -235,7 +244,14 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     const p = pan.current;
-    if (!p || p.pointerId !== event.pointerId) return;
+    if (!p) {
+      if (event.buttons) return;
+      const hit = layerAt(event);
+      const deep = event.metaKey || event.ctrlKey;
+      setHover((h) => (h?.hit === hit && h.deep === deep ? h : hit && { hit, deep }));
+      return;
+    }
+    if (p.pointerId !== event.pointerId) return;
     const dx = event.clientX - p.x;
     const dy = event.clientY - p.y;
     p.x = event.clientX;
@@ -249,6 +265,14 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
     setPanning(false);
   };
 
+  // Nothing to point out while panning or while a value is being adjusted.
+  const hovered =
+    hover && !spaceHeld && !panning && !hideSelection
+      ? hover.deep
+        ? selectDeepest(hover.hit)
+        : selectOnClick(hover.hit, selected)
+      : null;
+
   return (
     <div
       ref={viewport}
@@ -260,6 +284,7 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
       onPointerCancel={endPan}
+      onPointerLeave={() => setHover(null)}
       onDblClick={(event) => {
         const hit = layerAt(event);
         if (hit && !event.metaKey && !event.ctrlKey) onSelect(selectOnDoubleClick(hit, selected));
@@ -275,19 +300,32 @@ export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, 
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
-      {canvas && selected && !travelling && <SelectionBox layer={selected} view={view} hidden={hideSelection} />}
+      {canvas && hovered && hovered !== selected && !travelling && <Outline layer={hovered} view={view} hover />}
+      {canvas && selected && !travelling && <Outline layer={selected} view={view} hidden={hideSelection} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
 }
 
-/** Drawn above the canvas, so its lines stay 1px at any zoom. Blue, purple for an instance, gray for a locked layer. */
-function SelectionBox({ layer, view, hidden }: { layer: Layer; view: View; hidden: boolean }) {
+interface OutlineProps {
+  layer: Layer;
+  view: View;
+  /** The layer under the pointer rather than the selected one. */
+  hover?: boolean;
+  hidden?: boolean;
+}
+
+/**
+ * The selection box, or the outline of the layer a click would select. Drawn
+ * above the canvas, so its lines stay 1px at any zoom. Blue, purple for an
+ * instance, gray for a locked layer.
+ */
+function Outline({ layer, view, hover, hidden }: OutlineProps) {
   const r = boxOf(layer);
   const kind = role(layer);
   return (
     <div
-      class="vk-selection"
+      class={hover ? "vk-hover" : "vk-selection"}
       data-kind={kind}
       data-hidden={hidden || undefined}
       aria-hidden="true"
@@ -298,7 +336,7 @@ function SelectionBox({ layer, view, hidden }: { layer: Layer; view: View; hidde
         height: `${r.height * view.zoom}px`,
       }}
     >
-      {kind === "locked" && (
+      {kind === "locked" && !hover && (
         <span class="vk-selection-lock">
           <Icon name="lock" />
         </span>

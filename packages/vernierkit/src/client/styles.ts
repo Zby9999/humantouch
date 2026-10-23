@@ -298,18 +298,18 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 
-.vk-selection {
+.vk-selection, .vk-hover {
   --vk-selection: var(--vk-accent);
   position: absolute;
   box-sizing: border-box;
   border: 1px solid var(--vk-selection);
   pointer-events: none;
-  transition: opacity 150ms ${EASE_OUT};
 }
 /* Gone at once while a value changes; fades back once it settles. */
+.vk-selection { transition: opacity 150ms ${EASE_OUT}; }
 .vk-selection[data-hidden] { opacity: 0; transition: none; }
-.vk-selection[data-kind="instance"] { --vk-selection: var(--vk-instance); }
-.vk-selection[data-kind="locked"] { --vk-selection: var(--vk-locked); }
+:is(.vk-selection, .vk-hover)[data-kind="instance"] { --vk-selection: var(--vk-instance); }
+:is(.vk-selection, .vk-hover)[data-kind="locked"] { --vk-selection: var(--vk-locked); }
 .vk-selection-lock {
   position: absolute;
   bottom: 100%;

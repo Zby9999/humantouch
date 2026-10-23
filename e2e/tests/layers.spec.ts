@@ -422,3 +422,41 @@ test.describe("the selection box", () => {
       .toBeLessThan(1);
   });
 });
+
+test.describe("the hover outline", () => {
+  const hover = (page: Page) => page.locator(".vk-hover");
+  const rect = async (locator: ReturnType<Page["locator"]>) => {
+    const { x, y, width, height } = (await locator.boundingBox())!;
+    return [x, y, width, height].map(Math.round);
+  };
+
+  test("outlines the layer a click would select, and with ⌘ held, the deepest one", async ({ page }) => {
+    await enterEditMode(page);
+    const h1 = await pointOn(page, "h1");
+
+    await page.mouse.move(h1.x, h1.y);
+    const outermost = await rect(hover(page));
+    await page.keyboard.down("Meta");
+    await expect.poll(() => rect(hover(page))).toEqual(await rect(canvas(page).locator("h1")));
+    await page.keyboard.up("Meta");
+    await expect.poll(() => rect(hover(page))).toEqual(outermost);
+
+    await page.mouse.click(h1.x, h1.y);
+    expect(await rect(page.locator(".vk-selection"))).toEqual(outermost);
+  });
+
+  test("is not drawn over the selected layer, and goes when the pointer leaves the canvas", async ({ page }) => {
+    await enterEditMode(page);
+
+    await clickOn(page, "h1", "Meta");
+    await page.keyboard.down("Meta");
+    await expect(hover(page)).toHaveCount(0);
+    await page.keyboard.up("Meta");
+    const text = await pointOn(page, "header + p");
+    await page.mouse.move(text.x, text.y);
+    await expect(hover(page)).toHaveCount(1);
+
+    await layerTree(page).hover();
+    await expect(hover(page)).toHaveCount(0);
+  });
+});
