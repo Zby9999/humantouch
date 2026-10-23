@@ -115,3 +115,14 @@ test("a text layer offers no fill or corner radius here", async ({ page }) => {
   await expect(design(page).getByRole("group", { name: "Fill" })).toHaveCount(0);
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
 });
+
+test("the selection box steps aside while a value changes, so the change can be seen, and comes back after", async ({ page }) => {
+  await selectRow(page, "Card");
+  const box = page.locator(".vk-selection");
+  await expect(box).toBeVisible();
+
+  await design(page).getByRole("textbox", { name: "Corner radius" }).press("ArrowUp");
+  await expect(box).toHaveCSS("opacity", "0");
+
+  await expect(box).toHaveCSS("opacity", "1");
+});

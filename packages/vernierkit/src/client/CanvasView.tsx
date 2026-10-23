@@ -30,6 +30,8 @@ interface Props {
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
   selected: Layer | null;
+  /** Keep the selection box out of the way, as while a value is being adjusted. */
+  hideSelection: boolean;
   onSelect(layer: Layer | null): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
   leaving: boolean;
@@ -39,7 +41,7 @@ interface Props {
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ onCanvas, tree, selected, onSelect, leaving, animate, onLeft }: Props) {
+export function CanvasView({ onCanvas, tree, selected, hideSelection, onSelect, leaving, animate, onLeft }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -273,20 +275,21 @@ export function CanvasView({ onCanvas, tree, selected, onSelect, leaving, animat
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
-      {canvas && selected && !travelling && <SelectionBox layer={selected} view={view} />}
+      {canvas && selected && !travelling && <SelectionBox layer={selected} view={view} hidden={hideSelection} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
 }
 
 /** Drawn above the canvas, so its lines stay 1px at any zoom. Blue, purple for an instance, gray for a locked layer. */
-function SelectionBox({ layer, view }: { layer: Layer; view: View }) {
+function SelectionBox({ layer, view, hidden }: { layer: Layer; view: View; hidden: boolean }) {
   const r = boxOf(layer);
   const kind = role(layer);
   return (
     <div
       class="vk-selection"
       data-kind={kind}
+      data-hidden={hidden || undefined}
       aria-hidden="true"
       style={{
         left: `${view.x + r.left * view.zoom}px`,

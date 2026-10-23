@@ -1,3 +1,5 @@
+import { EASE_OUT } from "./motion";
+
 export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 /** Editor layer styles. They live inside the Shadow DOM and never touch the page. */
@@ -294,7 +296,10 @@ export const styles = /* css */ `
   box-sizing: border-box;
   border: 1px solid var(--vk-selection);
   pointer-events: none;
+  transition: opacity 150ms ${EASE_OUT};
 }
+/* Gone at once while a value changes; fades back once it settles. */
+.vk-selection[data-hidden] { opacity: 0; transition: none; }
 .vk-selection[data-kind="instance"] { --vk-selection: var(--vk-instance); }
 .vk-selection[data-kind="locked"] { --vk-selection: var(--vk-locked); }
 .vk-selection-lock {
@@ -310,6 +315,6 @@ export const styles = /* css */ `
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vk-dock, .vk-toggle { transition: none; }
+  .vk-dock, .vk-toggle, .vk-selection { transition: none; }
 }
 `;
