@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import type { TargetedFocusEvent, TargetedKeyboardEvent } from "preact";
+import type { TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useRef, useState } from "preact/hooks";
 import type { Editor, Fill, Property, PropertyValues } from "./edits";
 import { Icon, type IconName } from "./icons";
@@ -96,11 +96,11 @@ interface NumberFieldProps {
   onChange(value: number): void;
 }
 
-/** A number typed in, or stepped with ↑ / ↓ (10 at a time with ⇧). */
+/** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
 function NumberField({ label, icon, value, min = -Infinity, onChange }: NumberFieldProps) {
   return (
     <label class="vk-field" title={label}>
-      <Icon name={icon} />
+      <Scrub icon={icon} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}
         value={value === null ? "Mixed" : String(value)}
@@ -109,6 +109,60 @@ function NumberField({ label, icon, value, min = -Infinity, onChange }: NumberFi
         onChange={onChange}
       />
     </label>
+  );
+}
+
+/**
+ * The icon of a number field: dragging left and right changes the value, 1 per
+ * px (10 with ⇧), as in Figma. The pointer is locked while dragging, so it
+ * never runs into the edge of the screen.
+ */
+function Scrub({ icon, value, min, onChange }: { icon: IconName; value: number | null; min: number; onChange(value: number): void }) {
+  /** The drag under way: the value so far, and movement of less than 1px not yet counted. */
+  const drag = useRef<{ pointerId: number; value: number; rest: number } | null>(null);
+
+  const onPointerDown = (event: TargetedPointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    Promise.resolve(handle.requestPointerLock()).catch(() => {}); // Without the lock, the drag still works.
+    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0 };
+  };
+
+  const onPointerMove = (event: TargetedPointerEvent<HTMLSpanElement>) => {
+    const d = drag.current;
+    if (d?.pointerId !== event.pointerId) return;
+    d.rest += event.movementX;
+    const px = Math.trunc(d.rest);
+    if (!px) return;
+    d.rest -= px;
+    const next = Math.max(min, d.value + px * (event.shiftKey ? 10 : 1));
+    if (next === d.value) return;
+    d.value = next;
+    onChange(next);
+  };
+
+  const end = (event: TargetedPointerEvent<HTMLSpanElement>) => {
+    if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current = null;
+    const root = event.currentTarget.getRootNode() as Document | ShadowRoot;
+    if (root.pointerLockElement === event.currentTarget) document.exitPointerLock();
+  };
+
+  return (
+    <span
+      class="vk-scrub"
+      aria-hidden="true"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      // A click on the icon is not a click on the field's label: it does not start typing.
+      onClick={(event) => event.preventDefault()}
+    >
+      <Icon name={icon} />
+    </span>
   );
 }
 

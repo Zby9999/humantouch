@@ -132,3 +132,28 @@ test("the selection box steps aside while a value changes, so the change can be 
   await expect(box).toHaveCSS("opacity", "1");
   expect(await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => el.stepsAside)).toBe(true);
 });
+
+test("dragging left and right on a number's icon changes it, 1 per px and 10 with Shift", async ({ page }) => {
+  await selectRow(page, "Card");
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const { x, y } = (await icon.boundingBox())!;
+  const drag = async (dx: number) => {
+    await page.mouse.move(x + 4, y + 4);
+    await page.mouse.down();
+    for (let i = 1; i <= Math.abs(dx); i++) await page.mouse.move(x + 4 + Math.sign(dx) * i, y + 4);
+    await page.mouse.up();
+  };
+
+  await drag(5);
+  await expect(radius).toHaveValue("17");
+
+  await page.keyboard.down("Shift");
+  await drag(2);
+  await page.keyboard.up("Shift");
+  await expect(radius).toHaveValue("37");
+
+  await drag(-50);
+  await expect(radius).toHaveValue("0");
+  expect(await cardStyles(page, "borderRadius")).toEqual(["0px", "0px", "0px", "12px"]);
+});

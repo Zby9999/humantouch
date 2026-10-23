@@ -208,6 +208,14 @@ export const styles = /* css */ `
 .vk-field:hover { box-shadow: inset 0 0 0 1px var(--vk-border); }
 .vk-field:focus-within { box-shadow: inset 0 0 0 1px var(--vk-accent); }
 .vk-field .vk-icon { flex: none; color: var(--vk-text-muted); }
+.vk-scrub {
+  display: grid;
+  flex: none;
+  place-items: center;
+  align-self: stretch;
+  cursor: ew-resize;
+  touch-action: none;
+}
 .vk-input {
   all: unset;
   flex: 1;
