@@ -123,3 +123,49 @@ test("a short press on the locked toggle does nothing", async ({ page }) => {
   await expect(toggle).toHaveAttribute("aria-disabled", "true");
   expect(readVernier("state.json")).toEqual({ status: "claimed", done: [] });
 });
+
+/** A computed style of every card on the live page, in page order. */
+function cardStyles(page: Page, property: "backgroundColor" | "borderRadius") {
+  return page.locator("article").evaluateAll((cards, property) => cards.map((card) => getComputedStyle(card)[property]), property);
+}
+
+const RED = "rgb(255, 0, 0)";
+const WHITE = "rgb(255, 255, 255)";
+
+test("each change done leaves the Change Preview, so the page shows what the code really does; after finish, nothing is previewed", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  await vernierkit("claim");
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+  expect(await cardStyles(page, "backgroundColor")).toEqual([RED, RED, RED, WHITE]);
+  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
+
+  // The test applies nothing to the code: once done, a change shows as the code has it, unchanged.
+  await vernierkit("done", "1");
+  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
+
+  await vernierkit("finish");
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
+  await expect(page.locator("[data-vk-preview], style[data-vk-preview-styles]")).toHaveCount(0);
+  await expect(page.getByRole("radiogroup", { name: "Change Preview" })).toHaveCount(0);
+});
+
+test("after unlocking by hand, neither the done changes nor the others are previewed", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  await vernierkit("claim");
+  await vernierkit("done", "2");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
+  expect(await cardStyles(page, "backgroundColor")).toEqual([RED, RED, RED, WHITE]);
+
+  const toggle = page.getByRole("button", { name: LOCKED_LABEL });
+  await toggle.hover();
+  await page.mouse.down();
+  await page.waitForTimeout(1200);
+  await page.mouse.up();
+
+  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  expect(await cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
+  await expect(page.locator("[data-vk-preview]")).toHaveCount(0);
+});

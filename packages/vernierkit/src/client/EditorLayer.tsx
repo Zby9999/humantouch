@@ -19,7 +19,7 @@ const PREVIEW_KEY = "vernierkit:change-preview";
  * comes back to it, after a reload too. With none, edit mode freezes the page afresh.
  * Meanwhile the page shows the round's changes, unless switched to how it is now.
  * Once the Agent claims the round, the editor folds into the toggle, locked
- * until the round ends.
+ * until the round ends, and each change it applies leaves the preview.
  */
 export function EditorLayer() {
   const [mode, setMode] = useState<Mode>("preview");
@@ -46,6 +46,12 @@ export function EditorLayer() {
     });
   useEffect(() => void load(), []);
 
+  const changes = round?.changeSet.changes ?? [];
+  /** Not applied yet: once the Agent has done a change, the page shows what the code makes of it. */
+  const pending = claimed ? changes.filter((change) => !claimed.done.includes(change.id)) : changes;
+  // Before paint: a canvas leaving at once must find its changes on the page.
+  useLayoutEffect(() => preview.show(previewing ? pending : []), [round, previewing, status]);
+
   const lastStatus = useRef(status);
   useEffect(
     () =>
@@ -65,9 +71,6 @@ export function EditorLayer() {
     }
   }, [claimed !== null, mode]);
 
-  const changes = round?.changeSet.changes ?? [];
-  // Before paint: a canvas leaving at once must find its changes on the page.
-  useLayoutEffect(() => preview.show(previewing ? changes : []), [round, previewing]);
 
   const save = (next: SavedRound | null) => {
     setRound(next);
@@ -93,7 +96,7 @@ export function EditorLayer() {
       )}
       <Toggle
         editing={mode === "edit"}
-        changeCount={claimed ? changes.filter((change) => !claimed.done.includes(change.id)).length : changeCount}
+        changeCount={claimed ? pending.length : changeCount}
         applying={claimed && { done: claimed.done.length, total: changes.length }}
         onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
         onToggle={(animate) => {
@@ -103,8 +106,8 @@ export function EditorLayer() {
           setMode(mode === "edit" ? (animate ? "leaving" : "preview") : "edit");
         }}
       >
-        {mode !== "edit" && changes.length > 0 && (
-          <PreviewSwitch on={previewing} onChange={switchPreview} unseen={changes.filter((change) => !canPreview(change)).length} />
+        {mode !== "edit" && pending.length > 0 && (
+          <PreviewSwitch on={previewing} onChange={switchPreview} unseen={pending.filter((change) => !canPreview(change)).length} />
         )}
       </Toggle>
     </>
