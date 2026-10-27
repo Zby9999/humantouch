@@ -138,6 +138,25 @@ test("several layers edited together go back together with ⌘Z, the focus still
   expect(await css()).toEqual(before);
 });
 
+test("in edit mode, an X beside the Design title goes back to preview mode, and the change count beside it opens the change list", async ({ page }) => {
+  await makeThreeChanges(page);
+  // No toggle floats over the canvas meanwhile.
+  await expect(page.locator(".vk-dock")).toHaveCount(0);
+
+  const count = design(page).getByRole("button", { name: "3 changes not applied yet" });
+  await expect(count).toHaveText("3");
+  await count.click();
+  await expect(changeList(page).getByRole("listitem")).toHaveCount(3);
+  await page.keyboard.press("Escape");
+  await expect(changeList(page)).toHaveCount(0);
+  await expect(count).toBeFocused();
+
+  await design(page).getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  await expect(badge(page)).toHaveText("3");
+});
+
 test("the badge opens the change list, where each change can be undone on its own; ⌘Z brings it back", async ({ page }) => {
   await makeThreeChanges(page);
 

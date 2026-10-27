@@ -18,13 +18,13 @@ interface Drag {
 }
 
 /**
- * The single control in preview mode, and the way back from edit mode. Drag it
- * to any corner; click it to switch modes. While the Agent applies the round
+ * The single control in preview mode; edit mode has its own way back, beside
+ * the Design panel's title. Drag it to any corner; click it to enter edit mode
+ * (or, while the canvas grows back over the page, to turn back to it). While the Agent applies the round
  * it is locked, its ring fills as changes are done, and pressing and holding
  * it unlocks it.
  */
 interface Props {
-  editing: boolean;
   /** Changes not yet applied, shown as a badge, which opens the change list. */
   changeCount: number;
   /** The change list is open. */
@@ -39,7 +39,7 @@ interface Props {
   children?: ComponentChildren;
 }
 
-export function Toggle({ editing, changeCount, changesOpen, onShowChanges, applying, onUnlock, onToggle, children }: Props) {
+export function Toggle({ changeCount, changesOpen, onShowChanges, applying, onUnlock, onToggle, children }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -156,14 +156,10 @@ export function Toggle({ editing, changeCount, changesOpen, onShowChanges, apply
     endHold();
   };
 
-  const label = applying
-    ? "Vernier Kit: applying design changes. Press and hold to unlock."
-    : editing
-      ? "Vernier Kit: back to preview mode"
-      : "Vernier Kit: enter edit mode";
+  const label = applying ? "Vernier Kit: applying design changes. Press and hold to unlock." : "Vernier Kit: enter edit mode";
 
   return (
-    <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner} data-editing={editing || undefined}>
+    <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner}>
       <div class={holding ? "vk-toggle-wrap is-holding" : "vk-toggle-wrap"}>
         <button
           type="button"
@@ -198,6 +194,7 @@ export function Toggle({ editing, changeCount, changesOpen, onShowChanges, apply
           <button
             type="button"
             class="vk-badge"
+            data-vk-changes-opener=""
             aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}
             aria-haspopup="dialog"
             aria-expanded={changesOpen}

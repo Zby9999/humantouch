@@ -28,10 +28,10 @@ export function ChangeList({ changes, readOnly, onRevert, onDiscard, onClose }: 
 
   useEffect(() => {
     dialog.current!.focus({ preventScroll: true });
-    // A press anywhere else closes it; the badge toggles it itself.
+    // A press anywhere else closes it; what opened it (the badge, or the count in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
-      if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.classList.contains("vk-badge"))) {
+      if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.hasAttribute("data-vk-changes-opener"))) {
         latestOnClose.current();
       }
     };
@@ -49,9 +49,9 @@ export function ChangeList({ changes, readOnly, onRevert, onDiscard, onClose }: 
       setConfirming(false);
       return;
     }
-    const badge = (event.currentTarget.getRootNode() as ShadowRoot).querySelector<HTMLElement>(".vk-badge");
+    const opener = (event.currentTarget.getRootNode() as ShadowRoot).querySelector<HTMLElement>("[data-vk-changes-opener]");
     onClose();
-    badge?.focus();
+    opener?.focus();
   };
 
   const count = changes.length === 1 ? "1 change" : `${changes.length} changes`;

@@ -6,6 +6,7 @@ import { canPreview, startChangePreview } from "./change-preview";
 import { ChangeList } from "./ChangeList";
 import type { Change } from "./changeset";
 import { checkChange } from "./check";
+import { Icon } from "./icons";
 import { PreviewSwitch } from "./PreviewSwitch";
 import { revertSaved } from "./saved-round";
 import { connectRoundStore } from "./service";
@@ -121,10 +122,48 @@ export function EditorLayer() {
 
   // A shell already up folds away once claimed; none starts while claimed.
   shellShown.current = mode !== "preview" && ready && (shellShown.current || !claimed);
+  /** Into edit mode, or back out of it: a click animates, a key press switches at once. A click while leaving turns back. */
+  const switchMode = (animate: boolean) => {
+    setAnimate(animate);
+    if (mode === "preview") performance.mark(ENTER_MARK);
+    setMode(mode === "edit" ? (animate ? "leaving" : "preview") : "edit");
+  };
+  const list = listOpen && listed.length > 0 && (
+    <ChangeList changes={listed} readOnly={!!claimed} onRevert={revert} onDiscard={discard} onClose={() => setListOpen(false)} />
+  );
+  // In edit mode, the way back and the changes so far sit beside the Design panel's title, in place of the toggle.
+  const editing = mode === "edit" && shellShown.current;
   return (
     <>
       {shellShown.current && (
         <Shell
+          controls={
+            <>
+              {listed.length > 0 && (
+                <button
+                  type="button"
+                  class="vk-count"
+                  data-vk-changes-opener=""
+                  aria-label={`${listed.length} ${listed.length === 1 ? "change" : "changes"} not applied yet`}
+                  aria-haspopup="dialog"
+                  aria-expanded={listOpen}
+                  onClick={() => setListOpen(!listOpen)}
+                >
+                  {listed.length}
+                </button>
+              )}
+              <button
+                type="button"
+                class="vk-icon-button"
+                aria-label="Vernier Kit: back to preview mode"
+                title="Back to preview mode"
+                onClick={(event) => switchMode(event.detail > 0)}
+              >
+                <Icon name="close" />
+              </button>
+              {editing && list}
+            </>
+          }
           saved={round!}
           onSave={save}
           onChanges={setLive}
@@ -138,27 +177,21 @@ export function EditorLayer() {
           }}
         />
       )}
-      <Toggle
-        editing={mode === "edit"}
-        changeCount={listed.length}
-        changesOpen={listOpen && listed.length > 0}
-        onShowChanges={() => setListOpen(!listOpen)}
-        applying={claimed && { done: claimed.done.length, total: changes.length }}
-        onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
-        onToggle={(animate) => {
-          setAnimate(animate);
-          if (mode === "preview") performance.mark(ENTER_MARK);
-          // A click while leaving turns back to the same canvas.
-          setMode(mode === "edit" ? (animate ? "leaving" : "preview") : "edit");
-        }}
-      >
-        {mode !== "edit" && pending.length > 0 && (
-          <PreviewSwitch on={previewing} onChange={switchPreview} unseen={pending.filter((change) => !canPreview(change)).length} />
-        )}
-        {listOpen && listed.length > 0 && (
-          <ChangeList changes={listed} readOnly={!!claimed} onRevert={revert} onDiscard={discard} onClose={() => setListOpen(false)} />
-        )}
-      </Toggle>
+      {!editing && (
+        <Toggle
+          changeCount={listed.length}
+          changesOpen={listOpen && listed.length > 0}
+          onShowChanges={() => setListOpen(!listOpen)}
+          applying={claimed && { done: claimed.done.length, total: changes.length }}
+          onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
+          onToggle={switchMode}
+        >
+          {mode !== "edit" && pending.length > 0 && (
+            <PreviewSwitch on={previewing} onChange={switchPreview} unseen={pending.filter((change) => !canPreview(change)).length} />
+          )}
+          {list}
+        </Toggle>
+      )}
     </>
   );
 }

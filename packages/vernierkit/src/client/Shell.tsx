@@ -1,4 +1,5 @@
 /** @jsxImportSource preact */
+import type { ComponentChildren } from "preact";
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
 import { CanvasView, isEditable } from "./CanvasView";
@@ -21,6 +22,8 @@ export interface RoundControl {
 }
 
 interface Props {
+  /** Beside the Design panel's title: the way back to preview mode, and the changes so far. */
+  controls: ComponentChildren;
   /** The round to come back to, canvas and ChangeSet; null to freeze the page afresh. */
   saved: SavedRound | null;
   /** The round, saved a moment after the last edit; null once it has no changes left. */
@@ -44,7 +47,7 @@ const ADJUSTING_MS = 200;
 const AUTOSAVE_MS = 500;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ saved, onSave, onChanges, control, previewing, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, onSave, onChanges, control, previewing, leaving, animate, onLeft }: Props) {
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
@@ -174,7 +177,10 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
         onLeft={onLeft}
       />
       <aside class="vk-panel" aria-label="Design">
-        <h2 class="vk-panel-title">Design</h2>
+        <div class="vk-panel-header">
+          <h2 class="vk-panel-title">Design</h2>
+          {controls}
+        </div>
         {tree && editor && selected.length ? (
           <>
             <LayerInfo tree={tree} layers={selected} />

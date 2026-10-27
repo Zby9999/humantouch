@@ -27,9 +27,6 @@ export const styles = /* css */ `
 .vk-dock[data-corner="bottom-left"] { bottom: var(--vk-gap); left: var(--vk-gap); }
 .vk-dock[data-corner="bottom-right"] { bottom: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
 .vk-dock.is-dragging { transition: none; }
-/* In edit mode it stays over the canvas, clear of the side panels. */
-.vk-dock[data-editing][data-corner$="left"] { left: calc(240px + var(--vk-gap)); }
-.vk-dock[data-editing][data-corner$="right"] { right: calc(240px + var(--vk-gap)); }
 
 .vk-toggle {
   all: unset;
@@ -250,6 +247,34 @@ export const styles = /* css */ `
   font-weight: 600;
   border-bottom: 1px solid var(--vk-border);
 }
+/* The Design panel's title, with the changes so far and the way back to preview mode beside it. */
+.vk-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  border-bottom: 1px solid var(--vk-border);
+}
+.vk-panel-header .vk-panel-title { flex: 1; border-bottom: 0; }
+.vk-count {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--vk-accent);
+  color: #fff;
+  font: 600 11px/20px ${FONT_STACK};
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+}
+.vk-count:hover { background: #0b85de; }
+.vk-count:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
+/* Opened from the count: below the panel's title, over the panel, which would clip it. */
+.vk-panel-header .vk-changes { position: fixed; top: 44px; right: 8px; z-index: 1; }
+
 .vk-panel-empty {
   margin: 0;
   padding: 12px 16px;

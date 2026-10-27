@@ -16,6 +16,7 @@ const PATHS: Record<string, string> = {
   plus: "M8 3.5v9M3.5 8h9",
   minus: "M3.5 8h9",
   gap: "M3.5 3v10M12.5 3v10M6.5 8h3",
+  close: "M4.5 4.5l7 7M11.5 4.5l-7 7",
   undo: "M5.5 4 3 6.5 5.5 9M3 6.5h6.5a3.25 3.25 0 0 1 0 6.5H7",
 };
 
