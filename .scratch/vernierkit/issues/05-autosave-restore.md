@@ -6,7 +6,7 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 停止编辑约半秒后自动保存画布副本与改动单，无需任何保存动作
 - [x] 刷新浏览器后进入编辑模式，画布与改动原样恢复

@@ -6,7 +6,7 @@
 
 **Blocked by:** 26, 28
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 源码改对了时，`done` 说明页面显示了这条改动
 - [x] 修改被别的样式盖住时，`done` 说明页面没有显示，并给出页面上实际的值

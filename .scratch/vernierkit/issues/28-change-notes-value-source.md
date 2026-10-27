@@ -6,7 +6,7 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 填充与圆角改动记录改前值的来源：样式规则、内联样式，或没有任何样式设定（浏览器默认）
 - [x] 来源给出选择器、所在文件（开发服务器提供时）、CSS layer、是否 important，以及对应的类名

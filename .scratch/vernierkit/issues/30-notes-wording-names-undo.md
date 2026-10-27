@@ -11,7 +11,7 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 写在最外层组件里的图层，作用范围写"在位置处修改"
 - [x] `<button>` 等有用途的元素在图层树中显示为 Button 等名称，组件与文字图层的名称不变

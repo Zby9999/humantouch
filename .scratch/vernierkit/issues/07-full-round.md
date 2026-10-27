@@ -6,7 +6,7 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] `claim` 后编辑层（若处于编辑模式）自动收起为切换按钮，按钮在落地期间不可用
 - [x] 每次 `done <编号>` 后进度环增长、角标减一

@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 开发模式下打开示例项目，页面上出现切换按钮，可拖到任意角落
 - [x] 页面中由项目源码写出的元素带有正确的 文件:行:列 元素位置标记；组件使用处带有使用处位置标记

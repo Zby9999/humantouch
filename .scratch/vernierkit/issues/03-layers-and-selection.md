@@ -6,7 +6,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 图层按规格的翻译规则分类：Flex → Stack，Grid → Grid，普通从上到下排列 → 纵向 Stack，绝对 / 固定定位 → 自由定位，只含文字（含行内片段）→ 文字图层，第三方组件 → 锁定图层，其他容器 → Frame
 - [x] 图层树如实显示页面结构，图层名自动取组件名或文字内容

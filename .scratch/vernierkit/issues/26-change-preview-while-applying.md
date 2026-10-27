@@ -6,7 +6,7 @@
 
 **Blocked by:** 25, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] `done <编号>` 之后，这条改动的预览立即撤下，其他未完成的改动仍在预览中
 - [x] `finish` 后页面上不再有改动预览，页面就是代码的真实样子

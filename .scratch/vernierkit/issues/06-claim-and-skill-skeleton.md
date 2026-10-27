@@ -6,7 +6,7 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] `claim` 把状态标记为已认领，并输出改动说明
 - [x] 改动说明对 04 中的填充与圆角改动给出种类、位置、作用范围、设计意图与参考样式

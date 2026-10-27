@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 有未落地改动时，预览模式中的真实页面显示这些样式改动，悬停、点击、动效照常可用
 - [x] 改动只作用于对应使用处的实例，同一组件的其他使用处不变

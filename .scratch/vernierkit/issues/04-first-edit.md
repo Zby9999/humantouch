@@ -6,7 +6,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 修改纯色填充或圆角后画布立即变化，没有可感知的延迟
 - [x] 同一使用处的所有实例同步变化
