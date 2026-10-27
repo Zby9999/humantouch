@@ -4,7 +4,7 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { DELETED_ATTR, LAYER_ID_ATTR, MADE_ATTR, WRAP_ATTR } from "./canvas-style";
+import { DELETED_ATTR, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
@@ -290,6 +290,30 @@ export function originOf(el: Element, chain: UsageLevel[]): Origin {
     if (project > 0 && chain[project - 1].usage) return { loc: chain[project - 1].usage, chain: chain.slice(project) };
   }
   return { loc, chain };
+}
+
+/** How much of its words tells an element apart. */
+export const SIGN_WORDS = 80;
+
+/**
+ * What an element looks like to a reader, on a canvas or the live page: its
+ * tag and its first words (on a canvas, those the page had, before any new
+ * words). It tells siblings apart where markers have moved.
+ */
+export function signOf(el: Element): string {
+  return `${el.localName} ${wordsAsPage(el).slice(0, SIGN_WORDS)}`;
+}
+
+/** An element's words as the page has them: on a canvas, before any change to them. */
+export function wordsAsPage(el: Element): string {
+  const original = el.getAttribute(ORIGINAL_TEXT_ATTR);
+  let text = el.textContent!;
+  if (original !== null) {
+    const template = el.ownerDocument.createElement("template");
+    template.innerHTML = original;
+    text = template.content.textContent!;
+  }
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** The usage key of an element on a canvas, from its markers alone: null with no source marker. */

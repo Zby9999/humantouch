@@ -72,7 +72,7 @@ export function startChangePreview(doc: Document): ChangePreview {
         const taken = keys.map(() => false);
         let last = 0;
         for (const child of container.children) {
-          const key = keyOf(child);
+          const key = usageKeyOf(child);
           const i = keys.findIndex((k, j) => k !== null && k === key && !taken[j]);
           if (i >= 0) {
             taken[i] = true;
@@ -234,7 +234,7 @@ function* keysIn(root: Element, locs: Set<string>): Generator<[Element, string]>
 }
 
 /** The usage key of a live element: null with no source marker. */
-export function keyOf(el: Element): string | null {
+export function usageKeyOf(el: Element): string | null {
   const { loc, chain } = originOf(el, readUsageChain(el));
   return loc && usageKey(loc, chain);
 }

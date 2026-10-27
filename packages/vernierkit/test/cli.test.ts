@@ -369,6 +369,23 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 3)).not.toContain("Sketch");
   });
 
+  test("the sketch is as the designer left it: moved or resized since, and moved or copied into the Frame", async () => {
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }),
+      change(2, "create", {
+        property: "new",
+        target: frameTarget,
+        after: { type: "text", place: place(1, { x: 10, y: 12 }, "11", frameTarget), width: 160, height: null, text: "Plans" },
+      }),
+      change(3, "style", { layer: "12", property: "y", before: 12, after: 40 }),
+      change(4, "move", { layer: "30", property: "move", before: place(1), after: place(2, { x: 0, y: 80 }, "11", frameTarget), target: { ...list, context: { path: ["Page", "Button"], element: "<button>" } } }),
+    );
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("\n  - Text “Plans”: X 10px, Y 40px, 160px wide (change 2)\n  - Button (moved in): X 0px, Y 80px (change 4)\n");
+  });
+
   test("new words, and in a loop, new words that come from data", async () => {
     saveRound(
       change(1, "text", { property: "text", before: "Get started", after: "Start now" }),
@@ -554,6 +571,9 @@ describe("done, checked on the page", () => {
     );
     expect((await cli("done", "2")).output).toContain("Its container's layers are in another order on the page: put it 1st, as the notes say, and run `npx vernierkit done 2` again.\n");
     expect((await cli("done", "3")).output).toContain("The layer is at X 0px and Y 0px, not absolute at X 40px and Y 12px: check its `position`, `left` and `top`");
+    closePage();
+    closePage = openPage(() => ({ outcome: "not shown", actual: "no reference" }));
+    expect((await cli("done", "3")).output).toContain("The layer is placed absolute, but not from its container: make the container its positioning reference (`position: relative`)");
   });
 
   test("says why when the page could not check it", async () => {

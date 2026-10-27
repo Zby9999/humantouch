@@ -34,7 +34,7 @@ import {
   type Target,
 } from "./changeset";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
-import { boxOf, buildLayerTree, holdsLayers, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import { compose, decompose, dissolve, inferStack, marginBox, paddingBox, stackStyle, undissolve } from "./stacks";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
@@ -486,7 +486,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const moveStep = (id: string, from: Place, to: Place, start: Place, size: Record<string, string>, record: MoveRecord) => {
     const styleAt = (place: Place): Record<string, string> => {
       if (same(place, start)) return {};
-      if (place.absolute) return { position: "absolute", left: `${place.absolute.x}px`, top: `${place.absolute.y}px`, right: "auto", bottom: "auto", ...size };
+      if (place.absolute) return { ...absoluteAt(place.absolute), ...size };
       // An absolute layer put into a layout leaves its own position.
       return start.absolute ? { position: "static" } : {};
     };
@@ -517,15 +517,14 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     push({ layers, back, key: layers.join(" "), undo: run(unmake), redo: run(make) }, false);
   };
   /** Making a Stack, or dissolving one, as recorded in `record`, with the layer `id`. */
-  const restack = (id: string, record: StructureRecord) => () => {
+  const stackOn = (id: string, record: StructureRecord) => () => {
     changes.record(id, record);
     if (record.kind === "stack") compose(doc, id, record.after as Composed, record.style);
     else dissolve(doc, id, record.after as Dissolved, record.style);
   };
   /** Taking that back. */
-  const unstack = (id: string, record: StructureRecord) => () => {
-    const change = changes.list().find((c) => c.layer === id && c.property === record.property);
-    if (change) changes.remove(change.id);
+  const stackOff = (id: string, record: StructureRecord) => () => {
+    drop(id, record.property);
     if (record.kind === "stack") decompose(doc, id, record.after as Composed, changes.list());
     else undissolve(doc, id, record.after as Dissolved, changes.list());
   };
@@ -538,7 +537,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
    * Taking a layer made this round off the canvas, as recorded in `record`;
    * once taken off, making it again puts the same elements back where they were.
    */
-  const unmake = (id: string, record: StructureRecord, make: () => void) => {
+  const madeLayer = (id: string, record: StructureRecord, make: () => void) => {
     let taken: [Element, Element, Node | null][] = [];
     const container = (record.kind === "create" ? (record.after as Created).place : (record.after as Place)).container.layer;
     return {
@@ -548,7 +547,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
         for (const [el, parent, next] of taken) parent.insertBefore(el, next);
         taken = [];
       },
-      unmake: () => {
+      takeOff: () => {
         drop(id, record.property);
         taken = elementsOf(doc, id)
           .filter((el) => el.getAttribute(MADE_ATTR) === id)
@@ -569,7 +568,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       changes.record(id, record);
       hide(els, record.property, record.style);
     },
-    unmake: () => {
+    bringBack: () => {
       drop(id, record.property);
       unhide(doc, id, record.property, changes.list());
     },
@@ -585,11 +584,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     const all = id ? elementsOf(doc, id) : [];
     return all.length > shown.length ? all : shown;
   };
-  /** Instances a loop renders: several, side by side in one container. */
-  const inLoop = (layer: Layer) => {
-    const els = onPage(layer);
-    return els.length > 1 && els.every((el) => el.parentElement === els[0].parentElement);
-  };
+  /** One of the instances a loop renders, those deleted included. */
+  const inLoop = (layer: Layer) => isLoop(onPage(layer));
   /** A layer made this round by the change `id` is the one with: the change that made it, if there is one. */
   const makerOf = (id: string) => changes.list().find((change) => change.layer === id && madeBy(change) === id) ?? null;
 
@@ -607,8 +603,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       // Deleted, it is no layer: its elements are found by the change.
       const { id: _, layer: id, ...record } = change;
       const els = elementsOf(doc, id).filter((el) => el.getAttribute(DELETED_ATTR) === change.property);
-      const { make, unmake } = deleting(id, record, els);
-      structural([id], [id], unmake, make);
+      const { make, bringBack } = deleting(id, record, els);
+      structural([id], [id], bringBack, make);
       return layerById(id);
     }
     const layer = layerById(change.layer);
@@ -624,12 +620,12 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     if (change.kind === "stack" || change.kind === "unstack") {
       const members = (change.after as Composed | Dissolved).layers.map((member) => member.layer);
       const kept = change.kind === "stack" && (change.after as Composed).place ? members : [id];
-      structural(kept, [id], unstack(id, record), restack(id, record));
+      structural(kept, [id], stackOff(id, record), stackOn(id, record));
       return layerById(kept[0]);
     }
     if (change.kind === "create" || change.kind === "duplicate") {
       const container = layer.parent!;
-      const { make, unmake: takeOff } = unmake(id, record, () => {});
+      const { make, takeOff } = madeLayer(id, record, () => {});
       structural([container.el.getAttribute(LAYER_ID_ATTR) ?? id], [id], takeOff, make);
       return tree.layerOf(container.el);
     }
@@ -649,10 +645,10 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     syncOrders(doc, changes, isFlow);
     tree = buildLayerTree(doc);
   };
-  /** Whether the container with id `id` lays its layers out as a plain top-to-bottom flow, not as flex or grid. */
+  /** Whether the container with id `id` lays its layers out as a plain top-to-bottom flow of blocks, not as flex or grid. */
   const isFlow = (id: string) => {
     const [el] = elementsOf(doc, id);
-    return !!el && !/(flex|grid)$/.test(getComputedStyle(el).display);
+    return !!el && FLOW.test(getComputedStyle(el).display);
   };
 
   const editor: Editor = {
@@ -678,7 +674,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
         return layer;
       }
       const target = targetOf(layer, tree.acrossInstances(layer).length);
-      const loop = isLoop(tree.acrossInstances(layer));
+      const loop = isLoop(tree.acrossInstances(layer).map((instance) => instance.el));
       const text = !!layer.text;
       if (text) layer = wrap(layer);
       const id = idOf(layer, tree.acrossInstances(layer));
@@ -800,7 +796,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
           const reference = paddingBox((members[0].el as HTMLElement).offsetParent ?? container.el);
           const boxes = members.map((member) => marginBox(member.el));
           absolute = { x: round(Math.min(...boxes.map((b) => b.left)) - reference.left), y: round(Math.min(...boxes.map((b) => b.top)) - reference.top) };
-          style = { ...style, position: "absolute", left: `${absolute.x}px`, top: `${absolute.y}px`, right: "auto", bottom: "auto" };
+          style = { ...style, ...absoluteAt(absolute) };
         }
         composed.place = {
           container: { layer: idOf(container, tree.acrossInstances(container)), target: targetOf(container, count) },
@@ -811,7 +807,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       }
       const record: StructureRecord = { kind: "stack", target: targetOf(container, count), scope: "usage", property: "stack", before: null, after: composed, style, sources: [] };
       const kept = frame ? [id] : composed.layers.map((member) => member.layer);
-      structural([id], kept, restack(id, record), unstack(id, record));
+      structural([id], kept, stackOn(id, record), stackOff(id, record));
       return layerById(id)!;
     },
     canUnstack: (layer) => layer.kind === "stack" && !!layer.parent && layer.children.every((child) => placeable(child) && repeatsWith(child, layer)),
@@ -838,11 +834,11 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
         ...(frame ? {} : bodyText(doc)),
         ...(width !== null && { width: `${width}px` }),
         ...(height !== null && { height: `${height}px` }),
-        ...(place.absolute && { position: "absolute", left: `${place.absolute.x}px`, top: `${place.absolute.y}px`, right: "auto", bottom: "auto" }),
+        ...(place.absolute && absoluteAt(place.absolute)),
       };
       const id = String(++lastId);
       const record: StructureRecord = { kind: "create", target: targetOf(container, count), scope: "usage", property: "new", before: null, after: created, style, sources: [] };
-      const { make, unmake: takeOff } = unmake(id, record, () => {
+      const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);
         insertNew(doc, id, created, style);
       });
@@ -942,7 +938,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
         sources: [],
         ...(loop && { data: true }),
       };
-      const { make, unmake: bringBack } = deleting(id, record, loop ? [own.el] : instances.map((instance) => instance.el));
+      const { make, bringBack } = deleting(id, record, loop ? [own.el] : instances.map((instance) => instance.el));
       structural([idOf(parent, tree.acrossInstances(parent))], [id], make, bringBack);
     },
     canDuplicate: (layer) => layer.parent !== null && !layer.text,
@@ -952,6 +948,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       const loop = inLoop(layer);
       const parent = to?.parent ?? layer.parent!;
       const containers = loop ? [parent] : tree.acrossInstances(parent);
+      // The original needs an id of its own, for its changes to stay apart from the copy's.
       idOf(layer, instances);
       const from = placeOf(layer);
       const where = { layer: idOf(parent, tree.acrossInstances(parent)), target: targetOf(parent, tree.acrossInstances(parent).length) };
@@ -961,7 +958,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       if (!to) place = { container: where, nth: parent.children.indexOf(layer) + 2, slot: slots.indexOf(layer.el) + 1, absolute: from.absolute };
       else if ("x" in to) {
         place = { container: where, nth: parent.children.length + 1, slot: slots.length, absolute: { x: round(to.x), y: round(to.y) } };
-        style = { position: "absolute", left: `${place.absolute!.x}px`, top: `${place.absolute!.y}px`, right: "auto", bottom: "auto", ...sizeOf(layer.el) };
+        style = { ...absoluteAt(place.absolute!), ...sizeOf(layer.el) };
       } else {
         const next = parent.children.filter((child) => child !== layer)[to.index];
         const nth = next ? parent.children.indexOf(next) : parent.children.length;
@@ -972,7 +969,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       const id = String(++lastId);
       const record: StructureRecord = { kind: "duplicate", target: targetOf(layer, onPage(layer).length), scope: "usage", property: "copy", before: from, after: place, style, sources: [], ...(loop && { data: true }) };
       const originals = (loop ? [layer] : instances).map((instance) => instance.el);
-      const { make, unmake: takeOff } = unmake(id, record, () => {
+      const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);
         insertCopies(originals, containers.map((container) => container.el), id, place, style);
       });
@@ -1000,7 +997,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
           const margins = getComputedStyle(child.el);
           const x = round(r.left - frame.left - (parseFloat(margins.marginLeft) || 0));
           const y = round(r.top - frame.top - (parseFloat(margins.marginTop) || 0));
-          const style = { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto", ...sizeOf(child.el) };
+          const style = { ...absoluteAt({ x, y }), ...sizeOf(child.el) };
           return { layer: idOf(child, tree.acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style };
         }),
       };
@@ -1021,7 +1018,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
         style,
         sources: sourcesOf(layer.el, ["display", "flex-direction"]),
       };
-      structural([id], [id], restack(id, record), unstack(id, record));
+      structural([id], [id], stackOn(id, record), stackOff(id, record));
       return layerById(id)!;
     },
   };
@@ -1078,6 +1075,11 @@ function bodyText(doc: Document): Record<string, string> {
   };
 }
 
+/** The CSS that places a layer absolute at `x` and `y`, in px, from its container's top left. */
+function absoluteAt({ x, y }: { x: number; y: number }): Record<string, string> {
+  return { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" };
+}
+
 /** An element's size as CSS sets it now: what keeps it as large once it is absolute. */
 function sizeOf(el: Element): Record<string, string> {
   const style = getComputedStyle(el);
@@ -1085,8 +1087,8 @@ function sizeOf(el: Element): Record<string, string> {
 }
 
 /** Instances a loop renders: several, side by side in one container. */
-function isLoop(instances: Layer[]): boolean {
-  return instances.length > 1 && instances.every((instance) => instance.el.parentElement === instances[0].el.parentElement);
+function isLoop(els: Element[]): boolean {
+  return els.length > 1 && els.every((el) => el.parentElement === els[0].parentElement);
 }
 
 /** The CSS properties a property may declare, and the ones it is read from: what taking it off the canvas puts back. */
@@ -1296,7 +1298,9 @@ function targetOf(layer: Layer, instances: number): Target {
   for (let l: Layer | null = layer; l; l = l.parent) path.unshift(l.name);
   // Text given an element of its own is written in its container.
   const written = layer.el.hasAttribute(WRAP_ATTR) && layer.el.parentElement ? layer.el.parentElement : layer.el;
-  const context = { path, element: openingTag(written) };
+  // Its words, to tell it apart once its markers move: text has them, containers do not count theirs.
+  const words = layer.kind === "text" ? (layer.text ? layer.name : wordsAsPage(layer.el)) : "";
+  const context = { path, element: openingTag(written), ...(words && { text: words.slice(0, SIGN_WORDS) }) };
   // Text with no element of its own is found by which run of text of its container it is.
   const wrapped = written !== layer.el ? Number(layer.el.getAttribute(WRAP_ATTR)) : null;
   const run = layer.text ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : wrapped;

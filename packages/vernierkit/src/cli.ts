@@ -104,6 +104,9 @@ function notShown(change: Change, actual: unknown): string {
   if (change.kind === "move") {
     const { absolute, nth } = change.after as Place;
     if (!absolute) return `Its container's layers are in another order on the page: put it ${ordinal(nth)}, as the notes say, and ${again}.`;
+    if (actual === "no reference") {
+      return `The layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
+    }
     const at = actual as { x: number; y: number } | null;
     const where = at ? `at X ${at.x}px and Y ${at.y}px` : "not placed absolute";
     return `The layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;

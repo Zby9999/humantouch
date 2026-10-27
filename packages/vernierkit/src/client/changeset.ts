@@ -28,6 +28,8 @@ export interface Target {
     path: string[];
     /** The layer's element as an opening tag, with its id and classes. */
     element: string;
+    /** Its words, when it has any, as the page had them: to tell it apart from its siblings when its markers have moved. */
+    text?: string;
   };
 }
 
@@ -125,11 +127,14 @@ export interface Change {
   reference?: true;
   /**
    * A reorder: the layers of the container in their order now, by usage key
-   * (null for one with no source marker), and whether the container is a
-   * plain top-to-bottom flow; what the live page shows the new order by. Null:
-   * the page cannot show it, as text runs on among the layers.
+   * (null for one with no source marker) and by what they look like (`signs`:
+   * tag and words, which survive the Agent moving the JSX), and whether the
+   * container is a plain top-to-bottom flow; what the live page shows the
+   * order by, and checks it by. `self`: which of them the change moves;
+   * `others`: those other reorders move, which this one's check leaves out.
+   * Null: the page cannot show it, as text runs on among the layers.
    */
-  order?: { keys: (string | null)[]; flow: boolean } | null;
+  order?: { keys: (string | null)[]; signs: string[]; flow: boolean; self: number; others: number[] } | null;
 }
 
 /**
@@ -209,6 +214,7 @@ export function withDependents(list: Change[], id: number): Change[] {
   return [...taken].sort((a, b) => b.id - a.id);
 }
 
+/** Whether `later` needs `earlier` to be there: it is made to, in or around what `earlier` made, or moves a layer `earlier` moved before it. */
 function buildsOn(later: Change, earlier: Change): boolean {
   if (later === earlier) return false;
   const made = madeBy(earlier);

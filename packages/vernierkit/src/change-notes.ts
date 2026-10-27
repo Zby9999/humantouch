@@ -5,9 +5,10 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import { madeBy, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
+import { madeBy, placedAt, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
-import { changeTitle, kindTitle, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
+import type { Size } from "./client/edits";
+import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -59,6 +60,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
 
+/** What the designer wants of the change, in design language. */
 function intent(change: Change): string {
   switch (change.kind) {
     case "style":
@@ -126,13 +128,20 @@ function sketch(change: Change, list: Change[]): string[] {
     return [`**Sketch:** this layer is drawn in the Frame of change ${frame.id} as part of its sketch: follow the brief, with it as a guide to the layout, rather than writing it as it is.`];
   }
   if (!created.brief) return [];
-  const drawn = list.filter((c) => c.kind === "create" && (c.after as Created).place.container.layer === change.layer);
-  const items = drawn.map((c) => {
-    const { type, text, place, width, height } = c.after as Created;
-    const what = type === "text" ? `Text ${quoted(text ?? "")}` : "Frame";
-    const where = place.absolute ? `X ${place.absolute.x}px, Y ${place.absolute.y}px` : `${ordinal(place.nth)} in its layout`;
+  // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
+  const latest = <T>(layer: string, property: string, then: T) => (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property)?.after as T) ?? then;
+  const items = list.flatMap((c) => {
+    const place = placedAt(c);
+    if (c.kind === "stack" || place?.container.layer !== change.layer) return [];
+    const made = c.kind === "create" ? (c.after as Created) : null;
+    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : "a copy"})`;
+    let where = `${ordinal(place.nth)} in its layout`;
+    if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
+    const fixed = (size: Size | undefined) => (size?.type === "fixed" ? size.value : null);
+    const width = fixed(latest<Size | undefined>(c.layer, "width", undefined)) ?? made?.width ?? null;
+    const height = fixed(latest<Size | undefined>(c.layer, "height", undefined)) ?? made?.height ?? null;
     const size = width === null ? "" : height === null ? `, ${width}px wide` : `, ${width} × ${height}px`;
-    return `\n  - ${what}: ${where}${size} (change ${c.id})`;
+    return [`\n  - ${what}: ${where}${size} (change ${c.id})`];
   });
   return [
     `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.`,
@@ -216,6 +225,7 @@ function dataChange({ kind, target: { instances } }: Change): string {
   return `${one}, so its place comes from the order of the data the loop goes through. Reorder the data where it is written in the code; ${outside}`;
 }
 
+/** A sentence's first letter in capitals. */
 function capitalized(text: string): string {
   return text[0].toUpperCase() + text.slice(1);
 }

@@ -5,7 +5,7 @@
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
-import { canvasKey, NOT_DRAWN } from "./layers";
+import { canvasKey, NOT_DRAWN, signOf } from "./layers";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -55,26 +55,33 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
  * when no reorder says yet.
  */
 export function syncOrders(doc: Document, changes: ChangeSet, flow: (id: string) => boolean) {
-  for (const change of changes.list()) {
-    if (!isReorder(change)) continue;
+  const reorders = changes.list().filter(isReorder);
+  for (const change of reorders) {
     const id = (change.after as Place).container.layer;
-    const keys = keysIn(doc, id);
-    const order = keys && { keys, flow: change.order?.flow ?? flow(id) };
+    const layers = layersIn(doc, id);
+    const moved = (layer: string | null) => reorders.some((other) => other !== change && other.layer === layer && (other.after as Place).container.layer === id);
+    const order = layers && {
+      keys: layers.map(canvasKey),
+      signs: layers.map(signOf),
+      flow: change.order?.flow ?? flow(id),
+      self: layers.findIndex((el) => el.getAttribute(LAYER_ID_ATTR) === change.layer),
+      others: layers.flatMap((el, i) => (moved(el.getAttribute(LAYER_ID_ATTR)) ? [i] : [])),
+    };
     if (JSON.stringify(order) !== JSON.stringify(change.order)) changes.record(change.layer, { ...change, order });
   }
 }
 
 /**
- * The usage keys of the container's layers on the canvas, in order: those the
+ * The elements of the container's layers on the canvas, in order: those the
  * live page has too (deleted ones included, new ones not). Null when text runs
  * on among them, which the page cannot put in another order.
  */
-function keysIn(doc: Document, id: string): (string | null)[] | null {
+function layersIn(doc: Document, id: string): Element[] | null {
   const container = elementsOf(doc, id)[0];
   if (!container) return null;
   const text = [...container.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
   if (text || [...container.children].some((el) => el.hasAttribute(WRAP_ATTR))) return null;
-  return [...container.children].filter((el) => !NOT_DRAWN.has(el.localName) && !el.hasAttribute(MADE_ATTR)).map(canvasKey);
+  return [...container.children].filter((el) => !NOT_DRAWN.has(el.localName) && !el.hasAttribute(MADE_ATTR));
 }
 
 /** Makes each container the positioning reference of what is placed absolute in it, where it is not one already. */

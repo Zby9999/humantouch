@@ -1722,9 +1722,10 @@ describe("the live page shows changes to the structure", () => {
     editor.move(layer("a"), { parent: layer("list"), index: 2 });
 
     const keys = ["8:7", "7:7", "6:7"].map((at) => `src/App.tsx:${at} []`);
+    // Each one's check leaves out the layer the other moves.
     expect(changes.list().map((change) => change.order)).toEqual([
-      { keys, flow: false },
-      { keys, flow: false },
+      { keys, signs: ["div C", "div B", "div A"], flow: false, self: 0, others: [2] },
+      { keys, signs: ["div C", "div B", "div A"], flow: false, self: 2, others: [0] },
     ]);
   });
 
@@ -1799,6 +1800,68 @@ describe("the live page shows changes to the structure", () => {
     expect(again.getBoundingClientRect().y).toBeLessThan(page.getElementById("a")!.getBoundingClientRect().y);
   });
 
+  test("a reorder is checked by what the layers look like: moving the JSX moves their markers along", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    editor.move(layer("a"), { parent: layer("list"), index: 2 });
+    const [first, second] = changes.list();
+    const list = page.getElementById("list")!;
+    const lines = () => [...list.children].map((el, i) => el.setAttribute("data-vk-loc", `src/App.tsx:${6 + i}:7`));
+    const check = async (change: (typeof changes.list extends () => (infer C)[] ? C : never)) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const result = checkChange(page, change);
+        vi.advanceTimersByTime(CHECK_SETTLE_MS);
+        return await result;
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+
+    // Not applied, but a line added above moves every marker down: still not shown.
+    for (const el of list.children) el.setAttribute("data-vk-loc", el.getAttribute("data-vk-loc")!.replace(/:(\d+):/, (_, n) => `:${Number(n) + 1}:`));
+    expect((await check(first)).outcome).toBe("not shown");
+    // The first reorder applied alone, its JSX moved with its markers: shown, though the second is not applied yet.
+    list.prepend(page.getElementById("c")!);
+    lines();
+    expect(await check(first)).toEqual({ outcome: "shown" });
+    expect((await check(second)).outcome).toBe("not shown");
+    list.append(page.getElementById("a")!);
+    lines();
+    expect(await check(second)).toEqual({ outcome: "shown" });
+  });
+
+  test("a layer placed absolute is checked from its container, its positioning reference", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    Object.assign((page.getElementById("tag") as HTMLElement).style, { position: "absolute", left: "40px", top: "30px" });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const result = checkChange(page, changes.list()[0]);
+      vi.advanceTimersByTime(CHECK_SETTLE_MS);
+      expect(await result).toEqual({ outcome: "not shown", actual: "no reference" });
+    } finally {
+      vi.useRealTimers();
+    }
+    page.getElementById("board")!.style.position = "relative";
+    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+  });
+
+  test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.remove(layer("one"));
+    const [deleted] = changes.list();
+
+    // The Agent deletes it: the next paragraph moves up to its line.
+    page.getElementById("one")!.remove();
+    page.getElementById("two")!.setAttribute("data-vk-loc", "src/App.tsx:11:7");
+    expect(await checkChange(page, deleted)).toEqual({ outcome: "shown" });
+
+    page.getElementById("flow")!.remove();
+    expect(await checkChange(page, deleted)).toEqual({ outcome: "unchecked", reason: "its container is not on the page now" });
+  });
+
   test("checked: shown once the page's own markup has the change; a deletion not yet made is not", async () => {
     const { page, editor, changes, layer } = open();
     editor.move(layer("c"), { parent: layer("list"), index: 0 });
@@ -1809,6 +1872,7 @@ describe("the live page shows changes to the structure", () => {
     // The Agent's code, as the dev server brings it in.
     page.getElementById("list")!.prepend(page.getElementById("c")!);
     Object.assign((page.getElementById("tag") as HTMLElement).style, { position: "absolute", left: "40px", top: "30px" });
+    page.getElementById("board")!.style.position = "relative";
     expect(await checkChange(page, reorder)).toEqual({ outcome: "shown" });
     expect(await checkChange(page, placed)).toEqual({ outcome: "shown" });
 
