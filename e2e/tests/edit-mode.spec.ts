@@ -232,14 +232,6 @@ test.describe("canvas navigation", () => {
     return { x: b.x, y: b.y, width: b.width, height: b.height };
   }
   const viewportArea = (page: Page) => page.getByRole("region", { name: "Canvas viewport" });
-  /** The part of the canvas viewport the panels floating over it leave free, 8px in from each. */
-  async function freeArea(page: Page) {
-    const viewport = (await viewportArea(page).boundingBox())!;
-    const layers = (await page.getByRole("complementary", { name: "Layers" }).boundingBox())!;
-    const design = (await page.getByRole("complementary", { name: "Design" }).boundingBox())!;
-    const x = layers.x + layers.width + 8;
-    return { x, y: viewport.y, width: design.x - 8 - x, height: viewport.height };
-  }
 
   test("the canvas lays the page out at its original width and shows all of it across", async ({ page }) => {
     const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -277,7 +269,7 @@ test.describe("canvas navigation", () => {
   test("space + drag pans the canvas, and does not press the toggle", async ({ page }) => {
     await enterEditMode(page);
     const before = await box(page);
-    const area = await freeArea(page);
+    const area = (await viewportArea(page).boundingBox())!;
 
     await page.mouse.move(area.x + 200, area.y + 200);
     await page.keyboard.down("Space");
@@ -290,11 +282,11 @@ test.describe("canvas navigation", () => {
     await expect(page.getByRole("button", { name: EXIT_LABEL })).toBeVisible();
   });
 
-  test("shift + 1 zooms to fit the whole page in the room the panels leave", async ({ page }) => {
+  test("shift + 1 zooms to fit the whole page in the window", async ({ page }) => {
     await enterEditMode(page);
     await page.keyboard.press("Shift+Digit1");
 
-    const area = await freeArea(page);
+    const area = (await viewportArea(page).boundingBox())!;
     await expect
       .poll(async () => {
         const canvas = await box(page);

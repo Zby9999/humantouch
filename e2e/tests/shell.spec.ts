@@ -40,23 +40,20 @@ test("the Layers panel starts hidden; a button shows it, another hides it, and i
   await expect(page.getByRole("button", { name: "Show layers" })).toBeFocused();
 });
 
-test("the panels float over the canvas, which is fitted into the room they leave", async ({ page }) => {
+test("with the Layers panel hidden, the canvas takes its room; shown, the panel takes it back", async ({ page }) => {
   await enterEditMode(page);
-  const canvas = page.locator('iframe[title="Canvas"]');
   const viewport = page.getByRole("region", { name: "Canvas viewport" });
-  const width = page.viewportSize()!.width;
-
-  // The canvas fills the window behind the panels; the Design panel stands off the window's edge.
-  expect(await edges(page, viewport)).toEqual({ left: 0, right: width });
   const panel = await edges(page, design(page));
-  expect(panel.right).toBe(width - 8);
-  expect((await edges(page, canvas)).right).toBeLessThan(panel.left);
+
+  expect(await edges(page, viewport)).toEqual({ left: 0, right: panel.left });
+
+  const canvas = page.locator('iframe[title="Canvas"]');
+  const before = await edges(page, canvas);
 
   await page.getByRole("button", { name: "Show layers" }).click();
-  await page.keyboard.press("Shift+Digit1");
   const left = await edges(page, layers(page));
-  expect(left.left).toBe(8);
-  const fitted = await edges(page, canvas);
-  expect(fitted.left).toBeGreaterThan(left.right);
-  expect(fitted.right).toBeLessThan(panel.left);
+  expect(left.left).toBe(0);
+  expect(await edges(page, viewport)).toEqual({ left: left.right, right: panel.left });
+  // The canvas stays where it was on screen as the panel opens beside it.
+  await expect.poll(() => edges(page, canvas)).toEqual(before);
 });

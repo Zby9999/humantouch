@@ -13,7 +13,6 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { toggleIn } from "./selection";
-import { PANEL_INSET, PANEL_WIDTH } from "./styles";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
 
@@ -150,7 +149,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
   }, []);
 
   return (
-    <div class="vk-shell">
+    <div class={layersShown ? "vk-shell" : "vk-shell is-layers-hidden"}>
       {layersShown ? (
         <aside class="vk-panel is-layers" aria-label="Layers">
           <div class="vk-panel-header">
@@ -164,7 +163,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
           )}
         </aside>
       ) : (
-        <button ref={layersToggle} type="button" class="vk-island-button" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+        <button ref={layersToggle} type="button" class="vk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
       )}
@@ -204,7 +203,6 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
         animate={animate}
         changed={!!round.current?.changeSet.list().some((change) => !previewing || !canPreview(change))}
         onLeft={onLeft}
-        covered={{ left: layersShown ? PANEL_SPAN : 0, right: PANEL_SPAN }}
       />
       <aside class="vk-panel is-design" aria-label="Design">
         <div class="vk-panel-header">
@@ -223,9 +221,6 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
     </div>
   );
 }
-
-/** A panel and the room around it: what of the canvas it covers. */
-const PANEL_SPAN = PANEL_WIDTH + 2 * PANEL_INSET;
 
 function readLayersShown(): boolean {
   try {

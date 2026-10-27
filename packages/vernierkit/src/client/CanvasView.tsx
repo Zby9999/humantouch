@@ -49,12 +49,10 @@ interface Props {
   /** The canvas has changes the page does not: on leaving, it fades into the page instead of cutting to it. */
   changed: boolean;
   onLeft(): void;
-  /** How much of the viewport the panels floating over it cover, at each side, in px: the canvas is fitted to the rest. */
-  covered: { left: number; right: number };
 }
 
-/** The canvas that fills the shell, the panels floating over it: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, leaving, animate, changed, onLeft, covered }: Props) {
+/** The middle column: the frozen page, scaled and panned inside a viewport. */
+export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, leaving, animate, changed, onLeft }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -122,7 +120,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       if (!mounted) return;
       setCanvas(frozen);
       onCanvas(frozen);
-      const start = initialView(frozen, visibleArea(viewport.current!, covered));
+      const start = initialView(frozen, viewport.current!.getBoundingClientRect());
       setView(start);
       shell.style.opacity = "";
       if (animate && prefersReducedMotion()) {
@@ -185,8 +183,8 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {}, covered });
-  latest.current = { canvas, selected, onSelect, endDrag, covered };
+  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {} });
+  latest.current = { canvas, selected, onSelect, endDrag };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -221,7 +219,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       if (event.code === "Digit1" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         event.stopPropagation();
-        if (canvas) setView(fitView(canvas, visibleArea(viewport.current!, latest.current.covered)));
+        if (canvas) setView(fitView(canvas, viewport.current!.getBoundingClientRect()));
       }
     };
     const release = () => {
@@ -236,6 +234,21 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       window.removeEventListener("keyup", onKey, true);
       window.removeEventListener("blur", release);
     };
+  }, []);
+
+  // A panel opening or closing beside the viewport moves its left edge: the canvas stays where it is on screen.
+  useEffect(() => {
+    const el = viewport.current!;
+    let left = el.getBoundingClientRect().left;
+    const observer = new ResizeObserver(() => {
+      const now = el.getBoundingClientRect().left;
+      if (now === left) return;
+      const moved = left - now;
+      left = now;
+      setView((v) => ({ ...v, x: v.x + moved }));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   // Registered by hand: it has to be non-passive to keep the page underneath from scrolling.
@@ -535,31 +548,19 @@ function currentView(stage: HTMLElement): View {
   return { x: m.e, y: m.f, zoom: m.a };
 }
 
-/** The part of the viewport no panel covers, in viewport px: `x` from its left edge. */
-interface Area {
-  x: number;
-  width: number;
-  height: number;
-}
-
-function visibleArea(viewport: HTMLElement, covered: Props["covered"]): Area {
-  const { width, height } = viewport.getBoundingClientRect();
-  return { x: covered.left, width: Math.max(0, width - covered.left - covered.right), height };
-}
-
 /** At most 100%, the full width in view, and the part of the page the designer was looking at on top. */
-function initialView(canvas: Canvas, area: Area): View {
+function initialView(canvas: Canvas, area: DOMRect): View {
   const zoom = clamp(Math.min(1, (area.width - 2 * PADDING) / canvas.width));
   return { ...centered(canvas, area, zoom), y: PADDING - canvas.scrollY * zoom };
 }
 
-function fitView(canvas: Canvas, area: Area): View {
+function fitView(canvas: Canvas, area: DOMRect): View {
   const zoom = clamp(Math.min((area.width - 2 * PADDING) / canvas.width, (area.height - 2 * PADDING) / canvas.height));
   return centered(canvas, area, zoom);
 }
 
-function centered(canvas: Canvas, area: Area, zoom: number): View {
-  return { zoom, x: area.x + (area.width - canvas.width * zoom) / 2, y: (area.height - canvas.height * zoom) / 2 };
+function centered(canvas: Canvas, area: DOMRect, zoom: number): View {
+  return { zoom, x: (area.width - canvas.width * zoom) / 2, y: (area.height - canvas.height * zoom) / 2 };
 }
 
 /** Scales by `factor`, keeping the point (`px`, `py`) of the viewport fixed. */
