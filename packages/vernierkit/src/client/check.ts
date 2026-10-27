@@ -7,17 +7,31 @@
  * page in a background tab gets its timers slowed.
  */
 import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
-import { canPreview, elementsOf } from "./change-preview";
-import type { Change } from "./changeset";
-import { readValue, type Property } from "./edits";
+import { canPreview, elementsOf, usageKeyOf } from "./change-preview";
+import { isReorder, type Change, type Place } from "./changeset";
+import { openingTag, readValue, type Property } from "./edits";
+import { signOf, usageKey } from "./layers";
+
+/** Why a change cannot be checked, when it cannot: as for the Change Preview, the page must be able to find and show it. */
+function uncheckable(change: Change): string | null {
+  if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
+  if (change.target.run !== undefined) return "the text has no element of its own on the page";
+  if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
+  if (canPreview(change)) return null;
+  if (change.kind === "style") return "the layer's container cannot be found on the page";
+  if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
+  return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
+}
 
 export function checkChange(doc: Document, change: Change): Promise<CheckResult> {
-  if (change.kind === "move") return Promise.resolve({ outcome: "unchecked", reason: "only style changes are checked on the page so far, not moves" });
-  if (!canPreview(change)) return Promise.resolve({ outcome: "unchecked", reason: "the layer has no source marker, so the page cannot find it" });
+  const reason = uncheckable(change);
+  if (reason) return Promise.resolve({ outcome: "unchecked", reason });
   const look = (): CheckResult => {
+    if (change.kind === "delete") return lookDeleted(doc, change);
+    if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
     const els = elementsOf(doc, change.target);
     if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-    const wrong = els.map((el) => readValue(el, change.property as Property)).find((value) => !same(value, change.after));
+    const wrong = els.map((el) => readValue(el, change.property as Property)).find((value) => !sameValue(value, change.after));
     return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: wrong };
   };
   const first = look();
@@ -38,7 +52,65 @@ export function checkChange(doc: Document, change: Change): Promise<CheckResult>
   });
 }
 
+/**
+ * A deleted layer is gone from the page, or hidden, while its container is
+ * there (gone with its container, it may only be out of view). An element
+ * found by its markers counts as the layer only if it looks the same: its tag
+ * and words, or, with no words, its opening tag; markers move as the Agent edits.
+ */
+function lookDeleted(doc: Document, change: Change): CheckResult {
+  const { target } = change;
+  if (!elementsOf(doc, (change.before as Place).container.target).length) return { outcome: "unchecked", reason: "its container is not on the page now" };
+  const own = usageKey(target.loc!, target.chain);
+  const tag = /^<([\w-]+)/.exec(target.context.element)?.[1];
+  const same = (el: Element) =>
+    target.context.text ? signOf(el) === `${tag} ${target.context.text}` : el.localName === tag && (usageKeyOf(el) === own || openingTag(el) === target.context.element);
+  const there = elementsOf(doc, target).filter((el) => getComputedStyle(el).display !== "none" && same(el));
+  return there.length ? { outcome: "not shown", actual: "there" } : { outcome: "shown" };
+}
+
+/**
+ * The reordered layer is in its place among the container's other layers, as
+ * the canvas has them: told apart by what they look like, as the Agent's
+ * edit moves their markers. Layers other reorders move are left out, so each
+ * reorder is checked on its own. `actual`: the layers on the page, in order.
+ */
+function lookOrder(doc: Document, change: Change): CheckResult {
+  const containers = elementsOf(doc, (change.after as Place).container.target);
+  if (!containers.length) return { outcome: "unchecked", reason: "its container is not on the page now" };
+  const { signs, self, others } = change.order!;
+  const kept = signs.filter((_, i) => !others.includes(i));
+  for (const container of containers) {
+    const page = [...container.children].map(signOf);
+    if (!page.includes(signs[self])) return { outcome: "unchecked", reason: "the layer cannot be told apart in its container on the page now" };
+    const expected = kept.filter((sign) => page.includes(sign));
+    const actual = page.filter((sign) => kept.includes(sign));
+    if (!sameValue(actual, expected)) return { outcome: "not shown", actual };
+  }
+  return { outcome: "shown" };
+}
+
+/**
+ * A layer placed absolute is absolute, in its container as its positioning
+ * reference, at its X and Y, in every instance. `actual`: where it is
+ * instead, null when it is not absolute, "no reference" when placed from elsewhere.
+ */
+function lookPlaced(doc: Document, change: Change): CheckResult {
+  const els = elementsOf(doc, change.target);
+  if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
+  const { x, y } = (change.after as Place).absolute!;
+  for (const el of els) {
+    const style = getComputedStyle(el);
+    if (!/^(absolute|fixed)$/.test(style.position)) return { outcome: "not shown", actual: null };
+    // Placed from its container, or from somewhere else.
+    if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
+    const at = { x: Math.round(parseFloat(style.left) * 100) / 100, y: Math.round(parseFloat(style.top) * 100) / 100 };
+    if (Math.abs(at.x - x) > 0.5 || Math.abs(at.y - y) > 0.5) return { outcome: "not shown", actual: at };
+  }
+  return { outcome: "shown" };
+}
+
 /** Values are plain data in design language. */
-function same(a: unknown, b: unknown): boolean {
+function sameValue(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }

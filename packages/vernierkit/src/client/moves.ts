@@ -3,8 +3,9 @@
  * to the canvas being edited and to a saved one. A layer goes in each instance
  * of its container's usage; a layer one of several a loop renders goes alone.
  */
-import { declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle } from "./canvas-style";
-import type { Change, Place } from "./changeset";
+import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
+import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
+import { canvasKey, NOT_DRAWN, signOf } from "./layers";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -37,28 +38,69 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
     moved.push(node);
   });
 
-  const others = changes.filter((change) => change.layer === layer && change.kind === "style");
+  const others = changesOn(layer, changes).filter((change) => change.kind !== "move");
   for (const el of moved) {
     keepOriginal(el);
     restoreStyle(el, MOVE_CSS, others);
     declare(el, style);
   }
-  if (to.absolute) {
-    for (const container of new Set(moved.map((el) => el.parentElement!))) {
-      if (getComputedStyle(container).position !== "static" && !container.hasAttribute(REFERENCE_ATTR)) continue;
-      keepOriginal(container);
-      container.setAttribute(REFERENCE_ATTR, "");
-      declare(container, { position: "relative" });
-    }
+  if (to.absolute) holdAbsolute(new Set(moved.map((el) => el.parentElement!)));
+  if (from.absolute) releaseAbsolute(doc, from.container.layer, changes);
+}
+
+/**
+ * Puts the order of each reordered container's layers, as the canvas has them
+ * now, into its reorders: what the live page shows the order by.
+ * `flow(id)`: whether the container with that id is a plain top-to-bottom flow,
+ * when no reorder says yet.
+ */
+export function syncOrders(doc: Document, changes: ChangeSet, flow: (id: string) => boolean) {
+  const reorders = changes.list().filter(isReorder);
+  for (const change of reorders) {
+    const id = (change.after as Place).container.layer;
+    const layers = layersIn(doc, id);
+    const moved = (layer: string | null) => reorders.some((other) => other !== change && other.layer === layer && (other.after as Place).container.layer === id);
+    const order = layers && {
+      keys: layers.map(canvasKey),
+      signs: layers.map(signOf),
+      flow: change.order?.flow ?? flow(id),
+      self: layers.findIndex((el) => el.getAttribute(LAYER_ID_ATTR) === change.layer),
+      others: layers.flatMap((el, i) => (moved(el.getAttribute(LAYER_ID_ATTR)) ? [i] : [])),
+    };
+    if (JSON.stringify(order) !== JSON.stringify(change.order)) changes.record(change.layer, { ...change, order });
   }
-  // A container no absolute layer is placed in any more is no longer a positioning reference.
-  const id = from.container.layer;
-  if (from.absolute && !changes.some((change) => change.kind === "move" && (change.after as Place).absolute && (change.after as Place).container.layer === id)) {
-    const own = changes.filter((change) => change.layer === id && change.kind === "style");
-    for (const container of sources) {
-      if (!container.hasAttribute(REFERENCE_ATTR)) continue;
-      container.removeAttribute(REFERENCE_ATTR);
-      restoreStyle(container, ["position"], own);
-    }
+}
+
+/**
+ * The elements of the container's layers on the canvas, in order: those the
+ * live page has too (deleted ones included, new ones not). Null when text runs
+ * on among them, which the page cannot put in another order.
+ */
+function layersIn(doc: Document, id: string): Element[] | null {
+  const container = elementsOf(doc, id)[0];
+  if (!container) return null;
+  const text = [...container.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
+  if (text || [...container.children].some((el) => el.hasAttribute(WRAP_ATTR))) return null;
+  return [...container.children].filter((el) => !NOT_DRAWN.has(el.localName) && !el.hasAttribute(MADE_ATTR));
+}
+
+/** Makes each container the positioning reference of what is placed absolute in it, where it is not one already. */
+export function holdAbsolute(containers: Iterable<Element>) {
+  for (const container of containers) {
+    if (getComputedStyle(container).position !== "static" && !container.hasAttribute(REFERENCE_ATTR)) continue;
+    keepOriginal(container);
+    container.setAttribute(REFERENCE_ATTR, "");
+    declare(container, { position: "relative" });
+  }
+}
+
+/** The container with id `id`, once no change in `changes` places a layer absolute in it, is no longer a positioning reference. */
+export function releaseAbsolute(doc: Document, id: string, changes: Change[]) {
+  if (changes.some((change) => placedAt(change)?.absolute && placedAt(change)!.container.layer === id)) return;
+  const own = changesOn(id, changes).filter((change) => change.kind !== "move");
+  for (const container of elementsOf(doc, id)) {
+    if (!container.hasAttribute(REFERENCE_ATTR)) continue;
+    container.removeAttribute(REFERENCE_ATTR);
+    restoreStyle(container, ["position"], own);
   }
 }

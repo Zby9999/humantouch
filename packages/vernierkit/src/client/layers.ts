@@ -4,6 +4,7 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
+import { DELETED_ATTR, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
@@ -31,6 +32,8 @@ export interface Layer {
   isInstance: boolean;
   /** For an instance: `file:line:column` of its usage, the JSX that uses the component. */
   usageLoc: string | null;
+  /** Made this round, or in a layer made this round: the id of the layer made. */
+  made: string | null;
   parent: Layer | null;
   children: Layer[];
 }
@@ -50,7 +53,7 @@ export interface LayerTree {
 }
 
 /** Elements that never draw a box of their own. */
-const NOT_DRAWN = new Set(["head", "script", "style", "link", "meta", "template", "title", "noscript", "br", "wbr", "source", "track"]);
+export const NOT_DRAWN = new Set(["head", "script", "style", "link", "meta", "template", "title", "noscript", "br", "wbr", "source", "track"]);
 /** Elements drawn as one piece: what is inside is not layers. */
 const IMAGES = new Set(["img", "svg", "picture"]);
 const STILLS = new Set(["canvas", "video"]);
@@ -99,6 +102,7 @@ export function buildLayerTree(doc: Document): LayerTree {
       chain,
       isInstance: false,
       usageLoc: null,
+      made: el.getAttribute(MADE_ATTR),
       parent,
       children: [],
     };
@@ -198,6 +202,11 @@ export function buildLayerTree(doc: Document): LayerTree {
   };
 }
 
+/** Whether layers can go in the layer: a Stack or a Frame that is not a field or another element that holds no others. */
+export function holdsLayers(layer: Layer): boolean {
+  return (layer.kind === "stack" || layer.kind === "frame") && !LEAVES.has(layer.el.localName);
+}
+
 /**
  * What selecting the layer means: an ordinary layer, an instance (edits apply
  * to its usage), or a locked layer (moved and resized as a whole only).
@@ -245,10 +254,19 @@ export function typeLabel(layer: Layer): string {
   return layer.absolute ? `${type} · Absolute` : type;
 }
 
-/** The same layer across instances shares a location (a locked layer has only its usage's) and a usage chain. */
+/**
+ * The same layer across instances shares a location (a locked layer has only
+ * its usage's) and a usage chain. A layer made this round repeats with the
+ * others the same edit made, apart from the layers it was made from.
+ */
 function repeatKey(layer: Layer): string | null {
   const loc = layer.kind === "locked" ? layer.usageLoc : layer.loc;
-  return loc && usageKey(loc, layer.chain);
+  // Text given an element of its own goes with the same run of text of the other instances.
+  const wrap = layer.text ? null : layer.el.getAttribute(WRAP_ATTR);
+  if (wrap !== null) return loc && `${usageKey(loc, layer.chain)} wrap ${wrap}${layer.made ? ` made ${layer.made}` : ""}`;
+  if (!layer.made) return loc && usageKey(loc, layer.chain);
+  if (loc) return `${usageKey(loc, layer.chain)} made ${layer.made}`;
+  return layer.el.getAttribute(LAYER_ID_ATTR) === layer.made ? `made ${layer.made}` : null;
 }
 
 /** Elements with the same key are one layer across the instances of a usage. */
@@ -272,6 +290,36 @@ export function originOf(el: Element, chain: UsageLevel[]): Origin {
     if (project > 0 && chain[project - 1].usage) return { loc: chain[project - 1].usage, chain: chain.slice(project) };
   }
   return { loc, chain };
+}
+
+/** How much of its words tells an element apart. */
+export const SIGN_WORDS = 80;
+
+/**
+ * What an element looks like to a reader, on a canvas or the live page: its
+ * tag and its first words (on a canvas, those the page had, before any new
+ * words). It tells siblings apart where markers have moved.
+ */
+export function signOf(el: Element): string {
+  return `${el.localName} ${wordsAsPage(el).slice(0, SIGN_WORDS)}`;
+}
+
+/** An element's words as the page has them: on a canvas, before any change to them. */
+export function wordsAsPage(el: Element): string {
+  const original = el.getAttribute(ORIGINAL_TEXT_ATTR);
+  let text = el.textContent!;
+  if (original !== null) {
+    const template = el.ownerDocument.createElement("template");
+    template.innerHTML = original;
+    text = template.content.textContent!;
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The usage key of an element on a canvas, from its markers alone: null with no source marker. */
+export function canvasKey(el: Element): string | null {
+  const { loc, chain } = originOf(el, chainOf(el));
+  return loc && usageKey(loc, chain);
 }
 
 function chainOf(el: Element): UsageLevel[] {
@@ -306,7 +354,7 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
     }
     if (child.nodeType !== Node.ELEMENT_NODE) continue;
     const e = child as Element;
-    if (NOT_DRAWN.has(e.localName)) continue;
+    if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR)) continue;
     const display = view.getComputedStyle(e).display;
     if (display === "none" && !hiddenByEdit(e)) continue;
     endRun();
@@ -333,7 +381,7 @@ function isText(el: Element, view: Window): boolean {
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const e = child as Element;
         if (e.localName === "br" || e.localName === "wbr") continue;
-        if (NOT_DRAWN.has(e.localName)) continue;
+        if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR)) continue;
         const display = view.getComputedStyle(e).display;
         if (display === "none") continue;
         if (display !== "inline" && display !== "contents") return false;

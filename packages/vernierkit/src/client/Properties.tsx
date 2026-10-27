@@ -11,6 +11,10 @@ interface Props {
   layers: Layer[];
   /** Called after each edit, so the panel shows the new values. */
   onEdit(): void;
+  /** Makes the layers a Stack. */
+  onStack(): void;
+  /** Dissolves the layers, Stacks. */
+  onDissolve(): void;
 }
 
 /** A fill added to a layer that has none, as in Figma. */
@@ -25,7 +29,7 @@ type Shown<T> = T | typeof MIXED;
  * With several selected, only what all of them offer shows, and a value they
  * do not share shows as Mixed; a change goes to each of them, as one edit.
  */
-export function Properties({ editor, layers, onEdit }: Props) {
+export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Props) {
   /** Whether every selected layer offers the property, or takes the value. */
   const offers = <P extends Property>(property: P, value?: PropertyValues[P]) => layers.every((layer) => editor.can(layer, property, value));
   /** The value all selected layers share, or Mixed; undefined when not all of them offer it. */
@@ -57,6 +61,7 @@ export function Properties({ editor, layers, onEdit }: Props) {
   const radius = shown("radius");
   const clip = shown("clip");
   const fill = shown("fill");
+  const brief = layers.length === 1 ? editor.brief(layers[0]) : null;
   return (
     <>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
@@ -85,9 +90,20 @@ export function Properties({ editor, layers, onEdit }: Props) {
           )}
         </section>
       )}
+      {direction === undefined && (layers.length > 1 || layers[0].kind === "frame") && editor.canStack(layers) && (
+        <section class="vk-section" role="group" aria-label="Stack">
+          <div class="vk-section-header">
+            <h3 class="vk-section-title">Stack</h3>
+            <button type="button" class="vk-icon-button" aria-label="Make Stack" title="Make Stack (⇧A)" onClick={onStack}>
+              <Icon name="plus" />
+            </button>
+          </div>
+        </section>
+      )}
       {direction !== undefined && (
         <StackSection
           direction={direction}
+          dissolve={layers.every((layer) => editor.canUnstack(layer)) ? onDissolve : null}
           gap={shown("gap")!}
           padding={shown("padding")!}
           align={shown("align")!}
@@ -112,6 +128,17 @@ export function Properties({ editor, layers, onEdit }: Props) {
         </section>
       )}
       {fill !== undefined && <FillSection fill={fill} onChange={set("fill")} />}
+      {brief !== null && (
+        <BriefSection
+          // Typed in freely, set when left: anew when the layer or its brief changes elsewhere, as with undo.
+          key={`${layers[0].el.getAttribute("data-vk-layer")} ${brief}`}
+          brief={brief}
+          onChange={(text) => {
+            editor.setBrief(layers[0], text);
+            onEdit();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -179,8 +206,10 @@ const ALIGNMENTS: Alignment[] = ["start", "center", "end"];
 const ROWS = { start: "Top", center: "Center", end: "Bottom" };
 const COLUMNS = { start: "left", center: "center", end: "right" };
 
-function StackSection({ direction, gap, padding, align, wrap, set, update }: {
+function StackSection({ direction, dissolve, gap, padding, align, wrap, set, update }: {
   direction: Shown<PropertyValues["direction"]>;
+  /** Dissolves the Stacks; null when they cannot be. */
+  dissolve: (() => void) | null;
   gap: Shown<number>;
   padding: Shown<Padding>;
   align: Shown<Align>;
@@ -193,7 +222,14 @@ function StackSection({ direction, gap, padding, align, wrap, set, update }: {
     update("padding", (current) => current.map((p, j) => (i === j ? value : p)) as Padding, continues);
   return (
     <section class="vk-section" aria-labelledby="vk-stack">
-      <h3 id="vk-stack" class="vk-section-title">Stack</h3>
+      <div class="vk-section-header">
+        <h3 id="vk-stack" class="vk-section-title">Stack</h3>
+        {dissolve && (
+          <button type="button" class="vk-icon-button" aria-label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve}>
+            <Icon name="minus" />
+          </button>
+        )}
+      </div>
       <div class="vk-row">
         <div class="vk-segmented-field" role="radiogroup" aria-label="Direction">
           {(["horizontal", "vertical"] as const).map((d) => (
@@ -310,6 +346,22 @@ function PercentField({ label, icon, value, onChange }: {
         onChange={onChange}
       />
     </label>
+  );
+}
+
+/** A new Frame's brief: what the Agent is to make in it, shown in its place on the canvas. Set once typed and left. */
+function BriefSection({ brief, onChange }: { brief: string; onChange(brief: string): void }) {
+  return (
+    <section class="vk-section" aria-labelledby="vk-brief">
+      <h3 id="vk-brief" class="vk-section-title">Brief</h3>
+      <textarea
+        class="vk-textarea"
+        aria-labelledby="vk-brief"
+        placeholder="What should the Agent make here?"
+        defaultValue={brief}
+        onChange={(event) => onChange(event.currentTarget.value.trim())}
+      />
+    </section>
   );
 }
 

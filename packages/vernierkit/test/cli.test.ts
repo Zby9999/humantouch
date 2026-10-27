@@ -233,6 +233,198 @@ describe("claim, moves", () => {
   });
 });
 
+describe("claim, Stacks made and dissolved", () => {
+  const board = { ...cards, loc: "src/App.tsx:30:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Frame"], element: '<div class="relative h-64">' } };
+  const layer = (name: string, loc: string, element: string) => ({ ...board, loc, context: { path: ["Page", "App", "Frame", name], element } });
+  const title = layer("Freeze", "src/App.tsx:31:9", '<h3 class="font-bold">');
+  const body = layer("Turn the page into a canvas.", "src/App.tsx:32:9", '<p class="text-sm">');
+  const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: board }, nth, slot: nth - 1, absolute });
+  const settings = { direction: "horizontal", gap: 24, padding: [0, 0, 0, 0], align: { x: "start", y: "center", distribute: false } };
+  const stack = (more: object) => ({ ...redFill, kind: "stack", property: "stack", target: board, before: null, sources: [], ...more });
+
+  test("a new Stack: the layers it holds, in order, how it lays them out, and where it goes", async () => {
+    saveRound(
+      stack({
+        layer: "7",
+        after: { ...settings, place: place(1, { x: 20, y: 30 }), layers: [{ layer: "5", target: title, from: place(2, { x: 20, y: 30 }) }, { layer: "6", target: body, from: place(1, { x: 144, y: 30 }) }] },
+        style: { display: "flex", "flex-direction": "row", gap: "24px", "align-items": "center", position: "absolute", left: "20px", top: "30px" },
+      }),
+    );
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toMatch(/^1\. Make Stack\n/);
+    expect(notes).toContain("- **Layer:** a new Stack, in Frame (`<div class=\"relative h-64\">`, at `src/App.tsx:30:7`)\n");
+    expect(notes).toContain("- **Location:** `src/App.tsx:30:7`\n");
+    expect(notes).toContain(
+      "- **Design intent:** Wrap these 2 layers, in this order, in a new Stack: horizontal, with a gap of 24px, no padding, aligned center left. " +
+        "Place it absolute in Frame (`<div class=\"relative h-64\">`, at `src/App.tsx:30:7`), at X 20px and Y 30px from the Frame's top left (CSS `left` and `top`).\n" +
+        "  1. Freeze (`<h3 class=\"font-bold\">`, at `src/App.tsx:31:9`)\n" +
+        "  2. Turn the page into a canvas. (`<p class=\"text-sm\">`, at `src/App.tsx:32:9`)\n",
+    );
+    expect(notes).toContain("- **Join the layout:** the layers are placed absolute now. In the Stack, they are laid out by it: take their absolute positioning off.\n");
+    expect(notes).toContain("- **Reference style:** `display: flex`, `flex-direction: row`, `gap: 24px`, `align-items: center`, `position: absolute`, `left: 20px`, `top: 30px`\n");
+    expect(notes).not.toContain("Currently set by");
+  });
+
+  test("a Stack made in the layout, or of a Frame", async () => {
+    saveRound(
+      stack({ layer: "7", after: { ...settings, place: place(2), layers: [{ layer: "5", target: title, from: place(2) }] } }),
+      stack({ id: 2, layer: "4", after: { ...settings, padding: [8, 16, 8, 16], place: null, layers: [{ layer: "5", target: title, from: place(1) }] } }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("Put it in the layout of Frame (`<div class=\"relative h-64\">`, at `src/App.tsx:30:7`), as its 2nd layer, where the first of them was.\n");
+    expect(section(output, 1)).not.toContain("Join the layout");
+    expect(section(output, 2)).toContain("- **Layer:** Frame, `<div class=\"relative h-64\">` (Page › App › Frame)\n");
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Make this Frame a Stack: horizontal, with a gap of 24px, padding 8px top and bottom, 16px left and right, aligned center left. Its 1 layer goes in its layout, in this order:\n  1. Freeze",
+    );
+  });
+
+  test("a dissolved Stack: what it was, the Frame it becomes, and where each of its layers is placed", async () => {
+    saveRound({
+      ...redFill,
+      kind: "unstack",
+      property: "unstack",
+      layer: "4",
+      target: board,
+      before: { ...settings, direction: "vertical", gap: 10 },
+      after: {
+        width: 200,
+        height: 80,
+        layers: [
+          { layer: "5", target: title, x: 0, y: 0, width: 200, height: 20, style: {} },
+          { layer: "6", target: body, x: 0, y: 30, width: 180, height: 50, style: {} },
+        ],
+      },
+      style: { display: "block", width: "200px", height: "80px", position: "relative" },
+      sources: [{ properties: ["display", "flex-direction"], kind: "rule", selector: ".flex", file: null, layer: "utilities", important: false, className: "flex", declaration: "display: flex" }],
+    });
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toMatch(/^1\. Dissolve Stack\n/);
+    expect(notes).toContain(
+      "- **Design intent:** Dissolve this Stack (vertical, with a gap of 10px, no padding, aligned center left): make it a Frame, Fixed 200 × 80px, " +
+        "that is the positioning reference of its layers (`position: relative`), and place each of its layers absolute where it is, at its size (CSS `left` and `top` from the Frame's top left):\n" +
+        "  1. Freeze (`<h3 class=\"font-bold\">`, at `src/App.tsx:31:9`): X 0px, Y 0px, 200 × 20px\n" +
+        "  2. Turn the page into a canvas. (`<p class=\"text-sm\">`, at `src/App.tsx:32:9`): X 0px, Y 30px, 180 × 50px\n",
+    );
+    expect(notes).toContain("- **Currently set by:** class `flex`");
+  });
+
+  test("a change to a layer made this round says which change made it", async () => {
+    const made = { ...board, loc: null, unlocated: false, made: "7", context: { path: ["Page", "App", "Frame", "Stack"], element: "<div>" } };
+    saveRound(
+      stack({ layer: "7", after: { ...settings, place: place(1), layers: [{ layer: "5", target: title, from: place(1) }] } }),
+      { ...smallRadius, layer: "7", target: made },
+    );
+
+    const notes = section((await cli("claim")).output, 2);
+
+    expect(notes).toContain("- **Location:** **New:** the layer is made in change 1, and is not in the source yet. Apply that change first, then change it there.\n");
+    expect(notes).toContain("- **Currently set by:** nothing yet: the layer is new\n");
+  });
+});
+
+describe("claim, new layers, words, deleting and copying", () => {
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, absolute: object | null = null, layer = "4", target: object = list) => ({ container: { layer, target }, nth, slot: nth - 1, absolute });
+  const change = (id: number, kind: string, more: object) => ({ ...redFill, id, kind, layer: String(10 + id), target: list, before: null, style: {}, sources: [], ...more });
+  const frameTarget = { ...list, loc: null, made: "11", context: { path: ["Page", "App", "Stack", "Frame"], element: "<div>" } };
+
+  test("new text and a new Frame: what they are, where they go, and in what style; a brief and the sketch drawn in the Frame", async () => {
+    saveRound(
+      change(1, "create", {
+        property: "new",
+        after: { type: "frame", place: place(4), width: 200, height: 120, brief: "A pricing table with three plans" },
+        style: { width: "200px", height: "120px" },
+      }),
+      change(2, "create", {
+        property: "new",
+        target: frameTarget,
+        after: { type: "text", place: place(1, { x: 10, y: 12 }, "11", frameTarget), width: 160, height: null, text: "Plans" },
+        style: { "font-size": "16px", width: "160px", position: "absolute", left: "10px", top: "12px" },
+      }),
+      change(3, "create", { property: "new", after: { type: "text", place: place(2), width: null, height: null, text: "Hello" }, style: { "font-size": "16px", margin: "0px" } }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. New Frame\n/);
+    expect(section(output, 1)).toContain("- **Layer:** a new Frame, in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`)\n");
+    expect(section(output, 1)).toContain("- **Design intent:** Add a Frame, Fixed 200 × 120px, with no fill, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 4th layer.\n");
+    expect(section(output, 1)).toContain(
+      "- **Brief:** “A pricing table with three plans”. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.\n",
+    );
+    expect(section(output, 1)).toContain("- **Sketch:** what the designer drew in the Frame, from its top left, shows the layout they have in mind:\n  - Text “Plans”: X 10px, Y 12px, 160px wide (change 2)\n");
+    expect(section(output, 2)).toContain("- **Location:** **New:** the layer is made in change 1");
+    expect(section(output, 2)).toContain("- **Sketch:** this layer is drawn in the Frame of change 1 as part of its sketch: follow the brief, with it as a guide to the layout, rather than writing it as it is.\n");
+    expect(section(output, 3)).toMatch(/^3\. New text\n/);
+    expect(section(output, 3)).toContain(
+      "- **Design intent:** Add text that reads “Hello”, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.\n",
+    );
+    expect(section(output, 3)).not.toContain("Sketch");
+  });
+
+  test("the sketch is as the designer left it: moved or resized since, and moved or copied into the Frame", async () => {
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }),
+      change(2, "create", {
+        property: "new",
+        target: frameTarget,
+        after: { type: "text", place: place(1, { x: 10, y: 12 }, "11", frameTarget), width: 160, height: null, text: "Plans" },
+      }),
+      change(3, "style", { layer: "12", property: "y", before: 12, after: 40 }),
+      change(4, "move", { layer: "30", property: "move", before: place(1), after: place(2, { x: 0, y: 80 }, "11", frameTarget), target: { ...list, context: { path: ["Page", "Button"], element: "<button>" } } }),
+    );
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("\n  - Text “Plans”: X 10px, Y 40px, 160px wide (change 2)\n  - Button (moved in): X 0px, Y 80px (change 4)\n");
+  });
+
+  test("new words, and in a loop, new words that come from data", async () => {
+    saveRound(
+      change(1, "text", { property: "text", before: "Get started", after: "Start now" }),
+      change(2, "text", { property: "text-1", before: "Card 2", after: "Second", target: cards, data: true }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Text\n/);
+    expect(section(output, 1)).toContain("- **Design intent:** Change the text from “Get started” to “Start now”.\n");
+    expect(section(output, 1)).toContain("- **Reference style:** none: only its words change\n");
+    expect(section(output, 2)).toContain(
+      "- **Data change:** the layer is one of the 3 instances a loop renders, each with words of its own: they come from the data the loop goes through. Change them there; if the data comes from outside the code (an API, a CMS), say so in the report.\n",
+    );
+  });
+
+  test("deleting and copying, and in a loop, as data changes", async () => {
+    saveRound(
+      change(1, "delete", { property: "delete", before: place(2), after: null, style: { display: "none" } }),
+      change(2, "delete", { property: "delete-1", before: place(2), after: null, target: cards, data: true, style: { display: "none" } }),
+      change(3, "duplicate", { property: "copy", before: place(1), after: place(2) }),
+      change(4, "duplicate", { property: "copy", before: place(1), after: place(3, { x: 12, y: 8 }), style: { position: "absolute", left: "12px", top: "8px" } }),
+      change(5, "duplicate", { property: "copy", before: place(2), after: place(3), target: cards, data: true }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Delete\n/);
+    expect(section(output, 1)).toContain("- **Design intent:** Delete this layer, and all in it, from Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), where it is 2nd.\n");
+    expect(section(output, 1)).toContain("- **Reference style:** none: the layer goes\n");
+    expect(section(output, 2)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: take its item out of the data the loop goes through.");
+    expect(section(output, 3)).toMatch(/^3\. Duplicate\n/);
+    expect(section(output, 3)).toContain("- **Design intent:** Copy this layer, with all in it, and put the copy in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer.\n");
+    expect(section(output, 3)).toContain("- **Reference style:** none: the copy is as the layer is\n");
+    expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
+    expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
+  });
+});
+
 describe("claim, where each value comes from", () => {
   const rule = { kind: "rule", important: false, className: null };
 
@@ -361,6 +553,27 @@ describe("done, checked on the page", () => {
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 1` again.\n",
     );
     expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+  });
+
+  test("for a deletion, a reorder and an absolute placement, says what the page shows instead", async () => {
+    const list = { ...cards, loc: "src/App.tsx:20:7", instances: 1 };
+    const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });
+    saveRound(
+      { ...redFill, kind: "delete", property: "delete", before: place(2), after: null, style: { display: "none" } },
+      { ...redFill, id: 2, kind: "move", property: "move", before: place(3), after: place(1), style: {} },
+      { ...redFill, id: 3, layer: "5", kind: "move", property: "move", before: place(2), after: place(3, { x: 40, y: 12 }), style: {} },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({ outcome: "not shown", actual: id === 3 ? { x: 0, y: 0 } : null }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The layer is still on the page: take it out of the code (for a data change, its item out of the data), and run `npx vernierkit done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain("Its container's layers are in another order on the page: put it 1st, as the notes say, and run `npx vernierkit done 2` again.\n");
+    expect((await cli("done", "3")).output).toContain("The layer is at X 0px and Y 0px, not absolute at X 40px and Y 12px: check its `position`, `left` and `top`");
+    closePage();
+    closePage = openPage(() => ({ outcome: "not shown", actual: "no reference" }));
+    expect((await cli("done", "3")).output).toContain("The layer is placed absolute, but not from its container: make the container its positioning reference (`position: relative`)");
   });
 
   test("says why when the page could not check it", async () => {

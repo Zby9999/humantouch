@@ -1,5 +1,8 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { CHECK_SETTLE_MS } from "../src/service-protocol";
+import { startChangePreview } from "../src/client/change-preview";
 import { createChangeSet } from "../src/client/changeset";
+import { checkChange } from "../src/client/check";
 import { createEditor } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { buildLayerTree, type Layer } from "../src/client/layers";
@@ -36,8 +39,12 @@ const PAGE = `<!DOCTYPE html>
 </body>`;
 
 let iframe: HTMLIFrameElement | undefined;
+let live: HTMLIFrameElement | undefined;
 
-afterEach(() => iframe?.remove());
+afterEach(() => {
+  iframe?.remove();
+  live?.remove();
+});
 
 function openCanvas(page = PAGE) {
   iframe = document.createElement("iframe");
@@ -1052,5 +1059,832 @@ describe("moves, taken back in any order", () => {
 
     expect(editor.canDrop(layer("pinned"), layer("board"))).toBe(false);
     expect(editor.canDrop(layer("pinned"), find(editor.tree().root, (l) => l.el === doc.body)!)).toBe(true);
+  });
+});
+
+/** Each element of the page, in order, with its style: what it looks like, apart from the editor's own attributes. */
+const styles = (doc: Document) => [...doc.body.querySelectorAll("*")].map((el) => `${el.id || el.localName} ${el.getAttribute("style")}`);
+
+/** A Frame 600 × 400 at the page's top left, with these layers in it. */
+const board = (layers: string) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="board" ${at("20:5")} style="position: relative; width: 600px; height: 400px">${layers}</div>
+</body>`;
+/** An absolute layer in the board: `[left, top, width, height]`. */
+const placed = (id: string, [left, top, width, height]: number[]) =>
+  `<div id="${id}" ${at(`2${id.charCodeAt(0) - 96}:7`)} style="position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px"></div>`;
+
+describe("making a Stack", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const rects = (...ids: string[]) => ids.map((id) => canvas.doc.getElementById(id)!.getBoundingClientRect().toJSON() as DOMRect);
+    return { ...canvas, layer, rects };
+  };
+  /** How far each layer moved, at most, in px. */
+  const drift = (before: DOMRect[], after: DOMRect[]) =>
+    Math.max(...before.map((b, i) => Math.max(Math.abs(b.x - after[i].x), Math.abs(b.y - after[i].y))));
+
+  test("of layers side by side: a horizontal Stack, in their order across, its gap the median of the spaces between, where they were", () => {
+    // In the page's order, the third comes first; the spaces between are 20, 24 and 30px.
+    const { doc, editor, changes, layer, rects } = open(
+      board([placed("c", [264, 30, 100, 40]), placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40]), placed("d", [394, 30, 100, 40])].join("")),
+    );
+    const before = rects("a", "b", "c", "d");
+
+    const stack = editor.stack(["a", "b", "c", "d"].map(layer));
+
+    expect(stack.kind).toBe("stack");
+    expect(stack.direction).toBe("horizontal");
+    expect(stack.children.map((l) => l.el.id)).toEqual(["a", "b", "c", "d"]);
+    expect(stack.el.parentElement).toBe(doc.getElementById("board"));
+    expect(drift(before, rects("a", "b", "c", "d"))).toBeLessThanOrEqual(6);
+    expect(editor.tree().root.children[0].children).toEqual([stack]);
+    const [change] = changes.list();
+    expect(change).toMatchObject({
+      kind: "stack",
+      layer: stack.el.getAttribute("data-vk-layer"),
+      property: "stack",
+      target: { loc: "src/App.tsx:20:5" },
+      before: null,
+      after: {
+        direction: "horizontal",
+        gap: 24,
+        padding: [0, 0, 0, 0],
+        align: { x: "start", y: "start", distribute: false },
+        place: { container: { target: { loc: "src/App.tsx:20:5" } }, nth: 1, absolute: { x: 20, y: 30 } },
+        layers: ["a", "b", "c", "d"].map((id) => ({ target: { loc: layer(id).loc }, from: { absolute: { x: Number(doc.getElementById(id)!.style.left.slice(0, -2)) } } })),
+      },
+      // As tall as each other: they stay as tall as the Stack.
+      style: { display: "flex", "flex-direction": "row", gap: "24px", "align-items": "stretch", position: "absolute", left: "20px", top: "30px" },
+    });
+  });
+
+  test("of layers one above the other: a vertical Stack; centered across, it aligns them center", () => {
+    const { editor, changes, layer, rects } = open(
+      board([placed("a", [140, 0, 120, 50]), placed("b", [170, 70, 60, 50]), placed("c", [155, 130, 90, 50])].join("")),
+    );
+    const before = rects("a", "b", "c");
+
+    editor.stack(["a", "b", "c"].map(layer));
+
+    // Spaces of 20 and 10px: the median of two is their mean.
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 15, align: { x: "center", y: "start" } });
+    expect(drift(before, rects("a", "b", "c"))).toBeLessThanOrEqual(5);
+  });
+
+  test("lined up on their far edges, they are aligned to the end; spread out no further across than down, the Stack is vertical", () => {
+    const { editor, changes, layer } = open(board([placed("a", [100, 0, 100, 40]), placed("b", [140, 60, 60, 40])].join("")));
+
+    editor.stack([layer("a"), layer("b")]);
+
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 20, align: { x: "end", y: "start" } });
+  });
+
+  test("overlapping layers are put one after the other, with no gap", () => {
+    const { editor, changes, layer } = open(board([placed("a", [0, 0, 100, 40]), placed("b", [60, 10, 100, 40])].join("")));
+
+    editor.stack([layer("a"), layer("b")]);
+
+    expect(changes.list()[0].after).toMatchObject({ direction: "horizontal", gap: 0 });
+  });
+
+  test("a Frame selected alone becomes a Stack of its layers, its padding the room between its edges and them", () => {
+    const { doc, editor, changes, layer, rects } = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("")));
+    const before = rects("a", "b");
+
+    const stack = editor.stack([layer("board")]);
+
+    expect(stack.el).toBe(doc.getElementById("board"));
+    expect(stack.kind).toBe("stack");
+    expect(changes.list()[0]).toMatchObject({
+      kind: "stack",
+      target: { loc: "src/App.tsx:20:5" },
+      after: { place: null, direction: "horizontal", gap: 20, padding: [30, 360, 330, 20] },
+      style: { display: "flex", padding: "30px 360px 330px 20px" },
+    });
+    expect(drift(before, rects("a", "b"))).toBe(0);
+    expect(style(doc.getElementById("a")!).position).toBe("static");
+  });
+
+  test("of layers in a Stack's layout: a Stack in their place, nothing moving", () => {
+    const { doc, editor, changes, layer, rects } = open();
+    const before = rects("a", "b", "c");
+
+    const stack = editor.stack([layer("b"), layer("a")]);
+
+    expect([...doc.getElementById("list")!.children].map((el) => el.id || el.localName)).toEqual(["div", "c"]);
+    expect(stack.children.map((l) => l.el.id)).toEqual(["a", "b"]);
+    expect(rects("a", "b", "c")).toEqual(before);
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 10, align: { x: "start" }, place: { nth: 1, absolute: null } });
+    // Its layers were as wide as the Stack they were in: they still are.
+    expect(changes.list()[0].style["align-items"]).toBe("stretch");
+  });
+
+  test("in every instance of the usage; not of instances a loop renders", () => {
+    const card = (n: number) => `<article ${at("30:9")} style="display: flex; flex-direction: column; gap: 4px">
+        <h3 ${at("31:11")} style="margin: 0">Card ${n}</h3><p ${at("32:11")} style="margin: 0">Body</p></article>`;
+    const { doc, editor, changes } = open(`<!DOCTYPE html><body style="margin: 0"><main ${at("29:7")}>${[1, 2, 3].map(card).join("")}</main></body>`);
+    const tree = editor.tree();
+    const [h3, p] = ["h3", "p"].map((tag) => find(tree.root, (l) => l.el === doc.querySelector(tag))!);
+    const articles = [...doc.querySelectorAll("article")].map((el) => find(tree.root, (l) => l.el === el)!);
+
+    expect(editor.canStack([articles[0], articles[1]])).toBe(false);
+    editor.stack([h3, p]);
+
+    expect([...doc.querySelectorAll("article")].map((el) => [...el.children].map((c) => c.localName))).toEqual([["div"], ["div"], ["div"]]);
+    expect(changes.list()[0].target.instances).toBe(3);
+  });
+
+  test("what can be made a Stack: layers side by side in one container, not text with no element of its own, not the page", () => {
+    const { editor, layer } = open();
+    const run = find(editor.tree().root, (l) => l.name === "more")!;
+
+    expect(editor.canStack([layer("a"), layer("c")])).toBe(true);
+    expect(editor.canStack([layer("a"), layer("d")])).toBe(false);
+    expect(editor.canStack([run])).toBe(false);
+    expect(editor.canStack([editor.tree().root])).toBe(false);
+    expect(editor.canStack([])).toBe(false);
+  });
+
+  test("undone and redone in one step each", () => {
+    const { doc, editor, changes, layer } = open();
+    const original = styles(doc);
+
+    editor.stack([layer("a"), layer("b")]);
+    expect(editor.undo().map((l) => l.el.id)).toEqual(["a", "b"]);
+    expect(styles(doc)).toEqual(original);
+    expect(changes.list()).toEqual([]);
+
+    const [stack] = editor.redo();
+    expect(stack.kind).toBe("stack");
+    expect(stack.children.map((l) => l.el.id)).toEqual(["a", "b"]);
+    expect(changes.list()).toHaveLength(1);
+  });
+
+  test("a change to the new Stack says it is new; taken back from the change list, the Stack takes it along", () => {
+    const opened = open();
+    const { doc, editor, changes, layer } = opened;
+    const stack = editor.stack([layer("a"), layer("b")]);
+    editor.set(stack, "gap", 4);
+    const id = stack.el.getAttribute("data-vk-layer");
+    expect(changes.list()[1]).toMatchObject({ property: "gap", target: { loc: null, made: id, unlocated: false, context: { path: ["Page", "App", "Stack"] } } });
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    expect(editor.revert(changes.list()[0].id)?.el.id).toBe("a");
+    expect([...doc.getElementById("list")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(changes.list().map((c) => c.property)).toEqual(["stack", "gap"]);
+
+    expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
+  });
+
+  test("taken back from a saved round, its layers go back where they were, as they were", () => {
+    const opened = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("") + placed("c", [0, 200, 10, 10])));
+    opened.editor.stack([opened.layer("b"), opened.layer("a")]);
+    opened.editor.set(opened.layer("c"), "opacity", 0.5);
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+
+    const reverted = revertSaved(saved, saved.changeSet.changes[0].id)!;
+
+    const doc = new DOMParser().parseFromString(reverted.canvas, "text/html");
+    expect([...doc.getElementById("board")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
+    expect(doc.getElementById("a")!.getAttribute("style")).toBe("position: absolute; left: 20px; top: 30px; width: 100px; height: 40px");
+    expect(reverted.changeSet.changes.map((c) => c.property)).toEqual(["opacity"]);
+  });
+});
+
+describe("dissolving a Stack", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const rects = (...ids: string[]) => ids.map((id) => canvas.doc.getElementById(id)!.getBoundingClientRect().toJSON() as DOMRect);
+    return { ...canvas, layer, rects };
+  };
+
+  test("makes it a Frame of the same size, its layers absolute where they were, as large as they were", () => {
+    const { doc, editor, changes, layer, rects } = open();
+    const before = rects("list", "a", "b", "c", "row");
+
+    const frame = editor.unstack(layer("list"));
+
+    expect(rects("list", "a", "b", "c", "row")).toEqual(before);
+    expect(frame.kind).toBe("frame");
+    expect(frame.children.map((l) => [l.el.id, l.absolute])).toEqual([["a", true], ["b", true], ["c", true]]);
+    expect(style(doc.getElementById("list")!).position).toBe("relative");
+    expect(changes.list()[0]).toMatchObject({
+      kind: "unstack",
+      property: "unstack",
+      target: { loc: "src/App.tsx:5:5" },
+      before: { direction: "vertical", gap: 10, padding: [0, 0, 0, 0], align: { x: "start", y: "start", distribute: false } },
+      after: {
+        width: 200,
+        height: 80,
+        layers: [
+          { target: { loc: "src/App.tsx:6:7" }, x: 0, y: 0, width: 200, height: 20 },
+          { target: { loc: "src/App.tsx:7:7" }, x: 0, y: 30, width: 200, height: 20 },
+          { target: { loc: "src/App.tsx:8:7" }, x: 0, y: 60, width: 200, height: 20 },
+        ],
+      },
+      style: { display: "block", width: "200px", height: "80px", position: "relative" },
+    });
+    expect(changes.list()[0].sources.map((s) => s.declaration)).toContain("display: flex");
+  });
+
+  test("with padding, and layers with margins, nothing moves", () => {
+    const { editor, layer, rects } = open(`<!DOCTYPE html><body style="margin: 0">
+      <div id="s" ${at("5:5")} style="display: flex; align-items: center; gap: 6px; padding: 12px 8px; border: 2px solid">
+        <div id="a" ${at("6:7")} style="width: 40px; height: 40px; margin: 5px"></div>
+        <div id="b" ${at("7:7")} style="width: 30px; height: 10px"></div>
+      </div></body>`);
+    const before = rects("s", "a", "b");
+
+    editor.unstack(layer("s"));
+
+    expect(rects("s", "a", "b")).toEqual(before);
+  });
+
+  test("undone and redone, and taken back from a saved round", () => {
+    const { doc, editor, changes, layer } = open();
+    const original = styles(doc);
+
+    editor.unstack(layer("list"));
+    expect(editor.undo().map((l) => l.el.id)).toEqual(["list"]);
+    expect(styles(doc)).toEqual(original);
+    editor.redo();
+    expect(style(doc.getElementById("a")!).position).toBe("absolute");
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
+  });
+
+  test("a Stack made of layers can be dissolved again", () => {
+    const { doc, editor, layer, rects } = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("")));
+    const stack = editor.stack([layer("a"), layer("b")]);
+    const before = rects("a", "b");
+
+    editor.unstack(stack);
+
+    expect(rects("a", "b")).toEqual(before);
+    expect(style(doc.getElementById("a")!).position).toBe("absolute");
+  });
+
+  test("only a Stack, with no text of its own beside its layers, nor instances a loop renders", () => {
+    const { editor, layer } = open();
+    const item = `data-vk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const loop = openCanvas(`<!DOCTYPE html><ul id="list" ${at("5:5")} style="display: flex"><li ${item}>One</li><li ${item}>Two</li></ul>`);
+    const text = openCanvas(`<!DOCTYPE html><button id="go" ${at("5:5")} style="display: flex">Go <span ${at("5:20")}>→</span></button>`);
+
+    expect(editor.canUnstack(layer("list"))).toBe(true);
+    expect(editor.canUnstack(layer("board"))).toBe(false);
+    expect(editor.canUnstack(layer("a"))).toBe(false);
+    expect(text.editor.canUnstack(text.layerOf(text.doc.getElementById("go")!))).toBe(false);
+    expect(loop.editor.canUnstack(loop.layerOf(loop.doc.getElementById("list")!))).toBe(false);
+  });
+});
+
+describe("new text and Frames", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page.replace('<body style="margin: 0">', '<body style="margin: 0; font: 15px/22px serif; color: rgb(10, 20, 30)">'));
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = (id: string) => [...canvas.doc.getElementById(id)!.children].map((el) => el.id || el.localName);
+    return { ...canvas, layer, order };
+  };
+
+  test("new text in a Stack takes a place among its layers, in the page's body text style", () => {
+    const { doc, editor, changes, layer, order } = open();
+
+    const text = editor.create("text", { parent: layer("list"), index: 1 });
+
+    expect(order("list")).toEqual(["a", "p", "b", "c"]);
+    expect(text.kind).toBe("text");
+    expect(text.name).toBe("Text");
+    const el = doc.querySelector("#list > p")!;
+    expect([style(el).fontSize, style(el).lineHeight, style(el).fontFamily, style(el).color, style(el).marginTop]).toEqual(["15px", "22px", "serif", "rgb(10, 20, 30)", "0px"]);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "create",
+      property: "new",
+      layer: el.getAttribute("data-vk-layer"),
+      target: { loc: "src/App.tsx:5:5" },
+      before: null,
+      after: { type: "text", text: "Text", width: null, height: null, place: { container: { target: { loc: "src/App.tsx:5:5" } }, nth: 2, absolute: null } },
+      style: { "font-size": "15px", "line-height": "22px", margin: "0px" },
+    });
+
+    editor.undo();
+    expect(order("list")).toEqual(["a", "b", "c"]);
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a new Frame in a Frame is absolute where it is drawn, at its size, with no fill; the Frame is its positioning reference", () => {
+    const { doc, editor, changes, layer } = open();
+
+    const frame = editor.create("frame", { parent: layer("board"), x: 30, y: 20 }, { width: 120, height: 80 });
+
+    const board = doc.getElementById("board")!;
+    expect(frame.el.parentElement).toBe(board);
+    expect(frame.absolute).toBe(true);
+    const r = frame.el.getBoundingClientRect();
+    expect([r.left - board.getBoundingClientRect().left, r.top - board.getBoundingClientRect().top, r.width, r.height]).toEqual([30, 20, 120, 80]);
+    expect(style(frame.el).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(style(board).position).toBe("relative");
+    expect(changes.list()[0].after).toMatchObject({ type: "frame", width: 120, height: 80, place: { absolute: { x: 30, y: 20 } } });
+
+    editor.undo();
+    expect(board.children).toHaveLength(0);
+    expect(style(board).position).toBe("static");
+  });
+
+  test("a new layer goes in every instance of its container's usage", () => {
+    const card = (n: number) => `<article ${at("30:9")} style="display: flex; flex-direction: column"><h3 ${at("31:11")}>Card ${n}</h3></article>`;
+    const { doc, editor, changes } = open(`<!DOCTYPE html><body style="margin: 0"><main ${at("29:7")}>${[1, 2, 3].map(card).join("")}</main></body>`);
+    const article = find(editor.tree().root, (l) => l.el === doc.querySelector("article"))!;
+
+    editor.create("text", { parent: article, index: 1 });
+
+    expect([...doc.querySelectorAll("article")].map((el) => el.lastElementChild!.textContent)).toEqual(["Text", "Text", "Text"]);
+    expect(changes.list()[0].target.instances).toBe(3);
+  });
+
+  test("a new Frame takes a brief, shown in its place on the canvas, and what is drawn in it is its sketch; taken back, all of it goes", () => {
+    const opened = open();
+    const { doc, editor, changes, layer } = opened;
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+
+    editor.setBrief(frame, "A pricing table with three plans");
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 12 });
+
+    expect(editor.brief(editor.tree().layerOf(frame.el)!)).toBe("A pricing table with three plans");
+    expect(frame.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
+    expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-vk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
+    expect(text.el.parentElement).toBe(frame.el);
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.revert(changes.list()[0].id);
+    expect(doc.querySelectorAll("[data-vk-made]")).toHaveLength(0);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(changes.list()).toHaveLength(2);
+
+    expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
+    // Only the brief, in an editor without it, for a layer the designer did not make.
+    expect(editor.brief(layer("a"))).toBeNull();
+  });
+
+  test("where a new layer can go: a Stack or a Frame that holds layers, not text or a field", () => {
+    const { editor, layer } = open(MOVES.replace("</body>", `<input id="field" ${at("40:5")}></body>`));
+
+    expect(editor.canHold(layer("list"))).toBe(true);
+    expect(editor.canHold(layer("board"))).toBe(true);
+    expect(editor.canHold(layer("a"))).toBe(false);
+    expect(editor.canHold(layer("field"))).toBe(false);
+  });
+});
+
+describe("editing text", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    return { ...canvas, layer };
+  };
+
+  test("changes the words of the text in every instance, and records them; set back, it is no longer a change", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas(PAGE.replace(/>Card \d</g, ">Card<"));
+    const title = layerOf(cards[0].querySelector("h3")!);
+
+    editor.setText(title, "Plan");
+
+    expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Plan", "Plan", "Plan"]);
+    expect(cards[3].querySelector("h3")!.textContent).toBe("Your turn");
+    expect(changes.list()[0]).toMatchObject({ kind: "text", property: "text", target: { loc: "src/Card.tsx:4:7", instances: 3 }, before: "Card", after: "Plan" });
+    expect(changes.list()[0].data).toBeUndefined();
+
+    editor.setText(editor.tree().layerOf(cards[1].querySelector("h3")!)!, "Card");
+    expect(changes.list()).toEqual([]);
+    expect(doc.querySelectorAll("h3")[0].textContent).toBe("Card");
+  });
+
+  test("text that differs across the instances a loop renders comes from data: only this one changes, as a data change", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.setText(layerOf(cards[1].querySelector("h3")!), "Second");
+
+    expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Card 1", "Second", "Card 3"]);
+    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second" });
+    editor.undo();
+    expect(cards[1].querySelector("h3")!.textContent).toBe("Card 2");
+  });
+
+  test("text with no element of its own gets one, and is found in its container's source", () => {
+    const { doc, editor, changes } = open();
+    const run = find(editor.tree().root, (l) => l.name === "more")!;
+
+    const own = editor.ownElement(run);
+    editor.setText(own, "less");
+
+    expect(doc.getElementById("mixed")!.textContent).toBe("Loose text pill less");
+    expect(changes.list()[0]).toMatchObject({ kind: "text", target: { loc: "src/App.tsx:15:5", unlocated: false, context: { element: '<p id="mixed">' } }, before: "more", after: "less" });
+  });
+
+  test("of a new text layer, it is the words of the change that makes it", () => {
+    const { editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 0 });
+
+    editor.setText(text, "Hello");
+
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0].after).toMatchObject({ type: "text", text: "Hello" });
+    expect(text.el.textContent).toBe("Hello");
+    editor.undo();
+    expect(text.el.textContent).toBe("Text");
+  });
+
+  test("keeps the text's inline pieces as they were once taken back, on the canvas and a saved round", () => {
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html><p id="t" ${at("3:3")}>Some <b>bold</b> words</p><p id="u" ${at("4:3")}>Other</p>`);
+    editor.setText(layer("t"), "Plain");
+    editor.setText(layer("u"), "Changed");
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.revert(changes.list()[0].id);
+    expect(doc.getElementById("t")!.innerHTML).toBe("Some <b>bold</b> words");
+
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect(reverted.getElementById("t")!.innerHTML).toBe("Some <b>bold</b> words");
+    expect(reverted.getElementById("u")!.textContent).toBe("Changed");
+  });
+});
+
+describe("deleting layers", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const names = () => canvas.editor.tree().root.children[0].children.map((l) => l.name);
+    return { ...canvas, layer, names };
+  };
+
+  test("takes the layer off the canvas and the layer tree, in every instance; undo puts it back", () => {
+    const { doc, editor, changes, layer, names } = open();
+
+    editor.remove(layer("b"));
+
+    expect(style(doc.getElementById("b")!).display).toBe("none");
+    expect(names()).toEqual(["A", "C"]);
+    expect(changes.list()[0]).toMatchObject({ kind: "delete", property: "delete", target: { loc: "src/App.tsx:7:7" }, before: { nth: 2 }, after: null, style: { display: "none" } });
+
+    editor.undo();
+    expect(style(doc.getElementById("b")!).display).toBe("block");
+    expect(names()).toEqual(["A", "B", "C"]);
+  });
+
+  test("one of the instances a loop renders goes alone, as a data change; taken back from a saved round, it is back", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+
+    editor.remove(layerOf(cards[1]));
+    editor.remove(editor.tree().layerOf(cards[0])!);
+
+    expect(cards.map((card) => style(card).display)).toEqual(["none", "none", "block", "block"]);
+    expect(changes.list().map((c) => [c.property, c.data, c.target.instances])).toEqual([
+      ["delete-1", true, 3],
+      // The page still renders three.
+      ["delete-2", true, 3],
+    ]);
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect([...reverted.querySelectorAll("article")].map((card) => card.style.display)).toEqual(["none", "", "", ""]);
+
+    editor.revert(changes.list()[1].id);
+    expect(cards.map((card) => style(card).display)).toEqual(["block", "none", "block", "block"]);
+  });
+
+  test("a layer made this round is taken back instead: there is nothing in the source to delete", () => {
+    const { doc, editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 0 });
+
+    editor.remove(text);
+
+    expect(doc.querySelectorAll("#list > p")).toHaveLength(0);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(doc.querySelectorAll("#list > p")).toHaveLength(1);
+  });
+
+  test("a Stack made this round goes with its layers", () => {
+    const { doc, editor, changes, layer } = open();
+    const stack = editor.stack([layer("a"), layer("b")]);
+
+    editor.remove(stack);
+
+    expect(changes.list().map((c) => [c.kind, c.target.loc])).toEqual([
+      ["delete", "src/App.tsx:6:7"],
+      ["delete", "src/App.tsx:7:7"],
+    ]);
+    expect([...doc.getElementById("list")!.children].map((el) => [el.id, style(el).display])).toEqual([["a", "none"], ["b", "none"], ["c", "block"]]);
+  });
+
+  test("not the page", () => {
+    const { editor } = open();
+    expect(editor.canRemove(editor.tree().root)).toBe(false);
+  });
+});
+
+describe("duplicating layers", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    return { ...canvas, layer };
+  };
+
+  test("puts a copy right after the layer, in every instance; the copy is a layer of its own, new this round", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const title = layerOf(cards[3].querySelector("h3")!);
+    editor.set(title, "opacity", 0.5);
+
+    const copy = editor.duplicate(title);
+
+    expect([...cards[3].children].map((el) => el.textContent)).toEqual(["Your turn", "Your turn"]);
+    expect(style(cards[3].children[1]).opacity).toBe("0.5");
+    expect(copy.el).toBe(cards[3].children[1]);
+    expect(changes.list()[1]).toMatchObject({
+      kind: "duplicate",
+      property: "copy",
+      layer: copy.el.getAttribute("data-vk-layer"),
+      target: { loc: "src/Card.tsx:4:7" },
+      before: { nth: 1 },
+      after: { nth: 2, absolute: null },
+    });
+    expect(changes.list()[1].target.made).toBeUndefined();
+    // Its own layer: changed apart from the original.
+    editor.set(copy, "opacity", 1);
+    expect(style(cards[3].children[0]).opacity).toBe("0.5");
+    expect(changes.list()[2].target).toMatchObject({ loc: "src/Card.tsx:4:7", made: copy.el.getAttribute("data-vk-layer") });
+
+    editor.undo();
+    editor.undo();
+    expect(cards[3].children).toHaveLength(1);
+  });
+
+  test("an instance a loop renders is copied alone, as a data change", () => {
+    const { editor, changes, cards, layerOf, doc } = openCanvas();
+
+    editor.duplicate(layerOf(cards[1]));
+
+    expect([...doc.querySelectorAll("article")].map((el) => el.querySelector("h3")!.textContent)).toEqual(["Card 1", "Card 2", "Card 2", "Card 3", "Your turn"]);
+    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 } });
+  });
+
+  test("to where it is dragged: in a Stack, or absolute in a Frame; taken back from a saved round, the copy goes", () => {
+    const { doc, editor, changes, layer } = open();
+
+    editor.duplicate(layer("a"), { parent: layer("list"), index: 1 });
+    editor.duplicate(layer("b"), { parent: layer("board"), x: 12, y: 8 });
+
+    expect([...doc.getElementById("list")!.children].map((el) => el.textContent)).toEqual(["A", "B", "A", "C"]);
+    const copy = doc.getElementById("board")!.firstElementChild!;
+    expect([style(copy).position, style(copy).left, style(copy).top, style(copy).width]).toEqual(["absolute", "12px", "8px", "200px"]);
+    expect(changes.list()[1].after).toMatchObject({ absolute: { x: 12, y: 8 } });
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[1].id)!.canvas, "text/html");
+    expect(reverted.getElementById("board")!.children).toHaveLength(0);
+    expect(reverted.getElementById("board")!.style.position).toBe("");
+  });
+
+  test("not text with no element of its own, nor the page", () => {
+    const { editor } = open();
+    expect(editor.canDuplicate(find(editor.tree().root, (l) => l.name === "more")!)).toBe(false);
+    expect(editor.canDuplicate(editor.tree().root)).toBe(false);
+  });
+});
+
+/**
+ * A page with source markers only (no React, so no usage chains on the live
+ * page either): a Stack, a plain flow, and a Frame with layers in its flow.
+ */
+const loc = (at: string) => `data-vk-loc="src/App.tsx:${at}"`;
+const STRUCTURE = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="list" ${loc("5:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
+    <div id="a" ${loc("6:7")} style="height: 20px">A</div>
+    <div id="b" ${loc("7:7")} style="height: 20px">B</div>
+    <div id="c" ${loc("8:7")} style="height: 20px">C</div>
+  </div>
+  <section id="flow" ${loc("10:5")}><p id="one" ${loc("11:7")} style="margin: 0">One</p><p id="two" ${loc("12:7")} style="margin: 4px 0 0">Two</p></section>
+  <div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>
+</body>`;
+
+describe("the live page shows changes to the structure", () => {
+  /** The canvas, edited; and the live page, as the page is, with the Change Preview on it. */
+  const open = () => {
+    const canvas = openCanvas(STRUCTURE);
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(STRUCTURE);
+    page.close();
+    const preview = startChangePreview(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const box = (doc: Document, id: string) => {
+      const r = doc.getElementById(id)!.getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height];
+    };
+    const show = () => preview.show(canvas.changes.list());
+    return { ...canvas, page, preview, layer, show, box };
+  };
+  const order = (doc: Document, id: string) => [...doc.getElementById(id)!.children].map((el) => el.id);
+
+  test("a reorder in a Stack: in the canvas's order, the others making room, the page's elements where they were in its markup", () => {
+    const { doc, page, editor, layer, show, box } = open();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+
+    show();
+
+    expect(["a", "b", "c"].map((id) => box(page, id))).toEqual(["a", "b", "c"].map((id) => box(doc, id)));
+    expect(order(page, "list")).toEqual(["a", "b", "c"]);
+  });
+
+  test("a reorder in a plain flow, laid out as a column so the order holds", () => {
+    const { doc, page, editor, layer, show, box } = open();
+    editor.move(layer("two"), { parent: layer("flow"), index: 0 });
+
+    show();
+
+    expect(box(page, "two")[1]).toBeLessThan(box(page, "one")[1]);
+    expect(box(page, "two")).toEqual(box(doc, "two"));
+  });
+
+  test("the order of each reorder is the container's as the canvas has it now, however many layers moved in it", () => {
+    const { changes, editor, layer } = open();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    editor.move(layer("a"), { parent: layer("list"), index: 2 });
+
+    const keys = ["8:7", "7:7", "6:7"].map((at) => `src/App.tsx:${at} []`);
+    // Each one's check leaves out the layer the other moves.
+    expect(changes.list().map((change) => change.order)).toEqual([
+      { keys, signs: ["div C", "div B", "div A"], flow: false, self: 0, others: [2] },
+      { keys, signs: ["div C", "div B", "div A"], flow: false, self: 2, others: [0] },
+    ]);
+  });
+
+  test("a layer placed absolute in its own Frame stays where the canvas has it, the Frame its positioning reference", () => {
+    const { doc, page, editor, changes, layer, show, box } = open();
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    expect(changes.list()[0].reference).toBe(true);
+
+    show();
+
+    expect(box(page, "tag")).toEqual(box(doc, "tag"));
+    expect(getComputedStyle(page.getElementById("board")!).position).toBe("relative");
+  });
+
+  test("a deleted layer is hidden, and the others take its room", () => {
+    const { doc, page, editor, layer, show, box } = open();
+    editor.remove(layer("b"));
+
+    show();
+
+    expect(getComputedStyle(page.getElementById("b")!).display).toBe("none");
+    expect(box(page, "c")).toEqual(box(doc, "c"));
+  });
+
+  test("what the page cannot show it leaves out: a move into another container, a new layer, a Stack made", () => {
+    const { page, editor, changes, layer, show } = open();
+    const before = page.body.innerHTML;
+    editor.move(layer("tag"), { parent: layer("list"), index: 0 });
+    editor.create("text", { parent: layer("list"), index: 0 });
+    editor.stack([editor.tree().layerOf(editor.tree().root.el.querySelector("#one")!)!]);
+
+    show();
+
+    expect(changes.list()).toHaveLength(3);
+    expect(page.body.innerHTML).toBe(before);
+  });
+
+  test("shown again as the round grows and shrinks; off, the page is as it was", () => {
+    const { page, editor, changes, layer, show, preview } = open();
+    const drawn = () =>
+      [...page.getElementById("list")!.children]
+        .filter((el) => getComputedStyle(el).display !== "none")
+        .sort((x, y) => x.getBoundingClientRect().y - y.getBoundingClientRect().y)
+        .map((el) => el.id);
+    show();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    show();
+    editor.remove(layer("b"));
+    show();
+    expect(drawn()).toEqual(["c", "a"]);
+
+    editor.revert(changes.list()[0].id);
+    show();
+    expect(drawn()).toEqual(["a", "c"]);
+
+    preview.stop();
+    expect(getComputedStyle(page.getElementById("b")!).display).toBe("block");
+    expect(page.querySelectorAll("[data-vk-preview], [data-vk-preview-order]")).toHaveLength(0);
+  });
+
+  test("an element the page renders anew is given its place in the order at once", async () => {
+    const { page, editor, layer, show } = open();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    show();
+
+    // As React would, the page renders C again as a new element.
+    const again = page.getElementById("c")!.cloneNode(true) as Element;
+    page.getElementById("c")!.remove();
+    page.getElementById("list")!.append(again);
+    await Promise.resolve();
+
+    expect(again.getBoundingClientRect().y).toBeLessThan(page.getElementById("a")!.getBoundingClientRect().y);
+  });
+
+  test("a reorder is checked by what the layers look like: moving the JSX moves their markers along", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    editor.move(layer("a"), { parent: layer("list"), index: 2 });
+    const [first, second] = changes.list();
+    const list = page.getElementById("list")!;
+    const lines = () => [...list.children].map((el, i) => el.setAttribute("data-vk-loc", `src/App.tsx:${6 + i}:7`));
+    const check = async (change: (typeof changes.list extends () => (infer C)[] ? C : never)) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const result = checkChange(page, change);
+        vi.advanceTimersByTime(CHECK_SETTLE_MS);
+        return await result;
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+
+    // Not applied, but a line added above moves every marker down: still not shown.
+    for (const el of list.children) el.setAttribute("data-vk-loc", el.getAttribute("data-vk-loc")!.replace(/:(\d+):/, (_, n) => `:${Number(n) + 1}:`));
+    expect((await check(first)).outcome).toBe("not shown");
+    // The first reorder applied alone, its JSX moved with its markers: shown, though the second is not applied yet.
+    list.prepend(page.getElementById("c")!);
+    lines();
+    expect(await check(first)).toEqual({ outcome: "shown" });
+    expect((await check(second)).outcome).toBe("not shown");
+    list.append(page.getElementById("a")!);
+    lines();
+    expect(await check(second)).toEqual({ outcome: "shown" });
+  });
+
+  test("a layer placed absolute is checked from its container, its positioning reference", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    Object.assign((page.getElementById("tag") as HTMLElement).style, { position: "absolute", left: "40px", top: "30px" });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const result = checkChange(page, changes.list()[0]);
+      vi.advanceTimersByTime(CHECK_SETTLE_MS);
+      expect(await result).toEqual({ outcome: "not shown", actual: "no reference" });
+    } finally {
+      vi.useRealTimers();
+    }
+    page.getElementById("board")!.style.position = "relative";
+    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+  });
+
+  test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.remove(layer("one"));
+    const [deleted] = changes.list();
+
+    // The Agent deletes it: the next paragraph moves up to its line.
+    page.getElementById("one")!.remove();
+    page.getElementById("two")!.setAttribute("data-vk-loc", "src/App.tsx:11:7");
+    expect(await checkChange(page, deleted)).toEqual({ outcome: "shown" });
+
+    page.getElementById("flow")!.remove();
+    expect(await checkChange(page, deleted)).toEqual({ outcome: "unchecked", reason: "its container is not on the page now" });
+  });
+
+  test("checked: shown once the page's own markup has the change; a deletion not yet made is not", async () => {
+    const { page, editor, changes, layer } = open();
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    editor.remove(layer("b"));
+    const [reorder, placed, deleted] = changes.list();
+
+    // The Agent's code, as the dev server brings it in.
+    page.getElementById("list")!.prepend(page.getElementById("c")!);
+    Object.assign((page.getElementById("tag") as HTMLElement).style, { position: "absolute", left: "40px", top: "30px" });
+    page.getElementById("board")!.style.position = "relative";
+    expect(await checkChange(page, reorder)).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, placed)).toEqual({ outcome: "shown" });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const result = checkChange(page, deleted);
+      vi.advanceTimersByTime(CHECK_SETTLE_MS);
+      expect(await result).toEqual({ outcome: "not shown", actual: "there" });
+    } finally {
+      vi.useRealTimers();
+    }
+    page.getElementById("b")!.remove();
+    expect(await checkChange(page, deleted)).toEqual({ outcome: "shown" });
   });
 });

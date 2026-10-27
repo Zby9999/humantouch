@@ -75,7 +75,7 @@ test("layout changes are told in design language; a plain flow given a gap is to
   expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 8px`\n");
 });
 
-test("a reorder and an absolute placement are told apart, with where each goes; done does not check moves on the page", async ({ page }) => {
+test("a reorder and an absolute placement are told apart, with where each goes; done checks the reorder on the page", async ({ page }) => {
   await page.goto(DEV_URL);
   await page.evaluate(() => {
     const board = Object.assign(document.createElement("div"), { id: "board" });
@@ -113,7 +113,35 @@ test("a reorder and an absolute placement are told apart, with where each goes; 
   expect(absolute).toMatch(/^2\. Absolute\n/);
   expect(absolute).toContain("place it absolute in Frame (`<div id=\"board\">`, not located");
   expect(absolute).toContain("- **Reference style:** `position: absolute`");
-  expect(await vernierkit("done", "1")).toContain("Not checked on the page: only style changes are checked on the page so far, not moves.");
+  // Not applied: the page has the header first still.
+  expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. Its container's layers are in another order on the page: put it 2nd");
+  expect(await vernierkit("done", "2")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
+});
+
+test("a card of the loop deleted and another copied are data changes; a Stack made of two layers lists them in order", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const layers = page.getByRole("tree", { name: "Layers" });
+  await layers.getByRole("treeitem", { name: "Card", exact: true }).nth(1).click();
+  await page.keyboard.press("Delete");
+  await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await page.keyboard.press("ControlOrMeta+d");
+  await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layers.getByRole("treeitem", { name: "Badge", exact: true }).click({ modifiers: ["Shift"] });
+  await page.keyboard.press("Shift+A");
+  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(3);
+
+  const [, deleted, copied, stack] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(deleted).toMatch(/^1\. Delete\n/);
+  expect(deleted).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: take its item out of the data the loop goes through.");
+  expect(copied).toMatch(/^2\. Duplicate\n/);
+  expect(copied).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through");
+  expect(stack).toMatch(/^3\. Make Stack\n/);
+  expect(stack).toMatch(/Wrap these 2 layers, in this order, in a new Stack: horizontal, with a gap of 12px, no padding, aligned center left\. Put it in the layout of Header/);
+  expect(stack).toMatch(/\n {2}1\. Vernier Kit \(`<h1 class="[^"]*">`, at `src\/App\.tsx:\d+:\d+`\)\n {2}2\. Badge/);
+  expect(await vernierkit("done", "3")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
 });
 
 test("with no changes, claim says so and leaves the round as it is", async () => {

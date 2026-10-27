@@ -5,9 +5,10 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import type { Change, Place, Target } from "./client/changeset";
+import { madeBy, placedAt, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
-import { changeTitle, moveKind, ordinal, propertyName, value } from "./design-values";
+import type { Size } from "./client/edits";
+import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -34,28 +35,162 @@ export function changes(count: number): string {
 export function describeChanges(list: Change[], root: string, options: NotesOptions = TO_APPLY): string {
   const count = changes(list.length);
   let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
-  for (const change of list) notes += section(change, root, options.status?.(change));
+  for (const change of list) notes += section(change, list, root, options.status?.(change));
   return notes;
 }
 
-function section(change: Change, root: string, status: string | undefined): string {
+function section(change: Change, list: Change[], root: string, status: string | undefined): string {
   const { target } = change;
-  const move = change.kind === "move";
   const style = Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``);
   const lines = [
     ...(status ? [`**Status:** ${status}`] : []),
-    `**Kind:** ${move ? moveKind(change) : "Style"}`,
-    `**Layer:** ${layer(target)}`,
-    `**Location:** ${target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
+    `**Kind:** ${kindTitle(change)}`,
+    `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
+    `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
-    `**Design intent:** ${move ? moveIntent(change) : `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`}`,
+    `**Design intent:** ${intent(change)}`,
     ...(change.asStack ? [AS_STACK] : []),
-    ...(change.data ? [dataChange(target)] : []),
+    ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
-    `**Reference style:** ${style.length ? style.join(", ") : "none: only its place changes"}`,
-    ...(move ? [] : [`**Currently set by:** ${setBy(change.sources ?? [], root)}`]),
+    ...(change.kind === "stack" ? joinLayout(change.after as Composed) : []),
+    ...(change.kind === "create" ? sketch(change, list) : []),
+    `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
+    ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
+}
+
+/** What the designer wants of the change, in design language. */
+function intent(change: Change): string {
+  switch (change.kind) {
+    case "style":
+      return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
+    case "move":
+      return moveIntent(change);
+    case "stack":
+      return stackIntent(change.after as Composed);
+    case "unstack":
+      return unstackIntent(change.before as StackSettings, change.after as Dissolved);
+    case "create": {
+      const { type, place, width, height, text } = change.after as Created;
+      if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place)}.`;
+      const wide = width === null ? "" : `, ${width}px wide`;
+      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place)}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
+    }
+    case "text":
+      return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "delete": {
+      const from = change.before as Place;
+      return `Delete this layer, and all in it, from ${container(from)}, where it is ${ordinal(from.nth)}.`;
+    }
+    case "duplicate": {
+      const to = change.after as Place;
+      return `Copy this layer, with all in it, and ${to.absolute ? "place" : "put"} the copy ${placement(to)}.`;
+    }
+  }
+}
+
+/** The reference style of a change that declares none, by kind. */
+const NO_STYLE: Record<Change["kind"], string> = {
+  style: "none",
+  move: "none: only its place changes",
+  stack: "none",
+  unstack: "none",
+  create: "none",
+  text: "none: only its words change",
+  delete: "none: the layer goes",
+  duplicate: "none: the copy is as the layer is",
+};
+
+/** A layer a change makes, as its Layer line names it; null for a change to a layer that is there. */
+function newLayerIn(change: Change): string | null {
+  if (change.kind === "stack" && (change.after as Composed).place) return `a new Stack, in ${container((change.after as Composed).place!)}`;
+  if (change.kind !== "create") return null;
+  const { type, place } = change.after as Created;
+  return `a new ${type === "text" ? "text layer" : "Frame"}, in ${container(place)}`;
+}
+
+/** Where a layer goes in a container: a place in its layout, or absolute in it. */
+function placement(place: Place): string {
+  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer`;
+  const { x, y } = place.absolute;
+  return `absolute in ${container(place)}, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), which is to be its positioning reference (\`position: relative\`)`;
+}
+
+/**
+ * A new Frame's brief, and the layers drawn in it as a sketch of the layout;
+ * or, for a layer drawn in a new Frame with a brief, that it is part of that sketch.
+ */
+function sketch(change: Change, list: Change[]): string[] {
+  const created = change.after as Created;
+  const frame = list.find((c) => c.kind === "create" && c.layer === created.place.container.layer);
+  if (frame && (frame.after as Created).brief) {
+    return [`**Sketch:** this layer is drawn in the Frame of change ${frame.id} as part of its sketch: follow the brief, with it as a guide to the layout, rather than writing it as it is.`];
+  }
+  if (!created.brief) return [];
+  // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
+  const latest = <T>(layer: string, property: string, then: T) => (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property)?.after as T) ?? then;
+  const items = list.flatMap((c) => {
+    const place = placedAt(c);
+    if (c.kind === "stack" || place?.container.layer !== change.layer) return [];
+    const made = c.kind === "create" ? (c.after as Created) : null;
+    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : "a copy"})`;
+    let where = `${ordinal(place.nth)} in its layout`;
+    if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
+    const fixed = (size: Size | undefined) => (size?.type === "fixed" ? size.value : null);
+    const width = fixed(latest<Size | undefined>(c.layer, "width", undefined)) ?? made?.width ?? null;
+    const height = fixed(latest<Size | undefined>(c.layer, "height", undefined)) ?? made?.height ?? null;
+    const size = width === null ? "" : height === null ? `, ${width}px wide` : `, ${width} × ${height}px`;
+    return [`\n  - ${what}: ${where}${size} (change ${c.id})`];
+  });
+  return [
+    `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.`,
+    ...(items.length ? [`**Sketch:** what the designer drew in the Frame, from its top left, shows the layout they have in mind:${items.join("")}`] : []),
+  ];
+}
+
+/** The layers a Stack is made of, in order, how it lays them out, and where it goes. */
+function stackIntent(composed: Composed): string {
+  const { place, layers } = composed;
+  const items = layers.map(({ target }, i) => `\n  ${i + 1}. ${member(target)}`).join("");
+  if (!place) {
+    const count = layers.length === 1 ? "1 layer goes" : `${layers.length} layers go`;
+    return `Make this Frame a Stack: ${stackSettings(composed)}. Its ${count} in its layout, in this order:${items}`;
+  }
+  const these = layers.length === 1 ? "this layer" : `these ${layers.length} layers, in this order,`;
+  const where = place.absolute
+    ? `Place it absolute in ${container(place)}, at X ${place.absolute.x}px and Y ${place.absolute.y}px from the Frame's top left (CSS \`left\` and \`top\`).`
+    : `Put it in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer, where the first of them was.`;
+  return `Wrap ${these} in a new Stack: ${stackSettings(composed)}. ${where}${items}`;
+}
+
+/** The layers of a new Stack that are absolute now, and lose it. */
+function joinLayout({ layers }: Composed): string[] {
+  const absolute = layers.filter(({ from }) => from.absolute).length;
+  if (!absolute) return [];
+  const which = absolute === layers.length ? "the layers are" : `${absolute} of the layers are`;
+  return [`**Join the layout:** ${which} placed absolute now. In the Stack, they are laid out by it: take their absolute positioning off.`];
+}
+
+/** The Stack as it was, the Frame it becomes, and where each of its layers is placed. */
+function unstackIntent(before: StackSettings, { width, height, layers }: Dissolved): string {
+  const items = layers.map(({ target, x, y, width, height }, i) => `\n  ${i + 1}. ${member(target)}: X ${x}px, Y ${y}px, ${width} × ${height}px`).join("");
+  return (
+    `Dissolve this Stack (${stackSettings(before)}): make it a Frame, Fixed ${width} × ${height}px, that is the positioning reference of its layers (\`position: relative\`), ` +
+    `and place each of its layers absolute where it is, at its size (CSS \`left\` and \`top\` from the Frame's top left):${items}`
+  );
+}
+
+/** A layer a Stack is made of or dissolved into, as the Agent finds it. */
+function member(target: Target): string {
+  return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${target.loc ? `at \`${target.loc}\`` : "not located"})`;
+}
+
+/** Where a layer made this round is: in the change that makes it. */
+function newLayer(made: string, list: Change[]): string {
+  const maker = list.find((change) => madeBy(change) === made);
+  const which = maker ? `in change ${maker.id}` : "earlier this round";
+  return `**New:** the layer is made ${which}, and is not in the source yet. Apply that change first, then change it there.`;
 }
 
 /** Where a move takes the layer from, and to. */
@@ -80,8 +215,19 @@ function container({ container: { target } }: Place): string {
   return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${where}${usage})`;
 }
 
-function dataChange({ instances }: Target): string {
-  return `**Data change:** the layer is one of the ${instances} instances a loop renders, so its place comes from the order of the data the loop goes through. Reorder the data where it is written in the code; if it comes from outside the code (an API, a CMS), say so in the report.`;
+/** What a change to one of a loop's instances alone asks of the data the loop goes through. */
+function dataChange({ kind, target: { instances } }: Change): string {
+  const one = `**Data change:** the layer is one of the ${instances} instances a loop renders`;
+  const outside = "if the data comes from outside the code (an API, a CMS), say so in the report.";
+  if (kind === "text") return `${one}, each with words of its own: they come from the data the loop goes through. Change them there; ${outside}`;
+  if (kind === "delete") return `${one}: take its item out of the data the loop goes through. ${capitalized(outside)}`;
+  if (kind === "duplicate") return `${one}: add an item to the data the loop goes through, a copy of this one's, at the place given. ${capitalized(outside)}`;
+  return `${one}, so its place comes from the order of the data the loop goes through. Reorder the data where it is written in the code; ${outside}`;
+}
+
+/** A sentence's first letter in capitals. */
+function capitalized(text: string): string {
+  return text[0].toUpperCase() + text.slice(1);
 }
 
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
