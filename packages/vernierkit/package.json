@@ -16,6 +16,12 @@
       "types": "./dist/vite.d.ts",
       "default": "./dist/vite.js"
     },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "import": "./dist/next.js",
+      "require": "./dist/next.cjs"
+    },
+    "./next-loader": "./dist/next-loader.cjs",
     "./react": {
       "types": "./dist/react.d.ts",
       "development": "./dist/react.dev.js",
@@ -44,10 +50,14 @@
   },
   "peerDependencies": {
     "react": ">=18",
-    "vite": ">=5"
+    "vite": ">=5",
+    "next": ">=15"
   },
   "peerDependenciesMeta": {
     "vite": {
+      "optional": true
+    },
+    "next": {
       "optional": true
     }
   }

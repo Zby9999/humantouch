@@ -474,3 +474,178 @@ describe("remove", () => {
     expect(read("src/main.tsx")).toBe(MAIN);
   });
 });
+
+const NEXT_CONFIG = `import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+};
+
+export default nextConfig;
+`;
+
+const LAYOUT = `import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = { title: "App" };
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en">
+      <body className="antialiased">
+        {children}
+      </body>
+    </html>
+  );
+}
+`;
+
+/** A Next.js App Router project as `create-next-app` makes it. */
+function nextProject(lockfile = "package-lock.json") {
+  write(
+    "package.json",
+    `${JSON.stringify({ name: "app", private: true, scripts: { dev: "next dev", build: "next build" }, dependencies: { next: "16.4.3", react: "19.3.0", "react-dom": "19.3.0" } }, null, 2)}\n`,
+  );
+  write(lockfile, "");
+  write("next.config.ts", NEXT_CONFIG);
+  write("app/layout.tsx", LAYOUT);
+  write("app/page.tsx", `export default function Home() {\n  return <main>Hello</main>;\n}\n`);
+}
+
+describe("init, on a Next.js project", () => {
+  test("wraps the config with withVernier() and mounts the editor layer in the root layout's body", async () => {
+    nextProject();
+    const { exec, commands } = fakeExec();
+
+    const { code, output } = await cli(exec, "init");
+
+    expect(code).toBe(0);
+    expect(output).toContain("Next.js");
+    expect(commands).toEqual(["npm install --save-dev vernierkit"]);
+    expect(read("next.config.ts")).toBe(`import type { NextConfig } from "next";
+import { withVernier } from "vernierkit/next";
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+};
+
+export default withVernier(nextConfig);
+`);
+    expect(read("app/layout.tsx")).toBe(`import type { Metadata } from "next";
+import "./globals.css";
+import { Vernier } from "vernierkit/react";
+
+export const metadata: Metadata = { title: "App" };
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en">
+      <body className="antialiased">
+        {children}
+        <Vernier />
+      </body>
+    </html>
+  );
+}
+`);
+  });
+
+  test("a config written in CommonJS, and a root layout under src/", async () => {
+    nextProject();
+    rmSync(join(project, "next.config.ts"));
+    rmSync(join(project, "app"), { recursive: true });
+    write("next.config.js", `/** @type {import('next').NextConfig} */\nconst nextConfig = {};\n\nmodule.exports = nextConfig;\n`);
+    write("src/app/layout.jsx", `export default function RootLayout({ children }) {\n  return (\n    <html lang="en">\n      <body>{children}</body>\n    </html>\n  );\n}\n`);
+
+    expect((await cli(fakeExec().exec, "init")).code).toBe(0);
+
+    expect(read("next.config.js")).toBe(`const { withVernier } = require("vernierkit/next");\n/** @type {import('next').NextConfig} */\nconst nextConfig = {};\n\nmodule.exports = withVernier(nextConfig);\n`);
+    expect(read("src/app/layout.jsx")).toContain(`      <body>{children}<Vernier /></body>`);
+  });
+
+  test("a config already wrapped by another plugin is wrapped once more, outside it", async () => {
+    nextProject();
+    write("next.config.mjs", `import createMDX from "@next/mdx";\n\nconst withMDX = createMDX();\n\nexport default withMDX({ pageExtensions: ["tsx", "mdx"] });\n`);
+    rmSync(join(project, "next.config.ts"));
+
+    await cli(fakeExec().exec, "init");
+
+    expect(read("next.config.mjs")).toBe(`import createMDX from "@next/mdx";\nimport { withVernier } from "vernierkit/next";\n\nconst withMDX = createMDX();\n\nexport default withVernier(withMDX({ pageExtensions: ["tsx", "mdx"] }));\n`);
+  });
+
+  test("a root layout with no <body> to mount in: prints how to mount it", async () => {
+    nextProject();
+    write("app/layout.tsx", `export { default } from "../layouts/Root";\n`);
+
+    const { code, output } = await cli(fakeExec().exec, "init");
+
+    expect(code).toBe(1);
+    expect(output).toContain("Finish by hand:");
+    expect(output).toContain("<body>");
+    expect(output).toContain("<Vernier />");
+  });
+
+  test("a Next.js project with Vite in it too, for its tests, is taken for Next.js", async () => {
+    nextProject();
+    const pkg = JSON.parse(read("package.json"));
+    write("package.json", JSON.stringify({ ...pkg, devDependencies: { vite: "^8.0.0", vitest: "^5.0.0" } }));
+
+    await cli(fakeExec().exec, "init");
+
+    expect(read("next.config.ts")).toContain("withVernier(nextConfig)");
+    expect(there("vite.config.ts")).toBe(false);
+  });
+
+  test("remove puts it back as it was", async () => {
+    nextProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+
+    expect((await cli(exec, "remove")).code).toBe(0);
+
+    expect(read("next.config.ts")).toBe(NEXT_CONFIG);
+    expect(read("app/layout.tsx")).toBe(LAYOUT);
+  });
+});
+
+describe("doctor, on a Next.js project", () => {
+  test("runs next build, and looks through what it built for the editor layer", async () => {
+    nextProject();
+    const { exec, commands } = fakeExec();
+    await cli(exec, "init");
+    const building: Exec = async (command, args, options) => {
+      if (args.includes("build")) {
+        write(".next/static/chunks/app/page.js", "console.log('page')");
+        write(".next/server/app/page.js", `"use client";function Vernier(){return null}`);
+        // Next.js rewrites it for the build: doctor puts it back.
+        write("next-env.d.ts", "/// build\n");
+      }
+      return exec(command, args, options);
+    };
+    write("next-env.d.ts", "/// dev\n");
+
+    const { code, output } = await cli(building, "doctor");
+
+    expect(output).toContain("✓ next.config.ts: adds the plugin");
+    expect(output).toContain("✓ app/layout.tsx: mounts the editor layer");
+    expect(output).toContain("✓ A production build has none of the editor layer");
+    expect(code).toBe(0);
+    expect(commands.at(-1)).toBe("npx --no-install next build");
+    expect(read("next-env.d.ts")).toBe("/// dev\n");
+  });
+
+  test("a build with source markers in it fails", async () => {
+    nextProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    const building: Exec = async (command, args, options) => {
+      if (args.includes("build")) write(".next/static/chunks/app/page.js", `e("main",{"data-vk-loc":"app/page.tsx:2:10"})`);
+      return exec(command, args, options);
+    };
+
+    const { code, output } = await cli(building, "doctor");
+
+    expect(code).toBe(1);
+    expect(output).toMatch(/✗ A production build has editor layer code in it: static[/\\]chunks[/\\]app[/\\]page\.js/);
+  });
+});

@@ -6,6 +6,7 @@
 import { AS_STACK_ATTR, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, restoreStyle } from "./canvas-style";
 import { MOVE, type Change, type ChangeSet, type Place, type Target } from "./changeset";
 import { boxOf, buildLayerTree, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { PAGE_ATTR } from "./freezer";
 import { relocate, slotsOf } from "./moves";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 
@@ -765,7 +766,8 @@ function targetOf(layer: Layer, instances: number): Target {
   const { loc, chain, component } = layer;
   const path: string[] = [];
   for (let l: Layer | null = layer; l; l = l.parent) path.unshift(l.name);
-  const context = { path, element: openingTag(layer.el) };
+  const page = layer.el.ownerDocument.documentElement.getAttribute(PAGE_ATTR);
+  const context = { path, element: openingTag(layer.el), ...(page && { page }) };
   return { loc, chain, component, instances, locked: layer.kind === "locked", unlocated: !loc, context };
 }
 

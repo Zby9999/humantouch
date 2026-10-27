@@ -3,6 +3,8 @@ import type { SavedChangeSet } from "./client/changeset";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__VERNIERKIT__";
+/** Next.js has no `index.html` for the global: `withVernier()` puts the same, as JSON, in the bundle's `process.env` under this name. */
+export const SERVICE_ENV = "VERNIERKIT_SERVICE";
 /** Header that carries the token. A request without the right one is turned away. */
 export const TOKEN_HEADER = "X-Vernier-Token";
 /** Where the round is, on the local service. */

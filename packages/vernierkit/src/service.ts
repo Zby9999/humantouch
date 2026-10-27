@@ -66,7 +66,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
       for (const res of listeners) res.write(line);
     }).catch((error) => console.error("Vernier Kit:", error));
   };
-  watchFile(files.state, { interval: WATCH_MS }, broadcast);
+  // The service never keeps a process alive by itself: it lives as long as its dev server.
+  watchFile(files.state, { interval: WATCH_MS }, broadcast).unref();
 
   /** `checks.json`, with the pages open now: the command line asks them through it. Only beside a round. */
   const updateChecks = async (change: (checks: Checks) => void = () => {}) => {
@@ -159,6 +160,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
+  server.unref();
   const { port } = server.address() as AddressInfo;
 
   return {

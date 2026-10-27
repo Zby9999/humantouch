@@ -48,6 +48,8 @@ const TOP_LAYER_ATTR = "data-vk-top-layer";
 const PIXELS_ATTR = "data-vk-pixels";
 /** On a saved canvas's root: its size and scroll, as JSON. */
 const LAYOUT_ATTR = "data-vk-layout";
+/** On the canvas's root: the address of the page it was frozen from, its path and query. */
+export const PAGE_ATTR = "data-vk-page";
 
 /** How long to wait at most for the copy's fonts and cross-origin stylesheets. */
 const SETTLE_TIMEOUT_MS = 500;
@@ -64,6 +66,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   const viewport: Viewport = { width: page.innerWidth, height: page.innerHeight, scrollX: page.scrollX, scrollY: page.scrollY };
   const animationEnds = readAnimationEnds(live);
   const copy = root.cloneNode(true) as HTMLElement;
+  copy.setAttribute(PAGE_ATTR, page.location.pathname + page.location.search);
 
   // The clone has the same tree as the page, so the two lists line up one to one.
   const liveEls = [root, ...root.getElementsByTagName("*")];

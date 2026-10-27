@@ -97,14 +97,14 @@ function layer({ context }: Target): string {
 }
 
 /** Which instances the change is for: those of the usage the layer sits in. */
-function scope({ chain, instances, locked }: Target): string {
+function scope({ chain, instances, locked, context }: Target): string {
   if (!chain.length) return "This layer only.";
   const [own, ...outer] = chain;
   if (!outer.length && own.usage) {
     return `Change it where it is written, at Location. ${own.component}, which writes it, is used at \`${own.usage}\`, outside any other component.${instances > 1 ? ` It renders ${instances} instances, which change together.` : ""}`;
   }
   if (own.usage === null && !own.thirdParty) {
-    return `**Usage not determined.** ${own.component} is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page, and leave the other usages of ${own.component} as they are.`;
+    return `**Usage not determined.** ${own.component} is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page${context.page ? ` at \`${context.page}\`` : ""} (Layer, above), and leave the other usages of ${own.component} as they are.`;
   }
   const where = chain.map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`);
   let text = `This usage only: ${where[0]}${outer.length ? `, inside ${where.slice(1).join(", inside ")}` : ""}.`;

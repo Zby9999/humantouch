@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,9 +9,15 @@ const PACKAGE = fileURLToPath(new URL("../../packages/vernierkit/", import.meta.
 /** The command line as `npx vernierkit` runs it before the project has it: from the package being tested. */
 export const CLI = join(PACKAGE, "dist/cli.js");
 
+/** Runs a command; resolves with what it printed. When it fails, the error says what it printed too. */
 export const sh = async (command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) => {
-  const { stdout } = await promisify(execFile)(command, args, { cwd, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 });
-  return stdout;
+  try {
+    const { stdout } = await promisify(execFile)(command, args, { cwd, env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 });
+    return stdout;
+  } catch (error) {
+    const { stdout, stderr } = error as { stdout?: string; stderr?: string };
+    throw new Error(`${(error as Error).message}\n${stdout ?? ""}${stderr ?? ""}`);
+  }
 };
 
 /** The package as it would be published, packed into `dir`: `init` installs it from there. */
@@ -34,7 +40,7 @@ export async function copyWithoutVernier(example: string, uninstall: (dir: strin
   delete pkg.devDependencies.vernierkit;
   writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
   uninstall(dir);
-  writeFileSync(join(dir, ".gitignore"), "node_modules\ndist\n.next\n");
+  appendFileSync(join(dir, ".gitignore"), "node_modules\ndist\n");
   // From the store the workspace already filled.
   await sh("pnpm", ["install", "--prefer-offline"], dir);
   await sh("git", ["init", "-q"], dir);

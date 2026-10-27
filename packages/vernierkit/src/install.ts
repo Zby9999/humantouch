@@ -7,9 +7,9 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { addVitePlugin, insert, mountInEntry, undo, type Edit, type FileEdit } from "./source-edits";
+import { addVitePlugin, insert, mountInEntry, mountInLayout, undo, wrapNextConfig, type Edit, type FileEdit } from "./source-edits";
 import { readChangeSet, readIfThere, readState, vernierFolder, writeAtomically } from "./vernier-folder";
 
 /** Runs a command in `cwd`; resolves with its exit code and what it printed. */
@@ -67,8 +67,20 @@ interface Framework {
   /** By hand, when the edits cannot be made. */
   pluginSteps: string;
   mountSteps: string;
-  /** The production build, into `outDir`. */
-  build(outDir: string): [string, string[]];
+  /** The production build `doctor` runs. */
+  build(root: string): Promise<Build>;
+}
+
+/** A production build: how to run it, where it writes, and what else it rewrites, to be put back. */
+interface Build {
+  command: [string, string[]];
+  /** Where it writes, and the folders in there that hold what it built. */
+  dir: string;
+  built: string[];
+  /** A folder of its own, to delete afterwards. */
+  temporary: boolean;
+  /** Project files the build rewrites, relative to the root. */
+  rewrites: string[];
 }
 
 const VITE_CONFIGS = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs", "vite.config.cts", "vite.config.cjs"];
@@ -87,7 +99,34 @@ function vite(root: string, packageManager: PackageManager): Framework {
     mount: mountInEntry,
     pluginSteps: 'In the Vite config, import the plugin and put it first in `plugins`:\n\n  import vernier from "vernierkit/vite";\n  …\n  plugins: [vernier(), …],',
     mountSteps: 'In the entry module that renders the app, render the editor layer beside the app:\n\n  import { Vernier } from "vernierkit/react";\n  …\n  <Vernier />',
-    build: (outDir) => run(packageManager, ["vite", "build", "--outDir", outDir, "--emptyOutDir"]),
+    async build() {
+      // Not over the project's own build.
+      const dir = await mkdtemp(join(tmpdir(), "vernierkit-build-"));
+      return { command: run(packageManager, ["vite", "build", "--outDir", dir, "--emptyOutDir"]), dir, built: [""], temporary: true, rewrites: [] };
+    },
+  };
+}
+
+const NEXT_CONFIGS = ["next.config.ts", "next.config.mts", "next.config.mjs", "next.config.js", "next.config.cjs"];
+const LAYOUTS = ["app", "src/app"].flatMap((dir) => ["tsx", "jsx", "js", "ts"].map((extension) => `${dir}/layout.${extension}`));
+
+function next(root: string, packageManager: PackageManager): Framework {
+  return {
+    name: "Next.js",
+    config: NEXT_CONFIGS.find((file) => existsSync(join(root, file))) ?? null,
+    addPlugin: wrapNextConfig,
+    mountFile: async (root) => LAYOUTS.find((file) => existsSync(join(root, file))) ?? null,
+    mount: mountInLayout,
+    pluginSteps: 'In the Next.js config, wrap the config it exports with `withVernier()`:\n\n  import { withVernier } from "vernierkit/next";\n  …\n  export default withVernier(nextConfig);',
+    mountSteps: 'In the root layout (`app/layout.tsx`), render the editor layer at the end of <body>:\n\n  import { Vernier } from "vernierkit/react";\n  …\n  <body>\n    {children}\n    <Vernier />\n  </body>',
+    // Into `.next`, as `next build` always does: `next dev` keeps to `.next/dev`.
+    build: async (root) => ({
+      command: run(packageManager, ["next", "build"]),
+      dir: join(root, ".next"),
+      built: ["static", "server"],
+      temporary: false,
+      rewrites: ["next-env.d.ts", "tsconfig.json"],
+    }),
   };
 }
 
@@ -157,6 +196,8 @@ async function findProjectToInstall(cwd: string, io: InstallIo): Promise<Project
     io.error("Vernier Kit works with React projects, and this one does not depend on react.\n");
     return null;
   }
+  // A Next.js project may have Vite too, for Vitest.
+  if (hasDependency(pkg, "next")) return { root, pkg, packageManager, framework: next(root, packageManager) };
   if (!hasDependency(pkg, "vite") && !VITE_CONFIGS.some((file) => existsSync(join(root, file)))) {
     io.error("Vernier Kit works with Vite and Next.js projects, and this one uses neither.\n");
     return null;
@@ -382,18 +423,22 @@ export async function doctor(cwd: string, io: InstallIo): Promise<number> {
   const gitignore = await readIfThere(join(root, ".gitignore"));
   check(Boolean(gitignore && ignoresVernier(gitignore)), ".gitignore ignores .vernier/", ".gitignore does not ignore .vernier/: add a line `.vernier/` to it");
 
-  const outDir = await mkdtemp(join(tmpdir(), "vernierkit-build-"));
+  const build = await framework.build(root);
+  const rewritten = await Promise.all(build.rewrites.map((file) => readIfThere(join(root, file))));
   try {
-    const command = framework.build(outDir);
-    const result = await io.exec(command[0], command[1], { cwd: root });
+    const result = await io.exec(build.command[0], build.command[1], { cwd: root });
     if (result.code !== 0) {
-      check(false, "", `The production build failed (\`${show(command)}\`):\n${result.output}`);
+      check(false, "", `The production build failed (\`${show(build.command)}\`):\n${result.output}`);
     } else {
-      const found = await residue(outDir);
+      const found = await residue(build.dir, build.built);
       check(!found.length, "A production build has none of the editor layer", `A production build has editor layer code in it: ${found.join(", ")}`);
     }
   } finally {
-    await rm(outDir, { recursive: true, force: true });
+    if (build.temporary) await rm(build.dir, { recursive: true, force: true });
+    for (const [i, file] of build.rewrites.entries()) {
+      const text = rewritten[i];
+      if (text !== null && (await readIfThere(join(root, file))) !== text) await writeFile(join(root, file), text);
+    }
   }
 
   io.write(`Vernier Kit doctor (${framework.name}, ${packageManager}):\n${checks.map(([ok, text]) => `${ok ? "✓" : "✗"} ${text}\n`).join("")}`);
@@ -402,13 +447,16 @@ export async function doctor(cwd: string, io: InstallIo): Promise<number> {
   return failed ? 1 : 0;
 }
 
-/** The built files, relative to `dir`, that hold some of the editor layer. */
-async function residue(dir: string): Promise<string[]> {
-  const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((file) => /\.(m?js|css|html)$/.test(file));
+/** The built files in the `built` folders of `dir`, relative to it, that hold some of the editor layer. */
+async function residue(dir: string, built: string[]): Promise<string[]> {
   const found: string[] = [];
-  for (const file of files) {
-    const text = await readFile(join(dir, file), "utf8");
-    if (RESIDUE.some((mark) => text.includes(mark))) found.push(relative(dir, join(dir, file)));
+  for (const folder of built) {
+    if (!existsSync(join(dir, folder))) continue;
+    const files = readdirSync(join(dir, folder), { recursive: true, encoding: "utf8" }).filter((file) => /\.(m?js|css|html)$/.test(file));
+    for (const file of files) {
+      const text = await readFile(join(dir, folder, file), "utf8");
+      if (RESIDUE.some((mark) => text.includes(mark))) found.push(join(folder, file));
+    }
   }
   return found;
 }

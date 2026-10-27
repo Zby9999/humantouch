@@ -52,6 +52,7 @@ If a change cannot be applied exactly as asked, apply the closest you can and st
 While you apply them:
 
 - **Follow how the project already writes styles.** With Tailwind, change the classes (`bg-red-500`, `rounded-sm`, an arbitrary value only when no class fits). With CSS files or CSS Modules, change the CSS rule that styles the element. Do not add inline styles unless the project already styles that element inline.
+- **CSS Modules**: the page has the class as the bundler renamed it (`Card-module__aGLaxq__card`, `Card_card__x1y2z`). The rule to change is the local name (`.card`) in the `.module.css` file the component at Location imports.
 - **Change what sets the value now.** If it is a class, replace that class. If it is a rule, change the rule, or, when the rule is shared with elements outside the scope, override it for this layer only.
 - **A rule in no CSS layer beats every class in a layer**, whatever their specificity. Tailwind v4 puts its utilities in a layer, so when the value is set by a rule in no CSS layer, adding a utility class will not show: change that rule, narrow it, or use the class's important form (`bg-blue-600!`) as a last resort.
 - **Moves**: move the JSX itself, to the container and the place the design intent gives; for a data change, reorder the data instead. An **Absolute** layer is placed with `position: absolute` and the `left` / `top` given, in a container that is its positioning reference: if the container is not positioned yet, give it `position: relative` (`relative` in Tailwind).

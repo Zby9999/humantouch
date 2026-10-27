@@ -23,6 +23,8 @@ export interface Target {
     path: string[];
     /** The layer's element as an opening tag, with its id and classes. */
     element: string;
+    /** The address of the page the canvas was frozen from, its path and query. */
+    page?: string;
   };
 }
 

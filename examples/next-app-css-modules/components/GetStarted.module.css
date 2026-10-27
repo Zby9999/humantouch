@@ -1,0 +1,20 @@
+.button {
+  align-self: flex-start;
+  margin-top: 24px;
+  padding: 8px 16px;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(28 25 23 / 0.4);
+}
+
+.dialog {
+  width: 320px;
+  padding: 24px;
+  border-radius: 12px;
+  background: white;
+}

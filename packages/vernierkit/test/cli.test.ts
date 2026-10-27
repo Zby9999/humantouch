@@ -143,6 +143,26 @@ describe("claim", () => {
     expect(notes).toContain("- **Location:** `src/components/Card.tsx:3:5`");
     expect(notes).toContain("- **Scope:** **Usage not determined.**");
   });
+
+  test("with the usage not determined, gives the address of the page and the layer's place on it", async () => {
+    // A Next.js page: the framework renders it, from no JSX of the project's.
+    const inPage = {
+      ...cards,
+      loc: "app/pricing/page.tsx:12:7",
+      chain: [{ component: "Pricing", usage: null, thirdParty: false }],
+      component: "Pricing",
+      instances: 1,
+      context: { path: ["Page", "Pricing", "Heading"], element: '<h1 class="page-module__title">', page: "/pricing?plan=team" },
+    };
+    saveRound({ ...redFill, target: inPage });
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Layer:** Heading, `<h1 class=\"page-module__title\">` (Page › Pricing › Heading)");
+    expect(notes).toContain(
+      "- **Scope:** **Usage not determined.** Pricing is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page at `/pricing?plan=team` (Layer, above), and leave the other usages of Pricing as they are.\n",
+    );
+  });
 });
 
 describe("claim, layout changes", () => {

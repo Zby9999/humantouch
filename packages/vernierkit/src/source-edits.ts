@@ -130,6 +130,52 @@ export function addVitePlugin(file: string, code: string): FileEdit {
 }
 
 /**
+ * Wraps the config a Next.js config module exports with `withVernier()`, and
+ * imports it (or requires it, in CommonJS).
+ */
+export function wrapNextConfig(file: string, code: string): FileEdit {
+  const program = parseModule(code);
+  if (!program) return { reason: "it could not be read" };
+  const exported = program.body.find((node: Node) => node.type === "ExportDefaultDeclaration")?.declaration;
+  if (exported && !/Declaration$/.test(exported.type)) {
+    return insert(file, code, [importAfterLast(code, program, "{ withVernier }", "vernierkit/next"), ...wrap(exported)]);
+  }
+  const assigned = program.body.find(
+    (node: Node) =>
+      node.type === "ExpressionStatement" &&
+      node.expression.type === "AssignmentExpression" &&
+      node.expression.left.type === "MemberExpression" &&
+      node.expression.left.object.name === "module" &&
+      node.expression.left.property.name === "exports",
+  )?.expression.right;
+  if (!assigned) return { reason: "its exported config could not be found" };
+  const requires = program.body.filter((node: Node) => node.type === "VariableDeclaration" && node.declarations[0]?.init?.callee?.name === "require");
+  const last: Node | undefined = requires.at(-1);
+  const line = 'const { withVernier } = require("vernierkit/next");';
+  return insert(file, code, [last ? { at: last.end, text: `\n${line}` } : { at: 0, text: `${line}\n` }, ...wrap(assigned)]);
+}
+
+function wrap(expression: Node): Insertion[] {
+  return [
+    { at: expression.start, text: "withVernier(" },
+    { at: expression.end, text: ")" },
+  ];
+}
+
+/** Mounts `<Vernier />` at the end of the `<body>` a Next.js root layout renders. */
+export function mountInLayout(file: string, code: string): FileEdit {
+  const program = parseModule(code);
+  let body: Node | null = null;
+  if (program) {
+    walk(program, (node) => {
+      if (node.type === "JSXElement" && node.openingElement.name.name === "body" && node.closingElement) body ??= node;
+    });
+  }
+  if (!program || !body) return { reason: "it renders no <body>" };
+  return insert(file, code, [importAfterLast(code, program, "{ Vernier }", "vernierkit/react"), ...mountIn(code, body)]);
+}
+
+/**
  * Mounts `<Vernier />` in the JSX a Vite entry renders: beside the root's
  * children (`<StrictMode>`'s, say), or in a fragment with a lone root.
  */
