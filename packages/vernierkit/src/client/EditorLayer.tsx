@@ -18,6 +18,12 @@ type Mode = "preview" | "edit" | "leaving";
 
 const PREVIEW_KEY = "vernierkit:change-preview";
 
+/** An undo made from the change list with no canvas up: the saved round before it, and after. */
+interface ListStep {
+  before: SavedRound | null;
+  after: SavedRound | null;
+}
+
 /**
  * Preview mode shows only the toggle; edit mode adds the shell around the
  * canvas. A round with changes not yet applied keeps its canvas: edit mode
@@ -37,6 +43,12 @@ export function EditorLayer() {
   /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
   const [live, setLive] = useState<Change[] | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  /**
+   * Undos made from the change list with no canvas up, for ⌘Z / ⇧⌘Z in the
+   * list to undo and redo. They hold only while the saved round is the one
+   * they left: once anything else saves it, they are dropped.
+   */
+  const listSteps = useRef<{ past: ListStep[]; future: ListStep[] }>({ past: [], future: [] });
   /** The canvas, while edit mode is up: the change list works on it then. */
   const control = useRef<RoundControl | null>(null);
   const [previewing, setPreviewing] = useState(readPreviewing);
@@ -102,7 +114,24 @@ export function EditorLayer() {
   /** From the change list. With no canvas up, the saved canvas is changed and saved at once. */
   const revert = (id: number) => {
     if (control.current) control.current.revert(id);
-    else if (round) save(revertSaved(round, id));
+    else if (round) {
+      const next = revertSaved(round, id);
+      listSteps.current.past.push({ before: round, after: next });
+      listSteps.current.future = [];
+      save(next);
+    }
+  };
+  /** Undoes (or redoes) the latest undo made from the list, when the saved round is still where it left it. */
+  const replayList = (redo: boolean) => {
+    const { past, future } = listSteps.current;
+    const step = (redo ? future : past).at(-1);
+    if (!step || round !== (redo ? step.before : step.after)) {
+      listSteps.current = { past: [], future: [] };
+      return;
+    }
+    (redo ? future : past).pop();
+    (redo ? past : future).push(step);
+    save(redo ? step.after : step.before);
   };
   const discard = () => {
     setListOpen(false);
@@ -128,8 +157,18 @@ export function EditorLayer() {
     if (mode === "preview") performance.mark(ENTER_MARK);
     setMode(mode === "edit" ? (animate ? "leaving" : "preview") : "edit");
   };
-  const list = listOpen && listed.length > 0 && (
-    <ChangeList changes={listed} readOnly={!!claimed} onRevert={revert} onDiscard={discard} onClose={() => setListOpen(false)} />
+  // With no canvas up, the list stays open once its last change is undone: ⌘Z can bring it back.
+  const list = listOpen && (listed.length > 0 || (!shellShown.current && listSteps.current.past.length > 0)) && (
+    <ChangeList
+      changes={listed}
+      readOnly={!!claimed}
+      onRevert={revert}
+      // In edit mode ⌘Z is the canvas's already, list undos included.
+      onUndo={shellShown.current ? undefined : () => replayList(false)}
+      onRedo={shellShown.current ? undefined : () => replayList(true)}
+      onDiscard={discard}
+      onClose={() => setListOpen(false)}
+    />
   );
   // In edit mode, the way back and the changes so far sit beside the Design panel's title, in place of the toggle.
   const editing = mode === "edit" && shellShown.current;

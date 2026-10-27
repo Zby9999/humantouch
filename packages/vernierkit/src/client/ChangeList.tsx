@@ -10,6 +10,9 @@ interface Props {
   /** The Agent is applying them: nothing can be undone or discarded meanwhile. */
   readOnly: boolean;
   onRevert(id: number): void;
+  /** ⌘Z / ⇧⌘Z in the list: undo or redo what was undone from it. Without them, the keys are left alone. */
+  onUndo?(): void;
+  onRedo?(): void;
   /** Called once the designer has confirmed. */
   onDiscard(): void;
   onClose(): void;
@@ -19,7 +22,7 @@ interface Props {
  * Opened from the toggle's badge: the changes not yet applied, each of which
  * can be undone on its own, and Discard all, which asks first.
  */
-export function ChangeList({ changes, readOnly, onRevert, onDiscard, onClose }: Props) {
+export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDiscard, onClose }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -43,6 +46,13 @@ export function ChangeList({ changes, readOnly, onRevert, onDiscard, onClose }: 
   }, [confirming]);
 
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && (key === "z" || key === "y") && onUndo && onRedo) {
+      event.preventDefault();
+      if (key === "y" ? !event.metaKey : event.shiftKey) onRedo();
+      else onUndo();
+      return;
+    }
     if (event.key !== "Escape") return;
     event.preventDefault();
     if (confirming) {
@@ -59,6 +69,7 @@ export function ChangeList({ changes, readOnly, onRevert, onDiscard, onClose }: 
     <div ref={dialog} class="vk-changes" role="dialog" aria-label="Changes" tabIndex={-1} onKeyDown={onKeyDown}>
       <h2 class="vk-changes-title">{count} not applied yet</h2>
       {readOnly && <p class="vk-changes-note">The Agent is applying these changes.</p>}
+      {!changes.length && <p class="vk-changes-note">No changes left.</p>}
       <ul class="vk-changes-list">
         {changes.map((change) => (
           <li key={change.id} class="vk-change">
@@ -87,6 +98,7 @@ export function ChangeList({ changes, readOnly, onRevert, onDiscard, onClose }: 
         ))}
       </ul>
       {!readOnly &&
+        changes.length > 0 &&
         (confirming ? (
           <div class="vk-changes-confirm">
             <p>Discard all {count}? The canvas goes with them: edit mode freezes the page afresh.</p>

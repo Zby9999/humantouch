@@ -200,6 +200,46 @@ test("in preview mode, undoing a change from the list takes it off the live page
   expect(await cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
 });
 
+test("in preview mode, ⌘Z in the change list undoes what was undone there; with the list closed, ⌘Z is the page's", async ({ page }) => {
+  await makeThreeChanges(page);
+  await backToPreviewMode(page);
+  await badge(page).click();
+  const list = changeList(page);
+  await list.getByRole("button", { name: "Undo the fill of Card" }).click();
+  await list.getByRole("button", { name: "Undo the fill of Button" }).click();
+  expect(await cardStyles(page, "backgroundColor", "page")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(badge(page)).toHaveText("2");
+  await expect(page.locator('[data-testid="hero"] > button')).toHaveCSS("background-color", "rgb(37, 99, 235)");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(badge(page)).toHaveText("3");
+  expect(await cardStyles(page, "backgroundColor", "page")).toEqual([RED, RED, RED, WHITE]);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(badge(page)).toHaveText("2");
+  expect(await cardStyles(page, "backgroundColor", "page")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(badge(page)).toHaveText("2");
+});
+
+test("the last change undone in preview mode can be brought back with ⌘Z, the list still open", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  await setField(page, "Corner radius", "2");
+  await backToPreviewMode(page);
+  await badge(page).click();
+
+  await changeList(page).getByRole("button", { name: "Undo the corner radius of Card" }).click();
+  await expect(badge(page)).toHaveCount(0);
+  await expect(changeList(page).getByText("No changes left.")).toBeVisible();
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(badge(page)).toHaveText("1");
+  expect(await cardStyles(page, "borderRadius", "page")).toEqual(["2px", "2px", "2px", "12px"]);
+});
+
 test("after a reload there is nothing to undo with ⌘Z, but the change list still undoes each change", async ({ page }) => {
   await makeThreeChanges(page);
   await backToPreviewMode(page);
