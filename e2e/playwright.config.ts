@@ -4,13 +4,16 @@ import { fileURLToPath } from "node:url";
 const example = fileURLToPath(new URL("../examples/vite-react19-tw4", import.meta.url));
 
 /**
- * The dev server on this port, the production preview on the next. Two
+ * The dev server on this port, the production preview on the next, and the
+ * ports after for the projects the tests start themselves. Two
  * checkouts running e2e at once set `VK_E2E_PORT` apart: locally an existing
  * server is reused, so on the same ports one would test the other's code.
  */
 const PORT = Number(process.env.VK_E2E_PORT ?? 5310);
 export const DEV_URL = `http://localhost:${PORT}`;
 export const PREVIEW_URL = `http://localhost:${PORT + 1}`;
+/** Where `install.spec.ts` serves the copy of the example it installs Vernier Kit into. */
+export const INSTALL_PORT = PORT + 2;
 export const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
 export const EXIT_LABEL = "Vernier Kit: back to preview mode";
 
