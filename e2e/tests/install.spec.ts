@@ -82,3 +82,17 @@ test("doctor reports every part installed, and a production build with none of t
   expect(output).not.toContain("✗");
   expect(output).toContain("All good.");
 });
+
+test("remove takes it all back out: git sees no change at all", async () => {
+  const output = await installed("remove");
+
+  expect(output).toContain("Vernier Kit removed");
+  expect(await gitStatus(project)).toBe("");
+});
+
+test("remove again does nothing, and does not fail", async () => {
+  const output = await sh(process.execPath, [CLI, "remove"], project);
+
+  expect(output).toMatch(/not installed/);
+  expect(await gitStatus(project)).toBe("");
+});

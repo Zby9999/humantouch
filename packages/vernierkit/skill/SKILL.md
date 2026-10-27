@@ -101,3 +101,13 @@ It prints the notes of the round before, with each change marked **Applied** or 
 Without a diff, take the applied changes back out of the source by hand, as they were before (the notes give the earlier value as the design intent's "from"); leave the others alone.
 
 Then tell the designer what you reverted. There is nothing to claim or finish for an undo.
+
+## Removing Vernier Kit
+
+When the designer or a developer asks to remove or uninstall Vernier Kit, run from the project root:
+
+```sh
+npx vernierkit remove
+```
+
+It takes back out everything `init` added (the plugin in the build config, `<Vernier />`, the package, this Skill, its line in AGENTS.md and in .gitignore) and deletes `.vernier/`, leaving the project as it was. It refuses while the designer has design changes not applied yet, or while a round is being applied: say so, and ask whether to apply them first or have the designer discard them. If it lists steps to finish by hand (lines changed since `init`), do them.

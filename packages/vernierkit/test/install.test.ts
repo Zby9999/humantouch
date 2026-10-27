@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -354,5 +354,123 @@ describe("doctor", () => {
     expect(code).toBe(1);
     expect(output).toContain("✗ The production build failed");
     expect(output).toContain("error TS2304");
+  });
+});
+
+describe("remove", () => {
+  /** Every file of the project and its text, but for `.vernier/`. */
+  function snapshot() {
+    const files: Record<string, string> = {};
+    const visit = (dir: string) => {
+      for (const entry of readdirSync(join(project, dir), { withFileTypes: true })) {
+        const path = dir ? `${dir}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) visit(path);
+        else files[path] = read(path);
+      }
+    };
+    visit("");
+    return files;
+  }
+
+  test("after init, puts every file back as it was, uninstalls the package and deletes .vernier/", async () => {
+    viteProject();
+    write("AGENTS.md", "# Project\n\nUse pnpm.");
+    write(".gitignore", "node_modules");
+    const before = snapshot();
+    const { exec, commands } = fakeExec();
+    await cli(exec, "init");
+
+    const { code, output } = await cli(exec, "remove");
+
+    expect(code).toBe(0);
+    expect(snapshot()).toEqual(before);
+    expect(there(".vernier")).toBe(false);
+    expect(there(".agents")).toBe(false);
+    expect(there(".claude")).toBe(false);
+    expect(commands.at(-1)).toBe("pnpm remove vernierkit");
+    expect(output).toMatch(/removed/i);
+  });
+
+  test("deletes AGENTS.md and .gitignore when init made them", async () => {
+    viteProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+
+    await cli(exec, "remove");
+
+    expect(there("AGENTS.md")).toBe(false);
+    expect(there(".gitignore")).toBe(false);
+  });
+
+  test("keeps the other skills in .claude/skills", async () => {
+    viteProject();
+    write(".claude/skills/deploy/SKILL.md", "# Deploy");
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+
+    await cli(exec, "remove");
+
+    expect(read(".claude/skills/deploy/SKILL.md")).toBe("# Deploy");
+    expect(there(".claude/skills/vernierkit")).toBe(false);
+  });
+
+  test("with design changes not applied yet, refuses, and says to apply or discard them first", async () => {
+    viteProject();
+    const { exec, commands } = fakeExec();
+    await cli(exec, "init");
+    write(".vernier/changeset.json", JSON.stringify({ lastId: 1, changes: [{ id: 1 }] }));
+
+    const { code, errors } = await cli(exec, "remove");
+
+    expect(code).toBe(1);
+    expect(errors).toMatch(/not applied/);
+    expect(errors).toMatch(/discard/);
+    expect(read("vite.config.ts")).toContain("vernier()");
+    expect(there(".vernier/changeset.json")).toBe(true);
+    expect(commands).toHaveLength(1);
+  });
+
+  test("while a round is being applied, refuses, and says to finish it first", async () => {
+    viteProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    write(".vernier/changeset.json", JSON.stringify({ lastId: 1, changes: [{ id: 1 }] }));
+    write(".vernier/state.json", JSON.stringify({ status: "claimed", done: [] }));
+
+    const { code, errors } = await cli(exec, "remove");
+
+    expect(code).toBe(1);
+    expect(errors).toMatch(/being applied/);
+    expect(errors).toContain("npx vernierkit finish");
+  });
+
+  test("run again, does nothing and does not fail", async () => {
+    viteProject();
+    const { exec, commands } = fakeExec();
+    await cli(exec, "init");
+    await cli(exec, "remove");
+    const before = snapshot();
+
+    const { code, output } = await cli(exec, "remove");
+
+    expect(code).toBe(0);
+    expect(output).toMatch(/not installed/i);
+    expect(snapshot()).toEqual(before);
+    expect(commands).toHaveLength(2);
+  });
+
+  test("a line changed since init is left, with the step to take it out by hand", async () => {
+    viteProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    write("vite.config.ts", read("vite.config.ts").replace("plugins: [vernier(), react()]", "plugins: [vernier(), react(), legacy()]"));
+
+    const { code, output } = await cli(exec, "remove");
+
+    expect(code).toBe(1);
+    expect(output).toContain("vite.config.ts");
+    expect(output).toContain("vernier()");
+    expect(read("vite.config.ts")).not.toContain("vernierkit/vite");
+    expect(read("src/main.tsx")).toBe(MAIN);
   });
 });

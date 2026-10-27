@@ -8,7 +8,7 @@
 import { changes, describeChanges, TO_APPLY } from "./change-notes";
 import { propertyName, value } from "./design-values";
 import type { Change } from "./client/changeset";
-import { defaultExec, doctor, init, type Exec } from "./install";
+import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
   archiveRound,
@@ -40,6 +40,7 @@ export async function run(args: string[], io: Io): Promise<number> {
   const installIo = { write: io.write, error: io.error, exec: io.exec ?? defaultExec };
   if (command === "init") return init(io.cwd, installIo);
   if (command === "doctor") return doctor(io.cwd, installIo);
+  if (command === "remove") return remove(io.cwd, installIo);
   const root = findProject(io.cwd);
   const folder = vernierFolder(root);
   switch (command) {

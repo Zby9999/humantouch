@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addVitePlugin, insert, mountInEntry, undo, type Edit, type FileEdit } from "./source-edits";
-import { readIfThere, vernierFolder, writeAtomically } from "./vernier-folder";
+import { readChangeSet, readIfThere, readState, vernierFolder, writeAtomically } from "./vernier-folder";
 
 /** Runs a command in `cwd`; resolves with its exit code and what it printed. */
 export type Exec = (command: string, args: string[], options: { cwd: string }) => Promise<{ code: number; output: string }>;
@@ -283,6 +283,80 @@ async function sourceFiles(root: string): Promise<string[]> {
   };
   await visit("");
   return files;
+}
+
+/**
+ * Takes Vernier Kit back out of the project `cwd` is in: undoes what `init`
+ * did, line by line, deletes `.vernier/` and uninstalls the package. Not while
+ * the designer has changes the Agent has not applied: they would be lost.
+ */
+export async function remove(cwd: string, io: InstallIo): Promise<number> {
+  const found = await findPackage(cwd);
+  const root = found?.root ?? cwd;
+  const folder = vernierFolder(root);
+  const record = await readRecord(root);
+  if (!record) {
+    const text = "Vernier Kit is not installed here: there is nothing to remove.";
+    io.write(found && hasDependency(found.pkg, "vernierkit") ? `${text} vernierkit is a dependency, but \`init\` did not install it: uninstall it, and take out its plugin and <Vernier /> by hand.\n` : `${text}\n`);
+    return 0;
+  }
+  if (await readState(folder)) {
+    io.error("A round of design changes is being applied: finish it first (`npx vernierkit finish`), then run `npx vernierkit remove` again.\n");
+    return 1;
+  }
+  if ((await readChangeSet(folder))?.changes.length) {
+    io.error("The designer has design changes not applied yet, and removing Vernier Kit would lose them. Apply them first (`npx vernierkit claim`, as the Skill says), or have the designer discard them in the editor; then run `npx vernierkit remove` again.\n");
+    return 1;
+  }
+
+  const byHand: string[] = [];
+  const texts = new Map<string, string | null>();
+  for (const edit of [...record.edits].reverse()) {
+    if (!texts.has(edit.file)) texts.set(edit.file, await readIfThere(join(root, edit.file)));
+    const text = texts.get(edit.file);
+    const undone = text == null ? null : undo(text, edit);
+    if (undone === null) byHand.push(`In ${edit.file}, take out what Vernier Kit added: it made\n\n${indent(edit.before)}\n\n  into\n\n${indent(edit.after)}`);
+    else texts.set(edit.file, undone);
+  }
+  for (const [file, text] of texts) {
+    if (text === null) continue;
+    if (text === "" && record.created.includes(file)) await rm(join(root, file));
+    else await writeFile(join(root, file), text);
+  }
+  for (const folder of SKILL_FOLDERS) {
+    await rm(join(root, folder), { recursive: true, force: true });
+    await removeIfEmpty(root, dirname(folder));
+  }
+  await rm(folder.dir, { recursive: true, force: true });
+
+  const done = ["Took the plugin, <Vernier />, the Skill and its lines in AGENTS.md and .gitignore back out", "Deleted .vernier/"];
+  if (record.dependency) {
+    const packageManager = packageManagerOf(root, found?.pkg ?? {});
+    const command = uninstallCommand(packageManager);
+    const result = await io.exec(command[0], command[1], { cwd: root });
+    if (result.code === 0) done.push(`Uninstalled vernierkit (\`${show(command)}\`)`);
+    else byHand.push(`Uninstall vernierkit: \`${show(command)}\` failed:\n\n${indent(result.output.trim())}`);
+  }
+
+  io.write(`Vernier Kit removed:\n${done.map((line) => `- ${line}\n`).join("")}`);
+  if (byHand.length) {
+    io.write(`\nFinish by hand: these were changed since \`init\`, so they are left as they are.\n\n${byHand.map((step, i) => `${i + 1}. ${step}\n`).join("\n")}`);
+    return 1;
+  }
+  return 0;
+}
+
+function indent(text: string) {
+  return text.replace(/^/gm, "    ");
+}
+
+/** Deletes `dir` and the folders above it, up to the root, while they are empty. */
+async function removeIfEmpty(root: string, dir: string) {
+  for (; dir && dir !== "."; dir = dirname(dir)) {
+    const entries = await readdir(join(root, dir)).catch(() => null);
+    if (!entries || entries.length) return;
+    await rm(join(root, dir), { recursive: true });
+  }
 }
 
 /** Checks the installation, and that a production build has none of the editor layer in it. */
