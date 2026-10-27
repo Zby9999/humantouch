@@ -176,32 +176,35 @@ export function EditorLayer() {
     <>
       {shellShown.current && (
         <Shell
+          // Only while in edit mode: leaving, the toggle is back with its badge.
           controls={
-            <>
-              {listed.length > 0 && (
+            editing && (
+              <>
+                {listed.length > 0 && (
+                  <button
+                    type="button"
+                    class="vk-count"
+                    data-vk-changes-opener=""
+                    aria-label={`${listed.length} ${listed.length === 1 ? "change" : "changes"} not applied yet`}
+                    aria-haspopup="dialog"
+                    aria-expanded={listOpen}
+                    onClick={() => setListOpen(!listOpen)}
+                  >
+                    {listed.length}
+                  </button>
+                )}
                 <button
                   type="button"
-                  class="vk-count"
-                  data-vk-changes-opener=""
-                  aria-label={`${listed.length} ${listed.length === 1 ? "change" : "changes"} not applied yet`}
-                  aria-haspopup="dialog"
-                  aria-expanded={listOpen}
-                  onClick={() => setListOpen(!listOpen)}
+                  class="vk-icon-button"
+                  aria-label="Vernier Kit: back to preview mode"
+                  title="Back to preview mode"
+                  onClick={(event) => switchMode(event.detail > 0)}
                 >
-                  {listed.length}
+                  <Icon name="close" />
                 </button>
-              )}
-              <button
-                type="button"
-                class="vk-icon-button"
-                aria-label="Vernier Kit: back to preview mode"
-                title="Back to preview mode"
-                onClick={(event) => switchMode(event.detail > 0)}
-              >
-                <Icon name="close" />
-              </button>
-              {editing && list}
-            </>
+                {list}
+              </>
+            )
           }
           saved={round!}
           onSave={save}
