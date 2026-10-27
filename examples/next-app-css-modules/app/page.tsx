@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card } from "../components/Card";
 import { GetStarted } from "../components/GetStarted";
 import styles from "./page.module.css";
@@ -25,6 +26,9 @@ export default function Home() {
         ))}
         <Card title="Your turn" body="Open the editor and try it." />
       </div>
+      <footer>
+        <Link href="/about">About</Link>
+      </footer>
     </main>
   );
 }

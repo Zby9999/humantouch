@@ -37,3 +37,9 @@
   - 命令行接缝 `test/install.test.ts`：临时目录里的 Vite 项目（npm / pnpm / yarn 锁文件、改不了的配置、没有 JSX 的入口、没有 `plugins` 的配置、函数形式的配置、单独的 `<App />`），断言写入的文件、执行的命令和输出。
   - 主接缝 `e2e/tests/install.spec.ts`：把示例项目复制到临时目录、拿掉 Vernier Kit、`pnpm install --prefer-offline`、提交到它自己的 git 仓库；然后用打包好的 tarball 跑真实的 `init`，启动这个副本的开发服务器（端口 `VK_E2E_PORT + 2`），等切换按钮出现。从运行 `init` 到切换按钮出现本机约 4 秒（含安装依赖），测试断言 < 60 秒；再断言只改了两处源码、重复 `init` 不改任何东西、`doctor` 全部 ✓。
 - "Agent 从收到 Guide 到切换按钮出现 ≤ 60 秒"：命令这一段测得约 4 秒；真实 Agent 读 Guide 的耗时留给 24 的安装验收统计。
+
+**审查后的修正（2026-10-27）**
+
+- "已加插件"的判断从"文件里出现 `vernierkit/`"改为"引入了插件并且调用了它"（Vite：`vernierkit/vite` 且有 `vernier(`；Next.js：`vernierkit/next` 且有 `withVernier(`）。只引入不使用时 `init` 不再当作已完成，给出手动步骤；`doctor` 报 ✗。
+- `init` → `git checkout .` → 再 `init`：重新修改一个文件时，先丢掉安装记录里这个文件的旧记录，`remove` 不会再因为找不到旧的那几行而误报"Finish by hand"。
+- 包管理器的各条命令（安装、卸载、运行二进制、运行脚本）收进一张表 `COMMANDS`，不再分散在几个 switch 里。

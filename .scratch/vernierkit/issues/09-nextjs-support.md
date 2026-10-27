@@ -62,3 +62,12 @@
   - CSS Modules 下 "Currently set by" 给出的是打包后的类名和 chunk 地址（如 `Card-module__aGLaxq__card`、`_next/static/chunks/….css`），不是 `.module.css` 文件本身。
   - `withVernier` 以 `process.cwd()` 为项目根目录，`next dev` 在项目目录里运行时成立。
   - Next 每个加载配置的进程都会启动一个本机服务（`unref` 后不会拖住进程），页面只用编译客户端代码的那一个。
+
+**审查后的修正（2026-10-27）**
+
+- `next.config` 里多行的 `export default {…}`：`withVernier(` 和 `)` 两端现在作为一处修改记录（连同中间的行）。之前分两处记录，`remove` 可能把 `)` 放回到另一个同样以 `})` 结尾的行上，弄坏文件。
+- Next.js 允许在 `.js` 里写 JSX（create-next-app 的 JS 模板就是这样）：源码标记转换现在也处理 `.js`（只用 jsx 语法插件；没有 JSX 的 `.js` 原样跳过），Turbopack 规则加了 `*.js`，webpack 规则改成 `/\.(jsx?|tsx)$/`。
+- 用户已有同名的 Turbopack 规则，并且写成 loader 列表的简写时，先把它规整成规则对象再并上我们的规则，不再产生混合列表。
+- **决定：** 只支持 Next.js 16 及以上（peer `next >=16`）。顶层的 `turbopack.rules` 与规则条件、`next dev` 单独使用 `.next/dev`，都是 16 才有。`init` 遇到版本号可解析且低于 16 的项目会拒绝，什么都不改。
+- `doctor` 的 `next build` 跟随项目自己的构建：`build` 脚本带 `--webpack` 时也带上。
+- 示例项目加了 `/about` 页和一个 `next/link` 链接。e2e 补充了：Next 自己写的 `<a>` 没有元素位置，`<Link>` 的使用处标记照常传下去（01）；预览模式下客户端跳转到 `/about` 后再进编辑模式，回到同一张画布（05）；`claim` 后切换按钮锁定，`done` 推进进度环（07）。

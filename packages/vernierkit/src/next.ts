@@ -22,6 +22,16 @@ let service: Promise<Service> | undefined;
  * code, and runs the local service that keeps the round in `.vernier/`.
  * Production builds are left untouched.
  */
+/**
+ * A Turbopack rule as a list of rule objects: it may be one, a list of them,
+ * or the shortcut of a list of loaders.
+ */
+function asRules(rule: unknown): unknown[] {
+  if (!Array.isArray(rule)) return [rule];
+  const isRule = (item: unknown) => typeof item === "object" && item !== null && "loaders" in item;
+  return rule.every(isRule) ? rule : [{ loaders: rule }];
+}
+
 export function withVernier<Config extends object>(config: Config | ConfigFunction<Config>): (phase: string, context: { defaultConfig: Config }) => Promise<Config> {
   return async (phase, context) => {
     const given = typeof config === "function" ? await config(phase, context) : config;
@@ -36,7 +46,8 @@ export function withVernier<Config extends object>(config: Config | ConfigFuncti
     const loader = { loader: LOADER, options: { root } };
     const rule = { condition: { not: "foreign" }, loaders: [loader] };
     const rules = { ...resolved.turbopack?.rules };
-    for (const glob of ["*.jsx", "*.tsx"]) rules[glob] = rules[glob] ? [rules[glob], rule].flat() : rule;
+    // Next.js allows JSX in `.js` modules too.
+    for (const glob of ["*.js", "*.jsx", "*.tsx"]) rules[glob] = rules[glob] ? [...asRules(rules[glob]), rule] : rule;
     const webpack = resolved.webpack;
 
     const withMarkers: NextConfig = {
@@ -48,7 +59,7 @@ export function withVernier<Config extends object>(config: Config | ConfigFuncti
         const result = webpack ? webpack(webpackConfig, options) : webpackConfig;
         if (options.dev) {
           result.module ??= {};
-          (result.module.rules ??= []).unshift({ test: /\.[jt]sx$/, exclude: /[\\/]node_modules[\\/]/, enforce: "pre", use: [loader] });
+          (result.module.rules ??= []).unshift({ test: /\.(jsx?|tsx)$/, exclude: /[\\/]node_modules[\\/]/, enforce: "pre", use: [loader] });
         }
         return result;
       },

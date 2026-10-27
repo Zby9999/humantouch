@@ -5,9 +5,9 @@ import { SERVICE_GLOBAL } from "./service-protocol";
 /** Mounts the editor layer. Put it once in the root component. */
 export function Vernier(): null {
   useEffect(() => {
-    const window_ = window as unknown as Record<string, unknown>;
+    const globals = window as unknown as Record<string, unknown>;
     const fromBundle = serviceFromBundle();
-    if (fromBundle && !window_[SERVICE_GLOBAL]) window_[SERVICE_GLOBAL] = JSON.parse(fromBundle);
+    if (fromBundle && !globals[SERVICE_GLOBAL]) globals[SERVICE_GLOBAL] = JSON.parse(fromBundle);
     return mountEditorLayer();
   }, []);
   return null;

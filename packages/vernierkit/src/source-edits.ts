@@ -21,16 +21,18 @@ export interface Insertion {
 
 /**
  * Inserts into `text`. Returns the new text, and one edit per run of lines
- * the insertions fall on.
+ * the insertions fall on. Insertions given together in a list make one edit
+ * with all the lines between them, so it is undone whole (the two ends of a
+ * wrapped expression, say).
  */
-export function insert(file: string, text: string, insertions: Insertion[]): { text: string; edits: Edit[] } {
-  const sorted = [...insertions].sort((a, b) => a.at - b.at);
+export function insert(file: string, text: string, insertions: (Insertion | Insertion[])[]): { text: string; edits: Edit[] } {
+  const sorted = insertions.map((item) => (Array.isArray(item) ? item : [item])).sort((a, b) => a[0].at - b[0].at);
   // Insertions on the same lines make one edit, so its `after` is whole.
   const groups: Insertion[][] = [];
-  for (const insertion of sorted) {
+  for (const together of sorted) {
     const last = groups.at(-1);
-    if (last && lineStart(text, insertion.at) <= lineEnd(text, last.at(-1)!.at)) last.push(insertion);
-    else groups.push([insertion]);
+    if (last && lineStart(text, together[0].at) <= lineEnd(text, last.at(-1)!.at)) last.push(...together);
+    else groups.push([...together]);
   }
   let result = "";
   let from = 0;
@@ -155,10 +157,13 @@ export function wrapNextConfig(file: string, code: string): FileEdit {
   return insert(file, code, [last ? { at: last.end, text: `\n${line}` } : { at: 0, text: `${line}\n` }, ...wrap(assigned)]);
 }
 
-function wrap(expression: Node): Insertion[] {
+/** Both ends together: undone one at a time, a `)` could be put back on another line that ends the same. */
+function wrap(expression: Node): Insertion[][] {
   return [
-    { at: expression.start, text: "withVernier(" },
-    { at: expression.end, text: ")" },
+    [
+      { at: expression.start, text: "withVernier(" },
+      { at: expression.end, text: ")" },
+    ],
   ];
 }
 

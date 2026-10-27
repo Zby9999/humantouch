@@ -29,3 +29,8 @@
 - 测试：
   - 命令行接缝 `test/install.test.ts`：init 后 remove，整个项目目录逐文件与 init 前相同；新建的 AGENTS.md / .gitignore 被删；别的 skill 保留；未落地改动、正在落地时拒绝；重复运行不报错；被改过的行给出手动步骤。
   - 主接缝 `e2e/tests/install.spec.ts`：在 08 的同一个副本上，真实的 `remove`（包括 `pnpm remove` 还原锁文件）之后 `git status --porcelain --untracked-files=all` 为空；再运行一次仍为空、不报错。
+
+**审查后的修正（2026-10-27）**
+
+- 有行要手动撤回时，输出不再同时声称"全部撤回"，改为"除下面这些行外都已撤回"。
+- 包管理器在 08 的修正里收进 `COMMANDS` 表。只有 pnpm 的卸载在 e2e 里验证过锁文件逐字节还原；npm、yarn 的卸载在命令行接缝里只断言命令本身。

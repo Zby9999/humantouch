@@ -36,6 +36,14 @@ test("elements server components write carry their element location, under Turbo
   await expect(page.getByRole("button", { name: "Get started" })).toHaveAttribute("data-vk-loc", locate("components/GetStarted.tsx", "<button"));
 });
 
+test("code from Next.js itself is not marked: the link next/link writes has no element location", async ({ page }) => {
+  const link = page.getByRole("link", { name: "About" });
+
+  expect(await link.getAttribute("data-vk-loc")).toBeNull();
+  // Its usage is project source: Link passes the marker on to the element.
+  await expect(link).toHaveAttribute("data-vk-usage", locate("app/page.tsx", "<Link"));
+});
+
 test("the usage chain reaches through server components: the cards are Card used in the page", async ({ page }) => {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   const card = canvas(page).locator("article").first();

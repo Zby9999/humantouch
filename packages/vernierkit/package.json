@@ -51,7 +51,7 @@
   "peerDependencies": {
     "react": ">=18",
     "vite": ">=5",
-    "next": ">=15"
+    "next": ">=16"
   },
   "peerDependenciesMeta": {
     "vite": {

@@ -649,3 +649,82 @@ describe("doctor, on a Next.js project", () => {
     expect(output).toMatch(/✗ A production build has editor layer code in it: static[/\\]chunks[/\\]app[/\\]page\.js/);
   });
 });
+
+describe("review fixes", () => {
+  test("remove puts back a config object wrapped over several lines, beside another call that ends the same way", async () => {
+    nextProject();
+    rmSync(join(project, "next.config.ts"));
+    const config = `import createMDX from "@next/mdx";\n\nconst withMDX = createMDX({\n  extension: /\\.mdx?$/,\n})\n\nexport default {\n  reactStrictMode: true,\n}\n`;
+    write("next.config.mjs", config);
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    expect(read("next.config.mjs")).toContain("export default withVernier({\n  reactStrictMode: true,\n})\n");
+
+    expect((await cli(exec, "remove")).code).toBe(0);
+
+    expect(read("next.config.mjs")).toBe(config);
+  });
+
+  test("init again after the source was checked out as it was: remove still puts everything back", async () => {
+    viteProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    write("vite.config.ts", VITE_CONFIG);
+    write("src/main.tsx", MAIN);
+    await cli(exec, "init");
+
+    const { code, output } = await cli(exec, "remove");
+
+    expect(output).not.toContain("Finish by hand");
+    expect(code).toBe(0);
+    expect(read("vite.config.ts")).toBe(VITE_CONFIG);
+    expect(read("src/main.tsx")).toBe(MAIN);
+  });
+
+  test("a config that imports the plugin but does not use it is not taken as done", async () => {
+    viteProject();
+    write("vite.config.ts", `import vernier from "vernierkit/vite";\n${VITE_CONFIG}`);
+
+    const { code, output } = await cli(fakeExec().exec, "init");
+
+    expect(code).toBe(1);
+    expect(output).toContain("vite.config.ts: it imports vernierkit but does not add the plugin");
+    expect((await cli(fakeExec(builtPage()).exec, "doctor")).output).toContain("✗ The build config does not add the plugin.");
+  });
+
+  test("a Next.js project older than 16 is turned down", async () => {
+    nextProject();
+    const pkg = JSON.parse(read("package.json"));
+    write("package.json", JSON.stringify({ ...pkg, dependencies: { ...pkg.dependencies, next: "^15.3.0" } }));
+
+    const { code, errors } = await cli(fakeExec().exec, "init");
+
+    expect(code).toBe(1);
+    expect(errors).toContain("Next.js 16");
+    expect(read("next.config.ts")).toBe(NEXT_CONFIG);
+  });
+
+  test("doctor builds with webpack when the project's build does", async () => {
+    nextProject();
+    const pkg = JSON.parse(read("package.json"));
+    write("package.json", JSON.stringify({ ...pkg, scripts: { build: "next build --webpack" } }));
+    const { exec, commands } = fakeExec();
+    await cli(exec, "init");
+
+    await cli(exec, "doctor");
+
+    expect(commands.at(-1)).toBe("npx --no-install next build --webpack");
+  });
+
+  test("remove that leaves a line by hand does not say it took everything out", async () => {
+    viteProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    write("vite.config.ts", read("vite.config.ts").replace("plugins: [vernier(), react()]", "plugins: [vernier(), react(), legacy()]"));
+
+    const { output } = await cli(exec, "remove");
+
+    expect(output).not.toContain("Took the plugin");
+    expect(output).toContain("Finish by hand");
+  });
+});

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
+import { EXIT_LABEL, NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
 
 /** A round on the Next.js example, saved into its `.vernier/` for real. */
@@ -64,6 +64,19 @@ test("changes are saved into the project, and come back after a reload", async (
   await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", "rgb(255, 0, 0)");
 });
 
+test("after a client-side navigation in preview mode, edit mode comes back to the same canvas", async ({ page }) => {
+  await changeCardsAndHeading(page);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+
+  await page.getByRole("link", { name: "About" }).click();
+  await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+
+  await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", "rgb(255, 0, 0)");
+  await expect(canvas(page).getByRole("heading", { name: "About" })).toHaveCount(0);
+});
+
 test("claim tells where each change is: a server component's usage in the page, and the page itself when no usage is known", async ({ page }) => {
   await changeCardsAndHeading(page);
 
@@ -78,14 +91,18 @@ test("claim tells where each change is: a server component's usage in the page, 
   expect(card).toMatch(/- \*\*Currently set by:\*\* class `[^`]*card[^`]*`: rule `\.[^`]*card[^`]*` in no CSS layer/);
 });
 
-test("done checks the change on the page once the CSS Module has it; finish ends the round", async ({ page }) => {
+test("claim locks the editor; done checks the change on the page once the CSS Module has it and fills the ring; finish ends the round", async ({ page }) => {
   await changeCardsAndHeading(page);
   await vernierkit("claim");
+  const progress = page.getByRole("progressbar", { name: "Applying design changes" });
+  await expect(page.getByRole("button", { name: /^Vernier Kit: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(progress).toHaveAttribute("aria-valuemax", "2");
   const original = readFileSync(CARD_CSS, "utf8");
   try {
     writeFileSync(CARD_CSS, original.replace("background: rgb(255, 255, 255);", "background: rgb(255, 0, 0);"));
 
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    await expect(progress).toHaveAttribute("aria-valuenow", "1");
     expect(await vernierkit("finish")).toContain("Round finished: 1 of 2 changes applied. Not marked done: 2.");
   } finally {
     writeFileSync(CARD_CSS, original);
