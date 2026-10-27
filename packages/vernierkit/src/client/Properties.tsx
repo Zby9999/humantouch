@@ -495,6 +495,8 @@ function TextField<T>({ label, class: className, value, placeholder, parse, step
       type="text"
       class={`vk-input${className ? ` ${className}` : ""}`}
       aria-label={label}
+      // Something typed, not yet applied: ⌘Z is the field's own until then.
+      data-vk-typing={draft !== null && draft !== value ? "" : undefined}
       placeholder={placeholder}
       spellcheck={false}
       autocomplete="off"

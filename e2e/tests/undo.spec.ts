@@ -95,15 +95,47 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   await expect(badge(page)).toHaveCount(0);
 });
 
-test("in a field, ⌘Z is the field's own", async ({ page }) => {
+test("while a value is being typed, ⌘Z is the field's own; once applied, ⌘Z undoes the edit though the field keeps focus", async ({ page }) => {
   await makeThreeChanges(page);
   const hex = design(page).getByRole("textbox", { name: "Fill color", exact: true });
-  await hex.focus();
+  const button = canvas(page).getByRole("button", { name: "Get started" });
 
+  await hex.fill("00ff00");
   await page.keyboard.press("ControlOrMeta+z");
-
-  await expect(canvas(page).getByRole("button", { name: "Get started" })).toHaveCSS("background-color", "rgb(37, 99, 235)");
+  await expect(button).toHaveCSS("background-color", "rgb(37, 99, 235)");
   await expect(badge(page)).toHaveText("3");
+
+  await hex.press("Escape");
+  await hex.focus();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(button).toHaveCSS("background-color", "rgb(220, 38, 38)");
+  await expect(hex).toHaveValue("DC2626");
+});
+
+test("several layers edited together go back together with ⌘Z, the focus still in the field just typed in", async ({ page }) => {
+  await enterEditMode(page);
+  const css = () =>
+    canvas(page)
+      .locator('[data-testid="hero"]')
+      .evaluate((hero) => {
+        const [header, , button] = [...hero.children] as HTMLElement[];
+        const of = (el: HTMLElement) => ({ style: el.style.cssText, width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height });
+        return [of(header), of(button)];
+      });
+  await selectRow(page, "Header");
+  const before = await css();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click({ modifiers: ["Shift"] });
+  await expect(design(page).getByRole("heading", { name: "2 layers" })).toBeVisible();
+
+  await design(page).getByRole("checkbox", { name: "Distribute evenly" }).check();
+  await setField(page, "Width", "120");
+  await setField(page, "Gap", "30");
+  await expect(badge(page)).toHaveText("6");
+
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ControlOrMeta+z");
+
+  await expect(badge(page)).toHaveCount(0);
+  expect(await css()).toEqual(before);
 });
 
 test("the badge opens the change list, where each change can be undone on its own; ⌘Z brings it back", async ({ page }) => {

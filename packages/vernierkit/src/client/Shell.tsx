@@ -103,13 +103,16 @@ export function Shell({ saved, onSave, onChanges, control, previewing, leaving, 
     setSelected(layers);
   };
 
-  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own.
+  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
+  // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
   const latest = useRef({ editor, onEdit, select });
   latest.current = { editor, onEdit, select };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select } = latest.current;
-      if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || isEditable(event.composedPath()[0])) return;
+      const target = event.composedPath()[0];
+      const field = target instanceof HTMLElement && target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing");
+      if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return;
       // By the letter typed, wherever the keyboard has it.
       const key = event.key.toLowerCase();
       const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
