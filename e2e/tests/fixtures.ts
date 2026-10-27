@@ -7,11 +7,16 @@ export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
  * Tests share one dev server, and so one `.vernier/` folder. Unless a test
  * opts out with `keepRoundInMemory: false`, the round it saves stays in its
  * own browser context, so tests running side by side never see each other's.
+ *
+ * The Layers panel starts hidden; most tests work through it, so it is shown
+ * unless a test opts out with `showLayers: false`.
  */
-export const test = base.extend<{ keepRoundInMemory: boolean }>({
+export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolean }>({
   keepRoundInMemory: [true, { option: true }],
-  context: async ({ context, keepRoundInMemory }, use) => {
+  showLayers: [true, { option: true }],
+  context: async ({ context, keepRoundInMemory, showLayers }, use) => {
     if (keepRoundInMemory) await keepRoundIn(context);
+    if (showLayers) await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
     await use(context);
   },
 });

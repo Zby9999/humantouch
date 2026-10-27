@@ -2,6 +2,12 @@ import { EASE_OUT, UNLOCK_HOLD_MS } from "./motion";
 
 export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
+/** The panels float over the canvas: this wide, this far in from the window's edges. */
+export const PANEL_WIDTH = 240;
+export const PANEL_INSET = 8;
+/** A panel's corner radius. What sits `d` in from a corner is rounded `PANEL_RADIUS - d`, so the corners nest. */
+const PANEL_RADIUS = 16;
+
 /** Editor layer styles. They live inside the Shadow DOM and never touch the page. */
 export const styles = /* css */ `
 :host {
@@ -211,12 +217,11 @@ export const styles = /* css */ `
   --vk-text: #1e1e1e;
   --vk-text-muted: #757575;
   --vk-field: #f5f5f5;
+  --vk-panel-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
   color-scheme: light;
   position: fixed;
   inset: 0;
   z-index: 2147483646;
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 240px;
   font: 400 11px/16px ${FONT_STACK};
   letter-spacing: 0.005em;
   color: var(--vk-text);
@@ -229,17 +234,45 @@ export const styles = /* css */ `
     --vk-text: #ffffff;
     --vk-text-muted: #a6a6a6;
     --vk-field: #383838;
+    --vk-panel-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08), 0 2px 6px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
     color-scheme: dark;
   }
 }
 
+/* Islands floating over the canvas, which fills the shell behind them. */
 .vk-panel {
+  position: absolute;
+  top: ${PANEL_INSET}px;
+  bottom: ${PANEL_INSET}px;
+  z-index: 1;
+  box-sizing: border-box;
+  width: ${PANEL_WIDTH}px;
   overflow: auto;
   overscroll-behavior: contain;
+  border-radius: ${PANEL_RADIUS}px;
   background: var(--vk-panel);
+  box-shadow: var(--vk-panel-shadow);
 }
-.vk-panel:first-child { border-right: 1px solid var(--vk-border); }
-.vk-panel:last-child { border-left: 1px solid var(--vk-border); }
+.vk-panel.is-layers { left: ${PANEL_INSET}px; }
+.vk-panel.is-design { right: ${PANEL_INSET}px; }
+/* With the Layers panel hidden: the button that brings it back, an island of its own. */
+.vk-island-button {
+  all: unset;
+  position: absolute;
+  top: ${PANEL_INSET}px;
+  left: ${PANEL_INSET}px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--vk-panel);
+  box-shadow: var(--vk-panel-shadow);
+  color: var(--vk-text);
+}
+.vk-island-button:hover { background: var(--vk-field); }
+.vk-island-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
 .vk-panel-title {
   margin: 0;
   padding: 12px 16px;
@@ -273,7 +306,7 @@ export const styles = /* css */ `
 .vk-count:hover { background: #0b85de; }
 .vk-count:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
 /* Opened from the count: below the panel's title, over the panel, which would clip it. */
-.vk-panel-header .vk-changes { position: fixed; top: 44px; right: 8px; z-index: 1; }
+.vk-panel-header .vk-changes { position: fixed; top: ${PANEL_INSET + 44}px; right: ${2 * PANEL_INSET}px; z-index: 1; }
 
 .vk-panel-empty {
   margin: 0;
@@ -288,13 +321,15 @@ export const styles = /* css */ `
   --vk-locked: #8c8c8c;
 }
 
-.vk-tree { padding: 4px 0; }
+/* Rows sit 8px in from the panel's edges, so their corners nest in the panel's. */
+.vk-tree { padding: 4px 8px 8px; }
 .vk-tree-row {
   display: flex;
   align-items: center;
   gap: 2px;
   height: 28px;
   padding-right: 8px;
+  border-radius: ${PANEL_RADIUS - 8}px;
   white-space: nowrap;
   cursor: default;
   user-select: none;
@@ -510,7 +545,8 @@ export const styles = /* css */ `
 .vk-check input { margin: 0; accent-color: var(--vk-accent); }
 
 .vk-viewport {
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   outline: none;
   touch-action: none;
@@ -530,7 +566,7 @@ export const styles = /* css */ `
 }
 .vk-viewport.is-panning { cursor: grabbing; }
 /* While the page shrinks into the canvas or grows back, it passes over the panels. */
-.vk-viewport.is-travelling { overflow: visible; }
+.vk-viewport.is-travelling { overflow: visible; z-index: 2; }
 .vk-stage {
   position: absolute;
   top: 0;

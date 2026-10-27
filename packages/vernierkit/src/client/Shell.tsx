@@ -3,6 +3,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
 import { CanvasView, isEditable } from "./CanvasView";
+import { Icon } from "./icons";
 import { canPreview } from "./change-preview";
 import { createChangeSet, type Change, type ChangeSet } from "./changeset";
 import { createEditor, type Destination, type Editor } from "./edits";
@@ -12,6 +13,9 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { toggleIn } from "./selection";
+import { PANEL_INSET, PANEL_WIDTH } from "./styles";
+
+const LAYERS_KEY = "vernierkit:layers-panel";
 
 /** What the change list does to the round while edit mode is up: on the canvas, as edits. */
 export interface RoundControl {
@@ -48,6 +52,20 @@ const AUTOSAVE_MS = 500;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
 export function Shell({ controls, saved, onSave, onChanges, control, previewing, leaving, animate, onLeft }: Props) {
+  /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
+  const [layersShown, setLayersShown] = useState(readLayersShown);
+  const layersToggle = useRef<HTMLButtonElement>(null);
+  const toggledLayers = useRef(false);
+  const showLayers = (shown: boolean) => {
+    toggledLayers.current = true;
+    setLayersShown(shown);
+    writeLayersShown(shown);
+  };
+  // The button pressed goes away with the panel: focus moves to the one that brings it back.
+  useEffect(() => {
+    if (toggledLayers.current) layersToggle.current?.focus();
+  }, [layersShown]);
+
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
@@ -133,12 +151,23 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
 
   return (
     <div class="vk-shell">
-      <aside class="vk-panel" aria-label="Layers">
-        <h2 class="vk-panel-title">Layers</h2>
-        {tree && (
-          <LayerTreeView tree={tree} selected={selected} onSelect={(layer, extend) => select(extend ? toggleIn(selected, layer) : [layer])} />
-        )}
-      </aside>
+      {layersShown ? (
+        <aside class="vk-panel is-layers" aria-label="Layers">
+          <div class="vk-panel-header">
+            <h2 class="vk-panel-title">Layers</h2>
+            <button ref={layersToggle} type="button" class="vk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
+              <Icon name="sidebar" />
+            </button>
+          </div>
+          {tree && (
+            <LayerTreeView tree={tree} selected={selected} onSelect={(layer, extend) => select(extend ? toggleIn(selected, layer) : [layer])} />
+          )}
+        </aside>
+      ) : (
+        <button ref={layersToggle} type="button" class="vk-island-button" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+          <Icon name="sidebar" />
+        </button>
+      )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
         onCanvas={(canvas) => {
@@ -175,8 +204,9 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
         animate={animate}
         changed={!!round.current?.changeSet.list().some((change) => !previewing || !canPreview(change))}
         onLeft={onLeft}
+        covered={{ left: layersShown ? PANEL_SPAN : 0, right: PANEL_SPAN }}
       />
-      <aside class="vk-panel" aria-label="Design">
+      <aside class="vk-panel is-design" aria-label="Design">
         <div class="vk-panel-header">
           <h2 class="vk-panel-title">Design</h2>
           {controls}
@@ -192,4 +222,21 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
       </aside>
     </div>
   );
+}
+
+/** A panel and the room around it: what of the canvas it covers. */
+const PANEL_SPAN = PANEL_WIDTH + 2 * PANEL_INSET;
+
+function readLayersShown(): boolean {
+  try {
+    return localStorage.getItem(LAYERS_KEY) === "shown";
+  } catch {
+    return false;
+  }
+}
+
+function writeLayersShown(shown: boolean) {
+  try {
+    localStorage.setItem(LAYERS_KEY, shown ? "shown" : "hidden");
+  } catch {}
 }

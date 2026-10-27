@@ -19,6 +19,7 @@ const PATHS: Record<string, string> = {
   close: "M4.5 4.5l7 7M11.5 4.5l-7 7",
   opacity: "M3.5 3.5h9v9h-9zM3.5 9.5l6-6M6.5 12.5l6-6",
   undo: "M5.5 4 3 6.5 5.5 9M3 6.5h6.5a3.25 3.25 0 0 1 0 6.5H7",
+  sidebar: "M2.5 3.5h11v9h-11zM6 3.5v9",
 };
 
 export type IconName = keyof typeof PATHS;
