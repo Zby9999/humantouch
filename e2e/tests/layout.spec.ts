@@ -107,7 +107,7 @@ test("a plain top-to-bottom flow shows as a vertical Stack, and becomes a real o
   expect(await canvasStyle(page, "article", "row-gap")).toBe("8px");
 });
 
-test("opacity, clipping, and a hidden layer that stays in the layer tree to be shown again", async ({ page }) => {
+test("opacity, clipping, and a hidden layer that stays in the layer tree and the panel, to be shown again", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Card").first().click();
 
@@ -120,8 +120,9 @@ test("opacity, clipping, and a hidden layer that stays in the layer tree to be s
   expect(await canvasStyle(page, "article", "display")).toBe("none");
   await expect(rows(page, "Card")).toHaveCount(4);
   await expect(rows(page, "Card").first()).toHaveAttribute("aria-selected", "true");
-  // Hidden, it offers nothing but being shown again.
-  await expect(design(page).getByRole("textbox", { name: "Opacity", exact: true })).toHaveCount(0);
+  // Hidden, it stays selected and the panel stays as it was, Visible where it was, to be ticked again.
+  await expect(design(page).getByRole("textbox", { name: "Opacity", exact: true })).toHaveValue("50%");
+  await expect(design(page).getByRole("combobox", { name: "Width sizing" })).toBeVisible();
 
   await design(page).getByRole("checkbox", { name: "Visible" }).check();
   expect(await canvasStyle(page, "article", "display")).toBe("block");

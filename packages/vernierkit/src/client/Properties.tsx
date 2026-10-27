@@ -3,7 +3,7 @@ import type { TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } 
 import { useRef, useState } from "preact/hooks";
 import type { Align, Alignment, Editor, Fill, Padding, Property, PropertyValues, Size } from "./edits";
 import { Icon, type IconName } from "./icons";
-import { boxOf, type Layer } from "./layers";
+import type { Layer } from "./layers";
 
 interface Props {
   editor: Editor;
@@ -72,8 +72,8 @@ export function Properties({ editor, layers, onEdit }: Props) {
       {(width !== undefined || height !== undefined) && (
         <section class="vk-section" aria-labelledby="vk-size">
           <h3 id="vk-size" class="vk-section-title">Size</h3>
-          {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} update={update} />}
-          {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} update={update} />}
+          {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} measure={editor.measure} update={update} />}
+          {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} />}
           {offers("minWidth") && (
             <div class="vk-grid-2">
               <LimitField label="Min width" glyph="W" value={shown("minWidth")!} onChange={set("minWidth")} />
@@ -129,15 +129,16 @@ const SIZINGS = [
 ] as const;
 
 /** Width or height: Fixed, Hug or Fill, and the size it comes to. Typing a size makes it Fixed. */
-function SizeRow({ axis, size, layers, offers, update }: {
+function SizeRow({ axis, size, layers, offers, measure, update }: {
   axis: "width" | "height";
+  measure(layer: Layer): DOMRect;
   size: Shown<Size>;
   layers: Layer[];
   offers<P extends Property>(property: P, value?: PropertyValues[P]): boolean;
   update: Update;
 }) {
   const label = axis === "width" ? "Width" : "Height";
-  const sizes = layers.map((layer) => Math.round(boxOf(layer)[axis] * 100) / 100);
+  const sizes = layers.map((layer) => Math.round(measure(layer)[axis] * 100) / 100);
   const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   return (
     <div class="vk-row vk-size-row">
@@ -155,7 +156,7 @@ function SizeRow({ axis, size, layers, offers, update }: {
         onChange={(event) => {
           const type = event.currentTarget.value as Size["type"];
           // Fixed at the size it comes to now.
-          update(axis, (_, layer) => (type === "fixed" ? { type, value: Math.round(boxOf(layer)[axis] * 100) / 100 } : { type }));
+          update(axis, (_, layer) => (type === "fixed" ? { type, value: Math.round(measure(layer)[axis] * 100) / 100 } : { type }));
         }}
       >
         {size === MIXED && (

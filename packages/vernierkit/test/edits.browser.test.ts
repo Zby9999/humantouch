@@ -766,6 +766,22 @@ describe("opacity, visibility and clipping", () => {
     expect(el("hug").getAttribute("style")).toBe(before);
   });
 
+  test("hidden, a layer still offers and reads its properties as when shown, and can be changed meanwhile", () => {
+    const { editor, at, el } = open();
+
+    editor.set(at("row"), "visible", false);
+
+    expect(editor.can(at("row"), "gap")).toBe(true);
+    expect(editor.read(at("row"), "gap")).toBe(10);
+    expect(editor.read(at("row"), "width")).toEqual({ type: "fixed", value: 616 });
+    expect(editor.measure(at("row")).width).toBe(616);
+    editor.set(at("row"), "gap", 20);
+    expect(style(el("row")).display).toBe("none");
+    editor.set(at("row"), "visible", true);
+    expect(style(el("row")).display).toBe("flex");
+    expect(style(el("row")).columnGap).toBe("20px");
+  });
+
   test("undoing one change to a layer leaves its other changes on, though they set the same style", () => {
     const { editor, at, el } = open();
 

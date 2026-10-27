@@ -5,9 +5,9 @@
  */
 import { AS_STACK_ATTR, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, restoreStyle } from "./canvas-style";
 import { MOVE, type Change, type ChangeSet, type Place, type Target } from "./changeset";
-import { buildLayerTree, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { boxOf, buildLayerTree, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf } from "./moves";
-import { PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
+import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 
 export { LAYER_ID_ATTR };
 
@@ -88,6 +88,8 @@ export interface Editor {
   set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
   /** Makes the edits `edits` makes one step, undone and redone together: the same change to several layers. */
   batch(edits: () => void, options?: SetOptions): void;
+  /** Where the layer is on the canvas, in canvas px; for a hidden layer, where it is when shown. */
+  measure(layer: Layer): DOMRect;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
   undo(): Layer[];
   /** Makes again the latest edit undone. Returns the layers it was made to; none when there is nothing to redo. */
@@ -280,21 +282,23 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   /** The edit itself: on the canvas and in the ChangeSet. */
   const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P]) => {
     const definition: Definition<PropertyValues[P]> = PROPERTIES[property];
-    const before = definition.read(layer.el, colors);
+    const before = readAsShown(layer.el, property, colors);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     const sources = known && changes.has(known, property) ? [] : sourcesOf(layer.el, definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
-    const asStack = definition.stack && (layer.el.hasAttribute(AS_STACK_ATTR) || !stackOf(layer.el).flex);
-    const declarations = {
+    const asStack = definition.stack && (layer.el.hasAttribute(AS_STACK_ATTR) || !asShown(layer.el, () => stackOf(layer.el).flex));
+    const declarations = asShown(layer.el, () => ({
       ...(asStack && { display: "flex", "flex-direction": stackOf(layer.el).direction === "horizontal" ? "row" : "column" }),
       ...definition.write(value, layer.el),
-    };
+    }));
     for (const instance of instances) {
       keepOriginal(instance.el);
       if (asStack) instance.el.setAttribute(AS_STACK_ATTR, "");
       declare(instance.el, declarations);
+      // Hidden by the designer, it stays hidden whatever else changes.
+      if (property !== "visible" && known && changes.has(known, "visible")) declare(instance.el, { display: "none" });
     }
     const id = idOf(layer, instances);
     changes.record(id, {
@@ -334,7 +338,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
 
   /** An edit that can be undone. `from`: the value it changes, when the canvas cannot tell (on a hidden layer, say). */
   const edit = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, from?: PropertyValues[P]) => {
-    const before = from === undefined ? PROPERTIES[property].read(layer.el, colors) : from;
+    const before = from === undefined ? readAsShown(layer.el, property, colors) : from;
     if (same(before, value)) return;
     const id = apply(layer, property, value);
     const to = (v: PropertyValues[P]) => () => {
@@ -454,11 +458,11 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
       if (layer.text || !kinds.includes(layer.kind)) return false;
-      // A hidden layer can only be shown again.
-      if (property !== "visible" && getComputedStyle(layer.el).display === "none") return false;
-      return (!applies || applies(layer.el)) && (value === undefined || !accepts || accepts(layer.el, value));
+      // A hidden layer offers what it does when shown, so the panel stays as it was.
+      return asShown(layer.el, () => (!applies || applies(layer.el)) && (value === undefined || !accepts || accepts(layer.el, value)));
     },
-    read: (layer, property) => PROPERTIES[property].read(layer.el, colors),
+    read: (layer, property) => readAsShown(layer.el, property, colors),
+    measure: (layer) => asShown(layer.el, () => boxOf(layer)),
     set(layer, property, value, { continues = false } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
       edit(layer, property, value, continues);
@@ -514,6 +518,32 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     },
   };
   return editor;
+}
+
+/**
+ * Runs `look` on an element as if shown: a layer the designer hid is read and
+ * measured as it is laid out when visible. It is shown and hidden again in one
+ * go, so nothing of it is ever painted.
+ */
+function asShown<T>(el: Element, look: () => T): T {
+  const style = (el as HTMLElement).style;
+  if (style.getPropertyValue("display") !== "none" || style.getPropertyPriority("display") !== "important") return look();
+  // Its display as it is when shown: a real Stack an edit made it, or the page's own.
+  const page = el.ownerDocument.createElement("div").style;
+  page.cssText = el.getAttribute(ORIGINAL_STYLE_ATTR) ?? "";
+  const display = el.hasAttribute(AS_STACK_ATTR) ? "flex" : page.getPropertyValue("display");
+  if (display) style.setProperty("display", display, "important");
+  else style.removeProperty("display");
+  try {
+    return look();
+  } finally {
+    style.setProperty("display", "none", "important");
+  }
+}
+
+/** A property of an element as the editor reads it: as if shown, apart from whether it is shown. */
+function readAsShown<P extends Property>(el: Element, property: P, colors: ColorReader): PropertyValues[P] {
+  return property === "visible" ? PROPERTIES[property].read(el, colors) : asShown(el, () => PROPERTIES[property].read(el, colors));
 }
 
 /** What a move records besides where the layer was and is. */

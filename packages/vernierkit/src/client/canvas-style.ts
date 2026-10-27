@@ -61,7 +61,8 @@ export function restoreStyle(el: Element, names: string[], others: Change[]) {
     const value = page.getPropertyValue(name);
     if (value) style.setProperty(name, value, page.getPropertyPriority(name));
   }
-  for (const change of others) declare(el, change.style);
+  // Hidden by the designer, it stays hidden: that change goes on last.
+  for (const change of [...others].sort((a, b) => Number(a.property === "visible") - Number(b.property === "visible"))) declare(el, change.style);
   if (!others.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
   if (el.hasAttribute(REFERENCE_ATTR)) declare(el, { position: "relative" });
 }
