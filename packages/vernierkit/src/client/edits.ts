@@ -33,6 +33,7 @@ import {
   type StackSettings,
   type Target,
 } from "./changeset";
+import { PAGE_ATTR } from "./freezer";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -1300,7 +1301,8 @@ function targetOf(layer: Layer, instances: number): Target {
   const written = layer.el.hasAttribute(WRAP_ATTR) && layer.el.parentElement ? layer.el.parentElement : layer.el;
   // Its words, to tell it apart once its markers move: text has them, containers do not count theirs.
   const words = layer.kind === "text" ? (layer.text ? layer.name : wordsAsPage(layer.el)) : "";
-  const context = { path, element: openingTag(written), ...(words && { text: words.slice(0, SIGN_WORDS) }) };
+  const page = layer.el.ownerDocument.documentElement.getAttribute(PAGE_ATTR);
+  const context = { path, element: openingTag(written), ...(words && { text: words.slice(0, SIGN_WORDS) }), ...(page && { page }) };
   // Text with no element of its own is found by which run of text of its container it is.
   const wrapped = written !== layer.el ? Number(layer.el.getAttribute(WRAP_ATTR)) : null;
   const run = layer.text ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : wrapped;

@@ -2,11 +2,13 @@
  * The command line, run by the Agent as the Skill tells it: `claim` takes the
  * round to apply and prints the change notes, `done <number>` reports each
  * change applied and has the page check it, `finish` ends the round, and
- * `last` prints the round before, to undo it by.
+ * `last` prints the round before, to undo it by. `init`, `doctor` and
+ * `remove` install Vernier Kit, check it, and take it back out.
  */
 import { changes, describeChanges, TO_APPLY } from "./change-notes";
 import { ordinal, propertyName, value } from "./design-values";
 import type { Change, Place } from "./client/changeset";
+import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
   archiveRound,
@@ -26,11 +28,19 @@ export interface Io {
   write(text: string): void;
   /** For what went wrong: the command was not run. */
   error(text: string): void;
+  /** Runs the package manager and the build, for `init`, `doctor` and `remove`. */
+  exec?: Exec;
 }
+
+export type { Exec };
 
 /** Runs one command; resolves with the exit code. */
 export async function run(args: string[], io: Io): Promise<number> {
   const [command, ...rest] = args;
+  const installIo = { write: io.write, error: io.error, exec: io.exec ?? defaultExec };
+  if (command === "init") return init(io.cwd, installIo);
+  if (command === "doctor") return doctor(io.cwd, installIo);
+  if (command === "remove") return remove(io.cwd, installIo);
   const root = findProject(io.cwd);
   const folder = vernierFolder(root);
   switch (command) {

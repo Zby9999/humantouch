@@ -17,16 +17,19 @@ export interface MarkSourceOptions {
  */
 export function markSource(code: string, options: MarkSourceOptions) {
   const filePath = options.id.replace(/[?#].*$/, "");
-  if (!/\.[jt]sx$/.test(filePath) || /[\\/]node_modules[\\/]/.test(filePath)) return null;
+  // Next.js allows JSX in `.js` modules too.
+  const js = filePath.endsWith(".js");
+  if ((!js && !/\.[jt]sx$/.test(filePath)) || /[\\/]node_modules[\\/]/.test(filePath)) return null;
   const file = path.relative(options.root, filePath).split(path.sep).join("/");
   let ast;
   try {
-    ast = parse(code, { sourceType: "module", plugins: ["jsx", "typescript"] });
+    ast = parse(code, { sourceType: "module", plugins: js ? ["jsx"] : ["jsx", "typescript"] });
   } catch {
     // Leave syntax errors to the framework's own transform, which reports them better.
     return null;
   }
   const s = new MagicString(code);
+  let inserted = false;
 
   walk(ast.program, (node) => {
     if (node.type !== "JSXOpeningElement") return;
@@ -42,8 +45,11 @@ export function markSource(code: string, options: MarkSourceOptions) {
     // Last, so spread props cannot override it; after any type arguments, which follow the name.
     const after = node.attributes.at(-1) ?? node.typeArguments ?? node.typeParameters ?? name;
     s.appendLeft(after.end!, ` ${attr}="${file}:${line}:${column + 1}"`);
+    inserted = true;
   });
 
+  // A `.js` module with no JSX: nothing to mark.
+  if (js && !inserted) return null;
   return { code: s.toString(), map: s.generateMap({ source: filePath, hires: true }) };
 }
 

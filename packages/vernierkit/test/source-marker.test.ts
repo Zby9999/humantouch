@@ -104,3 +104,13 @@ describe("source marker", () => {
     });
   });
 });
+
+test("marks JSX in a .js module, as Next.js allows", () => {
+  const result = markSource(`export default function Page() {\n  return <main>Hi</main>;\n}\n`, { id: "/project/app/page.js", root: "/project" });
+
+  expect(result?.code).toContain('<main data-vk-loc="app/page.js:2:10">');
+});
+
+test("leaves a .js module with no JSX alone", () => {
+  expect(markSource(`export const a = 1 < 2;\n`, { id: "/project/lib/a.js", root: "/project" })).toBeNull();
+});

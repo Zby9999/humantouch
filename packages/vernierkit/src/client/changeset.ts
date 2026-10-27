@@ -30,6 +30,8 @@ export interface Target {
     element: string;
     /** Its words, when it has any, as the page had them: to tell it apart from its siblings when its markers have moved. */
     text?: string;
+    /** The address of the page the canvas was frozen from, its path and query. */
+    page?: string;
   };
 }
 
