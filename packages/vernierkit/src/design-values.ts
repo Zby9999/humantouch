@@ -1,5 +1,5 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
-import type { Change, Composed, Place, StackSettings } from "./client/changeset";
+import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
 import type { Align, Fill, Padding, Radius, Size } from "./client/edits";
 
 const PROPERTIES: Record<string, string> = {
@@ -51,7 +51,20 @@ export function kindTitle(change: Change): string {
       return "Make Stack";
     case "unstack":
       return "Dissolve Stack";
+    case "create":
+      return (change.after as Created).type === "text" ? "New text" : "New Frame";
+    case "text":
+      return "Text";
+    case "delete":
+      return "Delete";
+    case "duplicate":
+      return "Duplicate";
   }
+}
+
+/** Words as quoted in the notes and the change list. */
+export function quoted(text: string): string {
+  return `“${text}”`;
 }
 
 /** How a Stack lays its layers out, in a sentence: "horizontal, with a gap of 24px, no padding, aligned top left". */
@@ -67,6 +80,18 @@ export function changeValues(change: Change): string {
     return `${layers.length === 1 ? "1 layer" : `${layers.length} layers`}, ${direction}, gap ${gap}px`;
   }
   if (change.kind === "unstack") return `${(change.before as StackSettings).direction} Stack → Frame`;
+  if (change.kind === "create") {
+    const { type, text, width, height, brief } = change.after as Created;
+    if (type === "text") return quoted(text ?? "");
+    return `${width} × ${height}px${brief ? `, ${quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief)}` : ""}`;
+  }
+  if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
+  const name = (place: Place) => place.container.target.context.path.at(-1);
+  if (change.kind === "delete") return `from ${name(change.before as Place)}`;
+  if (change.kind === "duplicate") {
+    const to = change.after as Place;
+    return to.absolute ? `copy at X ${to.absolute.x}px, Y ${to.absolute.y}px in ${name(to)}` : `copy in ${name(to)}, ${ordinal(to.nth)}`;
+  }
   if (change.kind === "move") {
     const [before, after] = [change.before, change.after] as Place[];
     const name = (place: Place) => place.container.target.context.path.at(-1);
@@ -87,6 +112,9 @@ export function moveKind(change: Change): "Reorder" | "Move" | "Absolute" {
   if (after.absolute) return "Absolute";
   return before.container.layer === after.container.layer && !before.absolute ? "Reorder" : "Move";
 }
+
+/** How much of a brief the change list shows. */
+const MAX_BRIEF = 40;
 
 /** 1st, 2nd, 3rd, 4th, … */
 export function ordinal(n: number): string {

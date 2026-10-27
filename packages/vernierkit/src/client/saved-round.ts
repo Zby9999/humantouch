@@ -3,9 +3,10 @@
  * reload. The saved canvas is parsed, changed and written back as it is.
  */
 import type { SavedRound } from "../service-protocol";
-import { createChangeSet, withDependents, type Composed, type Dissolved, type Place } from "./changeset";
+import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place } from "./changeset";
 import { changesOn, elementsOf, restoreStyle } from "./canvas-style";
 import { cssOf, type Property } from "./edits";
+import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate } from "./moves";
 import { decompose, undissolve } from "./stacks";
 
@@ -25,6 +26,10 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     if (change.kind === "move") relocate(doc, change.layer, change.property, change.after as Place, change.before as Place, {}, rest);
     else if (change.kind === "stack") decompose(doc, change.layer, change.after as Composed, rest);
     else if (change.kind === "unstack") undissolve(doc, change.layer, change.after as Dissolved, rest);
+    else if (change.kind === "create") removeMade(doc, change.layer, (change.after as Created).place.container.layer, rest);
+    else if (change.kind === "duplicate") removeMade(doc, change.layer, (change.after as Place).container.layer, rest);
+    else if (change.kind === "delete") unhide(doc, change.layer, change.property, rest);
+    else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
     else for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest));
   }
   if (!changes.list().length) return null;

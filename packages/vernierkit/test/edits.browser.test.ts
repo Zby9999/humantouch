@@ -1336,3 +1336,317 @@ describe("dissolving a Stack", () => {
     expect(loop.editor.canUnstack(loop.layerOf(loop.doc.getElementById("list")!))).toBe(false);
   });
 });
+
+describe("new text and Frames", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page.replace('<body style="margin: 0">', '<body style="margin: 0; font: 15px/22px serif; color: rgb(10, 20, 30)">'));
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = (id: string) => [...canvas.doc.getElementById(id)!.children].map((el) => el.id || el.localName);
+    return { ...canvas, layer, order };
+  };
+
+  test("new text in a Stack takes a place among its layers, in the page's body text style", () => {
+    const { doc, editor, changes, layer, order } = open();
+
+    const text = editor.create("text", { parent: layer("list"), index: 1 });
+
+    expect(order("list")).toEqual(["a", "p", "b", "c"]);
+    expect(text.kind).toBe("text");
+    expect(text.name).toBe("Text");
+    const el = doc.querySelector("#list > p")!;
+    expect([style(el).fontSize, style(el).lineHeight, style(el).fontFamily, style(el).color, style(el).marginTop]).toEqual(["15px", "22px", "serif", "rgb(10, 20, 30)", "0px"]);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "create",
+      property: "new",
+      layer: el.getAttribute("data-vk-layer"),
+      target: { loc: "src/App.tsx:5:5" },
+      before: null,
+      after: { type: "text", text: "Text", width: null, height: null, place: { container: { target: { loc: "src/App.tsx:5:5" } }, nth: 2, absolute: null } },
+      style: { "font-size": "15px", "line-height": "22px", margin: "0px" },
+    });
+
+    editor.undo();
+    expect(order("list")).toEqual(["a", "b", "c"]);
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a new Frame in a Frame is absolute where it is drawn, at its size, with no fill; the Frame is its positioning reference", () => {
+    const { doc, editor, changes, layer } = open();
+
+    const frame = editor.create("frame", { parent: layer("board"), x: 30, y: 20 }, { width: 120, height: 80 });
+
+    const board = doc.getElementById("board")!;
+    expect(frame.el.parentElement).toBe(board);
+    expect(frame.absolute).toBe(true);
+    const r = frame.el.getBoundingClientRect();
+    expect([r.left - board.getBoundingClientRect().left, r.top - board.getBoundingClientRect().top, r.width, r.height]).toEqual([30, 20, 120, 80]);
+    expect(style(frame.el).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(style(board).position).toBe("relative");
+    expect(changes.list()[0].after).toMatchObject({ type: "frame", width: 120, height: 80, place: { absolute: { x: 30, y: 20 } } });
+
+    editor.undo();
+    expect(board.children).toHaveLength(0);
+    expect(style(board).position).toBe("static");
+  });
+
+  test("a new layer goes in every instance of its container's usage", () => {
+    const card = (n: number) => `<article ${at("30:9")} style="display: flex; flex-direction: column"><h3 ${at("31:11")}>Card ${n}</h3></article>`;
+    const { doc, editor, changes } = open(`<!DOCTYPE html><body style="margin: 0"><main ${at("29:7")}>${[1, 2, 3].map(card).join("")}</main></body>`);
+    const article = find(editor.tree().root, (l) => l.el === doc.querySelector("article"))!;
+
+    editor.create("text", { parent: article, index: 1 });
+
+    expect([...doc.querySelectorAll("article")].map((el) => el.lastElementChild!.textContent)).toEqual(["Text", "Text", "Text"]);
+    expect(changes.list()[0].target.instances).toBe(3);
+  });
+
+  test("a new Frame takes a brief, shown in its place on the canvas, and what is drawn in it is its sketch; taken back, all of it goes", () => {
+    const opened = open();
+    const { doc, editor, changes, layer } = opened;
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+
+    editor.setBrief(frame, "A pricing table with three plans");
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 12 });
+
+    expect(editor.brief(editor.tree().layerOf(frame.el)!)).toBe("A pricing table with three plans");
+    expect(frame.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
+    expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-vk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
+    expect(text.el.parentElement).toBe(frame.el);
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.revert(changes.list()[0].id);
+    expect(doc.querySelectorAll("[data-vk-made]")).toHaveLength(0);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(changes.list()).toHaveLength(2);
+
+    expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
+    // Only the brief, in an editor without it, for a layer the designer did not make.
+    expect(editor.brief(layer("a"))).toBeNull();
+  });
+
+  test("where a new layer can go: a Stack or a Frame that holds layers, not text or a field", () => {
+    const { editor, layer } = open(MOVES.replace("</body>", `<input id="field" ${at("40:5")}></body>`));
+
+    expect(editor.canHold(layer("list"))).toBe(true);
+    expect(editor.canHold(layer("board"))).toBe(true);
+    expect(editor.canHold(layer("a"))).toBe(false);
+    expect(editor.canHold(layer("field"))).toBe(false);
+  });
+});
+
+describe("editing text", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    return { ...canvas, layer };
+  };
+
+  test("changes the words of the text in every instance, and records them; set back, it is no longer a change", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas(PAGE.replace(/>Card \d</g, ">Card<"));
+    const title = layerOf(cards[0].querySelector("h3")!);
+
+    editor.setText(title, "Plan");
+
+    expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Plan", "Plan", "Plan"]);
+    expect(cards[3].querySelector("h3")!.textContent).toBe("Your turn");
+    expect(changes.list()[0]).toMatchObject({ kind: "text", property: "text", target: { loc: "src/Card.tsx:4:7", instances: 3 }, before: "Card", after: "Plan" });
+    expect(changes.list()[0].data).toBeUndefined();
+
+    editor.setText(editor.tree().layerOf(cards[1].querySelector("h3")!)!, "Card");
+    expect(changes.list()).toEqual([]);
+    expect(doc.querySelectorAll("h3")[0].textContent).toBe("Card");
+  });
+
+  test("text that differs across the instances a loop renders comes from data: only this one changes, as a data change", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.setText(layerOf(cards[1].querySelector("h3")!), "Second");
+
+    expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Card 1", "Second", "Card 3"]);
+    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second" });
+    editor.undo();
+    expect(cards[1].querySelector("h3")!.textContent).toBe("Card 2");
+  });
+
+  test("text with no element of its own gets one, and is found in its container's source", () => {
+    const { doc, editor, changes } = open();
+    const run = find(editor.tree().root, (l) => l.name === "more")!;
+
+    const own = editor.ownElement(run);
+    editor.setText(own, "less");
+
+    expect(doc.getElementById("mixed")!.textContent).toBe("Loose text pill less");
+    expect(changes.list()[0]).toMatchObject({ kind: "text", target: { loc: "src/App.tsx:15:5", unlocated: false, context: { element: '<p id="mixed">' } }, before: "more", after: "less" });
+  });
+
+  test("of a new text layer, it is the words of the change that makes it", () => {
+    const { editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 0 });
+
+    editor.setText(text, "Hello");
+
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0].after).toMatchObject({ type: "text", text: "Hello" });
+    expect(text.el.textContent).toBe("Hello");
+    editor.undo();
+    expect(text.el.textContent).toBe("Text");
+  });
+
+  test("keeps the text's inline pieces as they were once taken back, on the canvas and a saved round", () => {
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html><p id="t" ${at("3:3")}>Some <b>bold</b> words</p><p id="u" ${at("4:3")}>Other</p>`);
+    editor.setText(layer("t"), "Plain");
+    editor.setText(layer("u"), "Changed");
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.revert(changes.list()[0].id);
+    expect(doc.getElementById("t")!.innerHTML).toBe("Some <b>bold</b> words");
+
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect(reverted.getElementById("t")!.innerHTML).toBe("Some <b>bold</b> words");
+    expect(reverted.getElementById("u")!.textContent).toBe("Changed");
+  });
+});
+
+describe("deleting layers", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const names = () => canvas.editor.tree().root.children[0].children.map((l) => l.name);
+    return { ...canvas, layer, names };
+  };
+
+  test("takes the layer off the canvas and the layer tree, in every instance; undo puts it back", () => {
+    const { doc, editor, changes, layer, names } = open();
+
+    editor.remove(layer("b"));
+
+    expect(style(doc.getElementById("b")!).display).toBe("none");
+    expect(names()).toEqual(["A", "C"]);
+    expect(changes.list()[0]).toMatchObject({ kind: "delete", property: "delete", target: { loc: "src/App.tsx:7:7" }, before: { nth: 2 }, after: null, style: { display: "none" } });
+
+    editor.undo();
+    expect(style(doc.getElementById("b")!).display).toBe("block");
+    expect(names()).toEqual(["A", "B", "C"]);
+  });
+
+  test("one of the instances a loop renders goes alone, as a data change; taken back from a saved round, it is back", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+
+    editor.remove(layerOf(cards[1]));
+    editor.remove(editor.tree().layerOf(cards[0])!);
+
+    expect(cards.map((card) => style(card).display)).toEqual(["none", "none", "block", "block"]);
+    expect(changes.list().map((c) => [c.property, c.data, c.target.instances])).toEqual([
+      ["delete-1", true, 3],
+      // The page still renders three.
+      ["delete-2", true, 3],
+    ]);
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect([...reverted.querySelectorAll("article")].map((card) => card.style.display)).toEqual(["none", "", "", ""]);
+
+    editor.revert(changes.list()[1].id);
+    expect(cards.map((card) => style(card).display)).toEqual(["block", "none", "block", "block"]);
+  });
+
+  test("a layer made this round is taken back instead: there is nothing in the source to delete", () => {
+    const { doc, editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 0 });
+
+    editor.remove(text);
+
+    expect(doc.querySelectorAll("#list > p")).toHaveLength(0);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(doc.querySelectorAll("#list > p")).toHaveLength(1);
+  });
+
+  test("a Stack made this round goes with its layers", () => {
+    const { doc, editor, changes, layer } = open();
+    const stack = editor.stack([layer("a"), layer("b")]);
+
+    editor.remove(stack);
+
+    expect(changes.list().map((c) => [c.kind, c.target.loc])).toEqual([
+      ["delete", "src/App.tsx:6:7"],
+      ["delete", "src/App.tsx:7:7"],
+    ]);
+    expect([...doc.getElementById("list")!.children].map((el) => [el.id, style(el).display])).toEqual([["a", "none"], ["b", "none"], ["c", "block"]]);
+  });
+
+  test("not the page", () => {
+    const { editor } = open();
+    expect(editor.canRemove(editor.tree().root)).toBe(false);
+  });
+});
+
+describe("duplicating layers", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    return { ...canvas, layer };
+  };
+
+  test("puts a copy right after the layer, in every instance; the copy is a layer of its own, new this round", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const title = layerOf(cards[3].querySelector("h3")!);
+    editor.set(title, "opacity", 0.5);
+
+    const copy = editor.duplicate(title);
+
+    expect([...cards[3].children].map((el) => el.textContent)).toEqual(["Your turn", "Your turn"]);
+    expect(style(cards[3].children[1]).opacity).toBe("0.5");
+    expect(copy.el).toBe(cards[3].children[1]);
+    expect(changes.list()[1]).toMatchObject({
+      kind: "duplicate",
+      property: "copy",
+      layer: copy.el.getAttribute("data-vk-layer"),
+      target: { loc: "src/Card.tsx:4:7" },
+      before: { nth: 1 },
+      after: { nth: 2, absolute: null },
+    });
+    expect(changes.list()[1].target.made).toBeUndefined();
+    // Its own layer: changed apart from the original.
+    editor.set(copy, "opacity", 1);
+    expect(style(cards[3].children[0]).opacity).toBe("0.5");
+    expect(changes.list()[2].target).toMatchObject({ loc: "src/Card.tsx:4:7", made: copy.el.getAttribute("data-vk-layer") });
+
+    editor.undo();
+    editor.undo();
+    expect(cards[3].children).toHaveLength(1);
+  });
+
+  test("an instance a loop renders is copied alone, as a data change", () => {
+    const { editor, changes, cards, layerOf, doc } = openCanvas();
+
+    editor.duplicate(layerOf(cards[1]));
+
+    expect([...doc.querySelectorAll("article")].map((el) => el.querySelector("h3")!.textContent)).toEqual(["Card 1", "Card 2", "Card 2", "Card 3", "Your turn"]);
+    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 } });
+  });
+
+  test("to where it is dragged: in a Stack, or absolute in a Frame; taken back from a saved round, the copy goes", () => {
+    const { doc, editor, changes, layer } = open();
+
+    editor.duplicate(layer("a"), { parent: layer("list"), index: 1 });
+    editor.duplicate(layer("b"), { parent: layer("board"), x: 12, y: 8 });
+
+    expect([...doc.getElementById("list")!.children].map((el) => el.textContent)).toEqual(["A", "B", "A", "C"]);
+    const copy = doc.getElementById("board")!.firstElementChild!;
+    expect([style(copy).position, style(copy).left, style(copy).top, style(copy).width]).toEqual(["absolute", "12px", "8px", "200px"]);
+    expect(changes.list()[1].after).toMatchObject({ absolute: { x: 12, y: 8 } });
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[1].id)!.canvas, "text/html");
+    expect(reverted.getElementById("board")!.children).toHaveLength(0);
+    expect(reverted.getElementById("board")!.style.position).toBe("");
+  });
+
+  test("not text with no element of its own, nor the page", () => {
+    const { editor } = open();
+    expect(editor.canDuplicate(find(editor.tree().root, (l) => l.name === "more")!)).toBe(false);
+    expect(editor.canDuplicate(editor.tree().root)).toBe(false);
+  });
+});

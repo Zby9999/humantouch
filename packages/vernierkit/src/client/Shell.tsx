@@ -129,6 +129,32 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
     onEdit();
     select([stack]);
   };
+  /** Delete: the layers deleted, and nothing selected. */
+  const remove = (layers: Layer[]) => {
+    if (!editor) return;
+    // Each deletion may build the layers anew: each layer is found again in them.
+    editor.batch(() => {
+      for (const layer of layers) {
+        const now = editor.tree().layerOf(nodeOf(layer));
+        if (now && editor.canRemove(now)) editor.remove(now);
+      }
+    });
+    onEdit();
+    select([]);
+  };
+  /** ⌘D: each layer copied right after it, the copies selected. */
+  const duplicate = (layers: Layer[]) => {
+    if (!editor) return;
+    const copies: Element[] = [];
+    editor.batch(() => {
+      for (const layer of layers) {
+        const now = editor.tree().layerOf(nodeOf(layer));
+        if (now && editor.canDuplicate(now)) copies.push(editor.duplicate(now).el);
+      }
+    });
+    onEdit();
+    select(copies.map((el) => editor.tree().layerOf(el)).filter((layer) => layer !== null));
+  };
   /** ⌥⇧A: the Stacks among the layers dissolved, the Frames they become selected. */
   const dissolve = (layers: Layer[]) => {
     const stacks = editor ? layers.filter((layer) => editor.canUnstack(layer)) : [];
@@ -141,8 +167,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select } = latest.current;
@@ -164,19 +190,24 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
-  // ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, as in Figma. Fields and dialogs keep their keys.
+  // As in Figma: ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, Delete deletes and ⌘D
+  // copies them. Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate } = latest.current;
       const target = event.composedPath()[0];
+      if (!selected.length || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      const command = event.metaKey || event.ctrlKey;
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
       const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
-      if (!a || !event.shiftKey || event.metaKey || event.ctrlKey || !selected.length) return;
-      if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      let act: (() => void) | null = null;
+      if (a && event.shiftKey && !command) act = () => (event.altKey ? dissolve(selected) : makeStack(selected));
+      else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
+      else if (event.key.toLowerCase() === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
+      if (!act) return;
       event.preventDefault();
       event.stopPropagation();
-      if (event.altKey) dissolve(selected);
-      else makeStack(selected);
+      act();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -232,6 +263,30 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
           const moved = editor!.move(layer, to);
           onEdit();
           select([moved]);
+        }}
+        onDuplicate={(layer: Layer, to: Destination) => {
+          const copy = editor!.duplicate(layer, to);
+          onEdit();
+          select([copy]);
+        }}
+        onCreate={(type, to, size) => {
+          const layer = editor!.create(type, to, size);
+          onEdit();
+          select([layer]);
+          return layer;
+        }}
+        onBeginText={(layer) => {
+          const own = editor!.ownElement(layer);
+          // Loose text got an element of its own: the layers are built anew.
+          if (own !== layer) setTree(editor!.tree());
+          select([own]);
+          return own;
+        }}
+        onEditText={(layer, text) => {
+          editor!.setText(editor!.tree().layerOf(layer.el) ?? layer, text);
+          onEdit();
+          const now = editor!.tree().layerOf(layer.el);
+          if (now) select([now]);
         }}
         leaving={leaving}
         animate={animate}

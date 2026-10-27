@@ -14,8 +14,24 @@ export const AS_STACK_ATTR = "data-vk-as-stack";
 export const REFERENCE_ATTR = "data-vk-reference";
 /** On moved elements: the change (its property) they move under. */
 export const MOVE_ATTR = "data-vk-move";
-/** On elements this round made (a Stack around layers): the id of the layer made. */
+/** On elements this round made (a Stack around layers, new text or a Frame, a copy and all in it): the id of the layer made. */
 export const MADE_ATTR = "data-vk-made";
+/** On new text or a new Frame: `text` or `frame`. */
+export const NEW_ATTR = "data-vk-new";
+/** On a new Frame: its brief, shown in its place on the canvas. */
+export const BRIEF_ATTR = "data-vk-brief";
+/** On deleted elements: the change (its property) they are deleted under. They are no layers any more. */
+export const DELETED_ATTR = "data-vk-deleted";
+/** On elements whose words changed: the change (its property) they changed under. */
+export const TEXT_ATTR = "data-vk-text";
+/** Before the first change to an element's words: what was in it, to go back to. */
+export const ORIGINAL_TEXT_ATTR = "data-vk-original-text";
+/**
+ * On the element loose text was given to move or edit it: which run of text of
+ * its container it was, from 0. It carries the container's markers, as the
+ * text is written there.
+ */
+export const WRAP_ATTR = "data-vk-wrap";
 
 /** The canvas elements of the layer with id `id`, in page order: one per instance. */
 export function elementsOf(doc: Document, id: string): Element[] {
@@ -48,6 +64,11 @@ export function declare(el: Element, declarations: Record<string, string>) {
 export function restoreStyle(el: Element, names: string[], others: Change[]) {
   const original = el.getAttribute(ORIGINAL_STYLE_ATTR);
   if (original === null) return;
+  // A move or a deletion of one of a loop's instances alone is not on the others: those elements are marked with it.
+  others = others.filter((change) => {
+    const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
+    return !change.data || !mark || el.getAttribute(mark) === change.property;
+  });
   if (!others.length) {
     if (original) el.setAttribute("style", original);
     else el.removeAttribute("style");

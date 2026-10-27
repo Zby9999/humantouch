@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
 import type { TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { findDrop, type Drop } from "./drag";
+import type { Created } from "./changeset";
+import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
 import { freeze, restore, type Canvas } from "./freezer";
 import { Icon } from "./icons";
@@ -42,6 +43,14 @@ interface Props {
   editor: Editor | null;
   /** A dragged layer let go where it can go. */
   onMove(layer: Layer, to: Destination): void;
+  /** A dragged layer let go with ⌥ held: a copy goes there. */
+  onDuplicate(layer: Layer, to: Destination): void;
+  /** A layer drawn with the text or Frame tool; `size` when drawn rather than clicked. Returns the new layer. */
+  onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
+  /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
+  onBeginText(layer: Layer): Layer;
+  /** Typing in a text layer ends, with these words. */
+  onEditText(layer: Layer, text: string): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -52,7 +61,8 @@ interface Props {
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
-export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, leaving, animate, changed, onLeft }: Props) {
+export function CanvasView(props: Props) {
+  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, onCreate, onBeginText, onEditText, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -69,6 +79,13 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   const dragging = useRef<DragSession | null>(null);
   /** The drag under way: how far the layer has gone, in canvas px, and where it would go. */
   const [drag, setDrag] = useState<{ layer: Layer; box: DOMRect; drop: Drop | null } | null>(null);
+  /** T or F pressed: the next drag on the canvas draws new text or a new Frame. */
+  const [tool, setTool] = useState<Created["type"] | null>(null);
+  /** A layer being drawn: where the drawing started, and where the pointer is, in canvas px. */
+  const drawing = useRef<{ pointerId: number; start: { x: number; y: number } } | null>(null);
+  const [drawn, setDrawn] = useState<DOMRect | null>(null);
+  /** The text being typed in, and what was in it. */
+  const typing = useRef<{ layer: Layer; html: string } | null>(null);
   const modeSwitch = useRef<Animation | null>(null);
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
@@ -183,12 +200,12 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {} });
-  latest.current = { canvas, selected, onSelect, endDrag };
+  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {}, tool });
+  latest.current = { canvas, selected, onSelect, endDrag, tool };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { canvas, selected, onSelect, endDrag } = latest.current;
+      const { canvas, selected, onSelect, endDrag, tool } = latest.current;
       if (event.key === "Meta" || event.key === "Control") {
         const deep = event.metaKey || event.ctrlKey;
         setHover((h) => h && { ...h, deep });
@@ -204,6 +221,20 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
         return;
       }
       if (event.type !== "keydown") return;
+      if (event.key === "Escape" && tool) {
+        event.preventDefault();
+        event.stopPropagation();
+        setTool(null);
+        return;
+      }
+      // T and F, as in Figma: draw new text, or a new Frame.
+      const key = event.key.toLowerCase();
+      if ((key === "t" || key === "f") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        setTool(key === "t" ? "text" : "frame");
+        return;
+      }
       if (event.key === "Escape" && dragging.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -284,6 +315,13 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (event.button === 0 && !spaceHeld && tool && editor) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const start = toCanvas(event);
+      drawing.current = { pointerId: event.pointerId, start };
+      setDrawn(new DOMRect(start.x, start.y, 0, 0));
+      return;
+    }
     if (event.button === 0 && !spaceHeld) {
       const hit = layerAt(event);
       const layer = hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, primary));
@@ -306,6 +344,10 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (drawing.current?.pointerId === event.pointerId) {
+      setDrawn(boxFrom(drawing.current.start, toCanvas(event)));
+      return;
+    }
     const pressed = press.current;
     if (pressed?.pointerId === event.pointerId) {
       if (!dragging.current && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < DRAG_THRESHOLD) return;
@@ -330,9 +372,16 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (drawing.current?.pointerId === event.pointerId) {
+      const { start } = drawing.current;
+      drawing.current = null;
+      setDrawn(null);
+      if (event.type === "pointerup" && tool && editor) draw(tool, start, boxFrom(start, toCanvas(event)));
+      return;
+    }
     if (press.current?.pointerId === event.pointerId) {
       press.current = null;
-      endDrag(event.type === "pointerup");
+      endDrag(event.type === "pointerup", event.altKey);
       return;
     }
     if (pan.current?.pointerId !== event.pointerId) return;
@@ -380,8 +429,47 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
     setDrag({ layer, box, drop });
   };
 
-  /** Ends the drag: everything shifted goes back, and, let go where it can go, the layer moves there. */
-  function endDrag(commit: boolean) {
+  /** Makes the layer drawn over `box`, where it goes; new text is typed in at once. A click rather than a drag makes one of the size it takes. */
+  const draw = (type: Created["type"], start: { x: number; y: number }, box: DOMRect) => {
+    setTool(null);
+    const to = findPlace(editor!, start, box);
+    if (!to) return;
+    const clicked = box.width < DRAG_THRESHOLD && box.height < DRAG_THRESHOLD;
+    const layer = onCreate(type, to, clicked ? undefined : { width: box.width, height: box.height });
+    if (type === "text") beginTyping(layer);
+  };
+
+  /** Types in a text layer, on the canvas itself: Enter, Esc or going elsewhere ends it, and the words are set. */
+  const beginTyping = (layer: Layer) => {
+    const own = onBeginText(layer);
+    const el = own.el as HTMLElement;
+    typing.current = { layer: own, html: el.innerHTML };
+    el.contentEditable = "plaintext-only";
+    el.focus({ preventScroll: true });
+    el.ownerDocument.getSelection()?.selectAllChildren(el);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" && !(event.key === "Enter" && !event.shiftKey)) return;
+      event.preventDefault();
+      el.blur();
+    };
+    const end = () => {
+      el.removeEventListener("keydown", onKey);
+      el.removeEventListener("blur", end);
+      const typed = typing.current;
+      typing.current = null;
+      el.removeAttribute("contenteditable");
+      const text = el.textContent!.replace(/\s+/g, " ").trim();
+      // The words are set as an edit, from what was there before typing.
+      el.innerHTML = typed!.html;
+      onEditText(typed!.layer, text);
+      viewport.current?.focus({ preventScroll: true });
+    };
+    el.addEventListener("keydown", onKey);
+    el.addEventListener("blur", end);
+  };
+
+  /** Ends the drag: everything shifted goes back, and, let go where it can go, the layer moves there; with ⌥ held, a copy goes there. */
+  function endDrag(commit: boolean, copy = false) {
     const session = dragging.current;
     if (!session) return;
     dragging.current = null;
@@ -393,7 +481,9 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       }
     }
     setDrag(null);
-    if (commit && session.drop) onMove(session.layer, session.drop.to);
+    if (!commit || !session.drop) return;
+    if (copy && editor?.canDuplicate(session.layer)) onDuplicate(session.layer, session.drop.to);
+    else onMove(session.layer, session.drop.to);
   }
 
   // Nothing to point out while panning, dragging or while a value is being adjusted.
@@ -408,7 +498,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
   return (
     <div
       ref={viewport}
-      class={`vk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : ""}${travelling ? " is-travelling" : ""}`}
+      class={`vk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
       role="region"
       aria-label="Canvas viewport"
       tabIndex={-1}
@@ -420,7 +510,9 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       onDblClick={(event) => {
         const hit = layerAt(event);
         const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
-        if (layer) onSelect([layer]);
+        // On the text selected, a double click types in it.
+        if (layer && layer === primary && layer.kind === "text" && editor) beginTyping(layer);
+        else if (layer) onSelect([layer]);
       }}
     >
       <div
@@ -438,6 +530,7 @@ export function CanvasView({ restoreFrom, onCanvas, tree, selected, hideSelectio
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
       {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
+      {drawn && <div class="vk-drag-ghost" aria-hidden="true" style={place(drawn, view)} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
@@ -531,6 +624,11 @@ function setStyles(session: DragSession, el: Element, styles: Record<string, str
     } else style.setProperty(name, value, "important");
   }
   if ("translate" in styles) saved.translate = styles.translate !== null;
+}
+
+/** The box between two points. */
+function boxFrom(a: { x: number; y: number }, b: { x: number; y: number }): DOMRect {
+  return new DOMRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
 /** A box on the canvas, placed over it in the viewport. */

@@ -4,7 +4,7 @@
  * the layer is dragged, layers are only shifted.
  */
 import type { Destination, Editor } from "./edits";
-import type { Layer } from "./layers";
+import { boxOf, type Layer } from "./layers";
 
 export interface Drop {
   /** The Stack or Frame the layer would go into, and where in it. */
@@ -83,6 +83,30 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
           : area.top + parseFloat(style.paddingTop);
   const line = horizontal ? { x: main - 1, y: area.top, width: 2, height: area.height } : { x: area.left, y: main - 1, width: area.width, height: 2 };
   return { to: { parent: container, index }, line, shifts };
+}
+
+/**
+ * Where a layer drawn from `start` over `box` goes, as a dragged one would:
+ * into the deepest Stack or Frame under where the drawing started that can
+ * hold it; in a Stack, at the place along it nearest the start; in a Frame,
+ * absolute where it is drawn. All in canvas px.
+ */
+export function findPlace(editor: Editor, start: { x: number; y: number }, box: DOMRect): Destination | null {
+  let container = editor.tree().layerAt(start.x, start.y);
+  while (container && !editor.canHold(container)) container = container.parent;
+  if (!container) return null;
+  if (container.kind === "frame") {
+    const area = container.el.getBoundingClientRect();
+    return { parent: container, x: Math.round(box.left - area.left - container.el.clientLeft), y: Math.round(box.top - area.top - container.el.clientTop) };
+  }
+  const horizontal = container.direction === "horizontal";
+  const at = horizontal ? start.x : start.y;
+  const next = container.children.find((child) => {
+    if (child.absolute) return false;
+    const r = boxOf(child);
+    return at < (horizontal ? r.left + r.right : r.top + r.bottom) / 2;
+  });
+  return { parent: container, index: next ? container.children.indexOf(next) : container.children.length };
 }
 
 /** The space between a Stack's layers, along it. */

@@ -4,7 +4,7 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { LAYER_ID_ATTR, MADE_ATTR } from "./canvas-style";
+import { DELETED_ATTR, LAYER_ID_ATTR, MADE_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
@@ -202,6 +202,11 @@ export function buildLayerTree(doc: Document): LayerTree {
   };
 }
 
+/** Whether layers can go in the layer: a Stack or a Frame that is not a field or another element that holds no others. */
+export function holdsLayers(layer: Layer): boolean {
+  return (layer.kind === "stack" || layer.kind === "frame") && !LEAVES.has(layer.el.localName);
+}
+
 /**
  * What selecting the layer means: an ordinary layer, an instance (edits apply
  * to its usage), or a locked layer (moved and resized as a whole only).
@@ -256,6 +261,9 @@ export function typeLabel(layer: Layer): string {
  */
 function repeatKey(layer: Layer): string | null {
   const loc = layer.kind === "locked" ? layer.usageLoc : layer.loc;
+  // Text given an element of its own goes with the same run of text of the other instances.
+  const wrap = layer.text ? null : layer.el.getAttribute(WRAP_ATTR);
+  if (wrap !== null) return loc && `${usageKey(loc, layer.chain)} wrap ${wrap}${layer.made ? ` made ${layer.made}` : ""}`;
   if (!layer.made) return loc && usageKey(loc, layer.chain);
   if (loc) return `${usageKey(loc, layer.chain)} made ${layer.made}`;
   return layer.el.getAttribute(LAYER_ID_ATTR) === layer.made ? `made ${layer.made}` : null;
@@ -316,7 +324,7 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
     }
     if (child.nodeType !== Node.ELEMENT_NODE) continue;
     const e = child as Element;
-    if (NOT_DRAWN.has(e.localName)) continue;
+    if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR)) continue;
     const display = view.getComputedStyle(e).display;
     if (display === "none" && !hiddenByEdit(e)) continue;
     endRun();
@@ -343,7 +351,7 @@ function isText(el: Element, view: Window): boolean {
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const e = child as Element;
         if (e.localName === "br" || e.localName === "wbr") continue;
-        if (NOT_DRAWN.has(e.localName)) continue;
+        if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR)) continue;
         const display = view.getComputedStyle(e).display;
         if (display === "none") continue;
         if (display !== "inline" && display !== "contents") return false;

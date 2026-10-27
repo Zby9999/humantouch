@@ -4,7 +4,7 @@
  * of its container's usage; a layer one of several a loop renders goes alone.
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle } from "./canvas-style";
-import type { Change, Place } from "./changeset";
+import { placedAt, type Change, type Place } from "./changeset";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -43,22 +43,27 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
     restoreStyle(el, MOVE_CSS, others);
     declare(el, style);
   }
-  if (to.absolute) {
-    for (const container of new Set(moved.map((el) => el.parentElement!))) {
-      if (getComputedStyle(container).position !== "static" && !container.hasAttribute(REFERENCE_ATTR)) continue;
-      keepOriginal(container);
-      container.setAttribute(REFERENCE_ATTR, "");
-      declare(container, { position: "relative" });
-    }
+  if (to.absolute) holdAbsolute(new Set(moved.map((el) => el.parentElement!)));
+  if (from.absolute) releaseAbsolute(doc, from.container.layer, changes);
+}
+
+/** Makes each container the positioning reference of what is placed absolute in it, where it is not one already. */
+export function holdAbsolute(containers: Iterable<Element>) {
+  for (const container of containers) {
+    if (getComputedStyle(container).position !== "static" && !container.hasAttribute(REFERENCE_ATTR)) continue;
+    keepOriginal(container);
+    container.setAttribute(REFERENCE_ATTR, "");
+    declare(container, { position: "relative" });
   }
-  // A container no absolute layer is placed in any more is no longer a positioning reference.
-  const id = from.container.layer;
-  if (from.absolute && !changes.some((change) => change.kind === "move" && (change.after as Place).absolute && (change.after as Place).container.layer === id)) {
-    const own = changesOn(id, changes).filter((change) => change.kind !== "move");
-    for (const container of sources) {
-      if (!container.hasAttribute(REFERENCE_ATTR)) continue;
-      container.removeAttribute(REFERENCE_ATTR);
-      restoreStyle(container, ["position"], own);
-    }
+}
+
+/** The container with id `id`, once no change in `changes` places a layer absolute in it, is no longer a positioning reference. */
+export function releaseAbsolute(doc: Document, id: string, changes: Change[]) {
+  if (changes.some((change) => placedAt(change)?.absolute && placedAt(change)!.container.layer === id)) return;
+  const own = changesOn(id, changes).filter((change) => change.kind !== "move");
+  for (const container of elementsOf(doc, id)) {
+    if (!container.hasAttribute(REFERENCE_ATTR)) continue;
+    container.removeAttribute(REFERENCE_ATTR);
+    restoreStyle(container, ["position"], own);
   }
 }

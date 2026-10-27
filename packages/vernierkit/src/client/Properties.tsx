@@ -61,6 +61,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const radius = shown("radius");
   const clip = shown("clip");
   const fill = shown("fill");
+  const brief = layers.length === 1 ? editor.brief(layers[0]) : null;
   return (
     <>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
@@ -127,6 +128,17 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         </section>
       )}
       {fill !== undefined && <FillSection fill={fill} onChange={set("fill")} />}
+      {brief !== null && (
+        <BriefSection
+          // Typed in freely, set when left: anew when the layer or its brief changes elsewhere, as with undo.
+          key={`${layers[0].el.getAttribute("data-vk-layer")} ${brief}`}
+          brief={brief}
+          onChange={(text) => {
+            editor.setBrief(layers[0], text);
+            onEdit();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -334,6 +346,22 @@ function PercentField({ label, icon, value, onChange }: {
         onChange={onChange}
       />
     </label>
+  );
+}
+
+/** A new Frame's brief: what the Agent is to make in it, shown in its place on the canvas. Set once typed and left. */
+function BriefSection({ brief, onChange }: { brief: string; onChange(brief: string): void }) {
+  return (
+    <section class="vk-section" aria-labelledby="vk-brief">
+      <h3 id="vk-brief" class="vk-section-title">Brief</h3>
+      <textarea
+        class="vk-textarea"
+        aria-labelledby="vk-brief"
+        placeholder="What should the Agent make here?"
+        defaultValue={brief}
+        onChange={(event) => onChange(event.currentTarget.value.trim())}
+      />
+    </section>
   );
 }
 

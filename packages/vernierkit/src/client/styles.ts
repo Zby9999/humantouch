@@ -424,6 +424,24 @@ export const styles = /* css */ `
   cursor: default;
 }
 .vk-input:focus { cursor: text; }
+.vk-textarea {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--vk-field);
+  color: var(--vk-text);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+.vk-textarea:hover { box-shadow: inset 0 0 0 1px var(--vk-border); }
+.vk-textarea:focus { box-shadow: inset 0 0 0 1px var(--vk-accent); cursor: text; }
+.vk-textarea::placeholder { color: var(--vk-text-muted); }
 .vk-opacity {
   flex: none;
   width: 36px;
@@ -539,6 +557,7 @@ export const styles = /* css */ `
   background: var(--vk-canvas);
 }
 .vk-viewport.is-pan-ready { cursor: grab; }
+.vk-viewport.is-drawing { cursor: crosshair; }
 .vk-viewport-message {
   position: absolute;
   inset: 0;

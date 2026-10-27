@@ -72,6 +72,19 @@ export interface Dissolved {
   layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string> })[];
 }
 
+/** A layer the designer made (the `after` of a `create` change): new text or a new Frame, and where it goes. */
+export interface Created {
+  type: "text" | "frame";
+  place: Place;
+  /** Its size in px, as drawn. Null: it fits its content (text not drawn wider than its words). */
+  width: number | null;
+  height: number | null;
+  /** New text: its words. */
+  text?: string;
+  /** A new Frame: what the Agent is to make in it. */
+  brief?: string;
+}
+
 export interface Change {
   id: number;
   /**
@@ -79,8 +92,12 @@ export interface Change {
    * another place; `before` and `after` are `Place`s. `stack`: layers are made
    * a Stack, the layer; `after` is `Composed`. `unstack`: the Stack, the
    * layer, is dissolved; `before` is its `StackSettings`, `after` is `Dissolved`.
+   * `create`: the layer is new; `after` is `Created`. `text`: the layer's
+   * words change; `before` and `after` are strings. `delete`: the layer goes;
+   * `before` is its `Place`. `duplicate`: the layer is a copy of the layer
+   * `target` is; `before` is where that one is, `after` where the copy goes.
    */
-  kind: "style" | "move" | "stack" | "unstack";
+  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate";
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
@@ -98,7 +115,7 @@ export interface Change {
    * change (to its gap, alignment, direction or wrap) makes it a real Stack.
    */
   asStack?: true;
-  /** A move of one of the instances a loop renders: in the code, the data the loop goes through changes. */
+  /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
@@ -186,21 +203,30 @@ function buildsOn(later: Change, earlier: Change): boolean {
   return later.id > earlier.id && placed(later).some((layer) => placed(earlier).includes(layer));
 }
 
-/** The layer a change makes, if it makes one. */
+/** The layer a change makes, if it makes one: a new Stack, new text or a Frame, a copy. */
 export function madeBy(change: Change): string | null {
+  if (change.kind === "create" || change.kind === "duplicate") return change.layer;
   return change.kind === "stack" && (change.after as Composed).place ? change.layer : null;
 }
 
-/** The layers whose place or layout a change changes. */
+/** Where a change puts a layer: a move's or a copy's new place, a new layer's, a new Stack's. */
+export function placedAt(change: Change): Place | null {
+  if (change.kind === "move" || change.kind === "duplicate") return change.after as Place;
+  if (change.kind === "create" || change.kind === "stack") return (change.after as Created | Composed).place;
+  return null;
+}
+
+/** The layers whose place or layout a change changes. One of a loop's instances changed alone is told apart from the others. */
 function placed(change: Change): string[] {
-  if (change.kind === "move") return [change.layer];
+  if (change.kind === "move" || change.kind === "delete") return [change.data ? `${change.layer} ${change.property}` : change.layer];
   if (change.kind === "stack" || change.kind === "unstack") return [change.layer, ...(change.after as Composed | Dissolved).layers.map((member) => member.layer)];
   return [];
 }
 
 /** The places a change takes layers from and to. */
 function placesOf(change: Change): Place[] {
-  if (change.kind === "move") return [change.before, change.after] as Place[];
+  if (change.kind === "move" || change.kind === "duplicate") return [change.before, change.after] as Place[];
+  if (change.kind === "create") return [(change.after as Created).place];
   if (change.kind !== "stack") return [];
   const { place, layers } = change.after as Composed;
   return [...(place ? [place] : []), ...layers.map((member) => member.from)];

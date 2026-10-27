@@ -5,9 +5,9 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import { madeBy, type Change, type Composed, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
+import { madeBy, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
-import { changeTitle, kindTitle, moveKind, ordinal, propertyName, stackSettings, value } from "./design-values";
+import { changeTitle, kindTitle, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -41,19 +41,19 @@ export function describeChanges(list: Change[], root: string, options: NotesOpti
 function section(change: Change, list: Change[], root: string, status: string | undefined): string {
   const { target } = change;
   const style = Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``);
-  const made = change.kind === "stack" ? (change.after as Composed).place : null;
   const lines = [
     ...(status ? [`**Status:** ${status}`] : []),
     `**Kind:** ${kindTitle(change)}`,
-    `**Layer:** ${made ? `a new Stack, in ${container(made)}` : layer(target)}`,
+    `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
     `**Design intent:** ${intent(change)}`,
     ...(change.asStack ? [AS_STACK] : []),
-    ...(change.data ? [dataChange(target)] : []),
+    ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
     ...(change.kind === "stack" ? joinLayout(change.after as Composed) : []),
-    `**Reference style:** ${style.length ? style.join(", ") : "none: only its place changes"}`,
+    ...(change.kind === "create" ? sketch(change, list) : []),
+    `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
@@ -69,7 +69,75 @@ function intent(change: Change): string {
       return stackIntent(change.after as Composed);
     case "unstack":
       return unstackIntent(change.before as StackSettings, change.after as Dissolved);
+    case "create": {
+      const { type, place, width, height, text } = change.after as Created;
+      if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place)}.`;
+      const wide = width === null ? "" : `, ${width}px wide`;
+      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place)}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
+    }
+    case "text":
+      return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "delete": {
+      const from = change.before as Place;
+      return `Delete this layer, and all in it, from ${container(from)}, where it is ${ordinal(from.nth)}.`;
+    }
+    case "duplicate": {
+      const to = change.after as Place;
+      return `Copy this layer, with all in it, and ${to.absolute ? "place" : "put"} the copy ${placement(to)}.`;
+    }
   }
+}
+
+/** The reference style of a change that declares none, by kind. */
+const NO_STYLE: Record<Change["kind"], string> = {
+  style: "none",
+  move: "none: only its place changes",
+  stack: "none",
+  unstack: "none",
+  create: "none",
+  text: "none: only its words change",
+  delete: "none: the layer goes",
+  duplicate: "none: the copy is as the layer is",
+};
+
+/** A layer a change makes, as its Layer line names it; null for a change to a layer that is there. */
+function newLayerIn(change: Change): string | null {
+  if (change.kind === "stack" && (change.after as Composed).place) return `a new Stack, in ${container((change.after as Composed).place!)}`;
+  if (change.kind !== "create") return null;
+  const { type, place } = change.after as Created;
+  return `a new ${type === "text" ? "text layer" : "Frame"}, in ${container(place)}`;
+}
+
+/** Where a layer goes in a container: a place in its layout, or absolute in it. */
+function placement(place: Place): string {
+  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer`;
+  const { x, y } = place.absolute;
+  return `absolute in ${container(place)}, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), which is to be its positioning reference (\`position: relative\`)`;
+}
+
+/**
+ * A new Frame's brief, and the layers drawn in it as a sketch of the layout;
+ * or, for a layer drawn in a new Frame with a brief, that it is part of that sketch.
+ */
+function sketch(change: Change, list: Change[]): string[] {
+  const created = change.after as Created;
+  const frame = list.find((c) => c.kind === "create" && c.layer === created.place.container.layer);
+  if (frame && (frame.after as Created).brief) {
+    return [`**Sketch:** this layer is drawn in the Frame of change ${frame.id} as part of its sketch: follow the brief, with it as a guide to the layout, rather than writing it as it is.`];
+  }
+  if (!created.brief) return [];
+  const drawn = list.filter((c) => c.kind === "create" && (c.after as Created).place.container.layer === change.layer);
+  const items = drawn.map((c) => {
+    const { type, text, place, width, height } = c.after as Created;
+    const what = type === "text" ? `Text ${quoted(text ?? "")}` : "Frame";
+    const where = place.absolute ? `X ${place.absolute.x}px, Y ${place.absolute.y}px` : `${ordinal(place.nth)} in its layout`;
+    const size = width === null ? "" : height === null ? `, ${width}px wide` : `, ${width} × ${height}px`;
+    return `\n  - ${what}: ${where}${size} (change ${c.id})`;
+  });
+  return [
+    `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.`,
+    ...(items.length ? [`**Sketch:** what the designer drew in the Frame, from its top left, shows the layout they have in mind:${items.join("")}`] : []),
+  ];
 }
 
 /** The layers a Stack is made of, in order, how it lays them out, and where it goes. */
@@ -138,8 +206,18 @@ function container({ container: { target } }: Place): string {
   return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${where}${usage})`;
 }
 
-function dataChange({ instances }: Target): string {
-  return `**Data change:** the layer is one of the ${instances} instances a loop renders, so its place comes from the order of the data the loop goes through. Reorder the data where it is written in the code; if it comes from outside the code (an API, a CMS), say so in the report.`;
+/** What a change to one of a loop's instances alone asks of the data the loop goes through. */
+function dataChange({ kind, target: { instances } }: Change): string {
+  const one = `**Data change:** the layer is one of the ${instances} instances a loop renders`;
+  const outside = "if the data comes from outside the code (an API, a CMS), say so in the report.";
+  if (kind === "text") return `${one}, each with words of its own: they come from the data the loop goes through. Change them there; ${outside}`;
+  if (kind === "delete") return `${one}: take its item out of the data the loop goes through. ${capitalized(outside)}`;
+  if (kind === "duplicate") return `${one}: add an item to the data the loop goes through, a copy of this one's, at the place given. ${capitalized(outside)}`;
+  return `${one}, so its place comes from the order of the data the loop goes through. Reorder the data where it is written in the code; ${outside}`;
+}
+
+function capitalized(text: string): string {
+  return text[0].toUpperCase() + text.slice(1);
 }
 
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";

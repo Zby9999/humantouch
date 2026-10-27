@@ -329,6 +329,85 @@ describe("claim, Stacks made and dissolved", () => {
   });
 });
 
+describe("claim, new layers, words, deleting and copying", () => {
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, absolute: object | null = null, layer = "4", target: object = list) => ({ container: { layer, target }, nth, slot: nth - 1, absolute });
+  const change = (id: number, kind: string, more: object) => ({ ...redFill, id, kind, layer: String(10 + id), target: list, before: null, style: {}, sources: [], ...more });
+  const frameTarget = { ...list, loc: null, made: "11", context: { path: ["Page", "App", "Stack", "Frame"], element: "<div>" } };
+
+  test("new text and a new Frame: what they are, where they go, and in what style; a brief and the sketch drawn in the Frame", async () => {
+    saveRound(
+      change(1, "create", {
+        property: "new",
+        after: { type: "frame", place: place(4), width: 200, height: 120, brief: "A pricing table with three plans" },
+        style: { width: "200px", height: "120px" },
+      }),
+      change(2, "create", {
+        property: "new",
+        target: frameTarget,
+        after: { type: "text", place: place(1, { x: 10, y: 12 }, "11", frameTarget), width: 160, height: null, text: "Plans" },
+        style: { "font-size": "16px", width: "160px", position: "absolute", left: "10px", top: "12px" },
+      }),
+      change(3, "create", { property: "new", after: { type: "text", place: place(2), width: null, height: null, text: "Hello" }, style: { "font-size": "16px", margin: "0px" } }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. New Frame\n/);
+    expect(section(output, 1)).toContain("- **Layer:** a new Frame, in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`)\n");
+    expect(section(output, 1)).toContain("- **Design intent:** Add a Frame, Fixed 200 × 120px, with no fill, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 4th layer.\n");
+    expect(section(output, 1)).toContain(
+      "- **Brief:** “A pricing table with three plans”. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.\n",
+    );
+    expect(section(output, 1)).toContain("- **Sketch:** what the designer drew in the Frame, from its top left, shows the layout they have in mind:\n  - Text “Plans”: X 10px, Y 12px, 160px wide (change 2)\n");
+    expect(section(output, 2)).toContain("- **Location:** **New:** the layer is made in change 1");
+    expect(section(output, 2)).toContain("- **Sketch:** this layer is drawn in the Frame of change 1 as part of its sketch: follow the brief, with it as a guide to the layout, rather than writing it as it is.\n");
+    expect(section(output, 3)).toMatch(/^3\. New text\n/);
+    expect(section(output, 3)).toContain(
+      "- **Design intent:** Add text that reads “Hello”, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.\n",
+    );
+    expect(section(output, 3)).not.toContain("Sketch");
+  });
+
+  test("new words, and in a loop, new words that come from data", async () => {
+    saveRound(
+      change(1, "text", { property: "text", before: "Get started", after: "Start now" }),
+      change(2, "text", { property: "text-1", before: "Card 2", after: "Second", target: cards, data: true }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Text\n/);
+    expect(section(output, 1)).toContain("- **Design intent:** Change the text from “Get started” to “Start now”.\n");
+    expect(section(output, 1)).toContain("- **Reference style:** none: only its words change\n");
+    expect(section(output, 2)).toContain(
+      "- **Data change:** the layer is one of the 3 instances a loop renders, each with words of its own: they come from the data the loop goes through. Change them there; if the data comes from outside the code (an API, a CMS), say so in the report.\n",
+    );
+  });
+
+  test("deleting and copying, and in a loop, as data changes", async () => {
+    saveRound(
+      change(1, "delete", { property: "delete", before: place(2), after: null, style: { display: "none" } }),
+      change(2, "delete", { property: "delete-1", before: place(2), after: null, target: cards, data: true, style: { display: "none" } }),
+      change(3, "duplicate", { property: "copy", before: place(1), after: place(2) }),
+      change(4, "duplicate", { property: "copy", before: place(1), after: place(3, { x: 12, y: 8 }), style: { position: "absolute", left: "12px", top: "8px" } }),
+      change(5, "duplicate", { property: "copy", before: place(2), after: place(3), target: cards, data: true }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Delete\n/);
+    expect(section(output, 1)).toContain("- **Design intent:** Delete this layer, and all in it, from Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), where it is 2nd.\n");
+    expect(section(output, 1)).toContain("- **Reference style:** none: the layer goes\n");
+    expect(section(output, 2)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: take its item out of the data the loop goes through.");
+    expect(section(output, 3)).toMatch(/^3\. Duplicate\n/);
+    expect(section(output, 3)).toContain("- **Design intent:** Copy this layer, with all in it, and put the copy in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer.\n");
+    expect(section(output, 3)).toContain("- **Reference style:** none: the copy is as the layer is\n");
+    expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
+    expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
+  });
+});
+
 describe("claim, where each value comes from", () => {
   const rule = { kind: "rule", important: false, className: null };
 
