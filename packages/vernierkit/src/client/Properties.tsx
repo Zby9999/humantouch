@@ -76,9 +76,10 @@ export function Properties({ editor, layers, onEdit }: Props) {
           {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} />}
           {offers("minWidth") && (
             <div class="vk-grid-2">
+              {/* Width on the left, height on the right; minimum above maximum. */}
               <LimitField label="Min width" glyph="W" value={shown("minWidth")!} onChange={set("minWidth")} />
-              <LimitField label="Max width" glyph="W" value={shown("maxWidth")!} onChange={set("maxWidth")} />
               <LimitField label="Min height" glyph="H" value={shown("minHeight")!} onChange={set("minHeight")} />
+              <LimitField label="Max width" glyph="W" value={shown("maxWidth")!} onChange={set("maxWidth")} />
               <LimitField label="Max height" glyph="H" value={shown("maxHeight")!} onChange={set("maxHeight")} />
             </div>
           )}
@@ -100,7 +101,7 @@ export function Properties({ editor, layers, onEdit }: Props) {
           <h3 id="vk-appearance" class="vk-section-title">Appearance</h3>
           <div class="vk-grid-2">
             {opacity !== undefined && (
-              <PercentField label="Opacity" glyph="%" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />
+              <PercentField label="Opacity" icon="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />
             )}
             {radius !== undefined && (
               <NumberField label="Corner radius" icon="radius" value={typeof radius === "number" ? radius : null} min={0} onChange={set("radius")} />
@@ -282,13 +283,22 @@ function LimitField({ label, glyph, value, onChange }: { label: string; glyph: s
   );
 }
 
-/** A value from 0 to 1, shown and typed as a percentage. */
-function PercentField({ label, glyph, value, onChange }: { label: string; glyph: string; value: number | null; onChange(value: number): void }) {
+/** A value from 0 to 1, shown and typed as a percentage, and dragged on its icon 1% per px (10% with ⇧). */
+function PercentField({ label, icon, value, onChange }: {
+  label: string;
+  icon: IconName;
+  value: number | null;
+  onChange(value: number, continues?: boolean): void;
+}) {
   return (
     <label class="vk-field" title={label}>
-      <span class="vk-glyph" aria-hidden="true">
-        {glyph}
-      </span>
+      <Scrub
+        icon={icon}
+        value={value === null ? null : Math.round(value * 100)}
+        min={0}
+        max={100}
+        onChange={(percent, continues) => onChange(percent / 100, continues)}
+      />
       <TextField
         label={label}
         value={value === null ? "Mixed" : `${Math.round(value * 100)}%`}
@@ -391,11 +401,12 @@ function NumberField({ label, icon, glyph, value, min = -Infinity, onChange }: N
  * px (10 with ⇧), as in Figma. The pointer is locked while dragging, so it
  * never runs into the edge of the screen.
  */
-function Scrub({ icon, glyph, value, min, onChange }: {
+function Scrub({ icon, glyph, value, min, max = Infinity, onChange }: {
   icon?: IconName;
   glyph?: string;
   value: number | null;
   min: number;
+  max?: number;
   onChange(value: number, continues: boolean): void;
 }) {
   /** The drag under way: the value so far, movement of less than 1px not yet counted, and whether it has changed the value yet. */
@@ -417,7 +428,7 @@ function Scrub({ icon, glyph, value, min, onChange }: {
     const px = Math.trunc(d.rest);
     if (!px) return;
     d.rest -= px;
-    const next = Math.max(min, d.value + px * (event.shiftKey ? 10 : 1));
+    const next = Math.min(max, Math.max(min, d.value + px * (event.shiftKey ? 10 : 1)));
     if (next === d.value) return;
     d.value = next;
     onChange(next, d.moved);

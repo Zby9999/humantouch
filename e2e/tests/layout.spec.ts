@@ -202,3 +202,38 @@ test("a new size and gap show on the live page in preview mode", async ({ page }
   await expect(page.locator("article").first()).toHaveCSS("display", "flex");
   await expect(page.locator("article").first()).toHaveCSS("row-gap", "8px");
 });
+
+test("minimum and maximum sizes sit in two columns: width on the left, height on the right, minimum above maximum", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Card").first().click();
+  const at = async (name: string) => (await design(page).getByRole("textbox", { name, exact: true }).boundingBox())!;
+  const [minW, maxW, minH, maxH] = await Promise.all(["Min width", "Max width", "Min height", "Max height"].map(at));
+
+  expect(maxW.x).toBe(minW.x);
+  expect(maxW.y).toBeGreaterThan(minW.y);
+  expect(minH.x).toBeGreaterThan(minW.x);
+  expect(minH.y).toBe(minW.y);
+  expect([maxH.x, maxH.y]).toEqual([minH.x, maxW.y]);
+});
+
+test("dragging left and right on the opacity icon changes it, 1% per px", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Card").first().click();
+  const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
+  const icon = page.locator('.vk-field:has([aria-label="Opacity"]) .vk-scrub');
+  const { x, y } = (await icon.boundingBox())!;
+
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 30; i++) await page.mouse.move(x + 4 - i, y + 4);
+  await page.mouse.up();
+
+  await expect(opacity).toHaveValue("70%");
+  expect(await canvasStyle(page, "article", "opacity")).toBe("0.7");
+  // It stops at 100%.
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 40; i++) await page.mouse.move(x + 4 + i, y + 4);
+  await page.mouse.up();
+  await expect(opacity).toHaveValue("100%");
+});
