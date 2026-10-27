@@ -3,10 +3,11 @@
  * recorded in the ChangeSet. An edit to a layer is an edit to its usage, so
  * it shows up in every instance of that usage. Every edit can be undone.
  */
-import { AS_STACK_ATTR, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, restoreStyle } from "./canvas-style";
-import { MOVE, type Change, type ChangeSet, type Place, type Target } from "./changeset";
+import { AS_STACK_ATTR, changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, restoreStyle } from "./canvas-style";
+import { MOVE, withDependents, type Change, type ChangeSet, type Composed, type Dissolved, type Place, type StackSettings, type Target } from "./changeset";
 import { boxOf, buildLayerTree, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf } from "./moves";
+import { compose, decompose, dissolve, inferStack, marginBox, paddingBox, stackStyle, undissolve } from "./stacks";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 
 export { LAYER_ID_ATTR };
@@ -112,6 +113,20 @@ export interface Editor {
    * gets an element of its own. Returns the layer where it is now.
    */
   move(layer: Layer, to: Destination): Layer;
+  /**
+   * Whether the layers can be made a Stack: layers side by side in one
+   * container, each in every instance of it; or a Frame alone, of its layers.
+   */
+  canStack(layers: Layer[]): boolean;
+  /**
+   * Makes the layers a Stack that holds them where they are (⇧A): a new one
+   * around them, or the Frame selected alone. Returns the Stack.
+   */
+  stack(layers: Layer[]): Layer;
+  /** Whether the layer is a Stack that can be dissolved: its layers are elements, each in every instance of it. */
+  canUnstack(layer: Layer): boolean;
+  /** Dissolves the Stack: it becomes a Frame of its size, its layers absolute where they are. Returns the Frame. */
+  unstack(layer: Layer): Layer;
 }
 
 /**
@@ -120,6 +135,8 @@ export interface Editor {
  */
 interface Step {
   layers: string[];
+  /** The layers undoing it leaves, when not the same: those a Stack was made of, say. */
+  back?: string[];
   /** Steps of one adjustment are one step: the same edit to the same layers, as this tells. */
   key: string;
   undo(): void;
@@ -285,7 +302,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     const before = readAsShown(layer.el, property, colors);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
-    const sources = known && changes.has(known, property) ? [] : sourcesOf(layer.el, definition.sets);
+    // A layer made this round has no style of the page's to change.
+    const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(layer.el, definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
     const asStack = definition.stack && (layer.el.hasAttribute(AS_STACK_ATTR) || !asShown(layer.el, () => stackOf(layer.el).flex));
@@ -313,7 +331,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     });
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property)) {
-      const others = changes.list().filter((change) => change.layer === id);
+      const others = changesOn(id, changes.list());
       for (const instance of instances) restoreStyle(instance.el, cssOf(property), others);
     }
     return id;
@@ -334,7 +352,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     else past.push(step);
   };
   /** The layers a step was made to, as they are now. */
-  const layersOf = (step: Step) => [...new Set(step.layers)].map(layerById).filter((layer) => layer !== null);
+  const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
 
   /** An edit that can be undone. `from`: the value it changes, when the canvas cannot tell (on a hidden layer, say). */
   const edit = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, from?: PropertyValues[P]) => {
@@ -404,6 +422,63 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       },
       false,
     );
+  };
+
+  /**
+   * A change to the structure that can be undone: `make` makes it, `unmake`
+   * takes it back, each on the canvas and in the ChangeSet; the layers are
+   * built anew after each. `layers`: what it is made to; `back`: what taking it back leaves.
+   */
+  const structural = (layers: string[], back: string[], make: () => void, unmake: () => void) => {
+    const run = (f: () => void) => () => {
+      f();
+      tree = buildLayerTree(doc);
+    };
+    run(make)();
+    push({ layers, back, key: layers.join(" "), undo: run(unmake), redo: run(make) }, false);
+  };
+  /** Making a Stack, or dissolving one, as recorded in `record`, with the layer `id`. */
+  const restack = (id: string, record: StructureRecord) => () => {
+    changes.record(id, record);
+    if (record.kind === "stack") compose(doc, id, record.after as Composed, record.style);
+    else dissolve(doc, id, record.after as Dissolved, record.style);
+  };
+  /** Taking that back. */
+  const unstack = (id: string, record: StructureRecord) => () => {
+    const change = changes.list().find((c) => c.layer === id && c.property === record.property);
+    if (change) changes.remove(change.id);
+    if (record.kind === "stack") decompose(doc, id, record.after as Composed, changes.list());
+    else undissolve(doc, id, record.after as Dissolved, changes.list());
+  };
+  /** Laid out in its container's own element, there to be placed: not text with no element of its own, nor pinned to the window. */
+  const placeable = (layer: Layer) => !layer.text && layer.el.parentElement === layer.parent?.el && !layer.el.hasAttribute(PIN_OFFSET_ATTR);
+  /** The layer is in every instance of `container`: not one of the instances a loop renders there. */
+  const repeatsWith = (layer: Layer, container: Layer) => tree.acrossInstances(layer).length === tree.acrossInstances(container).length;
+  /** A Frame that can become a Stack of its layers. */
+  const isFrameOfLayers = (layer: Layer) =>
+    layer.kind === "frame" && !!layer.parent && layer.children.length > 0 && layer.children.every((child) => placeable(child) && repeatsWith(child, layer));
+
+  /** Takes one change back out, as an edit that can be undone. Returns its layer as it is then. */
+  const revertOne = (change: Change): Layer | null => {
+    const layer = layerById(change.layer);
+    if (!layer) return null;
+    if (change.kind === "move") {
+      const { kind, target, scope, property, data, wrap } = change;
+      const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }) };
+      const el = elementsOf(doc, change.layer).find((e) => e.getAttribute(MOVE_ATTR) === property) ?? layer.el;
+      moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(el), record);
+      return tree.layerOf(el);
+    }
+    if (change.kind === "stack" || change.kind === "unstack") {
+      const { id: _, layer: id, ...record } = change;
+      const members = (change.after as Composed | Dissolved).layers.map((member) => member.layer);
+      const kept = change.kind === "stack" && (change.after as Composed).place ? members : [id];
+      structural(kept, [id], unstack(id, record), restack(id, record));
+      return layerById(kept[0]);
+    }
+    // Whatever the layer offers now (a hidden one offers only Visible), a change of its own can always go.
+    edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.after as PropertyValues[Property]);
+    return layer;
   };
 
   /** Puts a moved layer at `to`, on the canvas and in the ChangeSet, and builds the layers anew. */
@@ -480,6 +555,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       push(
         {
           layers: steps.flatMap((step) => step.layers),
+          back: steps.flatMap((step) => step.back ?? step.layers),
           key: steps.map((step) => step.key).join(", "),
           undo: () => [...steps].reverse().forEach((step) => step.undo()),
           redo: () => steps.forEach((step) => step.redo()),
@@ -492,29 +568,117 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       if (!step) return [];
       future.push(step);
       step.undo();
-      return layersOf(step);
+      return layersOf(step.back ?? step.layers);
     },
     redo() {
       const step = future.pop();
       if (!step) return [];
       past.push(step);
       step.redo();
-      return layersOf(step);
+      return layersOf(step.layers);
     },
     revert(id) {
-      const change = changes.list().find((c) => c.id === id);
-      const layer = change && layerById(change.layer);
-      if (!change || !layer) return null;
-      if (change.kind === "move") {
-        const { kind, target, scope, property, data, wrap } = change;
-        const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }) };
-        const el = elementsOf(doc, change.layer).find((e) => e.getAttribute(MOVE_ATTR) === property) ?? layer.el;
-        moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(el), record);
-        return tree.layerOf(el);
+      // What builds on it goes first, newest first, all one step.
+      let layer: Layer | null = null;
+      editor.batch(() => {
+        for (const change of withDependents(changes.list(), id)) {
+          const reverted = revertOne(change);
+          if (change.id === id) layer = reverted;
+        }
+      });
+      return layer && tree.layerOf(nodeOf(layer));
+    },
+    canStack(layers) {
+      if (layers.length === 1 && isFrameOfLayers(layers[0])) return true;
+      const parent = layers[0]?.parent;
+      return !!parent && layers.every((layer) => layer.parent === parent && placeable(layer) && repeatsWith(layer, parent));
+    },
+    stack(layers) {
+      if (!editor.canStack(layers)) throw new Error(`Vernier Kit: ${layers.map((layer) => layer.name).join(", ")} cannot be made a Stack`);
+      const frame = layers.length === 1 && isFrameOfLayers(layers[0]) ? layers[0] : null;
+      const members = frame ? frame.children : layers;
+      const container = frame ?? layers[0].parent!;
+      const count = tree.acrossInstances(container).length;
+      const inferred = inferStack(
+        members.map((member) => marginBox(member.el)),
+        frame && paddingBox(frame.el),
+      );
+      const ordered = inferred.order.map((i) => members[i]);
+      const composed: Composed = {
+        ...inferred.settings,
+        place: null,
+        layers: ordered.map((member) => ({ layer: idOf(member, tree.acrossInstances(member)), target: targetOf(member, count), from: placeOf(member) })),
+      };
+      let style = stackStyle(inferred.settings, inferred.stretch);
+      let id: string;
+      if (frame) id = idOf(frame, tree.acrossInstances(frame));
+      else {
+        id = String(++lastId);
+        // Where the first of them is; absolute where they are, if they all are.
+        const slots = slotsOf(container.el);
+        let absolute: Place["absolute"] = null;
+        if (members.every((member) => member.absolute)) {
+          const reference = paddingBox((members[0].el as HTMLElement).offsetParent ?? container.el);
+          const boxes = members.map((member) => marginBox(member.el));
+          absolute = { x: round(Math.min(...boxes.map((b) => b.left)) - reference.left), y: round(Math.min(...boxes.map((b) => b.top)) - reference.top) };
+          style = { ...style, position: "absolute", left: `${absolute.x}px`, top: `${absolute.y}px`, right: "auto", bottom: "auto" };
+        }
+        composed.place = {
+          container: { layer: idOf(container, tree.acrossInstances(container)), target: targetOf(container, count) },
+          nth: container.children.findIndex((child) => members.includes(child)) + 1,
+          slot: Math.min(...members.map((member) => slots.indexOf(member.el))),
+          absolute,
+        };
       }
-      // Whatever the layer offers now (a hidden one offers only Visible), a change of its own can always go.
-      edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.after as PropertyValues[Property]);
-      return layer;
+      const record: StructureRecord = { kind: "stack", target: targetOf(container, count), scope: "usage", property: "stack", before: null, after: composed, style, sources: [] };
+      const kept = frame ? [id] : composed.layers.map((member) => member.layer);
+      structural([id], kept, restack(id, record), unstack(id, record));
+      return layerById(id)!;
+    },
+    canUnstack: (layer) => layer.kind === "stack" && !!layer.parent && layer.children.every((child) => placeable(child) && repeatsWith(child, layer)),
+    unstack(layer) {
+      if (!editor.canUnstack(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be dissolved`);
+      const count = tree.acrossInstances(layer).length;
+      const id = idOf(layer, tree.acrossInstances(layer));
+      const before: StackSettings = {
+        direction: readAsShown(layer.el, "direction", colors),
+        gap: readAsShown(layer.el, "gap", colors),
+        padding: readAsShown(layer.el, "padding", colors),
+        align: readAsShown(layer.el, "align", colors),
+      };
+      // Each layer where it is now, from inside the Frame's border, its margins aside.
+      const frame = paddingBox(layer.el);
+      const dissolved: Dissolved = {
+        width: round(layer.el.getBoundingClientRect().width),
+        height: round(layer.el.getBoundingClientRect().height),
+        layers: layer.children.map((child) => {
+          const r = child.el.getBoundingClientRect();
+          const margins = getComputedStyle(child.el);
+          const x = round(r.left - frame.left - (parseFloat(margins.marginLeft) || 0));
+          const y = round(r.top - frame.top - (parseFloat(margins.marginTop) || 0));
+          const style = { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto", ...sizeOf(child.el) };
+          return { layer: idOf(child, tree.acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style };
+        }),
+      };
+      const own = getComputedStyle(layer.el);
+      const style = {
+        ...(/flex$/.test(own.display) && { display: own.display === "inline-flex" ? "inline-block" : "block" }),
+        ...sizeOf(layer.el),
+        // The positioning reference of its layers.
+        ...(own.position === "static" && { position: "relative" }),
+      };
+      const record: StructureRecord = {
+        kind: "unstack",
+        target: targetOf(layer, count),
+        scope: "usage",
+        property: "unstack",
+        before,
+        after: dissolved,
+        style,
+        sources: sourcesOf(layer.el, ["display", "flex-direction"]),
+      };
+      structural([id], [id], restack(id, record), unstack(id, record));
+      return layerById(id)!;
     },
   };
   return editor;
@@ -548,6 +712,8 @@ function readAsShown<P extends Property>(el: Element, property: P, colors: Color
 
 /** What a move records besides where the layer was and is. */
 type MoveRecord = Omit<Parameters<ChangeSet["record"]>[1], "before" | "after" | "style">;
+/** What making or dissolving a Stack records. */
+type StructureRecord = Omit<Change, "id" | "layer">;
 
 /** An element's size as CSS sets it now: what keeps it as large once it is absolute. */
 function sizeOf(el: Element): Record<string, string> {
@@ -766,7 +932,8 @@ function targetOf(layer: Layer, instances: number): Target {
   const path: string[] = [];
   for (let l: Layer | null = layer; l; l = l.parent) path.unshift(l.name);
   const context = { path, element: openingTag(layer.el) };
-  return { loc, chain, component, instances, locked: layer.kind === "locked", unlocated: !loc, context };
+  // A layer made this round is not in the source yet: the change that made it says where it goes.
+  return { loc, chain, component, instances, locked: layer.kind === "locked", unlocated: !loc && !layer.made, ...(layer.made && { made: layer.made }), context };
 }
 
 const MAX_CLASSES = 200;

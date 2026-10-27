@@ -3,7 +3,7 @@
  * to the canvas being edited and to a saved one. A layer goes in each instance
  * of its container's usage; a layer one of several a loop renders goes alone.
  */
-import { declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle } from "./canvas-style";
+import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle } from "./canvas-style";
 import type { Change, Place } from "./changeset";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
@@ -37,7 +37,7 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
     moved.push(node);
   });
 
-  const others = changes.filter((change) => change.layer === layer && change.kind === "style");
+  const others = changesOn(layer, changes).filter((change) => change.kind !== "move");
   for (const el of moved) {
     keepOriginal(el);
     restoreStyle(el, MOVE_CSS, others);
@@ -54,7 +54,7 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
   // A container no absolute layer is placed in any more is no longer a positioning reference.
   const id = from.container.layer;
   if (from.absolute && !changes.some((change) => change.kind === "move" && (change.after as Place).absolute && (change.after as Place).container.layer === id)) {
-    const own = changes.filter((change) => change.layer === id && change.kind === "style");
+    const own = changesOn(id, changes).filter((change) => change.kind !== "move");
     for (const container of sources) {
       if (!container.hasAttribute(REFERENCE_ATTR)) continue;
       container.removeAttribute(REFERENCE_ATTR);

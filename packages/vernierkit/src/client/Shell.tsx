@@ -122,11 +122,27 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
     setAdjusting(false);
     setSelected(layers);
   };
+  /** ⇧A: the layers made a Stack, which is then selected. */
+  const makeStack = (layers: Layer[]) => {
+    if (!editor?.canStack(layers)) return;
+    const stack = editor.stack(layers);
+    onEdit();
+    select([stack]);
+  };
+  /** ⌥⇧A: the Stacks among the layers dissolved, the Frames they become selected. */
+  const dissolve = (layers: Layer[]) => {
+    const stacks = editor ? layers.filter((layer) => editor.canUnstack(layer)) : [];
+    if (!editor || !stacks.length) return;
+    // Each dissolving builds the layers anew: each Stack is found again in them.
+    editor.batch(() => stacks.forEach((stack) => editor.unstack(editor.tree().layerOf(stack.el) ?? stack)));
+    onEdit();
+    select(stacks.map((stack) => editor.tree().layerOf(stack.el)).filter((layer) => layer !== null));
+  };
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select });
-  latest.current = { editor, onEdit, select };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select } = latest.current;
@@ -143,6 +159,24 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
       if (!layers.length) return;
       select(layers);
       onEdit();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  // ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, as in Figma. Fields and dialogs keep their keys.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const { selected, makeStack, dissolve } = latest.current;
+      const target = event.composedPath()[0];
+      // By the letter typed; with ⌥, a Mac types another one, so by the key.
+      const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
+      if (!a || !event.shiftKey || event.metaKey || event.ctrlKey || !selected.length) return;
+      if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.altKey) dissolve(selected);
+      else makeStack(selected);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -212,7 +246,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
         {tree && editor && selected.length ? (
           <>
             <LayerInfo tree={tree} layers={selected} />
-            <Properties editor={editor} layers={selected} onEdit={onEdit} />
+            <Properties editor={editor} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
           </>
         ) : (
           <p class="vk-panel-empty">Select a layer to see its properties.</p>

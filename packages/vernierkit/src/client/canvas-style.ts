@@ -3,7 +3,7 @@
  * own styles, and taking them back off. Works on the canvas being edited and on
  * a saved one alike.
  */
-import type { Change } from "./changeset";
+import type { Change, Composed, Dissolved } from "./changeset";
 import { ORIGINAL_STYLE_ATTR, pinOffsetOf } from "./style-source";
 
 /** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
@@ -14,6 +14,8 @@ export const AS_STACK_ATTR = "data-vk-as-stack";
 export const REFERENCE_ATTR = "data-vk-reference";
 /** On moved elements: the change (its property) they move under. */
 export const MOVE_ATTR = "data-vk-move";
+/** On elements this round made (a Stack around layers): the id of the layer made. */
+export const MADE_ATTR = "data-vk-made";
 
 /** The canvas elements of the layer with id `id`, in page order: one per instance. */
 export function elementsOf(doc: Document, id: string): Element[] {
@@ -65,4 +67,29 @@ export function restoreStyle(el: Element, names: string[], others: Change[]) {
   for (const change of [...others].sort((a, b) => Number(a.property === "visible") - Number(b.property === "visible"))) declare(el, change.style);
   if (!others.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
   if (el.hasAttribute(REFERENCE_ATTR)) declare(el, { position: "relative" });
+}
+
+/**
+ * The changes that declare styles on the layer with id `layer`, each with the
+ * declarations it puts on it: its own changes, and those that place it as one
+ * of the layers of a Stack made or dissolved.
+ */
+export function changesOn(layer: string, changes: Change[]): Change[] {
+  return changes.flatMap((change) => {
+    if (change.layer === layer) return [change];
+    if (change.kind === "unstack") {
+      const member = (change.after as Dissolved).layers.find((m) => m.layer === layer);
+      return member ? [{ ...change, style: member.style }] : [];
+    }
+    if (change.kind === "stack") {
+      const member = (change.after as Composed).layers.find((m) => m.layer === layer);
+      return member ? [{ ...change, style: memberStyle(member.from.absolute !== null) }] : [];
+    }
+    return [];
+  });
+}
+
+/** What joining a Stack declares on a layer: one that was absolute joins its layout. */
+export function memberStyle(absolute: boolean): Record<string, string> {
+  return absolute ? { position: "static" } : {};
 }

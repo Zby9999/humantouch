@@ -1054,3 +1054,285 @@ describe("moves, taken back in any order", () => {
     expect(editor.canDrop(layer("pinned"), find(editor.tree().root, (l) => l.el === doc.body)!)).toBe(true);
   });
 });
+
+/** Each element of the page, in order, with its style: what it looks like, apart from the editor's own attributes. */
+const styles = (doc: Document) => [...doc.body.querySelectorAll("*")].map((el) => `${el.id || el.localName} ${el.getAttribute("style")}`);
+
+/** A Frame 600 × 400 at the page's top left, with these layers in it. */
+const board = (layers: string) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="board" ${at("20:5")} style="position: relative; width: 600px; height: 400px">${layers}</div>
+</body>`;
+/** An absolute layer in the board: `[left, top, width, height]`. */
+const placed = (id: string, [left, top, width, height]: number[]) =>
+  `<div id="${id}" ${at(`2${id.charCodeAt(0) - 96}:7`)} style="position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px"></div>`;
+
+describe("making a Stack", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const rects = (...ids: string[]) => ids.map((id) => canvas.doc.getElementById(id)!.getBoundingClientRect().toJSON() as DOMRect);
+    return { ...canvas, layer, rects };
+  };
+  /** How far each layer moved, at most, in px. */
+  const drift = (before: DOMRect[], after: DOMRect[]) =>
+    Math.max(...before.map((b, i) => Math.max(Math.abs(b.x - after[i].x), Math.abs(b.y - after[i].y))));
+
+  test("of layers side by side: a horizontal Stack, in their order across, its gap the median of the spaces between, where they were", () => {
+    // In the page's order, the third comes first; the spaces between are 20, 24 and 30px.
+    const { doc, editor, changes, layer, rects } = open(
+      board([placed("c", [264, 30, 100, 40]), placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40]), placed("d", [394, 30, 100, 40])].join("")),
+    );
+    const before = rects("a", "b", "c", "d");
+
+    const stack = editor.stack(["a", "b", "c", "d"].map(layer));
+
+    expect(stack.kind).toBe("stack");
+    expect(stack.direction).toBe("horizontal");
+    expect(stack.children.map((l) => l.el.id)).toEqual(["a", "b", "c", "d"]);
+    expect(stack.el.parentElement).toBe(doc.getElementById("board"));
+    expect(drift(before, rects("a", "b", "c", "d"))).toBeLessThanOrEqual(6);
+    expect(editor.tree().root.children[0].children).toEqual([stack]);
+    const [change] = changes.list();
+    expect(change).toMatchObject({
+      kind: "stack",
+      layer: stack.el.getAttribute("data-vk-layer"),
+      property: "stack",
+      target: { loc: "src/App.tsx:20:5" },
+      before: null,
+      after: {
+        direction: "horizontal",
+        gap: 24,
+        padding: [0, 0, 0, 0],
+        align: { x: "start", y: "start", distribute: false },
+        place: { container: { target: { loc: "src/App.tsx:20:5" } }, nth: 1, absolute: { x: 20, y: 30 } },
+        layers: ["a", "b", "c", "d"].map((id) => ({ target: { loc: layer(id).loc }, from: { absolute: { x: Number(doc.getElementById(id)!.style.left.slice(0, -2)) } } })),
+      },
+      // As tall as each other: they stay as tall as the Stack.
+      style: { display: "flex", "flex-direction": "row", gap: "24px", "align-items": "stretch", position: "absolute", left: "20px", top: "30px" },
+    });
+  });
+
+  test("of layers one above the other: a vertical Stack; centered across, it aligns them center", () => {
+    const { editor, changes, layer, rects } = open(
+      board([placed("a", [140, 0, 120, 50]), placed("b", [170, 70, 60, 50]), placed("c", [155, 130, 90, 50])].join("")),
+    );
+    const before = rects("a", "b", "c");
+
+    editor.stack(["a", "b", "c"].map(layer));
+
+    // Spaces of 20 and 10px: the median of two is their mean.
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 15, align: { x: "center", y: "start" } });
+    expect(drift(before, rects("a", "b", "c"))).toBeLessThanOrEqual(5);
+  });
+
+  test("lined up on their far edges, they are aligned to the end; spread out no further across than down, the Stack is vertical", () => {
+    const { editor, changes, layer } = open(board([placed("a", [100, 0, 100, 40]), placed("b", [140, 60, 60, 40])].join("")));
+
+    editor.stack([layer("a"), layer("b")]);
+
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 20, align: { x: "end", y: "start" } });
+  });
+
+  test("overlapping layers are put one after the other, with no gap", () => {
+    const { editor, changes, layer } = open(board([placed("a", [0, 0, 100, 40]), placed("b", [60, 10, 100, 40])].join("")));
+
+    editor.stack([layer("a"), layer("b")]);
+
+    expect(changes.list()[0].after).toMatchObject({ direction: "horizontal", gap: 0 });
+  });
+
+  test("a Frame selected alone becomes a Stack of its layers, its padding the room between its edges and them", () => {
+    const { doc, editor, changes, layer, rects } = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("")));
+    const before = rects("a", "b");
+
+    const stack = editor.stack([layer("board")]);
+
+    expect(stack.el).toBe(doc.getElementById("board"));
+    expect(stack.kind).toBe("stack");
+    expect(changes.list()[0]).toMatchObject({
+      kind: "stack",
+      target: { loc: "src/App.tsx:20:5" },
+      after: { place: null, direction: "horizontal", gap: 20, padding: [30, 360, 330, 20] },
+      style: { display: "flex", padding: "30px 360px 330px 20px" },
+    });
+    expect(drift(before, rects("a", "b"))).toBe(0);
+    expect(style(doc.getElementById("a")!).position).toBe("static");
+  });
+
+  test("of layers in a Stack's layout: a Stack in their place, nothing moving", () => {
+    const { doc, editor, changes, layer, rects } = open();
+    const before = rects("a", "b", "c");
+
+    const stack = editor.stack([layer("b"), layer("a")]);
+
+    expect([...doc.getElementById("list")!.children].map((el) => el.id || el.localName)).toEqual(["div", "c"]);
+    expect(stack.children.map((l) => l.el.id)).toEqual(["a", "b"]);
+    expect(rects("a", "b", "c")).toEqual(before);
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 10, align: { x: "start" }, place: { nth: 1, absolute: null } });
+    // Its layers were as wide as the Stack they were in: they still are.
+    expect(changes.list()[0].style["align-items"]).toBe("stretch");
+  });
+
+  test("in every instance of the usage; not of instances a loop renders", () => {
+    const card = (n: number) => `<article ${at("30:9")} style="display: flex; flex-direction: column; gap: 4px">
+        <h3 ${at("31:11")} style="margin: 0">Card ${n}</h3><p ${at("32:11")} style="margin: 0">Body</p></article>`;
+    const { doc, editor, changes } = open(`<!DOCTYPE html><body style="margin: 0"><main ${at("29:7")}>${[1, 2, 3].map(card).join("")}</main></body>`);
+    const tree = editor.tree();
+    const [h3, p] = ["h3", "p"].map((tag) => find(tree.root, (l) => l.el === doc.querySelector(tag))!);
+    const articles = [...doc.querySelectorAll("article")].map((el) => find(tree.root, (l) => l.el === el)!);
+
+    expect(editor.canStack([articles[0], articles[1]])).toBe(false);
+    editor.stack([h3, p]);
+
+    expect([...doc.querySelectorAll("article")].map((el) => [...el.children].map((c) => c.localName))).toEqual([["div"], ["div"], ["div"]]);
+    expect(changes.list()[0].target.instances).toBe(3);
+  });
+
+  test("what can be made a Stack: layers side by side in one container, not text with no element of its own, not the page", () => {
+    const { editor, layer } = open();
+    const run = find(editor.tree().root, (l) => l.name === "more")!;
+
+    expect(editor.canStack([layer("a"), layer("c")])).toBe(true);
+    expect(editor.canStack([layer("a"), layer("d")])).toBe(false);
+    expect(editor.canStack([run])).toBe(false);
+    expect(editor.canStack([editor.tree().root])).toBe(false);
+    expect(editor.canStack([])).toBe(false);
+  });
+
+  test("undone and redone in one step each", () => {
+    const { doc, editor, changes, layer } = open();
+    const original = styles(doc);
+
+    editor.stack([layer("a"), layer("b")]);
+    expect(editor.undo().map((l) => l.el.id)).toEqual(["a", "b"]);
+    expect(styles(doc)).toEqual(original);
+    expect(changes.list()).toEqual([]);
+
+    const [stack] = editor.redo();
+    expect(stack.kind).toBe("stack");
+    expect(stack.children.map((l) => l.el.id)).toEqual(["a", "b"]);
+    expect(changes.list()).toHaveLength(1);
+  });
+
+  test("a change to the new Stack says it is new; taken back from the change list, the Stack takes it along", () => {
+    const opened = open();
+    const { doc, editor, changes, layer } = opened;
+    const stack = editor.stack([layer("a"), layer("b")]);
+    editor.set(stack, "gap", 4);
+    const id = stack.el.getAttribute("data-vk-layer");
+    expect(changes.list()[1]).toMatchObject({ property: "gap", target: { loc: null, made: id, unlocated: false, context: { path: ["Page", "App", "Stack"] } } });
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    expect(editor.revert(changes.list()[0].id)?.el.id).toBe("a");
+    expect([...doc.getElementById("list")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(changes.list().map((c) => c.property)).toEqual(["stack", "gap"]);
+
+    expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
+  });
+
+  test("taken back from a saved round, its layers go back where they were, as they were", () => {
+    const opened = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("") + placed("c", [0, 200, 10, 10])));
+    opened.editor.stack([opened.layer("b"), opened.layer("a")]);
+    opened.editor.set(opened.layer("c"), "opacity", 0.5);
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+
+    const reverted = revertSaved(saved, saved.changeSet.changes[0].id)!;
+
+    const doc = new DOMParser().parseFromString(reverted.canvas, "text/html");
+    expect([...doc.getElementById("board")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
+    expect(doc.getElementById("a")!.getAttribute("style")).toBe("position: absolute; left: 20px; top: 30px; width: 100px; height: 40px");
+    expect(reverted.changeSet.changes.map((c) => c.property)).toEqual(["opacity"]);
+  });
+});
+
+describe("dissolving a Stack", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const rects = (...ids: string[]) => ids.map((id) => canvas.doc.getElementById(id)!.getBoundingClientRect().toJSON() as DOMRect);
+    return { ...canvas, layer, rects };
+  };
+
+  test("makes it a Frame of the same size, its layers absolute where they were, as large as they were", () => {
+    const { doc, editor, changes, layer, rects } = open();
+    const before = rects("list", "a", "b", "c", "row");
+
+    const frame = editor.unstack(layer("list"));
+
+    expect(rects("list", "a", "b", "c", "row")).toEqual(before);
+    expect(frame.kind).toBe("frame");
+    expect(frame.children.map((l) => [l.el.id, l.absolute])).toEqual([["a", true], ["b", true], ["c", true]]);
+    expect(style(doc.getElementById("list")!).position).toBe("relative");
+    expect(changes.list()[0]).toMatchObject({
+      kind: "unstack",
+      property: "unstack",
+      target: { loc: "src/App.tsx:5:5" },
+      before: { direction: "vertical", gap: 10, padding: [0, 0, 0, 0], align: { x: "start", y: "start", distribute: false } },
+      after: {
+        width: 200,
+        height: 80,
+        layers: [
+          { target: { loc: "src/App.tsx:6:7" }, x: 0, y: 0, width: 200, height: 20 },
+          { target: { loc: "src/App.tsx:7:7" }, x: 0, y: 30, width: 200, height: 20 },
+          { target: { loc: "src/App.tsx:8:7" }, x: 0, y: 60, width: 200, height: 20 },
+        ],
+      },
+      style: { display: "block", width: "200px", height: "80px", position: "relative" },
+    });
+    expect(changes.list()[0].sources.map((s) => s.declaration)).toContain("display: flex");
+  });
+
+  test("with padding, and layers with margins, nothing moves", () => {
+    const { editor, layer, rects } = open(`<!DOCTYPE html><body style="margin: 0">
+      <div id="s" ${at("5:5")} style="display: flex; align-items: center; gap: 6px; padding: 12px 8px; border: 2px solid">
+        <div id="a" ${at("6:7")} style="width: 40px; height: 40px; margin: 5px"></div>
+        <div id="b" ${at("7:7")} style="width: 30px; height: 10px"></div>
+      </div></body>`);
+    const before = rects("s", "a", "b");
+
+    editor.unstack(layer("s"));
+
+    expect(rects("s", "a", "b")).toEqual(before);
+  });
+
+  test("undone and redone, and taken back from a saved round", () => {
+    const { doc, editor, changes, layer } = open();
+    const original = styles(doc);
+
+    editor.unstack(layer("list"));
+    expect(editor.undo().map((l) => l.el.id)).toEqual(["list"]);
+    expect(styles(doc)).toEqual(original);
+    editor.redo();
+    expect(style(doc.getElementById("a")!).position).toBe("absolute");
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
+  });
+
+  test("a Stack made of layers can be dissolved again", () => {
+    const { doc, editor, layer, rects } = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("")));
+    const stack = editor.stack([layer("a"), layer("b")]);
+    const before = rects("a", "b");
+
+    editor.unstack(stack);
+
+    expect(rects("a", "b")).toEqual(before);
+    expect(style(doc.getElementById("a")!).position).toBe("absolute");
+  });
+
+  test("only a Stack, with no text of its own beside its layers, nor instances a loop renders", () => {
+    const { editor, layer } = open();
+    const item = `data-vk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const loop = openCanvas(`<!DOCTYPE html><ul id="list" ${at("5:5")} style="display: flex"><li ${item}>One</li><li ${item}>Two</li></ul>`);
+    const text = openCanvas(`<!DOCTYPE html><button id="go" ${at("5:5")} style="display: flex">Go <span ${at("5:20")}>→</span></button>`);
+
+    expect(editor.canUnstack(layer("list"))).toBe(true);
+    expect(editor.canUnstack(layer("board"))).toBe(false);
+    expect(editor.canUnstack(layer("a"))).toBe(false);
+    expect(text.editor.canUnstack(text.layerOf(text.doc.getElementById("go")!))).toBe(false);
+    expect(loop.editor.canUnstack(loop.layerOf(loop.doc.getElementById("list")!))).toBe(false);
+  });
+});

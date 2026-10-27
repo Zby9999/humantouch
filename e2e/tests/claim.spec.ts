@@ -113,7 +113,7 @@ test("a reorder and an absolute placement are told apart, with where each goes; 
   expect(absolute).toMatch(/^2\. Absolute\n/);
   expect(absolute).toContain("place it absolute in Frame (`<div id=\"board\">`, not located");
   expect(absolute).toContain("- **Reference style:** `position: absolute`");
-  expect(await vernierkit("done", "1")).toContain("Not checked on the page: only style changes are checked on the page so far, not moves.");
+  expect(await vernierkit("done", "1")).toContain("Not checked on the page: only style changes are checked on the page so far, not changes to the structure.");
 });
 
 test("with no changes, claim says so and leaves the round as it is", async () => {

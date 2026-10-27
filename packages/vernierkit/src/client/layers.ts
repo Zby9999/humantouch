@@ -4,6 +4,7 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
+import { LAYER_ID_ATTR, MADE_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
@@ -31,6 +32,8 @@ export interface Layer {
   isInstance: boolean;
   /** For an instance: `file:line:column` of its usage, the JSX that uses the component. */
   usageLoc: string | null;
+  /** Made this round, or in a layer made this round: the id of the layer made. */
+  made: string | null;
   parent: Layer | null;
   children: Layer[];
 }
@@ -99,6 +102,7 @@ export function buildLayerTree(doc: Document): LayerTree {
       chain,
       isInstance: false,
       usageLoc: null,
+      made: el.getAttribute(MADE_ATTR),
       parent,
       children: [],
     };
@@ -245,10 +249,16 @@ export function typeLabel(layer: Layer): string {
   return layer.absolute ? `${type} · Absolute` : type;
 }
 
-/** The same layer across instances shares a location (a locked layer has only its usage's) and a usage chain. */
+/**
+ * The same layer across instances shares a location (a locked layer has only
+ * its usage's) and a usage chain. A layer made this round repeats with the
+ * others the same edit made, apart from the layers it was made from.
+ */
 function repeatKey(layer: Layer): string | null {
   const loc = layer.kind === "locked" ? layer.usageLoc : layer.loc;
-  return loc && usageKey(loc, layer.chain);
+  if (!layer.made) return loc && usageKey(loc, layer.chain);
+  if (loc) return `${usageKey(loc, layer.chain)} made ${layer.made}`;
+  return layer.el.getAttribute(LAYER_ID_ATTR) === layer.made ? `made ${layer.made}` : null;
 }
 
 /** Elements with the same key are one layer across the instances of a usage. */

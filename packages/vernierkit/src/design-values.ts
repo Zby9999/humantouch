@@ -1,5 +1,5 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
-import type { Change, Place } from "./client/changeset";
+import type { Change, Composed, Place, StackSettings } from "./client/changeset";
 import type { Align, Fill, Padding, Radius, Size } from "./client/edits";
 
 const PROPERTIES: Record<string, string> = {
@@ -35,13 +35,38 @@ export function propertyName(property: string): string {
   return IN_A_SENTENCE[property] ?? propertyTitle(property).toLowerCase();
 }
 
-/** What a change is, as a title: "Fill", "Reorder". */
+/** What a change is, as a title: "Fill", "Reorder", "Make Stack". */
 export function changeTitle(change: Change): string {
-  return change.kind === "move" ? moveKind(change) : propertyTitle(change.property);
+  return change.kind === "style" ? propertyTitle(change.property) : kindTitle(change);
+}
+
+/** The kind of a change: "Style", "Reorder", "Make Stack". */
+export function kindTitle(change: Change): string {
+  switch (change.kind) {
+    case "style":
+      return "Style";
+    case "move":
+      return moveKind(change);
+    case "stack":
+      return "Make Stack";
+    case "unstack":
+      return "Dissolve Stack";
+  }
+}
+
+/** How a Stack lays its layers out, in a sentence: "horizontal, with a gap of 24px, no padding, aligned top left". */
+export function stackSettings({ direction, gap, padding, align }: StackSettings): string {
+  const room = padding.some((p) => p) ? `padding ${value("padding", padding)}` : "no padding";
+  return `${direction}, with a gap of ${gap}px, ${room}, aligned ${value("align", align)}`;
 }
 
 /** A change's values, from the first to the latest: "#FFFFFF → #FF0000", "3rd → 1st". */
 export function changeValues(change: Change): string {
+  if (change.kind === "stack") {
+    const { layers, direction, gap } = change.after as Composed;
+    return `${layers.length === 1 ? "1 layer" : `${layers.length} layers`}, ${direction}, gap ${gap}px`;
+  }
+  if (change.kind === "unstack") return `${(change.before as StackSettings).direction} Stack → Frame`;
   if (change.kind === "move") {
     const [before, after] = [change.before, change.after] as Place[];
     const name = (place: Place) => place.container.target.context.path.at(-1);

@@ -3,6 +3,7 @@
  * language, for the Agent to apply. Adjusting one property of one layer again
  * and again stays a single change, from the first value to the latest.
  */
+import type { Align, Padding } from "./edits";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
 
@@ -17,6 +18,8 @@ export interface Target {
   instances: number;
   locked: boolean;
   unlocated: boolean;
+  /** The layer is new this round, or in a new one: the id of the layer made, whose change says what it is. */
+  made?: string;
   /** Where the layer is on the page, for the Agent to find it by when its source is not known. */
   context: {
     /** Layer names from the page down to the layer itself. */
@@ -38,10 +41,46 @@ export interface Place {
   absolute: { x: number; y: number } | null;
 }
 
+/** How a Stack lays its layers out, in design language. */
+export interface StackSettings {
+  direction: "horizontal" | "vertical";
+  gap: number;
+  padding: Padding;
+  align: Align;
+}
+
+/** A layer a change to the structure takes in: its id on the canvas, and how the Agent finds it in the source. */
+export interface Member {
+  layer: string;
+  target: Target;
+}
+
+/** A Stack made of layers (the `after` of a `stack` change): how it lays them out, and which. */
+export interface Composed extends StackSettings {
+  /** Where the new Stack is. Null: the Frame the change is made to became the Stack. */
+  place: Place | null;
+  /** The layers in it, in order, each with where it was. */
+  layers: (Member & { from: Place })[];
+}
+
+/** A Stack dissolved (the `after` of an `unstack` change): a Frame of its size, its layers absolute in it. */
+export interface Dissolved {
+  /** The Frame's size, in px. */
+  width: number;
+  height: number;
+  /** Its layers, each where it was: `x` and `y` in px from the Frame's top left, its size, and the CSS that places it so. */
+  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string> })[];
+}
+
 export interface Change {
   id: number;
-  /** `style`: a property of the layer changes. `move`: the layer goes to another place; `before` and `after` are `Place`s. */
-  kind: "style" | "move";
+  /**
+   * `style`: a property of the layer changes. `move`: the layer goes to
+   * another place; `before` and `after` are `Place`s. `stack`: layers are made
+   * a Stack, the layer; `after` is `Composed`. `unstack`: the Stack, the
+   * layer, is dissolved; `before` is its `StackSettings`, `after` is `Dissolved`.
+   */
+  kind: "style" | "move" | "stack" | "unstack";
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
@@ -120,6 +159,51 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
     list: () => [...changes.values()],
     save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
+}
+
+/**
+ * Change `id` and the changes that build on it, newest first: what taking it
+ * back out takes along. A change builds on another when it changes the place
+ * of a layer the other placed before it, or when it is made to, into or out
+ * of a layer the other made.
+ */
+export function withDependents(list: Change[], id: number): Change[] {
+  const taken = new Set<Change>();
+  const take = (change: Change) => {
+    if (taken.has(change)) return;
+    taken.add(change);
+    for (const other of list) if (buildsOn(other, change)) take(other);
+  };
+  const change = list.find((c) => c.id === id);
+  if (change) take(change);
+  return [...taken].sort((a, b) => b.id - a.id);
+}
+
+function buildsOn(later: Change, earlier: Change): boolean {
+  if (later === earlier) return false;
+  const made = madeBy(earlier);
+  if (made && (later.target.made === made || placed(later).includes(made) || placesOf(later).some((place) => place.container.layer === made))) return true;
+  return later.id > earlier.id && placed(later).some((layer) => placed(earlier).includes(layer));
+}
+
+/** The layer a change makes, if it makes one. */
+export function madeBy(change: Change): string | null {
+  return change.kind === "stack" && (change.after as Composed).place ? change.layer : null;
+}
+
+/** The layers whose place or layout a change changes. */
+function placed(change: Change): string[] {
+  if (change.kind === "move") return [change.layer];
+  if (change.kind === "stack" || change.kind === "unstack") return [change.layer, ...(change.after as Composed | Dissolved).layers.map((member) => member.layer)];
+  return [];
+}
+
+/** The places a change takes layers from and to. */
+function placesOf(change: Change): Place[] {
+  if (change.kind === "move") return [change.before, change.after] as Place[];
+  if (change.kind !== "stack") return [];
+  const { place, layers } = change.after as Composed;
+  return [...(place ? [place] : []), ...layers.map((member) => member.from)];
 }
 
 /** One change per property of a layer. */

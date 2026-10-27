@@ -5,9 +5,9 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import type { Change, Place, Target } from "./client/changeset";
+import { madeBy, type Change, type Composed, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
-import { changeTitle, moveKind, ordinal, propertyName, value } from "./design-values";
+import { changeTitle, kindTitle, moveKind, ordinal, propertyName, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -34,28 +34,86 @@ export function changes(count: number): string {
 export function describeChanges(list: Change[], root: string, options: NotesOptions = TO_APPLY): string {
   const count = changes(list.length);
   let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
-  for (const change of list) notes += section(change, root, options.status?.(change));
+  for (const change of list) notes += section(change, list, root, options.status?.(change));
   return notes;
 }
 
-function section(change: Change, root: string, status: string | undefined): string {
+function section(change: Change, list: Change[], root: string, status: string | undefined): string {
   const { target } = change;
-  const move = change.kind === "move";
   const style = Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``);
+  const made = change.kind === "stack" ? (change.after as Composed).place : null;
   const lines = [
     ...(status ? [`**Status:** ${status}`] : []),
-    `**Kind:** ${move ? moveKind(change) : "Style"}`,
-    `**Layer:** ${layer(target)}`,
-    `**Location:** ${target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
+    `**Kind:** ${kindTitle(change)}`,
+    `**Layer:** ${made ? `a new Stack, in ${container(made)}` : layer(target)}`,
+    `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
-    `**Design intent:** ${move ? moveIntent(change) : `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`}`,
+    `**Design intent:** ${intent(change)}`,
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(target)] : []),
     ...(change.wrap ? [WRAP] : []),
+    ...(change.kind === "stack" ? joinLayout(change.after as Composed) : []),
     `**Reference style:** ${style.length ? style.join(", ") : "none: only its place changes"}`,
-    ...(move ? [] : [`**Currently set by:** ${setBy(change.sources ?? [], root)}`]),
+    ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
+}
+
+function intent(change: Change): string {
+  switch (change.kind) {
+    case "style":
+      return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
+    case "move":
+      return moveIntent(change);
+    case "stack":
+      return stackIntent(change.after as Composed);
+    case "unstack":
+      return unstackIntent(change.before as StackSettings, change.after as Dissolved);
+  }
+}
+
+/** The layers a Stack is made of, in order, how it lays them out, and where it goes. */
+function stackIntent(composed: Composed): string {
+  const { place, layers } = composed;
+  const items = layers.map(({ target }, i) => `\n  ${i + 1}. ${member(target)}`).join("");
+  if (!place) {
+    const count = layers.length === 1 ? "1 layer goes" : `${layers.length} layers go`;
+    return `Make this Frame a Stack: ${stackSettings(composed)}. Its ${count} in its layout, in this order:${items}`;
+  }
+  const these = layers.length === 1 ? "this layer" : `these ${layers.length} layers, in this order,`;
+  const where = place.absolute
+    ? `Place it absolute in ${container(place)}, at X ${place.absolute.x}px and Y ${place.absolute.y}px from the Frame's top left (CSS \`left\` and \`top\`).`
+    : `Put it in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer, where the first of them was.`;
+  return `Wrap ${these} in a new Stack: ${stackSettings(composed)}. ${where}${items}`;
+}
+
+/** The layers of a new Stack that are absolute now, and lose it. */
+function joinLayout({ layers }: Composed): string[] {
+  const absolute = layers.filter(({ from }) => from.absolute).length;
+  if (!absolute) return [];
+  const which = absolute === layers.length ? "the layers are" : `${absolute} of the layers are`;
+  return [`**Join the layout:** ${which} placed absolute now. In the Stack, they are laid out by it: take their absolute positioning off.`];
+}
+
+/** The Stack as it was, the Frame it becomes, and where each of its layers is placed. */
+function unstackIntent(before: StackSettings, { width, height, layers }: Dissolved): string {
+  const items = layers.map(({ target, x, y, width, height }, i) => `\n  ${i + 1}. ${member(target)}: X ${x}px, Y ${y}px, ${width} × ${height}px`).join("");
+  return (
+    `Dissolve this Stack (${stackSettings(before)}): make it a Frame, Fixed ${width} × ${height}px, that is the positioning reference of its layers (\`position: relative\`), ` +
+    `and place each of its layers absolute where it is, at its size (CSS \`left\` and \`top\` from the Frame's top left):${items}`
+  );
+}
+
+/** A layer a Stack is made of or dissolved into, as the Agent finds it. */
+function member(target: Target): string {
+  return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${target.loc ? `at \`${target.loc}\`` : "not located"})`;
+}
+
+/** Where a layer made this round is: in the change that makes it. */
+function newLayer(made: string, list: Change[]): string {
+  const maker = list.find((change) => madeBy(change) === made);
+  const which = maker ? `in change ${maker.id}` : "earlier this round";
+  return `**New:** the layer is made ${which}, and is not in the source yet. Apply that change first, then change it there.`;
 }
 
 /** Where a move takes the layer from, and to. */
