@@ -48,7 +48,9 @@ For each change, in order:
 3. Read what `done` says. It checks the change on the designer's open page:
    - **it shows the change**: go on to the next one.
    - **it does not show the change**: something overrides your edit; the output says what the page shows instead. Look again at **Currently set by**, fix it, and run `done` with the same number again. Go on only once it shows, or once you know it cannot: then report it.
-   - **Not checked**: no page could check it (none is open, or the layer is not on it now). Go on; it is not an error.
+   - **Not checked**: no page could check it (none is open, or the layer is not on it now), or the change is not one the page can tell (a new layer, a Stack made or dissolved, a move into another container, a copy, new words). Go on; it is not an error.
+
+   Of the changes to the structure, the page checks a **Reorder** by the order of the container's layers, an **Absolute** placement in the same container by where the layer is, and a **Delete** by the layer being gone.
 
 If a change cannot be applied exactly as asked, apply the closest you can and still run `done`; or leave it out and do not run `done` for it. Either way, report it (step 5).
 

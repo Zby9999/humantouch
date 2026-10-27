@@ -15,6 +15,7 @@ import {
   LAYER_ID_ATTR,
   MADE_ATTR,
   MOVE_ATTR,
+  REFERENCE_ATTR,
   restoreStyle,
   TEXT_ATTR,
   WRAP_ATTR,
@@ -34,7 +35,7 @@ import {
 } from "./changeset";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, type Layer, type LayerKind, type LayerTree } from "./layers";
-import { relocate, slotsOf } from "./moves";
+import { relocate, slotsOf, syncOrders } from "./moves";
 import { compose, decompose, dissolve, inferStack, marginBox, paddingBox, stackStyle, undissolve } from "./stacks";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -509,6 +510,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const structural = (layers: string[], back: string[], make: () => void, unmake: () => void) => {
     const run = (f: () => void) => () => {
       f();
+      syncOrders(doc, changes, isFlow);
       tree = buildLayerTree(doc);
     };
     run(make)();
@@ -612,8 +614,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     const layer = layerById(change.layer);
     if (!layer) return null;
     if (change.kind === "move") {
-      const { kind, target, scope, property, data, wrap } = change;
-      const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }) };
+      const { kind, target, scope, property, data, wrap, reference } = change;
+      const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }), ...(reference && { reference }) };
       const el = elementsOf(doc, change.layer).find((e) => e.getAttribute(MOVE_ATTR) === property) ?? layer.el;
       moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(el), record);
       return tree.layerOf(el);
@@ -644,7 +646,13 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
     changes.record(id, { ...record, before: from, after: to, style });
     relocate(doc, id, record.property, from, to, style, changes.list());
+    syncOrders(doc, changes, isFlow);
     tree = buildLayerTree(doc);
+  };
+  /** Whether the container with id `id` lays its layers out as a plain top-to-bottom flow, not as flex or grid. */
+  const isFlow = (id: string) => {
+    const [el] = elementsOf(doc, id);
+    return !!el && !/(flex|grid)$/.test(getComputedStyle(el).display);
   };
 
   const editor: Editor = {
@@ -685,7 +693,19 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       }
       const el = layer.el;
       const earlier = changes.list().find((change) => change.layer === id && change.property === property);
-      const record: MoveRecord = { kind: "move", target, scope: "usage", property, sources: [], ...(loop && { data: true }), ...(text && { wrap: true }) };
+      // Placed absolute in a container the page does not position: it becomes the positioning reference.
+      const container = to.parent.el;
+      const reference = !!after.absolute && (getComputedStyle(container).position === "static" || container.hasAttribute(REFERENCE_ATTR));
+      const record: MoveRecord = {
+        kind: "move",
+        target,
+        scope: "usage",
+        property,
+        sources: [],
+        ...(loop && { data: true }),
+        ...(text && { wrap: true }),
+        ...(reference && { reference: true }),
+      };
       moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, sizeOf(el), record);
       return tree.layerOf(el) ?? layer;
     },
@@ -1277,14 +1297,27 @@ function targetOf(layer: Layer, instances: number): Target {
   // Text given an element of its own is written in its container.
   const written = layer.el.hasAttribute(WRAP_ATTR) && layer.el.parentElement ? layer.el.parentElement : layer.el;
   const context = { path, element: openingTag(written) };
+  // Text with no element of its own is found by which run of text of its container it is.
+  const wrapped = written !== layer.el ? Number(layer.el.getAttribute(WRAP_ATTR)) : null;
+  const run = layer.text ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : wrapped;
   // A layer made this round is not in the source yet: the change that made it says where it goes.
-  return { loc, chain, component, instances, locked: layer.kind === "locked", unlocated: !loc && !layer.made, ...(layer.made && { made: layer.made }), context };
+  return {
+    loc,
+    chain,
+    component,
+    instances,
+    locked: layer.kind === "locked",
+    unlocated: !loc && !layer.made,
+    ...(layer.made && { made: layer.made }),
+    ...(run !== null && { run }),
+    context,
+  };
 }
 
 const MAX_CLASSES = 200;
 
 /** `<div id="root" class="…">`: what of the element the Agent can search the source for. */
-function openingTag(el: Element): string {
+export function openingTag(el: Element): string {
   let tag = `<${el.localName}`;
   if (el.id) tag += ` id="${el.id}"`;
   const classes = el.getAttribute("class")?.trim();

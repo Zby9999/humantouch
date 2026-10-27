@@ -538,6 +538,24 @@ describe("done, checked on the page", () => {
     expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
   });
 
+  test("for a deletion, a reorder and an absolute placement, says what the page shows instead", async () => {
+    const list = { ...cards, loc: "src/App.tsx:20:7", instances: 1 };
+    const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });
+    saveRound(
+      { ...redFill, kind: "delete", property: "delete", before: place(2), after: null, style: { display: "none" } },
+      { ...redFill, id: 2, kind: "move", property: "move", before: place(3), after: place(1), style: {} },
+      { ...redFill, id: 3, layer: "5", kind: "move", property: "move", before: place(2), after: place(3, { x: 40, y: 12 }), style: {} },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({ outcome: "not shown", actual: id === 3 ? { x: 0, y: 0 } : null }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The layer is still on the page: take it out of the code (for a data change, its item out of the data), and run `npx vernierkit done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain("Its container's layers are in another order on the page: put it 1st, as the notes say, and run `npx vernierkit done 2` again.\n");
+    expect((await cli("done", "3")).output).toContain("The layer is at X 0px and Y 0px, not absolute at X 40px and Y 12px: check its `position`, `left` and `top`");
+  });
+
   test("says why when the page could not check it", async () => {
     saveRound(redFill);
     await cli("claim");

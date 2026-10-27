@@ -7,7 +7,7 @@ import { createChangeSet, withDependents, type Composed, type Created, type Diss
 import { changesOn, elementsOf, restoreStyle } from "./canvas-style";
 import { cssOf, type Property } from "./edits";
 import { removeMade, unhide, writeText } from "./layer-changes";
-import { relocate } from "./moves";
+import { relocate, syncOrders } from "./moves";
 import { decompose, undissolve } from "./stacks";
 
 /**
@@ -32,6 +32,8 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
     else for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest));
   }
+  // A reorder's container's order is as recorded when it was a plain flow: it has no styles to tell here.
+  syncOrders(doc, changes, () => false);
   if (!changes.list().length) return null;
   const doctype = /^<!DOCTYPE html>/i.test(round.canvas) ? "<!DOCTYPE html>" : "";
   return { canvas: doctype + doc.documentElement.outerHTML, changeSet: changes.save() };

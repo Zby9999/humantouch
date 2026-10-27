@@ -20,6 +20,8 @@ export interface Target {
   unlocated: boolean;
   /** The layer is new this round, or in a new one: the id of the layer made, whose change says what it is. */
   made?: string;
+  /** Text with no element of its own: which run of text in the element at `loc` it is, from 0. */
+  run?: number;
   /** Where the layer is on the page, for the Agent to find it by when its source is not known. */
   context: {
     /** Layer names from the page down to the layer itself. */
@@ -119,6 +121,15 @@ export interface Change {
   data?: true;
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
+  /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
+  reference?: true;
+  /**
+   * A reorder: the layers of the container in their order now, by usage key
+   * (null for one with no source marker), and whether the container is a
+   * plain top-to-bottom flow; what the live page shows the new order by. Null:
+   * the page cannot show it, as text runs on among the layers.
+   */
+  order?: { keys: (string | null)[]; flow: boolean } | null;
 }
 
 /**
@@ -136,7 +147,9 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap"> & { kind?: Change["kind"] },
+    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order"> & {
+      kind?: Change["kind"];
+    },
   ): void;
   /** Takes change `id` out: the designer no longer wants it. */
   remove(id: number): void;
@@ -166,7 +179,7 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
-      else if (earlier) Object.assign(earlier, { after: change.after, style: change.style });
+      else if (earlier) Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
       else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
     },
     remove(id) {
@@ -201,6 +214,13 @@ function buildsOn(later: Change, earlier: Change): boolean {
   const made = madeBy(earlier);
   if (made && (later.target.made === made || placed(later).includes(made) || placesOf(later).some((place) => place.container.layer === made))) return true;
   return later.id > earlier.id && placed(later).some((layer) => placed(earlier).includes(layer));
+}
+
+/** A move to another place among the layers of the same container, in its layout. */
+export function isReorder(change: Change): boolean {
+  if (change.kind !== "move") return false;
+  const [before, after] = [change.before, change.after] as Place[];
+  return before.container.layer === after.container.layer && !before.absolute && !after.absolute;
 }
 
 /** The layer a change makes, if it makes one: a new Stack, new text or a Frame, a copy. */

@@ -53,7 +53,7 @@ export interface LayerTree {
 }
 
 /** Elements that never draw a box of their own. */
-const NOT_DRAWN = new Set(["head", "script", "style", "link", "meta", "template", "title", "noscript", "br", "wbr", "source", "track"]);
+export const NOT_DRAWN = new Set(["head", "script", "style", "link", "meta", "template", "title", "noscript", "br", "wbr", "source", "track"]);
 /** Elements drawn as one piece: what is inside is not layers. */
 const IMAGES = new Set(["img", "svg", "picture"]);
 const STILLS = new Set(["canvas", "video"]);
@@ -290,6 +290,12 @@ export function originOf(el: Element, chain: UsageLevel[]): Origin {
     if (project > 0 && chain[project - 1].usage) return { loc: chain[project - 1].usage, chain: chain.slice(project) };
   }
   return { loc, chain };
+}
+
+/** The usage key of an element on a canvas, from its markers alone: null with no source marker. */
+export function canvasKey(el: Element): string | null {
+  const { loc, chain } = originOf(el, chainOf(el));
+  return loc && usageKey(loc, chain);
 }
 
 function chainOf(el: Element): UsageLevel[] {

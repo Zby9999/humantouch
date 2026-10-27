@@ -5,8 +5,8 @@
  * `last` prints the round before, to undo it by.
  */
 import { changes, describeChanges, TO_APPLY } from "./change-notes";
-import { propertyName, value } from "./design-values";
-import type { Change } from "./client/changeset";
+import { ordinal, propertyName, value } from "./design-values";
+import type { Change, Place } from "./client/changeset";
 import { CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
   archiveRound,
@@ -89,15 +89,29 @@ async function done(folder: VernierFolder, arg: string | undefined, io: Io): Pro
       io.write("Checked on the page: it shows the change.\n");
       break;
     case "not shown":
-      io.write(
-        `Checked on the page: it does not show the change. The ${propertyName(change.property)} is ${value(change.property, result.actual)}, not ${value(change.property, change.after)}. ` +
-          `Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run \`npx vernierkit done ${id}\` again.\n`,
-      );
+      io.write(`Checked on the page: it does not show the change. ${notShown(change, result.actual)}\n`);
       break;
     case "unchecked":
       io.write(`Not checked on the page: ${result.reason}.\n`);
   }
   return 0;
+}
+
+/** What the page shows instead of change `id`, what to look at, and to check again. */
+function notShown(change: Change, actual: unknown): string {
+  const again = `run \`npx vernierkit done ${change.id}\` again`;
+  if (change.kind === "delete") return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
+  if (change.kind === "move") {
+    const { absolute, nth } = change.after as Place;
+    if (!absolute) return `Its container's layers are in another order on the page: put it ${ordinal(nth)}, as the notes say, and ${again}.`;
+    const at = actual as { x: number; y: number } | null;
+    const where = at ? `at X ${at.x}px and Y ${at.y}px` : "not placed absolute";
+    return `The layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+  }
+  return (
+    `The ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}. ` +
+    `Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and ${again}.`
+  );
 }
 
 /** Longest wait for a page's answer: the page waits for the dev server itself, and a page in a background tab is slow. */
