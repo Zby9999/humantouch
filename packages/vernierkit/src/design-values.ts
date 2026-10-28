@@ -1,6 +1,7 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
 import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/edits";
+import { isCircle, isMiddle, lengthCss, type RadialGradient } from "./client/paint";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -145,7 +146,7 @@ const DIRECTIONS: Record<number, string> = { 0: "bottom to top", 90: "left to ri
 
 function fillValue(fill: Fill | null): string {
   if (!fill) return "no fill";
-  const stops = (stops: ColorStop[]) => stops.map((stop) => `${colorValue(stop)} at ${stop.position}%`).join(", ");
+  const stops = (stops: ColorStop[]) => stops.map((stop) => `${colorValue(stop)} at ${stop.position}${stop.unit}`).join(", ");
   switch (fill.type) {
     case "solid":
       return colorValue(fill);
@@ -154,10 +155,23 @@ function fillValue(fill: Fill | null): string {
       return `a linear gradient at ${fill.angle}°${direction ? ` (${direction})` : ""}: ${stops(fill.stops)}`;
     }
     case "radial":
-      return `a radial gradient ${fill.shape ? `shaped and centered as the page has it (\`${fill.shape}\`)` : "from the middle out"}: ${stops(fill.stops)}`;
+      return `a radial gradient ${radialShape(fill)}: ${stops(fill.stops)}`;
     case "conic":
       return "a conic gradient";
   }
+}
+
+/**
+ * Where a radial gradient is centered and how far out it reaches, in the
+ * units the page writes them in: "from the middle out", "centered 30% across
+ * and 20% down, 20px out", "from the middle, a circle out to the closest side".
+ */
+function radialShape({ center, size }: RadialGradient): string {
+  const middle = isMiddle(center);
+  if (middle && "extent" in size && size.extent === "farthest-corner" && !size.circle) return "from the middle out";
+  const from = middle ? "from the middle" : `centered ${lengthCss(center.x)} across and ${lengthCss(center.y)} down`;
+  if ("extent" in size) return `${from}, ${size.circle ? "a circle" : "an ellipse"} out to the ${size.extent.replace("-", " ")}`;
+  return `${from}, ${isCircle(size) ? `${lengthCss(size.x)} out` : `out ${lengthCss(size.x)} across and ${lengthCss(size.y)} down`}`;
 }
 
 /** "a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity)". */

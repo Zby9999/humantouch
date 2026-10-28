@@ -210,16 +210,20 @@ describe("claim, fills and strokes", () => {
   test("say gradients and strokes in design language, with the reference style that draws them", async () => {
     const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
     const stops = [
-      { color: "#FF0000", opacity: 1, position: 0 },
-      { color: "#0000FF", opacity: 0.5, position: 100 },
+      { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+      { color: "#0000FF", opacity: 0.5, position: 100, unit: "%" },
     ];
+    const pc = (value: number) => ({ value, unit: "%" });
+    const px = (value: number) => ({ value, unit: "px" });
+    const middle = { x: pc(50), y: pc(50) };
+    const spot = { center: { x: pc(30), y: pc(20) }, size: { x: px(20), y: px(20) } };
     saveRound(
       change(1, "fill", { type: "solid", color: "#FFFFFF", opacity: 1 }, { type: "linear", angle: 90, stops }, {
         "background-color": "transparent",
         "background-image": "linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)",
       }),
-      change(2, "fill", { type: "linear", angle: 30, stops }, { type: "radial", shape: "circle at 30% 20%", stops }, {}),
-      change(3, "fill", { type: "radial", shape: "", stops }, { type: "linear", angle: 45, stops }, {}),
+      change(2, "fill", { type: "linear", angle: 30, stops }, { type: "radial", ...spot, stops: [{ ...stops[0], position: 10, unit: "px" }, stops[1]] }, {}),
+      change(3, "fill", { type: "radial", center: middle, size: { extent: "farthest-corner", circle: false }, stops }, { type: "linear", angle: 45, stops }, {}),
       change(4, "stroke", null, { color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" }, {
         "border-width": "1px",
         "border-style": "solid",
@@ -238,7 +242,7 @@ describe("claim, fills and strokes", () => {
       "- **Reference style:** `background-color: transparent`, `background-image: linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)`\n",
     );
     expect(section(output, 2)).toContain(
-      "Change the fill from a linear gradient at 30°: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a radial gradient shaped and centered as the page has it (`circle at 30% 20%`): #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
+      "Change the fill from a linear gradient at 30°: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a radial gradient centered 30% across and 20% down, 20px out: #FF0000 at 10px, #0000FF at 50% opacity at 100%.\n",
     );
     expect(section(output, 3)).toContain(
       "Change the fill from a radial gradient from the middle out: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a linear gradient at 45°: #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
@@ -249,6 +253,29 @@ describe("claim, fills and strokes", () => {
       "Change the stroke from 1px solid #E5E7EB to dashed #FF0000 at 50% opacity, on some sides: top 0px, right 0px, bottom 1px, left 4px.\n",
     );
     expect(section(output, 6)).toContain("Change the stroke from 2px dashed #E5E7EB to no stroke.\n");
+  });
+
+  test("say a radial gradient's center and size in design language, by keyword or across and down", async () => {
+    const pc = (value: number) => ({ value, unit: "%" });
+    const px = (value: number) => ({ value, unit: "px" });
+    const stops = [
+      { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+      { color: "#0000FF", opacity: 1, position: 100, unit: "%" },
+    ];
+    const radial = (center: object, size: object) => ({ type: "radial", center, size, stops });
+    const solid = { type: "solid", color: "#FFFFFF", opacity: 1 };
+    const change = (id: number, after: unknown) => ({ ...redFill, id, property: "fill", before: solid, after, style: {} });
+    saveRound(
+      change(1, radial({ x: pc(50), y: pc(50) }, { extent: "closest-side", circle: true })),
+      change(2, radial({ x: px(40), y: pc(50) }, { extent: "farthest-corner", circle: false })),
+      change(3, radial({ x: pc(0), y: pc(0) }, { x: pc(50), y: px(30) })),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("to a radial gradient from the middle, a circle out to the closest side: #FF0000 at 0%, #0000FF at 100%.\n");
+    expect(section(output, 2)).toContain("to a radial gradient centered 40px across and 50% down, an ellipse out to the farthest corner: #FF0000 at 0%, #0000FF at 100%.\n");
+    expect(section(output, 3)).toContain("to a radial gradient centered 0% across and 0% down, out 50% across and 30px down: #FF0000 at 0%, #0000FF at 100%.\n");
   });
 });
 

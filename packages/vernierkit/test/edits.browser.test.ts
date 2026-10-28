@@ -130,8 +130,8 @@ describe("gradient fill", () => {
     type: "linear",
     angle: 90,
     stops: [
-      { color: "#FF0000", opacity: 1, position: 0 },
-      { color: "#0000FF", opacity: 0.5, position: 100 },
+      { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+      { color: "#0000FF", opacity: 0.5, position: 100, unit: "%" },
     ],
   };
 
@@ -164,37 +164,126 @@ describe("gradient fill", () => {
     const red = { color: "#FF0000", opacity: 1 };
     const blue = { color: "#0000FF", opacity: 1 };
 
-    expect(read("linear-gradient(red, blue)")).toEqual({ type: "linear", angle: 180, stops: [{ ...red, position: 0 }, { ...blue, position: 100 }] });
+    const at = (position: number, unit: "%" | "px" = "%") => ({ position, unit });
+
+    expect(read("linear-gradient(red, blue)")).toEqual({ type: "linear", angle: 180, stops: [{ ...red, ...at(0) }, { ...blue, ...at(100) }] });
     // Tailwind v3's bg-gradient-to-r from-red-500 via-… to-transparent, in short.
     expect(read("linear-gradient(to right, red, rgb(0 0 255 / 0.5), transparent)")).toEqual({
       type: "linear",
       angle: 90,
       stops: [
-        { ...red, position: 0 },
-        { color: "#0000FF", opacity: 0.5, position: 50 },
-        { color: "#000000", opacity: 0, position: 100 },
+        { ...red, ...at(0) },
+        { color: "#0000FF", opacity: 0.5, ...at(50) },
+        { color: "#000000", opacity: 0, ...at(100) },
       ],
     });
-    // Tailwind v4 blends in oklab: the stops read the same.
+    // Tailwind v4 blends in oklab: the stops read the same. A stop in px stays in px.
     expect(read("linear-gradient(to left in oklab, red 20%, blue 400px)")).toEqual({
       type: "linear",
       angle: 270,
-      stops: [{ ...red, position: 20 }, { ...blue, position: 50 }],
+      stops: [{ ...red, ...at(20) }, { ...blue, ...at(400, "px") }],
     });
     // A corner: square to the diagonal of the 800 × 40 box.
     expect((read("linear-gradient(to top right, red, blue)") as { angle: number }).angle).toBe(2.86);
     expect(read("linear-gradient(0.25turn, red 10% 30%, blue)")).toEqual({
       type: "linear",
       angle: 90,
-      stops: [{ ...red, position: 10 }, { ...red, position: 30 }, { ...blue, position: 100 }],
+      stops: [{ ...red, ...at(10) }, { ...red, ...at(30) }, { ...blue, ...at(100) }],
     });
-    expect(read("radial-gradient(red, blue)")).toEqual({ type: "radial", shape: "", stops: [{ ...red, position: 0 }, { ...blue, position: 100 }] });
-    expect(read("radial-gradient(circle at 30% 20%, red, blue 80%)")).toEqual({
-      type: "radial",
-      shape: "circle at 30% 20%",
-      stops: [{ ...red, position: 0 }, { ...blue, position: 80 }],
-    });
+    // A stop left out goes halfway, in the unit of its neighbours, or in % between px and %; 800px along, 200px is 25%.
+    const green = { color: "#008000", opacity: 1 };
+    expect((read("linear-gradient(90deg, red 100px, green, blue 300px)") as { stops: unknown[] }).stops[1]).toEqual({ ...green, ...at(200, "px") });
+    expect((read("linear-gradient(90deg, red 200px, green, blue 75%)") as { stops: unknown[] }).stops[1]).toEqual({ ...green, ...at(50) });
+    // A stop before the one before it is where that one is: 0 after 20% is a hard edge at 20%.
+    expect(read("linear-gradient(90deg, red 20%, blue 0)")).toEqual({ type: "linear", angle: 90, stops: [{ ...red, ...at(20) }, { ...blue, ...at(20) }] });
     expect(read("conic-gradient(red, blue)")).toEqual({ type: "conic", css: "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))" });
+  });
+
+  test("the page's own radial gradients read as center and size, in the units the page writes them; stops in px are measured along the real gradient", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    const read = (css: string) => {
+      box.style.backgroundImage = css;
+      return editor.read(layerOf(box), "fill");
+    };
+    const red = { color: "#FF0000", opacity: 1 };
+    const blue = { color: "#0000FF", opacity: 1 };
+    const pc = (value: number) => ({ value, unit: "%" });
+    const px = (value: number) => ({ value, unit: "px" });
+
+    // The default: an ellipse from the middle out to the farthest corner.
+    expect(read("radial-gradient(red, blue)")).toEqual({
+      type: "radial",
+      center: { x: pc(50), y: pc(50) },
+      size: { extent: "farthest-corner", circle: false },
+      stops: [{ ...red, position: 0, unit: "%" }, { ...blue, position: 100, unit: "%" }],
+    });
+    // The keyword size and the center in % stay as written; the stop in px stays in px.
+    expect(read("radial-gradient(circle closest-side at 30% 20%, red 20px, blue)")).toEqual({
+      type: "radial",
+      center: { x: pc(30), y: pc(20) },
+      size: { extent: "closest-side", circle: true },
+      stops: [{ ...red, position: 20, unit: "px" }, { ...blue, position: 100, unit: "%" }],
+    });
+    // The 20px circle reaches 10px out at 50%; a stop at 0 after it is where it is.
+    expect(read("radial-gradient(circle 20px at 40px 10px, red 10px, green, blue 0)")).toEqual({
+      type: "radial",
+      center: { x: px(40), y: px(10) },
+      size: { x: px(20), y: px(20) },
+      stops: [
+        { ...red, position: 10, unit: "px" },
+        { color: "#008000", opacity: 1, position: 10, unit: "px" },
+        { ...blue, position: 10, unit: "px" },
+      ],
+    });
+    // A missing stop between px and %: halfway along a ray as long as the ellipse is wide, 100px.
+    expect(read("radial-gradient(ellipse 50% 30% at left top, red 20px, green, blue 60%)")).toEqual({
+      type: "radial",
+      center: { x: pc(0), y: pc(0) },
+      size: { x: pc(50), y: pc(30) },
+      stops: [
+        { ...red, position: 20, unit: "px" },
+        { color: "#008000", opacity: 1, position: 40, unit: "%" },
+        { ...blue, position: 60, unit: "%" },
+      ],
+    });
+    // A center offset from the right or bottom edge cannot be told in one length: not offered as a fill.
+    read("radial-gradient(at right 10px bottom 20px, red, blue)");
+    expect(editor.can(layerOf(box), "fill")).toBe(false);
+  });
+
+  test("a radial gradient paints at its center and size, its stops in their own units, and reads back as set", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    const layer = layerOf(box);
+    const spot: Fill = {
+      type: "radial",
+      center: { x: { value: 30, unit: "%" }, y: { value: 20, unit: "px" } },
+      size: { x: { value: 20, unit: "px" }, y: { value: 20, unit: "px" } },
+      stops: [
+        { color: "#FF0000", opacity: 1, position: 10, unit: "px" },
+        { color: "#0000FF", opacity: 1, position: 100, unit: "%" },
+      ],
+    };
+
+    editor.set(layer, "fill", spot);
+    expect(style(box).backgroundImage).toBe("radial-gradient(20px at 30% 20px, rgb(255, 0, 0) 10px, rgb(0, 0, 255) 100%)");
+    expect(changes.list()[0].style["background-image"]).toBe("radial-gradient(circle 20px at 30% 20px, rgb(255 0 0 / 1) 10px, rgb(0 0 255 / 1) 100%)");
+    expect(editor.read(layer, "fill")).toEqual(spot);
+
+    // A size and center by keyword, and the default ones, as CSS leaves them out.
+    const keyword: Fill = { ...spot, center: { x: { value: 50, unit: "%" }, y: { value: 50, unit: "%" } }, size: { extent: "farthest-side", circle: false } };
+    editor.set(layer, "fill", keyword);
+    expect(style(box).backgroundImage).toBe("radial-gradient(farthest-side, rgb(255, 0, 0) 10px, rgb(0, 0, 255) 100%)");
+    expect(editor.read(layer, "fill")).toEqual(keyword);
+    const ellipse: Fill = { ...keyword, size: { x: { value: 50, unit: "%" }, y: { value: 30, unit: "px" } } };
+    editor.set(layer, "fill", ellipse);
+    expect(style(box).backgroundImage).toBe("radial-gradient(50% 30px, rgb(255, 0, 0) 10px, rgb(0, 0, 255) 100%)");
+    expect(editor.read(layer, "fill")).toEqual(ellipse);
   });
 
   test("a conic gradient is shown, not edited: no other fill replaces it from the panel, and none is set", () => {

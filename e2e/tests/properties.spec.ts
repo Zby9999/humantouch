@@ -149,6 +149,63 @@ test("a radial gradient keeps the stops, and a color again takes the first of th
   expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
 });
 
+test("a radial gradient's center and size: the page's own kept until changed, changed on the panel, its stops in px kept in px", async ({ page }) => {
+  await canvas(page)
+    .locator("article")
+    // The three cards of one usage, inside their 1px border 200 × 100.
+    .evaluateAll((cards) =>
+      cards.slice(0, 3).forEach((card) => {
+        Object.assign((card as HTMLElement).style, { width: "202px", height: "102px", boxSizing: "border-box" });
+        (card as HTMLElement).style.backgroundImage = "radial-gradient(circle closest-side at 30% 20%, red 20px, blue)";
+      }),
+    );
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("group", { name: "Fill" });
+  const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
+  const field = (name: string) => fill.getByRole("textbox", { name, exact: true });
+  const type = async (name: string, value: string) => {
+    await field(name).fill(value);
+    await field(name).press("Enter");
+  };
+
+  // 30% across and 20% down, the circle reaches the top: 20px out.
+  await expect(fill.getByRole("combobox", { name: "Fill type" })).toHaveValue("radial");
+  await expect(field("Center X")).toHaveValue("30%");
+  await expect(field("Center Y")).toHaveValue("20%");
+  await expect(field("Radius X")).toHaveValue("20");
+  await expect(field("Radius Y")).toHaveValue("20");
+  // The stop at 20px is at the end of the bar, as the canvas draws it.
+  const first = fill.getByRole("slider", { name: "Stop 1 position" });
+  await expect(first).toHaveAttribute("aria-valuetext", "20px");
+  const bar = (await fill.getByRole("group", { name: "Gradient stops" }).boundingBox())!;
+  const handle = (await first.boundingBox())!;
+  expect(Math.round(((handle.x + handle.width / 2 - bar.x) / bar.width) * 100)).toBe(100);
+
+  // A stop changed: the keyword, the center in % and the stop in px stay as the page has them.
+  await type("Stop 1 color", "00ff00");
+  expect(await gradient()).toBe("radial-gradient(circle closest-side at 30% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+
+  await type("Center X", "50");
+  expect(await gradient()).toBe("radial-gradient(circle closest-side at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+
+  // A size by keyword, changed: an ellipse in % of the layer, 60px of 200px across and 20px of 100px down.
+  await type("Radius X", "60");
+  expect(await gradient()).toBe("radial-gradient(30% 20% at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+  await expect(field("Radius X")).toHaveValue("60");
+
+  // The same both ways: a circle, which CSS sizes in px.
+  await type("Radius Y", "60");
+  expect(await gradient()).toBe("radial-gradient(60px at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+  await expect(first).toHaveAttribute("aria-valuetext", "20px");
+
+  // The stop in px moves 1px at a time; a new stop goes in %, in the widest gap: 20px of 60px is 33.33%.
+  await first.press("ArrowRight");
+  expect(await gradient()).toBe("radial-gradient(60px at 50% 20%, rgb(0, 255, 0) 21px, rgb(0, 0, 255) 100%)");
+  await fill.getByRole("button", { name: "Add stop" }).click();
+  await expect(field("Stop 2 at")).toHaveValue("67.5%");
+  await expect(field("Stop 1 at")).toHaveValue("21px");
+});
+
 test("a conic gradient the page has shows, and cannot be edited", async ({ page }) => {
   await canvas(page)
     .locator("article")

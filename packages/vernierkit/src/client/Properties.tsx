@@ -5,7 +5,26 @@ import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Prop
 import { Icon, type IconName } from "./icons";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
-import { cssColor, fillAs, nextStopPosition, stop, stopAt, strokeWith, turned, type Color } from "./paint";
+import {
+  alongOf,
+  centerPercent,
+  cssColor,
+  fillAs,
+  gradientLength,
+  nextStopPosition,
+  paintArea,
+  radiiOf,
+  sortedStops,
+  stop,
+  stopAt,
+  strokeWith,
+  turned,
+  withCenter,
+  withRadius,
+  type PaintArea,
+  type Color,
+  type RadialGradient,
+} from "./paint";
 import { stepped } from "./stroke-weight";
 import { useToast } from "./Toast";
 
@@ -145,6 +164,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
       {fill !== undefined && (
         <FillSection
           fill={fill}
+          box={paintArea(layers[0].el)}
           conic={layers.some((layer) => editor.read(layer, "fill")?.type === "conic")}
           onChange={set("fill")}
           update={update}
@@ -473,8 +493,10 @@ const FILL_TYPES = [
  * A fill: a color, or a linear or radial gradient, its stops dragged along a
  * bar and listed below it, as in Figma. A conic gradient the page has is shown, not edited.
  */
-function FillSection({ fill, conic, onChange, update }: {
+function FillSection({ fill, box, conic, onChange, update }: {
   fill: Shown<Fill | null>;
+  /** The first selected layer's box its gradient is sized to, for what the panel shows; each layer changes by its own. */
+  box: PaintArea;
   /** Some selected layer has a conic gradient: the fills are shown, and none of them is changed. */
   conic: boolean;
   onChange(fill: Fill | null, continues?: boolean): void;
@@ -538,7 +560,8 @@ function FillSection({ fill, conic, onChange, update }: {
                 onChange={(angle, continues) => onChange({ ...fill, angle: turned(angle) }, continues)}
               />
             )}
-            <GradientStops gradient={fill} onChange={(stops, continues) => onChange({ ...fill, stops }, continues)} />
+            {fill.type === "radial" && <RadialFields gradient={fill} box={box} update={update} />}
+            <GradientStops gradient={fill} length={gradientLength(fill, box)} onChange={(stops, continues) => onChange({ ...fill, stops }, continues)} />
           </>
         )
       )}
@@ -546,35 +569,74 @@ function FillSection({ fill, conic, onChange, update }: {
   );
 }
 
-/** The stops sorted by position, as the editor reads them back. */
-function sorted(stops: ColorStop[]): ColorStop[] {
-  return [...stops].sort((a, b) => a.position - b.position);
+/**
+ * A radial gradient's center, in % of the layer as Figma places a gradient,
+ * and how far it reaches across and down, in px: the same both ways is a
+ * circle. Each layer changes by its own box, in the units its page writes them in.
+ */
+function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box: PaintArea; update: Update }) {
+  const radii = radiiOf(gradient, box);
+  const change = (next: (current: RadialGradient, value: number, box: PaintArea) => RadialGradient) => (value: number, continues?: boolean) =>
+    update("fill", (current, layer) => (current?.type === "radial" ? next(current, value, paintArea(layer.el)) : current), continues);
+  return (
+    <div class="vk-grid-2">
+      {(["x", "y"] as const).map((axis) => (
+        <NumberField
+          key={axis}
+          label={`Center ${axis.toUpperCase()}`}
+          glyph={axis.toUpperCase()}
+          unit="%"
+          value={centerPercent(gradient, axis, box)}
+          onChange={change((current, value, box) => withCenter(current, axis, value, box))}
+        />
+      ))}
+      {(["x", "y"] as const).map((axis) => (
+        <NumberField
+          key={axis}
+          label={`Radius ${axis.toUpperCase()}`}
+          glyph={axis === "x" ? "↔" : "↕"}
+          // To a tenth of a px: a radius typed in px and kept in % reads back as typed.
+          value={Math.round(radii[axis] * 10) / 10}
+          min={0}
+          onChange={change((current, value, box) => withRadius(current, axis, value, box))}
+        />
+      ))}
+    </div>
+  );
 }
 
 /**
  * A gradient's stops: on a bar showing the gradient, each a handle dragged
- * left and right or moved with the arrow keys (10% with ⇧) and taken off with
- * Delete; a click on the bar adds one there. Below, each stop's position and color.
+ * left and right or moved with the arrow keys (10 with ⇧) and taken off with
+ * Delete; a click on the bar adds one there. Below, each stop's position and
+ * color. A stop stays in the unit the page writes it in, % or px; the bar shows
+ * it where it falls along the gradient, `length` px long. New stops are in %.
  */
-function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(stops: ColorStop[], continues?: boolean): void }) {
+function GradientStops({ gradient, length, onChange }: { gradient: Gradient; length: number; onChange(stops: ColorStop[], continues?: boolean): void }) {
   const bar = useRef<HTMLDivElement>(null);
   /** The handle being dragged: the stop, by where it is in the sorted stops as it moves among them, and whether it has moved yet. */
   const drag = useRef<{ pointerId: number; index: number; moved: boolean } | null>(null);
   const { stops } = gradient;
-  /** Moves stop `index` to `position`: returns where it is among the stops now. */
-  const move = (index: number, position: number, continues = false) => {
-    const moved = stop(stops[index], Math.min(100, Math.max(0, position)));
-    const next = sorted(stops.map((s, i) => (i === index ? moved : s)));
+  /** Puts stop `index` at `position` in `unit`, no further back than the start: returns where it is among the stops now. */
+  const place = (index: number, position: number, unit: ColorStop["unit"], continues = false) => {
+    const moved = stop(stops[index], Math.max(0, unit === "%" ? Math.min(100, position) : position), unit);
+    const next = sortedStops(stops.map((s, i) => (i === index ? moved : s)), length);
     onChange(next, continues);
     return next.indexOf(moved);
   };
+  /** Where `along` % of the bar is, within it, in `unit`: whole % or whole px. */
+  const positionAt = (along: number, unit: ColorStop["unit"]) => {
+    const clamped = Math.min(100, Math.max(0, along));
+    return Math.round(unit === "%" ? clamped : (clamped / 100) * length);
+  };
   const remove = (index: number) => stops.length > 2 && onChange(stops.filter((_, i) => i !== index));
-  const add = (position: number) => onChange(sorted([...stops, stopAt(stops, position)]));
+  const add = (along: number) => onChange(sortedStops([...stops, stopAt(stops, along, length)], length));
   const along = (clientX: number) => {
     const box = bar.current!.getBoundingClientRect();
-    return Math.round(((clientX - box.left) / box.width) * 100);
+    return ((clientX - box.left) / box.width) * 100;
   };
-  const preview = `linear-gradient(90deg, ${stops.map((s) => `${cssColor(s)} ${s.position}%`).join(", ")})`;
+  const shownAt = (s: ColorStop) => Math.min(100, Math.max(0, alongOf(s, length)));
+  const preview = `linear-gradient(90deg, ${stops.map((s) => `${cssColor(s)} ${alongOf(s, length)}%`).join(", ")})`;
   return (
     <>
       <div
@@ -585,7 +647,7 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
         style={{ "--vk-gradient": preview }}
         onPointerDown={(event) => {
           if (event.button !== 0 || event.target !== event.currentTarget) return;
-          add(along(event.clientX));
+          add(Math.round(along(event.clientX)));
         }}
       >
         {stops.map((s, index) => (
@@ -596,10 +658,10 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
             tabIndex={0}
             aria-label={`Stop ${index + 1} position`}
             aria-valuemin={0}
-            aria-valuemax={100}
+            aria-valuemax={s.unit === "%" ? 100 : Math.round(length)}
             aria-valuenow={s.position}
-            aria-valuetext={`${s.position}%`}
-            style={{ left: `${s.position}%`, "--vk-stop": cssColor(s) }}
+            aria-valuetext={`${s.position}${s.unit}`}
+            style={{ left: `${shownAt(s)}%`, "--vk-stop": cssColor(s) }}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
@@ -610,9 +672,10 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
             onPointerMove={(event) => {
               const d = drag.current;
               if (d?.pointerId !== event.pointerId) return;
-              const position = Math.min(100, Math.max(0, along(event.clientX)));
+              const { unit } = stops[d.index];
+              const position = positionAt(along(event.clientX), unit);
               if (position === stops[d.index].position) return;
-              d.index = move(d.index, position, d.moved);
+              d.index = place(d.index, position, unit, d.moved);
               d.moved = true;
             }}
             onPointerUp={(event) => {
@@ -623,7 +686,7 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
               const by = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[event.key];
               if (by) {
                 event.preventDefault();
-                move(index, s.position + by * (event.shiftKey ? 10 : 1));
+                place(index, s.position + by * (event.shiftKey ? 10 : 1), s.unit);
               } else if (event.key === "Delete" || event.key === "Backspace") {
                 event.preventDefault();
                 remove(index);
@@ -634,7 +697,7 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
       </div>
       <div class="vk-section-header">
         <h4 class="vk-section-title vk-subtitle">Stops</h4>
-        <button type="button" class="vk-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops))}>
+        <button type="button" class="vk-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops, length))}>
           <Icon name="plus" />
         </button>
       </div>
@@ -643,16 +706,16 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
           <label class="vk-field vk-stop-position" title="Position">
             <TextField
               label={`Stop ${index + 1} at`}
-              value={`${s.position}%`}
-              parse={(text) => parseNumber(text, 0, 100)}
-              step={(by) => move(index, s.position + by)}
-              onChange={(position) => move(index, position)}
+              value={`${s.position}${s.unit}`}
+              parse={(text) => parseStopPosition(text, s.unit)}
+              step={(by) => place(index, s.position + by, s.unit)}
+              onChange={({ position, unit }) => place(index, position, unit)}
             />
           </label>
           <ColorField
             name={`Stop ${index + 1}`}
             color={s}
-            onChange={(color, continues) => onChange(stops.map((other, i) => (i === index ? stop(color, s.position) : other)), continues)}
+            onChange={(color, continues) => onChange(stops.map((other, i) => (i === index ? stop(color, s.position, s.unit) : other)), continues)}
           />
           <button type="button" class="vk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
             <Icon name="minus" />
@@ -661,6 +724,14 @@ function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(st
       ))}
     </>
   );
+}
+
+/** A stop's position typed in: in % or px as typed, else in the unit it is in now; % from 0 to 100, px from 0. */
+function parseStopPosition(text: string, unit: ColorStop["unit"]): Pick<ColorStop, "position" | "unit"> | null {
+  const typed = /(%|px)\s*$/i.exec(text.trim())?.[1].toLowerCase() as ColorStop["unit"] | undefined;
+  const as = typed ?? unit;
+  const position = parseNumber(text, 0, as === "%" ? 100 : Infinity);
+  return position === null ? null : { position, unit: as };
 }
 
 const SIDE_NAMES = ["Top", "Right", "Bottom", "Left"];
@@ -965,19 +1036,21 @@ interface NumberFieldProps {
   glyph?: string;
   /** Null: the value differs from part to part, shown as Mixed. */
   value: number | null;
+  /** Shown after the number: "%". */
+  unit?: string;
   min?: number;
   /** `continues`: one more step of a drag on the icon. */
   onChange(value: number, continues?: boolean): void;
 }
 
 /** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
-function NumberField({ label, icon, glyph, value, min = -Infinity, onChange }: NumberFieldProps) {
+function NumberField({ label, icon, glyph, value, unit = "", min = -Infinity, onChange }: NumberFieldProps) {
   return (
     <label class="vk-field" title={label}>
       <Scrub icon={icon} glyph={glyph} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}
-        value={value === null ? "Mixed" : String(value)}
+        value={value === null ? "Mixed" : `${value}${unit}`}
         parse={(text) => parseNumber(text, min)}
         step={(by) => onChange(Math.max(min, (value ?? 0) + by))}
         onChange={onChange}
