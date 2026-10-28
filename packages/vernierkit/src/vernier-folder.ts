@@ -1,6 +1,7 @@
 /**
  * The `.vernier/` folder in the project: the round being edited (canvas and
- * ChangeSet), its state while the Agent applies it, and the rounds before it.
+ * ChangeSet), its state while the Agent applies it, the rounds before it, and
+ * the layers off the canvas, which belong to no round (ADR 0009).
  * The local service and the command line both work through this module.
  */
 import { execFile } from "node:child_process";
@@ -10,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { SavedChangeSet } from "./client/changeset";
-import type { CheckResult, CodeSnapshot, RoundStatus } from "./service-protocol";
+import type { CheckResult, CodeSnapshot, OffCanvasLayer, RoundStatus } from "./service-protocol";
 
 export const VERNIER_DIR = ".vernier";
 
@@ -24,6 +25,8 @@ export interface VernierFolder {
   history: string;
   /** Written by the local service: how many pages listen, and how they answered each check. */
   checks: string;
+  /** The layers off the canvas: no round's, so no round's end takes them (ADR 0009). */
+  offCanvas: string;
 }
 
 /** What `checks.json` holds. */
@@ -45,7 +48,7 @@ export type RoundState = Extract<RoundStatus, { status: "claimed" }> & { claimed
 
 export function vernierFolder(root: string): VernierFolder {
   const dir = join(root, VERNIER_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.vernier/`, else `cwd` itself. */
@@ -118,6 +121,19 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
   await rm(folder.checks, { force: true });
   await rm(folder.state, { force: true });
   return result;
+}
+
+/** The layers off the canvas; none when there are none. */
+export async function readOffCanvas(folder: VernierFolder): Promise<OffCanvasLayer[]> {
+  const text = await readIfThere(folder.offCanvas);
+  return text === null ? [] : (JSON.parse(text) as { layers: OffCanvasLayer[] }).layers;
+}
+
+/** Keeps the layers off the canvas; with none, nothing is kept. */
+export async function writeOffCanvas(folder: VernierFolder, layers: OffCanvasLayer[]) {
+  if (!layers.length) return rm(folder.offCanvas, { force: true });
+  await mkdir(folder.dir, { recursive: true });
+  await writeAtomically(folder.offCanvas, `${JSON.stringify({ layers }, null, 2)}\n`);
 }
 
 export async function readChecks(folder: VernierFolder): Promise<Checks | null> {

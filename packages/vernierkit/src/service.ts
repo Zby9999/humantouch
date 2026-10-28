@@ -13,14 +13,17 @@ import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readProjectBreakpoints } from "./project-breakpoints";
+import { snippetAt } from "./source-snippet";
 import {
   BREAKPOINTS_PATH,
   CHECKS_PATH,
   EVENTS_PATH,
+  OFF_CANVAS_PATH,
   ROUND_PATH,
   TOKEN_HEADER,
   UNLOCK_PATH,
   type CheckReport,
+  type OffCanvasLayer,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -29,10 +32,12 @@ import {
   archiveRound,
   readChecks,
   readIfThere,
+  readOffCanvas,
   readState,
   vernierFolder,
   writeAtomically,
   writeChecks,
+  writeOffCanvas,
   type Checks,
 } from "./vernier-folder";
 
@@ -139,10 +144,28 @@ export async function startService({ root }: { root: string }): Promise<Service>
         const breakpoints = await readProjectBreakpoints(root);
         return breakpoints ? send(res, 200, JSON.stringify(breakpoints)) : send(res, 204);
       }
+      case `GET ${OFF_CANVAS_PATH}`: {
+        const layers = await readOffCanvas(files);
+        return layers.length ? send(res, 200, JSON.stringify({ layers })) : send(res, 204);
+      }
+      case `PUT ${OFF_CANVAS_PATH}`: {
+        // No round's: saved whether or not one is claimed.
+        const { layers } = JSON.parse(body) as { layers: OffCanvasLayer[] };
+        if (!Array.isArray(layers) || !layers.every((layer) => typeof layer?.id === "string" && typeof layer.look === "string" && typeof layer.origin === "object")) return send(res, 400);
+        const kept = new Map((await readOffCanvas(files)).map((layer) => [layer.id, layer]));
+        for (const layer of layers) {
+          // The JSX as the source had it when the layer first came: the Agent may delete it since.
+          const snippet = kept.get(layer.id)?.origin.snippet;
+          if (snippet !== undefined) layer.origin.snippet = snippet;
+          else if (layer.origin.snippet === undefined) layer.origin.snippet = layer.origin.written ? await snippetAt(root, layer.origin.written) : null;
+        }
+        await writeOffCanvas(files, layers);
+        return send(res, 204);
+      }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH, BREAKPOINTS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 

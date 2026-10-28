@@ -222,8 +222,22 @@ export interface Editor {
   /**
    * Deletes the layer, in every instance; one of the instances a loop renders
    * goes alone, as data. A layer made this round is taken back instead.
+   * `offCanvas`: it is moved off the canvas (ADR 0009), and is there now as
+   * the layer with this id; the deletion says so.
    */
-  remove(layer: Layer): void;
+  remove(layer: Layer, options?: { offCanvas?: string }): void;
+  /**
+   * How the Agent finds the layer in the source, where it is, and the JSX that
+   * writes it (an instance's: its usage; none for a layer made this round):
+   * what a layer moved off the canvas keeps of where it came from.
+   */
+  whereIs(layer: Layer): { target: Target; place: Place | null; written: string | null };
+  /**
+   * Makes `make`, a change to something besides the canvas (a layer off it),
+   * one step with the edits, undone by `unmake`: taken back and made again
+   * in their order. `layers`: what undoing or redoing it leaves to select.
+   */
+  along(make: () => void, unmake: () => void, layers?: () => Layer[]): void;
   /** Whether the layer can be copied: not the page, not text with no element of its own. */
   canDuplicate(layer: Layer): boolean;
   /**
@@ -232,6 +246,34 @@ export interface Editor {
    * copied alone, as data. Returns the copy.
    */
   duplicate(layer: Layer, to?: Destination): Layer;
+}
+
+/**
+ * The edits made, in order, to undo and redo, shared by editors that work
+ * side by side (the canvas's, and those of the layers off it): undo goes
+ * back through all of them, in the order they were made.
+ */
+export interface History {
+  readonly past: Entry[];
+  readonly future: Entry[];
+}
+
+/** A step in a history, with the editor's own ways to find its layers and show it. */
+interface Entry {
+  step: Step;
+  found(ids: string[]): Layer[];
+  show(): void;
+}
+
+export function createHistory(): History {
+  return { past: [], future: [] };
+}
+
+export interface EditorOptions {
+  /** The history its edits go into: one of its own when none is given. */
+  history?: History;
+  /** Whether a change records what set the value before, in the page's styles: not where there are none (off the canvas). */
+  sources?: boolean;
 }
 
 /**
@@ -386,7 +428,14 @@ export function readValue<P extends Property>(el: Element, property: P): Propert
  * `changes`. `project`: the project's own breakpoints, which the views' ranges
  * line up with; none, they follow the views' widths.
  */
-export function createEditor(views: Views, changes: ChangeSet, project: ProjectBreakpoints | null = null): Editor {
+export function createEditor(
+  views: Views,
+  changes: ChangeSet,
+  project: ProjectBreakpoints | null = null,
+  { history = createHistory(), sources: readSources = true }: EditorOptions = {},
+): Editor {
+  /** What sets `properties` of `el` in the page's styles, where the editor reads them. */
+  const sourcesFor = (el: Element, properties: string[]) => (readSources ? sourcesOf(el, properties) : []);
   const doc = views.canvas.document;
   let tree = buildLayerTree(doc);
   const colors = colorReader(doc);
@@ -481,7 +530,7 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     const earlier = known ? changes.find(known, property, breakpoint) : null;
     // A layer made this round has no style of the page's to change.
-    const sources = layer.made || earlier ? [] : sourcesOf(el, definition.sets);
+    const sources = layer.made || earlier ? [] : sourcesFor(el, definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
     const flowing = () => !asShown(el, () => stackOf(el).flex);
@@ -517,23 +566,23 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
     return id;
   };
 
-  const past: Step[] = [];
-  const future: Step[] = [];
   /** Steps of the batch under way, if any. */
   let batching: Step[] | null = null;
   /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a batch. */
   const show = () => {
     if (!batching) views.sync();
   };
-  const push = (step: Step, continues: boolean) => {
+  /** `found`: what undoing or redoing it leaves, as the layers are then; by default, those of the step's layer ids. */
+  const push = (step: Step, continues: boolean, found: (ids: string[]) => Layer[] = layersOf) => {
     if (batching) {
       batching.push(step);
       return;
     }
-    future.length = 0;
-    const last = past.at(-1);
-    if (continues && last?.key === step.key) last.redo = step.redo;
-    else past.push(step);
+    history.future.length = 0;
+    const last = history.past.at(-1);
+    // One adjustment is one step: the same edit to the same layers, in this editor.
+    if (continues && last?.show === show && last.step.key === step.key) last.step.redo = step.redo;
+    else history.past.push({ step, found, show });
     show();
   };
   /** The layers a step was made to, as they are now. */
@@ -976,20 +1025,24 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
       );
     },
     undo() {
-      const step = past.pop();
-      if (!step) return [];
-      future.push(step);
-      step.undo();
-      show();
-      return layersOf(step.back ?? step.layers);
+      const entry = history.past.pop();
+      if (!entry) return [];
+      history.future.push(entry);
+      entry.step.undo();
+      entry.show();
+      return entry.found(entry.step.back ?? entry.step.layers);
     },
     redo() {
-      const step = future.pop();
-      if (!step) return [];
-      past.push(step);
-      step.redo();
-      show();
-      return layersOf(step.layers);
+      const entry = history.future.pop();
+      if (!entry) return [];
+      history.past.push(entry);
+      entry.step.redo();
+      entry.show();
+      return entry.found(entry.step.layers);
+    },
+    along(make, unmake, layers) {
+      make();
+      push({ layers: [], key: "along", undo: unmake, redo: make }, false, layers && (() => layers()));
     },
     revert(id) {
       // What builds on it goes first, newest first, all one step.
@@ -1055,7 +1108,7 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
         };
       }
       // What sets the margins the layers lose, for the Agent to take off.
-      const sources = ordered.flatMap((member, i) => (margins[i].some((m) => m) ? sourcesOf(member.el, MARGIN_CSS) : []));
+      const sources = ordered.flatMap((member, i) => (margins[i].some((m) => m) ? sourcesFor(member.el, MARGIN_CSS) : []));
       const record: StructureRecord = { kind: "stack", target: targetOf(container, count), scope: "usage", property: "stack", before: null, after: composed, style, sources };
       const kept = frame ? [id] : composed.layers.map((member) => member.layer);
       structural([id], kept, stackOn(id, record), stackOff(id, record));
@@ -1188,7 +1241,15 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
       structural([id], [id], words(id, record, text), words(id, record, now));
     },
     canRemove: (layer) => layer.parent !== null,
-    remove(layer) {
+    whereIs(layer) {
+      const made = layer.made !== null && layer.el.getAttribute(LAYER_ID_ATTR) === layer.made;
+      return {
+        target: targetOf(layer, onPage(layer).length),
+        place: layer.parent ? placeOf(layer) : null,
+        written: made ? null : layer.isInstance ? layer.usageLoc : layer.loc,
+      };
+    },
+    remove(layer, { offCanvas } = {}) {
       if (!editor.canRemove(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be deleted`);
       const own = editor.ownElement(layer);
       const instances = tree.acrossInstances(own);
@@ -1220,6 +1281,7 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
         style: { display: "none" },
         sources: [],
         ...(loop && { data: true }),
+        ...(offCanvas && { offCanvas }),
       };
       const { make, bringBack } = deleting(id, record, loop ? [own.el] : instances.map((instance) => instance.el));
       structural([idOf(parent, tree.acrossInstances(parent))], [id], make, bringBack);
@@ -1312,7 +1374,7 @@ export function createEditor(views: Views, changes: ChangeSet, project: ProjectB
         before,
         after: dissolved,
         style,
-        sources: sourcesOf(layer.el, ["display", "flex-direction"]),
+        sources: sourcesFor(layer.el, ["display", "flex-direction"]),
       };
       structural([id], [id], stackOn(id, record), stackOff(id, record));
       return layerById(id)!;

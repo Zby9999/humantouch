@@ -308,6 +308,8 @@ export const styles = /* css */ `
 }
 .vk-tree-row:hover { box-shadow: inset 0 0 0 1px var(--vk-accent); }
 .vk-tree-row.is-selected { background: var(--vk-accent-soft); }
+/* The canvas's layers after those off it. */
+.vk-tree-row.is-first-on-canvas { margin-top: 4px; border-top: 1px solid var(--vk-border); }
 .vk-tree-row.is-instance .vk-icon { color: var(--vk-instance); }
 .vk-tree-row .vk-icon { flex: none; color: var(--vk-text-muted); }
 .vk-tree-name { overflow: hidden; text-overflow: ellipsis; }
@@ -586,6 +588,17 @@ export const styles = /* css */ `
 }
 /* The views beside the desktop view, on the stage to its right. */
 .vk-canvas.is-beside { position: absolute; top: 0; }
+/* The layers off the canvas (ADR 0009), where they were left on the stage, each as it looks, on nothing of its own. */
+.vk-off-canvas-layers { position: absolute; top: 0; left: 0; }
+.vk-off-canvas {
+  position: absolute;
+  display: block;
+  border: 0;
+  color-scheme: normal;
+  background: transparent;
+  pointer-events: none;
+}
+.vk-off-canvas[hidden] { display: none; }
 /* Above each view, as a Frame's name in Figma: what it is, and that it shows only what CSS does at its width. */
 .vk-view-label {
   position: absolute;

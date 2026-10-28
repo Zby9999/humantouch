@@ -152,6 +152,11 @@ export interface Change {
    * None: nothing of its own at any breakpoint.
    */
   copiedBreakpoints?: CopiedBreakpoint[];
+  /**
+   * A deletion that moved the layer off the canvas (ADR 0009): the id of the
+   * layer it is there now, which keeps how it looked and its source, to be put back by.
+   */
+  offCanvas?: string;
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
@@ -184,7 +189,7 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "copiedBreakpoints"> & {
+    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "copiedBreakpoints" | "offCanvas"> & {
       kind?: Change["kind"];
     },
   ): void;

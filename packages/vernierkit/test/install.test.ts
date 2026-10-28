@@ -444,6 +444,19 @@ describe("remove", () => {
     expect(errors).toContain("npx vernierkit finish");
   });
 
+  test("deletes the layers off the canvas too, which belong to no round, and says so", async () => {
+    viteProject();
+    const { exec } = fakeExec();
+    await cli(exec, "init");
+    write(".vernier/off-canvas.json", JSON.stringify({ layers: [{ id: "a" }, { id: "b" }] }));
+
+    const { code, output } = await cli(exec, "remove");
+
+    expect(code).toBe(0);
+    expect(there(".vernier")).toBe(false);
+    expect(output).toContain("Deleted .vernier/, with the 2 layers the designer had moved off the canvas");
+  });
+
   test("run again, does nothing and does not fail", async () => {
     viteProject();
     const { exec, commands } = fakeExec();

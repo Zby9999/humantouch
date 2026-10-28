@@ -21,11 +21,13 @@ export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolea
   },
 });
 
-/** Stands in for the local service, in memory: a round that is only ever edited, never claimed. */
+/** Stands in for the local service, in memory: a round that is only ever edited, never claimed, and the layers off the canvas. */
 async function keepRoundIn(context: BrowserContext) {
   let saved: string | null = null;
+  /** The layers off the canvas, which belong to no round. */
+  let offCanvas: string | null = null;
   await context.route(
-    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/unlock", "/checks"].includes(url.pathname),
+    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/unlock", "/checks", "/off-canvas"].includes(url.pathname),
     (route) => {
       const request = route.request();
       const headers = {
@@ -34,6 +36,11 @@ async function keepRoundIn(context: BrowserContext) {
         "Access-Control-Allow-Headers": "X-Vernier-Token, Content-Type",
       };
       const { pathname } = new URL(request.url());
+      if (pathname === "/off-canvas") {
+        if (request.method() === "PUT") offCanvas = JSON.parse(request.postData()!).layers.length ? request.postData() : null;
+        if (request.method() === "GET" && offCanvas) return route.fulfill({ status: 200, headers, contentType: "application/json", body: offCanvas });
+        return route.fulfill({ status: 204, headers });
+      }
       if (pathname === "/events") {
         return route.fulfill({ status: 200, headers, contentType: "application/x-ndjson", body: `${JSON.stringify({ status: "editing" })}\n` });
       }

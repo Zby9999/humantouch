@@ -292,7 +292,7 @@ test("every view grows with what it shows and shrinks back, nothing cut off; the
   await expect.poll(async () => (await heights()).map((h) => h.view)).toEqual(before.map((h) => h.view));
 });
 
-test("a layer dragged below the bottom of a view leaves every view as tall as it was, while dragged and once let go there", async ({ page }) => {
+test("a layer dragged below the bottom of a view leaves every view as tall as it was while dragged; let go there, it goes off the canvas", async ({ page }) => {
   await enterEditMode(page);
   const views = [desktop(page), tablet(page), phone(page)];
   const heights = () => Promise.all(views.map((view) => view.evaluate((frame: HTMLIFrameElement) => frame.offsetHeight)));
@@ -318,9 +318,8 @@ test("a layer dragged below the bottom of a view leaves every view as tall as it
   expect(past).toBeGreaterThan(0);
   expect(await heights()).toEqual(before);
 
-  // Let go outside every view: nothing moves, and every view is as tall as it was.
+  // Let go outside every view, it goes off the canvas (ADR 0009): gone from every view, there beside them.
   await page.mouse.up();
-  await expect(phone(page).contentFrame().locator("article")).toHaveCount(4);
-  await painted(page);
-  expect(await heights()).toEqual(before);
+  await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
+  for (const view of views) await expect(view.contentFrame().locator("article:last-child")).toBeHidden();
 });

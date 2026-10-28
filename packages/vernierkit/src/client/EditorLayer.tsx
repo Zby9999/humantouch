@@ -1,10 +1,10 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { RoundStatus, SavedRound } from "../service-protocol";
+import type { OffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ENTER_MARK } from "./CanvasView";
 import { ChangeList } from "./ChangeList";
 import type { ProjectBreakpoints } from "./breakpoints";
-import type { Change } from "./changeset";
+import { withDependents, type Change } from "./changeset";
 import { checkChange, pageAt } from "./check";
 import { Icon } from "./icons";
 import { revertSaved } from "./saved-round";
@@ -15,10 +15,18 @@ import { Toggle } from "./Toggle";
 /** `leaving`: back in preview mode, while the canvas grows back over the page. */
 type Mode = "preview" | "edit" | "leaving";
 
-/** An undo made from the change list with no canvas up: the saved round before it, and after. */
+/** An undo made from the change list with no canvas up: the saved round before it, and after, and the layers off the canvas. */
 interface ListStep {
   before: SavedRound | null;
   after: SavedRound | null;
+  offCanvasBefore: OffCanvasLayer[];
+  offCanvasAfter: OffCanvasLayer[];
+}
+
+/** The layers off the canvas but those `changes` moved out: taking a move out back puts the layer back on the canvas instead. */
+function withoutMovedOut(layers: OffCanvasLayer[], changes: Change[]): OffCanvasLayer[] {
+  const out = new Set(changes.map((change) => change.offCanvas));
+  return layers.some((layer) => out.has(layer.id)) ? layers.filter((layer) => !out.has(layer.id)) : layers;
 }
 
 /**
@@ -39,6 +47,8 @@ export function EditorLayer() {
   const [breakpoints, setBreakpoints] = useState<ProjectBreakpoints | null | undefined>(store ? undefined : null);
   /** Undefined until the saved round, if any, has loaded. */
   const [round, setRound] = useState<SavedRound | null | undefined>(store ? undefined : null);
+  /** The layers off the canvas (ADR 0009), which belong to no round; undefined until they have loaded. */
+  const [offCanvas, setOffCanvas] = useState<OffCanvasLayer[] | undefined>(store ? undefined : []);
   /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
   const [live, setLive] = useState<Change[] | null>(null);
   const [listOpen, setListOpen] = useState(false);
@@ -65,6 +75,10 @@ export function EditorLayer() {
     store?.breakpoints().then(setBreakpoints, (error: unknown) => {
       console.warn(error);
       setBreakpoints(null);
+    });
+    store?.loadOffCanvas().then(setOffCanvas, (error: unknown) => {
+      console.warn(error);
+      setOffCanvas([]);
     });
   }, []);
 
@@ -95,7 +109,7 @@ export function EditorLayer() {
       }),
     [],
   );
-  const ready = round !== undefined && status !== undefined && breakpoints !== undefined;
+  const ready = round !== undefined && status !== undefined && breakpoints !== undefined && offCanvas !== undefined;
   /** Whether the shell was up at the last render: before that, there is no canvas to leave. */
   const shellShown = useRef(false);
   // Claimed: the canvas is out of date as the code changes, so editing stops.
@@ -111,14 +125,20 @@ export function EditorLayer() {
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
   };
-  /** From the change list. With no canvas up, the saved canvas is changed and saved at once. */
+  const saveOffCanvas = (layers: OffCanvasLayer[]) => {
+    setOffCanvas(layers);
+    store?.saveOffCanvas(layers).catch((error: unknown) => console.warn(error));
+  };
+  /** From the change list. With no canvas up, the saved canvas is changed and saved at once; a layer it moved off the canvas is back on it, and so no longer off it. */
   const revert = (id: number) => {
     if (control.current) control.current.revert(id);
-    else if (round) {
+    else if (round && offCanvas) {
       const next = revertSaved(round, id);
-      listSteps.current.past.push({ before: round, after: next });
+      const outside = withoutMovedOut(offCanvas, withDependents(round.changeSet.changes, id));
+      listSteps.current.past.push({ before: round, after: next, offCanvasBefore: offCanvas, offCanvasAfter: outside });
       listSteps.current.future = [];
       save(next);
+      if (outside !== offCanvas) saveOffCanvas(outside);
     }
   };
   /** Undoes (or redoes) the latest undo made from the list, when the saved round is still where it left it. */
@@ -132,10 +152,16 @@ export function EditorLayer() {
     (redo ? future : past).pop();
     (redo ? past : future).push(step);
     save(redo ? step.after : step.before);
+    const outside = redo ? step.offCanvasAfter : step.offCanvasBefore;
+    if (outside !== offCanvas) saveOffCanvas(outside);
   };
   const discard = () => {
     setListOpen(false);
-    control.current?.discard();
+    if (control.current) control.current.discard();
+    else if (offCanvas && round) {
+      const outside = withoutMovedOut(offCanvas, round.changeSet.changes);
+      if (outside !== offCanvas) saveOffCanvas(outside);
+    }
     setLive(null);
     save(null);
     // The canvas goes with the round: back to the page, which edit mode freezes afresh.
@@ -202,8 +228,10 @@ export function EditorLayer() {
             )
           }
           saved={round!}
+          offCanvas={offCanvas!}
           breakpoints={breakpoints!}
           onSave={save}
+          onSaveOffCanvas={saveOffCanvas}
           onChanges={setLive}
           control={control}
           leaving={mode === "leaving"}

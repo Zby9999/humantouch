@@ -198,7 +198,7 @@ export function serializeCanvas(canvas: Canvas): string {
 }
 
 /** The doctype that puts a document in `doc`'s rendering mode. */
-function doctypeOf(doc: Document): string {
+export function doctypeOf(doc: Document): string {
   return doc.compatMode === "CSS1Compat" ? "<!DOCTYPE html>" : "";
 }
 
@@ -234,11 +234,23 @@ type Layout = Pick<Canvas, "width" | "height" | "windowHeight" | "scrollY">;
 
 /** Brings a copy written into `iframe` to rest, sized to the whole page. */
 function present(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
+  editable(doc);
+  return layOut(doc, iframe, layout, loading);
+}
+
+/** Makes `doc` one to edit, as a canvas is: its styles change at once, every layer can be hit, and its edit styles come first. */
+export function editable(doc: Document) {
   const styles = Object.assign(doc.createElement("style"), { textContent: CANVAS_STYLES });
   styles.setAttribute(CANVAS_STYLES_ATTR, "");
   doc.head.append(styles);
   orderEditStyles(doc);
-  return layOut(doc, iframe, layout, loading);
+}
+
+/** `doc`, made `editable`, as an HTML document: what `editable` added left out. */
+export function serializeEditable(doc: Document): string {
+  const copy = doc.documentElement.cloneNode(true) as HTMLElement;
+  for (const el of copy.querySelectorAll(`style[${CANVAS_STYLES_ATTR}]`)) el.remove();
+  return doctypeOf(doc) + copy.outerHTML;
 }
 
 /**
