@@ -130,6 +130,7 @@ function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
 function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
+      if (change.property === "absolute" && change.after) return placedFreely(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":
       return moveIntent(change);
@@ -178,6 +179,21 @@ function intent(change: Change, list: Change[]): string {
       );
     }
   }
+}
+
+/**
+ * A layer in its container's layout placed freely in a narrower view, at
+ * that breakpoint only (the `absolute` property): absolute where it was put,
+ * at the size it had in the layout there, which keeps it as large.
+ */
+function placedFreely({ after, style }: Change): string {
+  const { x, y } = after as { x: number; y: number };
+  const [width, height] = [style.width, style.height].map((size) => Math.round(parseFloat(size ?? "")));
+  const size = Number.isFinite(width) && Number.isFinite(height) ? ` (Fixed ${width} × ${height}px, as the reference style shows)` : "";
+  return (
+    `Take this layer out of its container's layout and place it absolute in it, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), ` +
+    `at the size it has there now${size}. Make the container its positioning reference (\`position: relative\`) if it is not one already.`
+  );
 }
 
 /**

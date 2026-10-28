@@ -258,3 +258,36 @@ test("nudged in the phone view, a free layer moves there only, at the phone's br
   await page.locator("[data-vk-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toContainText(["below 640px"]);
 });
+
+test("nudged in the phone view, a layer in a Frame's flow is placed freely there only, which the breakpoint panel lists and resets to the flow", async ({ page }) => {
+  await page.evaluate(() => {
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "height: 240px; margin: 16px 0; padding: 8px; background: #eee";
+    const chip = Object.assign(document.createElement("div"), { id: "chip" });
+    // Inline in its flow: the board is a Frame, not a plain top-to-bottom flow shown as a Stack.
+    chip.style.cssText = "display: inline-block; width: 80px; height: 30px; background: #ccc";
+    board.append(chip);
+    document.querySelector("main")!.append(board);
+  });
+  await enterEditMode(page);
+  const position = (view: Locator) => view.contentFrame().locator("#chip").evaluate((el) => getComputedStyle(el).position);
+  await pick(page, phone(page), "#chip");
+  const was = await placeIn(phone(page), "#chip");
+
+  await page.keyboard.press("Shift+ArrowDown");
+
+  await expect.poll(() => placeIn(phone(page), "#chip")).toEqual({ x: was.x, y: was.y + 10 });
+  expect(await position(phone(page))).toBe("absolute");
+  expect(await position(desktop(page))).toBe("static");
+  expect(await placeIn(desktop(page), "#chip")).toEqual(was);
+  const changed = design(page).locator('.vk-breakpoint-change[data-vk-property="absolute"]');
+  await expect(changed).toHaveText("Absolute");
+  await page.locator("[data-vk-changes-opener]").click();
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Absolute.*in the layout → X 8px, Y 18px.*below 640px/]);
+  await page.keyboard.press("Escape");
+
+  await changed.getByRole("button", { name: "Reset Absolute to inherit" }).click();
+  await expect.poll(() => position(phone(page))).toBe("static");
+  expect(await placeIn(phone(page), "#chip")).toEqual(was);
+  await expect(page.locator("[data-vk-changes-opener]")).toHaveCount(0);
+});

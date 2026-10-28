@@ -42,7 +42,7 @@ import {
 import { PAGE_ATTR } from "./freezer";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
-import { relocate, slotsOf, syncOrders } from "./moves";
+import { holdAbsolute, relocate, releaseAbsolute, slotsOf, syncOrders } from "./moves";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -89,6 +89,13 @@ export interface PropertyValues {
   /** An absolute layer's place in its parent, in px. */
   x: number;
   y: number;
+  /**
+   * Placed freely in its container, at X and Y from its top left, in px, at
+   * its size; null: in its container's layout. Not offered in the panel: a
+   * layer in a Frame's flow dragged or nudged in a narrower view is placed
+   * freely at that view's breakpoint only, as this (ADR 0008); its X and Y there change it too.
+   */
+  absolute: { x: number; y: number } | null;
   width: Size;
   height: Size;
   minWidth: number | null;
@@ -384,6 +391,14 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   },
   x: position("left", "right", 0),
   y: position("top", "bottom", 1),
+  absolute: {
+    kinds: [],
+    read: (el) => (absolute(el) ? { x: offsetOf(el, "left", 0), y: offsetOf(el, "top", 1) } : null),
+    // Taken out of the layout at its size; back in it, nothing of it is left once the change is gone.
+    write: (place, el) => (place ? { ...absoluteAt(place), ...sizeOf(el) } : { position: "static", left: "auto", top: "auto", right: "auto", bottom: "auto" }),
+    writes: ["position", "left", "top", "right", "bottom", "width", "height"],
+    sets: ["position", "left", "top"],
+  },
   width: size("width"),
   height: size("height"),
   minWidth: limit("min-width", "width"),
@@ -614,9 +629,25 @@ export function createEditor(
       const others = changesOn(id, changes.list());
       for (const instance of instances) restoreStyle(instance.el, cssOf(property), others, breakpoint);
     }
+    if (property === "absolute") referenceFor(layer);
     // A Stack now laid out the other way: the layers are built anew, so a drag into it reads the way it runs now.
     if (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction) tree = buildLayerTree(doc);
     return id;
+  };
+
+  /**
+   * The container of a layer placed freely at a breakpoint is its positioning
+   * reference, at every width, as a Frame a layer is moved into is (that
+   * changes nothing else there); once nothing is placed freely in it, no longer.
+   */
+  const referenceFor = (layer: Layer) => {
+    const container = layer.parent;
+    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    if (!container || !id) return;
+    const containerId = idOf(container, tree.acrossInstances(container));
+    if (changes.list().some((change) => change.layer === id && change.property === "absolute")) {
+      holdAbsolute(tree.acrossInstances(container).map((instance) => instance.el));
+    } else releaseAbsolute(doc, containerId, changes.list());
   };
 
   /** Steps of the batch under way, if any. */
@@ -918,14 +949,20 @@ export function createEditor(
       const layer = layerById(id);
       return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
     };
+    const reference = () => {
+      const layer = property === "absolute" ? layerById(id) : null;
+      if (layer) referenceFor(layer);
+    };
     const off = () => {
       changes.remove(change.id);
       const others = changesOn(id, changes.list());
       for (const el of instances()) restoreStyle(el, cssOf(property as Property), others, breakpoint!);
+      reference();
     };
     const on = () => {
       changes.restore(change);
       for (const el of instances()) declare(el, change.style, breakpoint!);
+      reference();
     };
     off();
     push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off }, false);
@@ -1084,7 +1121,14 @@ export function createEditor(
       // Absolute as the page has it, and staying in its container: only its position changes, as X and Y do.
       // At a breakpoint, so does that of any absolute layer: where it is placed there is its X and Y there.
       const moved = !layer.text && layer.el.hasAttribute(MOVE_ATTR);
-      const placedHere = !!breakpointIn(current) && !layer.text && absolute(shownIn(current, layer.el));
+      const atBreakpoint = !!breakpointIn(current) && !layer.text;
+      const placedHere = atBreakpoint && absolute(shownIn(current, layer.el));
+      // At a breakpoint, a layer in its container's flow there is placed freely there only, and so is it placed anew.
+      if ("x" in to && atBreakpoint && to.parent === layer.parent && (!placedHere || editor.changedHere(layer, "absolute"))) {
+        const [dx, dy] = pinOffsetOf(layer.el);
+        edit(layer, "absolute", { x: round(to.x - dx), y: round(to.y - dy) }, false, breakpointFor(layer, "absolute"));
+        return layer;
+      }
       if ("x" in to && (layer.absolute || placedHere) && !layer.text && (!moved || placedHere) && to.parent === layer.parent) {
         const [dx, dy] = pinOffsetOf(layer.el);
         editor.batch(() => {
@@ -1198,6 +1242,12 @@ export function createEditor(
     },
     set(layer, property, value, { continues = false } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
+      // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
+      if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
+        const place = { ...editor.read(layer, "absolute")!, [property]: value };
+        edit(layer, "absolute", place, continues, breakpointFor(layer, "absolute"));
+        return;
+      }
       edit(layer, property, value, continues, breakpointFor(layer, property));
     },
     batch(edits, { continues = false } = {}) {
@@ -1798,13 +1848,20 @@ function declaredValue(el: Element, property: string): string {
   return declaredByEdit(el, property) || pageValue(el, property) || "auto";
 }
 
+/**
+ * An absolute layer's place along one axis, as CSS sets it. Where the freezer
+ * pinned it, it was shifted with the page's scroll: shifted back, it reads as the page has it.
+ */
+function offsetOf(el: Element, start: "left" | "top", axis: 0 | 1): number {
+  return round(parseFloat(getComputedStyle(el).getPropertyValue(start)) - pinOffsetOf(el)[axis]);
+}
+
 /** An absolute layer's place along one axis: where its edge is from its parent's, as CSS sets it. */
 function position(start: "left" | "top", end: "right" | "bottom", axis: 0 | 1): Definition<number> {
   return {
     kinds: EVERY_KIND,
     applies: absolute,
-    // Where the freezer pinned it, it was shifted with the page's scroll: shifted back, it reads as the page has it.
-    read: (el) => round(parseFloat(getComputedStyle(el).getPropertyValue(start)) - pinOffsetOf(el)[axis]),
+    read: (el) => offsetOf(el, start, axis),
     write: (value) => ({ [start]: `${value}px`, [end]: "auto" }),
     writes: [start, end],
     sets: [start],

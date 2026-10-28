@@ -2855,6 +2855,107 @@ describe("breakpoints", () => {
     ]);
   });
 
+  test("nudged in the phone view, a layer in a Frame's flow is placed freely at its breakpoint only, one change and one step; the desktop view keeps it in the flow", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    const place = (d: Document) => {
+      const r = d.getElementById("tag")!.getBoundingClientRect();
+      const f = d.getElementById("frame")!.getBoundingClientRect();
+      return [r.left - f.left, r.top - f.top];
+    };
+    const positions = () => [doc, phone.document].map((d) => style(d.getElementById("tag")!).position);
+    const was = [place(doc), place(phone.document)];
+
+    editor.at(phone);
+    const [moved] = editor.nudge([layer("tag")], 0, 10);
+    editor.nudge([moved], 1, 0, { continues: true });
+
+    expect(positions()).toEqual(["static", "absolute"]);
+    expect([place(doc), place(phone.document)]).toEqual([was[0], [was[1][0] + 1, was[1][1] + 10]]);
+    expect(changes.list().map((change) => [change.kind, change.property, change.before, change.after, change.breakpoint ?? "every width"])).toEqual([
+      ["style", "absolute", null, { x: 1, y: 10 }, { min: null, max: 800 }],
+    ]);
+    expect(editor.changesHere(layer("tag"))).toEqual(["absolute"]);
+
+    editor.undo();
+    expect(positions()).toEqual(["static", "static"]);
+    expect([place(doc), place(phone.document)]).toEqual(was);
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(positions()).toEqual(["static", "absolute"]);
+    expect(place(phone.document)).toEqual([was[1][0] + 1, was[1][1] + 10]);
+  });
+
+  test("dragged in its own Frame in the phone view, a layer in the flow is placed freely there only; its X there changes that placement; set back to inherit, it is in the flow again", async () => {
+    const { editor, changes, phone, desktop, layer, doc } = await open(NUDGES);
+    const tag = (d: Document) => style(d.getElementById("tag")!);
+    const frame = doc.getElementById("frame")!;
+
+    editor.at(phone);
+    editor.move(layer("tag"), { parent: layer("frame"), x: 50, y: 30 });
+    editor.move(layer("tag"), { parent: layer("frame"), x: 60, y: 40 });
+    editor.set(layer("tag"), "x", 5);
+
+    expect([tag(doc).position, tag(phone.document).position]).toEqual(["static", "absolute"]);
+    expect([tag(phone.document).left, tag(phone.document).top, tag(phone.document).width]).toEqual(["5px", "40px", "40px"]);
+    expect(changes.list().map((change) => [change.property, change.before, change.after, change.breakpoint ?? "every width"])).toEqual([
+      ["absolute", null, { x: 5, y: 40 }, { min: null, max: 800 }],
+    ]);
+    // Its Frame is its positioning reference.
+    expect(style(frame).position).toBe("relative");
+    expect(editor.changesHere(layer("tag"))).toEqual(["absolute"]);
+
+    // In the desktop view, it is in the Frame's flow, as it was.
+    editor.at(desktop);
+    expect(editor.read(layer("tag"), "absolute")).toBeNull();
+    expect(editor.can(layer("tag"), "x")).toBe(false);
+
+    editor.at(phone);
+    editor.inherit(layer("tag"), "absolute");
+    expect([tag(doc).position, tag(phone.document).position]).toEqual(["static", "static"]);
+    expect(tag(phone.document).left).toBe("auto");
+    expect(style(frame).position).toBe("static");
+    expect(changes.list()).toEqual([]);
+    expect(editor.changesHere(layer("tag"))).toEqual([]);
+    editor.undo();
+    expect(tag(phone.document).position).toBe("absolute");
+    expect(style(frame).position).toBe("relative");
+  });
+
+  test("placed freely at a breakpoint, taken back from the change list or from a saved round, a layer is in its Frame's flow again, which is no positioning reference any more", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    editor.at(phone);
+    editor.nudge([layer("tag")], 0, 10);
+    const [change] = changes.list();
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+    expect(revertSaved(saved, change.id)).toBeNull();
+    const shown = showSaved(saved.canvas);
+    savedFrame!.style.width = "390px";
+    expect(style(shown.getElementById("tag")!).position).toBe("absolute");
+
+    editor.revert(change.id);
+    expect(style(phone.document.getElementById("tag")!).position).toBe("static");
+    expect(style(doc.getElementById("frame")!).position).toBe("static");
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(style(phone.document.getElementById("tag")!).position).toBe("absolute");
+  });
+
+  test("moved into another container in the phone view, a layer is moved in every view, placed freely where it is dropped at every width", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+
+    editor.at(phone);
+    editor.move(layer("tag"), { parent: layer("board"), x: 20, y: 30 });
+
+    expect([doc, phone.document].map((d) => [d.getElementById("tag")!.parentElement!.id, style(d.getElementById("tag")!).position])).toEqual([
+      ["board", "absolute"],
+      ["board", "absolute"],
+    ]);
+    expect(changes.list().map((change) => [change.kind, (change.after as { absolute: unknown }).absolute, change.breakpoint ?? "every width"])).toEqual([
+      ["move", { x: 20, y: 30 }, "every width"],
+    ]);
+  });
+
   test("taken back from the change list, or from a saved round with no canvas open, a change at a breakpoint goes there only", async () => {
     const opened = await open();
     const { editor, changes, phone, layer, fills, doc } = opened;

@@ -4,10 +4,10 @@
  */
 import type { SavedRound } from "../service-protocol";
 import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack } from "./changeset";
-import { changesOn, elementsOf, moveInlineEdits, restoreStyle } from "./canvas-style";
+import { changesOn, elementsOf, LAYER_ID_ATTR, moveInlineEdits, restoreStyle } from "./canvas-style";
 import { cssOf, type Property } from "./edits";
 import { removeMade, unhide, writeText } from "./layer-changes";
-import { relocate, syncOrders } from "./moves";
+import { releaseAbsolute, relocate, syncOrders } from "./moves";
 import { decompose, undissolve } from "./stacks";
 
 /**
@@ -32,7 +32,13 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     else if (change.kind === "putBack") removeMade(doc, change.layer, (change.after as PutBack).place.container.layer, rest);
     else if (change.kind === "delete") unhide(doc, change.layer, change.property, rest);
     else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
-    else for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
+    else {
+      const els = elementsOf(doc, change.layer);
+      for (const el of els) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
+      // Placed freely at a breakpoint no more: its container may be no positioning reference now.
+      const container = change.property === "absolute" ? els[0]?.parentElement?.getAttribute(LAYER_ID_ATTR) : null;
+      if (container) releaseAbsolute(doc, container, rest);
+    }
   }
   syncOrders(doc, changes);
   if (!changes.list().length) return null;

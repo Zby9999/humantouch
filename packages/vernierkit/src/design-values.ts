@@ -7,6 +7,7 @@ const PROPERTIES: Record<string, string> = {
   radius: "Corner radius",
   x: "X",
   y: "Y",
+  absolute: "Absolute",
   width: "Width",
   height: "Height",
   minWidth: "Min width",
@@ -26,7 +27,7 @@ const PROPERTIES: Record<string, string> = {
   clip: "Clip content",
 };
 /** Where the title does not read well in a sentence. */
-const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", clip: "content clipping", columns: "number of columns" };
+const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", absolute: "absolute placement", clip: "content clipping", columns: "number of columns" };
 
 /** A property's name as a title: "Fill", "Corner radius". */
 export function propertyTitle(property: string): string {
@@ -160,6 +161,10 @@ export function value(property: string, v: unknown): string {
       return `${v as number}px`;
     case "columns":
       return String(v);
+    case "absolute": {
+      const place = v as { x: number; y: number } | null;
+      return place ? `X ${place.x}px, Y ${place.y}px` : "in the layout";
+    }
     case "width":
     case "height": {
       const size = v as Size;
