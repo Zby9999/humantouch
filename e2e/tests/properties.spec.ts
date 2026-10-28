@@ -14,6 +14,11 @@ async function enterEditMode(page: Page) {
   await expect(canvas(page).locator("h1")).toBeVisible();
 }
 
+/** The toast at the bottom of the canvas, read out as it changes. */
+function toast(page: Page) {
+  return page.getByRole("status");
+}
+
 async function selectRow(page: Page, name: string, nth = 0) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).nth(nth).click();
 }
@@ -210,23 +215,27 @@ test("a stroke: the page's own as it is; its weight and line, one side, each sid
   ]);
 });
 
-test("a stroke weight goes in 0.5px steps, whatever the screen, and says so when it is rounded; it shows as set though a 1x screen draws it narrower", async ({ page }) => {
+test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says so when it is rounded; it shows as set though a 1x screen draws it narrower", async ({ page }) => {
+  await page.clock.install();
   await selectRow(page, "Card");
   const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
   const weight = stroke.getByRole("textbox", { name: "Stroke weight" });
-  const note = stroke.getByRole("status");
 
   await weight.fill("1.25");
   await weight.press("Enter");
   await expect(weight).toHaveValue("1");
-  await expect(note).toHaveText("Stroke weights go in 0.5px steps: 1.25px is now 1px.");
+  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 1.25px is now 1px.");
+  // Not in the Design panel any more.
+  await expect(stroke.getByText("0.5px steps")).toHaveCount(0);
+  await page.clock.runFor(5000);
+  await expect(toast(page)).toHaveText("");
 
-  // The screen of these tests is 1x: 1.5px is drawn 1px wide, and shows as 1.5.
+  // The screen of these tests is 1x: 1.5px is drawn 1px wide, and shows as 1.5. In 0.5px steps already, it says nothing.
   await weight.fill("1.5");
   await weight.press("Enter");
   await expect(weight).toHaveValue("1.5");
-  await expect(note).toHaveCount(0);
   expect(await cardStyles(page, "borderWidth")).toEqual(["1px", "1px", "1px", "1px"]);
+  await expect(toast(page)).toHaveText("");
   await selectRow(page, "Card", 3);
   await selectRow(page, "Card");
   await expect(weight).toHaveValue("1.5");
@@ -234,23 +243,55 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and says so when
   await weight.fill("0.3");
   await weight.press("Enter");
   await expect(weight).toHaveValue("0.5");
-  await expect(note).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
-  // Undone, the weight is not the rounded one any more: the note goes with it.
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect(weight).toHaveValue("1.5");
-  await expect(note).toHaveCount(0);
-  await weight.fill("0.3");
-  await weight.press("Enter");
-  await expect(note).toHaveCount(1);
+  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
 
   // Each side its own, each rounded.
   await stroke.getByRole("combobox", { name: "Stroke sides" }).selectOption("Custom");
-  await expect(note).toHaveCount(0);
   const left = stroke.getByRole("textbox", { name: "Stroke left" });
   await left.fill("1.75");
   await left.press("Enter");
   await expect(left).toHaveValue("1.5");
-  await expect(note).toHaveText("Stroke weights go in 0.5px steps: 1.75px is now 1.5px.");
+  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 1.75px is now 1.5px.");
+});
+
+test("a toast rises at the bottom middle of the canvas and fades after about 3 seconds, but not while the pointer is on it; a new one takes its place", async ({ page }) => {
+  await page.clock.install();
+  await selectRow(page, "Card");
+  const weight = design(page).getByRole("group", { name: "Stroke", exact: true }).getByRole("textbox", { name: "Stroke weight" });
+  const message = toast(page).getByText("Stroke weights go in 0.5px steps", { exact: false });
+
+  await weight.fill("1.25");
+  await weight.press("Enter");
+  await expect(message).toBeVisible();
+  // Over the canvas, in the middle of it, near its bottom.
+  const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
+  const box = (await message.boundingBox())!;
+  expect(Math.abs(box.x + box.width / 2 - (area.x + area.width / 2))).toBeLessThan(2);
+  expect(area.y + area.height - (box.y + box.height)).toBeGreaterThan(0);
+  expect(area.y + area.height - (box.y + box.height)).toBeLessThan(48);
+
+  // A new one takes the old one's place, and its time starts afresh.
+  await page.clock.runFor(2000);
+  await weight.fill("0.3");
+  await weight.press("Enter");
+  await expect(message).toHaveCount(1);
+  await expect(message).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
+  await page.clock.runFor(2000);
+  await expect(message).toBeVisible();
+  await page.clock.runFor(2000);
+  await expect(message).toHaveCount(0);
+
+  // The pointer on it holds it; off it, it goes about 3 seconds later.
+  await weight.fill("1.25");
+  await weight.press("Enter");
+  await message.hover();
+  await page.clock.runFor(6000);
+  await expect(message).toBeVisible();
+  await page.mouse.move(0, 0);
+  await page.clock.runFor(2000);
+  await expect(message).toBeVisible();
+  await page.clock.runFor(2000);
+  await expect(message).toHaveCount(0);
 });
 
 test("effects: the page's shadows as they are; shadows added, changed and taken off, and a layer blur and a background blur, on the canvas at once", async ({ page }) => {

@@ -27,10 +27,10 @@
 - 新模块 `client/stroke-weight.ts`：描边粗细"写的值"与"画出来的值"。`edits.ts` 只改了描边一项的读（`readWrittenStroke`），给 `Definition` 加了可选的 `reference`（参考样式取 `write` 的一部分时用），`apply` 里多查一次这条改动起始的 `before`（仅对有 `reference` 的属性）。`CanvasView.tsx` 没有改。
 - 画出来的值：`drawnWidths` 在同一文档里放一个隐藏元素（`!important` 的内联样式，页面规则够不着），读回四边的计算宽度后立即移除，不经过绘制。它就是浏览器在这块屏幕上画这些粗细的结果。
 - 读（面板显示、改动的 before / after）：每条画出来的边，先看画布上编辑写的内联 `!important` 声明，否则用 `sourcesOf`（"Currently set by" 的样式来源查找）找到设定 `border-<side>-width` 的那条声明，取其中的 px 值；读不到（`var()`、非 px 单位）或这个值画出来和这条边实际画出来的不一样（来源找错了）时，退回计算样式。所以 1x 屏上源码写 1.5px、本轮改成 1.5px，面板都显示 1.5。
-- 取整（面板）：Stroke 的粗细框与 Custom 的四个分边框，输入经 `stepped` 按 0.5px 向下取整，不足 0.5 取 0.5，0 仍是 0（没有描边）。被取整时在 Stroke 段末尾显示一句 "Stroke weights go in 0.5px steps: 1.25px is now 1px."：沿用面板已有的 `vk-layer-note` 说明样式，加 `role="status"`。改颜色、线型、边、加或去描边时消失，下一次输入不需取整时消失，撤销等让粗细不再是取整后的值时也消失，换选中时消失（Stroke 段随选中重建）。
+- 取整（面板）：Stroke 的粗细框与 Custom 的四个分边框，输入经 `stepped` 按 0.5px 向下取整，不足 0.5 取 0.5，0 仍是 0（没有描边）。被取整时在 Stroke 段末尾显示一句 "Stroke weights go in 0.5px steps: 1.25px is now 1px."：沿用面板已有的 `vk-layer-note` 说明样式，加 `role="status"`。改颜色、线型、边、加或去描边时消失，下一次输入不需取整时消失，撤销等让粗细不再是取整后的值时也消失，换选中时消失（Stroke 段随选中重建）。（已由 55 改为编辑模式外壳底部会自动消失的简短提示，属性面板里这行说明已去掉。）
 - 参考样式：这条改动从起始到现在粗细不变（只改颜色或线型）时，参考样式去掉 `border-width`；描边只在部分边上时，`border-style` 换成那几条边各自的 `border-<side>-style`，否则 Agent 照抄会让其余边按默认 3px 画出来。画布上仍声明完整的三项。
 - 核对（`check.ts`）：新增按属性的 `AS_DRAWN` 表，目前只有描边：页面按计算样式读（画出来的），改后值在开始观察页面之前先在真实页面上画一遍（`drawnStroke`），两者比较。没有显示时，`actual` 报写的值（同上的读法），所以提示里是源码里写的 3px 而不是画出来的值；为不在 MutationObserver 回调里改动页面，只在最后超时那次读 `actual`。其他属性的核对不变。
-- 测试：辅接缝 `edits.browser.test.ts`：页面原有粗细按写的值读、经 var() 退回画出来的值、本轮改的值读回原样、只改颜色 / 线型时参考样式不含粗细（含改了粗细又改回、经 var()、只在部分边上），以及核对：1x 屏上 1.5px 显示、3px 不显示并报 3px、分边、颜色不对、经 var() 写对、写成 1.25px（画出来相同）。主接缝 `properties.spec.ts`：1.25 → 1、0.3 → 0.5、Custom 的 1.75 → 1.5 及提醒，1.5 不提醒且在 1x 屏上显示 1.5、换选中后仍是 1.5，撤销后提醒消失。`round.spec.ts`：源码写 `border-[3px]` 时 `done` 报没有显示，改成 `border-[1.5px]`（画成 1px）后报显示；只改颜色时 changeset 里的参考样式不含粗细，源码只改颜色后 `done` 报显示。
+- 测试：辅接缝 `edits.browser.test.ts`：页面原有粗细按写的值读、经 var() 退回画出来的值、本轮改的值读回原样、只改颜色 / 线型时参考样式不含粗细（含改了粗细又改回、经 var()、只在部分边上），以及核对：1x 屏上 1.5px 显示、3px 不显示并报 3px、分边、颜色不对、经 var() 写对、写成 1.25px（画出来相同）。主接缝 `properties.spec.ts`：1.25 → 1、0.3 → 0.5、Custom 的 1.75 → 1.5 及提醒，1.5 不提醒且在 1x 屏上显示 1.5、换选中后仍是 1.5，撤销后提醒消失（55 起提醒改为简短提示，这一条断言已去掉）。`round.spec.ts`：源码写 `border-[3px]` 时 `done` 报没有显示，改成 `border-[1.5px]`（画成 1px）后报显示；只改颜色时 changeset 里的参考样式不含粗细，源码只改颜色后 `done` 报显示。
 
 **已知限制**
 

@@ -13,6 +13,7 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { toggleIn } from "./selection";
+import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
 
@@ -62,6 +63,11 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
   useEffect(() => {
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
+
+  /** The toast at the bottom of the canvas: a new one takes the old one's place. */
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const toasts = useRef(0);
+  const [showToast] = useState<ShowToast>(() => (text: string) => setToast({ text, key: ++toasts.current }));
 
   /** The tool picked, from the toolbar or the keyboard: null to select, or what the next drag draws. */
   const [tool, setTool] = useState<Tool>(null);
@@ -366,6 +372,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
         onLeft={onLeft}
       />
       <Tools tool={tool} onTool={setTool} />
+      <Toast message={toast} />
       <aside class="vk-panel is-design" aria-label="Design">
         <div class="vk-panel-header">
           <h2 class="vk-panel-title">Design</h2>
@@ -379,7 +386,10 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
         {tree && editor && selected.length ? (
           <>
             <LayerInfo tree={tree} layers={selected} />
-            <Properties editor={editor} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+            {/* The Design panel's short notes show in the toast. */}
+            <ToastProvider value={showToast}>
+              <Properties editor={editor} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+            </ToastProvider>
           </>
         ) : (
           <p class="vk-panel-empty">Select a layer to see its properties.</p>

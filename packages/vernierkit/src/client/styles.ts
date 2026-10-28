@@ -1,4 +1,4 @@
-import { EASE_OUT, UNLOCK_HOLD_MS } from "./motion";
+import { EASE_OUT, TOAST_FADE_MS, UNLOCK_HOLD_MS } from "./motion";
 
 export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -243,6 +243,41 @@ export const styles = /* css */ `
 }
 .vk-tools .vk-icon-button[aria-pressed="true"] { background: var(--vk-accent); color: #fff; }
 .vk-shell.is-playing > .vk-tools { display: none; }
+/* A toast, as in Figma: a dark pill of one line, at the bottom middle of the canvas, over it. */
+.vk-toasts {
+  position: absolute;
+  bottom: 16px;
+  left: 240px;
+  right: 240px;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.vk-shell.is-layers-hidden > .vk-toasts { left: 0; }
+.vk-shell.is-playing > .vk-toasts { left: 0; right: 0; }
+.vk-toast {
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 8px 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #1e1e1e;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 4px 12px rgb(0 0 0 / 0.18);
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  animation: vk-toast-in ${TOAST_FADE_MS}ms ${EASE_OUT};
+  transition: opacity ${TOAST_FADE_MS}ms ${EASE_OUT}, translate ${TOAST_FADE_MS}ms ${EASE_OUT};
+}
+.vk-toast.is-fading { opacity: 0; translate: 0 8px; }
+@keyframes vk-toast-in { from { opacity: 0; translate: 0 8px; } }
+@keyframes vk-toast-fade-in { from { opacity: 0; } }
+
 .vk-panel-title {
   margin: 0;
   padding: 12px 16px;
@@ -711,5 +746,8 @@ export const styles = /* css */ `
 
 @media (prefers-reduced-motion: reduce) {
   .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
+  /* A toast only fades: it does not rise or sink. */
+  .vk-toast { animation-name: vk-toast-fade-in; transition-property: opacity; }
+  .vk-toast.is-fading { translate: none; }
 }
 `;

@@ -11,6 +11,8 @@ export const MODE_SWITCH_MS = 240;
 export const UNLOCK_HOLD_MS = 1000;
 /** With reduced motion, the editor fades in and out instead. */
 export const MODE_FADE_MS = 150;
+/** A toast fading in and out; with reduced motion, it only fades. */
+export const TOAST_FADE_MS = 180;
 
 export function prefersReducedMotion(): boolean {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;

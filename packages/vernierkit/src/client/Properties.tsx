@@ -7,6 +7,7 @@ import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
 import { cssColor, fillAs, nextStopPosition, stop, stopAt, strokeWith, turned, type Color } from "./paint";
 import { stepped } from "./stroke-weight";
+import { useToast } from "./Toast";
 
 interface Props {
   editor: Editor;
@@ -684,31 +685,21 @@ function widest(weight: Stroke["weight"]): number {
 function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | null>; onChange(stroke: Stroke | null, continues?: boolean): void; update: Update }) {
   /** Custom chosen with every side alike: the four sides stay out until another choice. */
   const [custom, setCustom] = useState(false);
-  /**
-   * The weight last typed in, when it was not in 0.5px steps, what it became,
-   * and the stroke's weights then: the note shows while they are still so (an undo takes it away).
-   */
-  const [rounded, setRounded] = useState<{ from: number; to: number; weights: string } | null>(null);
-  /** A change to anything but the weight: the note on the weight last typed in goes. */
-  const change = (next: Stroke | null, continues?: boolean) => {
-    setRounded(null);
-    onChange(next, continues);
-  };
-  /** A weight typed in, in 0.5px steps, and the stroke `make` makes with it: says so when it is rounded. */
+  const showToast = useToast();
+  /** A weight typed in, in 0.5px steps, and the stroke `make` makes with it: a toast says so when it is rounded. */
   const changeWeight = (typed: number, make: (weight: number) => Stroke | null, continues?: boolean) => {
     const weight = stepped(typed);
     const next = make(weight);
-    setRounded(weight === typed || !next ? null : { from: typed, to: weight, weights: JSON.stringify(next.weight) });
+    if (weight !== typed && next) showToast(`Stroke weights go in 0.5px steps: ${typed}px is now ${weight}px.`);
     onChange(next, continues);
   };
-  const note = rounded && stroke && stroke !== MIXED && JSON.stringify(stroke.weight) === rounded.weights ? rounded : null;
   const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
   return (
     <section class="vk-section" role="group" aria-label="Stroke">
       <div class="vk-section-header">
         <h3 class="vk-section-title">Stroke</h3>
         {!stroke && (
-          <button type="button" class="vk-icon-button" aria-label="Add stroke" onClick={() => change(NEW_STROKE)}>
+          <button type="button" class="vk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
             <Icon name="plus" />
           </button>
         )}
@@ -718,9 +709,9 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
           {stroke === MIXED ? (
             <span class="vk-field vk-mixed">Mixed</span>
           ) : (
-            <ColorField name="Stroke" color={stroke} onChange={(color, continues) => change({ ...color, weight: stroke.weight, style: stroke.style }, continues)} />
+            <ColorField name="Stroke" color={stroke} onChange={(color, continues) => onChange({ ...color, weight: stroke.weight, style: stroke.style }, continues)} />
           )}
-          <button type="button" class="vk-icon-button" aria-label="Remove stroke" onClick={() => change(null)}>
+          <button type="button" class="vk-icon-button" aria-label="Remove stroke" onClick={() => onChange(null)}>
             <Icon name="minus" />
           </button>
         </div>
@@ -742,7 +733,7 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
             class="vk-select"
             aria-label="Stroke style"
             value={stroke.style}
-            onChange={(event) => change({ ...stroke, style: event.currentTarget.value as Stroke["style"] })}
+            onChange={(event) => onChange({ ...stroke, style: event.currentTarget.value as Stroke["style"] })}
           >
             <option value="solid">Solid</option>
             <option value="dashed">Dashed</option>
@@ -754,7 +745,6 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
             onChange={(event) => {
               const choice = event.currentTarget.value;
               setCustom(choice === "custom");
-              setRounded(null);
               update("stroke", (current) => {
                 if (!current) return current;
                 const weight = widest(current.weight) || 1;
@@ -790,11 +780,6 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
             );
           })}
         </div>
-      )}
-      {note && (
-        <p class="vk-layer-note" role="status">
-          Stroke weights go in 0.5px steps: {note.from}px is now {note.to}px.
-        </p>
       )}
     </section>
   );

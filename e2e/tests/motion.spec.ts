@@ -35,6 +35,45 @@ test.beforeEach(async ({ page }) => {
   await cdp.send("Animation.enable");
 });
 
+/** The toast's look right now. */
+function toastStyle(page: Page) {
+  return page
+    .getByRole("status")
+    .getByRole("paragraph")
+    .filter({ hasText: "Stroke weights go in 0.5px steps" })
+    .evaluate((el) => ({ opacity: Number(getComputedStyle(el).opacity), translate: getComputedStyle(el).translate }));
+}
+
+/** Enters edit mode and types a stroke weight that is rounded: a toast says so. Its fade in plays at `rate` times its speed. */
+async function showToast(page: Page, rate: number) {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const weight = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Stroke weight" });
+  await weight.fill("1.25");
+  await playbackRate(cdp, rate);
+  await weight.press("Enter");
+  return toastStyle(page);
+}
+
+/** Lets the toast's fade in end, then waits for its time to run out: what changes as it fades out. */
+async function fadeOut(page: Page) {
+  await playbackRate(cdp, 1);
+  return page
+    .getByRole("status")
+    .getByRole("paragraph")
+    .evaluate(
+      (el) =>
+        new Promise<string[]>((resolve) => {
+          const changing: string[] = [];
+          el.addEventListener("transitionrun", (event) => {
+            if (!changing.length) requestAnimationFrame(() => resolve(changing.sort()));
+            changing.push((event as TransitionEvent).propertyName);
+          });
+        }),
+    );
+}
+
 test("entering edit mode shrinks the page from where it was in the window into the canvas", async ({ page }) => {
   await page.evaluate(() => scrollTo(0, 120));
   const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -139,8 +178,24 @@ test("switching modes from the keyboard is instant", async ({ page }) => {
   expect((await box(page)).width).toBeLessThan(area.width);
 });
 
+test("a toast rises into place as it fades in, and sinks as it fades out", async ({ page }) => {
+  const comingIn = await showToast(page, 0.02);
+  expect(comingIn.opacity).toBeLessThan(1);
+  expect(comingIn.translate).not.toBe("none");
+
+  expect(await fadeOut(page)).toEqual(["opacity", "translate"]);
+});
+
 test.describe("with reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
+
+  test("a toast only fades in and out, where it stays", async ({ page }) => {
+    const comingIn = await showToast(page, 0.02);
+    expect(comingIn.opacity).toBeLessThan(1);
+    expect(comingIn.translate).toBe("none");
+
+    expect(await fadeOut(page)).toEqual(["opacity"]);
+  });
 
   test("the canvas does not travel; the editor only fades", async ({ page }) => {
     await playbackRate(cdp, 0.02);
