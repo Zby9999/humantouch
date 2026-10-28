@@ -160,7 +160,7 @@ export function readMediaBreakpoints(doc: Document): ProjectBreakpoints | null {
     for (const rule of rules) {
       if ("styleSheet" in rule) {
         const sheet = (rule as CSSImportRule).styleSheet;
-        if (sheet && !notTheProjects(sheet)) readSheet(sheet);
+        if (sheet && isProjects(sheet)) readSheet(sheet);
         continue;
       }
       if ("media" in rule && "cssRules" in rule) {
@@ -174,7 +174,7 @@ export function readMediaBreakpoints(doc: Document): ProjectBreakpoints | null {
       read(sheet.cssRules);
     } catch {} // Another origin's: it cannot be read.
   };
-  for (const sheet of doc.styleSheets) if (!notTheProjects(sheet)) readSheet(sheet);
+  for (const sheet of doc.styleSheets) if (isProjects(sheet)) readSheet(sheet);
   const list = [...found].filter(([width]) => width > 0).sort(([a], [b]) => a - b).map(([width, name]) => ({ width, name }));
   return list.length ? { from: "css", list } : null;
 }
@@ -183,17 +183,17 @@ export function readMediaBreakpoints(doc: Document): ProjectBreakpoints | null {
 const DEPENDENCY = /[\\/]node_modules[\\/]/;
 
 /**
- * A stylesheet whose media queries are not the project's breakpoints, as far
- * as its source tells: a dependency's (loaded from `node_modules`, or so named
- * by Vite's dev server), or one of the editor's own (marked `data-vk-*`). One
- * whose source cannot be told (a bundle, a plain `<style>`) counts as the project's.
+ * Whether a stylesheet's media queries are the project's breakpoints, as far
+ * as its source tells: not a dependency's (loaded from `node_modules`, or so
+ * named by Vite's dev server), nor one of the editor's own (marked
+ * `data-vk-*`). One whose source cannot be told (a bundle, a plain `<style>`) is the project's.
  */
-function notTheProjects(sheet: CSSStyleSheet): boolean {
+function isProjects(sheet: CSSStyleSheet): boolean {
   const owner = sheet.ownerNode as Element | null;
   // Told apart by what they have, not by class: the document may be another window's.
   const attributes = owner && "getAttributeNames" in owner ? owner.getAttributeNames() : [];
   const from = [sheet.href, owner && "getAttribute" in owner ? owner.getAttribute("data-vite-dev-id") : null];
-  return from.some((path) => !!path && DEPENDENCY.test(path)) || attributes.some((name) => name.startsWith("data-vk-"));
+  return !from.some((path) => !!path && DEPENDENCY.test(path)) && !attributes.some((name) => name.startsWith("data-vk-"));
 }
 
 /** The widths a media query on the width starts or stops holding at, each with the feature it is said by. */

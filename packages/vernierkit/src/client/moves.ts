@@ -90,18 +90,11 @@ export function holdAbsolute(containers: Iterable<Element>) {
   }
 }
 
-/**
- * The container with id `id`, once no change in `changes` places a layer
- * absolute in it, is no longer a positioning reference: neither a move, nor a
- * layer of it placed freely at a breakpoint (the `absolute` property).
- */
+/** The container with id `id`, once no change in `changes` places a layer absolute in it, is no longer a positioning reference. */
 export function releaseAbsolute(doc: Document, id: string, changes: Change[]) {
   if (changes.some((change) => placedAt(change)?.absolute && placedAt(change)!.container.layer === id)) return;
-  const containers = elementsOf(doc, id);
-  const freed = new Set(changes.filter((change) => change.kind === "style" && change.property === "absolute").map((change) => change.layer));
-  if (containers.some((container) => [...container.children].some((el) => freed.has(el.getAttribute(LAYER_ID_ATTR) ?? "")))) return;
   const own = changesOn(id, changes).filter((change) => change.kind !== "move");
-  for (const container of containers) {
+  for (const container of elementsOf(doc, id)) {
     if (!container.hasAttribute(REFERENCE_ATTR)) continue;
     container.removeAttribute(REFERENCE_ATTR);
     restoreStyle(container, ["position"], own);

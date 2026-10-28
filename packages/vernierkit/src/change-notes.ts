@@ -68,7 +68,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
-    ...(change.wrap ? [WRAP] : []),
+    ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
@@ -192,7 +192,7 @@ function placedFreely({ after, style }: Change): string {
   const size = Number.isFinite(width) && Number.isFinite(height) ? ` (Fixed ${width} × ${height}px, as the reference style shows)` : "";
   return (
     `Take this layer out of its container's layout and place it absolute in it, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), ` +
-    `at the size it has there now${size}. Make the container its positioning reference (\`position: relative\`) if it is not one already.`
+    `at the size it has there now${size}. Make the container its positioning reference at these widths (\`position: relative\`) if it is not one already.`
   );
 }
 
@@ -429,6 +429,8 @@ function capitalized(text: string): string {
 }
 
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
+/** Loose text placed freely at a breakpoint: it needs an element to place. */
+const WRAP_TO_PLACE = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>`, at every width, and place that.";
 
 const AS_STACK =
   "**Make it a Stack:** the layer lays its children out as plain blocks, top to bottom, which the editor shows as a vertical Stack. Make it a real Stack, a flex column (as the reference style shows), so the change applies.";

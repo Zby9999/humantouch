@@ -178,6 +178,12 @@ export interface Change {
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
   reference?: true;
   /**
+   * A layer placed freely at a breakpoint (an `absolute` style change), in a
+   * container the page does not position at those widths: the container's id.
+   * It is the layer's positioning reference there, as the change is (ADR 0008).
+   */
+  within?: string;
+  /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
    * JSX); what the check measures the live page by. `self`: which of them the
@@ -203,7 +209,7 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "copiedBreakpoints" | "offCanvas"> & {
+    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "offCanvas"> & {
       kind?: Change["kind"];
     },
   ): void;

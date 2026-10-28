@@ -195,7 +195,7 @@ describe("claim, breakpoints", () => {
     expect(section(output, 1)).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`)");
     expect(section(output, 1)).toContain(
       "- **Design intent:** Take this layer out of its container's layout and place it absolute in it, at X 12px and Y 40px from its top left (CSS `left` and `top`), " +
-        "at the size it has there now (Fixed 120 × 32px, as the reference style shows). Make the container its positioning reference (`position: relative`) if it is not one already.\n",
+        "at the size it has there now (Fixed 120 × 32px, as the reference style shows). Make the container its positioning reference at these widths (`position: relative`) if it is not one already.\n",
     );
   });
 

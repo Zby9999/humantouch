@@ -16,6 +16,7 @@ import {
   declaredByEdit,
   DELETED_ATTR,
   elementsOf,
+  keepOriginal,
   LAYER_ID_ATTR,
   MADE_ATTR,
   MOVE_ATTR,
@@ -42,7 +43,7 @@ import {
 import { PAGE_ATTR } from "./freezer";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
-import { holdAbsolute, relocate, releaseAbsolute, slotsOf, syncOrders } from "./moves";
+import { relocate, slotsOf, syncOrders } from "./moves";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -186,20 +187,24 @@ export interface Editor {
   /**
    * Moves the layer, across the instances of its container, and records the
    * move: one per layer, from where it was to where it is. Loose text first
-   * gets an element of its own. Returns the layer where it is now.
+   * gets an element of its own. Placed freely in its own container beside the
+   * desktop view, it is placed so at that view's breakpoint only (ADR 0008);
+   * moved into another container, it loses such placements. Returns the layer where it is now.
    */
   move(layer: Layer, to: Destination): Layer;
   /**
    * Nudges the layers `dx` and `dy` px, as the arrow keys do. A layer placed
    * freely in the view worked in moves that far, as dragging it there would
    * place it (at its breakpoint, beside the desktop view); a layer in a
-   * Frame's flow is placed freely where it is, and moved on from there. A
+   * Frame's flow is placed freely where it is, and moved on from there (beside
+   * the desktop view, at its breakpoint only: the `absolute` property). A
    * layer in a Stack's layout swaps places with the next one along the Stack
    * that way, in every view, and stays at its end or nudged across it; layers
    * side by side move together. One in a Grid goes a cell along it (← →),
    * or a row (↑ ↓: as many cells as the Grid has columns in the view worked
    * in), the layers between moving a cell along, as dragging it there does,
-   * in every view; it stays at the Grid's ends. `continues`: one more nudge of a run, undone
+   * in every view; it stays at the Grid's ends, and in a Grid that places its
+   * layers itself (`placesItself`). `continues`: one more nudge of a run, undone
    * with the nudges before it. Returns the layers where they are now.
    */
   nudge(layers: Layer[], dx: number, dy: number, options?: SetOptions): Layer[];
@@ -607,7 +612,18 @@ export function createEditor(
     const declarations = asShown(el, () => ({
       ...(asStack && { display: "flex", "flex-direction": stackOf(el).direction === "horizontal" ? "row" : "column" }),
       ...definition.write(value, el),
+      // Placed freely at a breakpoint and placed anew there: as large as it was when first taken out of the layout.
+      ...(property === "absolute" && value && earlier?.style.width && { width: earlier.style.width, height: earlier.style.height }),
     }));
+    // Placed freely at a breakpoint, in a container not positioned there: the container becomes its positioning reference there.
+    const within =
+      property === "absolute" && breakpoint && layer.parent
+        ? earlier
+          ? earlier.within
+          : getComputedStyle(shownIn(viewAt(breakpoint), layer.parent.el)).position === "static"
+            ? idOf(layer.parent, tree.acrossInstances(layer.parent))
+            : undefined
+        : undefined;
     for (const instance of instances) {
       if (asStack && !breakpoint) instance.el.setAttribute(AS_STACK_ATTR, "");
       declare(instance.el, declarations, breakpoint);
@@ -623,31 +639,36 @@ export function createEditor(
       style: declarations,
       sources,
       ...(asStack && { asStack: true }),
+      ...(within && { within }),
+      // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
+      ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
     });
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property, breakpoint)) {
       const others = changesOn(id, changes.list());
       for (const instance of instances) restoreStyle(instance.el, cssOf(property), others, breakpoint);
     }
-    if (property === "absolute") referenceFor(layer);
+    referenceAt(within, breakpoint);
     // A Stack now laid out the other way: the layers are built anew, so a drag into it reads the way it runs now.
     if (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction) tree = buildLayerTree(doc);
     return id;
   };
 
   /**
-   * The container of a layer placed freely at a breakpoint is its positioning
-   * reference, at every width, as a Frame a layer is moved into is (that
-   * changes nothing else there); once nothing is placed freely in it, no longer.
+   * The container `within` a layer is placed freely in at `breakpoint` (ADR
+   * 0008): its positioning reference there, while a change places a layer so;
+   * else as it was. Nothing changes at any other width.
    */
-  const referenceFor = (layer: Layer) => {
-    const container = layer.parent;
-    const id = layer.el.getAttribute(LAYER_ID_ATTR);
-    if (!container || !id) return;
-    const containerId = idOf(container, tree.acrossInstances(container));
-    if (changes.list().some((change) => change.layer === id && change.property === "absolute")) {
-      holdAbsolute(tree.acrossInstances(container).map((instance) => instance.el));
-    } else releaseAbsolute(doc, containerId, changes.list());
+  const referenceAt = (within: string | undefined, breakpoint: Breakpoint | null) => {
+    if (!within || !breakpoint) return;
+    const others = changesOn(within, changes.list());
+    const held = others.some((change) => change.within === within && same(change.breakpoint, breakpoint));
+    for (const el of elementsOf(doc, within)) {
+      if (held) {
+        keepOriginal(el);
+        declare(el, { position: "relative" }, breakpoint);
+      } else restoreStyle(el, ["position"], others, breakpoint);
+    }
   };
 
   /** Steps of the batch under way, if any. */
@@ -738,7 +759,7 @@ export function createEditor(
   const containerOf = (container: Layer): Place["container"] => {
     const instances = tree.acrossInstances(container);
     // A Grid that places its layers itself has no cell to name by their order.
-    const cells = container.kind === "grid" && !placesItself(container.el);
+    const cells = container.kind === "grid" && !placesItself(shownIn(current, container.el));
     return { layer: idOf(container, instances), target: targetOf(container, instances.length), ...(cells && { grid: true as const }) };
   };
 
@@ -951,20 +972,16 @@ export function createEditor(
       const layer = layerById(id);
       return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
     };
-    const reference = () => {
-      const layer = property === "absolute" ? layerById(id) : null;
-      if (layer) referenceFor(layer);
-    };
     const off = () => {
       changes.remove(change.id);
       const others = changesOn(id, changes.list());
       for (const el of instances()) restoreStyle(el, cssOf(property as Property), others, breakpoint!);
-      reference();
+      referenceAt(change.within, breakpoint!);
     };
     const on = () => {
       changes.restore(change);
       for (const el of instances()) declare(el, change.style, breakpoint!);
-      reference();
+      referenceAt(change.within, breakpoint!);
     };
     off();
     push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off }, false);
@@ -1123,21 +1140,32 @@ export function createEditor(
       // Absolute as the page has it, and staying in its container: only its position changes, as X and Y do.
       // At a breakpoint, so does that of any absolute layer: where it is placed there is its X and Y there.
       const moved = !layer.text && layer.el.hasAttribute(MOVE_ATTR);
-      const atBreakpoint = !!breakpointIn(current) && !layer.text;
-      const placedHere = atBreakpoint && absolute(shownIn(current, layer.el));
-      // At a breakpoint, a layer in its container's flow there is placed freely there only, and so is it placed anew.
-      if ("x" in to && atBreakpoint && to.parent === layer.parent && (!placedHere || editor.changedHere(layer, "absolute"))) {
+      if ("x" in to && to.parent === layer.parent && (breakpointIn(current) || (layer.absolute && !layer.text && !moved))) {
+        // At a breakpoint, loose text gets an element of its own, to be placed freely there.
+        if (layer.text) layer = wrap(layer);
         const [dx, dy] = pinOffsetOf(layer.el);
-        edit(layer, "absolute", { x: round(to.x - dx), y: round(to.y - dy) }, false, breakpointFor(layer, "absolute"));
+        const at = { x: round(to.x - dx), y: round(to.y - dy) };
+        // At a breakpoint, a layer in its container's flow there is placed freely there only (ADR 0008).
+        if (breakpointIn(current) && !absolute(shownIn(current, layer.el))) edit(layer, "absolute", at, false, breakpointFor(layer, "absolute"));
+        else {
+          // Placed freely already: only its position changes, as X and Y do; at a breakpoint, there.
+          const placed = layer;
+          editor.batch(() => {
+            editor.set(placed, "x", at.x);
+            editor.set(placed, "y", at.y);
+          });
+        }
         return layer;
       }
-      if ("x" in to && (layer.absolute || placedHere) && !layer.text && (!moved || placedHere) && to.parent === layer.parent) {
-        const [dx, dy] = pinOffsetOf(layer.el);
+      // Into another container, a change to the structure in every view: where it was placed freely at a breakpoint goes with what it leaves.
+      const placings = layer.text ? [] : changes.list().filter((change) => change.layer === layer.el.getAttribute(LAYER_ID_ATTR) && change.property === "absolute");
+      if (placings.length && to.parent !== layer.parent) {
+        let there = layer;
         editor.batch(() => {
-          editor.set(layer, "x", round(to.x - dx));
-          editor.set(layer, "y", round(to.y - dy));
+          for (const change of placings) inheritStep(change);
+          there = editor.move(layer, to);
         });
-        return layer;
+        return there;
       }
       const target = targetOf(layer, tree.acrossInstances(layer).length);
       const loop = isLoop(tree.acrossInstances(layer).map((instance) => instance.el));
@@ -1735,7 +1763,7 @@ export function trackCount(computed: string): number {
 /**
  * Whether a Grid, as `el` lays it out, places its layers otherwise than in
  * the order they are written: one of them in a cell or area of its own
- * (`grid-row`, `grid-column`, `grid-area`) or in another order (`order`), or
+ * (a line of `grid-row`, `grid-column`, `grid-area`, not a span alone) or in another order (`order`), or
  * holes filled out of order (`dense`). Putting a layer at another place among
  * the others does not take it to another cell there, so it offers no cells to
  * reorder by (ticket 18).
@@ -1745,8 +1773,9 @@ export function placesItself(el: Element): boolean {
   return [...el.children].some((child) => {
     const style = getComputedStyle(child);
     if (/^(absolute|fixed)$/.test(style.position) || style.display === "none") return false;
+    // Spanning tracks (`span 2`) it is still placed in order: only a line of its own places it.
     const lines = [style.gridColumnStart, style.gridColumnEnd, style.gridRowStart, style.gridRowEnd];
-    return lines.some((line) => line !== "auto") || style.order !== "0";
+    return lines.some((line) => line !== "auto" && !/^span\b/.test(line)) || style.order !== "0";
   });
 }
 

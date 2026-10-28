@@ -401,12 +401,15 @@ function cssOf(key: string, { base, at }: Sections): string {
 
 /**
  * The changes that declare styles on the layer with id `layer`, each with the
- * declarations it puts on it: its own changes, and those that place it as one
- * of the layers of a Stack made or dissolved.
+ * declarations it puts on it: its own changes, those that place it as one
+ * of the layers of a Stack made or dissolved, and those that make it the
+ * positioning reference of a layer placed freely in it at a breakpoint.
  */
 export function changesOn(layer: string, changes: Change[]): Change[] {
   return changes.flatMap((change) => {
     if (change.layer === layer) return [change];
+    // A layer placed freely in it at a breakpoint: it is the layer's positioning reference there.
+    if (change.within === layer) return [{ ...change, style: { position: "relative" } }];
     if (change.kind === "unstack") {
       const member = (change.after as Dissolved).layers.find((m) => m.layer === layer);
       return member ? [{ ...change, style: member.style }] : [];
