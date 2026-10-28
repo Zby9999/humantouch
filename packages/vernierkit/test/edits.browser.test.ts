@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
+import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet } from "../src/client/changeset";
-import { checkChange } from "../src/client/check";
+import { checkChange, type PageAt } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
 import { moveInlineEdits } from "../src/client/canvas-style";
 import { createEditor } from "../src/client/edits";
@@ -68,7 +69,7 @@ function showSaved(html: string): Document {
   return doc;
 }
 
-function openCanvas(page = PAGE) {
+function openCanvas(page = PAGE, project: ProjectBreakpoints | null = null) {
   iframe = document.createElement("iframe");
   iframe.style.width = "800px";
   document.body.append(iframe);
@@ -78,7 +79,7 @@ function openCanvas(page = PAGE) {
   doc.close();
   const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
   const changes = createChangeSet();
-  const editor = createEditor(views, changes);
+  const editor = createEditor(views, changes, project);
   const tree = editor.tree();
   const cards = [...doc.querySelectorAll("article")];
   const layerOf = (el: Element) => find(tree.root, (layer) => layer.el === el && !layer.text)!;
@@ -2283,9 +2284,9 @@ describe("views", () => {
 describe("breakpoints", () => {
   const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
   const BLUE = { type: "solid", color: "#0000FF", opacity: 1 } as const;
-  /** The canvas, 800 px wide, shown in a phone view too: its breakpoint is every width below 800 px. */
-  const open = async (page = MOVES) => {
-    const canvas = openCanvas(page);
+  /** The canvas, 800 px wide, shown in a phone view too: its breakpoint is every width below 800 px, unless the project has breakpoints of its own. */
+  const open = async (page = MOVES, project: ProjectBreakpoints | null = null) => {
+    const canvas = openCanvas(page, project);
     phoneFrame = document.createElement("iframe");
     document.body.append(phoneFrame);
     const phone = await canvas.views.add(phoneFrame, 390);
@@ -2294,8 +2295,229 @@ describe("breakpoints", () => {
     /** How the element with id `id` is styled in each view: desktop, then phone. */
     const shown = (id: string) => [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
     const fills = (id: string) => shown(id).map((s) => s.backgroundColor);
-    return { ...canvas, desktop, phone, layer, shown, fills };
+    /** Shows the canvas in one more view, `width` px wide. */
+    const addView = async (width: number) => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      extraFrames.push(frame);
+      return canvas.views.add(frame, width);
+    };
+    return { ...canvas, desktop, phone, layer, shown, fills, addView };
   };
+  let extraFrames: HTMLIFrameElement[] = [];
+  afterEach(() => {
+    for (const frame of extraFrames) frame.remove();
+    extraFrames = [];
+  });
+
+  /** A Tailwind theme of the project's own, as the local service reads it. */
+  const TAILWIND: ProjectBreakpoints = {
+    from: "tailwind",
+    list: [
+      { width: 640, name: "sm" },
+      { width: 768, name: "md" },
+    ],
+  };
+
+  test("with breakpoints of the project's own, a view stands for the range of them its width is in, whatever other views there are; one in the desktop view's range is the desktop view", async () => {
+    const { editor, changes, phone, layer, addView } = await open(MOVES, TAILWIND);
+    const tablet = await addView(700);
+    const wide = await addView(780);
+
+    expect([phone, tablet, wide].map((view) => editor.breakpointAt(view.width))).toEqual([
+      { min: null, max: 640, project: { tailwind: "max-sm:" } },
+      { min: 640, max: 768, project: { tailwind: "sm:max-md:" } },
+      null,
+    ]);
+    await addView(500);
+    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 640, project: { tailwind: "max-sm:" } });
+
+    editor.at(tablet);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(wide);
+    editor.set(layer("board"), "radius", 8);
+    expect(changes.list().map((change) => [change.property, change.breakpoint ?? "every width"])).toEqual([
+      ["fill", { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+      ["radius", "every width"],
+    ]);
+  });
+
+  test("with the project's media queries, a range is written with the query at each of its edges", async () => {
+    const css: ProjectBreakpoints = {
+      from: "css",
+      list: [
+        { width: 600, name: "(max-width: 599px)" },
+        { width: 750, name: "(min-width: 750px)" },
+      ],
+    };
+    const { editor, phone } = await open(MOVES, css);
+    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 600, project: { queries: ["(max-width: 599px)"] } });
+    expect(editor.breakpointAt(700)).toEqual({ min: 600, max: 750, project: { queries: ["(max-width: 599px)", "(min-width: 750px)"] } });
+  });
+
+  test("a change at a breakpoint is checked on the page shown at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
+    // As the live page has it: source markers, and no usage chains, which only the canvas is given.
+    const live = MOVES.replace(/ data-vk-chain='[^']*'/g, "");
+    const { editor, changes, phone, layer } = await open(live);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    /** The live page, `width` px wide: with the fill applied below 800px, or not. */
+    const pageAt = (width: number, applied: boolean) => {
+      const frame = document.createElement("iframe");
+      frame.style.width = `${width}px`;
+      document.body.append(frame);
+      extraFrames.push(frame);
+      const page = frame.contentDocument!;
+      page.open();
+      page.write(live.replace("<body", `<style>${applied ? "@media (width < 800px) { #board { background-color: rgb(255, 0, 0) } }" : ""}</style>\n<body`));
+      page.close();
+      return page;
+    };
+    const widths: number[] = [];
+    let closed = 0;
+    const openAt = (applied: boolean) => async (width: number) => {
+      widths.push(width);
+      return { doc: pageAt(width, applied), close: () => void closed++ };
+    };
+    const check = async (applied: boolean, at: PageAt = openAt(applied)) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const result = checkChange(pageAt(1000, applied), change, at);
+        await vi.advanceTimersByTimeAsync(CHECK_SETTLE_MS);
+        return await result;
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+
+    expect(await check(true)).toEqual({ outcome: "shown" });
+    expect(await check(false)).toEqual({ outcome: "not shown", actual: null });
+    expect(widths).toEqual([799, 799]);
+    expect(closed).toBe(2);
+    expect(await check(true, async () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
+    // The window in the range already: checked on the page as it is.
+    widths.length = 0;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      expect(await checkChange(pageAt(700, true), change, openAt(true))).toEqual({ outcome: "shown" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(widths).toEqual([]);
+  });
+
+  test("the project's media queries are read from the page's stylesheets: each width one starts or stops holding at, named by the first there", () => {
+    const { doc } = openCanvas(`<!DOCTYPE html><style>
+      @media (max-width: 767px) { p { color: red } }
+      @media screen and (min-width: 48em) { p { color: blue } }
+      @layer page { @supports (display: grid) { @media (width >= 1024px) { p { color: green } } } }
+      @media (640px < width <= 900px) { p { margin: 0 } }
+      @media (prefers-color-scheme: dark), (min-height: 500px), print { p { color: white } }
+    </style><body><p>Hi</p></body>`);
+    expect(readMediaBreakpoints(doc)).toEqual({
+      from: "css",
+      list: [
+        { width: 641, name: "(640px < width <= 900px)" },
+        { width: 768, name: "(max-width: 767px)" },
+        { width: 901, name: "(640px < width <= 900px)" },
+        { width: 1024, name: "(width >= 1024px)" },
+      ],
+    });
+    expect(readMediaBreakpoints(openCanvas(MOVES).doc)).toBeNull();
+  });
+
+  test("a change at a breakpoint recorded before the views changed is told, edited and reset in every view whose width is in its range, never doubled", async () => {
+    const { editor, changes, phone, layer, fills, addView } = await open();
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    // A view added between: the phone view now stands for the widths below 600px, the new one for 600px up to 800px.
+    const between = await addView(600);
+    expect(editor.breakpoint()).toEqual({ min: null, max: 600 });
+
+    for (const view of [phone, between]) {
+      editor.at(view);
+      expect(editor.changesHere(layer("board"))).toEqual(["fill"]);
+    }
+    editor.set(layer("board"), "fill", BLUE);
+    expect(changes.list().map((change) => [change.after, change.breakpoint])).toEqual([[BLUE, { min: null, max: 800 }]]);
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(0, 0, 255)"]);
+
+    editor.inherit(layer("board"), "fill");
+    expect(changes.list()).toEqual([]);
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    editor.at(phone);
+    expect(editor.changesHere(layer("board"))).toEqual([]);
+  });
+
+  test("with the project's breakpoints read, a change recorded at a range of them before says how the project writes it, and one in a view in the desktop view's range is told, edited and reset there", async () => {
+    const canvas = openCanvas(MOVES, TAILWIND);
+    const { views, editor, doc } = canvas;
+    // Recorded before the project's breakpoints were read, by the views' widths: as a saved round brings them back.
+    const layer = (id: string) => find(editor.tree().root, (l) => l.el === doc.getElementById(id) && !l.text)!;
+    const wide = await (async () => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      extraFrames.push(frame);
+      return views.add(frame, 780);
+    })();
+    const narrow = await (async () => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      extraFrames.push(frame);
+      return views.add(frame, 700);
+    })();
+    editor.at(narrow);
+    editor.set(layer("board"), "fill", RED);
+    editor.set(layer("board"), "radius", 4);
+    editor.set(layer("list"), "gap", 4);
+    // As a round saved before the project's breakpoints were read has them: with no word of the project's, the fill at 640px up to 800px, the views' widths then.
+    const round = structuredClone(canvas.changes.save());
+    const [old, oldRadius] = round.changes;
+    old.breakpoint = { min: 640, max: 800 };
+    oldRadius.breakpoint = { min: 640, max: 768 };
+    const saved = createChangeSet(round);
+    const [fill, radius] = saved.list();
+    const reopened = createEditor(views, saved, TAILWIND);
+    expect(radius.breakpoint).toEqual({ min: 640, max: 768, project: { tailwind: "sm:max-md:" } });
+    expect(fill.breakpoint).toEqual({ min: 640, max: 800 });
+
+    // 780px is in the desktop view's range, md and up: edits there are at every width, but the fill of 640px up to 800px holds there.
+    reopened.at(wide);
+    expect(reopened.breakpoint()).toBeNull();
+    expect(reopened.changesHere(layer("board"))).toEqual(["fill"]);
+    reopened.set(layer("board"), "fill", BLUE);
+    expect(saved.list().map((change) => [change.property, change.after, change.breakpoint ?? "every width"])).toEqual([
+      ["fill", BLUE, { min: 640, max: 800 }],
+      ["radius", 4, { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+      ["gap", 4, { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+    ]);
+    reopened.inherit(layer("board"), "fill");
+    expect(reopened.changesHere(layer("board"))).toEqual([]);
+    reopened.set(layer("board"), "opacity", 0.5);
+    expect(saved.list().at(-1)!.breakpoint).toBeUndefined();
+    // In the view of its own range, the board's changes there, in the order they were made.
+    reopened.at(narrow);
+    expect(reopened.changesHere(layer("board"))).toEqual(["radius"]);
+  });
+
+  test("an edit at a breakpoint reaching into another range the property has of its own takes only the widths left, so no two overlap", async () => {
+    const { editor, changes, views, phone, layer, shown, addView } = await open();
+    const between = await addView(600);
+    editor.at(between);
+    editor.set(layer("board"), "fill", RED);
+    // The view taken away: the phone view stands for every width below 800px again, which reaches into the change's range.
+    views.remove(between);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", BLUE);
+
+    expect(changes.list().map((change) => change.breakpoint)).toEqual([
+      { min: 600, max: 800 },
+      { min: null, max: 600 },
+    ]);
+    expect(style(phone.document.getElementById("board")!).backgroundColor).toBe("rgb(0, 0, 255)");
+    expect(shown("board")[0].backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
 
   test("an edit made in the phone view shows there only, and is recorded at its breakpoint", async () => {
     const { editor, changes, phone, layer, fills } = await open();

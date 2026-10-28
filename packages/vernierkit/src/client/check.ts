@@ -6,11 +6,12 @@
  * does or time is up. Changes to the page are watched rather than polled, as a
  * page in a background tab gets its timers slowed.
  */
-import { breakpointName, mediaOf } from "./breakpoints";
+import { breakpointName, mediaOf, widthIn } from "./breakpoints";
 import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
 import { isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property } from "./edits";
 import { signOf, usageKey } from "./layers";
+import { CHECK_FRAME_ATTR } from "./host";
 import { elementsOf, usageKeyOf } from "./page-elements";
 
 /** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
@@ -41,12 +42,81 @@ function checkable(change: Change): boolean {
   return after.absolute ? true : !before.absolute && !!change.order;
 }
 
-export function checkChange(doc: Document, change: Change): Promise<CheckResult> {
-  // A change at a breakpoint shows at its widths only: the page, as wide as it is, may be at none of them.
-  // Checking it at those widths, whatever the page's, is ticket 38's.
-  if (change.breakpoint && !doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
-    return Promise.resolve({ outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page is not shown at that width now` });
+/** The page shown at another width, as a window that wide, to check it there; null when it cannot be. */
+export type PageAt = (width: number) => Promise<{ doc: Document; close(): void } | null>;
+
+/**
+ * Whether `doc`, the live page, shows the change. A change at a breakpoint
+ * shows at its widths only (ADR 0008): with the window at none of them, it is
+ * checked on the page shown at one of them, by `at`.
+ */
+export async function checkChange(doc: Document, change: Change, at?: PageAt): Promise<CheckResult> {
+  const { breakpoint } = change;
+  if (!breakpoint || doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches) return checkOn(doc, change);
+  const width = widthIn(breakpoint);
+  const cannot: CheckResult = { outcome: "unchecked", reason: `it applies ${breakpointName(breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
+  // What cannot be checked on any page needs no other width.
+  const reason = uncheckable(change);
+  if (reason) return { outcome: "unchecked", reason };
+  const page = await at?.(width).catch(() => null);
+  if (!page) return cannot;
+  try {
+    return page.doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches ? await checkOn(page.doc, change) : cannot;
+  } finally {
+    page.close();
   }
+}
+
+/** How long the page may take to load at another width: what is left of the time `done` waits, once it has settled. */
+const LOAD_MS = 3000;
+
+/**
+ * The page `page` shows, loaded afresh in a hidden iframe `width` px wide,
+ * as tall as its window: as it shows in a window that wide. The editor layer
+ * is not mounted there. Null when it does not load in time.
+ */
+export function pageAt(page: Window): PageAt {
+  return (width) =>
+    new Promise((resolve) => {
+      const frame = page.document.createElement("iframe");
+      frame.setAttribute(CHECK_FRAME_ATTR, "");
+      frame.setAttribute("aria-hidden", "true");
+      frame.tabIndex = -1;
+      Object.assign(frame.style, {
+        position: "fixed",
+        top: "0",
+        left: `${-width - 100}px`,
+        width: `${width}px`,
+        height: `${page.innerHeight}px`,
+        border: "0",
+        visibility: "hidden",
+        pointerEvents: "none",
+      });
+      const close = () => frame.remove();
+      const timer = setTimeout(() => {
+        close();
+        resolve(null);
+      }, LOAD_MS);
+      frame.addEventListener(
+        "load",
+        () => {
+          clearTimeout(timer);
+          const doc = frame.contentDocument;
+          if (doc) resolve({ doc, close });
+          else {
+            close();
+            resolve(null);
+          }
+        },
+        { once: true },
+      );
+      frame.src = page.location.href;
+      page.document.documentElement.append(frame);
+    });
+}
+
+/** Whether `doc` shows the change, as wide as it is. */
+function checkOn(doc: Document, change: Change): Promise<CheckResult> {
   const reason = uncheckable(change);
   if (reason) return Promise.resolve({ outcome: "unchecked", reason });
   const look = (): CheckResult => {

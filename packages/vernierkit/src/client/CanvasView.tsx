@@ -171,8 +171,14 @@ export function CanvasView(props: Props) {
     }
   }
   const bounds: Bounds | null = canvas && boundsOf(placed);
-  /** What playing shows: the desktop view, as tall as it is now. */
-  const played: Bounds | null = placed[0] ?? null;
+  /**
+   * While playing, how wide the canvas is shown: as wide as the viewport, as a
+   * window that wide shows the page (ADR 0010), so what the page's CSS and
+   * the edits at breakpoints do at that width shows. Null when not playing.
+   */
+  const [playWidth, setPlayWidth] = useState<number | null>(null);
+  /** What playing shows: the desktop view, as wide as it is played, as tall as it is now. */
+  const played: Bounds | null = placed[0] ? { width: playWidth ?? placed[0].width, height: placed[0].height } : null;
 
   /**
    * Plays a mode switch animation, taking over from one still running.
@@ -309,7 +315,14 @@ export function CanvasView(props: Props) {
     writeViewWidths(next);
   };
 
-  // Playing shows the canvas at 100%, from the part at the top of the viewport; stopping puts the camera back as it was.
+  /** Shows the canvas `width` px wide, as playing does; null: as wide as it was frozen, its desktop view. Returns what is played. */
+  const playAt = (width: number | null): Bounds | null => {
+    if (!canvas || !played) return null;
+    iframe.current!.style.width = `${width ?? canvas.width}px`;
+    setPlayWidth(width);
+    return { ...played, width: width ?? canvas.width };
+  };
+  // Playing shows the canvas at 100%, as wide as the viewport, from the part at the top of it; stopping puts the canvas and the camera back as they were.
   const playingRef = useRef(playing);
   playingRef.current = playing;
   const beforePlaying = useRef<Camera | null>(null);
@@ -321,9 +334,10 @@ export function CanvasView(props: Props) {
       setHover(null);
       const area = viewport.current!.getBoundingClientRect();
       const top = Math.max(0, -camera.y / camera.zoom);
-      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, played, area));
+      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, playAt(Math.round(area.width))!, area));
       viewport.current!.focus({ preventScroll: true });
     } else if (beforePlaying.current) {
+      playAt(null);
       setCamera(beforePlaying.current);
       beforePlaying.current = null;
     }
@@ -359,8 +373,8 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ played, bounds, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, onTool, playing, onStopPlaying });
-  latest.current = { played, bounds, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying };
+  const latest = useRef({ played, playAt, bounds, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, onTool, playing, onStopPlaying });
+  latest.current = { played, playAt, bounds, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -449,8 +463,10 @@ export function CanvasView(props: Props) {
     let left = el.getBoundingClientRect().left;
     const observer = new ResizeObserver(() => {
       if (playingRef.current) {
-        const { played } = latest.current;
-        if (played) setCamera((v) => scrolled(v, played, el.getBoundingClientRect()));
+        // The window resized while playing: the canvas is as wide as it now.
+        const area = el.getBoundingClientRect();
+        const played = latest.current.playAt(Math.round(area.width));
+        if (played) setCamera((v) => scrolled(v, played, area));
         return;
       }
       const now = el.getBoundingClientRect().left;
@@ -806,6 +822,7 @@ export function CanvasView(props: Props) {
             key={keyOf(p)}
             name={p.name}
             width={p.width}
+            breakpoint={p.desktop ? null : (editor?.breakpointAt(p.width) ?? null)}
             left={camera.x + p.x * camera.zoom}
             top={camera.y - LABEL_OFFSET}
             size={p.width * camera.zoom}

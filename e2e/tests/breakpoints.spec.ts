@@ -65,7 +65,9 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
 
   await pick(page, phone(page), "article");
   const section = design(page).getByRole("region", { name: "Phone breakpoint" });
-  await expect(section).toContainText("below 768px");
+  // Tailwind's own breakpoints, which the example keeps: the phone is below `sm`.
+  await expect(section).toContainText("below 640px");
+  await expect(section).toContainText("max-sm:");
   await expect(section.getByRole("listitem")).toHaveCount(0);
   await setField(page, "Fill color", "ff0000");
   await setField(page, "Corner radius", "4");
@@ -86,6 +88,36 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
   await page.keyboard.press("Meta+z");
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([BLUE, BLUE, RED]);
   await expect(section.getByRole("listitem")).toHaveText(["Fill", "Corner radius"]);
+});
+
+test("each view stands for the range of the project's Tailwind breakpoints its width is in, and its label says which; adding a view changes no range", async ({ page }) => {
+  await enterEditMode(page);
+  const label = (name: string) => page.getByRole("group", { name: `${name} view` });
+  await expect(label("Tablet")).toContainText("md:max-lg:");
+  await expect(label("Phone")).toContainText("max-sm:");
+  await expect(label("Desktop")).not.toContainText(":");
+
+  // A view of 500px is in the phone's range, `sm` being 640px: an edit in either shows in both.
+  await page.getByRole("button", { name: "Add view" }).click();
+  await page.getByRole("spinbutton", { name: "New view width" }).fill("500");
+  await page.getByRole("spinbutton", { name: "New view width" }).press("Enter");
+  const custom = page.locator('iframe[title="Custom 500"]');
+  await expect(custom.contentFrame().locator("h1")).toBeVisible();
+  await expect(label("Custom")).toContainText("max-sm:");
+  // Every view in sight again (⇧1).
+  await page.keyboard.press("Shift+Digit1");
+
+  await pick(page, phone(page), "article");
+  await expect(design(page).getByRole("region", { name: "Phone breakpoint" })).toContainText("below 640px");
+  await setField(page, "Fill color", "ff0000");
+  await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, RED]);
+  await expect(custom.contentFrame().locator("article").first()).toHaveCSS("background-color", RED);
+  // Told and reset in the other view of the range too.
+  await pick(page, custom, "article");
+  const section = design(page).getByRole("region", { name: "Custom breakpoint" });
+  await expect(section.getByRole("listitem")).toHaveText(["Fill"]);
+  await section.getByRole("button", { name: "Reset Fill to inherit" }).click();
+  await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, WHITE]);
 });
 
 test("a layer hidden at a breakpoint is hidden in that view only, and stays in the layer tree", async ({ page }) => {
@@ -132,7 +164,7 @@ test("the change list says the breakpoint of each change made in a narrower view
 
   await page.locator("[data-vk-changes-opener]").click();
   const list = page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
-  await expect(list.nth(0)).toContainText("below 768px");
-  await expect(list.nth(1)).toContainText(/768px to \d+px/);
+  await expect(list.nth(0)).toContainText("below 640px");
+  await expect(list.nth(1)).toContainText("768px to 1023px");
   await expect(list.nth(2)).not.toContainText("px to");
 });

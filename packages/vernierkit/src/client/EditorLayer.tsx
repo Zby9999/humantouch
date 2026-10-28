@@ -3,8 +3,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { RoundStatus, SavedRound } from "../service-protocol";
 import { ENTER_MARK } from "./CanvasView";
 import { ChangeList } from "./ChangeList";
+import type { ProjectBreakpoints } from "./breakpoints";
 import type { Change } from "./changeset";
-import { checkChange } from "./check";
+import { checkChange, pageAt } from "./check";
 import { Icon } from "./icons";
 import { revertSaved } from "./saved-round";
 import { connectRoundStore } from "./service";
@@ -34,6 +35,8 @@ export function EditorLayer() {
   const [mode, setMode] = useState<Mode>("preview");
   const [animate, setAnimate] = useState(true);
   const [store] = useState(connectRoundStore);
+  /** The project's breakpoints from its Tailwind theme, as the local service reads them; undefined until it has said. */
+  const [breakpoints, setBreakpoints] = useState<ProjectBreakpoints | null | undefined>(store ? undefined : null);
   /** Undefined until the saved round, if any, has loaded. */
   const [round, setRound] = useState<SavedRound | null | undefined>(store ? undefined : null);
   /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
@@ -57,7 +60,13 @@ export function EditorLayer() {
       console.warn(error);
       setRound(null);
     });
-  useEffect(() => void load(), []);
+  useEffect(() => {
+    void load();
+    store?.breakpoints().then(setBreakpoints, (error: unknown) => {
+      console.warn(error);
+      setBreakpoints(null);
+    });
+  }, []);
 
   const changes = round?.changeSet.changes ?? [];
   /** Not applied yet. */
@@ -71,7 +80,7 @@ export function EditorLayer() {
     if (!check || !store || round === undefined || checked.current === check.at) return;
     checked.current = check.at;
     const change = round?.changeSet.changes.find((c) => c.id === check.id);
-    const result = change ? checkChange(document, change) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
+    const result = change ? checkChange(document, change, pageAt(window)) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
     void result.then((result) => store.report({ ...check, ...result })).catch((error: unknown) => console.warn(error));
   }, [check?.at, round]);
 
@@ -86,7 +95,7 @@ export function EditorLayer() {
       }),
     [],
   );
-  const ready = round !== undefined && status !== undefined;
+  const ready = round !== undefined && status !== undefined && breakpoints !== undefined;
   /** Whether the shell was up at the last render: before that, there is no canvas to leave. */
   const shellShown = useRef(false);
   // Claimed: the canvas is out of date as the code changes, so editing stops.
@@ -193,6 +202,7 @@ export function EditorLayer() {
             )
           }
           saved={round!}
+          breakpoints={breakpoints!}
           onSave={save}
           onChanges={setLive}
           control={control}

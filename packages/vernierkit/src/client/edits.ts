@@ -5,7 +5,7 @@
  * canvas. Every edit can be undone.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { breakpointKey, breakpointOf, sameBreakpoint, type Breakpoint } from "./breakpoints";
+import { breakpointKey, breakpointOf, clearOf, contains, widestFirst, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import {
   AS_STACK_ATTR,
   asShown,
@@ -125,13 +125,20 @@ export interface Editor {
   at(view: View | null): void;
   /** The breakpoint of the view worked in; null in the desktop view: every width. */
   breakpoint(): Breakpoint | null;
-  /** Whether `property` of the layer is changed at the breakpoint worked in, on its own; never in the desktop view. */
+  /** The breakpoint of a view `width` px wide, as the views are now; null: the desktop view's, every width. */
+  breakpointAt(width: number): Breakpoint | null;
+  /**
+   * Whether `property` of the layer is changed on its own at a breakpoint
+   * that holds in the view worked in: its own, or any other range of widths
+   * its width is in, as one recorded before the views changed; never in the desktop view.
+   */
   changedHere(layer: Layer, property: Property): boolean;
-  /** The properties of the layer changed at the breakpoint worked in, on their own, in the order they were first changed. */
+  /** The properties of the layer changed on their own at a breakpoint that holds in the view worked in, in the order they were first changed. */
   changesHere(layer: Layer): Property[];
   /**
-   * Takes the breakpoint's own value of `property` off the layer, as an edit
-   * that can be undone: it inherits the value at every width again.
+   * Takes the value of `property` the layer has of its own at the
+   * breakpoints that hold in the view worked in off it, as an edit that can
+   * be undone: it inherits the value at every width there again.
    */
   inherit(layer: Layer, property: Property): void;
   /** Whether `property` can be edited on the layer; with `value`, whether the layer can take that value. */
@@ -374,8 +381,12 @@ export function readValue<P extends Property>(el: Element, property: P): Propert
   return PROPERTIES[property].read(el, colorReader(el.ownerDocument));
 }
 
-/** Edits the canvas `views` show, every view alike, recording each change in `changes`. */
-export function createEditor(views: Views, changes: ChangeSet): Editor {
+/**
+ * Edits the canvas `views` show, every view alike, recording each change in
+ * `changes`. `project`: the project's own breakpoints, which the views' ranges
+ * line up with; none, they follow the views' widths.
+ */
+export function createEditor(views: Views, changes: ChangeSet, project: ProjectBreakpoints | null = null): Editor {
   const doc = views.canvas.document;
   let tree = buildLayerTree(doc);
   const colors = colorReader(doc);
@@ -402,17 +413,56 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
 
   /** The view worked in; null: the desktop view. */
   let current: View | null = null;
+  /** The views beside the desktop view. */
+  const others = () => views.list().slice(1);
+  /** The view worked in when it is not the desktop view: null in the desktop view. */
+  const beside = () => (current && others().includes(current) ? current : null);
+  /** The breakpoint of a view `width` px wide, beside the views there are now. */
+  const breakpointAt = (width: number) =>
+    breakpointOf(
+      width,
+      views.canvas.width,
+      others().map((v) => v.width),
+      project,
+    );
   /** The breakpoint of a view; null for the desktop view. */
-  const breakpointIn = (view: View | null): Breakpoint | null => {
-    const all = views.list();
-    if (!view || view === all[0] || !all.includes(view)) return null;
-    return breakpointOf(view.width, views.canvas.width, all.slice(1).map((v) => v.width));
-  };
-  /** The view that stands for `breakpoint` now, if one does: the view worked in first. */
+  const breakpointIn = (view: View | null): Breakpoint | null => (view && others().includes(view) ? breakpointAt(view.width) : null);
+  // Changes at breakpoints recorded with no word of the project's (before its breakpoints were read) are written as it writes them, where they can be.
+  for (const change of changes.list()) if (change.breakpoint && !change.breakpoint.project) Object.assign(change.breakpoint, writtenWith(change.breakpoint, project));
+  /** A view that shows `breakpoint` now, if one does: the view worked in first. */
   const viewAt = (breakpoint: Breakpoint | null): View | null => {
     if (!breakpoint) return null;
-    if (sameBreakpoint(breakpointIn(current), breakpoint)) return current;
-    return views.list().find((view) => sameBreakpoint(breakpointIn(view), breakpoint)) ?? null;
+    const view = beside();
+    if (view && contains(breakpoint, view.width)) return view;
+    return others().find((v) => contains(breakpoint, v.width)) ?? null;
+  };
+  /** The style changes of the layer with id `id` at a breakpoint, to `property` or to any. */
+  const changesAtBreakpoints = (id: string, property?: string) =>
+    changes.list().filter((change) => change.kind === "style" && change.layer === id && change.breakpoint && (!property || change.property === property));
+  /** Of those, the ones at a breakpoint that holds at `width`: the narrowest, which wins, first. */
+  const changesAt = (id: string, width: number, property?: string) =>
+    changesAtBreakpoints(id, property)
+      .filter((change) => contains(change.breakpoint, width))
+      .sort((a, b) => widestFirst(b.breakpoint!, a.breakpoint!));
+  /**
+   * Where an edit to `property` of the layer made in the view worked in goes.
+   * In the desktop view, every width. In another, the breakpoint the layer
+   * has the property changed at already, of its own, that holds there,
+   * whether the view's own or one recorded before the views changed; else the
+   * view's (every width for a view in the desktop view's range), as far as no
+   * other range the property has of its own reaches into it, so no two of them overlap.
+   */
+  const breakpointFor = (layer: Layer, property: Property): Breakpoint | null => {
+    const view = beside();
+    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    const breakpoint = breakpointIn(view);
+    if (!view || !id) return breakpoint;
+    const [own] = changesAt(id, view.width, property);
+    if (own) return own.breakpoint!;
+    if (!breakpoint) return null;
+    const taken = changesAtBreakpoints(id, property).map((change) => change.breakpoint!);
+    const clear = clearOf(breakpoint, view.width, taken);
+    return clear === breakpoint ? breakpoint : { ...clear, ...writtenWith(clear, project) };
   };
   /** The element that shows a canvas element in `view`, as it is now; the canvas's own for the desktop view, or a view that shows none of it. */
   const shownIn = (view: View | null, el: Element): Element => {
@@ -674,11 +724,11 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
   const isFrameOfLayers = (layer: Layer) =>
     layer.kind === "frame" && !!layer.parent && layer.children.length > 0 && layer.children.every((child) => placeable(child) && repeatsWith(child, layer));
 
-  /** The layer's id and the breakpoint worked in, when there is one and the layer has changes of its own. */
+  /** The layer's id and the width of the view worked in, when it is not the desktop view and the layer has changes of its own. */
   const workedHere = (layer: Layer) => {
-    const breakpoint = breakpointIn(current);
     const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
-    return breakpoint && id ? { id, breakpoint } : null;
+    const view = beside();
+    return view && id ? { id, width: view.width } : null;
   };
 
   /**
@@ -809,19 +859,28 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       current = view;
     },
     breakpoint: () => breakpointIn(current),
+    breakpointAt,
     changedHere: (layer, property) => editor.changesHere(layer).includes(property),
     changesHere(layer) {
       const here = workedHere(layer);
       if (!here) return [];
-      return changes
-        .list()
-        .filter((change) => change.layer === here.id && change.kind === "style" && sameBreakpoint(change.breakpoint, here.breakpoint))
-        .map((change) => change.property as Property);
+      const holding = new Set(changesAt(here.id, here.width));
+      // In the order they were first changed, each once.
+      return [
+        ...new Set(
+          changesAtBreakpoints(here.id)
+            .filter((change) => holding.has(change))
+            .map((change) => change.property as Property),
+        ),
+      ];
     },
     inherit(layer, property) {
       const here = workedHere(layer);
-      const change = here && changes.find(here.id, property, here.breakpoint);
-      if (change) inheritStep(change);
+      if (!here) return;
+      // Two ranges of its own that both hold here, as recorded before the views changed: both go, one step.
+      editor.batch(() => {
+        for (const change of changesAt(here.id, here.width, property)) inheritStep(change);
+      });
     },
     tree: () => tree,
     canMove: (layer) => layer.parent !== null,
@@ -893,7 +952,7 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
     },
     set(layer, property, value, { continues = false } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
-      edit(layer, property, value, continues, breakpointIn(current));
+      edit(layer, property, value, continues, breakpointFor(layer, property));
     },
     batch(edits, { continues = false } = {}) {
       if (batching) return edits();

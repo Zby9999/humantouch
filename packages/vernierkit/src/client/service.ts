@@ -1,5 +1,7 @@
 /** The editor layer's side of the local service: where the round is kept between page loads, and how it stands. */
+import type { ProjectBreakpoints } from "./breakpoints";
 import {
+  BREAKPOINTS_PATH,
   CHECKS_PATH,
   EVENTS_PATH,
   ROUND_PATH,
@@ -26,6 +28,8 @@ export interface RoundStore {
   unlock(): Promise<void>;
   /** Answers the check `done` asked for. */
   report(check: CheckReport): Promise<void>;
+  /** The project's own breakpoints from its Tailwind theme; null when it has none to be read. */
+  breakpoints(): Promise<ProjectBreakpoints | null>;
 }
 
 /** The store the dev server set up for this page, or null when it set up none. */
@@ -77,6 +81,10 @@ export function connectRoundStore(): RoundStore | null {
     },
     async report(check) {
       await request("POST", { path: CHECKS_PATH, body: JSON.stringify(check) });
+    },
+    async breakpoints() {
+      const response = await request("GET", { path: BREAKPOINTS_PATH });
+      return response.status === 204 ? null : ((await response.json()) as ProjectBreakpoints);
     },
   };
 }

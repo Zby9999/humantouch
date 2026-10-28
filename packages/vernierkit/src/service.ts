@@ -12,7 +12,9 @@ import { existsSync, unwatchFile, watchFile } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { readProjectBreakpoints } from "./project-breakpoints";
 import {
+  BREAKPOINTS_PATH,
   CHECKS_PATH,
   EVENTS_PATH,
   ROUND_PATH,
@@ -132,10 +134,15 @@ export async function startService({ root }: { root: string }): Promise<Service>
         });
         return send(res, 204);
       }
+      case `GET ${BREAKPOINTS_PATH}`: {
+        // Read afresh each time: the theme may have changed since.
+        const breakpoints = await readProjectBreakpoints(root);
+        return breakpoints ? send(res, 200, JSON.stringify(breakpoints)) : send(res, 204);
+      }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH, BREAKPOINTS_PATH].includes(path) ? 405 : 404);
     }
   };
 

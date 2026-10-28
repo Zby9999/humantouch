@@ -1,5 +1,6 @@
 /** @jsxImportSource preact */
 import { useState } from "preact/hooks";
+import { tailwindOf, type Breakpoint } from "./breakpoints";
 import { Icon } from "./icons";
 
 /**
@@ -44,9 +45,14 @@ export function viewName(width: number, desktop: boolean): string {
   return "Custom";
 }
 
-/** Above a view: what it is, that it shows only what CSS does at its width, and, but for the desktop view, the way to delete it. */
-export function ViewLabel(props: { name: string; width: number; left: number; top: number; size: number; onDelete?: () => void }) {
-  const { name, width, left, top, size, onDelete } = props;
+/**
+ * Above a view: what it is, the project's Tailwind breakpoint it stands for,
+ * that it shows only what CSS does at its width, and, but for the desktop
+ * view, the way to delete it.
+ */
+export function ViewLabel(props: { name: string; width: number; breakpoint: Breakpoint | null; left: number; top: number; size: number; onDelete?: () => void }) {
+  const { name, width, breakpoint, left, top, size, onDelete } = props;
+  const tailwind = tailwindOf(breakpoint);
   return (
     <div
       class="vk-view-label"
@@ -58,6 +64,11 @@ export function ViewLabel(props: { name: string; width: number; left: number; to
     >
       <span class="vk-view-name">{name}</span>
       <span class="vk-view-width">{width}</span>
+      {tailwind && (
+        <span class="vk-view-breakpoint" title="The project's breakpoint this view stands for: its changes are written with it">
+          {tailwind}
+        </span>
+      )}
       <span class="vk-view-note" title="Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.">
         CSS responsive only
       </span>

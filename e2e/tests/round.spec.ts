@@ -174,7 +174,8 @@ test("the page shows the code all along: before the claim, while the round is ap
 test.describe("done checks the change on the page", () => {
   const APP = `${EXAMPLE}src/App.tsx`;
   const CSS = `${EXAMPLE}src/index.css`;
-  const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8") };
+  const CARD = `${EXAMPLE}src/components/Card.tsx`;
+  const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8"), [CARD]: readFileSync(CARD, "utf8") };
   test.afterEach(() => {
     for (const [file, text] of Object.entries(originals)) writeFileSync(file, text);
   });
@@ -220,6 +221,30 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "flex items-center gap-2 self-start px-4", "flex items-center gap-2 self-stretch px-4");
 
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+  });
+
+  test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    const phone = page.locator('iframe[title="Phone 390"]');
+    await expect(phone.contentFrame().locator("h1")).toBeVisible();
+    const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+    await page.keyboard.down("Meta");
+    await page.mouse.click(box.x + 4, box.y + 4);
+    await page.keyboard.up("Meta");
+    await setField(page, "Fill color", "ff0000");
+    await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint?.max).toBe(640);
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
+
+    // Not applied yet: the cards are white at the phone's width too.
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The fill is #FFFFFF, not #FF0000.");
+    // Applied below `sm` only, as the notes say: the window, 1280px wide, still shows them white.
+    editSource(CARD, "bg-white p-5", "bg-white p-5 max-sm:bg-[#ff0000]");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    // Only the page itself is left: the one loaded at the phone's width is gone.
+    await expect(page.locator("iframe[data-vk-check]")).toHaveCount(0);
   });
 
   test("an edit that moves the layer's lines in its file: the check still finds it", async ({ page }) => {

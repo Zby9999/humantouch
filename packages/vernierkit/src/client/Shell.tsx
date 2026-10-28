@@ -13,6 +13,7 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { BreakpointSection } from "./BreakpointSection";
+import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
 import type { View } from "./views";
 import { toggleIn } from "./selection";
 
@@ -31,6 +32,8 @@ interface Props {
   controls: ComponentChildren;
   /** The round to come back to, canvas and ChangeSet; null to freeze the page afresh. */
   saved: SavedRound | null;
+  /** The project's breakpoints from its Tailwind theme; null: those of the page's media queries, if any. */
+  breakpoints: ProjectBreakpoints | null;
   /** The round, saved a moment after the last edit; null once it has no changes left. */
   onSave(round: SavedRound | null): void;
   /** The round's changes, right after each edit. */
@@ -50,7 +53,7 @@ const ADJUSTING_MS = 200;
 const AUTOSAVE_MS = 500;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, onSave, onChanges, control, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, breakpoints, onSave, onChanges, control, leaving, animate, onLeft }: Props) {
   /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
   const [layersShown, setLayersShown] = useState(readLayersShown);
   const layersToggle = useRef<HTMLButtonElement>(null);
@@ -303,7 +306,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
           const changeSet = createChangeSet(restoreFrom?.changeSet);
           round.current = { canvas: views.canvas, changeSet };
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
-          const editor = createEditor(views, changeSet);
+          // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.
+          const editor = createEditor(views, changeSet, breakpoints ?? readMediaBreakpoints(document));
           setTree(editor.tree());
           setEditor(editor);
           control.current = {

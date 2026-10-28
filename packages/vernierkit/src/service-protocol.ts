@@ -18,6 +18,8 @@ export const EVENTS_PATH = "/events";
 export const UNLOCK_PATH = "/unlock";
 /** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */
 export const CHECKS_PATH = "/checks";
+/** `GET`: the project's own breakpoints from its Tailwind theme, as `ProjectBreakpoints` (204: none to be read). */
+export const BREAKPOINTS_PATH = "/breakpoints";
 
 /** `done` asking the page to check change `id`; `at` tells one ask from the next. */
 export interface CheckAsk {

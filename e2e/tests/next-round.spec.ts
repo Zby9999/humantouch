@@ -108,3 +108,20 @@ test("claim locks the editor; done checks the change on the page once the CSS Mo
     writeFileSync(CARD_CSS, original);
   }
 });
+
+test("a change made in the phone view is at the range of the page's own media queries the view is in, and noted with them", async ({ page }) => {
+  await page.goto(NEXT_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const phone = page.locator('iframe[title="Phone 390"]');
+  await expect(phone.contentFrame().locator("h1")).toBeVisible();
+  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await setField(page, "Fill color", "ff0000");
+  // The page's CSS Module has its grid one column wide up to 767px, two up to 1023px.
+  await expect.poll(() => savedChanges()?.[0]?.breakpoint).toEqual({ min: null, max: 768, project: { queries: ["(max-width: 767px)"] } });
+
+  const notes = await vernierkit("claim");
+  expect(notes).toContain("The project writes these widths with its own media queries, whose edges these are: 768px, where `(max-width: 767px)` starts or stops holding");
+});

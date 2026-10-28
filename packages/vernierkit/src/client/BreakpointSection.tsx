@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { propertyTitle } from "../design-values";
-import { breakpointName } from "./breakpoints";
+import { breakpointName, tailwindOf } from "./breakpoints";
 import type { Editor, Property } from "./edits";
 import { Icon } from "./icons";
 import type { Layer } from "./layers";
@@ -23,9 +23,11 @@ interface Props {
  */
 export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
   const breakpoint = editor.breakpoint();
-  if (!breakpoint) return null;
   const changed: Property[] = [];
   for (const layer of layers) for (const property of editor.changesHere(layer)) if (!changed.includes(property)) changed.push(property);
+  // A view in the desktop view's range edits every width, as it does; only what a narrower range recorded before holds there is shown.
+  if (!breakpoint && !changed.length) return null;
+  const tailwind = tailwindOf(breakpoint);
   const inherit = (property: Property) => {
     editor.batch(() => {
       for (const layer of layers) editor.inherit(layer, property);
@@ -40,7 +42,22 @@ export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
         </h3>
         <span class="vk-breakpoint-range">{breakpointName(breakpoint)}</span>
       </div>
-      <p class="vk-layer-note">Style and layout changed here apply {breakpointName(breakpoint)} only.</p>
+      <p class="vk-layer-note">
+        {breakpoint ? (
+          <>
+            Style and layout changed here apply {breakpointName(breakpoint)} only
+            {tailwind && (
+              <>
+                {" "}
+                (<code class="vk-breakpoint-code">{tailwind}</code>)
+              </>
+            )}
+            .
+          </>
+        ) : (
+          "This view is in the desktop view's range: style and layout changed here apply at every width, but where these were changed on their own."
+        )}
+      </p>
       {changed.length > 0 && (
         <ul class="vk-breakpoint-changes" aria-label={`Changed at the ${view.toLowerCase()} breakpoint`}>
           {changed.map((property) => (

@@ -159,10 +159,11 @@ test("a change made in the phone view is noted with the widths it applies at, fo
   await page.mouse.click(box.x + 4, box.y + 4);
   await page.keyboard.up("Meta");
   await setField(page, "Fill color", "ff0000");
-  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 768 });
+  // The example keeps Tailwind's own breakpoints: the phone view is below `sm`, at 640px.
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 640, project: { tailwind: "max-sm:" } });
 
   const [, fill] = (await vernierkit("claim")).split(/^## /m);
 
-  expect(fill).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`)");
+  expect(fill).toContain("- **Breakpoint:** below 640px only (`@media (width < 640px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `max-sm:`");
   expect(fill).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000.\n");
 });

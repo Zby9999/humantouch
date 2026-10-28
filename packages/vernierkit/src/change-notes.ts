@@ -6,7 +6,7 @@
  */
 import { isAbsolute, relative } from "node:path";
 import { madeBy, placedAt, type Change, type Composed, type CopiedBreakpoint, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
-import { breakpointName, mediaOf } from "./client/breakpoints";
+import { breakpointName, mediaOf, type Breakpoint } from "./client/breakpoints";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
@@ -66,11 +66,29 @@ function section(change: Change, list: Change[], root: string, status: string | 
 
 /**
  * The widths a change applies at (ADR 0008): all of them, or the range of the
- * view it was made in, to be written with the project's own breakpoints.
+ * view it was made in, to be written with the project's own breakpoints:
+ * those it was recorded with, when its edges are the project's.
  */
 function breakpoint(change: Change): string {
   if (!change.breakpoint) return "all breakpoints.";
-  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries), and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
+  const written = writtenAs(change.breakpoint);
+  const how = written
+    ? `The project writes these widths with ${written}: make the change apply at these widths only that way`
+    : "Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries)";
+  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. ${how}, and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
+}
+
+/**
+ * How the project writes a range of its own breakpoints: "Tailwind's
+ * `md:max-lg:`", "its own media queries, at 768px (`(min-width: 768px)`)";
+ * null for a range whose edges are not the project's.
+ */
+function writtenAs({ min, max, project }: Breakpoint): string | null {
+  if (!project) return null;
+  if ("tailwind" in project) return `Tailwind's \`${project.tailwind}\``;
+  const edges = [min, max].filter((edge) => edge !== null);
+  if (edges.length !== project.queries.length) return null;
+  return `its own media queries, whose edges these are: ${project.queries.map((query, i) => `${edges[i]}px, where \`${query}\` starts or stops holding`).join(", and ")}`;
 }
 
 /**
@@ -83,7 +101,8 @@ function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
     const on = copy.inside ? `in ${copy.inside.name} (\`${copy.inside.element}\`), ` : "";
     const stack = copy.asStack ? ", made a real Stack (a flex column) there" : "";
     const from = list.some((change) => change.id === copy.change) ? ` (change ${copy.change})` : "";
-    return `\n  - ${breakpointName(copy.breakpoint)} (\`@media ${mediaOf(copy.breakpoint)}\`): ${on}${propertyName(copy.property)} ${value(copy.property, copy.value)}${stack}${from}`;
+    const written = writtenAs(copy.breakpoint);
+    return `\n  - ${breakpointName(copy.breakpoint)} (\`@media ${mediaOf(copy.breakpoint)}\`${written ? `, ${written}` : ""}): ${on}${propertyName(copy.property)} ${value(copy.property, copy.value)}${stack}${from}`;
   });
   return (
     "**Copied breakpoints:** the layer has values of its own at narrower breakpoints, and the copy keeps them, as the layer had them when copied. " +

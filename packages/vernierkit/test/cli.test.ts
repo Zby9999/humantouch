@@ -179,6 +179,24 @@ describe("claim, breakpoints", () => {
     expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
   });
 
+  test("a change at a range of the project's own breakpoints says how the project writes it: Tailwind's variants, or its media queries at the edges", async () => {
+    saveRound(
+      { ...redFill, breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } } },
+      { ...smallRadius, breakpoint: { min: 768, max: 1024, project: { tailwind: "md:max-lg:" } } },
+      { ...smallRadius, id: 3, breakpoint: { min: 600, max: 1000, project: { queries: ["(max-width: 599px)", "(min-width: 1000px)"] } } },
+    );
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Breakpoint:** below 640px only (`@media (width < 640px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `max-sm:`: make the change apply at these widths only that way, and leave the layer as it is at every other width.",
+    );
+    expect(section(output, 2)).toContain("The project writes these widths with Tailwind's `md:max-lg:`");
+    expect(section(output, 3)).toContain(
+      "The project writes these widths with its own media queries, whose edges these are: 600px, where `(max-width: 599px)` starts or stops holding, and 1000px, where `(min-width: 1000px)` starts or stops holding: make the change apply at these widths only that way",
+    );
+  });
+
   test("a copy of a layer with values of its own at breakpoints lists them, for the copy to have them there too; a copy of one with none says nothing of it", async () => {
     const PHONE = { min: null, max: 768 };
     const place = (nth: number) => ({ container: { layer: "9", target: cards }, nth, slot: nth - 1, absolute: null });
@@ -190,7 +208,7 @@ describe("claim, breakpoints", () => {
         id: 2,
         layer: "2",
         copiedBreakpoints: [
-          { change: 1, inside: null, breakpoint: PHONE, property: "radius", value: 4 },
+          { change: 1, inside: null, breakpoint: { ...PHONE, project: { tailwind: "max-md:" } }, property: "radius", value: 4 },
           { change: 8, inside: null, breakpoint: PHONE, property: "gap", value: 16, asStack: true },
           { change: 7, inside: { name: "Title", element: '<h2 class="text-lg">' }, breakpoint: { min: 768, max: 1280 }, property: "visible", value: false },
         ],
@@ -204,7 +222,7 @@ describe("claim, breakpoints", () => {
     expect(section(output, 2)).toContain(
       "- **Copied breakpoints:** the layer has values of its own at narrower breakpoints, and the copy keeps them, as the layer had them when copied. " +
         "Give the copy the same at those widths, the way the project already writes breakpoints, so it looks as the layer did in every view:\n" +
-        "  - below 768px (`@media (width < 768px)`): corner radius 4px (change 1)\n" +
+        "  - below 768px (`@media (width < 768px)`, Tailwind's `max-md:`): corner radius 4px (change 1)\n" +
         "  - below 768px (`@media (width < 768px)`): gap 16px, made a real Stack (a flex column) there\n" +
         "  - 768px to 1279px (`@media (768px <= width < 1280px)`): in Title (`<h2 class=\"text-lg\">`), visibility hidden\n",
     );

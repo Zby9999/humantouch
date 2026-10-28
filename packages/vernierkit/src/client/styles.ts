@@ -357,6 +357,7 @@ export const styles = /* css */ `
 .vk-breakpoint { --vk-breakpoint: #8a38f5; }
 @media (prefers-color-scheme: dark) { .vk-breakpoint { --vk-breakpoint: #b48aff; } }
 .vk-breakpoint-range { color: var(--vk-breakpoint); font-variant-numeric: tabular-nums; }
+.vk-breakpoint-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-breakpoint .vk-layer-note { margin: 0; }
 .vk-breakpoint-changes { list-style: none; margin: 4px 0 0; padding: 0; }
 .vk-breakpoint-change { display: flex; align-items: center; gap: 8px; height: 24px; }
@@ -599,6 +600,7 @@ export const styles = /* css */ `
 }
 .vk-view-name { color: var(--vk-text); font-weight: 500; }
 .vk-view-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.vk-view-breakpoint { flex: none; color: var(--vk-breakpoint, #8a38f5); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-view-delete { width: 20px; height: 20px; margin-left: auto; }
 .vk-add-view { position: absolute; display: flex; height: 20px; align-items: center; }
 .vk-add-view .vk-icon-button { width: 20px; height: 20px; }
