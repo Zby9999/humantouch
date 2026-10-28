@@ -81,6 +81,7 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
               <span class="vk-change-values">
                 {changeValues(change)}
                 {change.breakpoint && <span class="vk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+                {!!change.copiedBreakpoints?.length && <span class="vk-change-breakpoint"> · with copied breakpoints</span>}
               </span>
             </span>
             {!readOnly && (

@@ -96,6 +96,20 @@ export interface Created {
   brief?: string;
 }
 
+/** A value a layer has at a breakpoint of its own, as a copy of it takes it over. */
+export interface CopiedBreakpoint {
+  /** The change that gave the layer it, by its id. */
+  change: number;
+  /** The layer it is on: null, the layer copied itself; else a layer in it, by its name and its element as an opening tag. */
+  inside: { name: string; element: string } | null;
+  breakpoint: Breakpoint;
+  property: string;
+  /** Its value there when copied. */
+  value: unknown;
+  /** The change made the layer a real Stack there, as its own change does (`Change.asStack`). */
+  asStack?: true;
+}
+
 export interface Change {
   id: number;
   /**
@@ -132,6 +146,12 @@ export interface Change {
    * change (to its gap, alignment, direction or wrap) makes it a real Stack.
    */
   asStack?: true;
+  /**
+   * A copy's: what the layer it copies, and the layers in it, had at
+   * breakpoints of their own when copied, which the copy keeps (ADR 0008).
+   * None: nothing of its own at any breakpoint.
+   */
+  copiedBreakpoints?: CopiedBreakpoint[];
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
@@ -164,7 +184,7 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order"> & {
+    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "copiedBreakpoints"> & {
       kind?: Change["kind"];
     },
   ): void;

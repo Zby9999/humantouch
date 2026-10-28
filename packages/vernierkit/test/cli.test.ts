@@ -178,6 +178,38 @@ describe("claim, breakpoints", () => {
     expect(section(output, 3)).toContain("- **Breakpoint:** 768px to 1279px only (`@media (768px <= width < 1280px)`)");
     expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
   });
+
+  test("a copy of a layer with values of its own at breakpoints lists them, for the copy to have them there too; a copy of one with none says nothing of it", async () => {
+    const PHONE = { min: null, max: 768 };
+    const place = (nth: number) => ({ container: { layer: "9", target: cards }, nth, slot: nth - 1, absolute: null });
+    const copy = { ...redFill, kind: "duplicate", property: "copy", before: place(1), after: place(2), style: {} };
+    saveRound(
+      { ...smallRadius, id: 1, breakpoint: PHONE },
+      {
+        ...copy,
+        id: 2,
+        layer: "2",
+        copiedBreakpoints: [
+          { change: 1, inside: null, breakpoint: PHONE, property: "radius", value: 4 },
+          { change: 8, inside: null, breakpoint: PHONE, property: "gap", value: 16, asStack: true },
+          { change: 7, inside: { name: "Title", element: '<h2 class="text-lg">' }, breakpoint: { min: 768, max: 1280 }, property: "visible", value: false },
+        ],
+      },
+      { ...copy, id: 3, layer: "3" },
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 2)).toContain("- **Breakpoint:** all breakpoints.\n");
+    expect(section(output, 2)).toContain(
+      "- **Copied breakpoints:** the layer has values of its own at narrower breakpoints, and the copy keeps them, as the layer had them when copied. " +
+        "Give the copy the same at those widths, the way the project already writes breakpoints, so it looks as the layer did in every view:\n" +
+        "  - below 768px (`@media (width < 768px)`): corner radius 4px (change 1)\n" +
+        "  - below 768px (`@media (width < 768px)`): gap 16px, made a real Stack (a flex column) there\n" +
+        "  - 768px to 1279px (`@media (768px <= width < 1280px)`): in Title (`<h2 class=\"text-lg\">`), visibility hidden\n",
+    );
+    expect(section(output, 3)).not.toContain("Copied breakpoints");
+  });
 });
 
 describe("claim, layout changes", () => {

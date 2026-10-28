@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS } from "../src/service-protocol";
+import { layerName } from "../src/design-values";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
@@ -2517,6 +2518,53 @@ describe("breakpoints", () => {
     expect([copyIn(doc), copyIn(phone.document)]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
     expect(editor.read(copy, "fill")).toEqual(RED);
     expect(changes.list().filter((change) => change.layer === copy.el.getAttribute("data-vk-layer")).map((change) => change.kind)).toEqual(["duplicate"]);
+  });
+
+  test("a copy's change says what the layer, and each layer in it, has at breakpoints of its own when copied, as the copy keeps it", async () => {
+    const { editor, changes, phone, layer } = await open();
+    const PHONE = { min: null, max: 800 };
+
+    editor.at(phone);
+    editor.set(layer("row"), "fill", RED);
+    editor.set(layer("d"), "visible", false);
+    const [fill, hidden] = changes.list();
+    const copy = editor.duplicate(layer("row"));
+    // Changed again once copied: the copy keeps what the layer had then.
+    editor.set(layer("row"), "fill", BLUE);
+    const copyOfCopy = editor.duplicate(copy);
+
+    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-vk-layer"))!.copiedBreakpoints;
+    expect(copied(copy)).toEqual([
+      { change: fill.id, inside: null, breakpoint: PHONE, property: "fill", value: RED },
+      { change: hidden.id, inside: { name: hidden.target.context.path.at(-1), element: hidden.target.context.element }, breakpoint: PHONE, property: "visible", value: false },
+    ]);
+    expect(copied(copyOfCopy)).toEqual(copied(copy));
+  });
+
+  test("a copy of a copy says what a layer in it has at a breakpoint now, its own value over what it took over, and nothing of a layer deleted from it", async () => {
+    const { editor, changes, phone, layer } = await open();
+    const PHONE = { min: null, max: 800 };
+
+    editor.at(phone);
+    editor.set(layer("d"), "visible", false);
+    const copy = editor.duplicate(layer("row"));
+    const inCopy = () => find(editor.tree().root, (l) => l.el === copy.el.firstElementChild && !l.text)!;
+    editor.set(inCopy(), "visible", true);
+    const shown = changes.list().at(-1)!;
+    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-vk-layer"))!.copiedBreakpoints;
+
+    expect(copied(editor.duplicate(copy))).toEqual([{ change: shown.id, inside: { name: layerName(shown), element: shown.target.context.element }, breakpoint: PHONE, property: "visible", value: true }]);
+    editor.remove(inCopy());
+    expect(copied(editor.duplicate(copy))).toBeUndefined();
+  });
+
+  test("a copy of a layer with nothing of its own at any breakpoint says none", async () => {
+    const { editor, changes, layer } = await open();
+
+    editor.set(layer("row"), "fill", RED);
+    editor.duplicate(layer("row"));
+
+    expect(changes.list().find((change) => change.kind === "duplicate")!.copiedBreakpoints).toBeUndefined();
   });
 
   test("what the edits declare wins over what the page declares, important or in a CSS layer, at every width", async () => {

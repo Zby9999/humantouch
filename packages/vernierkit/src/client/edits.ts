@@ -37,7 +37,7 @@ import {
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
-import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
+import { copiedBreakpointsOf, hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
@@ -1191,7 +1191,20 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
         if (layer.absolute) style = { position: "static" };
       }
       const id = String(++lastId);
-      const record: StructureRecord = { kind: "duplicate", target: targetOf(layer, onPage(layer).length), scope: "usage", property: "copy", before: from, after: place, style, sources: [], ...(loop && { data: true }) };
+      // It keeps what the layer has at breakpoints of its own, as it is now.
+      const copied = copiedBreakpointsOf(layer.el, changes.list());
+      const record: StructureRecord = {
+        kind: "duplicate",
+        target: targetOf(layer, onPage(layer).length),
+        scope: "usage",
+        property: "copy",
+        before: from,
+        after: place,
+        style,
+        sources: [],
+        ...(loop && { data: true }),
+        ...(copied.length > 0 && { copiedBreakpoints: copied }),
+      };
       const originals = (loop ? [layer] : instances).map((instance) => instance.el);
       const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);

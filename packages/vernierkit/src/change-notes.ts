@@ -5,7 +5,7 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import { madeBy, placedAt, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
+import { madeBy, placedAt, type Change, type Composed, type CopiedBreakpoint, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
 import { breakpointName, mediaOf } from "./client/breakpoints";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
@@ -51,6 +51,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Scope:** ${scope(target)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
+    ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
@@ -70,6 +71,24 @@ function section(change: Change, list: Change[], root: string, status: string | 
 function breakpoint(change: Change): string {
   if (!change.breakpoint) return "all breakpoints.";
   return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries), and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
+}
+
+/**
+ * What a copy keeps of the layer it copies at breakpoints of their own, the
+ * layers in it included: each value, with the change that gave it, while that
+ * change is still in the round.
+ */
+function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
+  const items = copied.map((copy) => {
+    const on = copy.inside ? `in ${copy.inside.name} (\`${copy.inside.element}\`), ` : "";
+    const stack = copy.asStack ? ", made a real Stack (a flex column) there" : "";
+    const from = list.some((change) => change.id === copy.change) ? ` (change ${copy.change})` : "";
+    return `\n  - ${breakpointName(copy.breakpoint)} (\`@media ${mediaOf(copy.breakpoint)}\`): ${on}${propertyName(copy.property)} ${value(copy.property, copy.value)}${stack}${from}`;
+  });
+  return (
+    "**Copied breakpoints:** the layer has values of its own at narrower breakpoints, and the copy keeps them, as the layer had them when copied. " +
+    `Give the copy the same at those widths, the way the project already writes breakpoints, so it looks as the layer did in every view:${items.join("")}`
+  );
 }
 
 /** What the designer wants of the change, in design language. */
