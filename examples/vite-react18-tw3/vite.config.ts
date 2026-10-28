@@ -1,0 +1,10 @@
+import react from "@vitejs/plugin-react";
+import vernier from "vernierkit/vite";
+import { defineConfig } from "vite";
+
+// Tailwind v3 runs as a PostCSS plugin: see postcss.config.js and tailwind.config.js.
+export default defineConfig({
+  plugins: [vernier(), react()],
+  // Serve the stand-in third-party library unbundled so it goes through the plugins.
+  optimizeDeps: { exclude: ["acme-ui"] },
+});

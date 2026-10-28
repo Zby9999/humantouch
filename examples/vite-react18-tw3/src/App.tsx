@@ -1,0 +1,35 @@
+import { Badge, Surface } from "acme-ui";
+import { Vernier } from "vernierkit/react";
+import { Card } from "./components/Card";
+
+const features = [
+  { title: "Freeze", body: "Turn the current page into a canvas." },
+  { title: "Arrange", body: "Drag layers, build Stacks, tune spacing." },
+  { title: "Apply", body: "Your Agent writes the changes into code." },
+];
+
+export function App() {
+  return (
+    <main className="mx-auto max-w-4xl px-gutter md:px-section">
+      <section className="flex flex-col gap-4 py-section md:items-center md:text-center" data-testid="hero">
+        <header className="flex items-center gap-3 md:justify-center">
+          <h1 className="text-display font-bold text-ink">Vernier Kit</h1>
+          <Badge>Beta</Badge>
+        </header>
+        <p className="text-lead text-muted">
+          A Framer-style editor layer for <strong>any</strong> page, on React 18 and Tailwind v3.
+        </p>
+        <button type="button" className="self-start rounded-pill bg-brand-500 px-gutter py-2 text-caption text-white hover:bg-brand-700 md:self-center">
+          Get started
+        </button>
+      </section>
+      <Surface data-testid="features" className="grid grid-cols-1 gap-gutter pb-section sm:grid-cols-2 lg:grid-cols-4">
+        {features.map((feature) => (
+          <Card key={feature.title} title={feature.title} body={feature.body} />
+        ))}
+        <Card title="Your turn" body="Open the editor and try it." />
+      </Surface>
+      <Vernier />
+    </main>
+  );
+}
