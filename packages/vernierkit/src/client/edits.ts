@@ -34,6 +34,7 @@ import {
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
+import { blur, readShadows, writeShadows, type Blur, type Shadow } from "./effects";
 import { colorReader, fillApplies, fillSets, readFill, readStroke, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
@@ -44,6 +45,7 @@ import { CHAIN_ATTR } from "./usage-chain";
 
 export { LAYER_ID_ATTR };
 export type { ColorStop, Fill, Gradient, Stroke } from "./paint";
+export type { Shadow } from "./effects";
 
 /** Corner radius in px: one for all corners, or top-left, top-right, bottom-right, bottom-left. */
 export type Radius = number | [number, number, number, number];
@@ -76,6 +78,11 @@ export interface PropertyValues {
   /** A stroke of null: no stroke. */
   stroke: Stroke | null;
   radius: Radius;
+  /** Drop and inner shadows, first on top; none when empty. */
+  shadows: Shadow[];
+  /** A blur on the layer, and on what is behind it, in px; null for none. */
+  layerBlur: Blur;
+  backgroundBlur: Blur;
   /** An absolute layer's place in its parent, in px. */
   x: number;
   y: number;
@@ -277,6 +284,15 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     writes: ["border-radius"],
     sets: CORNERS.map((corner) => `border-${corner}-radius`),
   },
+  shadows: {
+    kinds: ["stack", "grid", "frame", "image", "still"],
+    read: readShadows,
+    write: writeShadows,
+    writes: ["box-shadow"],
+    sets: ["box-shadow"],
+  },
+  layerBlur: { kinds: ["stack", "grid", "frame", "image", "still"], ...blur("filter") },
+  backgroundBlur: { kinds: ["stack", "grid", "frame", "image", "still"], ...blur("backdrop-filter") },
   x: position("left", "right", 0),
   y: position("top", "bottom", 1),
   width: size("width"),

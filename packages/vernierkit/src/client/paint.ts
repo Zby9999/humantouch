@@ -323,7 +323,7 @@ export function writeStroke(stroke: Stroke | null): Record<string, string> {
 }
 
 /** Splits CSS at a separator outside parentheses, trimmed, leaving out empty parts. */
-function split(css: string, separator: "," | " "): string[] {
+export function split(css: string, separator: "," | " "): string[] {
   const parts: string[] = [];
   let depth = 0;
   let part = "";

@@ -3,7 +3,7 @@ import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
-import { createEditor, type Fill, type Stroke } from "../src/client/edits";
+import { createEditor, type Fill, type Shadow, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
@@ -280,6 +280,103 @@ describe("stroke", () => {
     expect(editor.can(layerOf(cards[0]), "stroke")).toBe(true);
     expect(editor.can(layerOf(doc.querySelector("h3")!), "stroke")).toBe(false);
     expect(editor.can(layerOf(doc.querySelector("span")!), "stroke")).toBe(false);
+  });
+});
+
+describe("shadows", () => {
+  const drop: Shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+  const inner: Shadow = { type: "inner", x: 2, y: -1, blur: 0, spread: 3, color: "#FF0000", opacity: 1 };
+
+  test("drop and inner shadows, several at once, paint every instance in their order and read back as set; none takes them off", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+
+    expect(editor.read(card, "shadows")).toEqual([]);
+
+    editor.set(card, "shadows", [drop, inner]);
+    expect(cards.map((el) => style(el).boxShadow)).toEqual([
+      ...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px, rgb(255, 0, 0) 2px -1px 0px 3px inset"),
+      "none",
+    ]);
+    expect(editor.read(layerOf(cards[2]), "shadows")).toEqual([drop, inner]);
+    expect(changes.list()[0]).toMatchObject({
+      property: "shadows",
+      before: [],
+      after: [drop, inner],
+      style: { "box-shadow": "0px 4px 4px 0px rgb(0 0 0 / 0.25), inset 2px -1px 0px 3px rgb(255 0 0 / 1)" },
+    });
+
+    editor.set(card, "shadows", []);
+    expect(style(cards[1]).boxShadow).toBe("none");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("the page's own shadows read in their order; Tailwind's empty shadows, there to compose with, are left out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    const read = (css: string) => {
+      box.style.boxShadow = css;
+      return editor.read(layerOf(box), "shadows");
+    };
+
+    // Tailwind v4's shadow-sm, after its inset, ring and ring-offset shadows, unset.
+    expect(read("0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)")).toEqual([
+      { type: "drop", x: 0, y: 1, blur: 3, spread: 0, color: "#000000", opacity: 0.1 },
+      { type: "drop", x: 0, y: 1, blur: 2, spread: -1, color: "#000000", opacity: 0.1 },
+    ]);
+    expect(read("inset 0 2px 4px oklch(62.8% 0.2577 29.23)")).toEqual([{ type: "inner", x: 0, y: 2, blur: 4, spread: 0, color: "#FF0000", opacity: 1 }]);
+    // A ring is a shadow spread out with no blur; its offset, 0px wide in white, draws nothing.
+    expect(read("0 0 0 0px #fff, 0 0 0 2px blue")).toEqual([{ type: "drop", x: 0, y: 0, blur: 0, spread: 2, color: "#0000FF", opacity: 1 }]);
+  });
+});
+
+describe("blurs", () => {
+  test("a layer blur and a background blur, added and taken off, paint every instance and read back as set", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+
+    expect([editor.read(card, "layerBlur"), editor.read(card, "backgroundBlur")]).toEqual([null, null]);
+
+    editor.set(card, "layerBlur", 4);
+    editor.set(card, "backgroundBlur", 12);
+    expect(cards.map((el) => `${style(el).filter} ${style(el).backdropFilter}`)).toEqual([...Array(3).fill("blur(4px) blur(12px)"), "none none"]);
+    expect([editor.read(layerOf(cards[1]), "layerBlur"), editor.read(layerOf(cards[1]), "backgroundBlur")]).toEqual([4, 12]);
+    expect(changes.list().map(({ property, before, after, style }) => ({ property, before, after, style }))).toEqual([
+      { property: "layerBlur", before: null, after: 4, style: { filter: "blur(4px)" } },
+      { property: "backgroundBlur", before: null, after: 12, style: { "backdrop-filter": "blur(12px)" } },
+    ]);
+
+    editor.set(card, "layerBlur", null);
+    editor.set(card, "backgroundBlur", null);
+    expect(`${style(cards[1]).filter} ${style(cards[1]).backdropFilter}`).toBe("none none");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a blur among the page's other filters is changed in its place, and they stay", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.filter = "grayscale(1) blur(2px) brightness(0.5)";
+    box.style.backdropFilter = "saturate(2)";
+    const layer = layerOf(box);
+
+    expect([editor.read(layer, "layerBlur"), editor.read(layer, "backgroundBlur")]).toEqual([2, null]);
+
+    editor.set(layer, "layerBlur", 6);
+    editor.set(layer, "backgroundBlur", 8);
+    expect([style(box).filter, style(box).backdropFilter]).toEqual(["grayscale(1) blur(6px) brightness(0.5)", "saturate(2) blur(8px)"]);
+
+    editor.set(layer, "layerBlur", null);
+    expect(style(box).filter).toBe("grayscale(1) brightness(0.5)");
+    expect(changes.list().find((change) => change.property === "layerBlur")).toMatchObject({ before: 2, after: null, style: { filter: "grayscale(1) brightness(0.5)" } });
+  });
+
+  test("a layer whose filter blurs twice offers no layer blur, which could not be read as one", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.filter = "blur(2px) blur(3px)";
+
+    expect(editor.can(layerOf(box), "layerBlur")).toBe(false);
+    expect(editor.can(layerOf(box), "backgroundBlur")).toBe(true);
   });
 });
 

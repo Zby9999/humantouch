@@ -1,11 +1,14 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
-import type { Align, ColorStop, Fill, Padding, Radius, Size, Stroke } from "./client/edits";
+import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/edits";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
   stroke: "Stroke",
   radius: "Corner radius",
+  shadows: "Shadows",
+  layerBlur: "Layer blur",
+  backgroundBlur: "Background blur",
   x: "X",
   y: "Y",
   width: "Width",
@@ -157,6 +160,11 @@ function fillValue(fill: Fill | null): string {
   }
 }
 
+/** "a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity)". */
+function shadowValue(s: Shadow): string {
+  return `${s.type === "drop" ? "a drop" : "an inner"} shadow (x ${s.x}px, y ${s.y}px, blur ${s.blur}px, spread ${s.spread}px, ${colorValue(s)})`;
+}
+
 export function value(property: string, v: unknown): string {
   switch (property) {
     case "fill":
@@ -169,6 +177,14 @@ export function value(property: string, v: unknown): string {
       const sides = ["top", "right", "bottom", "left"].map((side, i) => `${side} ${weight[i]}px`).join(", ");
       return `${stroke.style} ${colorValue(stroke)}, on some sides: ${sides}`;
     }
+    case "shadows": {
+      const shadows = v as Shadow[];
+      if (!shadows.length) return "no shadow";
+      return `${shadows.map(shadowValue).join(" and ")}${shadows.length > 1 ? ", the first on top" : ""}`;
+    }
+    case "layerBlur":
+    case "backgroundBlur":
+      return v === null ? "none" : `${v as number}px`;
     case "radius": {
       const radius = v as Radius;
       if (typeof radius === "number") return `${radius}px`;

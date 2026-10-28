@@ -1,9 +1,10 @@
 /** @jsxImportSource preact */
 import type { TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useRef, useState } from "preact/hooks";
-import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Property, PropertyValues, Size, Stroke } from "./edits";
+import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./edits";
 import { Icon, type IconName } from "./icons";
 import type { Layer } from "./layers";
+import { draws, shadow, type Blur, type Shadow } from "./effects";
 import { cssColor, fillAs, nextStopPosition, stop, stopAt, strokeWith, turned, type Color } from "./paint";
 
 interface Props {
@@ -22,6 +23,9 @@ interface Props {
 const NEW_FILL: Fill = { type: "solid", color: "#FFFFFF", opacity: 1 };
 /** A stroke added to a layer that has none, as in Figma. Fields in the order the editor reads them back in. */
 const NEW_STROKE: Stroke = { color: "#000000", opacity: 1, weight: 1, style: "solid" };
+
+/** An effect added, as in Figma: a drop shadow. Fields in the order the editor reads them back in. */
+const NEW_SHADOW: Shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
 
 /** A value the selected layers do not share: shown as Mixed. */
 const MIXED = Symbol("mixed");
@@ -52,6 +56,15 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
     onEdit();
   };
   const set = <P extends Property>(property: P) => (value: PropertyValues[P], continues = false) => update(property, () => value, continues);
+  /** Changes several properties of each selected layer, to what `next` makes of the layer, as one edit. */
+  const updateEach = (next: (layer: Layer) => Partial<PropertyValues>) => {
+    editor.batch(() => {
+      for (const layer of layers) {
+        for (const [property, value] of Object.entries(next(layer))) editor.set(layer, property as Property, value as PropertyValues[Property]);
+      }
+    });
+    onEdit();
+  };
 
   const locked = layers.some((layer) => layer.kind === "locked");
   const x = shown("x");
@@ -65,6 +78,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const clip = shown("clip");
   const fill = shown("fill");
   const stroke = shown("stroke");
+  const shadows = shown("shadows");
   return (
     <>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
@@ -116,19 +130,15 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         />
       )}
       {(opacity !== undefined || visible !== undefined) && (
-        <section class="vk-section" aria-labelledby="vk-appearance">
-          <h3 id="vk-appearance" class="vk-section-title">Appearance</h3>
-          <div class="vk-grid-2">
-            {opacity !== undefined && (
-              <PercentField label="Opacity" icon="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />
-            )}
-            {radius !== undefined && (
-              <NumberField label="Corner radius" icon="radius" value={typeof radius === "number" ? radius : null} min={0} onChange={set("radius")} />
-            )}
-          </div>
-          {visible !== undefined && <Check label="Visible" checked={visible} onChange={set("visible")} />}
-          {clip !== undefined && <Check label="Clip content" checked={clip} onChange={set("clip")} />}
-        </section>
+        <AppearanceSection
+          selection={keyOf(layers)}
+          opacity={opacity}
+          radii={radius === undefined ? undefined : layers.map((layer) => editor.read(layer, "radius"))}
+          visible={visible}
+          clip={clip}
+          set={set}
+          update={update}
+        />
       )}
       {fill !== undefined && (
         <FillSection
@@ -139,6 +149,17 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         />
       )}
       {stroke !== undefined && <StrokeSection key={keyOf(layers)} stroke={stroke} onChange={set("stroke")} update={update} />}
+      {shadows !== undefined && (
+        <EffectsSection
+          shadows={shadows}
+          layerBlur={shown("layerBlur")}
+          backgroundBlur={shown("backgroundBlur")}
+          read={(layer, property) => editor.read(layer, property)}
+          set={set}
+          update={update}
+          updateEach={updateEach}
+        />
+      )}
     </>
   );
 }
@@ -346,6 +367,97 @@ function PercentField({ label, icon, value, onChange }: {
         onChange={onChange}
       />
     </label>
+  );
+}
+
+const CORNER_NAMES = ["Top left", "Top right", "Bottom right", "Bottom left"];
+/** The corners as they sit in a 2 × 2 grid: top left, top right, bottom left, bottom right. */
+const CORNER_GRID = [0, 1, 3, 2];
+/** Each corner as a glyph, in the order of a radius: top left first, clockwise. */
+const CORNER_GLYPHS = ["┌", "┐", "┘", "└"];
+
+/** A radius's corners: top left, top right, bottom right, bottom left. */
+function cornersOf(radius: Radius): [number, number, number, number] {
+  return typeof radius === "number" ? [radius, radius, radius, radius] : radius;
+}
+
+/** Corners as the editor reads them back: all alike are one radius. */
+function radiusOf(corners: [number, number, number, number]): Radius {
+  return corners.every((r) => r === corners[0]) ? corners[0] : corners;
+}
+
+/**
+ * Opacity, corner radius, visibility and clipping. The corner radius is one
+ * for all corners, or each its own, as in Figma: the corners show while
+ * Independent corners is on, from the start when they differ.
+ * Not remade for each selection: a value typed and not yet applied still goes to the layer it was typed for.
+ */
+function AppearanceSection({ selection, opacity, radii, visible, clip, set, update }: {
+  /** Tells the selected layers apart: Independent corners, turned on or off, holds while they stay selected. */
+  selection: string;
+  opacity: Shown<number> | undefined;
+  /** Each selected layer's radius; undefined when not all of them offer one. */
+  radii: Radius[] | undefined;
+  visible: Shown<boolean> | undefined;
+  clip: Shown<boolean> | undefined;
+  set: Setter;
+  update: Update;
+}) {
+  /** Counts selections: the same layers selected again are a new one. */
+  const selected = useRef({ selection, count: 0 });
+  if (selected.current.selection !== selection) selected.current = { selection, count: selected.current.count + 1 };
+  const { count } = selected.current;
+  const [toggled, setToggled] = useState<{ count: number; on: boolean } | null>(null);
+  const independent = toggled?.count === count ? toggled.on : (radii?.some((radius) => typeof radius !== "number") ?? false);
+  // Set by hand, the corners stay shown when they come to be alike.
+  const toggle = (on: boolean) => setToggled({ count, on });
+  /** Corner `i` as all selected layers have it; null when they differ. */
+  const corner = (i: number) => {
+    const values = radii!.map((radius) => cornersOf(radius)[i]);
+    return values.every((v) => v === values[0]) ? values[0] : null;
+  };
+  const uniform = radii && radii.every((radius) => typeof radius === "number" && radius === radii[0]) ? (radii[0] as number) : null;
+  return (
+    <section class="vk-section" aria-labelledby="vk-appearance">
+      <h3 id="vk-appearance" class="vk-section-title">Appearance</h3>
+      <div class="vk-grid-2">
+        {opacity !== undefined && <PercentField label="Opacity" icon="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
+        {radii && (
+          <div class="vk-row">
+            <NumberField label="Corner radius" icon="radius" value={uniform} min={0} onChange={set("radius")} />
+            <button
+              type="button"
+              class="vk-icon-button"
+              aria-label="Independent corners"
+              title="Independent corners"
+              aria-pressed={independent}
+              onClick={() => toggle(!independent)}
+            >
+              <Icon name="corners" />
+            </button>
+          </div>
+        )}
+      </div>
+      {radii && independent && (
+        <div class="vk-grid-2" role="group" aria-label="Radius per corner">
+          {CORNER_GRID.map((i) => (
+            <NumberField
+              key={i}
+              label={`${CORNER_NAMES[i]} radius`}
+              glyph={CORNER_GLYPHS[i]}
+              value={corner(i)}
+              min={0}
+              onChange={(value, continues) => {
+                toggle(true);
+                update("radius", (current) => radiusOf(cornersOf(current).map((r, j) => (i === j ? value : r)) as [number, number, number, number]), continues);
+              }}
+            />
+          ))}
+        </div>
+      )}
+      {visible !== undefined && <Check label="Visible" checked={visible} onChange={set("visible")} />}
+      {clip !== undefined && <Check label="Clip content" checked={clip} onChange={set("clip")} />}
+    </section>
   );
 }
 
@@ -657,6 +769,132 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+type BlurProperty = "layerBlur" | "backgroundBlur";
+type EffectType = Shadow["type"] | BlurProperty;
+
+const isShadow = (type: EffectType): type is Shadow["type"] => type === "drop" || type === "inner";
+
+const EFFECT_TYPES: { type: EffectType; label: string }[] = [
+  { type: "drop", label: "Drop shadow" },
+  { type: "inner", label: "Inner shadow" },
+  { type: "layerBlur", label: "Layer blur" },
+  { type: "backgroundBlur", label: "Background blur" },
+];
+
+/**
+ * Effects, as in Figma: drop and inner shadows, as many as wanted, first on
+ * top; one layer blur and one background blur. Each can be made another type,
+ * keeping its blur, and taken off; a new one is a drop shadow, in place of
+ * shadows the layers do not share.
+ */
+function EffectsSection({ shadows, layerBlur, backgroundBlur, read, set, update, updateEach }: {
+  shadows: Shown<Shadow[]>;
+  /** Undefined when not all selected layers offer it. */
+  layerBlur: Shown<Blur> | undefined;
+  backgroundBlur: Shown<Blur> | undefined;
+  read<P extends Property>(layer: Layer, property: P): PropertyValues[P];
+  set: Setter;
+  update: Update;
+  updateEach(next: (layer: Layer) => Partial<PropertyValues>): void;
+}) {
+  const blurs = { layerBlur, backgroundBlur };
+  /** Whether an effect of type `from` can become `type`: not a blur the layers have already, or cannot have. */
+  const canBecome = (type: EffectType, from: EffectType) => type === from || isShadow(type) || blurs[type] === null;
+  /** A shadow changed so that it draws nothing (no offset, blur or spread) is none, as a stroke of weight 0 is. */
+  const changeShadow = (i: number, next: (s: Shadow) => Shadow, continues?: boolean) =>
+    update("shadows", (current) => current.map((s, j) => (i === j ? shadow(next(s)) : s)).filter(draws), continues);
+  /** Shadow `i` made another type: a blur takes its blur. */
+  const retypeShadow = (i: number, type: EffectType) => {
+    if (isShadow(type)) return changeShadow(i, (s) => ({ ...s, type }));
+    updateEach((layer) => {
+      const current = read(layer, "shadows");
+      return { shadows: current.filter((_, j) => j !== i), [type]: current[i].blur };
+    });
+  };
+  /** A blur made another type, on each layer that has it. */
+  const retypeBlur = (from: BlurProperty, type: EffectType) =>
+    updateEach((layer) => {
+      const value = read(layer, from);
+      if (value === null) return {};
+      if (isShadow(type)) return { [from]: null, shadows: [...read(layer, "shadows"), shadow({ ...NEW_SHADOW, type, blur: value })] };
+      return { [from]: null, [type]: value };
+    });
+  const typeSelect = (label: string, from: EffectType, onChange: (type: EffectType) => void) => (
+    <select class="vk-select vk-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
+      {EFFECT_TYPES.map(({ type, label }) => (
+        <option key={type} value={type} disabled={!canBecome(type, from)}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+  return (
+    <section class="vk-section" role="group" aria-label="Effects">
+      <div class="vk-section-header">
+        <h3 class="vk-section-title">Effects</h3>
+        <button type="button" class="vk-icon-button" aria-label="Add effect" onClick={() => update("shadows", (current) => (shadows === MIXED ? [NEW_SHADOW] : [...current, NEW_SHADOW]))}>
+          <Icon name="plus" />
+        </button>
+      </div>
+      {shadows === MIXED ? (
+        <div class="vk-row">
+          <span class="vk-field vk-mixed">Mixed shadows</span>
+          <button type="button" class="vk-icon-button" aria-label="Remove shadows" onClick={() => set("shadows")([])}>
+            <Icon name="minus" />
+          </button>
+        </div>
+      ) : (
+        shadows.map((s, i) => {
+          const name = `Shadow ${i + 1}`;
+          const lengthField = (key: "x" | "y" | "blur" | "spread", label: string, glyph: string, min?: number) => (
+            <NumberField
+              label={`${name} ${label}`}
+              glyph={glyph}
+              value={s[key]}
+              min={min}
+              onChange={(value, continues) => changeShadow(i, (current) => ({ ...current, [key]: value }), continues)}
+            />
+          );
+          return (
+            // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
+            <div class="vk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
+              <div class="vk-row">
+                {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
+                <button type="button" class="vk-icon-button" aria-label={`Remove shadow ${i + 1}`} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))}>
+                  <Icon name="minus" />
+                </button>
+              </div>
+              <div class="vk-grid-2">
+                {lengthField("x", "X", "X")}
+                {lengthField("y", "Y", "Y")}
+                {lengthField("blur", "blur", "B", 0)}
+                {lengthField("spread", "spread", "S")}
+              </div>
+              <ColorField name={name} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} />
+            </div>
+          );
+        })
+      )}
+      {(["layerBlur", "backgroundBlur"] as const).map((property) => {
+        const value = blurs[property];
+        if (value === undefined || value === null) return null;
+        const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
+        return (
+          <div class="vk-effect" key={property} role="group" aria-label={label}>
+            <div class="vk-row">
+              {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
+              <button type="button" class="vk-icon-button" aria-label={`Remove ${label.toLowerCase()}`} onClick={() => set(property)(null)}>
+                <Icon name="minus" />
+              </button>
+            </div>
+            <NumberField label={label} glyph="B" value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
+          </div>
+        );
+      })}
     </section>
   );
 }

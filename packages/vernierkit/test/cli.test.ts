@@ -252,6 +252,38 @@ describe("claim, fills and strokes", () => {
   });
 });
 
+describe("claim, corners and effects", () => {
+  test("say corners, shadows and blurs in design language, with the reference style that draws them", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
+    const drop = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+    const inner = { type: "inner", x: 0, y: -2, blur: 6, spread: 1, color: "#FF0000", opacity: 1 };
+    saveRound(
+      change(1, "radius", 12, [12, 12, 0, 0], { "border-radius": "12px 12px 0px 0px" }),
+      change(2, "shadows", [], [drop, inner], { "box-shadow": "0px 4px 4px 0px rgb(0 0 0 / 0.25), inset 0px -2px 6px 1px rgb(255 0 0 / 1)" }),
+      change(3, "shadows", [drop], [], { "box-shadow": "none" }),
+      change(4, "layerBlur", null, 4, { filter: "blur(4px)" }),
+      change(5, "backgroundBlur", 12, null, { "backdrop-filter": "none" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the corner radius from 12px to top-left 12px, top-right 12px, bottom-right 0px, bottom-left 0px.\n",
+    );
+    expect(section(output, 1)).toContain("- **Reference style:** `border-radius: 12px 12px 0px 0px`\n");
+    expect(section(output, 2)).toMatch(/^2\. Shadows\n/);
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Change the shadows from no shadow to a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity) and an inner shadow (x 0px, y -2px, blur 6px, spread 1px, #FF0000), the first on top.\n",
+    );
+    expect(section(output, 2)).toContain("- **Reference style:** `box-shadow: 0px 4px 4px 0px rgb(0 0 0 / 0.25), inset 0px -2px 6px 1px rgb(255 0 0 / 1)`\n");
+    expect(section(output, 3)).toContain("Change the shadows from a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity) to no shadow.\n");
+    expect(section(output, 4)).toMatch(/^4\. Layer blur\n[^]*- \*\*Design intent:\*\* Change the layer blur from none to 4px\.\n/);
+    expect(section(output, 4)).toContain("- **Reference style:** `filter: blur(4px)`\n");
+    expect(section(output, 5)).toMatch(/^5\. Background blur\n[^]*- \*\*Design intent:\*\* Change the background blur from 12px to none\.\n/);
+    expect(section(output, 5)).toContain("- **Reference style:** `backdrop-filter: none`\n");
+  });
+});
+
 describe("claim, moves", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const board = { ...list, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="h-64">' } };

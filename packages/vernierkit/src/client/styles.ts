@@ -455,6 +455,8 @@ export const styles = /* css */ `
 .vk-subtitle { color: var(--vk-text-muted); font-weight: 400; }
 .vk-read-only { color: var(--vk-text-muted); }
 .vk-stop-position { flex: none; width: 44px; }
+.vk-effect > * + * { margin-top: 8px; }
+.vk-select.vk-effect-type { flex: 1; width: auto; min-width: 0; }
 /* A see-through color shows over a checkerboard, as in Figma. */
 .vk-gradient-bar, .vk-gradient-swatch {
   --vk-checker: repeating-conic-gradient(#e6e6e6 0% 25%, #ffffff 0% 50%) 0 0 / 8px 8px;
@@ -502,6 +504,8 @@ export const styles = /* css */ `
 }
 .vk-icon-button:hover { background: var(--vk-field); }
 .vk-icon-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+/* A button that stays on in the panel (Independent corners): shown pressed, as in Figma. */
+.vk-section .vk-icon-button[aria-pressed="true"] { background: var(--vk-field); box-shadow: inset 0 0 0 1px var(--vk-border); }
 
 .vk-section > * + * { margin-top: 8px; }
 .vk-section > .vk-section-title + * { margin-top: 0; }

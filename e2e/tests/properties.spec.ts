@@ -19,7 +19,10 @@ async function selectRow(page: Page, name: string, nth = 0) {
 }
 
 /** A computed style of every card on the canvas, in page order. */
-function cardStyles(page: Page, property: "backgroundColor" | "backgroundImage" | "borderRadius" | "borderStyle" | "borderWidth" | "borderColor") {
+function cardStyles(
+  page: Page,
+  property: "backgroundColor" | "backgroundImage" | "borderRadius" | "borderStyle" | "borderWidth" | "borderColor" | "boxShadow" | "filter" | "backdropFilter",
+) {
   return canvas(page)
     .locator("article")
     .evaluateAll((cards, property) => cards.map((card) => getComputedStyle(card)[property]), property);
@@ -207,6 +210,104 @@ test("a stroke: the page's own as it is; its weight and line, one side, each sid
   ]);
 });
 
+test("effects: the page's shadows as they are; shadows added, changed and taken off, and a layer blur and a background blur, on the canvas at once", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const field = (name: string) => effects.getByRole("textbox", { name, exact: true });
+  const enter = async (name: string, value: string) => {
+    await field(name).fill(value);
+    await field(name).press("Enter");
+  };
+  const shadow = async () => (await cardStyles(page, "boxShadow"))[0];
+
+  // shadow-sm: two drop shadows.
+  await expect(effects.getByRole("combobox", { name: "Shadow 1 type" })).toHaveValue("drop");
+  await expect(field("Shadow 1 Y")).toHaveValue("1");
+  await expect(field("Shadow 1 blur")).toHaveValue("3");
+  await expect(field("Shadow 2 spread")).toHaveValue("-1");
+  await expect(field("Shadow 2 opacity")).toHaveValue("10%");
+
+  await effects.getByRole("button", { name: "Remove shadow 2" }).click();
+  await enter("Shadow 1 Y", "8");
+  await enter("Shadow 1 blur", "16");
+  // On every instance of the usage, and no other.
+  const [first, second, third, other] = await cardStyles(page, "boxShadow");
+  expect([first, second, third]).toEqual(Array(3).fill("rgba(0, 0, 0, 0.1) 0px 8px 16px 0px"));
+  expect(other).not.toBe(first);
+
+  // A new effect is a drop shadow, as in Figma; made an inner shadow, in red.
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  await expect(field("Shadow 2 blur")).toHaveValue("4");
+  await effects.getByRole("combobox", { name: "Shadow 2 type" }).selectOption("Inner shadow");
+  await enter("Shadow 2 color", "ff0000");
+  expect(await shadow()).toBe("rgba(0, 0, 0, 0.1) 0px 8px 16px 0px, rgba(255, 0, 0, 0.25) 0px 4px 4px 0px inset");
+
+  // A shadow made a layer blur blurs as much.
+  await effects.getByRole("combobox", { name: "Shadow 1 type" }).selectOption("Layer blur");
+  expect(await cardStyles(page, "filter")).toEqual(["blur(16px)", "blur(16px)", "blur(16px)", "none"]);
+  expect(await shadow()).toBe("rgba(255, 0, 0, 0.25) 0px 4px 4px 0px inset");
+  await enter("Layer blur", "2");
+  expect((await cardStyles(page, "filter"))[0]).toBe("blur(2px)");
+
+  // One layer blur and one background blur: the one there is is not offered again.
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  const type = effects.getByRole("combobox", { name: "Shadow 2 type" });
+  await expect(type.getByRole("option", { name: "Layer blur" })).toBeDisabled();
+  await type.selectOption("Background blur");
+  expect((await cardStyles(page, "backdropFilter"))[0]).toBe("blur(4px)");
+
+  await effects.getByRole("button", { name: "Remove layer blur" }).click();
+  await effects.getByRole("button", { name: "Remove background blur" }).click();
+  expect([(await cardStyles(page, "filter"))[0], (await cardStyles(page, "backdropFilter"))[0]]).toEqual(["none", "none"]);
+  await expect(effects.getByRole("combobox", { name: "Layer blur type" })).toHaveCount(0);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await cardStyles(page, "backdropFilter"))[0]).toBe("blur(4px)");
+  await expect(field("Background blur")).toHaveValue("4");
+});
+
+test("a shadow dragged until it draws nothing is taken off, and the rest of the drag leaves the next shadow as it is", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const y = effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true });
+  await y.fill("0");
+  await y.press("Enter"); // shadow-sm's first shadow, now 0 0 3px 0
+  const icon = page.locator('.vk-field:has([aria-label="Shadow 1 blur"]) .vk-scrub');
+  await icon.scrollIntoViewIfNeeded();
+  const box = (await icon.boundingBox())!;
+  const at = { x: box.x + 4, y: box.y + 4 };
+
+  // Down to 0, and back up, in one drag.
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (const dx of [-1, -2, -3, -1, 1, 3]) await page.mouse.move(at.x + dx, at.y);
+  await page.mouse.up();
+
+  expect((await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.1) 0px 1px 2px -1px");
+  await expect(effects.getByRole("textbox", { name: "Shadow 1 blur", exact: true })).toHaveValue("2");
+});
+
+test("shadows the selected layers do not share show as Mixed, replaced by a new effect, or taken off together", async ({ page }) => {
+  await canvas(page)
+    .locator("article")
+    .evaluateAll((cards) => ((cards[3] as HTMLElement).style.boxShadow = "none"));
+  await selectRow(page, "Card");
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).nth(3).click({ modifiers: ["Shift"] });
+  const effects = design(page).getByRole("group", { name: "Effects" });
+
+  await expect(effects.getByText("Mixed shadows")).toBeVisible();
+  // As in Figma, a new effect replaces the mixed ones.
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  expect(await cardStyles(page, "boxShadow")).toEqual(Array(4).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px"));
+  await expect(effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true })).toHaveValue("4");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(effects.getByText("Mixed shadows")).toBeVisible();
+  await effects.getByRole("button", { name: "Remove shadows" }).click();
+  expect(await cardStyles(page, "boxShadow")).toEqual(Array(4).fill("none"));
+  await expect(effects.getByRole("textbox")).toHaveCount(0);
+});
+
 test("a uniform corner radius, typed or stepped with the arrow keys", async ({ page }) => {
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
@@ -220,6 +321,46 @@ test("a uniform corner radius, typed or stepped with the arrow keys", async ({ p
   await radius.press("Shift+ArrowUp");
   expect((await cardStyles(page, "borderRadius"))[0]).toBe("15px");
   await expect(radius).toHaveValue("15");
+});
+
+test("corner radius: each corner its own, and back to one for all corners", async ({ page }) => {
+  await selectRow(page, "Card");
+  const panel = design(page);
+  const radius = panel.getByRole("textbox", { name: "Corner radius" });
+  const independent = panel.getByRole("button", { name: "Independent corners" });
+  await expect(independent).toHaveAttribute("aria-pressed", "false");
+  await expect(panel.getByRole("textbox", { name: "Top left radius" })).toHaveCount(0);
+
+  await independent.click();
+  await expect(independent).toHaveAttribute("aria-pressed", "true");
+  const corners = panel.getByRole("group", { name: "Radius per corner" });
+  for (const name of ["Top left", "Top right", "Bottom right", "Bottom left"]) {
+    await expect(corners.getByRole("textbox", { name: `${name} radius` })).toHaveValue("12");
+  }
+
+  for (const name of ["Bottom right", "Bottom left"]) {
+    const corner = corners.getByRole("textbox", { name: `${name} radius` });
+    await corner.fill("0");
+    await corner.press("Enter");
+  }
+  // On every instance of the usage, and no other.
+  expect(await cardStyles(page, "borderRadius")).toEqual(["12px 12px 0px 0px", "12px 12px 0px 0px", "12px 12px 0px 0px", "12px"]);
+  await expect(radius).toHaveValue("Mixed");
+
+  // Off again, the corners stay as they are until one radius is set for all.
+  await independent.click();
+  await expect(corners).toHaveCount(0);
+  expect((await cardStyles(page, "borderRadius"))[0]).toBe("12px 12px 0px 0px");
+  await radius.fill("8");
+  await radius.press("Enter");
+  expect((await cardStyles(page, "borderRadius"))[0]).toBe("8px");
+
+  // A layer whose corners differ shows them each, from the start.
+  await page.keyboard.press("ControlOrMeta+z");
+  await selectRow(page, "Card", 3);
+  await selectRow(page, "Card");
+  await expect(panel.getByRole("button", { name: "Independent corners" })).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("textbox", { name: "Bottom left radius" })).toHaveValue("0");
 });
 
 test("a radius past half the shorter side shows as set, and steps on from there", async ({ page }) => {
@@ -255,10 +396,11 @@ test("a locked layer offers no fill or corner radius", async ({ page }) => {
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
 });
 
-test("a text layer offers no fill or corner radius here", async ({ page }) => {
+test("a text layer offers no fill, corner radius or effects here", async ({ page }) => {
   await selectRow(page, "Freeze");
 
   await expect(design(page).getByRole("group", { name: "Fill" })).toHaveCount(0);
+  await expect(design(page).getByRole("group", { name: "Effects" })).toHaveCount(0);
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
 });
 
