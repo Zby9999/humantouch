@@ -14,7 +14,12 @@ const VERNIER = `${EXAMPLE}.vernier/`;
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
 
-test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.beforeEach(async () => {
+  rmSync(VERNIER, { recursive: true, force: true });
+  // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
+  // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
+  await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
+});
 test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
@@ -141,7 +146,7 @@ test("a change made in the tablet view is at the range of the project's own Tail
   await page.keyboard.up("Meta");
   await expect(page.getByRole("region", { name: "Tablet breakpoint" })).toContainText("560px to 819px");
   await setField(page, "Fill color", "eef4ff");
-  await expect.poll(() => savedChanges()?.[0]?.breakpoint, { timeout: 10_000 }).toEqual({ min: 560, max: 820, project: { tailwind: "sm:max-md:" } });
+  await expect.poll(() => savedChanges()?.[0]?.breakpoint).toEqual({ min: 560, max: 820, project: { tailwind: "sm:max-md:" } });
 
   const notes = await vernierkit("claim");
   expect(notes).toContain("- **Breakpoint:** 560px to 819px only (`@media (560px <= width < 820px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `sm:max-md:`");
