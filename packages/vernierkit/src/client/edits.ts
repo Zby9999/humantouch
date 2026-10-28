@@ -1,7 +1,8 @@
 /**
  * Edit commands: changes in design language, made to the canvas at once and
  * recorded in the ChangeSet. An edit to a layer is an edit to its usage, so
- * it shows up in every instance of that usage. Every edit can be undone.
+ * it shows up in every instance of that usage, and in every view of the
+ * canvas. Every edit can be undone.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import {
@@ -43,6 +44,7 @@ import { relocate, slotsOf, syncOrders } from "./moves";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
+import type { Views } from "./views";
 
 export { LAYER_ID_ATTR };
 export type { ColorStop, Fill, Gradient, Stroke } from "./paint";
@@ -380,9 +382,10 @@ export function readValue<P extends Property>(el: Element, property: P): Propert
   return PROPERTIES[property].read(el, colorReader(el.ownerDocument));
 }
 
-export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor {
-  let tree = initialTree;
-  const doc = tree.root.el.ownerDocument;
+/** Edits the canvas `views` show, every view alike, recording each change in `changes`. */
+export function createEditor(views: Views, changes: ChangeSet): Editor {
+  const doc = views.canvas.document;
+  let tree = buildLayerTree(doc);
   const colors = colorReader(doc);
   let lastId = 0;
   for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}]`)) lastId = Math.max(lastId, Number(el.getAttribute(LAYER_ID_ATTR)) || 0);
@@ -453,6 +456,10 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const future: Step[] = [];
   /** Steps of the batch under way, if any. */
   let batching: Step[] | null = null;
+  /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a batch. */
+  const show = () => {
+    if (!batching) views.sync();
+  };
   const push = (step: Step, continues: boolean) => {
     if (batching) {
       batching.push(step);
@@ -462,6 +469,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     const last = past.at(-1);
     if (continues && last?.key === step.key) last.redo = step.redo;
     else past.push(step);
+    show();
   };
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
@@ -521,6 +529,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     });
     const id = String(++lastId);
     for (const span of spans) span.setAttribute(LAYER_ID_ATTR, id);
+    show();
     tree = buildLayerTree(doc);
     return tree.layerOf(spans[runs.indexOf(layer)])!;
   };
@@ -827,6 +836,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       if (!step) return [];
       future.push(step);
       step.undo();
+      show();
       return layersOf(step.back ?? step.layers);
     },
     redo() {
@@ -834,6 +844,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       if (!step) return [];
       past.push(step);
       step.redo();
+      show();
       return layersOf(step.layers);
     },
     revert(id) {

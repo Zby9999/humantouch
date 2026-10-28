@@ -5,8 +5,9 @@ import { checkChange } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
 import { createEditor, type Fill, type Shadow, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
-import { buildLayerTree, type Layer } from "../src/client/layers";
+import { boxOf, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
+import { createViews } from "../src/client/views";
 
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
@@ -14,7 +15,7 @@ const cardAt = (usage: string) => [{ component: "Card", usage, thirdParty: false
 const chain = (levels: object[]) => `data-vk-chain='${JSON.stringify(levels)}'`;
 
 /**
- * A fixed canvas: three cards from one usage (a loop), one card from another
+ * A fixed canvas: three cards from one usage (a loop), one card from phoneFrame
  * usage, a locked badge from a dependency, and a box with no source marker.
  */
 const BADGE = [{ component: "Badge", usage: "src/App.tsx:10:5", thirdParty: true }, ...APP];
@@ -40,10 +41,13 @@ const PAGE = `<!DOCTYPE html>
 
 let iframe: HTMLIFrameElement | undefined;
 let live: HTMLIFrameElement | undefined;
+/** A second view of the canvas, as narrow as a phone. */
+let phoneFrame: HTMLIFrameElement | undefined;
 
 afterEach(() => {
   iframe?.remove();
   live?.remove();
+  phoneFrame?.remove();
 });
 
 function openCanvas(page = PAGE) {
@@ -54,12 +58,13 @@ function openCanvas(page = PAGE) {
   doc.open();
   doc.write(page);
   doc.close();
-  const tree = buildLayerTree(doc);
+  const views = createViews({ document: doc, width: 800, height: 600, scrollY: 0 });
   const changes = createChangeSet();
-  const editor = createEditor(tree, changes);
+  const editor = createEditor(views, changes);
+  const tree = editor.tree();
   const cards = [...doc.querySelectorAll("article")];
   const layerOf = (el: Element) => find(tree.root, (layer) => layer.el === el && !layer.text)!;
-  return { doc, tree, changes, editor, cards, layerOf };
+  return { doc, views, tree, changes, editor, cards, layerOf };
 }
 
 function find(layer: Layer, match: (layer: Layer) => boolean): Layer | undefined {
@@ -807,7 +812,7 @@ describe("where the value comes from", () => {
     ]);
   });
 
-  test("with nothing setting it, the browser default; a nested rule for another state does not count", () => {
+  test("with nothing setting it, the browser default; a nested rule for phoneFrame state does not count", () => {
     const { editor, changes, at } = openStyled();
 
     editor.set(at("div"), "fill", { type: "solid", color: "#000000", opacity: 1 });
@@ -830,7 +835,7 @@ describe("where the value comes from", () => {
     expect(changes.list()[0].sources[0]).toMatchObject({ kind: "rule", selector: ".bg-white" });
   });
 
-  test("declarations nested in a condition count; a stylesheet for another medium does not", () => {
+  test("declarations nested in a condition count; a stylesheet for phoneFrame medium does not", () => {
     const { editor, changes, at } = openStyled();
 
     editor.set(at("aside"), "radius", 1);
@@ -1118,15 +1123,15 @@ describe("opacity, visibility and clipping", () => {
   });
 
   test("a hidden layer stays in the layer tree, to be shown again", () => {
-    const { doc, editor, at, el } = open();
+    const { views, editor, at, el } = open();
     const before = el("hug").getAttribute("style");
 
     editor.set(at("hug"), "visible", false);
     expect(style(el("hug")).display).toBe("none");
-    const rebuilt = buildLayerTree(doc);
-    const hidden = find(rebuilt.root, (layer) => layer.el === el("hug"))!;
+    const rebuilt = createEditor(views, createChangeSet());
+    const hidden = find(rebuilt.tree().root, (layer) => layer.el === el("hug"))!;
     expect(hidden).toBeDefined();
-    expect(createEditor(rebuilt, createChangeSet()).read(hidden, "visible")).toBe(false);
+    expect(rebuilt.read(hidden, "visible")).toBe(false);
 
     editor.set(at("hug"), "visible", true);
     expect(el("hug").getAttribute("style")).toBe(before);
@@ -1217,7 +1222,7 @@ describe("moving layers", () => {
     return { ...canvas, layer, order };
   };
 
-  test("within a Stack, to another place among its layers, recorded from where it was to where it is", () => {
+  test("within a Stack, to phoneFrame place among its layers, recorded from where it was to where it is", () => {
     const { editor, changes, layer, order } = open();
 
     editor.move(layer("c"), { parent: layer("list"), index: 0 });
@@ -1252,7 +1257,7 @@ describe("moving layers", () => {
     expect(changes.list()).toHaveLength(1);
   });
 
-  test("into another Stack, at the place it is dropped", () => {
+  test("into phoneFrame Stack, at the place it is dropped", () => {
     const { editor, changes, layer, order } = open();
 
     editor.move(layer("b"), { parent: layer("row"), index: 1 });
@@ -1344,7 +1349,7 @@ describe("moving layers", () => {
     expect(editor.canMove(badge)).toBe(true);
     expect(editor.canDrop(layerOf(cards[3]), badge)).toBe(false);
     expect(editor.canDrop(layerOf(cards[0]), layerOf(cards[0]))).toBe(false);
-    // A card's title, in each of the three cards of the loop: into one card of another usage, it could not follow.
+    // A card's title, in each of the three cards of the loop: into one card of phoneFrame usage, it could not follow.
     expect(editor.canDrop(title, layerOf(cards[3]))).toBe(false);
     expect(editor.canDrop(title, layerOf(cards[2]))).toBe(true);
     expect(editor.canMove(tree.root)).toBe(false);
@@ -2516,5 +2521,108 @@ describe("changes to the structure are checked on the live page", () => {
     }
     page.getElementById("b")!.remove();
     expect(await checkChange(page, deleted)).toEqual({ outcome: "shown" });
+  });
+});
+
+describe("views", () => {
+  /** The canvas shown in a second view too, as narrow as a phone, where `#b` is set in by a media query. */
+  const open = async () => {
+    const canvas = openCanvas(MOVES.replace("<body", "<style>@media (max-width: 500px) { #b { margin-left: 50px } }</style>\n<body"));
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    /** Both views show the same canvas. */
+    const alike = () => expect(phone.document.documentElement.outerHTML).toBe(canvas.doc.documentElement.outerHTML);
+    return { ...canvas, phone, layer, alike };
+  };
+
+  test("an edit command changes every view of the canvas alike; undone and redone, every view follows", async () => {
+    const { editor, changes, phone, layer, alike } = await open();
+    const red = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+    let stack: Element | null = null;
+    let frame: Element | null = null;
+    const edits = [
+      () => editor.set(layer("board"), "fill", red),
+      () =>
+        editor.batch(() => {
+          editor.set(layer("list"), "gap", 20);
+          editor.set(layer("board"), "radius", 8);
+        }),
+      () => editor.ownElement(layer("mixed").children[0]),
+      () => editor.revert(changes.list().find((change) => change.property === "radius")!.id),
+      () => editor.move(layer("c"), { parent: layer("list"), index: 0 }),
+      () => editor.setText(layer("a"), "Alpha"),
+      () => (stack = editor.stack([layer("a"), layer("b")]).el),
+      () => (frame = editor.create("frame", { parent: layer("board"), x: 10, y: 20 }).el),
+      () => editor.setBrief(editor.tree().layerOf(frame!)!, "A chart of the week"),
+      () => editor.duplicate(layer("d")),
+      () => editor.remove(layer("d")),
+      () => editor.unstack(editor.tree().layerOf(stack!)!),
+      () => editor.move(layer("mixed").children[0], { parent: layer("board"), x: 5, y: 5 }),
+    ];
+    for (const edit of edits) {
+      edit();
+      alike();
+    }
+    expect(style(phone.document.getElementById("board")!).backgroundColor).toBe("rgb(255, 0, 0)");
+    expect(phone.document.getElementById("a")!.textContent).toBe("Alpha");
+    expect(phone.document.querySelectorAll("#board > *")).toHaveLength(2);
+
+    while (editor.undo().length) alike();
+    expect(style(phone.document.getElementById("board")!).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect([...phone.document.getElementById("list")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
+    while (editor.redo().length) alike();
+    expect(phone.document.querySelectorAll("#board > *")).toHaveLength(2);
+  });
+
+  test("what changes on the canvas outside the edit commands, as words typed into text, shows in every view before the next paint", async () => {
+    const { doc, phone, alike } = await open();
+
+    doc.getElementById("a")!.textContent = "Typed";
+    doc.getElementById("b")!.setAttribute("contenteditable", "plaintext-only");
+    await new Promise(requestAnimationFrame);
+
+    alike();
+    expect(phone.document.getElementById("a")!.textContent).toBe("Typed");
+  });
+
+  test("a view taken away stops following the canvas; the desktop view cannot be taken away", async () => {
+    const { views, editor, phone, layer } = await open();
+    const [desktop] = views.list();
+
+    views.remove(phone);
+    editor.setText(layer("a"), "Alpha");
+    await new Promise(requestAnimationFrame);
+
+    expect(views.list()).toEqual([desktop]);
+    expect(phone.document.getElementById("a")!.textContent).not.toBe("Alpha");
+    expect(() => views.remove(desktop)).toThrow();
+  });
+
+  test("a layer is one across the views: each finds it under a point of its own, and shows where it is laid out there", async () => {
+    const { views, editor, phone, layer } = await open();
+    const [desktop] = views.list();
+    const b = layer("b");
+
+    expect(desktop.document).toBe(views.canvas.document);
+    expect(desktop.boxOf(b)).toEqual(boxOf(b));
+    const box = phone.boxOf(b)!;
+    expect(box.x).toBe(50);
+    expect(box).toEqual(phone.document.getElementById("b")!.getBoundingClientRect());
+    expect(phone.layerAt(editor.tree(), box.x + 1, box.y + 1)).toBe(b);
+    expect(desktop.layerAt(editor.tree(), 1, box.y + 1)).toBe(b);
+
+    // Loose text, which has no element of its own, is found by its words in each view.
+    const loose = layer("mixed").children[0];
+    const words = phone.boxOf(loose)!;
+    expect(loose.text).not.toBeNull();
+    expect(phone.layerAt(editor.tree(), words.x + 2, words.y + 2)).toBe(loose);
+
+    // Built anew by an edit, the layers are still found in every view.
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    const c = layer("c");
+    expect(phone.boxOf(c)!.y).toBe(0);
+    expect(phone.layerAt(editor.tree(), 1, 1)).toBe(c);
   });
 });

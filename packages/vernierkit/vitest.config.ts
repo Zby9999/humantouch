@@ -17,7 +17,8 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            provider: playwright({ launchOptions: { channel: "chrome" } }),
+            // Playwright's own headless shell, not the installed Chrome: on macOS, Chrome takes focus as it starts.
+            provider: playwright(),
             instances: [{ browser: "chromium" }],
           },
         },

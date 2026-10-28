@@ -8,7 +8,7 @@ import { createChangeSet, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
 import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
-import { buildLayerTree, nodeOf, type Layer, type LayerTree } from "./layers";
+import { nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -298,12 +298,12 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
-        onCanvas={(canvas) => {
-          const layers = buildLayerTree(canvas.document);
+        onCanvas={(views) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
-          round.current = { canvas, changeSet };
-          const editor = createEditor(layers, changeSet);
-          setTree(layers);
+          round.current = { canvas: views.canvas, changeSet };
+          // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
+          const editor = createEditor(views, changeSet);
+          setTree(editor.tree());
           setEditor(editor);
           control.current = {
             revert(id) {
