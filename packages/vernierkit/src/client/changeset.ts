@@ -223,7 +223,10 @@ function buildsOn(later: Change, earlier: Change): boolean {
   if (later === earlier) return false;
   const made = madeBy(earlier);
   if (made && (later.target.made === made || placed(later).includes(made) || placesOf(later).some((place) => place.container.layer === made))) return true;
-  return later.id > earlier.id && placed(later).some((layer) => placed(earlier).includes(layer));
+  if (later.id < earlier.id) return false;
+  // A layer deleted once its layers were moved out of it (ungrouped): bringing one back into it brings it back too.
+  if (later.kind === "delete" && earlier.kind === "move" && (earlier.before as Place).container.layer === later.layer) return true;
+  return placed(later).some((layer) => placed(earlier).includes(layer));
 }
 
 /** A move to another place among the layers of the same container, in its layout. */

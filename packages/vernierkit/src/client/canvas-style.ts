@@ -112,5 +112,8 @@ export function changesOn(layer: string, changes: Change[]): Change[] {
 
 /** What joining a Stack declares on a layer: one that was absolute joins its layout; one with margins has them no more. */
 export function memberStyle({ from, unmargined }: Composed["layers"][number]): Record<string, string> {
-  return { ...(from.absolute && { position: "static" }), ...(unmargined && { margin: "0px" }) };
+  return { ...(from.absolute && { position: "static" }), ...(unmargined && NO_MARGIN) };
 }
+
+/** A layer joining a Stack with margins: it has none, one side at a time, so each side's own style comes back when taken apart. */
+const NO_MARGIN = { "margin-top": "0px", "margin-right": "0px", "margin-bottom": "0px", "margin-left": "0px" };

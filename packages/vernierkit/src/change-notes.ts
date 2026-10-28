@@ -56,6 +56,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "create" ? sketch(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
+    ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
@@ -178,12 +179,11 @@ function joinLayout({ layers }: Composed): string[] {
 /** The layers of a Stack that have margins now, and lose them: its gap, padding and own margin hold that room. */
 function dropMargins(change: Change): string[] {
   const { layers, place } = change.after as Composed;
-  const margined = layers.filter((member) => member.unmargined).length;
-  if (!margined) return [];
-  const which = margined === layers.length ? "the layers have" : `${margined} of the layers have`;
+  const margined = layers.filter((member) => member.unmargined).map(({ target }) => target.context.path.at(-1));
+  if (!margined.length) return [];
   const outer = change.style.margin ? `, and the room around them is the Stack's own margin (\`margin: ${change.style.margin}\`)` : "";
   const room = place ? `the room between them is its gap${outer}` : "the room between them is its gap, and the room around them its padding";
-  return [`**Drop the margins:** ${which} margins now. In the Stack, ${room}: take their margins off.`];
+  return [`**Drop the margins:** ${margined.join(", ")} ${margined.length === 1 ? "has" : "have"} margins now. In the Stack, ${room}: take their margins off.`];
 }
 
 /** The Stack as it was, the Frame it becomes, and where each of its layers is placed. */

@@ -1223,6 +1223,21 @@ describe("making a Stack", () => {
     expect([style(doc.getElementById("p")!).marginTop, style(doc.getElementById("btn")!).marginTop]).toEqual(["16px", "24px"]);
   });
 
+  test("taken apart, a layer's own margin on one side is back, though the layer has other changes", () => {
+    const { doc, editor, layer } = open(`<!DOCTYPE html><body style="margin: 0">
+      <section id="hero" ${at("5:5")} style="display: flex; flex-direction: column; width: 400px">
+        <p id="p" ${at("7:7")} style="height: 20px; margin-top: 16px">Words</p>
+        <p id="q" ${at("8:7")} style="height: 20px; margin-top: 8px">More</p>
+      </section></body>`);
+    editor.set(layer("p"), "opacity", 0.5);
+    editor.stack([layer("p"), layer("q")]);
+
+    editor.undo();
+
+    expect(doc.getElementById("p")!.style.marginTop).toBe("16px");
+    expect(style(doc.getElementById("p")!).opacity).toBe("0.5");
+  });
+
   test("in every instance of the usage; not of instances a loop renders", () => {
     const card = (n: number) => `<article ${at("30:9")} style="display: flex; flex-direction: column; gap: 4px">
         <h3 ${at("31:11")} style="margin: 0">Card ${n}</h3><p ${at("32:11")} style="margin: 0">Body</p></article>`;
@@ -1622,6 +1637,34 @@ describe("ungrouping", () => {
     expect(editor.tree().root.children[0].children.map((l) => l.el.id)).toEqual(["top", "inner", "end"]);
   });
 
+  test("one of its moves taken back from the change list brings the layer back too, that layer in it again", () => {
+    const { doc, editor, changes, layer } = open(NESTED);
+    editor.ungroup(layer("inner"));
+    const [first] = changes.list();
+
+    editor.revert(first.id);
+
+    expect(style(doc.getElementById("inner")!).display).toBe("flex");
+    expect(doc.getElementById("x")!.parentElement!.id).toBe("inner");
+    expect(doc.getElementById("y")!.parentElement!.id).toBe("outer");
+    expect(changes.list().map((c) => c.kind)).toEqual(["move"]);
+  });
+
+  test("a Frame in a Stack: its absolute layers stay where they are, absolute in the Stack", () => {
+    const { editor, layer, rects } = open(NESTED.replace(
+      `<div id="end" ${at("11:7")} style="height: 20px">End</div>`,
+      `<div id="end" ${at("11:7")} style="height: 20px">End</div>
+      <div id="card" ${at("12:7")} style="position: relative; height: 80px"><div id="pin" ${at("13:9")} style="position: absolute; left: 30px; top: 10px; width: 20px; height: 20px"></div></div>`,
+    ));
+    const before = rects("pin");
+
+    editor.ungroup(layer("card"));
+
+    expect(layer("pin").parent!.el.id).toBe("outer");
+    expect(layer("pin").absolute).toBe(true);
+    expect(rects("pin")).toEqual(before);
+  });
+
   test("not the page, text, or a layer with no layers in it", () => {
     const { editor, layer } = open(NESTED);
     expect(editor.canUngroup(editor.tree().root)).toBe(false);
@@ -1674,6 +1717,26 @@ describe("copy, cut and paste", () => {
     clipboard.paste([layer("list")]);
     expect(order("list")).toEqual(["A", "C", "B"]);
     expect(changes.list().map((c) => c.kind)).toEqual(["move", "duplicate"]);
+  });
+
+  test("cut and pasted after a layer of the same Stack: right after it", () => {
+    const { layer, order, clipboard } = open();
+
+    clipboard.cut([layer("a")]);
+    clipboard.paste([layer("b")]);
+
+    expect(order("list")).toEqual(["B", "A", "C"]);
+  });
+
+  test("a cut undone is still held: pasted, it is moved", () => {
+    const { editor, changes, layer, order, clipboard } = open();
+
+    clipboard.cut([layer("b")]);
+    editor.undo();
+    clipboard.paste([layer("row")]);
+
+    expect(order("row")).toEqual(["D", "B"]);
+    expect(changes.list().map((c) => c.kind)).toEqual(["move"]);
   });
 
   test("into a Frame selected: placed where it was in its own", () => {

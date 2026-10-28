@@ -37,7 +37,7 @@ import { PAGE_ATTR } from "./freezer";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, outerMargin, paddingBox, stackStyle, undissolve } from "./stacks";
+import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, outerMargin, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -166,7 +166,7 @@ export interface Editor {
   /**
    * Takes the Stack or Frame away, its layers left where they are (⌘⇧G): in
    * its container's layout, in its place and in order, or absolute where they
-   * are. One made this round is taken back instead. Returns its layers.
+   * are. A Stack made this round is taken back instead. Returns its layers.
    */
   ungroup(layer: Layer): Layer[];
   /** Whether new layers can go in the layer: a Stack or a Frame that holds layers. */
@@ -825,7 +825,9 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
           absolute,
         };
       }
-      const record: StructureRecord = { kind: "stack", target: targetOf(container, count), scope: "usage", property: "stack", before: null, after: composed, style, sources: [] };
+      // What sets the margins the layers lose, for the Agent to take off.
+      const sources = ordered.flatMap((member, i) => (margins[i].some((m) => m) ? sourcesOf(member.el, MARGIN_CSS) : []));
+      const record: StructureRecord = { kind: "stack", target: targetOf(container, count), scope: "usage", property: "stack", before: null, after: composed, style, sources };
       const kept = frame ? [id] : composed.layers.map((member) => member.layer);
       structural([id], kept, stackOn(id, record), stackOff(id, record));
       return layerById(id)!;
@@ -848,19 +850,15 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       }
       const group = layer.el;
       const container = layer.parent!.el;
-      // In its container's layout, its layers take its place; anywhere else, they stay where they are, absolute.
-      const inLayout = layer.parent!.kind === "stack" && !layer.absolute;
+      // In its container's layout, its layers in its layout take its place; any other stays where it is, absolute.
+      const inLayout = layer.children.map((child) => layer.parent!.kind === "stack" && !layer.absolute && !child.absolute);
       const index = layer.parent!.children.indexOf(layer);
-      const reference = paddingBox(container);
-      const spots = els.map((el) => {
-        const r = el.getBoundingClientRect();
-        const [top, , , left] = marginsOf(el);
-        return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
-      });
+      const spots = els.map((el) => spotIn(el, container));
       editor.batch(() => {
+        let n = 0;
         els.forEach((el, i) => {
           const parent = tree.layerOf(container)!;
-          editor.move(tree.layerOf(el)!, inLayout ? { parent, index: index + i } : { parent, ...spots[i] });
+          editor.move(tree.layerOf(el)!, inLayout[i] ? { parent, index: index + n++ } : { parent, ...spots[i] });
         });
         editor.remove(tree.layerOf(group)!);
       });
@@ -1167,6 +1165,9 @@ function stackOf(el: Element): StackLayout {
   if (/flex$/.test(style.display)) return { direction: style.flexDirection.startsWith("row") ? "horizontal" : "vertical", flex: true };
   return { direction: "vertical", flex: false };
 }
+
+/** The margins a layer joining a Stack loses. */
+const MARGIN_CSS = ["margin-top", "margin-right", "margin-bottom", "margin-left"];
 
 /** Block-level displays a plain flow lays out top to bottom. */
 const FLOW = /^(block|flow-root|list-item)$/;

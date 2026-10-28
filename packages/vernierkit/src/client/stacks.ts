@@ -11,7 +11,7 @@ import { MOVE_CSS, slotsOf } from "./moves";
 import { CHAIN_ATTR } from "./usage-chain";
 
 /** Every CSS property making a Stack may declare on it: what taking it apart takes off. */
-export const STACK_CSS = ["display", "flex-direction", "gap", "padding", "margin", "justify-content", "align-items", "position", "left", "top", "right", "bottom"];
+export const STACK_CSS = ["display", "flex-direction", "gap", "padding", "margin-top", "margin-right", "margin-bottom", "margin-left", "justify-content", "align-items", "position", "left", "top", "right", "bottom"];
 /** Every CSS property dissolving a Stack may declare on it. */
 export const DISSOLVED_CSS = ["display", "position", "width", "height"];
 
@@ -97,17 +97,18 @@ export function stackStyle({ direction, gap, padding, align }: StackSettings, st
   };
 }
 
-/** An element's box with its margins, as it takes up room in a layout. */
-export function marginBox(el: Element): Box {
-  const r = el.getBoundingClientRect();
-  const [top, right, bottom, left] = marginsOf(el);
-  return { left: r.left - left, top: r.top - top, right: r.right + right, bottom: r.bottom + bottom };
-}
-
 /** An element's box, its border included: what shows of it. */
 export function borderBox(el: Element): Box {
   const { left, top, right, bottom } = el.getBoundingClientRect();
   return { left, top, right, bottom };
+}
+
+/** Where an element is in `container`, as an absolute layer is placed there: from inside its border, margins left out. */
+export function spotIn(el: Element, container: Element): { x: number; y: number } {
+  const reference = paddingBox(container);
+  const r = el.getBoundingClientRect();
+  const [top, , , left] = marginsOf(el);
+  return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
 }
 
 /** An element's margins, in px: top, right, bottom, left. */

@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import type { TargetedPointerEvent } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
@@ -27,6 +27,9 @@ const MAX_ZOOM_STEP = 30;
 /** Performance entries: a mark when the designer asks for edit mode, a measure once the canvas is on screen. */
 export const ENTER_MARK = "vernierkit:enter-edit-mode";
 
+/** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
+export type Tool = Created["type"] | null;
+
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
   restoreFrom: string | null;
@@ -45,10 +48,9 @@ interface Props {
   onMove(layer: Layer, to: Destination): void;
   /** A dragged layer let go with ⌥ held: a copy goes there. */
   onDuplicate(layer: Layer, to: Destination): void;
-  /** The tool picked: the next drag on the canvas draws new text or a new Frame. Null: the selection tool. */
-  tool: Created["type"] | null;
+  tool: Tool;
   /** A tool picked from the keyboard (V, F, T, Esc), or put down once a layer is drawn. */
-  onTool(tool: Created["type"] | null): void;
+  onTool(tool: Tool): void;
   /** A layer drawn with the text or Frame tool; `size` when drawn rather than clicked. Returns the new layer. */
   onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
@@ -87,16 +89,15 @@ export function CanvasView(props: Props) {
   const dragging = useRef<DragSession | null>(null);
   /** The drag under way: how far the layer has gone, in canvas px, and where it would go. */
   const [drag, setDrag] = useState<{ layer: Layer; box: DOMRect; drop: Drop | null } | null>(null);
-  const toolPicked = useRef(onTool);
-  toolPicked.current = onTool;
-  const setTool = (next: Created["type"] | null) => toolPicked.current(next);
   /** A layer being drawn: where the drawing started, and where the pointer is, in canvas px. */
   const drawing = useRef<{ pointerId: number; start: { x: number; y: number } } | null>(null);
   const [drawn, setDrawn] = useState<DOMRect | null>(null);
   /** The text being typed in, and what was in it. */
   const typing = useRef<{ layer: Layer; html: string } | null>(null);
-  /** The text being typed in, outlined in blue as it grows; null when none is. */
-  const [typed, setTyped] = useState<{ layer: Layer; words: string } | null>(null);
+  /** The text being typed in, outlined in blue; null when none is. */
+  const [typingLayer, setTypingLayer] = useState<Layer | null>(null);
+  /** Bumped as the words are typed: the blue outline grows with them. */
+  const [, typedOn] = useReducer((n: number) => n + 1, 0);
   const modeSwitch = useRef<Animation | null>(null);
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
@@ -189,7 +190,7 @@ export function CanvasView(props: Props) {
     if (!canvas) return;
     if (playing) {
       beforePlaying.current = view;
-      setTool(null);
+      onTool(null);
       setHover(null);
       const area = viewport.current!.getBoundingClientRect();
       const top = Math.max(0, -view.y / view.zoom);
@@ -231,24 +232,26 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, playing, onStopPlaying });
-  latest.current = { canvas, selected, onSelect, endDrag, tool, playing, onStopPlaying };
+  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, onTool, playing, onStopPlaying });
+  latest.current = { canvas, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { canvas, selected, onSelect, endDrag, tool, playing, onStopPlaying } = latest.current;
+      const { canvas, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying } = latest.current;
       // Playing, the keys scroll as on a page, and Esc stops.
       if (playing) {
         if (event.type !== "keydown" || !canvas || event.metaKey || event.ctrlKey || event.altKey) return;
         const area = viewport.current!.getBoundingClientRect();
         const page = area.height - 40;
         const by: Record<string, number> = { ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page, Home: -Infinity, End: Infinity };
-        const dy = event.code === "Space" ? (event.shiftKey ? -page : page) : by[event.key];
+        // Space on the button that stops playing presses it, as on any button.
+        const onButton = event.composedPath()[0] instanceof HTMLButtonElement;
+        const dy = event.code === "Space" ? (onButton ? undefined : event.shiftKey ? -page : page) : by[event.key];
         if (event.key !== "Escape" && dy === undefined) return;
         event.preventDefault();
-        event.stopPropagation();
+        event.stopImmediatePropagation();
         if (event.key === "Escape") onStopPlaying();
-        else setView((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, canvas, area));
+        else if (dy !== undefined) setView((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, canvas, area));
         return;
       }
       if (event.key === "Meta" || event.key === "Control") {
@@ -269,7 +272,7 @@ export function CanvasView(props: Props) {
       if (event.key === "Escape" && tool) {
         event.preventDefault();
         event.stopPropagation();
-        setTool(null);
+        onTool(null);
         return;
       }
       // T and F, as in Figma: draw new text, or a new Frame; V goes back to selecting.
@@ -277,7 +280,7 @@ export function CanvasView(props: Props) {
       if ((key === "t" || key === "f" || key === "v") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        setTool(key === "t" ? "text" : key === "f" ? "frame" : null);
+        onTool(key === "t" ? "text" : key === "f" ? "frame" : null);
         return;
       }
       if (event.key === "Escape" && dragging.current) {
@@ -490,7 +493,7 @@ export function CanvasView(props: Props) {
 
   /** Makes the layer drawn over `box`, where it goes; new text is typed in at once. A click rather than a drag makes one of the size it takes. */
   const draw = (type: Created["type"], start: { x: number; y: number }, box: DOMRect) => {
-    setTool(null);
+    onTool(null);
     const to = findPlace(editor!, start, box);
     if (!to) return;
     const clicked = box.width < DRAG_THRESHOLD && box.height < DRAG_THRESHOLD;
@@ -503,7 +506,7 @@ export function CanvasView(props: Props) {
     const own = onBeginText(layer);
     const el = own.el as HTMLElement;
     typing.current = { layer: own, html: el.innerHTML };
-    setTyped({ layer: own, words: el.textContent! });
+    setTypingLayer(own);
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);
@@ -512,12 +515,12 @@ export function CanvasView(props: Props) {
       event.preventDefault();
       el.blur();
     };
-    const onInput = () => setTyped({ layer: own, words: el.textContent! });
+    const onInput = () => typedOn(undefined);
     const end = () => {
       el.removeEventListener("keydown", onKey);
       el.removeEventListener("input", onInput);
       el.removeEventListener("blur", end);
-      setTyped(null);
+      setTypingLayer(null);
       const typed = typing.current;
       typing.current = null;
       el.removeAttribute("contenteditable");
@@ -591,8 +594,8 @@ export function CanvasView(props: Props) {
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
       {canvas && hovered && !selected.includes(hovered) && !travelling && !playing && <Outline layer={hovered} view={view} hover />}
-      {canvas && !travelling && !playing && selected.map((layer, i) => layer !== typed?.layer && <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
-      {canvas && typed && <Outline layer={typed.layer} view={view} typing />}
+      {canvas && !travelling && !playing && selected.map((layer, i) => layer !== typingLayer && <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
+      {canvas && typingLayer && !travelling && !playing && <Outline layer={typingLayer} view={view} typing />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
       {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
@@ -714,7 +717,6 @@ function currentView(stage: HTMLElement): View {
   return { x: m.e, y: m.f, zoom: m.a };
 }
 
-/** At most 100%, the full width in view, and the part of the page the designer was looking at on top. */
 /** At 100%, kept within the canvas: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
 function scrolled(view: View, canvas: Canvas, area: DOMRect): View {
   const within = (n: number, min: number) => Math.max(Math.min(0, min), Math.min(0, n));
@@ -722,6 +724,7 @@ function scrolled(view: View, canvas: Canvas, area: DOMRect): View {
   return { zoom: 1, x, y: within(view.y, area.height - canvas.height) };
 }
 
+/** At most 100%, the full width in view, and the part of the page the designer was looking at on top. */
 function initialView(canvas: Canvas, area: DOMRect): View {
   const zoom = clamp(Math.min(1, (area.width - 2 * PADDING) / canvas.width));
   return { ...centered(canvas, area, zoom), y: PADDING - canvas.scrollY * zoom };

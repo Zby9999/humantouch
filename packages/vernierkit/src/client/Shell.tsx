@@ -2,9 +2,9 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
-import { CanvasView, isEditable } from "./CanvasView";
+import { CanvasView, isEditable, type Tool } from "./CanvasView";
 import { Icon } from "./icons";
-import { createChangeSet, type Change, type ChangeSet, type Created } from "./changeset";
+import { createChangeSet, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
 import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
@@ -64,18 +64,18 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
   }, [layersShown]);
 
   /** The tool picked, from the toolbar or the keyboard: null to select, or what the next drag draws. */
-  const [tool, setTool] = useState<Created["type"] | null>(null);
+  const [tool, setTool] = useState<Tool>(null);
   /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
   const [playing, setPlaying] = useState(false);
   const playButton = useRef<HTMLButtonElement>(null);
-  const stopped = useRef(false);
+  /** Playing has just stopped: focus goes back to the button that started it. */
+  const refocusPlay = useRef(false);
   const play = (on: boolean) => {
-    stopped.current = !on;
+    refocusPlay.current = !on;
     setPlaying(on);
   };
-  // Back from playing, focus goes back to the button that started it.
   useEffect(() => {
-    if (!playing && stopped.current) playButton.current?.focus();
+    if (!playing && refocusPlay.current) playButton.current?.focus();
   }, [playing]);
 
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
@@ -180,13 +180,13 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
 
   /** ⌘C / ⌘X / ⌘V, within the editor. */
   const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet) : null), [editor]);
-  /** ⌘C or ⌘X: whether there was anything to copy or cut. Cut layers are gone, and nothing is selected. */
-  const hold = (cut: boolean, layers: Layer[]) => {
-    if (!clipboard || !(cut ? clipboard.cut(layers) : clipboard.copy(layers))) return false;
-    if (cut) {
-      onEdit();
-      select([]);
-    }
+  /** ⌘C: whether there was anything to copy. */
+  const copy = (layers: Layer[]) => !!clipboard?.copy(layers);
+  /** ⌘X: whether there was anything to cut. Cut layers are gone, and nothing is selected. */
+  const cut = (layers: Layer[]) => {
+    if (!clipboard?.cut(layers)) return false;
+    onEdit();
+    select([]);
     return true;
   };
   /** ⌘V: the layers pasted, selected. */
@@ -215,8 +215,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, hold, paste, playing });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, hold, paste, playing };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, copy, cut, paste, playing });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -243,14 +243,15 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
   // Delete deletes and ⌘D copies them; ⌘C, ⌘X and ⌘V copy, cut and paste. Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve, remove, duplicate, ungroup, hold, paste, playing } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate, ungroup, copy, cut, paste, playing } = latest.current;
       const target = event.composedPath()[0];
       if (playing || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
       const letter = event.key.toLowerCase();
       // Only what the editor holds is pasted, and only when it holds something: the system clipboard is left alone.
       if (command && !event.shiftKey && !event.altKey && ["c", "x", "v"].includes(letter)) {
-        if (letter === "v" ? paste(selected) : selected.length > 0 && hold(letter === "x", selected)) {
+        const done = letter === "v" ? paste(selected) : selected.length > 0 && (letter === "x" ? cut : copy)(selected);
+        if (done) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -258,12 +259,12 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
       }
       if (!selected.length) return;
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
-      const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
+      const a = letter === "a" || (event.altKey && event.code === "KeyA");
       let act: (() => void) | null = null;
       if (a && event.shiftKey && !command) act = () => (event.altKey ? dissolve(selected) : makeStack(selected));
       else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
-      else if (event.key.toLowerCase() === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
-      else if (event.key.toLowerCase() === "g" && command && event.shiftKey && !event.altKey) act = () => ungroup(selected);
+      else if (letter === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
+      else if (letter === "g" && command && event.shiftKey && !event.altKey) act = () => ungroup(selected);
       if (!act) return;
       event.preventDefault();
       event.stopPropagation();
@@ -392,8 +393,13 @@ const TOOLS = [
   { tool: "text", label: "Text", key: "T", icon: "text" },
 ] as const;
 
+interface ToolsProps {
+  tool: Tool;
+  onTool(tool: Tool): void;
+}
+
 /** At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. */
-function Tools({ tool, onTool }: { tool: Created["type"] | null; onTool(tool: Created["type"] | null): void }) {
+function Tools({ tool, onTool }: ToolsProps) {
   return (
     <div class="vk-tools" role="toolbar" aria-label="Tools">
       {TOOLS.map((t) => (

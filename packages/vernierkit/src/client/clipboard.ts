@@ -7,7 +7,7 @@ import { LAYER_ID_ATTR } from "./canvas-style";
 import type { ChangeSet } from "./changeset";
 import type { Destination, Editor } from "./edits";
 import type { Layer } from "./layers";
-import { marginsOf, paddingBox } from "./stacks";
+import { spotIn } from "./stacks";
 
 export interface Clipboard {
   /** Holds the layers to paste copies of. False when none of them can be copied. */
@@ -18,7 +18,9 @@ export interface Clipboard {
    * Into the Stack or Frame selected (at the end of a Stack, where each was
    * in its own Frame), or right after the layer selected; with nothing
    * selected, a copy goes right after its original, a cut layer back where it
-   * was. Returns the layers pasted. Once a cut is pasted, it pastes again as copies.
+   * was. Returns the layers pasted. Once a cut is pasted, it pastes again as
+   * copies; a layer held that is deleted by then (its cut, or its paste,
+   * undone) is cut again and moved.
    */
   paste(selected: Layer[]): Layer[];
 }
@@ -32,14 +34,8 @@ interface Held {
 export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
   let held: Held | null = null;
 
-  const spotOf = (layer: Layer) => {
-    const reference = paddingBox(layer.parent!.el);
-    const r = layer.el.getBoundingClientRect();
-    const [top, , , left] = marginsOf(layer.el);
-    return { x: Math.round(r.left - left - reference.left), y: Math.round(r.top - top - reference.top) };
-  };
   const hold = (mode: Held["mode"], layers: Layer[]) => {
-    held = { mode, items: layers.map((layer) => ({ el: layer.el, spot: spotOf(layer) })) };
+    held = { mode, items: layers.map((layer) => ({ el: layer.el, spot: spotIn(layer.el, layer.parent!.el) })) };
   };
   /** Where the `n`th layer pasted goes, given the layer selected. Null: where the paste goes with nothing selected. */
   const destination = (target: Layer | null, item: Held["items"][number], n: number): Destination | null => {
@@ -50,7 +46,9 @@ export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
     }
     const parent = target.parent;
     if (!parent) return null;
-    return parent.kind === "stack" ? { parent, index: parent.children.indexOf(target) + 1 + n } : { parent, ...item.spot };
+    // Counted among the other layers, as a move counts them: the layer pasted, there already, left out.
+    const others = parent.children.filter((child) => child.el !== item.el);
+    return parent.kind === "stack" ? { parent, index: others.indexOf(target) + 1 + n } : { parent, ...item.spot };
   };
 
   return {
@@ -77,19 +75,16 @@ export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
       const pasted: Element[] = [];
       editor.batch(() => {
         items.forEach((item, n) => {
-          if (mode === "cut") {
-            // Back from its deletion first, then moved: one move in the ChangeSet.
-            const id = item.el.getAttribute(LAYER_ID_ATTR);
-            const deletion = changes.list().find((change) => change.kind === "delete" && change.layer === id);
-            if (!deletion) return;
-            editor.revert(deletion.id);
-          }
+          // Deleted, as a cut leaves it: back from its deletion first, then moved, one move in the ChangeSet.
+          const id = item.el.getAttribute(LAYER_ID_ATTR);
+          const deletion = changes.list().find((change) => change.kind === "delete" && change.layer === id);
+          if (deletion) editor.revert(deletion.id);
           const layer = editor.tree().layerOf(item.el);
           if (!layer) return;
           const target = last ? editor.tree().layerOf(last.el) : null;
           const to = destination(target, item, n);
           if (to && !editor.canDrop(layer, to.parent)) return;
-          if (mode === "copy") pasted.push(editor.duplicate(layer, to ?? undefined).el);
+          if (mode === "copy" && !deletion) pasted.push(editor.duplicate(layer, to ?? undefined).el);
           else pasted.push((to ? editor.move(layer, to) : layer).el);
         });
       });
