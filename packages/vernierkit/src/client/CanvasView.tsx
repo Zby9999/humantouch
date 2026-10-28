@@ -89,6 +89,8 @@ interface Props {
   onMoveOff(layer: Layer, view: View, at: { x: number; y: number }, copy: boolean): void;
   /** A layer off the canvas dragged elsewhere off it, its top left to `x` and `y` on the stage. */
   onPlaceOff(aside: Aside, x: number, y: number): void;
+  /** A layer off the canvas dragged over a view and let go where it can go there: back onto the canvas (ADR 0009). */
+  onPutBack(aside: Aside, to: Destination): void;
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
   /** The selected layers, the one selected last at the end: clicks go on from its depth. */
@@ -130,7 +132,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -650,10 +652,11 @@ export function CanvasView(props: Props) {
   const startDrag = (layer: Layer, shown: Shown): DragSession => {
     const { view, aside } = shown;
     const start = view.boxOf(layer) ?? new DOMRect();
-    const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, release: () => {} };
-    // A layer off the canvas itself is moved about the workspace, whole.
+    const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
+    // A layer off the canvas itself is moved about the workspace, whole, or back onto the canvas.
     if (aside?.layer()?.el === layer.el) {
       session.to = { x: aside.x, y: aside.y };
+      session.whole = true;
       return session;
     }
     for (const child of layer.parent!.children) {
@@ -671,12 +674,17 @@ export function CanvasView(props: Props) {
     const { layer, start, in: shown } = session;
     const box = new DOMRect(start.x + dx, start.y + dy, start.width, start.height);
     const aside = shown.aside;
-    if (session.to && aside) {
-      // Let go over a view, it would go back onto the canvas: not yet, so it stays where it was (ADR 0009).
-      const overView = viewAt(event, placed) !== null;
-      session.to = overView ? null : { x: aside.x + dx, y: aside.y + dy };
+    if (session.whole && aside) {
       setStyles(session, aside.document.defaultView!.frameElement!, { translate: `${dx}px ${dy}px` });
-      setDrag({ layer, in: shown, box, drop: null, out: false });
+      // Let go over a view, it goes back onto the canvas, where it can go there, as any layer dragged in it does (ADR 0009).
+      const into = viewAt(event, placed)?.at ?? null;
+      const rectOf = (l: Layer) => into?.view.boxOf(l) ?? new DOMRect();
+      const there = into && new DOMRect(aside.x + box.x - into.x, aside.y + box.y - into.y, box.width, box.height);
+      const drop = into && there && editor ? findDrop(editor, into.view, null, toView(event, into), there, rectOf) : null;
+      session.to = into ? null : { x: aside.x + dx, y: aside.y + dy };
+      session.back = drop;
+      // Nothing makes room for it: coming from outside, the layers would slide away from under the pointer as it enters.
+      setDrag({ layer, in: into ?? shown, box: there ?? box, drop, out: false });
       return;
     }
     // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it.
@@ -771,9 +779,11 @@ export function CanvasView(props: Props) {
     }
     setDrag(null);
     if (!commit) return;
-    const { layer, in: shown, box, to, out, drop } = session;
-    if (shown.aside && to) {
-      if (to.x !== shown.aside.x || to.y !== shown.aside.y) onPlaceOff(shown.aside, to.x, to.y);
+    const { layer, in: shown, box, to, out, drop, back } = session;
+    if (shown.aside && session.whole) {
+      if (to && (to.x !== shown.aside.x || to.y !== shown.aside.y)) onPlaceOff(shown.aside, to.x, to.y);
+      // Over a view where it cannot go, it stays off the canvas, where it was.
+      else if (back) onPutBack(shown.aside, back.to);
       return;
     }
     if (out && box) {
@@ -1028,8 +1038,12 @@ interface DragSession {
   box?: DOMRect;
   /** Let go now, the layer goes off the canvas (ADR 0009). */
   out: boolean;
-  /** A layer off the canvas, dragged whole: where its top left would go on the stage; null where it cannot go. */
+  /** A layer off the canvas, dragged whole: where its top left would go on the stage; null over a view. */
   to: { x: number; y: number } | null;
+  /** A layer off the canvas dragged whole, rather than a layer in a view or in it. */
+  whole?: true;
+  /** A layer off the canvas dragged over a view: where it would go back onto the canvas there; null where it cannot. */
+  back: Drop | null;
   /** Lets the views grow and shrink again, which they do not while the drag shifts layers. */
   release: () => void;
 }

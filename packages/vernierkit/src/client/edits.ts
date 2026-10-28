@@ -5,6 +5,7 @@
  * canvas. Every edit can be undone.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
+import type { OffCanvasLayer } from "../service-protocol";
 import { breakpointKey, breakpointOf, clearOf, contains, widestFirst, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import {
   AS_STACK_ATTR,
@@ -26,6 +27,7 @@ import {
 import {
   madeBy,
   MOVE,
+  movedOffBy,
   withDependents,
   type Change,
   type ChangeSet,
@@ -33,11 +35,12 @@ import {
   type Created,
   type Dissolved,
   type Place,
+  type PutBack,
   type StackSettings,
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
-import { copiedBreakpointsOf, hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
+import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
@@ -229,9 +232,10 @@ export interface Editor {
   /**
    * How the Agent finds the layer in the source, where it is, and the JSX that
    * writes it (an instance's: its usage; none for a layer made this round):
-   * what a layer moved off the canvas keeps of where it came from.
+   * what a layer moved off the canvas keeps of where it came from. A layer
+   * put back from off the canvas new is where it came from still, its source as written then with it.
    */
-  whereIs(layer: Layer): { target: Target; place: Place | null; written: string | null };
+  whereIs(layer: Layer): { target: Target; place: Place | null; written: string | null } & Pick<OffCanvasLayer["origin"], "snippet" | "copy">;
   /**
    * Makes `make`, a change to something besides the canvas (a layer off it),
    * one step with the edits, undone by `unmake`: taken back and made again
@@ -246,6 +250,22 @@ export interface Editor {
    * copied alone, as data. Returns the copy.
    */
   duplicate(layer: Layer, to?: Destination): Layer;
+  /**
+   * Puts a layer off the canvas back onto it, at `to` (ADR 0009), as a move
+   * goes, in every view; returns it there. Moved off this round and not
+   * edited off the canvas since, it is the layer that was deleted, back: put
+   * back where it was, neither change is left; elsewhere, it moves there.
+   * Otherwise it is new on the canvas, looking as it does off it, and the
+   * change puts it in with where it came from, its source as written then,
+   * its look and its edits there, for the Agent to put it back by.
+   */
+  putBack(from: Returning, to: Destination): Layer;
+}
+
+/** A layer off the canvas coming back onto it: its element there, as it looks now, and it as kept. */
+export interface Returning {
+  el: Element;
+  kept: OffCanvasLayer;
 }
 
 /**
@@ -621,6 +641,17 @@ export function createEditor(
     return { container, nth: parent.children.indexOf(layer) + 1, slot: slotsOf(parent.el).indexOf(layer.el), absolute };
   };
 
+  /** The place of a layer new on the canvas at `to`. */
+  const placeNew = (to: Destination): Place => {
+    const container = to.parent;
+    const instances = tree.acrossInstances(container);
+    const where = { layer: idOf(container, instances), target: targetOf(container, instances.length) };
+    const slots = slotsOf(container.el);
+    if ("x" in to) return { container: where, nth: container.children.length + 1, slot: slots.length, absolute: { x: round(to.x), y: round(to.y) } };
+    const next = container.children[to.index];
+    return { container: where, nth: to.index + 1, slot: next ? slots.indexOf(nodeOf(next)) : slots.length, absolute: null };
+  };
+
   /** The layer's place at `to`, worked out before it moves. */
   const placeAt = (layer: Layer, to: Destination): Place => {
     const parent = to.parent;
@@ -715,7 +746,7 @@ export function createEditor(
    */
   const madeLayer = (id: string, record: StructureRecord, make: () => void) => {
     let taken: [Element, Element, Node | null][] = [];
-    const container = (record.kind === "create" ? (record.after as Created).place : (record.after as Place)).container.layer;
+    const container = (record.kind === "create" || record.kind === "putBack" ? (record.after as Created | PutBack).place : (record.after as Place)).container.layer;
     return {
       make: () => {
         if (!taken.length) return make();
@@ -830,7 +861,7 @@ export function createEditor(
       structural(kept, [id], stackOff(id, record), stackOn(id, record));
       return layerById(kept[0]);
     }
-    if (change.kind === "create" || change.kind === "duplicate") {
+    if (change.kind === "create" || change.kind === "duplicate" || change.kind === "putBack") {
       const container = layer.parent!;
       const { make, takeOff } = madeLayer(id, record, () => {});
       structural([container.el.getAttribute(LAYER_ID_ATTR) ?? id], [id], takeOff, make);
@@ -893,6 +924,18 @@ export function createEditor(
         }
       },
     );
+  };
+
+  /**
+   * Whether the layer deleted by `deletion`, its element `el`, can come back
+   * into `container` as it was: into a container in as many instances as the
+   * one it was in, where it is not pinned to stay where it was.
+   */
+  const canReturn = (deletion: Change, el: Element, container: Layer) => {
+    const home = layerById((deletion.before as Place).container.layer);
+    if (!home || tree.acrossInstances(home).length !== tree.acrossInstances(container).length) return false;
+    // One of a loop's instances, or pinned against a window: only back into its own container.
+    return container === home || !(deletion.data || el.hasAttribute(PIN_OFFSET_ATTR));
   };
 
   /** Puts a moved layer at `to`, on the canvas and in the ChangeSet, and builds the layers anew. */
@@ -1152,14 +1195,7 @@ export function createEditor(
       if (!editor.canHold(container)) throw new Error(`Vernier Kit: nothing can go into ${container.name}`);
       const count = tree.acrossInstances(container).length;
       const containerId = idOf(container, tree.acrossInstances(container));
-      const slots = slotsOf(container.el);
-      const where = { layer: containerId, target: targetOf(container, count) };
-      let place: Place;
-      if ("x" in to) place = { container: where, nth: container.children.length + 1, slot: slots.length, absolute: { x: round(to.x), y: round(to.y) } };
-      else {
-        const next = container.children[to.index];
-        place = { container: where, nth: to.index + 1, slot: next ? slots.indexOf(nodeOf(next)) : slots.length, absolute: null };
-      }
+      const place = placeNew(to);
       // Text drawn wider than a click keeps the width it was drawn at; its height follows its words.
       const frame = type === "frame";
       const width = size ? round(size.width) : frame ? NEW_FRAME_SIZE : null;
@@ -1243,6 +1279,11 @@ export function createEditor(
     canRemove: (layer) => layer.parent !== null,
     whereIs(layer) {
       const made = layer.made !== null && layer.el.getAttribute(LAYER_ID_ATTR) === layer.made;
+      const maker = made ? makerOf(layer.made!) : null;
+      if (maker?.kind === "putBack") {
+        const { target, written, snippet, copy } = (maker.after as PutBack).layer.origin;
+        return { target, place: placeOf(layer), written, ...(snippet !== undefined && { snippet }), ...(copy && { copy }) };
+      }
       return {
         target: targetOf(layer, onPage(layer).length),
         place: layer.parent ? placeOf(layer) : null,
@@ -1334,6 +1375,46 @@ export function createEditor(
       structural([id], [layer.el.getAttribute(LAYER_ID_ATTR)!], make, takeOff);
       const at = containers[loop ? 0 : instances.indexOf(layer)].el;
       return tree.layerOf([...at.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
+    },
+    putBack(from, to) {
+      const deletion = movedOffBy(changes.list(), from.kept.id);
+      const deleted = deletion ? elementsOf(doc, deletion.layer).filter((el) => el.getAttribute(DELETED_ATTR) === deletion.property) : [];
+      // Moved off this round, as it was: the deletion is taken back, and it moves to where it is let go, if anywhere.
+      if (deletion && deleted.length && !from.kept.edits.changes.length && canReturn(deletion, deleted[0], to.parent)) {
+        let back: Layer | null = null;
+        // A change to the structure: at every width, whatever view it is let go in (ADR 0008).
+        const worked = current;
+        current = null;
+        try {
+          editor.batch(() => {
+            editor.revert(deletion.id);
+            const layer = tree.layerOf(deleted[0])!;
+            const parent = tree.layerOf(to.parent.el)!;
+            // Let go by its border box: placed by its margin box.
+            const [x, y] = "x" in to ? [to.x - parseFloat(getComputedStyle(layer.el).marginLeft), to.y - parseFloat(getComputedStyle(layer.el).marginTop)] : [0, 0];
+            back = editor.move(layer, "x" in to ? { parent, x: round(x), y: round(y) } : { parent, index: to.index });
+          });
+        } finally {
+          current = worked;
+        }
+        return back!;
+      }
+      // Otherwise new on the canvas, as it looks off it.
+      const container = to.parent;
+      if (!editor.canHold(container)) throw new Error(`Vernier Kit: nothing can go into ${container.name}`);
+      const count = tree.acrossInstances(container).length;
+      const containerId = idOf(container, tree.acrossInstances(container));
+      const place = placeNew(to);
+      const style = place.absolute ? absoluteAt(place.absolute) : {};
+      const id = String(++lastId);
+      const putBack: PutBack = { place, layer: structuredClone(from.kept) };
+      const record: StructureRecord = { kind: "putBack", target: targetOf(container, count), scope: "usage", property: "put back", before: null, after: putBack, style, sources: [] };
+      const { make, takeOff } = madeLayer(id, record, () => {
+        changes.record(id, record);
+        insertPutBack(doc, id, from.el, place, style);
+      });
+      structural([id], [containerId], make, takeOff);
+      return tree.layerOf(elementsOf(doc, id).find((el) => el.parentElement === container.el) ?? elementsOf(doc, id)[0])!;
     },
     unstack(layer) {
       if (!editor.canUnstack(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be dissolved`);

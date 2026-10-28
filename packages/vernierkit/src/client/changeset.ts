@@ -4,6 +4,7 @@
  * and again stays a single change, from the first value to the latest.
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
+import type { OffCanvasLayer } from "../service-protocol";
 import type { Align, Padding } from "./edits";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -96,6 +97,18 @@ export interface Created {
   brief?: string;
 }
 
+/**
+ * A layer off the canvas put back onto it (the `after` of a `putBack`
+ * change, ADR 0009): where it goes, and the layer as it was kept off the
+ * canvas: how it looks, where it came from with its source as written then,
+ * and what was edited there. The Agent puts it back by its source, which may
+ * be gone from the code by now.
+ */
+export interface PutBack {
+  place: Place;
+  layer: OffCanvasLayer;
+}
+
 /** A value a layer has at a breakpoint of its own, as a copy of it takes it over. */
 export interface CopiedBreakpoint {
   /** The change that gave the layer it, by its id. */
@@ -121,8 +134,9 @@ export interface Change {
    * words change; `before` and `after` are strings. `delete`: the layer goes;
    * `before` is its `Place`. `duplicate`: the layer is a copy of the layer
    * `target` is; `before` is where that one is, `after` where the copy goes.
+   * `putBack`: a layer off the canvas comes back onto it, new there; `after` is `PutBack`.
    */
-  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate";
+  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack";
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
@@ -271,9 +285,21 @@ function buildsOn(later: Change, earlier: Change): boolean {
   const made = madeBy(earlier);
   if (made && (later.target.made === made || placed(later).includes(made) || placesOf(later).some((place) => place.container.layer === made))) return true;
   if (later.id < earlier.id) return false;
+  // Put back once it was moved off this round: had it not been moved off, it could not come back.
+  if (later.kind === "putBack" && movedOffBy([earlier], (later.after as PutBack).layer.id)) return true;
   // A layer deleted once its layers were moved out of it (ungrouped): bringing one back into it brings it back too.
   if (later.kind === "delete" && earlier.kind === "move" && (earlier.before as Place).container.layer === later.layer) return true;
   return placed(later).some((layer) => placed(earlier).includes(layer));
+}
+
+/** The deletion among `changes` that moved the layer off the canvas that is there now as `id` (ADR 0009), if one does. */
+export function movedOffBy(changes: Change[], id: string): Change | null {
+  return changes.find((change) => change.kind === "delete" && change.offCanvas === id) ?? null;
+}
+
+/** The layers off the canvas that `changes` put back onto it, as they were kept there. */
+export function putBackBy(changes: Change[]): OffCanvasLayer[] {
+  return changes.filter((change) => change.kind === "putBack").map((change) => (change.after as PutBack).layer);
 }
 
 /** A move to another place among the layers of the same container, in its layout. */
@@ -285,14 +311,14 @@ export function isReorder(change: Change): boolean {
 
 /** The layer a change makes, if it makes one: a new Stack, new text or a Frame, a copy. */
 export function madeBy(change: Change): string | null {
-  if (change.kind === "create" || change.kind === "duplicate") return change.layer;
+  if (change.kind === "create" || change.kind === "duplicate" || change.kind === "putBack") return change.layer;
   return change.kind === "stack" && (change.after as Composed).place ? change.layer : null;
 }
 
 /** Where a change puts a layer: a move's or a copy's new place, a new layer's, a new Stack's. */
 export function placedAt(change: Change): Place | null {
   if (change.kind === "move" || change.kind === "duplicate") return change.after as Place;
-  if (change.kind === "create" || change.kind === "stack") return (change.after as Created | Composed).place;
+  if (change.kind === "create" || change.kind === "stack" || change.kind === "putBack") return (change.after as Created | Composed | PutBack).place;
   return null;
 }
 
@@ -306,7 +332,7 @@ function placed(change: Change): string[] {
 /** The places a change takes layers from and to. */
 function placesOf(change: Change): Place[] {
   if (change.kind === "move" || change.kind === "duplicate") return [change.before, change.after] as Place[];
-  if (change.kind === "create") return [(change.after as Created).place];
+  if (change.kind === "create" || change.kind === "putBack") return [(change.after as Created | PutBack).place];
   if (change.kind !== "stack") return [];
   const { place, layers } = change.after as Composed;
   return [...(place ? [place] : []), ...layers.map((member) => member.from)];

@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { createChangeSet } from "../src/client/changeset";
+import { dropUnusedRules } from "../src/client/canvas-style";
+import { createChangeSet, type PutBack } from "../src/client/changeset";
 import { createEditor, createHistory } from "../src/client/edits";
+import type { Destination } from "../src/client/edits";
 import type { Layer } from "../src/client/layers";
 import { freezeLook, serializeLook } from "../src/client/look";
-import { createOffCanvas } from "../src/client/off-canvas";
+import { createOffCanvas, type Aside } from "../src/client/off-canvas";
+import { revertSaved } from "../src/client/saved-round";
 import { createViews } from "../src/client/views";
 
 const CHAIN = `data-vk-chain='[{"component":"Card","usage":"src/App.tsx:6:9","thirdParty":false}]'`;
@@ -47,10 +50,10 @@ function iframe(width = 800): HTMLIFrameElement {
   return el;
 }
 
-function page(): Document {
+function page(html = PAGE): Document {
   const doc = iframe().contentDocument!;
   doc.open();
-  doc.write(PAGE);
+  doc.write(html);
   doc.close();
   return doc;
 }
@@ -275,5 +278,192 @@ describe("the layers off the canvas", () => {
     expect(getComputedStyle(aside.layer()!.el).opacity).toBe("0.5");
     offCanvas.place(aside, 20, -80);
     expect(offCanvas.save()).toMatchObject([{ x: 20, y: -80 }]);
+  });
+});
+
+const ORIGIN = {
+  target: { loc: "src/Card.tsx:3:5", chain: [], component: "Card", instances: 1, locked: false, unlocated: false, context: { path: ["Page", "Card"], element: "<article>" } },
+  place: null,
+  written: "src/App.tsx:6:9",
+  at: "2026-10-29T00:00:00.000Z",
+};
+
+describe("putting a layer off the canvas back", () => {
+  let host: HTMLDivElement | undefined;
+  afterEach(() => host?.remove());
+
+  /** The page as a canvas to edit, and the layers off it, sharing one history. */
+  function canvas(html = PAGE) {
+    const doc = page(html);
+    const history = createHistory();
+    const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
+    const changes = createChangeSet();
+    const editor = createEditor(views, changes, null, { history });
+    host = document.createElement("div");
+    document.body.append(host);
+    const offCanvas = createOffCanvas(host, [], history);
+    const layerOf = (el: Element) => find(editor.tree().root, (layer) => layer.el === el && !layer.text)!;
+    /** Moves the layer of `el` off the canvas, as the designer drags it out (`copy`: with ⌥ held). */
+    const moveOff = (el: Element, copy = false) => {
+      const layer = layerOf(el);
+      const aside = offCanvas.moveOut(el, { x: -400, y: 0 }, { ...editor.whereIs(layer), at: "2026-10-29T00:00:00.000Z" });
+      editor.batch(() => {
+        if (!copy) editor.remove(layer, { offCanvas: aside.id });
+        editor.along(
+          () => offCanvas.put(aside),
+          () => offCanvas.take(aside),
+        );
+      });
+      return aside;
+    };
+    /** Puts it back at `to`, as the designer lets it go over a view. */
+    const putBack = (aside: Aside, to: Destination) => {
+      let layer: Layer | null = null;
+      editor.batch(() => {
+        layer = editor.putBack({ el: aside.layer()!.el, kept: aside.keep() }, to);
+        editor.along(
+          () => offCanvas.take(aside),
+          () => offCanvas.put(aside),
+        );
+      });
+      return layer!;
+    };
+    return { doc, changes, editor, offCanvas, layerOf, moveOff, putBack };
+  }
+
+  test("moved off and put back where it was in the same round, it is as it was, and neither change is left", () => {
+    const { doc, changes, offCanvas, layerOf, moveOff, putBack } = canvas();
+    const card = doc.querySelector("article")!;
+    const title = doc.querySelector("h3")!;
+    const aside = moveOff(title);
+
+    const back = putBack(aside, { parent: layerOf(card), index: 0 });
+
+    expect(changes.list()).toEqual([]);
+    expect(back.el).toBe(title);
+    expect(getComputedStyle(title).display).toBe("block");
+    expect(card.querySelectorAll("h3")).toHaveLength(1);
+    expect(offCanvas.list()).toEqual([]);
+  });
+
+  test("moved off and put back elsewhere in the same round, it is a move, the deletion gone; undone, it is off the canvas again, deleted", () => {
+    const { doc, changes, editor, offCanvas, layerOf, moveOff, putBack } = canvas();
+    const card = doc.querySelector("article")!;
+    const title = doc.querySelector("h3")!;
+    const aside = moveOff(title);
+
+    const back = putBack(aside, { parent: layerOf(card), index: 2 });
+
+    expect(changes.list()).toMatchObject([{ kind: "move", before: { nth: 1 }, after: { nth: 3, container: { layer: "4" } } }]);
+    expect(back.el).toBe(title);
+    expect(card.lastElementChild).toBe(title);
+
+    editor.undo();
+    expect(changes.list()).toMatchObject([{ kind: "delete", offCanvas: aside.id }]);
+    expect(getComputedStyle(title).display).toBe("none");
+    expect(offCanvas.list()).toEqual([aside]);
+  });
+
+  test("edited off the canvas, it comes back as an insertion, looking as it does off the canvas, with its source, look and edits; undone, it is off the canvas again", () => {
+    const { doc, changes, editor, offCanvas, layerOf, moveOff, putBack } = canvas();
+    const card = doc.querySelector("article")!;
+    const title = doc.querySelector("h3")!;
+    const aside = moveOff(title);
+    aside.editor.set(aside.layer()!, "opacity", 0.5);
+    const shown = css(aside.layer()!.el, ...LOOK);
+
+    const back = putBack(aside, { parent: layerOf(card), index: 0 });
+
+    expect(changes.list()).toMatchObject([
+      { kind: "delete", offCanvas: aside.id },
+      {
+        kind: "putBack",
+        layer: back.el.getAttribute("data-vk-layer"),
+        target: { loc: "src/Card.tsx:3:5" },
+        after: {
+          place: { container: { layer: "4" }, nth: 1, absolute: null },
+          layer: { id: aside.id, origin: { written: "src/Card.tsx:4:7", place: { nth: 1 } }, edits: { changes: [{ property: "opacity", after: 0.5 }] } },
+        },
+      },
+    ]);
+    expect((changes.list()[1].after as PutBack).layer.look).toContain("Freeze it");
+    // A layer of the canvas's, new this round, in every instance of its container; the one deleted stays deleted.
+    expect(back.el).not.toBe(title);
+    expect(back.el.parentElement).toBe(card);
+    expect(back.el.nextElementSibling).toBe(card.querySelector("p"));
+    expect(back.made).toBe(back.el.getAttribute("data-vk-layer"));
+    expect(getComputedStyle(title).display).toBe("none");
+    expect(css(back.el, ...LOOK)).toEqual(shown);
+    expect(offCanvas.list()).toEqual([]);
+
+    editor.undo();
+    expect(changes.list()).toMatchObject([{ kind: "delete" }]);
+    expect(card.querySelectorAll("h3")).toHaveLength(1);
+    expect(offCanvas.list()).toEqual([aside]);
+    editor.redo();
+    expect(changes.list()).toHaveLength(2);
+    expect(card.querySelectorAll("h3")).toHaveLength(2);
+  });
+
+  test("moved off in an earlier round, its code and the rules of its classes gone since, it comes back new, looking as it did off the canvas", () => {
+    // The Agent deleted the badge, and its rules with it; the page's words are another colour now.
+    const after = PAGE.replace(/<p class="badge"[^]*?<\/p>/, "").replace(".badge::before", ".gone::before").replace("color: rgb(68, 64, 60)", "color: rgb(0, 0, 255)");
+    const before = page();
+    const { doc, changes, editor, offCanvas, layerOf, putBack } = canvas(after);
+    const badge = before.querySelector("p")!;
+    const aside = offCanvas.moveOut(badge, { x: -400, y: 0 }, { ...ORIGIN, written: "src/Card.tsx:5:7", snippet: { loc: "src/Card.tsx:5:7", code: '<p className="badge">Words</p>' } });
+    offCanvas.put(aside);
+    const card = doc.querySelector("article")!;
+
+    const back = putBack(aside, { parent: layerOf(card), index: 1 });
+
+    expect(changes.list()).toMatchObject([{ kind: "putBack", after: { place: { nth: 2 }, layer: { origin: { snippet: { code: '<p className="badge">Words</p>' } } } } }]);
+    expect(back.el.previousElementSibling).toBe(card.querySelector("h3"));
+    expect(back.el.hasAttribute("class")).toBe(false);
+    expect(css(back.el, ...LOOK, "width")).toEqual(css(badge, ...LOOK, "width"));
+    expect(getComputedStyle(back.el, "::before").content).toBe('"★"');
+    expect(getComputedStyle(back.el, "::before").color).toBe("rgb(255, 0, 0)");
+
+    // Taken off again, what showed its `::before` goes once the canvas is saved.
+    editor.undo();
+    expect(doc.querySelectorAll("style[data-vk-put-back]")).toHaveLength(1);
+    dropUnusedRules(doc.documentElement);
+    expect(doc.querySelectorAll("style[data-vk-put-back]")).toHaveLength(0);
+  });
+
+  test("an insertion goes with the deletion it put back: taking back the deletion takes it too, on the canvas and on a saved one; taken back alone, the deletion stays", () => {
+    const { doc, changes, editor, layerOf, moveOff, putBack } = canvas();
+    const card = doc.querySelector("article")!;
+    const aside = moveOff(doc.querySelector("h3")!);
+    aside.editor.set(aside.layer()!, "opacity", 0.5);
+    const back = putBack(aside, { parent: layerOf(card), index: 0 });
+    const [deletion, insertion] = changes.list();
+    const saved = { canvas: doc.documentElement.outerHTML, changeSet: changes.save() };
+
+    editor.revert(insertion.id);
+    expect(changes.list()).toEqual([deletion]);
+    expect(back.el.isConnected).toBe(false);
+    editor.undo();
+
+    editor.revert(deletion.id);
+    expect(changes.list()).toEqual([]);
+    expect(card.querySelectorAll("h3")).toHaveLength(1);
+    expect(getComputedStyle(card.querySelector("h3")!).display).toBe("block");
+
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, insertion.id)!.canvas, "text/html");
+    expect(reverted.querySelectorAll("article h3")).toHaveLength(1);
+    expect(revertSaved(saved, deletion.id)).toBeNull();
+  });
+
+  test("put back new, it is where it came from still, its source with it: moved off again, it takes them along, and its putting back is taken back", () => {
+    const { doc, changes, editor, offCanvas, layerOf, putBack } = canvas();
+    const snippet = { loc: "src/Card.tsx:5:7", code: '<p className="badge">Words</p>' };
+    const aside = offCanvas.moveOut(doc.querySelector("p")!, { x: -400, y: 0 }, { ...ORIGIN, written: "src/Card.tsx:5:7", snippet });
+    offCanvas.put(aside);
+    const back = putBack(aside, { parent: layerOf(doc.querySelector("article")!), index: 0 });
+
+    expect(editor.whereIs(back)).toMatchObject({ target: ORIGIN.target, written: "src/Card.tsx:5:7", snippet, place: { nth: 1 } });
+    editor.remove(back, { offCanvas: "again" });
+    expect(changes.list()).toEqual([]);
   });
 });

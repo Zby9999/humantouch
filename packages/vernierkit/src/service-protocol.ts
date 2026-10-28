@@ -24,8 +24,9 @@ export const BREAKPOINTS_PATH = "/breakpoints";
 
 /**
  * `GET`: the layers off the canvas, as `{ layers: OffCanvasLayer[] }` (204:
- * none). `PUT` saves them all. They belong to no round (ADR 0009): saved
- * while a round is claimed too, and kept when it ends.
+ * none). `PUT` saves them all, and answers with their snippets, as
+ * `OffCanvasSaved`. They belong to no round (ADR 0009): saved while a round
+ * is claimed too, and kept when it ends.
  */
 export const OFF_CANVAS_PATH = "/off-canvas";
 
@@ -99,6 +100,11 @@ export interface OffCanvasLayer {
   edits: SavedChangeSet;
 }
 
+/** The answer to saving the layers off the canvas: the JSX that writes each, by its id, as kept. */
+export interface OffCanvasSaved {
+  snippets: Record<string, Snippet | null>;
+}
+
 /** Where a layer off the canvas came from, as it was when moved out. */
 export interface OffCanvasOrigin {
   /** How the Agent finds it in the source, its component and usage chain included. */
@@ -112,6 +118,8 @@ export interface OffCanvasOrigin {
    * is first saved; null when it could not be read. Missing until then.
    */
   snippet?: Snippet | null;
+  /** Moved out as a copy: the layer it copies stayed on the canvas, and its code in the source. */
+  copy?: true;
   /** When it was moved out, as an ISO date. */
   at: string;
 }

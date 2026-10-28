@@ -127,15 +127,13 @@ test("off the canvas, a layer is edited as any other, with no change for the Age
 
   await expect(offCanvas(page).contentFrame().locator("h1")).toHaveCSS("opacity", "0.5");
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
-  // Moved about off the canvas, it goes where it is let go; over a view, it stays where it was.
+  // Moved about off the canvas, it goes where it is let go.
   const before = await placeOff(page);
   const moved = offCanvas(page).contentFrame().locator("h1");
   const box = (await moved.boundingBox())!;
   await dragTo(page, moved, { x: box.x + box.width / 2 - 30, y: box.y + box.height / 2 + 40 });
   const after = await placeOff(page);
   expect(after.y).toBeGreaterThan(before.y);
-  await dragTo(page, moved, { x: view.x + 50, y: view.y + 50 });
-  expect(await placeOff(page)).toEqual(after);
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 
   await page.waitForTimeout(800);
@@ -203,4 +201,146 @@ test("taking the deletion back from the change list puts the layer back on the c
   await enterEditMode(page);
   await expect(desktop(page).contentFrame().locator("h1")).toBeVisible();
   await expect(offCanvas(page)).toHaveCount(0);
+});
+
+/** Moves the title off the canvas, to the left of the views, as the designer drags it out of the desktop view. */
+async function moveTitleOff(page: Page) {
+  await enterEditMode(page);
+  await pan(page, 400);
+  const view = (await desktop(page).boundingBox())!;
+  await select(page, "Vernier Kit");
+  await dragTo(page, desktop(page).contentFrame().locator("h1"), { x: view.x - 200, y: view.y + 100 });
+  await expect(offCanvas(page)).toHaveCount(1);
+}
+
+/** Drags the layer off the canvas by a point just inside its top left, which is let go at `to` on the page: where it goes is where the pointer is. */
+async function dragOffTo(page: Page, to: { x: number; y: number }) {
+  const moved = offCanvas(page).contentFrame().locator("body > *").first();
+  const box = (await moved.boundingBox())!;
+  await page.mouse.move(box.x + 3, box.y + 3);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 3, to.y + 3, { steps: 10 });
+  await page.mouse.up();
+}
+
+/** Zooms the workspace out, about the middle of the viewport. */
+async function zoomOut(page: Page) {
+  const area = (await viewportArea(page).boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, 400);
+  await page.keyboard.up("Control");
+}
+
+/** The changes not applied yet, as the change list names them. */
+async function changeNames(page: Page) {
+  await badge(page).click();
+  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".vk-change-name").allTextContents();
+  await page.keyboard.press("Escape");
+  return names;
+}
+
+test("dragged back where it was in the same round, a layer off the canvas is in every view again, and neither change is left; undone, it is off the canvas again", async ({ page }) => {
+  await moveTitleOff(page);
+  const beta = (await desktop(page).contentFrame().locator("header").getByText("Beta").boundingBox())!;
+
+  // Let go at the start of its Stack, where it was: the badge took its place meanwhile.
+  await dragOffTo(page, { x: beta.x, y: beta.y + beta.height / 2 - 3 });
+
+  await expect(offCanvas(page)).toHaveCount(0);
+  for (const shown of [desktop(page), tablet(page), phone(page)]) {
+    await expect(shown.contentFrame().locator("header > h1")).toBeVisible();
+    expect(await shown.contentFrame().locator("header > *").first().evaluate((el) => el.localName)).toBe("h1");
+  }
+  await expect(badge(page)).toHaveCount(0);
+  await expect(layerTree(page).getByRole("treeitem").first()).not.toHaveAttribute("aria-description", /Off canvas/);
+
+  await page.keyboard.press(`${mod}+z`);
+  await expect(offCanvas(page)).toHaveCount(1);
+  await expect(desktop(page).contentFrame().locator("h1")).toBeHidden();
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+});
+
+test("dragged back elsewhere in the same round, into a Stack of the phone view, it takes a place there, in every view, as one move", async ({ page }) => {
+  await moveTitleOff(page);
+  await zoomOut(page);
+  const button = (await phone(page).contentFrame().getByRole("button", { name: "Get started" }).boundingBox())!;
+
+  // Below the button, in the hero's Stack: its last layer.
+  await dragOffTo(page, { x: button.x, y: button.y + button.height + 8 });
+
+  await expect(offCanvas(page)).toHaveCount(0);
+  for (const shown of [desktop(page), tablet(page), phone(page)]) {
+    await expect(shown.contentFrame().locator('[data-testid="hero"] > h1')).toBeVisible();
+    expect(await shown.contentFrame().locator('[data-testid="hero"] > *').last().evaluate((el) => el.localName)).toBe("h1");
+  }
+  expect(await changeNames(page)).toEqual(["Move · Vernier Kit"]);
+});
+
+test("edited off the canvas, dragged back into a Frame's empty space, it is put back there, free, looking as it does off the canvas, in every view; undone, it is off the canvas again", async ({ page }) => {
+  await page.evaluate(() => {
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "height: 240px; margin: 16px 0; background: #eee";
+    document.querySelector("main")!.append(board);
+  });
+  await moveTitleOff(page);
+  const opacity = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Opacity", exact: true });
+  await opacity.fill("50");
+  await opacity.press("Enter");
+  const look = await lookOf(offCanvas(page).contentFrame().locator("h1"));
+  const board = desktop(page).contentFrame().locator("#board");
+  await board.scrollIntoViewIfNeeded();
+  const area = (await board.boundingBox())!;
+  const zoom = await desktop(page).evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+
+  // Its top left 40 × 30 canvas px into the board (pressed 3 screen px inside it).
+  await dragOffTo(page, { x: area.x + 40 * zoom, y: area.y + 30 * zoom });
+
+  await expect(offCanvas(page)).toHaveCount(0);
+  for (const shown of [desktop(page), tablet(page), phone(page)]) {
+    const back = shown.contentFrame().locator("#board > h1");
+    await expect(back).toHaveText("Vernier Kit");
+    await expect(back).toHaveCSS("opacity", "0.5");
+    await expect(back).toHaveCSS("position", "absolute");
+  }
+  const back = desktop(page).contentFrame().locator("#board > h1");
+  expect(await lookOf(back)).toEqual(look);
+  const at = await back.evaluate((el) => {
+    const [r, b] = [el.getBoundingClientRect(), el.parentElement!.getBoundingClientRect()];
+    return { x: r.left - b.left, y: r.top - b.top };
+  });
+  expect(Math.abs(at.x - 40)).toBeLessThanOrEqual(2);
+  expect(Math.abs(at.y - 30)).toBeLessThanOrEqual(2);
+  // Its deletion where it was stays: it is put back new, as it is off the canvas.
+  await expect(desktop(page).contentFrame().locator("header > h1")).toBeHidden();
+  expect(await changeNames(page)).toEqual(["Delete · Vernier Kit", "Put back · Vernier Kit"]);
+
+  await page.keyboard.press(`${mod}+z`);
+  await expect(offCanvas(page)).toHaveCount(1);
+  await expect(offCanvas(page).contentFrame().locator("h1")).toHaveCSS("opacity", "0.5");
+  await expect(desktop(page).contentFrame().locator("#board > h1")).toHaveCount(0);
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+});
+
+test("a layer moved off the canvas as a copy, dragged back, is put back as a copy of it, new on the canvas", async ({ page }) => {
+  await enterEditMode(page);
+  await pan(page, 400);
+  const view = (await desktop(page).boundingBox())!;
+  await select(page, "Vernier Kit");
+  const title = desktop(page).contentFrame().locator("h1");
+  const box = (await title.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(view.x - 200, view.y + 100, { steps: 10 });
+  await page.keyboard.down("Alt");
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await expect(offCanvas(page)).toHaveCount(1);
+  await expect(badge(page)).toHaveCount(0);
+  const p = (await desktop(page).contentFrame().locator('[data-testid="hero"] > p').boundingBox())!;
+
+  await dragOffTo(page, { x: p.x, y: p.y + p.height - 6 });
+
+  await expect(desktop(page).contentFrame().locator("h1")).toHaveCount(2);
+  expect(await changeNames(page)).toEqual(["Put back · Vernier Kit"]);
 });

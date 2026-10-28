@@ -5,7 +5,20 @@
  * value now.
  */
 import { isAbsolute, relative } from "node:path";
-import { madeBy, placedAt, type Change, type Composed, type CopiedBreakpoint, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
+import {
+  madeBy,
+  movedOffBy,
+  placedAt,
+  type Change,
+  type Composed,
+  type CopiedBreakpoint,
+  type Created,
+  type Dissolved,
+  type Place,
+  type PutBack,
+  type StackSettings,
+  type Target,
+} from "./client/changeset";
 import { breakpointName, mediaOf, type Breakpoint } from "./client/breakpoints";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
@@ -57,6 +70,8 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.wrap ? [WRAP] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
+    ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
+    ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
     ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
@@ -140,6 +155,27 @@ function intent(change: Change, list: Change[]): string {
       const to = change.after as Place;
       return `Copy this layer, with all in it, and ${to.absolute ? "place" : "put"} the copy ${placement(to)}.`;
     }
+    case "putBack": {
+      const { place, layer } = change.after as PutBack;
+      const deletion = movedOffBy(list, layer.id);
+      const how = layer.origin.snippet ? "write it as its source below has it" : "write it as its look below shows it";
+      if (layer.origin.copy) {
+        return (
+          `Put a copy of this layer here, set aside off the canvas as a copy: the layer it copies stays where it is. ` +
+          `${capitalized(how)}, ${placement(place)}, as a copy of its own.`
+        );
+      }
+      if (deletion) {
+        return (
+          `Put this layer back, moved off the canvas this round (change ${deletion.id}): its code is still where it was. ` +
+          `Move that code here rather than deleting it and writing it again, ${placement(place)}.`
+        );
+      }
+      return (
+        `Put this layer back, moved off the canvas in an earlier round and deleted from the code then: ${how}, ${placement(place)}. ` +
+        "Keep the source as it is; adjust it only where the code around it has changed (its props, what it imports)."
+      );
+    }
   }
 }
 
@@ -153,10 +189,62 @@ const NO_STYLE: Record<Change["kind"], string> = {
   text: "none: only its words change",
   delete: "none: the layer goes",
   duplicate: "none: the copy is as the layer is",
+  putBack: "none: it is to look as its look shows",
 };
+
+/**
+ * Where a layer put back comes from (ADR 0009): its source as it was written
+ * when moved off the canvas, its look there, and what was edited there.
+ */
+function putBackFrom({ layer }: PutBack): string[] {
+  const { snippet } = layer.origin;
+  const source = snippet
+    ? `**Source**, as written at \`${snippet.loc}\` when it was moved off the canvas:\n\n${fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx")}`
+    : layer.origin.written
+      ? `**Source:** not kept: it could not be read at \`${layer.origin.written}\` when the layer was moved off the canvas. Write it from its look, below, as the project writes markup and styles.`
+      : "**Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.";
+  const look =
+    "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-vk-class`). " +
+    "Where its classes no longer give it this look, their rules gone with its code, give it the styles that do, as the project writes styles:\n\n" +
+    fenced(lookOf(layer.look), "html");
+  const edits = layer.edits.changes.map((edit) => `\n  - ${changeTitle(edit)} of ${layerName(edit)} (\`${edit.target.context.element}\`): ${intent(edit, layer.edits.changes)}`);
+  return [source, look, ...(edits.length ? [`**Edited off the canvas:** give it these too, as the designer made them there:${edits.join("")}`] : [])];
+}
+
+/** A deletion that moved a layer off the canvas this round, and put it back this round too: the code moves, rather than going. */
+function putBackIn(change: Change, list: Change[]): string[] {
+  const back = change.offCanvas && list.find((c) => c.kind === "putBack" && (c.after as PutBack).layer.id === change.offCanvas);
+  return back ? [`**Put back:** the layer was moved off the canvas and is put back in change ${back.id}. Do not delete its code: move it to where change ${back.id} puts it.`] : [];
+}
+
+/**
+ * A frozen look as the notes give it: its markup and its own styles, not the
+ * page's stylesheets and fonts it loaded only to look as the page does.
+ */
+function lookOf(look: string): string {
+  return (
+    look
+      .replace(/^<!DOCTYPE[^>]*>/i, "")
+      // What lays the document out around it, and orders the editor's own styles.
+      .replace(/<style data-vk-(look-styles="base"|edit-styles="order")>[^<]*<\/style>/g, "")
+      .replace(/@import url\("(?:[^"\\]|\\.)*"\) layer\(page\);/g, "")
+      .replace(/@font-face\s*\{[^}]*\}/g, "")
+      .trim()
+  );
+}
+
+/** `code` as a fenced block, inside a list item. */
+function fenced(code: string, language: string): string {
+  return ["```" + language, ...code.split("\n"), "```"].map((line) => `  ${line}`).join("\n");
+}
 
 /** A layer a change makes, as its Layer line names it; null for a change to a layer that is there. */
 function newLayerIn(change: Change): string | null {
+  if (change.kind === "putBack") {
+    const { place, layer } = change.after as PutBack;
+    const { context } = layer.origin.target;
+    return `${context.path.at(-1)}, \`${context.element}\`, moved off the canvas, put back in ${container(place)}`;
+  }
   if (change.kind === "stack" && (change.after as Composed).place) return `a new Stack, in ${container((change.after as Composed).place!)}`;
   if (change.kind !== "create") return null;
   const { type, place } = change.after as Created;
@@ -188,7 +276,7 @@ function sketch(change: Change, list: Change[]): string[] {
     const place = placedAt(c);
     if (c.kind === "stack" || place?.container.layer !== change.layer) return [];
     const made = c.kind === "create" ? (c.after as Created) : null;
-    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : "a copy"})`;
+    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
     let where = `${ordinal(place.nth)} in its layout`;
     if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
     const fixed = (size: Size | undefined) => (size?.type === "fixed" ? size.value : null);

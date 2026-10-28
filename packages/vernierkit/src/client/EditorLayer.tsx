@@ -4,7 +4,7 @@ import type { OffCanvasLayer, RoundStatus, SavedRound } from "../service-protoco
 import { ENTER_MARK } from "./CanvasView";
 import { ChangeList } from "./ChangeList";
 import type { ProjectBreakpoints } from "./breakpoints";
-import { withDependents, type Change } from "./changeset";
+import { putBackBy, withDependents, type Change } from "./changeset";
 import { checkChange, pageAt } from "./check";
 import { Icon } from "./icons";
 import { revertSaved } from "./saved-round";
@@ -23,10 +23,17 @@ interface ListStep {
   offCanvasAfter: OffCanvasLayer[];
 }
 
-/** The layers off the canvas but those `changes` moved out: taking a move out back puts the layer back on the canvas instead. */
-function withoutMovedOut(layers: OffCanvasLayer[], changes: Change[]): OffCanvasLayer[] {
+/**
+ * The layers off the canvas once `changes` are taken back: but those they
+ * moved out, which are back on the canvas instead; and with those they put
+ * back, which are off it again, as they were, unless moved out by them too.
+ */
+function offCanvasWithout(layers: OffCanvasLayer[], changes: Change[]): OffCanvasLayer[] {
   const out = new Set(changes.map((change) => change.offCanvas));
-  return layers.some((layer) => out.has(layer.id)) ? layers.filter((layer) => !out.has(layer.id)) : layers;
+  const known = new Set(layers.map((layer) => layer.id));
+  const back = putBackBy(changes).filter((layer) => !out.has(layer.id) && !known.has(layer.id));
+  if (!back.length && !layers.some((layer) => out.has(layer.id))) return layers;
+  return [...layers.filter((layer) => !out.has(layer.id)), ...back];
 }
 
 /**
@@ -127,14 +134,23 @@ export function EditorLayer() {
   };
   const saveOffCanvas = (layers: OffCanvasLayer[]) => {
     setOffCanvas(layers);
-    store?.saveOffCanvas(layers).catch((error: unknown) => console.warn(error));
+    return (
+      store?.saveOffCanvas(layers).catch((error: unknown) => {
+        console.warn(error);
+        return {};
+      }) ?? Promise.resolve({})
+    );
   };
-  /** From the change list. With no canvas up, the saved canvas is changed and saved at once; a layer it moved off the canvas is back on it, and so no longer off it. */
+  /**
+   * From the change list. With no canvas up, the saved canvas is changed and
+   * saved at once; a layer it moved off the canvas is back on it, and so no
+   * longer off it; one it put back is off it again.
+   */
   const revert = (id: number) => {
     if (control.current) control.current.revert(id);
     else if (round && offCanvas) {
       const next = revertSaved(round, id);
-      const outside = withoutMovedOut(offCanvas, withDependents(round.changeSet.changes, id));
+      const outside = offCanvasWithout(offCanvas, withDependents(round.changeSet.changes, id));
       listSteps.current.past.push({ before: round, after: next, offCanvasBefore: offCanvas, offCanvasAfter: outside });
       listSteps.current.future = [];
       save(next);
@@ -159,7 +175,7 @@ export function EditorLayer() {
     setListOpen(false);
     if (control.current) control.current.discard();
     else if (offCanvas && round) {
-      const outside = withoutMovedOut(offCanvas, round.changeSet.changes);
+      const outside = offCanvasWithout(offCanvas, round.changeSet.changes);
       if (outside !== offCanvas) saveOffCanvas(outside);
     }
     setLive(null);

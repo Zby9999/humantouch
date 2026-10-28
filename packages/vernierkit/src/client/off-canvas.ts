@@ -35,6 +35,8 @@ export interface Aside {
   readonly origin: OffCanvasOrigin;
   /** The layer itself, as its editor's layers are now; null when it has none. */
   layer(): Layer | null;
+  /** It as it is now, to keep, or to put back onto the canvas by. */
+  keep(): OffCanvasLayer;
 }
 
 export interface OffCanvas {
@@ -46,6 +48,8 @@ export interface OffCanvas {
   find(id: string): Aside | null;
   /** A new layer off the canvas, the look of `el` frozen, its top left at `at`; not there until `put`. */
   moveOut(el: Element, at: { x: number; y: number }, origin: OffCanvasOrigin): Aside;
+  /** One kept, `layer`, shown again as it was kept; not there until `put`. */
+  bring(layer: OffCanvasLayer): Aside;
   /** Puts it there; or back, as it was when taken away. */
   put(aside: Aside): void;
   /** Takes it away: no longer there, nor kept. */
@@ -110,6 +114,7 @@ export function createOffCanvas(host: HTMLElement, saved: OffCanvasLayer[], hist
       changes,
       origin,
       layer: () => editor.tree().root.children[0] ?? null,
+      keep: () => ({ id, x: aside.x, y: aside.y, look: serializeLook(doc), origin, edits: changes.save() }),
       iframe,
       there: false,
       fitWidth,
@@ -127,16 +132,16 @@ export function createOffCanvas(host: HTMLElement, saved: OffCanvasLayer[], hist
   };
   const shown = (aside: Aside) => all.find((a) => a === aside) ?? null;
 
-  for (const layer of saved) {
-    const aside = show(layer.id, layer.x, layer.y, layer.origin, layer.edits, (iframe) => {
+  /** Shows `layer`, as kept. */
+  const bring = (layer: OffCanvasLayer) =>
+    show(layer.id, layer.x, layer.y, structuredClone(layer.origin), layer.edits, (iframe) => {
       const doc = iframe.contentDocument!;
       doc.open();
       doc.write(layer.look);
       doc.close();
       editable(doc);
     });
-    put(aside);
-  }
+  for (const layer of saved) put(bring(layer));
 
   function put(aside: Shown) {
     aside.there = true;
@@ -153,6 +158,7 @@ export function createOffCanvas(host: HTMLElement, saved: OffCanvasLayer[], hist
     moveOut(el, at, origin) {
       return show(crypto.randomUUID(), at.x, at.y, origin, null, (iframe) => freezeLook(el, iframe));
     },
+    bring,
     put(aside) {
       const found = shown(aside);
       if (found) put(found);
@@ -170,10 +176,7 @@ export function createOffCanvas(host: HTMLElement, saved: OffCanvasLayer[], hist
       moveTo(found, x, y);
       changed();
     },
-    save: () =>
-      all
-        .filter((aside) => aside.there)
-        .map((aside) => ({ id: aside.id, x: aside.x, y: aside.y, look: serializeLook(aside.document), origin: aside.origin, edits: aside.changes.save() })),
+    save: () => all.filter((aside) => aside.there).map((aside) => aside.keep()),
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

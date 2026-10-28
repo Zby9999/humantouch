@@ -112,6 +112,69 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
   editable(doc);
 }
 
+/** On the layer itself, put back onto the canvas, what places it is its place's, not its look's. */
+const PLACING = new Set(["position", "top", "right", "bottom", "left", "float", "z-index"]);
+
+/**
+ * A copy of `source`, a layer off the canvas, for `doc`, the canvas, to put
+ * it back by (ADR 0009): its marks of where it is written kept, those of the
+ * editor off the canvas not, and what was deleted there left out. Each
+ * element of it is keyed by its place in it (`LOOK_ATTR`). `pairs`: each
+ * element of the copy with the one it copies, outermost first.
+ */
+export function copyLook(source: Element, doc: Document): { copy: Element; pairs: [Element, Element][] } {
+  const copy = doc.importNode(source, true) as Element;
+  const sources = [source, ...source.querySelectorAll("*")];
+  const copies = [copy, ...copy.querySelectorAll("*")];
+  const pairs: [Element, Element][] = [];
+  copies.forEach((to, i) => {
+    if (!copy.contains(to)) return;
+    if (to.hasAttribute(DELETED_ATTR) || DROPPED.has(to.localName)) {
+      to.remove();
+      return;
+    }
+    for (const attr of [...to.attributes]) if (attr.name === "style" || (attr.name.startsWith("data-vk-") && !KEPT.has(attr.name) && attr.name !== CLASS_ATTR)) to.removeAttribute(attr.name);
+    to.setAttribute(LOOK_ATTR, String(pairs.length));
+    pairs.push([sources[i], to]);
+  });
+  return { copy, pairs };
+}
+
+/**
+ * Gives each copy in `pairs`, in place on the canvas, the look of the layer
+ * off it that it copies: whatever it shows otherwise, from its container
+ * there and the page's styles, as the layer off the canvas shows it,
+ * outermost first, so each inherits as it did there. The layer itself is
+ * given all of its style, so what it inherits stays so in every view, where
+ * its container may differ at another width. Its size as frozen:
+ * Fixed in px, the rest following the content. `write` gives a copy its look;
+ * returns what shows their `::before` and `::after`, the copies told apart
+ * by `scope`, a selector for them all.
+ */
+export function matchLook(pairs: [Element, Element][], scope: string, write: (el: Element, style: Record<string, string>) => void): string {
+  const rules: string[] = [];
+  pairs.forEach(([source, copy], i) => {
+    const style = getComputedStyle(source);
+    const want = valuesOf(style);
+    const has = valuesOf(getComputedStyle(copy));
+    const declared: Record<string, string> = {};
+    for (const [name, value] of want) {
+      if (name === "width" || name === "height" || (i === 0 && PLACING.has(name))) continue;
+      if (i === 0 || has.get(name) !== value) declared[name] = value;
+    }
+    write(copy, { ...declared, ...sizeOf(source, style, i === 0) });
+    for (const pseudo of ["before", "after"] as const) {
+      const shown = getComputedStyle(source, `::${pseudo}`);
+      if (/^(none|normal)$/.test(shown.content)) continue;
+      const now = valuesOf(getComputedStyle(copy, `::${pseudo}`));
+      const differs: Record<string, string> = {};
+      for (const [name, value] of valuesOf(shown)) if (now.get(name) !== value) differs[name] = value;
+      rules.push(rule(`${scope}[${LOOK_ATTR}="${copy.getAttribute(LOOK_ATTR)}"]::${pseudo}`, differs));
+    }
+  });
+  return rules.join("");
+}
+
 /**
  * A frozen look, edits and all, as an HTML document to keep. The look as it
  * was frozen stays apart from the edits made since: in its own style element,

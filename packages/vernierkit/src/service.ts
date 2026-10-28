@@ -12,6 +12,7 @@ import { existsSync, unwatchFile, watchFile } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { PutBack } from "./client/changeset";
 import { readProjectBreakpoints } from "./project-breakpoints";
 import { snippetAt } from "./source-snippet";
 import {
@@ -24,6 +25,7 @@ import {
   UNLOCK_PATH,
   type CheckReport,
   type OffCanvasLayer,
+  type OffCanvasSaved,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -105,6 +107,15 @@ export async function startService({ root }: { root: string }): Promise<Service>
         if ((await status()).status === "claimed") return send(res, 409);
         const round = JSON.parse(body) as SavedRound;
         if (typeof round.canvas !== "string" || !Array.isArray(round.changeSet?.changes)) return send(res, 400);
+        // A layer put back goes with the JSX that wrote it, as kept off the canvas, when the editor layer has not heard it yet.
+        const unheard = round.changeSet.changes.filter((change) => change.kind === "putBack" && (change.after as PutBack).layer.origin.snippet === undefined);
+        if (unheard.length) {
+          const kept = new Map((await readOffCanvas(files)).map((layer) => [layer.id, layer.origin.snippet]));
+          for (const change of unheard) {
+            const { origin, id } = (change.after as PutBack).layer;
+            origin.snippet = kept.get(id) ?? (origin.written ? await snippetAt(root, origin.written) : null);
+          }
+        }
         await mkdir(files.dir, { recursive: true });
         await writeAtomically(files.canvas, round.canvas);
         await writeAtomically(files.changeSet, `${JSON.stringify(round.changeSet, null, 2)}\n`);
@@ -160,7 +171,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
           else if (layer.origin.snippet === undefined) layer.origin.snippet = layer.origin.written ? await snippetAt(root, layer.origin.written) : null;
         }
         await writeOffCanvas(files, layers);
-        return send(res, 204);
+        // The editor layer keeps each with its layer: it goes with it when put back, and comes back with it when that is undone.
+        return send(res, 200, JSON.stringify({ snippets: Object.fromEntries(layers.map((layer) => [layer.id, layer.origin.snippet ?? null])) } satisfies OffCanvasSaved));
       }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);

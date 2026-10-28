@@ -1,5 +1,5 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
-import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
+import type { Change, Composed, Created, Place, PutBack, StackSettings } from "./client/changeset";
 import type { Align, Fill, Padding, Radius, Size } from "./client/edits";
 
 const PROPERTIES: Record<string, string> = {
@@ -59,6 +59,8 @@ export function kindTitle(change: Change): string {
       return "Delete";
     case "duplicate":
       return "Duplicate";
+    case "putBack":
+      return "Put back";
   }
 }
 
@@ -88,6 +90,10 @@ export function changeValues(change: Change): string {
   if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
   const name = (place: Place) => place.container.target.context.path.at(-1);
   if (change.kind === "delete") return `from ${name(change.before as Place)}`;
+  if (change.kind === "putBack") {
+    const to = (change.after as PutBack).place;
+    return to.absolute ? `at X ${to.absolute.x}px, Y ${to.absolute.y}px in ${name(to)}` : `in ${name(to)}, ${ordinal(to.nth)}`;
+  }
   if (change.kind === "duplicate") {
     const to = change.after as Place;
     return to.absolute ? `copy at X ${to.absolute.x}px, Y ${to.absolute.y}px in ${name(to)}` : `copy in ${name(to)}, ${ordinal(to.nth)}`;
@@ -124,7 +130,9 @@ export function ordinal(n: number): string {
 }
 
 /** The name of the layer a change is made to, as the layer tree showed it. */
-export function layerName({ target }: Change): string {
+export function layerName({ kind, target, after }: Change): string {
+  // Put back, it is the layer that was off the canvas, not the container it goes into.
+  if (kind === "putBack") target = (after as PutBack).layer.origin.target;
   return target.context.path.at(-1) ?? "Layer";
 }
 

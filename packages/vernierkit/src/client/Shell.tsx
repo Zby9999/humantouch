@@ -1,10 +1,10 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
-import type { OffCanvasLayer, SavedRound } from "../service-protocol";
+import type { OffCanvasLayer, OffCanvasSaved, SavedRound } from "../service-protocol";
 import { CanvasView, isEditable, type Tool } from "./CanvasView";
 import { Icon } from "./icons";
-import { createChangeSet, withDependents, type Change, type ChangeSet } from "./changeset";
+import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
 import { createEditor, createHistory, type Destination, type Editor } from "./edits";
 import { createOffCanvas, type Aside, type OffCanvas } from "./off-canvas";
@@ -39,8 +39,8 @@ interface Props {
   breakpoints: ProjectBreakpoints | null;
   /** The round, saved a moment after the last edit; null once it has no changes left. */
   onSave(round: SavedRound | null): void;
-  /** The layers off the canvas, saved with the round, though no part of it. */
-  onSaveOffCanvas(layers: OffCanvasLayer[]): void;
+  /** The layers off the canvas, saved with the round, though no part of it. Answers with the JSX that writes each, as kept. */
+  onSaveOffCanvas(layers: OffCanvasLayer[]): Promise<OffCanvasSaved["snippets"]>;
   /** The round's changes, right after each edit. */
   onChanges(changes: Change[]): void;
   /** Set once there is a canvas, for the change list to reach it. */
@@ -144,7 +144,13 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const json = JSON.stringify(layers);
     if (json === savedOutside.current) return;
     savedOutside.current = json;
-    latestOnSaveOffCanvas.current(layers);
+    // Each keeps the JSX that writes it as the source had it: put back, it goes with it, though the source has it no more.
+    void latestOnSaveOffCanvas.current(layers).then((snippets) => {
+      for (const [id, snippet] of Object.entries(snippets)) {
+        const outside = offCanvas.find(id);
+        if (outside && outside.origin.snippet === undefined) outside.origin.snippet = snippet;
+      }
+    });
   };
   // Leaving edit mode saves at once, while the canvas is still there to save.
   useEffect(() => {
@@ -217,7 +223,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const moveOff = (layer: Layer, view: View, at: { x: number; y: number }, copy: boolean) => {
     if (!editor || !offCanvas || !editor.canRemove(layer)) return;
     const own = editor.ownElement(layer);
-    const outside = offCanvas.moveOut(view.elementOf(own.el) ?? own.el, at, { ...editor.whereIs(own), at: new Date().toISOString() });
+    const outside = offCanvas.moveOut(view.elementOf(own.el) ?? own.el, at, { ...editor.whereIs(own), ...(copy && { copy: true as const }), at: new Date().toISOString() });
     editor.batch(() => {
       if (!copy) editor.remove(own, { offCanvas: outside.id });
       editor.along(() => offCanvas.put(outside), () => offCanvas.take(outside), itself(outside));
@@ -234,6 +240,25 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const [fromX, fromY] = [outside.x, outside.y];
     editor.along(() => offCanvas.place(outside, x, y), () => offCanvas.place(outside, fromX, fromY), itself(outside));
     onEdit();
+  };
+  /**
+   * A layer off the canvas let go over a view, at `to` there (ADR 0009): it is
+   * back on the canvas, every view alike, and selected; off it, it is no more.
+   */
+  const putBack = (outside: Aside, to: Destination) => {
+    const layer = outside.layer();
+    if (!editor || !offCanvas || !layer) return;
+    let back: Layer | null = null;
+    editor.batch(() => {
+      back = editor.putBack({ el: layer.el, kept: outside.keep() }, to);
+      editor.along(
+        () => offCanvas.take(outside),
+        () => offCanvas.put(outside),
+        itself(outside),
+      );
+    });
+    onEdit();
+    select(back ? [back] : []);
   };
   /** ⌘D: each layer copied right after it, the copies selected. A layer off the canvas itself is not copied. */
   const duplicate = (layers: Layer[]) => {
@@ -400,27 +425,40 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           setTree(editor.tree());
           setEditor(editor);
           setOffCanvas(outside);
-          /** The layers off the canvas that `changes` moved there: taking those back puts the layer back on the canvas instead. */
-          const movedOut = (changes: Change[]) => changes.map((change) => change.offCanvas && outside.find(change.offCanvas)).filter((found) => !!found);
+          /**
+           * Taking `changes` back: the layers they moved off the canvas are back on it, and so no longer off it;
+           * those they put back onto it are off it again, as they were, unless moved off by them too.
+           */
+          const offAgain = (changes: Change[]) => {
+            const out = new Set(changes.map((change) => change.offCanvas).filter((id) => id !== undefined));
+            return {
+              taken: [...out].map((id) => outside.find(id)).filter((found) => found !== null),
+              setAside: putBackBy(changes)
+                .filter((kept) => !out.has(kept.id))
+                .map((kept) => outside.find(kept.id) ?? outside.bring(kept)),
+            };
+          };
           control.current = {
             revert(id) {
-              const taken = movedOut(withDependents(changeSet.list(), id));
+              const { taken, setAside } = offAgain(withDependents(changeSet.list(), id));
               let reverted = false;
               editor.batch(() => {
                 reverted = !!editor.revert(id);
                 for (const found of taken) editor.along(() => outside.take(found), () => outside.put(found));
+                for (const found of setAside) editor.along(() => outside.put(found), () => outside.take(found));
               });
-              if (reverted || taken.length) latest.current.onEdit();
+              if (reverted || taken.length || setAside.length) latest.current.onEdit();
             },
             discard() {
-              const taken = movedOut(changeSet.list());
+              const { taken, setAside } = offAgain(changeSet.list());
               for (const change of changeSet.list()) editor.revert(change.id);
+              for (const found of setAside) outside.put(found);
               for (const found of taken) outside.take(found);
               clearTimeout(pendingSave.current);
               pendingSave.current = undefined;
               round.current = null;
-              // The round goes; the layers off the canvas stay, but those it moved out.
-              if (taken.length) saveOffCanvas(outside);
+              // The round goes; the layers off the canvas stay, but those it moved out, and those it put back are there again.
+              if (taken.length || setAside.length) saveOffCanvas(outside);
               edited(undefined);
             },
           };
@@ -428,6 +466,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         offCanvas={offCanvas}
         onMoveOff={moveOff}
         onPlaceOff={placeOff}
+        onPutBack={putBack}
         tree={tree}
         selected={selected}
         hideSelection={adjusting}

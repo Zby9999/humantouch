@@ -52,8 +52,10 @@ const saved = () => JSON.parse(readFileSync(join(root, ".vernier/off-canvas.json
 describe("layers off the canvas, in the local service", () => {
   test("are kept in .vernier/, each with the JSX that writes it as the source had it when first saved", async () => {
     expect((await call("GET", OFF_CANVAS_PATH)).status).toBe(204);
-    expect((await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", "src/App.tsx:4:7")] })).status).toBe(204);
+    const answer = await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", "src/App.tsx:4:7")] });
 
+    // The editor layer is told too, to keep it with the layer wherever it goes.
+    expect(await answer.json()).toEqual({ snippets: { a: { loc: "src/App.tsx:4:7", code: '<h1 className="text-4xl">Hello</h1>' } } });
     expect(saved()[0].origin.snippet).toEqual({ loc: "src/App.tsx:4:7", code: '<h1 className="text-4xl">Hello</h1>' });
     // The Agent deletes it from the source; the snippet stays as it was.
     writeFileSync(join(root, "src/App.tsx"), APP.replace(/ *<h1.*\n/, ""));
@@ -76,11 +78,22 @@ describe("layers off the canvas, in the local service", () => {
     await call("PUT", ROUND_PATH, { canvas: "<html></html>", changeSet: { lastId: 1, changes: [] } });
     const folder = vernierFolder(root);
     await writeState(folder, { status: "claimed", done: [] });
-    expect((await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", null)] })).status).toBe(204);
+    expect((await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", null)] })).status).toBe(200);
 
     await archiveRound(folder, "finished");
 
     expect(existsSync(folder.changeSet)).toBe(false);
     expect(saved().map((l) => l.id)).toEqual(["a"]);
+  });
+
+  test("a layer put back carries its snippet into the round, as kept off the canvas when the editor layer had not heard it yet", async () => {
+    await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", "src/App.tsx:4:7")] });
+    writeFileSync(join(root, "src/App.tsx"), APP.replace(/ *<h1.*\n/, ""));
+    const putBack = { id: 1, kind: "putBack", layer: "3", property: "put back", after: { place: null, layer: layer("a", "src/App.tsx:4:7") } };
+
+    await call("PUT", ROUND_PATH, { canvas: "<html></html>", changeSet: { lastId: 1, changes: [putBack] } });
+
+    const changes = JSON.parse(readFileSync(join(root, ".vernier/changeset.json"), "utf8")).changes;
+    expect(changes[0].after.layer.origin.snippet).toEqual({ loc: "src/App.tsx:4:7", code: '<h1 className="text-4xl">Hello</h1>' });
   });
 });

@@ -11,6 +11,7 @@ import {
   UNLOCK_PATH,
   type CheckReport,
   type OffCanvasLayer,
+  type OffCanvasSaved,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -34,8 +35,8 @@ export interface RoundStore {
   breakpoints(): Promise<ProjectBreakpoints | null>;
   /** The layers off the canvas, kept apart from any round (ADR 0009). */
   loadOffCanvas(): Promise<OffCanvasLayer[]>;
-  /** Keeps the layers off the canvas, all of them. */
-  saveOffCanvas(layers: OffCanvasLayer[]): Promise<void>;
+  /** Keeps the layers off the canvas, all of them. Answers with the JSX that writes each, as kept. */
+  saveOffCanvas(layers: OffCanvasLayer[]): Promise<OffCanvasSaved["snippets"]>;
 }
 
 /** The store the dev server set up for this page, or null when it set up none. */
@@ -100,7 +101,7 @@ export function connectRoundStore(): RoundStore | null {
     saveOffCanvas(layers) {
       const next = savingOffCanvas.then(() => request("PUT", { path: OFF_CANVAS_PATH, body: JSON.stringify({ layers }) }));
       savingOffCanvas = next.catch(() => {});
-      return next.then(() => {});
+      return next.then(async (response) => (response.status === 200 ? ((await response.json()) as OffCanvasSaved).snippets : {}));
     },
   };
 }

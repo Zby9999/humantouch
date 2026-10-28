@@ -20,22 +20,27 @@ export interface Drop {
  * Where a dragged layer would go: into the Stack or Frame under the pointer
  * that can take it, outside the layer itself. A Stack or Frame beside the
  * layer is entered from its middle only; near its edges, the pointer is still
- * in the layout around it, so the layer goes beside it. All as `view` lays it
- * out, in its px: `box`, the layer where it is dragged to; `rectOf`, where a
- * layer was laid out before anything shifted.
+ * in the layout around it, so the layer goes beside it. `layer` null: a layer
+ * off the canvas, coming back onto it (ADR 0009), which goes into the deepest
+ * that can hold it. All as `view` lays it out, in its px: `box`, the layer
+ * where it is dragged to; `rectOf`, where a layer was laid out before anything shifted.
  */
 export function findDrop(
   editor: Editor,
   view: View,
-  layer: Layer,
+  layer: Layer | null,
   point: { x: number; y: number },
   box: DOMRect,
   rectOf: (layer: Layer) => DOMRect,
 ): Drop | null {
-  const home = layer.parent!;
+  const home = layer?.parent ?? null;
   const el = (layer: Layer) => view.elementOf(layer.el) ?? layer.el;
-  let container = view.layerAt(editor.tree(), point.x, point.y, layer);
+  let container = view.layerAt(editor.tree(), point.x, point.y, layer ?? undefined);
   for (; container; container = container.parent) {
+    if (!layer) {
+      if (editor.canHold(container)) break;
+      continue;
+    }
     if (!editor.canDrop(layer, container)) continue;
     if (container.parent === home && !inMiddle(rectOf(container), point)) continue;
     break;
@@ -45,7 +50,7 @@ export function findDrop(
   const area = rectOf(container);
   if (container.kind === "frame") {
     // Placed where it is let go: its left and top in the Frame, margins aside.
-    const margins = layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(el(layer));
+    const margins = !layer || layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(el(layer));
     const x = box.left - area.left - el(container).clientLeft - parseFloat(margins.marginLeft);
     const y = box.top - area.top - el(container).clientTop - parseFloat(margins.marginTop);
     return { to: { parent: container, x: Math.round(x), y: Math.round(y) }, line: null, shifts: new Map() };
@@ -71,14 +76,14 @@ export function findDrop(
       if (!child.text) shifts.set(child.el, stack.direction === "horizontal" ? { x: by, y: 0 } : { x: 0, y: by });
     }
   };
-  const homeFlow = home.children.filter((child) => !child.absolute);
-  const was = homeFlow.indexOf(layer);
+  const homeFlow = home?.children.filter((child) => !child.absolute) ?? [];
+  const was = layer ? homeFlow.indexOf(layer) : -1;
   if (container === home && was >= 0) {
     if (n < was) shift(flow.slice(n, was), container, room(container));
     else shift(flow.slice(was, n), container, -room(container));
   } else {
     shift(flow.slice(n), container, room(container));
-    if (was >= 0 && home.kind === "stack") shift(homeFlow.slice(was + 1), home, -room(home));
+    if (was >= 0 && home!.kind === "stack") shift(homeFlow.slice(was + 1), home!, -room(home!));
   }
 
   const gap = gapOf(container, el(container));

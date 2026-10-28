@@ -9,6 +9,8 @@ import {
   changesOn,
   copyRules,
   declare,
+  lookRules,
+  PUT_BACK_ATTR,
   DELETED_ATTR,
   elementsOf,
   keepOriginal,
@@ -24,6 +26,7 @@ import {
 import { layerName } from "../design-values";
 import { breakpointKey } from "./breakpoints";
 import type { Change, CopiedBreakpoint, Created, Place } from "./changeset";
+import { copyLook, matchLook } from "./look";
 import { holdAbsolute, releaseAbsolute, slotsOf } from "./moves";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -72,6 +75,40 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
     declare(copy, style);
     containers[i].insertBefore(copy, slotsOf(containers[i])[place.slot] ?? null);
   });
+  if (place.absolute) holdAbsolute(containers);
+}
+
+/**
+ * Puts `source`, a layer off the canvas, back onto it (ADR 0009) as the layer
+ * with id `id`, new this round, at `place`, in each instance of its
+ * container, with `style`: looking as it does off the canvas, at every width.
+ */
+export function insertPutBack(doc: Document, id: string, source: Element, place: Place, style: Record<string, string>) {
+  const containers = elementsOf(doc, place.container.layer);
+  let pseudos: string | null = null;
+  for (const container of containers) {
+    const { copy, pairs } = copyLook(source, doc);
+    // Written in the JSX its container is written in, as it is put back there.
+    const chain = container.getAttribute(CHAIN_ATTR);
+    for (const [, el] of pairs) {
+      el.setAttribute(MADE_ATTR, id);
+      if (chain) el.setAttribute(CHAIN_ATTR, chain);
+      else el.removeAttribute(CHAIN_ATTR);
+    }
+    copy.setAttribute(LAYER_ID_ATTR, id);
+    container.insertBefore(copy, slotsOf(container)[place.slot] ?? null);
+    const css = matchLook(pairs, `[${MADE_ATTR}="${CSS.escape(id)}"]`, lookRules);
+    declare(copy, style);
+    pseudos ??= css;
+  }
+  // Its own, though a layer with its id was put back before and taken off since: the sheet goes once the canvas is saved without it.
+  let sheet = doc.head.querySelector(`style[${PUT_BACK_ATTR}="${CSS.escape(id)}"]`);
+  if (pseudos && !sheet) {
+    sheet = doc.createElement("style");
+    sheet.setAttribute(PUT_BACK_ATTR, id);
+    doc.head.append(sheet);
+  }
+  if (sheet) sheet.textContent = pseudos ?? "";
   if (place.absolute) holdAbsolute(containers);
 }
 

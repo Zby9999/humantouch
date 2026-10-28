@@ -524,6 +524,74 @@ describe("claim, new layers, words, deleting and copying", () => {
   });
 });
 
+describe("claim, layers off the canvas put back", () => {
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });
+  const title = { ...list, loc: "src/App.tsx:21:9", context: { path: ["Page", "App", "Stack", "Title"], element: '<h1 class="text-4xl font-bold">' } };
+  const snippet = { loc: "src/App.tsx:21:9", code: '<h1 className="text-4xl font-bold">\n  Vernier Kit\n</h1>' };
+  const look =
+    '<!DOCTYPE html><html><head><style data-vk-edit-styles="order">@layer vernierkit-edits;</style><style data-vk-look-styles="base">html,body{margin:0}</style>' +
+    '<style data-vk-look-styles="">@import url("http://localhost:5173/src/index.css") layer(page);@font-face{font-family:"Inter";src:url("data:font/woff2;base64,AAAA")}' +
+    '@font-face { font-family: "Space Grotesk"; src: url("http://localhost:5173/space-grotesk.woff2") format("woff2"); }[data-vk-look="0"]{font-size:36px;font-weight:700}</style></head>' +
+    '<body><h1 data-vk-loc="src/App.tsx:21:9" data-vk-class="text-4xl font-bold" data-vk-look="0">Vernier Kit</h1></body></html>';
+  const opacity = { ...redFill, id: 1, layer: "1", target: { ...title, context: { path: ["Title"], element: '<h1 class="text-4xl font-bold">' } }, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
+  const kept = (more: object = {}) => ({
+    id: "a1",
+    x: -400,
+    y: 0,
+    look,
+    origin: { target: title, place: place(1), written: "src/App.tsx:21:9", snippet, at: "2026-10-29T00:00:00.000Z" },
+    edits: { lastId: 1, changes: [opacity] },
+    ...more,
+  });
+  const putBack = (id: number, after: object) => ({ ...redFill, id, kind: "putBack", layer: String(10 + id), target: list, property: "put back", before: null, after, style: {}, sources: [] });
+
+  test("a layer put back is written back from its source as it was, where it goes, with its look and what was edited off the canvas", async () => {
+    saveRound(putBack(1, { place: place(3), layer: kept() }));
+
+    const output = section((await cli("claim")).output, 1);
+
+    expect(output).toMatch(/^1\. Put back\n/);
+    expect(output).toContain("- **Layer:** Title, `<h1 class=\"text-4xl font-bold\">`, moved off the canvas, put back in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`)\n");
+    expect(output).toContain(
+      "- **Design intent:** Put this layer back, moved off the canvas in an earlier round and deleted from the code then: write it as its source below has it, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 3rd layer. Keep the source as it is; adjust it only where the code around it has changed (its props, what it imports).\n",
+    );
+    expect(output).toContain("- **Source**, as written at `src/App.tsx:21:9` when it was moved off the canvas:\n\n  ```tsx\n  <h1 className=\"text-4xl font-bold\">\n    Vernier Kit\n  </h1>\n  ```\n");
+    expect(output).toContain("- **Look**, as it was off the canvas, every style it had written onto it");
+    expect(output).toContain('[data-vk-look="0"]{font-size:36px;font-weight:700}');
+    // Not the page's stylesheets and fonts, which it only loaded from.
+    expect(output).not.toMatch(/@import|@font-face|base64|vernierkit-edits;|margin:0/);
+    expect(output).toContain("- **Reference style:** none: it is to look as its look shows\n");
+    expect(output).toContain("- **Edited off the canvas:** give it these too, as the designer made them there:\n  - Opacity of Title (`<h1 class=\"text-4xl font-bold\">`): Change the opacity from 100% to 50%.\n");
+  });
+
+  test("moved off and put back in the same round, its code is there still: it is moved, not deleted and written again; a layer whose source was not kept is written from its look", async () => {
+    saveRound(
+      { ...redFill, id: 1, kind: "delete", layer: "9", target: title, property: "delete", before: place(1), after: null, style: { display: "none" }, offCanvas: "a1" },
+      putBack(2, { place: place(3, { x: 12, y: 8 }), layer: kept() }),
+      putBack(3, { place: place(2), layer: kept({ id: "b2", origin: { target: title, place: null, written: null, snippet: null, at: "2026-10-29T00:00:00.000Z" }, edits: { lastId: 0, changes: [] } }) }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Put back:** the layer was moved off the canvas and is put back in change 2. Do not delete its code: move it to where change 2 puts it.\n");
+    expect(section(output, 2)).toContain("moved off the canvas this round (change 1): its code is still where it was. Move that code here rather than deleting it and writing it again, absolute in Stack");
+    expect(section(output, 3)).toContain("- **Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.\n");
+    expect(section(output, 3)).not.toContain("Edited off the canvas");
+  });
+
+  test("a copy set aside off the canvas, put back, is written as a copy: the layer it copies stays", async () => {
+    saveRound(putBack(1, { place: place(2), layer: kept({ origin: { target: title, place: place(1), written: "src/App.tsx:21:9", snippet, copy: true, at: "2026-10-29T00:00:00.000Z" } }) }));
+
+    const output = section((await cli("claim")).output, 1);
+
+    expect(output).toContain(
+      "- **Design intent:** Put a copy of this layer here, set aside off the canvas as a copy: the layer it copies stays where it is. Write it as its source below has it, in the layout of Stack",
+    );
+    expect(output).not.toContain("deleted");
+  });
+});
+
 describe("claim, where each value comes from", () => {
   const rule = { kind: "rule", important: false, className: null };
 

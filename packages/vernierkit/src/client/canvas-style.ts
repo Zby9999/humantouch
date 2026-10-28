@@ -179,6 +179,16 @@ export function copyRules(doc: Document, copy: Element) {
 }
 
 /**
+ * Gives `el`, an element new on the canvas, a look of its own: `style`, at
+ * every width, as a copy has the look of what it copies; edits win over it.
+ */
+export function lookRules(el: Element, style: Record<string, string>) {
+  keepOriginal(el);
+  el.removeAttribute(STYLE_KEY_ATTR);
+  writeRules(el, { lifted: {}, copied: { base: { style }, at: [] }, edits: { base: { style: {} }, at: [] } });
+}
+
+/**
  * A canvas saved before edits went into the edit styles had them in the style
  * attribute, as important declarations over the page's: they move into the
  * edit styles, and the style attribute is as the page wrote it again.
@@ -218,10 +228,16 @@ export function orderEditStyles(doc: Document) {
   head.prepend(order);
 }
 
+/** On the style element that shows the `::before` and `::after` of a layer put back from off the canvas: its id. */
+export const PUT_BACK_ATTR = "data-vk-put-back";
+
 /** Leaves out of `root`, a saved canvas, the rules of elements no longer on it. */
 export function dropUnusedRules(root: Element) {
   const keys = new Set([...root.querySelectorAll(`[${STYLE_KEY_ATTR}]`)].map((el) => el.getAttribute(STYLE_KEY_ATTR)));
   for (const sheet of root.querySelectorAll(`style[${RULES_FOR_ATTR}]`)) if (!keys.has(sheet.getAttribute(RULES_FOR_ATTR))) sheet.remove();
+  for (const sheet of root.querySelectorAll(`style[${PUT_BACK_ATTR}]`)) {
+    if (!root.querySelector(`[${MADE_ATTR}="${CSS.escape(sheet.getAttribute(PUT_BACK_ATTR)!)}"]`)) sheet.remove();
+  }
 }
 
 /** Puts `declarations` into `edits`, at every width or at `breakpoint`: `display: none` hides, an empty value takes a declaration off. */
