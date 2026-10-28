@@ -132,7 +132,7 @@ test("a text layer offers no fill or corner radius here", async ({ page }) => {
 
 test("the selection box steps aside while a value changes, so the change can be seen, and comes back after", async ({ page }) => {
   await selectRow(page, "Card");
-  const box = page.locator(".vk-selection");
+  const box = page.locator('.vk-selection[data-view="Desktop"]');
   await expect(box).toBeVisible();
   // It is gone only briefly, so watch for it rather than poll.
   await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => {

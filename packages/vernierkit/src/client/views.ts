@@ -11,10 +11,12 @@ import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 export interface View {
   /** What the view shows: the canvas itself for the desktop view, a copy of it for any other. */
   readonly document: Document;
-  /** The deepest layer at a point of this view, in its px, as `LayerTree.layerAt` finds it on the canvas. */
-  layerAt(tree: LayerTree, x: number, y: number): Layer | null;
+  /** The deepest layer at a point of this view, in its px, as `LayerTree.layerAt` finds it on the canvas; not `skip`, nor any layer in it. */
+  layerAt(tree: LayerTree, x: number, y: number, skip?: Layer): Layer | null;
   /** Where the layer is laid out in this view, in its px; null when the view shows none of it. */
   boxOf(layer: Layer): DOMRect | null;
+  /** The element that shows a layer's element in this view, to read how it is laid out there; null when the view has none. */
+  elementOf(el: Element): Element | null;
 }
 
 export interface Views {
@@ -24,6 +26,8 @@ export interface Views {
   list(): View[];
   /** Shows the canvas in `iframe` too, `width` px wide, as one more view. Settles once it is laid out. */
   add(iframe: HTMLIFrameElement, width: number): Promise<View>;
+  /** Stops showing the canvas in `view`, which no longer follows it. The desktop view, the canvas itself, stays. */
+  remove(view: View): void;
   /** Shows every change made to the canvas so far in every view now, rather than before the next paint. */
   sync(): void;
 }
@@ -31,7 +35,7 @@ export interface Views {
 /** The canvas, shown so far in the desktop view only. */
 export function createViews(canvas: Canvas): Views {
   const views: View[] = [viewOf(canvas.document, ITSELF)];
-  const followers: Follower[] = [];
+  const followers = new Map<View, Follower>();
   return {
     canvas,
     list: () => [...views],
@@ -40,13 +44,20 @@ export function createViews(canvas: Canvas): Views {
       if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
       const laidOut = copyCanvas(canvas, iframe, width);
       const follower = follow(canvas.document, doc);
-      followers.push(follower);
       const view = viewOf(doc, follower);
+      followers.set(view, follower);
       views.push(view);
       return laidOut.then(() => view);
     },
+    remove(view) {
+      if (view === views[0]) throw new Error("Vernier Kit: the desktop view shows the canvas itself, and stays");
+      followers.get(view)?.stop();
+      followers.delete(view);
+      const i = views.indexOf(view);
+      if (i >= 0) views.splice(i, 1);
+    },
     sync() {
-      for (const follower of followers) follower.sync();
+      for (const follower of followers.values()) follower.sync();
     },
   };
 }
@@ -70,9 +81,11 @@ function viewOf(document: Document, { inView, onCanvas }: Correspondence): View 
   };
   return {
     document,
-    layerAt(tree, x, y) {
+    layerAt(tree, x, y, skip) {
       let layer: Layer | null = null;
-      for (let e = document.elementFromPoint(x, y); e && !layer; e = e.parentElement) {
+      const skipped = skip && !skip.text ? inView(skip.el) : null;
+      const hit = skipped ? (document.elementsFromPoint(x, y).find((e) => !skipped.contains(e)) ?? null) : document.elementFromPoint(x, y);
+      for (let e = hit; e && !layer; e = e.parentElement) {
         const node = onCanvas(e);
         layer = node && tree.layerOf(node as Element);
       }
@@ -81,8 +94,10 @@ function viewOf(document: Document, { inView, onCanvas }: Correspondence): View 
     boxOf(layer) {
       if (layer.text) return rangeIn(layer.text)?.getBoundingClientRect() ?? null;
       const el = inView(layer.el) as Element | null;
-      return el ? el.getBoundingClientRect() : null;
+      // Not drawn at this width (`display: none` at a breakpoint): nothing to show.
+      return el && (el === layer.el || el.getClientRects().length) ? el.getBoundingClientRect() : null;
     },
+    elementOf: (el) => inView(el) as Element | null,
   };
 }
 
@@ -90,6 +105,8 @@ function viewOf(document: Document, { inView, onCanvas }: Correspondence): View 
 interface Follower extends Correspondence {
   /** Takes in the changes to the canvas not taken in yet. */
   sync(): void;
+  /** Stops following the canvas. */
+  stop(): void;
 }
 
 /**
@@ -157,6 +174,7 @@ function follow(canvas: Document, copy: Document): Follower {
     inView: (node) => inCopy.get(node) ?? null,
     onCanvas: (node) => onCanvas.get(node) ?? null,
     sync: () => takeIn(observer.takeRecords()),
+    stop: () => observer.disconnect(),
   };
 }
 

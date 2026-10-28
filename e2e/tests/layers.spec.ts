@@ -353,7 +353,7 @@ test.describe("text beside other layers", () => {
     expect(await layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
     await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Button.");
     // Outlines the text only, not the whole button.
-    const outline = (await page.locator(".vk-selection").boundingBox())!;
+    const outline = (await page.locator('.vk-selection[data-view="Desktop"]').boundingBox())!;
     expect(outline.width).toBeCloseTo(text.width, 0);
   });
 
@@ -371,7 +371,7 @@ test.describe("text beside other layers", () => {
 });
 
 test.describe("the selection box", () => {
-  const box = (page: Page) => page.locator(".vk-selection");
+  const box = (page: Page) => page.locator('.vk-selection[data-view="Desktop"]');
 
   test("outlines the selected layer in blue", async ({ page }) => {
     await enterEditMode(page);
@@ -424,7 +424,7 @@ test.describe("the selection box", () => {
 });
 
 test.describe("the hover outline", () => {
-  const hover = (page: Page) => page.locator(".vk-hover");
+  const hover = (page: Page) => page.locator('.vk-hover[data-view="Desktop"]');
   const rect = async (locator: ReturnType<Page["locator"]>) => {
     const { x, y, width, height } = (await locator.boundingBox())!;
     return [x, y, width, height].map(Math.round);
@@ -442,7 +442,7 @@ test.describe("the hover outline", () => {
     await expect.poll(() => rect(hover(page))).toEqual(outermost);
 
     await page.mouse.click(h1.x, h1.y);
-    expect(await rect(page.locator(".vk-selection"))).toEqual(outermost);
+    expect(await rect(page.locator('.vk-selection[data-view="Desktop"]'))).toEqual(outermost);
   });
 
   test("is not drawn over the selected layer, and goes when the pointer leaves the canvas", async ({ page }) => {
