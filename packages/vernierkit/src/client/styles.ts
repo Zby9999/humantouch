@@ -573,6 +573,37 @@ export const styles = /* css */ `
   /* The interaction layer above the canvas will take all pointer input. */
   pointer-events: none;
 }
+/* The views beside the desktop view, on the stage to its right. */
+.vk-canvas.is-beside { position: absolute; top: 0; }
+/* Above each view, as a Frame's name in Figma: what it is, and that it shows only what CSS does at its width. */
+.vk-view-label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
+  color: var(--vk-text-muted);
+  white-space: nowrap;
+}
+.vk-view-name { color: var(--vk-text); font-weight: 500; }
+.vk-view-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.vk-view-delete { width: 20px; height: 20px; margin-left: auto; }
+.vk-add-view { position: absolute; display: flex; height: 20px; align-items: center; }
+.vk-add-view .vk-icon-button { width: 20px; height: 20px; }
+.vk-add-view-width {
+  all: unset;
+  box-sizing: border-box;
+  width: 72px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--vk-panel);
+  box-shadow: 0 0 0 1px var(--vk-accent);
+  color: var(--vk-text);
+}
+.vk-add-view-width[aria-invalid] { box-shadow: 0 0 0 1px var(--vk-danger, #f24822); }
 
 .vk-selection, .vk-hover {
   --vk-selection: var(--vk-accent);

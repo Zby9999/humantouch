@@ -282,27 +282,29 @@ test.describe("canvas navigation", () => {
     await expect(page.getByRole("button", { name: EXIT_LABEL })).toBeVisible();
   });
 
-  test("shift + 1 zooms to fit the whole page in the window", async ({ page }) => {
+  test("shift + 1 zooms to fit every view of the page in the window", async ({ page }) => {
     await enterEditMode(page);
+    await expect(page.locator('iframe[title="Phone 390"]').contentFrame().locator("h1")).toBeVisible();
     await page.keyboard.press("Shift+Digit1");
 
+    /** Every view, side by side: the box round them all. */
+    const views = async () => {
+      const boxes = await page.locator("iframe.vk-canvas").evaluateAll((frames) => frames.map((frame) => frame.getBoundingClientRect().toJSON() as DOMRect));
+      const x = Math.min(...boxes.map((b) => b.left));
+      const y = Math.min(...boxes.map((b) => b.top));
+      return { x, y, width: Math.max(...boxes.map((b) => b.right)) - x, height: Math.max(...boxes.map((b) => b.bottom)) - y };
+    };
     const area = (await viewportArea(page).boundingBox())!;
     await expect
       .poll(async () => {
-        const canvas = await box(page);
-        return (
-          canvas.x >= area.x &&
-          canvas.y >= area.y &&
-          canvas.x + canvas.width <= area.x + area.width &&
-          canvas.y + canvas.height <= area.y + area.height
-        );
+        const all = await views();
+        return all.x >= area.x && all.y >= area.y && all.x + all.width <= area.x + area.width && all.y + all.height <= area.y + area.height;
       })
       .toBe(true);
-    const canvas = await box(page);
-    // Centered, and as large as it can be.
-    expect(canvas.x - area.x).toBeCloseTo(area.x + area.width - (canvas.x + canvas.width), 0);
-    expect(canvas.y - area.y).toBeCloseTo(area.y + area.height - (canvas.y + canvas.height), 0);
-    expect(Math.min(area.width - canvas.width, area.height - canvas.height)).toBeLessThan(100);
+    const all = await views();
+    // Centered across, and as large as it can be.
+    expect(all.x - area.x).toBeCloseTo(area.x + area.width - (all.x + all.width), 0);
+    expect(Math.min(area.width - all.width, area.height - all.height)).toBeLessThan(120);
   });
 });
 

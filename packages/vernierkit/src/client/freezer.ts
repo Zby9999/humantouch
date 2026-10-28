@@ -7,6 +7,7 @@ import { HOST_TAG } from "./host";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
+import { HAS_VIEWPORT_UNIT, mediaForViews, unitsForViews, VIEWPORT_MEDIA, type FrozenWindow } from "./viewport";
 
 export interface Canvas {
   /** The frozen copy. Lives in the iframe that was passed to `freeze`. */
@@ -20,8 +21,6 @@ export interface Canvas {
 
 /** The window the designer was looking at when the page was frozen. */
 interface Viewport {
-  width: number;
-  height: number;
   scrollX: number;
   scrollY: number;
 }
@@ -65,7 +64,12 @@ const SETTLE_TIMEOUT_MS = 500;
 export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas> {
   const live = page.document;
   const root = live.documentElement;
-  const viewport: Viewport = { width: page.innerWidth, height: page.innerHeight, scrollX: page.scrollX, scrollY: page.scrollY };
+  const viewport: Viewport = { scrollX: page.scrollX, scrollY: page.scrollY };
+  const frozen: FrozenWindow = {
+    height: page.innerHeight,
+    scrollbar: Math.max(0, page.innerWidth - root.clientWidth),
+    matches: (query) => page.matchMedia(query).matches,
+  };
   const animationEnds = readAnimationEnds(live);
   const copy = root.cloneNode(true) as HTMLElement;
   copy.setAttribute(PAGE_ATTR, page.location.pathname + page.location.search);
@@ -84,9 +88,10 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
         continue;
       case "style":
         copyStyleRules(from as HTMLStyleElement, to);
+        if ((from as HTMLStyleElement).media) to.setAttribute("media", mediaForViews((from as HTMLStyleElement).media, frozen));
         continue;
       case "link":
-        inlineStylesheet(from as HTMLLinkElement, to, page);
+        inlineStylesheet(from as HTMLLinkElement, to, frozen);
         continue;
       case "canvas":
         drawInto(to as HTMLCanvasElement, from as HTMLCanvasElement);
@@ -103,7 +108,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     if (chain.length) to.setAttribute(CHAIN_ATTR, JSON.stringify(chain));
     const ends = animationEnds.get(from);
     if (ends) for (const [name, value] of ends) setImportant(to, name, value);
-    if (to.hasAttribute("style")) resolveViewportUnits(to.style, viewport);
+    if (to.hasAttribute("style")) resolveViewportUnits(to.style, frozen);
     pinToViewport(from, to, viewport);
     // The document's own scroll is shown by the canvas view instead.
     if ((from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
@@ -116,8 +121,9 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   for (const sheet of live.adoptedStyleSheets) {
     copy.append(Object.assign(live.createElement("style"), { textContent: serialize(sheet.cssRules, null) }));
   }
-  // The page's height chain (`height: 100%` on html, body, …) ends at the viewport.
-  setImportant(copy, "height", `${root.getBoundingClientRect().height}px`);
+  // The page's height chain (`height: 100%` on html, body, …) ends at the window, which the canvas is taller than.
+  const rootHeight = root.getBoundingClientRect().height;
+  if (Math.abs(rootHeight - root.clientHeight) < 1) setImportant(copy, "height", `${rootHeight}px`);
 
   const doc = iframe.contentDocument;
   if (!doc) return Promise.reject(new Error("Vernier Kit: the canvas iframe is not in the document"));
@@ -126,11 +132,15 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   doc.write(doctypeOf(live));
   doc.close();
   doc.replaceChild(doc.adoptNode(copy), doc.documentElement);
-  for (const sheet of doc.styleSheets) {
+  // Written back as text: every view, and the canvas saved with the round, takes the sheets from their text.
+  for (const sheet of [...doc.styleSheets]) {
     const rules = readRules(sheet);
-    if (rules && VIEWPORT_DEPENDENT.test(sheet.ownerNode?.textContent ?? "")) resolveViewport(rules, page, viewport);
+    const owner = sheet.ownerNode;
+    if (!rules || !owner || !VIEWPORT_DEPENDENT.test(owner.textContent ?? "")) continue;
+    resolveViewport(rules, frozen);
+    owner.textContent = serialize(rules, null);
   }
-  return present(doc, iframe, { width: root.clientWidth, height: viewport.height, scrollY: viewport.scrollY });
+  return present(doc, iframe, { width: root.clientWidth, height: frozen.height, scrollY: viewport.scrollY });
 }
 
 /**
@@ -410,12 +420,12 @@ function copyStyleRules(from: HTMLStyleElement, to: Element) {
 }
 
 /** Same-origin stylesheets go in as text, so the copy is styled the moment it is inserted. */
-function inlineStylesheet(from: HTMLLinkElement, to: Element, page: Window) {
+function inlineStylesheet(from: HTMLLinkElement, to: Element, frozen: FrozenWindow) {
   if (!from.sheet || !/\bstylesheet\b/i.test(from.rel)) return;
   const rules = readRules(from.sheet);
   if (!rules) return; // Cross-origin: the copy loads it again.
   const style = to.ownerDocument.createElement("style");
-  if (from.media) style.media = VIEWPORT_MEDIA.test(from.media) ? frozenMedia(from.media, page) : from.media;
+  if (from.media) style.media = mediaForViews(from.media, frozen);
   style.textContent = serialize(rules, from.sheet.href);
   // Still known by the file it was loaded from, for the Agent.
   if (from.sheet.href) style.setAttribute(SHEET_HREF_ATTR, from.sheet.href);
@@ -462,74 +472,57 @@ function absolutizeUrls(css: string, base: string): string {
 }
 
 /*
- * The canvas is as tall as the whole page and no wider than its layout (no
- * scrollbar), so viewport units and media queries would resolve against the
- * wrong size. They are resolved against the viewport the designer had instead.
+ * The canvas is as tall as the whole page, and shown at several widths: what
+ * answers to the window's size is rewritten so that it answers to each view's
+ * width, and to the height of the window the designer had (`viewport.ts`).
  */
-const VIEWPORT_MEDIA = /width|height|aspect-ratio|orientation/i;
 const VIEWPORT_DEPENDENT = /\d[sld]?v(?:h|w|min|max|i|b)\b|@media[^{]*(?:width|height|aspect-ratio|orientation)/i;
-const VIEWPORT_UNIT = /(?<![\w#.])(-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)[sld]?(vh|vw|vmin|vmax|vi|vb)\b/gi;
-const HAS_VIEWPORT_UNIT = new RegExp(VIEWPORT_UNIT.source, "i");
-/** `url()`s and strings are left alone. */
-const LITERALS = /(url\([^)]*\)|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/;
 
-function frozenMedia(query: string, page: Window): string {
-  return page.matchMedia(query).matches ? "all" : "not all";
-}
-
-function resolveViewport(rules: CSSRuleList, page: Window, viewport: Viewport) {
+function resolveViewport(rules: CSSRuleList, frozen: FrozenWindow) {
   for (const rule of rules) {
     // Rules live in the iframe's realm, so they are checked by shape, not `instanceof`.
     if ("conditionText" in rule && "media" in rule && VIEWPORT_MEDIA.test(rule.conditionText as string)) {
-      (rule.media as MediaList).mediaText = frozenMedia(rule.conditionText as string, page);
+      (rule.media as MediaList).mediaText = mediaForViews(rule.conditionText as string, frozen);
     }
-    if ("style" in rule) resolveViewportUnits(rule.style as CSSStyleDeclaration, viewport);
-    if ("cssRules" in rule) resolveViewport(rule.cssRules as CSSRuleList, page, viewport);
+    if ("style" in rule) resolveViewportUnits(rule.style as CSSStyleDeclaration, frozen);
+    if ("cssRules" in rule) resolveViewport(rule.cssRules as CSSRuleList, frozen);
   }
 }
 
-function resolveViewportUnits(style: CSSStyleDeclaration, viewport: Viewport) {
+function resolveViewportUnits(style: CSSStyleDeclaration, frozen: FrozenWindow) {
   for (let i = 0; i < style.length; i++) {
     const name = style[i];
     const value = style.getPropertyValue(name);
-    if (!HAS_VIEWPORT_UNIT.test(value)) continue;
-    const resolved = value
-      .split(LITERALS)
-      .map((part, j) => (j % 2 ? part : part.replace(VIEWPORT_UNIT, (_, n: string, unit: string) => toPx(Number(n), unit, viewport))))
-      .join("");
-    style.setProperty(name, resolved, style.getPropertyPriority(name));
+    if (HAS_VIEWPORT_UNIT.test(value)) style.setProperty(name, unitsForViews(value, frozen), style.getPropertyPriority(name));
   }
 }
 
-function toPx(n: number, unit: string, { width, height }: Viewport): string {
-  const base = { vh: height, vb: height, vw: width, vi: width, vmin: Math.min(width, height), vmax: Math.max(width, height) }[
-    unit.toLowerCase() as "vh"
-  ];
-  return `${Math.round(((n * base) / 100) * 1000) / 1000}px`;
-}
-
-/** What the freezer pins on an element placed against the viewport. */
-const PINNED = ["top", "left", "bottom", "right", "width", "height", "margin-top", "margin-right", "margin-bottom", "margin-left"];
+/** What the freezer pins on an element placed against the viewport: down it, and, when the page was scrolled sideways, across it too. */
+const PINNED_DOWN = ["top", "bottom", "height", "margin-top", "margin-bottom"];
+const PINNED_ACROSS = ["left", "right", "width", "margin-left", "margin-right"];
 
 /**
- * The canvas has no viewport of its own. Elements placed against the viewport
- * (fixed, or absolute with no positioned ancestor) are pinned where the
- * designer saw them, margins included (auto margins center dialogs). What is
- * pinned is marked, so it is not taken for the page's own style, and so is how
- * far a fixed element moved with the page's scroll.
+ * The canvas has no viewport of its own: each view is as tall as the whole
+ * page. Elements placed against the viewport (fixed, or absolute with no
+ * positioned ancestor) are pinned where the designer saw them down the page,
+ * margins included (auto margins center dialogs). Across, the view is as wide
+ * as the window it stands for, so they are left to be placed in each view, as
+ * the page places them. What is pinned is marked, so it is not taken for the
+ * page's own style, and so is how far a fixed element moved with the page's scroll.
  */
 function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
   const style = getComputedStyle(from);
   const fixed = style.position === "fixed" && fixedToViewport(from);
   if (!fixed && !(style.position === "absolute" && absoluteToViewport(from))) return;
-  const top = parseFloat(style.top) + (fixed ? viewport.scrollY : 0);
-  const left = parseFloat(style.left) + (fixed ? viewport.scrollX : 0);
-  setImportant(to, "top", `${top}px`);
-  setImportant(to, "left", `${left}px`);
-  setImportant(to, "bottom", "auto");
-  setImportant(to, "right", "auto");
-  for (const name of PINNED.slice(4)) setImportant(to, name, style.getPropertyValue(name));
-  to.setAttribute(PINNED_ATTR, PINNED.join(" "));
+  const across = fixed && viewport.scrollX !== 0;
+  const pin = (side: "top" | "left", far: "bottom" | "right", names: string[], scrolled: number) => {
+    setImportant(to, side, `${parseFloat(style.getPropertyValue(side)) + (fixed ? scrolled : 0)}px`);
+    setImportant(to, far, "auto");
+    for (const name of names.slice(2)) setImportant(to, name, style.getPropertyValue(name));
+  };
+  pin("top", "bottom", PINNED_DOWN, viewport.scrollY);
+  if (across) pin("left", "right", PINNED_ACROSS, viewport.scrollX);
+  to.setAttribute(PINNED_ATTR, (across ? [...PINNED_DOWN, ...PINNED_ACROSS] : PINNED_DOWN).join(" "));
   if (fixed && (viewport.scrollX || viewport.scrollY)) to.setAttribute(PIN_OFFSET_ATTR, `${viewport.scrollX} ${viewport.scrollY}`);
 }
 

@@ -35,7 +35,7 @@ export function App() {
           </svg>
         </button>
       </section>
-      <Surface className="grid grid-cols-3 gap-4 pb-16">
+      <Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3">
         {features.map((feature) => (
           <Card key={feature.title} title={feature.title} body={feature.body} />
         ))}

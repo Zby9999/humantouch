@@ -2180,6 +2180,19 @@ describe("views", () => {
     expect(phone.document.getElementById("a")!.textContent).toBe("Typed");
   });
 
+  test("a view taken away stops following the canvas; the desktop view cannot be taken away", async () => {
+    const { views, editor, phone, layer } = await open();
+    const [desktop] = views.list();
+
+    views.remove(phone);
+    editor.setText(layer("a"), "Alpha");
+    await new Promise(requestAnimationFrame);
+
+    expect(views.list()).toEqual([desktop]);
+    expect(phone.document.getElementById("a")!.textContent).not.toBe("Alpha");
+    expect(() => views.remove(desktop)).toThrow();
+  });
+
   test("a layer is one across the views: each finds it under a point of its own, and shows where it is laid out there", async () => {
     const { views, editor, phone, layer } = await open();
     const [desktop] = views.list();

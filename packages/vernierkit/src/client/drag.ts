@@ -4,14 +4,15 @@
  * the layer is dragged, layers are only shifted.
  */
 import type { Destination, Editor } from "./edits";
-import { boxOf, type Layer } from "./layers";
+import type { Layer } from "./layers";
+import type { View } from "./views";
 
 export interface Drop {
   /** The Stack or Frame the layer would go into, and where in it. */
   to: Destination;
-  /** Where in a Stack the layer would go, drawn as a line, in canvas px. None for an absolute place. */
+  /** Where in a Stack the layer would go, drawn as a line, in the view's px. None for an absolute place. */
   line: { x: number; y: number; width: number; height: number } | null;
-  /** How far layers move aside to make room, in canvas px. */
+  /** How far layers move aside to make room, by their element on the canvas, in the view's px. */
   shifts: Map<Element, { x: number; y: number }>;
 }
 
@@ -19,12 +20,21 @@ export interface Drop {
  * Where a dragged layer would go: into the Stack or Frame under the pointer
  * that can take it, outside the layer itself. A Stack or Frame beside the
  * layer is entered from its middle only; near its edges, the pointer is still
- * in the layout around it, so the layer goes beside it. `box`: the layer where it is
- * dragged to; `rectOf`: where a layer was laid out before anything shifted.
+ * in the layout around it, so the layer goes beside it. All as `view` lays it
+ * out, in its px: `box`, the layer where it is dragged to; `rectOf`, where a
+ * layer was laid out before anything shifted.
  */
-export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: number }, box: DOMRect, rectOf: (layer: Layer) => DOMRect): Drop | null {
+export function findDrop(
+  editor: Editor,
+  view: View,
+  layer: Layer,
+  point: { x: number; y: number },
+  box: DOMRect,
+  rectOf: (layer: Layer) => DOMRect,
+): Drop | null {
   const home = layer.parent!;
-  let container = editor.tree().layerAt(point.x, point.y, layer.text ? undefined : layer.el);
+  const el = (layer: Layer) => view.elementOf(layer.el) ?? layer.el;
+  let container = view.layerAt(editor.tree(), point.x, point.y, layer);
   for (; container; container = container.parent) {
     if (!editor.canDrop(layer, container)) continue;
     if (container.parent === home && !inMiddle(rectOf(container), point)) continue;
@@ -35,9 +45,9 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
   const area = rectOf(container);
   if (container.kind === "frame") {
     // Placed where it is let go: its left and top in the Frame, margins aside.
-    const margins = layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(layer.el);
-    const x = box.left - area.left - container.el.clientLeft - parseFloat(margins.marginLeft);
-    const y = box.top - area.top - container.el.clientTop - parseFloat(margins.marginTop);
+    const margins = layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(el(layer));
+    const x = box.left - area.left - el(container).clientLeft - parseFloat(margins.marginLeft);
+    const y = box.top - area.top - el(container).clientTop - parseFloat(margins.marginTop);
     return { to: { parent: container, x: Math.round(x), y: Math.round(y) }, line: null, shifts: new Map() };
   }
 
@@ -55,7 +65,7 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
 
   // The layers between where it was and where it goes make room for it.
   const shifts = new Map<Element, { x: number; y: number }>();
-  const room = (stack: Layer) => (stack.direction === "horizontal" ? box.width : box.height) + gapOf(stack);
+  const room = (stack: Layer) => (stack.direction === "horizontal" ? box.width : box.height) + gapOf(stack, el(stack));
   const shift = (children: Layer[], stack: Layer, by: number) => {
     for (const child of children) {
       if (!child.text) shifts.set(child.el, stack.direction === "horizontal" ? { x: by, y: 0 } : { x: 0, y: by });
@@ -71,8 +81,8 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
     if (was >= 0 && home.kind === "stack") shift(homeFlow.slice(was + 1), home, -room(home));
   }
 
-  const gap = gapOf(container);
-  const style = getComputedStyle(container.el);
+  const gap = gapOf(container, el(container));
+  const style = getComputedStyle(el(container));
   const main =
     n < flow.length
       ? span(rectOf(flow[n]))[0] - gap / 2
@@ -89,29 +99,29 @@ export function findDrop(editor: Editor, layer: Layer, point: { x: number; y: nu
  * Where a layer drawn from `start` over `box` goes, as a dragged one would:
  * into the deepest Stack or Frame under where the drawing started that can
  * hold it; in a Stack, at the place along it nearest the start; in a Frame,
- * absolute where it is drawn. All in canvas px.
+ * absolute where it is drawn. All as `view` lays it out, in its px.
  */
-export function findPlace(editor: Editor, start: { x: number; y: number }, box: DOMRect): Destination | null {
-  let container = editor.tree().layerAt(start.x, start.y);
+export function findPlace(editor: Editor, view: View, start: { x: number; y: number }, box: DOMRect): Destination | null {
+  let container = view.layerAt(editor.tree(), start.x, start.y);
   while (container && !editor.canHold(container)) container = container.parent;
   if (!container) return null;
   if (container.kind === "frame") {
-    const area = container.el.getBoundingClientRect();
-    return { parent: container, x: Math.round(box.left - area.left - container.el.clientLeft), y: Math.round(box.top - area.top - container.el.clientTop) };
+    const el = view.elementOf(container.el) ?? container.el;
+    const area = el.getBoundingClientRect();
+    return { parent: container, x: Math.round(box.left - area.left - el.clientLeft), y: Math.round(box.top - area.top - el.clientTop) };
   }
   const horizontal = container.direction === "horizontal";
   const at = horizontal ? start.x : start.y;
   const next = container.children.find((child) => {
-    if (child.absolute) return false;
-    const r = boxOf(child);
-    return at < (horizontal ? r.left + r.right : r.top + r.bottom) / 2;
+    const r = !child.absolute && view.boxOf(child);
+    return r && at < (horizontal ? r.left + r.right : r.top + r.bottom) / 2;
   });
   return { parent: container, index: next ? container.children.indexOf(next) : container.children.length };
 }
 
-/** The space between a Stack's layers, along it. */
-function gapOf(stack: Layer): number {
-  return parseFloat(getComputedStyle(stack.el).getPropertyValue(stack.direction === "horizontal" ? "column-gap" : "row-gap")) || 0;
+/** The space between a Stack's layers, along it, as `el` shows it. */
+function gapOf(stack: Layer, el: Element): number {
+  return parseFloat(getComputedStyle(el).getPropertyValue(stack.direction === "horizontal" ? "column-gap" : "row-gap")) || 0;
 }
 
 /** Within the middle half of a box, both ways. */
