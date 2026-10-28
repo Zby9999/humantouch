@@ -14,6 +14,8 @@
 
 ## Comments
 
+**被取代（2026-10-28）**：设计师对比后改用 Tabler Icons，见 49。
+
 **实现记录（2026-10-28）**
 
 - 对照：stack-vertical → `layout-2-row`，stack-horizontal → `layout-2-column`，grid → `grid-view`，frame → `frame`，text → `text`，image → `image-03`，still → `play-square`，instance → `component`，lock → `square-lock-02`，radius → `square-round-corner`，plus → `plus-sign`，minus → `minus-sign`，gap → `align-horizontal-space-between`，close → `cancel-01`，opacity → `transparency`，undo → `undo-02`，sidebar → `sidebar-left`，play → `play`，pointer → `cursor-01`，brief → `sticky-note-03`。
