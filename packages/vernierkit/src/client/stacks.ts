@@ -109,13 +109,14 @@ function nearest(off: Record<Alignment, number>): Alignment {
 
 /** The CSS that lays a Stack's layers out as `settings` say. `stretch`: across, at the start, the layers stretch with the Stack. */
 export function stackStyle({ direction, gap, padding, align }: StackSettings, stretch: boolean): Record<string, string> {
-  const across = direction === "horizontal" ? align.y : align.x;
+  const [along, across] = direction === "horizontal" ? [align.x, align.y] : [align.y, align.x];
   const css = (a: Alignment) => (a === "center" ? "center" : a === "end" ? "flex-end" : "flex-start");
   return {
     display: "flex",
     "flex-direction": direction === "horizontal" ? "row" : "column",
     gap: `${gap}px`,
     ...(padding.some((p) => p) && { padding: padding.map((p) => `${p}px`).join(" ") }),
+    ...(along !== "start" && { "justify-content": css(along) }),
     "align-items": across === "start" && stretch ? "stretch" : css(across),
   };
 }

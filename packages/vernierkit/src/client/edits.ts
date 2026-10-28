@@ -652,6 +652,52 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     return layer;
   };
 
+  /**
+   * The layers made this round in the layer `id` and moved out of it since,
+   * made where they are now instead, each move taken into its making: taking
+   * back what made `id` then leaves them. Nothing moves on the canvas.
+   */
+  const rehome = (id: string) => {
+    const moved = changes.list().filter((change) => {
+      const maker = change.kind === "move" && (change.before as Place).container.layer === id ? makerOf(change.layer) : null;
+      return maker?.kind === "create" && (maker.after as Created).place.container.layer === id;
+    });
+    if (!moved.length) return;
+    const layers = moved.map((move) => {
+      const made = makerOf(move.layer)!;
+      const place = move.after as Place;
+      const style = Object.fromEntries(Object.entries(made.style).filter(([name]) => !["position", "left", "top", "right", "bottom"].includes(name)));
+      const where: Change = { ...made, target: place.container.target, after: { ...(made.after as Created), place }, style: { ...style, ...(place.absolute && absoluteAt(place.absolute)) } };
+      return { made, where, move };
+    });
+    const marks = (layer: string, move: string | null) => {
+      for (const el of elementsOf(doc, layer)) {
+        if (el.getAttribute(MADE_ATTR) !== layer) continue;
+        if (move) el.setAttribute(MOVE_ATTR, move);
+        else el.removeAttribute(MOVE_ATTR);
+      }
+    };
+    const ids = layers.map(({ made }) => made.layer);
+    structural(
+      ids,
+      ids,
+      () => {
+        for (const { where, move } of layers) {
+          drop(move.layer, move.property);
+          changes.restore(where);
+          marks(where.layer, null);
+        }
+      },
+      () => {
+        for (const { made, move } of layers) {
+          changes.restore(made);
+          changes.restore(move);
+          marks(made.layer, move.property);
+        }
+      },
+    );
+  };
+
   /** Puts a moved layer at `to`, on the canvas and in the ChangeSet, and builds the layers anew. */
   const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
     changes.record(id, { ...record, before: from, after: to, style });
@@ -968,6 +1014,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       if (maker) {
         const members = maker.kind === "stack" ? (maker.after as Composed).layers.map((member) => member.layer) : [];
         editor.batch(() => {
+          rehome(id);
           editor.revert(maker.id);
           for (const member of members) {
             const found = layerById(member);

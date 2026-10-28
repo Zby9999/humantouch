@@ -1187,10 +1187,20 @@ describe("making a Stack", () => {
     const { doc, editor, changes, layer, rects } = open(board(placed("a", [380, 160, 100, 40])).replace("position: relative;", "position: relative; box-sizing: border-box;"));
     const before = rects("a");
 
-    const stack = editor.stack([layer("board")]);
+    let stack = editor.stack([layer("board")]);
 
     expect(changes.list()[0].after).toMatchObject({ padding: [160, 120, 160, 120], align: { x: "end", y: "start" } });
     expect(drift(before, rects("a"))).toBe(0);
+    editor.undo();
+
+    // Nearer the bottom: along the Stack too, it is aligned to the end.
+    editor.move(layer("a"), { parent: layer("board"), x: 380, y: 300 });
+    editor.stack([layer("board")]);
+    expect(changes.list().at(-1)!.after).toMatchObject({ padding: [60, 120, 60, 120], align: { x: "end", y: "end" } });
+    expect(changes.list().at(-1)!.style["justify-content"]).toBe("flex-end");
+    const moved = doc.getElementById("a")!.getBoundingClientRect();
+    expect([moved.left, moved.top].map(Math.round)).toEqual([380, 300]);
+    stack = layer("board");
 
     editor.set(stack, "align", { x: "center", y: "center", distribute: false });
 
@@ -1483,6 +1493,73 @@ describe("new text and Frames", () => {
 
     expect([...doc.querySelectorAll("article")].map((el) => el.lastElementChild!.textContent)).toEqual(["Text", "Text", "Text"]);
     expect(changes.list()[0].target.instances).toBe(3);
+  });
+
+  test("a new Frame made a Stack and dissolved: it and its text stay where they are, shown", () => {
+    const { doc, editor, changes, layer } = open();
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 60, y: 40 });
+    const stack = editor.stack([editor.tree().layerOf(frame.el)!]);
+    editor.set(stack, "padding", [12, 12, 12, 12]);
+    const box = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return [r.left, r.top, r.width, r.height].map(Math.round);
+    };
+    const before = [box(frame.el), box(text.el)];
+
+    editor.unstack(editor.tree().layerOf(frame.el)!);
+
+    expect(frame.el.isConnected && text.el.isConnected).toBe(true);
+    expect([box(frame.el), box(text.el)]).toEqual(before);
+    expect(getComputedStyle(frame.el).display).not.toBe("none");
+    expect(doc.contains(text.el)).toBe(true);
+  });
+
+  test("a new Frame made a Stack, ungrouped: its text takes its place, the Frame goes", () => {
+    const { doc, editor, changes, layer } = open();
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 60, y: 40 });
+    editor.stack([editor.tree().layerOf(frame.el)!]);
+
+    let error: unknown = null;
+    try {
+      editor.ungroup(editor.tree().layerOf(frame.el)!);
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error).toBeNull();
+    expect(text.el.isConnected).toBe(true);
+    expect(text.el.parentElement).toBe(doc.getElementById("list"));
+    expect(editor.tree().layerOf(frame.el)).toBeNull();
+    // The text is made where it is now: no move, and nothing of the Frame.
+    const list = doc.getElementById("list")!.getAttribute("data-vk-layer");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create"]);
+    expect(changes.list()[0].after).toMatchObject({ type: "text", place: { container: { layer: list }, absolute: null } });
+    expect(changes.list()[0].style.position).toBeUndefined();
+
+    editor.undo();
+    expect(text.el.parentElement).toBe(frame.el);
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "create", "stack"]);
+    expect(changes.list().find((c) => c.layer === text.el.getAttribute("data-vk-layer"))!.after).toMatchObject({ place: { container: { layer: frame.el.getAttribute("data-vk-layer") } } });
+
+    editor.redo();
+    expect(text.el.parentElement).toBe(doc.getElementById("list"));
+    expect(changes.list().map((c) => c.kind)).toEqual(["create"]);
+  });
+
+  test("text made in a new Frame and dragged out of it stays when the Frame is deleted", () => {
+    const { doc, editor, changes, layer } = open();
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 60, y: 40 });
+    editor.move(editor.tree().layerOf(text.el)!, { parent: layer("list"), index: 0 });
+
+    editor.remove(editor.tree().layerOf(frame.el)!);
+
+    expect(frame.el.isConnected).toBe(false);
+    expect(text.el.parentElement).toBe(doc.getElementById("list"));
+    expect(changes.list().map((c) => c.kind)).toEqual(["create"]);
+    expect(changes.list()[0].after).toMatchObject({ place: { nth: 1, absolute: null } });
   });
 
   test("a new Frame takes a brief, shown in its place on the canvas, and what is drawn in it is its sketch; taken back, all of it goes", () => {

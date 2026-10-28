@@ -162,6 +162,8 @@ export interface ChangeSet {
   ): void;
   /** Takes change `id` out: the designer no longer wants it. */
   remove(id: number): void;
+  /** Puts `change` in as it is, its id and all, in its place among the others by id: over the one it was, or back where it was. */
+  restore(change: Change): void;
   /** Whether `property` of the layer with id `layerId` is changed already. */
   has(layerId: string, property: string): boolean;
   /** The changes, oldest first. */
@@ -193,6 +195,12 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
     },
     remove(id) {
       for (const [key, change] of changes) if (change.id === id) changes.delete(key);
+    },
+    restore(change) {
+      for (const [key, other] of changes) if (other.id === change.id) changes.delete(key);
+      const entries = [...changes, [keyOf(change.layer, change.property), change] as [string, Change]].sort(([, a], [, b]) => a.id - b.id);
+      changes.clear();
+      for (const [key, value] of entries) changes.set(key, value);
     },
     has: (layerId, property) => changes.has(keyOf(layerId, property)),
     list: () => [...changes.values()],
