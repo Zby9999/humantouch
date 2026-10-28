@@ -98,6 +98,8 @@ interface Props {
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
   onEditText(layer: Layer, text: string): void;
+  /** The view last pressed in, and what it is called: the one the designer works in (null: the desktop view). */
+  onWorkIn(view: View | null, name: string): void;
   /** Playing: the canvas alone at 100%, scrolled like a page; nothing on it can be selected or edited. */
   playing: boolean;
   /** Esc, while playing. */
@@ -113,7 +115,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -284,6 +286,11 @@ export function CanvasView(props: Props) {
       });
     }
   }, [views, widths]);
+  // The view pressed in last is the one worked in: its breakpoint is where edits go.
+  useLayoutEffect(() => {
+    const desktop = !active || active === views?.list()[0];
+    onWorkIn(desktop ? null : active, active ? viewName(active.width, desktop) : viewName(0, true));
+  }, [active]);
   // Each view is as tall as what it shows: the views are placed, outlined and fitted anew as it grows or shrinks.
   useEffect(() => views?.onResize(() => resized(undefined)), [views]);
   // Leaving edit mode: the views beside the desktop view stop following the canvas.

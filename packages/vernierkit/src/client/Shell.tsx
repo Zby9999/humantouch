@@ -12,6 +12,8 @@ import { nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
+import { BreakpointSection } from "./BreakpointSection";
+import type { View } from "./views";
 import { toggleIn } from "./selection";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
@@ -82,6 +84,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  /** The view the designer works in, and what it is called: the panel shows its values, and edits apply at its breakpoint. Null: the desktop view. */
+  const [worked, setWorked] = useState<{ view: View; name: string } | null>(null);
   /** The selected layers, the one selected last at the end. */
   const [selected, setSelected] = useState<Layer[]>([]);
   /** Bumped on each edit: the panel reads its values from the canvas. */
@@ -355,6 +359,10 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
           const now = editor!.tree().layerOf(layer.el);
           if (now) select([now]);
         }}
+        onWorkIn={(view, name) => {
+          editor?.at(view);
+          setWorked(view && { view, name });
+        }}
         playing={playing}
         onStopPlaying={() => play(false)}
         leaving={leaving}
@@ -376,6 +384,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
         {tree && editor && selected.length ? (
           <>
             <LayerInfo tree={tree} layers={selected} />
+            <BreakpointSection editor={editor} layers={selected} view={worked?.name ?? "Desktop"} onEdit={onEdit} />
             <Properties editor={editor} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
           </>
         ) : (

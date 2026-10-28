@@ -6,6 +6,7 @@
  */
 import { isAbsolute, relative } from "node:path";
 import { madeBy, placedAt, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
+import { breakpointName, mediaOf } from "./client/breakpoints";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
@@ -48,6 +49,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
+    `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
@@ -59,6 +61,15 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
+}
+
+/**
+ * The widths a change applies at (ADR 0008): all of them, or the range of the
+ * view it was made in, to be written with the project's own breakpoints.
+ */
+function breakpoint(change: Change): string {
+  if (!change.breakpoint) return "all breakpoints.";
+  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries), and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
 }
 
 /** What the designer wants of the change, in design language. */
@@ -133,7 +144,8 @@ function sketch(change: Change, list: Change[]): string[] {
   }
   if (!created.brief) return [];
   // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
-  const latest = <T>(layer: string, property: string, then: T) => (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property)?.after as T) ?? then;
+  const latest = <T>(layer: string, property: string, then: T) =>
+    (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property && !c.breakpoint)?.after as T) ?? then;
   const items = list.flatMap((c) => {
     const place = placedAt(c);
     if (c.kind === "stack" || place?.container.layer !== change.layer) return [];

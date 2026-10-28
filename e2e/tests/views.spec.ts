@@ -99,6 +99,11 @@ test("selecting in one view selects the same layer in every view; an edit shows 
     expect(boxes[i].width).toBeCloseTo(at.width, 0);
   }
 
+  // Edited in the desktop view, at every width (in the phone view, it would apply at its breakpoint only).
+  const desktopPoint = await pointOn(desktop(page), "article:last-child h3");
+  await page.keyboard.down("Meta");
+  await page.mouse.click(desktopPoint.x, desktopPoint.y);
+  await page.keyboard.up("Meta");
   const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
   await opacity.fill("50");
   await opacity.press("Enter");

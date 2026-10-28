@@ -3,6 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
+import { dropUnusedRules, EDIT_STYLES_ATTR, moveInlineEdits, orderEditStyles } from "./canvas-style";
 import { HOST_TAG } from "./host";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./styles";
@@ -165,6 +166,8 @@ export function serializeCanvas(canvas: Canvas): string {
           to.remove();
           break;
         }
+        // The edits' styles are written from their rules: as they are.
+        if (from.hasAttribute(EDIT_STYLES_ATTR)) break;
         const rules = readRules((from as HTMLStyleElement).sheet);
         if (rules) to.textContent = serialize(rules, null);
         break;
@@ -188,6 +191,7 @@ export function serializeCanvas(canvas: Canvas): string {
         break;
     }
   }
+  dropUnusedRules(copy);
   const layout: Layout = { width: canvas.width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY };
   copy.setAttribute(LAYOUT_ATTR, JSON.stringify(layout));
   return doctypeOf(doc) + copy.outerHTML;
@@ -211,6 +215,8 @@ export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas
   // Saved before the window's height was: no view shorter than the canvas was then.
   const layout: Layout = { ...saved, windowHeight: saved.windowHeight ?? saved.height };
   root.removeAttribute(LAYOUT_ATTR);
+  // Saved before the edits' styles were a stylesheet: they are moved into one.
+  moveInlineEdits(doc);
   const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
     const image = new Image();
     image.src = still.getAttribute(PIXELS_ATTR)!;
@@ -231,6 +237,7 @@ function present(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadi
   const styles = Object.assign(doc.createElement("style"), { textContent: CANVAS_STYLES });
   styles.setAttribute(CANVAS_STYLES_ATTR, "");
   doc.head.append(styles);
+  orderEditStyles(doc);
   return layOut(doc, iframe, layout, loading);
 }
 

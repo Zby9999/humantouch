@@ -6,6 +6,7 @@
  * does or time is up. Changes to the page are watched rather than polled, as a
  * page in a background tab gets its timers slowed.
  */
+import { breakpointName, mediaOf } from "./breakpoints";
 import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
 import { isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property } from "./edits";
@@ -41,6 +42,11 @@ function checkable(change: Change): boolean {
 }
 
 export function checkChange(doc: Document, change: Change): Promise<CheckResult> {
+  // A change at a breakpoint shows at its widths only: the page, as wide as it is, may be at none of them.
+  // Checking it at those widths, whatever the page's, is ticket 38's.
+  if (change.breakpoint && !doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
+    return Promise.resolve({ outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page is not shown at that width now` });
+  }
   const reason = uncheckable(change);
   if (reason) return Promise.resolve({ outcome: "unchecked", reason });
   const look = (): CheckResult => {

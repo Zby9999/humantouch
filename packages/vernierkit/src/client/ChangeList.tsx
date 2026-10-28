@@ -2,6 +2,7 @@
 import type { TargetedKeyboardEvent } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { changeTitle, changeValues, layerName } from "../design-values";
+import { breakpointName } from "./breakpoints";
 import type { Change } from "./changeset";
 import { Icon } from "./icons";
 
@@ -77,7 +78,10 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
               <span class="vk-change-name">
                 {changeTitle(change)} · {layerName(change)}
               </span>
-              <span class="vk-change-values">{changeValues(change)}</span>
+              <span class="vk-change-values">
+                {changeValues(change)}
+                {change.breakpoint && <span class="vk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+              </span>
             </span>
             {!readOnly && (
               <button

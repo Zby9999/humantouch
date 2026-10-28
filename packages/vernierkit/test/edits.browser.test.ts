@@ -3,6 +3,7 @@ import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
+import { moveInlineEdits } from "../src/client/canvas-style";
 import { createEditor } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, type Layer } from "../src/client/layers";
@@ -43,12 +44,28 @@ let iframe: HTMLIFrameElement | undefined;
 let live: HTMLIFrameElement | undefined;
 /** A second view of the canvas, as narrow as a phone. */
 let phoneFrame: HTMLIFrameElement | undefined;
+/** A saved canvas, shown as it would be put back. */
+let savedFrame: HTMLIFrameElement | undefined;
 
 afterEach(() => {
   iframe?.remove();
   live?.remove();
   phoneFrame?.remove();
+  savedFrame?.remove();
 });
+
+/** A saved canvas, shown 800 px wide, as it looks. */
+function showSaved(html: string): Document {
+  savedFrame?.remove();
+  savedFrame = document.createElement("iframe");
+  savedFrame.style.width = "800px";
+  document.body.append(savedFrame);
+  const doc = savedFrame.contentDocument!;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  return doc;
+}
 
 function openCanvas(page = PAGE) {
   iframe = document.createElement("iframe");
@@ -299,15 +316,17 @@ describe("taking a change back from a saved round, with no canvas open", () => {
 
     const once = revertSaved(save(opened), radius.id)!;
     expect(once.changeSet.changes.map((change) => change.id)).toEqual([fill.id, 3]);
-    const saved = parse(once.canvas).querySelectorAll<HTMLElement>("article");
-    expect([...saved].slice(0, 3).map((card) => [card.style.borderRadius, card.style.backgroundColor])).toEqual(
+    const saved = showSaved(once.canvas).querySelectorAll<HTMLElement>("article");
+    expect([...saved].slice(0, 3).map((card) => [style(card).borderRadius, style(card).backgroundColor])).toEqual(
       Array(3).fill(["12px", "rgb(255, 0, 0)"]),
     );
-    expect(saved[3].style.borderRadius).toBe("2px");
+    expect(style(saved[3]).borderRadius).toBe("2px");
     expect(once.canvas).toMatch(/^<!DOCTYPE html>/);
 
     const twice = revertSaved(once, fill.id)!;
-    expect([...parse(twice.canvas).querySelectorAll("article")].slice(0, 3).map((card) => card.getAttribute("style"))).toEqual(before.slice(0, 3));
+    const back = [...parse(twice.canvas).querySelectorAll("article")].slice(0, 3);
+    expect(back.map((card) => card.getAttribute("style"))).toEqual(before.slice(0, 3));
+    expect(back.map((card) => card.hasAttribute("data-vk-style"))).toEqual([false, false, false]);
     expect(twice.changeSet.lastId).toBe(3);
   });
 
@@ -1890,8 +1909,8 @@ describe("deleting layers", () => {
       ["delete-2", true, 3],
     ]);
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
-    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
-    expect([...reverted.querySelectorAll("article")].map((card) => card.style.display)).toEqual(["none", "", "", ""]);
+    const reverted = showSaved(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas);
+    expect([...reverted.querySelectorAll("article")].map((card) => style(card).display)).toEqual(["none", "block", "block", "block"]);
 
     editor.revert(changes.list()[1].id);
     expect(cards.map((card) => style(card).display)).toEqual(["block", "none", "block", "block"]);
@@ -2259,3 +2278,315 @@ describe("views", () => {
     expect(phone.layerAt(editor.tree(), 1, 1)).toBe(c);
   });
 });
+
+describe("breakpoints", () => {
+  const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  const BLUE = { type: "solid", color: "#0000FF", opacity: 1 } as const;
+  /** The canvas, 800 px wide, shown in a phone view too: its breakpoint is every width below 800 px. */
+  const open = async (page = MOVES) => {
+    const canvas = openCanvas(page);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    const [desktop] = canvas.views.list();
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    /** How the element with id `id` is styled in each view: desktop, then phone. */
+    const shown = (id: string) => [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
+    const fills = (id: string) => shown(id).map((s) => s.backgroundColor);
+    return { ...canvas, desktop, phone, layer, shown, fills };
+  };
+
+  test("an edit made in the phone view shows there only, and is recorded at its breakpoint", async () => {
+    const { editor, changes, phone, layer, fills } = await open();
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+    expect(changes.list()).toMatchObject([{ kind: "style", property: "fill", breakpoint: { min: null, max: 800 }, before: null, after: RED }]);
+  });
+
+  test("an edit made in the desktop view applies at every breakpoint, but where the breakpoint has changed the property on its own", async () => {
+    const { editor, phone, desktop, layer, fills } = await open();
+
+    editor.set(layer("list"), "fill", BLUE);
+    expect(fills("list")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(desktop);
+    editor.set(layer("board"), "fill", BLUE);
+
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+  });
+
+  test("worked in, a view reads values as it shows them, and tells which the breakpoint changed on its own", async () => {
+    const { editor, phone, desktop, layer } = await open(MOVES.replace("<body", "<style>@media (width < 500px) { #list { gap: 4px !important } }</style>\n<body"));
+
+    expect(editor.read(layer("list"), "gap")).toBe(10);
+    editor.at(phone);
+    expect(editor.breakpoint()).toEqual({ min: null, max: 800 });
+    expect(editor.read(layer("list"), "gap")).toBe(4);
+    expect(editor.changedHere(layer("list"), "gap")).toBe(false);
+
+    editor.set(layer("list"), "gap", 12);
+    expect(editor.read(layer("list"), "gap")).toBe(12);
+    expect(editor.changedHere(layer("list"), "gap")).toBe(true);
+    expect(editor.changedHere(layer("list"), "padding")).toBe(false);
+
+    editor.at(desktop);
+    expect(editor.breakpoint()).toBeNull();
+    expect(editor.read(layer("list"), "gap")).toBe(10);
+    expect(editor.changedHere(layer("list"), "gap")).toBe(false);
+  });
+
+  test("set back to inherit, a breakpoint shows the value at every width again, as it is now; undone, its own is back", async () => {
+    const { editor, changes, phone, desktop, layer, fills } = await open();
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(desktop);
+    editor.set(layer("board"), "fill", BLUE);
+    editor.at(phone);
+    editor.inherit(layer("board"), "fill");
+
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+    expect(editor.changedHere(layer("board"), "fill")).toBe(false);
+    expect(changes.list().map((change) => [change.property, change.breakpoint ?? "every width"])).toEqual([["fill", "every width"]]);
+
+    editor.undo();
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    expect(editor.changedHere(layer("board"), "fill")).toBe(true);
+    editor.redo();
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+  });
+
+  test("an edit at a breakpoint is undone and redone there, whichever view is worked in then; set back to where it started, it is no change", async () => {
+    const { editor, changes, phone, desktop, layer, fills } = await open();
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(desktop);
+    editor.undo();
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", null);
+    expect(changes.list()).toEqual([]);
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+  });
+
+  test("a layer hidden at a breakpoint is hidden there only, and stays a layer; hidden at every width, a breakpoint can show it again", async () => {
+    const { editor, changes, phone, desktop, layer, shown } = await open();
+    const displays = (id: string) => shown(id).map((s) => s.display);
+
+    editor.at(phone);
+    editor.set(layer("b"), "visible", false);
+    expect(displays("b")).toEqual(["block", "none"]);
+    expect(editor.read(layer("b"), "visible")).toBe(false);
+    expect(editor.read(layer("b"), "fill")).toBeNull();
+    expect(phone.boxOf(layer("b"))).toBeNull();
+    expect(editor.tree().root.children[0].children.map((l) => l.name)).toEqual(["A", "B", "C"]);
+    editor.at(desktop);
+    expect(editor.read(layer("b"), "visible")).toBe(true);
+
+    editor.set(layer("c"), "visible", false);
+    editor.at(phone);
+    expect(editor.read(layer("c"), "visible")).toBe(false);
+    editor.set(layer("c"), "visible", true);
+    expect(displays("c")).toEqual(["none", "block"]);
+    expect(changes.list().map((change) => [change.layer, change.after, change.breakpoint ?? "every width"])).toEqual([
+      [layer("b").el.getAttribute("data-vk-layer"), false, { min: null, max: 800 }],
+      [layer("c").el.getAttribute("data-vk-layer"), false, "every width"],
+      [layer("c").el.getAttribute("data-vk-layer"), true, { min: null, max: 800 }],
+    ]);
+    // Shown again at every width, it is shown at the breakpoint as well, which says so on its own still.
+    editor.at(desktop);
+    editor.set(layer("c"), "visible", true);
+    expect(displays("c")).toEqual(["block", "block"]);
+  });
+
+  test("changes to the structure made in the phone view apply in every view, at every width", async () => {
+    const { editor, changes, phone, layer, shown } = await open();
+    const order = (doc: Document) => [...doc.getElementById("list")!.children].map((el) => el.id);
+
+    editor.at(phone);
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    const copy = editor.duplicate(layer("d"));
+    editor.remove(layer("a"));
+    const stack = editor.stack([layer("b"), layer("c")]);
+
+    expect(order(phone.document)).toEqual(order(editor.tree().root.el.ownerDocument));
+    expect(shown("a").map((s) => s.display)).toEqual(["none", "none"]);
+    expect(phone.boxOf(copy)).not.toBeNull();
+    expect(phone.boxOf(stack)).not.toBeNull();
+    expect(changes.list().every((change) => !change.breakpoint)).toBe(true);
+  });
+
+  test("sizes, Stack settings and minimums change at a breakpoint as any property does", async () => {
+    const { editor, phone, layer, shown } = await open();
+
+    editor.at(phone);
+    editor.set(layer("list"), "gap", 24);
+    editor.set(layer("list"), "direction", "horizontal");
+    editor.set(layer("board"), "width", { type: "fixed", value: 120 });
+    editor.set(layer("board"), "minHeight", 300);
+
+    expect(shown("list").map((s) => [s.flexDirection, s.rowGap])).toEqual([
+      ["column", "10px"],
+      ["row", "24px"],
+    ]);
+    expect(shown("board").map((s) => [s.width, s.minHeight])).toEqual([
+      ["300px", "0px"],
+      ["120px", "300px"],
+    ]);
+    expect(editor.read(layer("board"), "width")).toEqual({ type: "fixed", value: 120 });
+    expect(editor.measure(layer("board")).width).toBe(120);
+  });
+
+  test("a layer placed freely is placed anew at a breakpoint when dragged there in its container, or when its X and Y change there", async () => {
+    const { editor, changes, phone, desktop, layer, doc } = await open();
+    editor.move(layer("d"), { parent: layer("board"), x: 10, y: 20 });
+    const place = (d: Document) => {
+      const r = d.getElementById("d")!.getBoundingClientRect();
+      const b = d.getElementById("board")!.getBoundingClientRect();
+      return [r.left - b.left, r.top - b.top];
+    };
+
+    editor.at(phone);
+    editor.move(layer("d"), { parent: layer("board"), x: 40, y: 50 });
+    expect([place(doc), place(phone.document)]).toEqual([
+      [10, 20],
+      [40, 50],
+    ]);
+    editor.set(layer("d"), "x", 5);
+    expect(place(phone.document)).toEqual([5, 50]);
+    expect(changes.list().map((change) => [change.kind, change.property, change.breakpoint ?? "every width"])).toEqual([
+      ["move", "move", "every width"],
+      ["style", "x", { min: null, max: 800 }],
+      ["style", "y", { min: null, max: 800 }],
+    ]);
+
+    // In the desktop view, dragged again, it is the move that changes.
+    editor.at(desktop);
+    editor.move(layer("d"), { parent: layer("board"), x: 30, y: 30 });
+    expect([place(doc), place(phone.document)]).toEqual([
+      [30, 30],
+      [5, 50],
+    ]);
+  });
+
+  test("taken back from the change list, or from a saved round with no canvas open, a change at a breakpoint goes there only", async () => {
+    const opened = await open();
+    const { editor, changes, phone, layer, fills, doc } = opened;
+    editor.set(layer("board"), "fill", BLUE);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.set(layer("list"), "fill", RED);
+    const [, board, list] = changes.list();
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = revertSaved(saved, board.id)!;
+    expect(reverted.changeSet.changes.map((change) => change.id)).toEqual([1, list.id]);
+    const shownAt = (width: number) => {
+      const shown = showSaved(reverted.canvas);
+      savedFrame!.style.width = `${width}px`;
+      return ["board", "list"].map((id) => style(shown.getElementById(id)!).backgroundColor);
+    };
+    expect(shownAt(390)).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    expect(shownAt(800)).toEqual(["rgb(0, 0, 255)", "rgba(0, 0, 0, 0)"]);
+
+    editor.revert(board.id);
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+    editor.undo();
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+  });
+
+  test("a copy looks as the layer does at every breakpoint, but the layer's changes there are not the copy's", async () => {
+    const { editor, changes, phone, layer, doc } = await open();
+
+    editor.at(phone);
+    editor.set(layer("row"), "fill", RED);
+    const copy = editor.duplicate(layer("row"));
+    editor.set(layer("row"), "fill", BLUE);
+
+    const copyIn = (d: Document) => style(d.body.children[2]).backgroundColor;
+    expect([copyIn(doc), copyIn(phone.document)]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+    expect(editor.read(copy, "fill")).toEqual(RED);
+    expect(changes.list().filter((change) => change.layer === copy.el.getAttribute("data-vk-layer")).map((change) => change.kind)).toEqual(["duplicate"]);
+  });
+
+  test("what the edits declare wins over what the page declares, important or in a CSS layer, at every width", async () => {
+    const page = MOVES.replace(
+      "<body",
+      "<style>@layer base, utilities; @layer utilities { #board { background-color: rgb(0 128 0) !important } } div#board.x { background-color: rgb(0 128 0) !important }</style>\n<body",
+    );
+    const { editor, phone, desktop, layer, fills } = await open(page);
+    layer("board").el.classList.add("x");
+
+    editor.set(layer("board"), "fill", BLUE);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    editor.at(desktop);
+    expect(editor.changedHere(layer("board"), "fill")).toBe(false);
+  });
+
+  test("a canvas saved with its edits in the style attribute, as before, is put back with them in its edit styles, and they come off as they did", () => {
+    const old = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="board" data-vk-layer="1" data-vk-original-style="width: 300px; height: 200px"
+    style="width: 300px; height: 200px; background-color: rgb(255 0 0 / 1) !important"></div>
+</body>`;
+    const { doc, views } = openCanvas(old);
+    const el = doc.getElementById("board")!;
+
+    // As putting a saved canvas back does.
+    moveInlineEdits(doc);
+    const changes = createChangeSet({
+      lastId: 1,
+      changes: [
+        {
+          id: 1,
+          kind: "style",
+          layer: "1",
+          target: { loc: null, chain: [], component: null, instances: 1, locked: false, unlocated: true, context: { path: ["Page", "Board"], element: "<div>" } },
+          scope: "usage",
+          property: "fill",
+          before: null,
+          after: { type: "solid", color: "#FF0000", opacity: 1 },
+          style: { "background-color": "rgb(255 0 0 / 1)" },
+          sources: [],
+        },
+      ],
+    });
+    const editor = createEditor(views, changes);
+    expect(el.getAttribute("style")).toBe("width: 300px; height: 200px");
+    expect(style(el).backgroundColor).toBe("rgb(255, 0, 0)");
+
+    editor.revert(1);
+    expect(style(el).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(el.getAttribute("style")).toBe("width: 300px; height: 200px");
+  });
+
+  test("a plain flow given a gap at a breakpoint is a real Stack there, though one at every width made it one first and is taken back", async () => {
+    const { editor, changes, phone, desktop, layer, shown } = await open(LAYOUT);
+    const flow = () => find(editor.tree().root, (l) => l.el.id === "flow")!;
+
+    editor.set(flow(), "gap", 16);
+    editor.at(phone);
+    editor.set(flow(), "gap", 30);
+    editor.at(desktop);
+    editor.revert(changes.list()[0].id);
+
+    expect(changes.list().map((change) => [change.after, change.asStack, change.breakpoint ?? "every width"])).toEqual([[30, true, { min: null, max: 800 }]]);
+    expect(shown("flow").map((s) => [s.display, s.rowGap])).toEqual([
+      ["block", "normal"],
+      ["flex", "30px"],
+    ]);
+  });
+});
+

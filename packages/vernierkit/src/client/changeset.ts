@@ -3,6 +3,7 @@
  * language, for the Agent to apply. Adjusting one property of one layer again
  * and again stays a single change, from the first value to the latest.
  */
+import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { Align, Padding } from "./edits";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -113,6 +114,12 @@ export interface Change {
   target: Target;
   /** `usage`: this usage of the component only. */
   scope: "usage";
+  /**
+   * A style change made in a view other than the desktop view: it applies at
+   * that view's breakpoint only, the width range it stands for (ADR 0008).
+   * None: at every width, unless a breakpoint changes the property on its own.
+   */
+  breakpoint?: Breakpoint;
   property: string;
   before: unknown;
   after: unknown;
@@ -151,12 +158,13 @@ export const MOVE = "move";
 export interface ChangeSet {
   /**
    * Records `property` of the layer with id `layerId` going from `before` to
-   * `after`. A property changed before keeps its first `before`; one that ends
-   * up where it started is no longer a change.
+   * `after`, at every width or at `breakpoint`. A property changed before (at
+   * the same breakpoint) keeps its first `before`; one that ends up where it
+   * started is no longer a change.
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order"> & {
+    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order"> & {
       kind?: Change["kind"];
     },
   ): void;
@@ -164,8 +172,10 @@ export interface ChangeSet {
   remove(id: number): void;
   /** Puts `change` in as it is, its id and all, in its place among the others by id: over the one it was, or back where it was. */
   restore(change: Change): void;
-  /** Whether `property` of the layer with id `layerId` is changed already. */
-  has(layerId: string, property: string): boolean;
+  /** Whether `property` of the layer with id `layerId` is changed already: at every width, or at `breakpoint` on its own. */
+  has(layerId: string, property: string, breakpoint?: Breakpoint | null): boolean;
+  /** The change to `property` of the layer with id `layerId`, at every width or at `breakpoint`; null when there is none. */
+  find(layerId: string, property: string, breakpoint?: Breakpoint | null): Change | null;
   /** The changes, oldest first. */
   list(): Change[];
   /** The ChangeSet as plain data, to save with the canvas. */
@@ -181,28 +191,32 @@ export interface SavedChangeSet {
 
 /** A new ChangeSet, or the one `saved` was saved from. */
 export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
-  const changes = new Map<string, Change>(saved?.changes.map((change) => [keyOf(change.layer, change.property), change]));
+  const changes = new Map<string, Change>(saved?.changes.map((change) => [keyOf(change.layer, change.property, change.breakpoint), change]));
   let lastId = saved?.lastId ?? 0;
   return {
     record(layerId, change) {
-      const key = keyOf(layerId, change.property);
+      const key = keyOf(layerId, change.property, change.breakpoint);
       const earlier = changes.get(key);
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
       else if (earlier) Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
-      else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
+      else {
+        const { breakpoint, ...rest } = change;
+        changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...(breakpoint && { breakpoint: { ...breakpoint } }), ...rest });
+      }
     },
     remove(id) {
       for (const [key, change] of changes) if (change.id === id) changes.delete(key);
     },
     restore(change) {
       for (const [key, other] of changes) if (other.id === change.id) changes.delete(key);
-      const entries = [...changes, [keyOf(change.layer, change.property), change] as [string, Change]].sort(([, a], [, b]) => a.id - b.id);
+      const entries = [...changes, [keyOf(change.layer, change.property, change.breakpoint), change] as [string, Change]].sort(([, a], [, b]) => a.id - b.id);
       changes.clear();
       for (const [key, value] of entries) changes.set(key, value);
     },
-    has: (layerId, property) => changes.has(keyOf(layerId, property)),
+    has: (layerId, property, breakpoint) => changes.has(keyOf(layerId, property, breakpoint)),
+    find: (layerId, property, breakpoint) => changes.get(keyOf(layerId, property, breakpoint)) ?? null,
     list: () => [...changes.values()],
     save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
@@ -273,9 +287,9 @@ function placesOf(change: Change): Place[] {
   return [...(place ? [place] : []), ...layers.map((member) => member.from)];
 }
 
-/** One change per property of a layer. */
-function keyOf(layerId: string, property: string): string {
-  return `${layerId} ${property}`;
+/** One change per property of a layer, at every width and at each breakpoint. */
+function keyOf(layerId: string, property: string, breakpoint?: Breakpoint | null): string {
+  return breakpoint ? `${layerId} ${property} ${breakpointKey(breakpoint)}` : `${layerId} ${property}`;
 }
 
 /** Values are plain data in design language. */

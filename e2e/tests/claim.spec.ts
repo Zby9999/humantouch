@@ -148,3 +148,21 @@ test("with no changes, claim says so and leaves the round as it is", async () =>
   expect(await vernierkit("claim")).toMatch(/^No design changes to apply/);
   expect(readVernier("state.json")).toBeNull();
 });
+
+test("a change made in the phone view is noted with the widths it applies at, for the project's own breakpoints", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const phone = page.locator('iframe[title="Phone 390"]');
+  await expect(phone.contentFrame().locator("h1")).toBeVisible();
+  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await setField(page, "Fill color", "ff0000");
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 768 });
+
+  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(fill).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`)");
+  expect(fill).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000.\n");
+});

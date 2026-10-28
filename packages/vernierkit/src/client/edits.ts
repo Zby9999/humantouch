@@ -5,14 +5,16 @@
  * canvas. Every edit can be undone.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
+import { breakpointKey, breakpointOf, sameBreakpoint, type Breakpoint } from "./breakpoints";
 import {
   AS_STACK_ATTR,
+  asShown,
   BRIEF_ATTR,
   changesOn,
   declare,
+  declaredByEdit,
   DELETED_ATTR,
   elementsOf,
-  keepOriginal,
   LAYER_ID_ATTR,
   MADE_ATTR,
   MOVE_ATTR,
@@ -39,9 +41,9 @@ import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText }
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
-import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
+import { PIN_OFFSET_ATTR, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
-import type { Views } from "./views";
+import type { View, Views } from "./views";
 
 export { LAYER_ID_ATTR };
 
@@ -114,15 +116,33 @@ export interface SetOptions {
 }
 
 export interface Editor {
+  /**
+   * Works in `view` from now on, the one the designer works in: values are read
+   * as it shows them, and style and layout edits apply at its breakpoint only
+   * (ADR 0008); in the desktop view (or null), at every width. Changes to the
+   * structure apply in every view, wherever they are made.
+   */
+  at(view: View | null): void;
+  /** The breakpoint of the view worked in; null in the desktop view: every width. */
+  breakpoint(): Breakpoint | null;
+  /** Whether `property` of the layer is changed at the breakpoint worked in, on its own; never in the desktop view. */
+  changedHere(layer: Layer, property: Property): boolean;
+  /** The properties of the layer changed at the breakpoint worked in, on their own, in the order they were first changed. */
+  changesHere(layer: Layer): Property[];
+  /**
+   * Takes the breakpoint's own value of `property` off the layer, as an edit
+   * that can be undone: it inherits the value at every width again.
+   */
+  inherit(layer: Layer, property: Property): void;
   /** Whether `property` can be edited on the layer; with `value`, whether the layer can take that value. */
   can<P extends Property>(layer: Layer, property: P, value?: PropertyValues[P]): boolean;
-  /** The layer's current value. */
+  /** The layer's current value, as the view worked in shows it. */
   read<P extends Property>(layer: Layer, property: P): PropertyValues[P];
-  /** Changes the layer, across the instances of its usage, and records the change. It can be undone. */
+  /** Changes the layer, across the instances of its usage, at the breakpoint worked in, and records the change. It can be undone. */
   set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
   /** Makes the edits `edits` makes one step, undone and redone together: the same change to several layers. */
   batch(edits: () => void, options?: SetOptions): void;
-  /** Where the layer is on the canvas, in canvas px; for a hidden layer, where it is when shown. */
+  /** Where the layer is in the view worked in, in its px; for a hidden layer, where it is when shown. */
   measure(layer: Layer): DOMRect;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
   undo(): Layer[];
@@ -380,32 +400,56 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
 
   const layerById = (id: string) => find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
 
-  /** The edit itself: on the canvas and in the ChangeSet. */
-  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P]) => {
+  /** The view worked in; null: the desktop view. */
+  let current: View | null = null;
+  /** The breakpoint of a view; null for the desktop view. */
+  const breakpointIn = (view: View | null): Breakpoint | null => {
+    const all = views.list();
+    if (!view || view === all[0] || !all.includes(view)) return null;
+    return breakpointOf(view.width, views.canvas.width, all.slice(1).map((v) => v.width));
+  };
+  /** The view that stands for `breakpoint` now, if one does: the view worked in first. */
+  const viewAt = (breakpoint: Breakpoint | null): View | null => {
+    if (!breakpoint) return null;
+    if (sameBreakpoint(breakpointIn(current), breakpoint)) return current;
+    return views.list().find((view) => sameBreakpoint(breakpointIn(view), breakpoint)) ?? null;
+  };
+  /** The element that shows a canvas element in `view`, as it is now; the canvas's own for the desktop view, or a view that shows none of it. */
+  const shownIn = (view: View | null, el: Element): Element => {
+    if (!view || view === views.list()[0]) return el;
+    views.sync();
+    return view.elementOf(el) ?? el;
+  };
+
+  /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. */
+  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null) => {
     const definition: Definition<PropertyValues[P]> = PROPERTIES[property];
-    const before = readAsShown(layer.el, property, colors);
+    // Read, and written, as laid out at the breakpoint, in the view that stands for it.
+    const el = shownIn(viewAt(breakpoint), layer.el);
+    const before = readAsShown(el, property, colors);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
+    const earlier = known ? changes.find(known, property, breakpoint) : null;
     // A layer made this round has no style of the page's to change.
-    const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(layer.el, definition.sets);
+    const sources = layer.made || earlier ? [] : sourcesOf(el, definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
-    const asStack = definition.stack && (layer.el.hasAttribute(AS_STACK_ATTR) || !asShown(layer.el, () => stackOf(layer.el).flex));
-    const declarations = asShown(layer.el, () => ({
-      ...(asStack && { display: "flex", "flex-direction": stackOf(layer.el).direction === "horizontal" ? "row" : "column" }),
-      ...definition.write(value, layer.el),
+    const flowing = () => !asShown(el, () => stackOf(el).flex);
+    // At a breakpoint, it is made a real Stack there too: an edit at every width that made it one may be taken back.
+    const asStack = definition.stack && ((!!breakpoint && !!earlier?.asStack) || layer.el.hasAttribute(AS_STACK_ATTR) || flowing());
+    const declarations = asShown(el, () => ({
+      ...(asStack && { display: "flex", "flex-direction": stackOf(el).direction === "horizontal" ? "row" : "column" }),
+      ...definition.write(value, el),
     }));
     for (const instance of instances) {
-      keepOriginal(instance.el);
-      if (asStack) instance.el.setAttribute(AS_STACK_ATTR, "");
-      declare(instance.el, declarations);
-      // Hidden by the designer, it stays hidden whatever else changes.
-      if (property !== "visible" && known && changes.has(known, "visible")) declare(instance.el, { display: "none" });
+      if (asStack && !breakpoint) instance.el.setAttribute(AS_STACK_ATTR, "");
+      declare(instance.el, declarations, breakpoint);
     }
     const id = idOf(layer, instances);
     changes.record(id, {
       target: targetOf(layer, instances.length),
       scope: "usage",
+      ...(breakpoint && { breakpoint }),
       property,
       before,
       after: value,
@@ -414,9 +458,9 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       ...(asStack && { asStack: true }),
     });
     // Back where it started: the page's own style again, the layer's other changes kept on.
-    if (!changes.has(id, property)) {
+    if (!changes.has(id, property, breakpoint)) {
       const others = changesOn(id, changes.list());
-      for (const instance of instances) restoreStyle(instance.el, cssOf(property), others);
+      for (const instance of instances) restoreStyle(instance.el, cssOf(property), others, breakpoint);
     }
     // A Stack now laid out the other way: the layers are built anew, so a drag into it reads the way it runs now.
     if (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction) tree = buildLayerTree(doc);
@@ -445,16 +489,26 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
 
-  /** An edit that can be undone. `from`: the value it changes, when the canvas cannot tell (on a hidden layer, say). */
-  const edit = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, from?: PropertyValues[P]) => {
-    const before = from === undefined ? readAsShown(layer.el, property, colors) : from;
+  /**
+   * An edit that can be undone, at every width or at `breakpoint`. `from`: the
+   * value it changes, when the canvas cannot tell (on a hidden layer, say).
+   */
+  const edit = <P extends Property>(
+    layer: Layer,
+    property: P,
+    value: PropertyValues[P],
+    continues: boolean,
+    breakpoint: Breakpoint | null,
+    from?: PropertyValues[P],
+  ) => {
+    const before = from === undefined ? readAsShown(shownIn(viewAt(breakpoint), layer.el), property, colors) : from;
     if (same(before, value)) return;
-    const id = apply(layer, property, value);
+    const id = apply(layer, property, value, breakpoint);
     const to = (v: PropertyValues[P]) => () => {
       const target = layerById(id);
-      if (target) apply(target, property, v);
+      if (target) apply(target, property, v, breakpoint);
     };
-    push({ layers: [id], key: `${id} ${property}`, undo: to(before), redo: to(value) }, continues);
+    push({ layers: [id], key: `${id} ${property} ${breakpointKey(breakpoint)}`, undo: to(before), redo: to(value) }, continues);
   };
 
   /**
@@ -620,6 +674,37 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
   const isFrameOfLayers = (layer: Layer) =>
     layer.kind === "frame" && !!layer.parent && layer.children.length > 0 && layer.children.every((child) => placeable(child) && repeatsWith(child, layer));
 
+  /** The layer's id and the breakpoint worked in, when there is one and the layer has changes of its own. */
+  const workedHere = (layer: Layer) => {
+    const breakpoint = breakpointIn(current);
+    const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
+    return breakpoint && id ? { id, breakpoint } : null;
+  };
+
+  /**
+   * Takes a change made at a breakpoint back out, as an edit that can be
+   * undone: the layer inherits what it shows at every width there again, as
+   * that is now, and undone, the change is back as it was.
+   */
+  const inheritStep = (change: Change) => {
+    const { layer: id, property, breakpoint } = change;
+    const instances = () => {
+      const layer = layerById(id);
+      return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
+    };
+    const off = () => {
+      changes.remove(change.id);
+      const others = changesOn(id, changes.list());
+      for (const el of instances()) restoreStyle(el, cssOf(property as Property), others, breakpoint!);
+    };
+    const on = () => {
+      changes.restore(change);
+      for (const el of instances()) declare(el, change.style, breakpoint!);
+    };
+    off();
+    push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off }, false);
+  };
+
   /** Takes one change back out, as an edit that can be undone. Returns its layer as it is then. */
   const revertOne = (change: Change): Layer | null => {
     if (change.kind === "delete") {
@@ -656,8 +741,12 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       structural([id], [id], words(id, record, null), words(id, record, change.after as string));
       return layerById(id);
     }
+    if (change.breakpoint) {
+      inheritStep(change);
+      return layer;
+    }
     // Whatever the layer offers now (a hidden one offers only Visible), a change of its own can always go.
-    edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.after as PropertyValues[Property]);
+    edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.breakpoint ?? null, change.after as PropertyValues[Property]);
     return layer;
   };
 
@@ -716,6 +805,24 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
   };
 
   const editor: Editor = {
+    at(view) {
+      current = view;
+    },
+    breakpoint: () => breakpointIn(current),
+    changedHere: (layer, property) => editor.changesHere(layer).includes(property),
+    changesHere(layer) {
+      const here = workedHere(layer);
+      if (!here) return [];
+      return changes
+        .list()
+        .filter((change) => change.layer === here.id && change.kind === "style" && sameBreakpoint(change.breakpoint, here.breakpoint))
+        .map((change) => change.property as Property);
+    },
+    inherit(layer, property) {
+      const here = workedHere(layer);
+      const change = here && changes.find(here.id, property, here.breakpoint);
+      if (change) inheritStep(change);
+    },
     tree: () => tree,
     canMove: (layer) => layer.parent !== null,
     canDrop(layer, container) {
@@ -728,8 +835,10 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
     move(layer, to) {
       if (!editor.canDrop(layer, to.parent)) throw new Error(`Vernier Kit: ${layer.name} cannot go into ${to.parent.name}`);
       // Absolute as the page has it, and staying in its container: only its position changes, as X and Y do.
+      // At a breakpoint, so does that of any absolute layer: where it is placed there is its X and Y there.
       const moved = !layer.text && layer.el.hasAttribute(MOVE_ATTR);
-      if ("x" in to && layer.absolute && !layer.text && !moved && to.parent === layer.parent) {
+      const placedHere = !!breakpointIn(current) && !layer.text && absolute(shownIn(current, layer.el));
+      if ("x" in to && (layer.absolute || placedHere) && !layer.text && (!moved || placedHere) && to.parent === layer.parent) {
         const [dx, dy] = pinOffsetOf(layer.el);
         editor.batch(() => {
           editor.set(layer, "x", round(to.x - dx));
@@ -773,13 +882,18 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
       if (layer.text || !kinds.includes(layer.kind)) return false;
       // A hidden layer offers what it does when shown, so the panel stays as it was.
-      return asShown(layer.el, () => (!applies || applies(layer.el)) && (value === undefined || !accepts || accepts(layer.el, value)));
+      const el = shownIn(current, layer.el);
+      return asShown(el, () => (!applies || applies(el)) && (value === undefined || !accepts || accepts(el, value)));
     },
-    read: (layer, property) => readAsShown(layer.el, property, colors),
-    measure: (layer) => asShown(layer.el, () => boxOf(layer)),
+    read: (layer, property) => readAsShown(shownIn(current, layer.el), property, colors),
+    measure(layer) {
+      const el = layer.text ? layer.el : shownIn(current, layer.el);
+      if (el === layer.el) return asShown(layer.el, () => boxOf(layer));
+      return asShown(el, () => el.getBoundingClientRect());
+    },
     set(layer, property, value, { continues = false } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
-      edit(layer, property, value, continues);
+      edit(layer, property, value, continues, breakpointIn(current));
     },
     batch(edits, { continues = false } = {}) {
       if (batching) return edits();
@@ -1135,27 +1249,6 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
   return editor;
 }
 
-/**
- * Runs `look` on an element as if shown: a layer the designer hid is read and
- * measured as it is laid out when visible. It is shown and hidden again in one
- * go, so nothing of it is ever painted.
- */
-function asShown<T>(el: Element, look: () => T): T {
-  const style = (el as HTMLElement).style;
-  if (style.getPropertyValue("display") !== "none" || style.getPropertyPriority("display") !== "important") return look();
-  // Its display as it is when shown: a real Stack an edit made it, or the page's own.
-  const page = el.ownerDocument.createElement("div").style;
-  page.cssText = el.getAttribute(ORIGINAL_STYLE_ATTR) ?? "";
-  const display = el.hasAttribute(AS_STACK_ATTR) ? "flex" : page.getPropertyValue("display");
-  if (display) style.setProperty("display", display, "important");
-  else style.removeProperty("display");
-  try {
-    return look();
-  } finally {
-    style.setProperty("display", "none", "important");
-  }
-}
-
 /** A property of an element as the editor reads it: as if shown, apart from whether it is shown. */
 function readAsShown<P extends Property>(el: Element, property: P, colors: ColorReader): PropertyValues[P] {
   return property === "visible" ? PROPERTIES[property].read(el, colors) : asShown(el, () => PROPERTIES[property].read(el, colors));
@@ -1329,10 +1422,7 @@ function stretches(el: Element): boolean {
 
 /** The value the page (or an edit) declares for `property` of `el`, as written: `auto` when nothing does. */
 function declaredValue(el: Element, property: string): string {
-  const inline = (el as HTMLElement).style;
-  // Edits are important declarations in the style attribute; what the freezer pinned is not the page's.
-  if (inline.getPropertyPriority(property) === "important" && !pinnedOf(el).includes(property)) return inline.getPropertyValue(property);
-  return pageValue(el, property) || "auto";
+  return declaredByEdit(el, property) || pageValue(el, property) || "auto";
 }
 
 /** An absolute layer's place along one axis: where its edge is from its parent's, as CSS sets it. */

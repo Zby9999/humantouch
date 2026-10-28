@@ -28,7 +28,7 @@ export interface StyleSource {
   declaration: string | null;
 }
 
-/** Before any edit, the element's own style attribute: edits write theirs into it. */
+/** Before any edit, the element's own style attribute, as the page wrote it: edits may take the important declarations off it. */
 export const ORIGINAL_STYLE_ATTR = "data-vk-original-style";
 /**
  * On an element the freezer pinned where the designer saw it (placed against
@@ -44,6 +44,8 @@ export const SHEET_HREF_ATTR = "data-vk-href";
 const VITE_ID_ATTR = "data-vite-dev-id";
 /** Styles of the canvas itself, not the page's. */
 const CANVAS_STYLES_ATTR = "data-vk-canvas-styles";
+/** The edits' styles on the canvas, not the page's (canvas-style). */
+const EDIT_STYLES_ATTR = "data-vk-edit-styles";
 
 /** The shorthands that can set a longhand, as written in a rule. */
 const SHORTHANDS: Record<string, string[]> = {
@@ -173,7 +175,7 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
 
   for (const sheet of doc.styleSheets) {
     const owner = sheet.ownerNode as Element | null;
-    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
+    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || owner?.hasAttribute(EDIT_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
     const rules = readRules(sheet);
     if (!rules) unreadable = true;
     else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);

@@ -97,6 +97,7 @@ describe("claim", () => {
 - **Layer:** Card, \`<article class="rounded-xl border bg-white p-5">\` (Page › Stack › Grid › Card)
 - **Location:** \`src/components/Card.tsx:3:5\`
 - **Scope:** This usage only: Card used at \`src/App.tsx:40:11\`, inside App used at \`src/main.tsx:8:5\`. It renders 3 instances, which change together. Other usages of Card stay as they are.
+- **Breakpoint:** all breakpoints.
 - **Design intent:** Change the fill from #FFFFFF to #FF0000 at 50% opacity.
 - **Reference style:** \`background-color: rgb(255 0 0 / 0.5)\`
 - **Currently set by:** unknown
@@ -162,6 +163,20 @@ describe("claim", () => {
     expect(notes).toContain(
       "- **Scope:** **Usage not determined.** Pricing is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page at `/pricing?plan=team` (Layer, above), and leave the other usages of Pricing as they are.\n",
     );
+  });
+});
+
+describe("claim, breakpoints", () => {
+  test("a change made in a narrower view says the widths it applies at, to be written with the project's own breakpoints; any other, all breakpoints", async () => {
+    saveRound(redFill, { ...smallRadius, breakpoint: { min: null, max: 768 } }, { ...smallRadius, id: 3, breakpoint: { min: 768, max: 1280 } });
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Breakpoint:** all breakpoints.\n");
+    expect(section(output, 2)).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`), as the designer changed it in a narrower view.");
+    expect(section(output, 2)).toContain("the way the project already writes breakpoints");
+    expect(section(output, 3)).toContain("- **Breakpoint:** 768px to 1279px only (`@media (768px <= width < 1280px)`)");
+    expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
   });
 });
 

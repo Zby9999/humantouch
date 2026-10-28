@@ -353,6 +353,16 @@ export const styles = /* css */ `
 .vk-layer-info dt { color: var(--vk-text-muted); }
 .vk-layer-info dd { margin: 0; overflow-wrap: anywhere; }
 .vk-layer-note { margin: 8px 0 0; color: var(--vk-text-muted); }
+/* The breakpoint the view worked in stands for, and the properties changed there on their own (ADR 0008). */
+.vk-breakpoint { --vk-breakpoint: #8a38f5; }
+@media (prefers-color-scheme: dark) { .vk-breakpoint { --vk-breakpoint: #b48aff; } }
+.vk-breakpoint-range { color: var(--vk-breakpoint); font-variant-numeric: tabular-nums; }
+.vk-breakpoint .vk-layer-note { margin: 0; }
+.vk-breakpoint-changes { list-style: none; margin: 4px 0 0; padding: 0; }
+.vk-breakpoint-change { display: flex; align-items: center; gap: 8px; height: 24px; }
+.vk-breakpoint-mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--vk-breakpoint); }
+.vk-breakpoint-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vk-breakpoint); }
+.vk-change-breakpoint { color: #b48aff; }
 .vk-source { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-unlocated { color: var(--vk-text-muted); font-style: italic; }
 

@@ -4,7 +4,7 @@
  * layer ids and the change's values only, so the same works on the canvas
  * being edited and on a saved one.
  */
-import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, restoreStyle } from "./canvas-style";
+import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, relayOut, restoreStyle } from "./canvas-style";
 import type { Change, Composed, Dissolved, StackSettings } from "./changeset";
 import type { Alignment } from "./edits";
 import { MOVE_CSS, slotsOf } from "./moves";
@@ -170,7 +170,7 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
       container.insertBefore(stack, slotsOf(container)[composed.place.slot] ?? null);
     }
     keepOriginal(stack);
-    declare(stack, style);
+    relayOut(stack, style);
     stack.append(...(members as Element[]));
     composed.layers.forEach((member, i) => {
       const style = memberStyle(member);
@@ -207,7 +207,7 @@ export function decompose(doc: Document, id: string, composed: Composed, changes
 export function dissolve(doc: Document, id: string, dissolved: Dissolved, style: Record<string, string>) {
   for (const stack of elementsOf(doc, id)) {
     keepOriginal(stack);
-    declare(stack, style);
+    relayOut(stack, style);
     for (const member of dissolved.layers) {
       const el = childOf(stack, member.layer);
       if (!el) continue;

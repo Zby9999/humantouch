@@ -12,6 +12,8 @@ import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 export interface View {
   /** What the view shows: the canvas itself for the desktop view, a copy of it for any other. */
   readonly document: Document;
+  /** How wide it shows the canvas, px: the desktop view as wide as the page was frozen at. */
+  readonly width: number;
   /**
    * How tall the view is, px: as tall as what it shows, and no shorter than
    * the window the page was frozen in. It follows what the view shows before
@@ -69,7 +71,7 @@ export function createViews(canvas: Canvas): Views {
   const followers = new Map<View, Follower>();
   const listeners = new Set<() => void>();
   const fittings = new Map<View, Fitting>();
-  const desktop = viewOf(canvas.document, ITSELF, () => fittings.get(desktop)?.height ?? canvas.height);
+  const desktop = viewOf(canvas.document, canvas.width, ITSELF, () => fittings.get(desktop)?.height ?? canvas.height);
   const views: View[] = [desktop];
 
   /** Each view made as tall as what it shows, once a frame, when anything may have changed it. */
@@ -118,7 +120,7 @@ export function createViews(canvas: Canvas): Views {
       const laidOut = copyCanvas(canvas, iframe, width);
       // What is typed in this view is in every other view at once, as it is on the canvas.
       const follower = follow(canvas.document, doc, sync);
-      const view = viewOf(doc, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
+      const view = viewOf(doc, width, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
       followers.set(view, follower);
       views.push(view);
       return laidOut.then((copy) => {
@@ -172,13 +174,14 @@ interface Correspondence {
 const ITSELF: Correspondence = { inView: (node) => node, onCanvas: (node) => node, typeIn: (el) => ({ el: el as HTMLElement, done() {} }) };
 
 /** A view of the canvas, as `document` shows it. */
-function viewOf(document: Document, { inView, onCanvas, typeIn }: Correspondence, height: () => number): View {
+function viewOf(document: Document, width: number, { inView, onCanvas, typeIn }: Correspondence, height: () => number): View {
   const rangeIn = (run: Text[]) => {
     const nodes = run.map(inView);
     return nodes.every((node) => node !== null) ? rangeOf(nodes as Text[]) : null;
   };
   return {
     document,
+    width,
     get height() {
       return height();
     },
