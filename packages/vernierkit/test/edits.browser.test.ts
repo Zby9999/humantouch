@@ -2,10 +2,11 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
-import { createChangeSet } from "../src/client/changeset";
+import { createChangeSet, type Place } from "../src/client/changeset";
 import { checkChange, type PageAt } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
 import { moveInlineEdits } from "../src/client/canvas-style";
+import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, type Layer } from "../src/client/layers";
@@ -2553,6 +2554,28 @@ describe("breakpoints", () => {
     expect(readMediaBreakpoints(openCanvas(MOVES).doc)).toBeNull();
   });
 
+  test("the media queries of a dependency's stylesheets, or of the editor's own, are not the project's; a stylesheet whose source cannot be told counts", () => {
+    const { doc } = openCanvas(`<!DOCTYPE html>
+      <style data-vite-dev-id="/app/node_modules/.pnpm/lib@1.0.0/node_modules/lib/dist/lib.css">@media (min-width: 500px) { p { color: red } }</style>
+      <style data-vite-dev-id="/app/src/index.css">@media (min-width: 768px) { p { color: blue } }</style>
+      <style data-vk-canvas-styles>@media (min-width: 300px) { p { color: green } }</style>
+      <style>@media (max-width: 1023px) { p { margin: 0 } }</style>
+      <body><p>Hi</p></body>`);
+    expect(readMediaBreakpoints(doc)?.list.map((breakpoint) => breakpoint.width)).toEqual([768, 1024]);
+
+    // A stylesheet loaded from a dependency's file.
+    const rulesOf = (css: string) => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(css);
+      return sheet.cssRules;
+    };
+    const linked = (href: string, css: string) => ({ href, ownerNode: null, cssRules: rulesOf(css) });
+    const page = {
+      styleSheets: [linked("http://localhost:5173/node_modules/.vite/deps/lib.css", "@media (min-width: 500px) { p { color: red } }"), linked("http://localhost:5173/src/app.css", "@media (min-width: 640px) { p { color: red } }")],
+    } as unknown as Document;
+    expect(readMediaBreakpoints(page)?.list.map((breakpoint) => breakpoint.width)).toEqual([640]);
+  });
+
   test("a change at a breakpoint recorded before the views changed is told, edited and reset in every view whose width is in its range, never doubled", async () => {
     const { editor, changes, phone, layer, fills, addView } = await open();
     editor.at(phone);
@@ -3269,5 +3292,59 @@ describe("Grid", () => {
     editor.undo();
     expect(order()).toEqual(["a", "b", "c", "d"]);
   });
-});
 
+  /** The Grid with its layers placed otherwise than in the order they are written: `grid` on the Grid, `b` on its second layer. */
+  const placed = (grid: string, b: string) => GRID.replace('style="display: grid; width: 400px"', `style="display: grid; width: 400px; ${grid}"`).replace(`id="b" ${at("7:7")} style="height: 40px"`, `id="b" ${at("7:7")} style="height: 40px; ${b}"`);
+  const PLACINGS = [
+    ["a cell of its own", "", "grid-column: 2; grid-row: 2"],
+    ["an area", "", "grid-area: 1 / 2"],
+    ["another order", "", "order: 1"],
+    ["holes filled out of order", "grid-auto-flow: row dense", ""],
+  ];
+
+  test.each(PLACINGS)("with a layer placed in %s, nudging a layer of the Grid moves none, and changes nothing", (_, grid, b) => {
+    const canvas = openCanvas(placed(grid, b));
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+
+    expect(canvas.editor.nudge([layer("a")], 1, 0)).toEqual([layer("a")]);
+    canvas.editor.nudge([layer("c")], 0, 1);
+
+    expect([...canvas.doc.getElementById("grid")!.children].map((el) => el.id)).toEqual(["a", "b", "c", "d"]);
+    expect(canvas.changes.list()).toEqual([]);
+  });
+
+  test("with a layer placed in a cell of its own, a layer dragged in the Grid goes nowhere; one dragged in from elsewhere goes last, no cell of its own named", () => {
+    const canvas = openCanvas(placed("", "grid-column: 2; grid-row: 2"));
+    const { editor, views, doc } = canvas;
+    const layer = (id: string) => find(editor.tree().root, (l) => l.el === doc.getElementById(id) && !l.text)!;
+    const [desktop] = views.list();
+    const rectOf = (l: Layer) => l.el.getBoundingClientRect();
+    const over = (id: string) => {
+      const r = doc.getElementById(id)!.getBoundingClientRect();
+      return { x: r.left + r.width / 4, y: r.top + r.height / 2 };
+    };
+
+    expect(findDrop(editor, desktop, layer("a"), over("d"), rectOf(layer("a")), rectOf)).toBeNull();
+    const drop = findDrop(editor, desktop, layer("f"), over("c"), rectOf(layer("f")), rectOf)!;
+    expect(drop).toMatchObject({ to: { parent: layer("grid"), index: 4 }, line: null });
+    // Drawn in it, a new layer goes last too.
+    expect(findPlace(editor, desktop, over("c"), new DOMRect(over("c").x, over("c").y, 10, 10))).toMatchObject({ parent: layer("grid"), index: 4 });
+
+    editor.move(layer("f"), drop.to);
+    expect([...doc.getElementById("grid")!.children].map((el) => el.id)).toEqual(["a", "b", "c", "d", "f"]);
+    // Not the Grid's 5th cell: where it is placed is the Grid's to say.
+    const after = canvas.changes.list()[0].after as Place;
+    expect([after.nth, after.container.grid]).toEqual([5, undefined]);
+  });
+
+  test("in a Grid that places its layers in the order they are written, a drag between them takes a cell, as before", () => {
+    const { editor, views, doc, layer } = open();
+    const [desktop] = views.list();
+    const rectOf = (l: Layer) => l.el.getBoundingClientRect();
+    const r = doc.getElementById("d")!.getBoundingClientRect();
+
+    expect(findDrop(editor, desktop, layer("a"), { x: r.left + r.width / 4, y: r.top + r.height / 2 }, rectOf(layer("a")), rectOf)).toMatchObject({
+      to: { parent: layer("grid"), index: 2 },
+    });
+  });
+});

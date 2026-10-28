@@ -3,7 +3,7 @@
  * layers around it make room. Nothing changes structure until the drop; while
  * the layer is dragged, layers are only shifted.
  */
-import { trackCount, type Destination, type Editor } from "./edits";
+import { placesItself, trackCount, type Destination, type Editor } from "./edits";
 import type { Layer } from "./layers";
 import { snap, type Mark } from "./snap";
 import type { View } from "./views";
@@ -80,7 +80,14 @@ export function findDrop(
     return { to: { parent: container, x: at(x, snapped.x), y: at(y, snapped.y) }, line: null, shifts: new Map(), box, marks };
   }
 
-  if (container.kind === "grid") return gridDrop(container, layer, point, box, rectOf, el);
+  if (container.kind === "grid") {
+    if (!placesItself(el(container))) return gridDrop(container, layer, point, box, rectOf, el);
+    // A Grid that places its layers itself has no cells to reorder by: its own layers go nowhere; one from elsewhere goes last.
+    if (layer?.parent === container) return null;
+    const shifts = new Map<Element, { x: number; y: number }>();
+    if (layer) closeUp(shifts, layer, box, rectOf, el);
+    return { to: { parent: container, index: container.children.filter((child) => child !== layer).length }, line: null, shifts, box, marks: [] };
+  }
 
   const horizontal = container.direction === "horizontal";
   const span = (r: DOMRect) => (horizontal ? [r.left, r.right] : [r.top, r.bottom]);
@@ -228,8 +235,9 @@ export function findPlace(editor: Editor, view: View, start: { x: number; y: num
     return { parent: container, x: Math.round(box.left - area.left - el.clientLeft), y: Math.round(box.top - area.top - el.clientTop) };
   }
   if (container.kind === "grid") {
-    const flow = container.children.filter((child) => !child.absolute && view.boxOf(child));
     const el = view.elementOf(container.el) ?? container.el;
+    if (placesItself(el)) return { parent: container, index: container.children.length };
+    const flow = container.children.filter((child) => !child.absolute && view.boxOf(child));
     const { n } = cellAt(el, el.getBoundingClientRect(), flow.map((child) => view.boxOf(child)!), start);
     return { parent: container, index: n < flow.length ? container.children.indexOf(flow[n]) : container.children.length };
   }

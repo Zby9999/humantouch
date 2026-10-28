@@ -174,3 +174,36 @@ test("a layer dragged into the Grid from a Stack takes the cell it is let go at"
   await expect.poll(children).toEqual(["Freeze", "button", "Arrange", "Apply", "Your turn"]);
   await expect(await changeRows(page)).toHaveText([/Move.*Button.*Stack → Grid/]);
 });
+
+test("in a Grid one of whose cards is placed by order, a card dragged or nudged among the cards stays, with no reorder; a layer dragged in goes last", async ({ page }) => {
+  // The first card shown last, whatever the order the cards are written in.
+  await page.locator("main article").first().evaluate((el) => ((el as HTMLElement).style.order = "1"));
+  await enterEditMode(page);
+  await layers(page).getByRole("treeitem", { name: "Card", exact: true }).nth(3).click();
+  const turn = desktop(page).contentFrame().locator("article").nth(3);
+  const arrange = desktop(page).contentFrame().locator("article").nth(1);
+
+  const start = (await turn.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  const target = (await arrange.boundingBox())!;
+  await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
+  await expect(page.locator(".vk-drop-line")).toHaveCount(0);
+  await page.mouse.up();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  expect(await cards(page)).toEqual([ORDER, ORDER, ORDER]);
+  await expect(page.locator("[data-vk-changes-opener]")).toHaveCount(0);
+
+  await layers(page).getByRole("treeitem", { name: "Button", exact: true }).click();
+  const button = desktop(page).contentFrame().locator('[data-testid="hero"] > button');
+  const from = (await button.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  const children = () => desktop(page).contentFrame().locator(GRID).evaluate((el) => [...el.children].map((child) => child.querySelector("h3")?.textContent ?? child.localName));
+  await expect.poll(children).toEqual([...ORDER, "button"]);
+  await expect(await changeRows(page)).toHaveText([/Move.*Button.*Stack → Grid/]);
+});

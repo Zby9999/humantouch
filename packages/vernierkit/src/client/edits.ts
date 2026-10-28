@@ -737,7 +737,9 @@ export function createEditor(
   /** A container as a place names it: a Grid's places are its cells. */
   const containerOf = (container: Layer): Place["container"] => {
     const instances = tree.acrossInstances(container);
-    return { layer: idOf(container, instances), target: targetOf(container, instances.length), ...(container.kind === "grid" && { grid: true as const }) };
+    // A Grid that places its layers itself has no cell to name by their order.
+    const cells = container.kind === "grid" && !placesItself(container.el);
+    return { layer: idOf(container, instances), target: targetOf(container, instances.length), ...(cells && { grid: true as const }) };
   };
 
   /**
@@ -1189,7 +1191,10 @@ export function createEditor(
           // In a Stack's or a Grid's layout: each a place along it, the furthest that way first, so side by side they go together.
           const stacked = layers.map((_, i) => i).filter((i) => {
             const layer = found(i);
-            return (layer?.parent?.kind === "stack" || layer?.parent?.kind === "grid") && !free(layer) && editor.canDrop(layer, layer.parent);
+            const parent = layer?.parent;
+            // A Grid that places its layers itself has no cell along to take: they stay, as they do in a Frame's flow.
+            const along = parent?.kind === "stack" || (parent?.kind === "grid" && !placesItself(shownIn(current, parent.el)));
+            return along && !free(layer!) && editor.canDrop(layer!, parent!);
           });
           const stuck = new Set<Node>();
           for (const parentNode of new Set(stacked.map((i) => nodeOf(found(i)!.parent!)))) {
@@ -1725,6 +1730,24 @@ function stackOf(el: Element): StackLayout {
 export function trackCount(computed: string): number {
   if (computed === "none") return 1;
   return computed.replace(/\[[^\]]*\]/g, " ").trim().split(/\s+/).filter(Boolean).length || 1;
+}
+
+/**
+ * Whether a Grid, as `el` lays it out, places its layers otherwise than in
+ * the order they are written: one of them in a cell or area of its own
+ * (`grid-row`, `grid-column`, `grid-area`) or in another order (`order`), or
+ * holes filled out of order (`dense`). Putting a layer at another place among
+ * the others does not take it to another cell there, so it offers no cells to
+ * reorder by (ticket 18).
+ */
+export function placesItself(el: Element): boolean {
+  if (/dense/.test(getComputedStyle(el).gridAutoFlow)) return true;
+  return [...el.children].some((child) => {
+    const style = getComputedStyle(child);
+    if (/^(absolute|fixed)$/.test(style.position) || style.display === "none") return false;
+    const lines = [style.gridColumnStart, style.gridColumnEnd, style.gridRowStart, style.gridRowEnd];
+    return lines.some((line) => line !== "auto") || style.order !== "0";
+  });
 }
 
 /** A Grid's space between its rows or its columns: one of the two, apart from the other. */
