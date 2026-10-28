@@ -43,9 +43,12 @@ const LINED_UP = 0.5;
  * aligned across where they line up most closely: their starts, their
  * centers or their ends. `frame`: the box inside the border of a Frame that
  * becomes the Stack, whose padding is then the room between its edges and the
- * layers; a new Stack fits round them, with none.
+ * layers; a new Stack fits round them, with none. `free`: the layers are
+ * placed freely in that Frame, so its size is not theirs: on each axis its
+ * padding is the room on the nearer side, the same on both, and the rest is
+ * the alignment's, the one nearest where the layers are, along and across.
  */
-export function inferStack(boxes: Box[], frame: Box | null): Inferred {
+export function inferStack(boxes: Box[], frame: Box | null, free = false): Inferred {
   const all: Box = {
     left: Math.min(...boxes.map((b) => b.left)),
     top: Math.min(...boxes.map((b) => b.top)),
@@ -59,29 +62,49 @@ export function inferStack(boxes: Box[], frame: Box | null): Inferred {
   const order = boxes.map((_, i) => i).sort((a, b) => boxes[a][start] - boxes[b][start]);
   const spaces = order.slice(1).map((i, n) => Math.max(0, boxes[i][start] - boxes[order[n]][end]));
 
+  const room = frame
+    ? ([all.top - frame.top, frame.right - all.right, frame.bottom - all.bottom, all.left - frame.left].map((p) => round(Math.max(0, p))) as StackSettings["padding"])
+    : null;
+  const padding: StackSettings["padding"] = !room
+    ? [0, 0, 0, 0]
+    : free
+      ? [Math.min(room[0], room[2]), Math.min(room[1], room[3]), Math.min(room[0], room[2]), Math.min(room[1], room[3])]
+      : room;
+  // Where they are aligned in: inside a free Frame's padding, or round them all.
+  const inside: Box =
+    frame && free ? { left: frame.left + padding[3], top: frame.top + padding[0], right: frame.right - padding[1], bottom: frame.bottom - padding[2] } : all;
+
   const middle = (b: Box) => (b[crossStart] + b[crossEnd]) / 2;
   const off = {
-    start: Math.max(...boxes.map((b) => b[crossStart] - all[crossStart])),
-    center: Math.max(...boxes.map((b) => Math.abs(middle(b) - middle(all)))),
-    end: Math.max(...boxes.map((b) => all[crossEnd] - b[crossEnd])),
+    start: Math.max(...boxes.map((b) => b[crossStart] - inside[crossStart])),
+    center: Math.max(...boxes.map((b) => Math.abs(middle(b) - middle(inside)))),
+    end: Math.max(...boxes.map((b) => inside[crossEnd] - b[crossEnd])),
   };
-  // On a tie, the start: it is what a Stack does unless told otherwise.
-  const cross = (["start", "center", "end"] as Alignment[]).reduce((best, a) => (off[a] < off[best] ? a : best));
+  const cross = nearest(off);
   const stretch = off.start <= LINED_UP && off.end <= LINED_UP;
+  const along = free
+    ? nearest({
+        start: all[start] - inside[start],
+        center: Math.abs((all[start] + all[end]) / 2 - (inside[start] + inside[end]) / 2),
+        end: inside[end] - all[end],
+      })
+    : "start";
 
-  const padding = frame
-    ? ([all.top - frame.top, frame.right - all.right, frame.bottom - all.bottom, all.left - frame.left].map((p) => round(Math.max(0, p))) as StackSettings["padding"])
-    : ([0, 0, 0, 0] as StackSettings["padding"]);
   return {
     settings: {
       direction: horizontal ? "horizontal" : "vertical",
       gap: round(median(spaces)),
       padding,
-      align: { x: horizontal ? "start" : cross, y: horizontal ? cross : "start", distribute: false },
+      align: { x: horizontal ? along : cross, y: horizontal ? cross : along, distribute: false },
     },
     order,
     stretch,
   };
+}
+
+/** The alignment off by the least, from how far off each is. On a tie, the start: it is what a Stack does unless told otherwise. */
+function nearest(off: Record<Alignment, number>): Alignment {
+  return (["start", "center", "end"] as Alignment[]).reduce((best, a) => (off[a] < off[best] ? a : best));
 }
 
 /** The CSS that lays a Stack's layers out as `settings` say. `stretch`: across, at the start, the layers stretch with the Stack. */

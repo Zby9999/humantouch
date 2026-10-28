@@ -1164,7 +1164,7 @@ describe("making a Stack", () => {
     expect(changes.list()[0].after).toMatchObject({ direction: "horizontal", gap: 0 });
   });
 
-  test("a Frame selected alone becomes a Stack of its layers, its padding the room between its edges and them", () => {
+  test("a Frame selected alone becomes a Stack of its layers, its padding the room on their nearer sides", () => {
     const { doc, editor, changes, layer, rects } = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("")));
     const before = rects("a", "b");
 
@@ -1175,11 +1175,28 @@ describe("making a Stack", () => {
     expect(changes.list()[0]).toMatchObject({
       kind: "stack",
       target: { loc: "src/App.tsx:20:5" },
-      after: { place: null, direction: "horizontal", gap: 20, padding: [30, 360, 330, 20] },
-      style: { display: "flex", padding: "30px 360px 330px 20px" },
+      after: { place: null, direction: "horizontal", gap: 20, padding: [30, 20, 30, 20], align: { x: "start", y: "start" } },
+      style: { display: "flex", padding: "30px 20px 30px 20px" },
     });
     expect(drift(before, rects("a", "b"))).toBe(0);
     expect(style(doc.getElementById("a")!).position).toBe("static");
+  });
+
+  test("a Frame's free layers are placed by its Stack: aligned where they are nearest, the rest of the room the alignment's", () => {
+    // Its size counting its padding in, as most pages size things: the padding does not make it larger.
+    const { doc, editor, changes, layer, rects } = open(board(placed("a", [380, 160, 100, 40])).replace("position: relative;", "position: relative; box-sizing: border-box;"));
+    const before = rects("a");
+
+    const stack = editor.stack([layer("board")]);
+
+    expect(changes.list()[0].after).toMatchObject({ padding: [160, 120, 160, 120], align: { x: "end", y: "start" } });
+    expect(drift(before, rects("a"))).toBe(0);
+
+    editor.set(stack, "align", { x: "center", y: "center", distribute: false });
+
+    const frame = doc.getElementById("board")!.getBoundingClientRect();
+    const a = doc.getElementById("a")!.getBoundingClientRect();
+    expect([a.left - frame.left, a.top - frame.top]).toEqual([250, 180]);
   });
 
   test("of layers in a Stack's layout: a Stack in their place, nothing moving", () => {

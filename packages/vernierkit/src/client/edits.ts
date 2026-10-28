@@ -785,9 +785,11 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       const count = tree.acrossInstances(container).length;
       // Measured as they show, margins left out: in the Stack, the room between them is its gap. The Stack has no
       // margin of its own either, which no one could see or set: the room the margins made around them goes.
+      // Placed freely in a Frame, they are placed again, by the Stack.
       const inferred = inferStack(
         members.map((member) => borderBox(member.el)),
         frame && paddingBox(frame.el),
+        !!frame && members.every((member) => member.absolute),
       );
       const ordered = inferred.order.map((i) => members[i]);
       const margins = ordered.map((member) => marginsOf(member.el));
