@@ -101,6 +101,12 @@ export interface PropertyValues {
   padding: Padding;
   align: Align;
   wrap: boolean;
+  /** How many columns a Grid lays its layers out in: as many equal columns, set. */
+  columns: number;
+  /** Space between a Grid's rows, in px. */
+  rowGap: number;
+  /** Space between a Grid's columns, in px. */
+  columnGap: number;
   /** From 0 to 1. */
   opacity: number;
   visible: boolean;
@@ -165,7 +171,7 @@ export interface Editor {
   /** Whether the layer can be moved at all. The page cannot. */
   canMove(layer: Layer): boolean;
   /**
-   * Whether the layer can go into `container`: a Stack or a Frame, outside
+   * Whether the layer can go into `container`: a Stack, a Grid or a Frame, outside
    * the layer itself, that repeats with the layer's own container (each
    * instance of the layer has a container to go to).
    */
@@ -183,7 +189,10 @@ export interface Editor {
    * Frame's flow is placed freely where it is, and moved on from there. A
    * layer in a Stack's layout swaps places with the next one along the Stack
    * that way, in every view, and stays at its end or nudged across it; layers
-   * side by side move together. `continues`: one more nudge of a run, undone
+   * side by side move together. One in a Grid goes a cell along it (← →),
+   * or a row (↑ ↓: as many cells as the Grid has columns in the view worked
+   * in), the layers between moving a cell along, as dragging it there does,
+   * in every view; it stays at the Grid's ends. `continues`: one more nudge of a run, undone
    * with the nudges before it. Returns the layers where they are now.
    */
   nudge(layers: Layer[], dx: number, dy: number, options?: SetOptions): Layer[];
@@ -212,7 +221,7 @@ export interface Editor {
    * are. A Stack made this round is taken back instead. Returns its layers.
    */
   ungroup(layer: Layer): Layer[];
-  /** Whether new layers can go in the layer: a Stack or a Frame that holds layers. */
+  /** Whether new layers can go in the layer: a Stack, a Grid or a Frame that holds layers. */
   canHold(layer: Layer): boolean;
   /**
    * Makes new text (in the page's body text style) or a new Frame (with no
@@ -424,6 +433,17 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     writes: ["flex-wrap"],
     sets: ["flex-wrap"],
   },
+  columns: {
+    kinds: ["grid"],
+    read: (el) => trackCount(getComputedStyle(el).gridTemplateColumns),
+    // As Tailwind's `grid-cols-*` writes them: equal columns, which shrink below their content as the Grid does.
+    accepts: (_, columns) => Number.isInteger(columns) && columns >= 1,
+    write: (columns) => ({ "grid-template-columns": `repeat(${columns}, minmax(0, 1fr))` }),
+    writes: ["grid-template-columns"],
+    sets: ["grid-template-columns"],
+  },
+  rowGap: gridGap("row-gap"),
+  columnGap: gridGap("column-gap"),
   opacity: {
     kinds: UNLOCKED,
     read: (el) => round(parseFloat(getComputedStyle(el).opacity)),
@@ -683,13 +703,19 @@ export function createEditor(
     push({ layers: [id], key: `${id} ${property} ${breakpointKey(breakpoint)}`, undo: to(before), redo: to(value) }, continues);
   };
 
+  /** A container as a place names it: a Grid's places are its cells. */
+  const containerOf = (container: Layer): Place["container"] => {
+    const instances = tree.acrossInstances(container);
+    return { layer: idOf(container, instances), target: targetOf(container, instances.length), ...(container.kind === "grid" && { grid: true as const }) };
+  };
+
   /**
    * The layer's place now. Its `slot` is where it would go back to with the
    * layer itself taken out first, as a move takes it out before putting it in.
    */
   const placeOf = (layer: Layer): Place => {
     const parent = layer.parent!;
-    const container = { layer: idOf(parent, tree.acrossInstances(parent)), target: targetOf(parent, tree.acrossInstances(parent).length) };
+    const container = containerOf(parent);
     const absolute = layer.absolute ? { x: PROPERTIES.x.read(layer.el, colors), y: PROPERTIES.y.read(layer.el, colors) } : null;
     return { container, nth: parent.children.indexOf(layer) + 1, slot: slotsOf(parent.el).indexOf(layer.el), absolute };
   };
@@ -697,8 +723,7 @@ export function createEditor(
   /** The place of a layer new on the canvas at `to`. */
   const placeNew = (to: Destination): Place => {
     const container = to.parent;
-    const instances = tree.acrossInstances(container);
-    const where = { layer: idOf(container, instances), target: targetOf(container, instances.length) };
+    const where = containerOf(container);
     const slots = slotsOf(container.el);
     if ("x" in to) return { container: where, nth: container.children.length + 1, slot: slots.length, absolute: { x: round(to.x), y: round(to.y) } };
     const next = container.children[to.index];
@@ -708,7 +733,7 @@ export function createEditor(
   /** The layer's place at `to`, worked out before it moves. */
   const placeAt = (layer: Layer, to: Destination): Place => {
     const parent = to.parent;
-    const container = { layer: idOf(parent, tree.acrossInstances(parent)), target: targetOf(parent, tree.acrossInstances(parent).length) };
+    const container = containerOf(parent);
     const others = parent.children.filter((child) => child !== layer);
     const nodes = slotsOf(parent.el).filter((node) => node !== layer.el);
     if ("x" in to) return { container, nth: others.length + 1, slot: nodes.length, absolute: { x: round(to.x), y: round(to.y) } };
@@ -1048,7 +1073,7 @@ export function createEditor(
     tree: () => tree,
     canMove: (layer) => layer.parent !== null,
     canDrop(layer, container) {
-      if (!editor.canMove(layer) || !["stack", "frame"].includes(container.kind)) return false;
+      if (!editor.canMove(layer) || !CONTAINERS.includes(container.kind)) return false;
       // Pinned where the designer saw it, against a window the canvas has none of: it stays in its container.
       if (!layer.text && layer.el.hasAttribute(PIN_OFFSET_ATTR) && container !== layer.parent) return false;
       for (let c: Layer | null = container; c; c = c.parent) if (c === layer) return false;
@@ -1117,14 +1142,19 @@ export function createEditor(
             const { x, y } = freePlaceOf(layer);
             moved(i, editor.move(layer, { parent, x: x + dx, y: y + dy }));
           });
-          // In a Stack's layout: each a place along it, the furthest that way first, so side by side they go together.
+          // In a Stack's or a Grid's layout: each a place along it, the furthest that way first, so side by side they go together.
           const stacked = layers.map((_, i) => i).filter((i) => {
             const layer = found(i);
-            return layer?.parent?.kind === "stack" && !free(layer) && editor.canDrop(layer, layer.parent);
+            return (layer?.parent?.kind === "stack" || layer?.parent?.kind === "grid") && !free(layer) && editor.canDrop(layer, layer.parent);
           });
           const stuck = new Set<Node>();
           for (const parentNode of new Set(stacked.map((i) => nodeOf(found(i)!.parent!)))) {
-            const along = Math.sign(tree.layerOf(parentNode)!.direction === "horizontal" ? dx : dy);
+            const container = tree.layerOf(parentNode)!;
+            // A Grid's cells run along its rows: a row on is as many cells on as it has columns.
+            const along =
+              container.kind === "grid"
+                ? Math.sign(dx) || Math.sign(dy) * PROPERTIES.columns.read(shownIn(current, container.el), colors)
+                : Math.sign(container.direction === "horizontal" ? dx : dy);
             if (!along) continue;
             const flowOf = (i: number) => {
               const parent = found(i)!.parent!;
@@ -1282,7 +1312,7 @@ export function createEditor(
       const group = layer.el;
       const container = layer.parent!.el;
       // In its container's layout, its layers in its layout take its place; any other stays where it is, absolute.
-      const inLayout = layer.children.map((child) => layer.parent!.kind === "stack" && !layer.absolute && !child.absolute);
+      const inLayout = layer.children.map((child) => layer.parent!.kind !== "frame" && !layer.absolute && !child.absolute);
       const index = layer.parent!.children.indexOf(layer);
       const spots = els.map((el) => spotIn(el, container));
       editor.batch(() => {
@@ -1635,6 +1665,28 @@ function stackOf(el: Element): StackLayout {
   const style = getComputedStyle(el);
   if (/flex$/.test(style.display)) return { direction: style.flexDirection.startsWith("row") ? "horizontal" : "vertical", flex: true };
   return { direction: "vertical", flex: false };
+}
+
+/**
+ * How many columns (or rows) a Grid is laid out in, from its computed
+ * `grid-template-columns` (or `-rows`): the sizes of its tracks, with any
+ * line names between them. None: one, the Grid's own width.
+ */
+export function trackCount(computed: string): number {
+  if (computed === "none") return 1;
+  return computed.replace(/\[[^\]]*\]/g, " ").trim().split(/\s+/).filter(Boolean).length || 1;
+}
+
+/** A Grid's space between its rows or its columns: one of the two, apart from the other. */
+function gridGap(name: "row-gap" | "column-gap"): Definition<number> {
+  return {
+    kinds: ["grid"],
+    read: (el) => px(getComputedStyle(el).getPropertyValue(name)),
+    accepts: (_, gap) => gap >= 0,
+    write: (gap) => ({ [name]: `${gap}px` }),
+    writes: [name],
+    sets: [name],
+  };
 }
 
 /** The margins a layer joining a Stack loses. */

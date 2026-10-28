@@ -18,12 +18,15 @@ const PROPERTIES: Record<string, string> = {
   padding: "Padding",
   align: "Alignment",
   wrap: "Wrap",
+  columns: "Columns",
+  rowGap: "Row gap",
+  columnGap: "Column gap",
   opacity: "Opacity",
   visible: "Visibility",
   clip: "Clip content",
 };
 /** Where the title does not read well in a sentence. */
-const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", clip: "content clipping" };
+const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", clip: "content clipping", columns: "number of columns" };
 
 /** A property's name as a title: "Fill", "Corner radius". */
 export function propertyTitle(property: string): string {
@@ -152,7 +155,11 @@ export function value(property: string, v: unknown): string {
     case "x":
     case "y":
     case "gap":
+    case "rowGap":
+    case "columnGap":
       return `${v as number}px`;
+    case "columns":
+      return String(v);
     case "width":
     case "height": {
       const size = v as Size;

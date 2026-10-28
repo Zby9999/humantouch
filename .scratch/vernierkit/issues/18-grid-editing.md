@@ -6,8 +6,8 @@
 
 **Blocked by:** 15
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 修改列数、间距后画布立即生效
-- [ ] 在格子之间拖动换序正确
-- [ ] 改动说明与 Skill 覆盖 Grid 改动
+- [x] 修改列数、间距后画布立即生效
+- [x] 在格子之间拖动换序正确
+- [x] 改动说明与 Skill 覆盖 Grid 改动

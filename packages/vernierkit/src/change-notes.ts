@@ -66,6 +66,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Design intent:** ${intent(change, list)}`,
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack ? [AS_STACK] : []),
+    ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
@@ -179,6 +180,25 @@ function intent(change: Change, list: Change[]): string {
   }
 }
 
+/**
+ * What a change to a Grid's columns or gaps asks besides its value: columns
+ * of equal shares, and the gap between rows and the one between columns set apart.
+ */
+function gridNotes({ property, after }: Change): string[] {
+  if (property === "columns") {
+    return [
+      `**Equal columns:** each column takes an equal share of the Grid's width, as \`grid-template-columns: repeat(${after}, minmax(0, 1fr))\` does (Tailwind's \`grid-cols-${after}\`). ` +
+        "Where its columns are sized some other way now, they become equal.",
+    ];
+  }
+  if (property !== "rowGap" && property !== "columnGap") return [];
+  const [these, those] = property === "rowGap" ? ["rows", "columns"] : ["columns", "rows"];
+  return [
+    `**Gap apart:** only the space between the Grid's ${these} changes, not the space between its ${those}. ` +
+      "Where one value sets both now (Tailwind's `gap-*`, CSS `gap`), set them apart: `gap-y-*` and `gap-x-*` in Tailwind, `row-gap` and `column-gap` in CSS.",
+  ];
+}
+
 /** The reference style of a change that declares none, by kind. */
 const NO_STYLE: Record<Change["kind"], string> = {
   style: "none",
@@ -251,9 +271,14 @@ function newLayerIn(change: Change): string | null {
   return `a new ${type === "text" ? "text layer" : "Frame"}, in ${container(place)}`;
 }
 
+/** In a Grid, the cell a place in its layout is: its cells are filled in the order of its layers. */
+function cell(place: Place): string {
+  return place.container.grid ? `: the Grid's ${ordinal(place.nth)} cell` : "";
+}
+
 /** Where a layer goes in a container: a place in its layout, or absolute in it. */
 function placement(place: Place): string {
-  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer`;
+  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer${cell(place)}`;
   const { x, y } = place.absolute;
   return `absolute in ${container(place)}, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), which is to be its positioning reference (\`position: relative\`)`;
 }
@@ -348,11 +373,17 @@ function newLayer(made: string, list: Change[]): string {
 function moveIntent(change: Change): string {
   const [before, after] = [change.before, change.after] as Place[];
   const kind = moveKind(change);
+  if (kind === "Reorder" && after.container.grid) {
+    return (
+      `Move it from the ${ordinal(before.nth)} to the ${ordinal(after.nth)} cell of its container, ${container(after)}: ` +
+      `the Grid fills its cells in the order its layers are written, so it is ${ordinal(after.nth)} among them; the layers between move a cell along.`
+    );
+  }
   if (kind === "Reorder") {
     return `Move it from ${ordinal(before.nth)} to ${ordinal(after.nth)} place among the layers of its container, ${container(after)}.`;
   }
   const from = before.absolute ? `out of where it is placed in ${container(before)}` : `out of the layout of ${container(before)}, where it is ${ordinal(before.nth)}`;
-  if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer.`;
+  if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer${cell(after)}.`;
   const { x, y } = after.absolute!;
   const into = after.container.layer === before.container.layer ? "in the same Frame" : `in ${container(after)}`;
   return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the Frame's top left (CSS \`left\` and \`top\`). Make the Frame its positioning reference (\`position: relative\`) if it is not one already.`;

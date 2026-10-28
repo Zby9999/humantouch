@@ -199,9 +199,9 @@ export function buildLayerTree(doc: Document): LayerTree {
   };
 }
 
-/** Whether layers can go in the layer: a Stack or a Frame that is not a field or another element that holds no others. */
+/** Whether layers can go in the layer: a Stack, a Grid or a Frame that is not a field or another element that holds no others. */
 export function holdsLayers(layer: Layer): boolean {
-  return (layer.kind === "stack" || layer.kind === "frame") && !LEAVES.has(layer.el.localName);
+  return (layer.kind === "stack" || layer.kind === "grid" || layer.kind === "frame") && !LEAVES.has(layer.el.localName);
 }
 
 /**

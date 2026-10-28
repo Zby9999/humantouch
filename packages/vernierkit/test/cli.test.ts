@@ -271,6 +271,46 @@ describe("claim, layout changes", () => {
   });
 });
 
+describe("claim, Grids", () => {
+  const grid = { ...cards, loc: "src/App.tsx:38:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "Stack", "Grid"], element: '<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">' } };
+  const list = { ...grid, loc: "src/App.tsx:20:7", context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const style = (id: number, property: string, before: unknown, after: unknown, css: Record<string, string>) => ({ ...redFill, id, target: grid, property, before, after, style: css });
+  const place = (container: object, layer: string, nth: number, isGrid: boolean) => ({ container: { layer, target: container, ...(isGrid && { grid: true }) }, nth, slot: nth - 1, absolute: null });
+  const move = (id: number, before: object, after: object) => ({ ...redFill, id, kind: "move", property: "move", before, after, style: {}, sources: [] });
+
+  test("columns are as many equal columns; the row gap and the column gap each change apart from the other", async () => {
+    saveRound(
+      style(1, "columns", 3, 2, { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }),
+      style(2, "rowGap", 16, 24, { "row-gap": "24px" }),
+      style(3, "columnGap", 16, 8, { "column-gap": "8px" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Columns\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the number of columns from 3 to 2.\n- **Equal columns:** each column takes an equal share of the Grid's width, as `grid-template-columns: repeat(2, minmax(0, 1fr))` does (Tailwind's `grid-cols-2`). Where its columns are sized some other way now, they become equal.\n",
+    );
+    expect(section(output, 2)).toMatch(/^2\. Row gap\n/);
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Change the row gap from 16px to 24px.\n- **Gap apart:** only the space between the Grid's rows changes, not the space between its columns. Where one value sets both now (Tailwind's `gap-*`, CSS `gap`), set them apart: `gap-y-*` and `gap-x-*` in Tailwind, `row-gap` and `column-gap` in CSS.\n",
+    );
+    expect(section(output, 3)).toContain("- **Design intent:** Change the column gap from 16px to 8px.\n- **Gap apart:** only the space between the Grid's columns changes, not the space between its rows.");
+  });
+
+  test("a layer reordered in a Grid takes another cell; one moved into a Grid, a cell of it", async () => {
+    saveRound(move(1, place(grid, "4", 1, true), place(grid, "4", 3, true)), move(2, place(list, "5", 2, false), place(grid, "4", 2, true)));
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Reorder\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Move it from the 1st to the 3rd cell of its container, Grid (`<div class=\"grid grid-cols-1 gap-4 sm:grid-cols-3\">`, at `src/App.tsx:38:7`): the Grid fills its cells in the order its layers are written, so it is 3rd among them; the layers between move a cell along.\n",
+    );
+    expect(section(output, 2)).toContain("into the layout of Grid (`<div class=\"grid grid-cols-1 gap-4 sm:grid-cols-3\">`, at `src/App.tsx:38:7`), as its 2nd layer: the Grid's 2nd cell.\n");
+  });
+});
+
 describe("claim, moves", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const board = { ...list, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="h-64">' } };

@@ -3013,3 +3013,160 @@ describe("breakpoints", () => {
   });
 });
 
+
+/** A Grid of four cards, as Tailwind writes one (`grid grid-cols-2 gap-4`), another of fixed columns, and a Stack. */
+const GRID = `<!DOCTYPE html>
+<body style="margin: 0">
+  <style>.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) } .gap-4 { gap: 16px }</style>
+  <div id="grid" ${at("5:5")} class="grid-cols-2 gap-4" style="display: grid; width: 400px">
+    <div id="a" ${at("6:7")} style="height: 40px">A</div>
+    <div id="b" ${at("7:7")} style="height: 40px">B</div>
+    <div id="c" ${at("8:7")} style="height: 40px">C</div>
+    <div id="d" ${at("9:7")} style="height: 40px">D</div>
+  </div>
+  <div id="fixed" ${at("11:5")} style="display: grid; grid-template-columns: 300px 100px; column-gap: 8px">
+    <div id="e" ${at("12:7")} style="height: 20px">E</div>
+  </div>
+  <div id="list" ${at("14:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
+    <div id="f" ${at("15:7")} style="height: 20px">F</div>
+  </div>
+</body>`;
+
+describe("Grid", () => {
+  const open = () => {
+    const canvas = openCanvas(GRID);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = () => [...canvas.doc.getElementById("grid")!.children].map((el) => el.id);
+    /** The columns the Grid is laid out in, by their widths. */
+    const columns = (id = "grid") => style(canvas.doc.getElementById(id)!).gridTemplateColumns;
+    return { ...canvas, layer, order, columns };
+  };
+
+  test("a Grid offers its columns, row gap and column gap, read as it is laid out; a Stack and the layers in a Grid do not", () => {
+    const { editor, layer } = open();
+
+    expect(["columns", "rowGap", "columnGap"].map((p) => editor.read(layer("grid"), p as "columns"))).toEqual([2, 16, 16]);
+    expect(["columns", "rowGap", "columnGap"].map((p) => editor.read(layer("fixed"), p as "columns"))).toEqual([2, 0, 8]);
+    expect(editor.can(layer("list"), "columns")).toBe(false);
+    expect(editor.can(layer("a"), "rowGap")).toBe(false);
+    expect(editor.can(layer("grid"), "gap")).toBe(false);
+  });
+
+  test("columns are set as equal columns, at least one, a whole number; the change records the count, and undo takes it back", () => {
+    const { editor, changes, layer, columns } = open();
+
+    editor.set(layer("grid"), "columns", 4);
+
+    // 400px wide, three gaps of 16px between them.
+    expect(columns()).toBe("88px 88px 88px 88px");
+    expect(changes.list()[0]).toMatchObject({
+      kind: "style",
+      property: "columns",
+      before: 2,
+      after: 4,
+      style: { "grid-template-columns": "repeat(4, minmax(0, 1fr))" },
+      sources: [{ kind: "rule", className: "grid-cols-2", declaration: "grid-template-columns: repeat(2, minmax(0px, 1fr))" }],
+    });
+    expect(editor.can(layer("grid"), "columns", 0)).toBe(false);
+    expect(editor.can(layer("grid"), "columns", 1.5)).toBe(false);
+    editor.undo();
+    expect(columns()).toBe("192px 192px");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("columns sized otherwise become as many equal columns", () => {
+    const { editor, layer, columns } = open();
+
+    editor.set(layer("fixed"), "columns", 3);
+
+    // 800px wide, two gaps of 8px between them.
+    expect(columns("fixed").split(" ").map((w) => Math.round(parseFloat(w)))).toEqual([261, 261, 261]);
+    expect(editor.read(layer("fixed"), "columns")).toBe(3);
+  });
+
+  test("row gap and column gap are set apart, over the gap the page sets both with", () => {
+    const { doc, editor, changes, layer } = open();
+    const grid = doc.getElementById("grid")!;
+
+    editor.set(layer("grid"), "rowGap", 24);
+    editor.set(layer("grid"), "columnGap", 8);
+
+    expect([style(grid).rowGap, style(grid).columnGap]).toEqual(["24px", "8px"]);
+    expect(changes.list().map((change) => [change.property, change.before, change.after, change.style])).toEqual([
+      ["rowGap", 16, 24, { "row-gap": "24px" }],
+      ["columnGap", 16, 8, { "column-gap": "8px" }],
+    ]);
+    expect(changes.list()[0].sources).toMatchObject([{ className: "gap-4", declaration: "gap: 16px" }]);
+  });
+
+  test("in a narrower view, columns and gaps change at its breakpoint only, as the view reads them, and can be set back to inherit", async () => {
+    const { doc, views, editor, changes, layer } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const counts = () => [doc, phone.document].map((d) => style(d.getElementById("grid")!).gridTemplateColumns.split(" ").length);
+
+    editor.at(phone);
+    editor.set(layer("grid"), "columns", 1);
+    editor.set(layer("grid"), "rowGap", 8);
+
+    expect(counts()).toEqual([2, 1]);
+    expect(editor.read(layer("grid"), "columns")).toBe(1);
+    expect(changes.list().map((change) => [change.property, change.breakpoint])).toEqual([
+      ["columns", { min: null, max: 800 }],
+      ["rowGap", { min: null, max: 800 }],
+    ]);
+    expect(editor.changesHere(layer("grid"))).toEqual(["columns", "rowGap"]);
+    editor.inherit(layer("grid"), "columns");
+    expect(counts()).toEqual([2, 2]);
+    expect(changes.list().map((change) => change.property)).toEqual(["rowGap"]);
+  });
+
+  test("a layer moved within its Grid takes another cell, the layers after it filling the cells in order: a Reorder in a Grid", () => {
+    const { editor, changes, layer, order } = open();
+
+    expect(editor.canDrop(layer("a"), layer("grid"))).toBe(true);
+    editor.move(layer("a"), { parent: layer("grid"), index: 3 });
+
+    expect(order()).toEqual(["b", "c", "d", "a"]);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "move",
+      before: { container: { grid: true, target: { loc: "src/App.tsx:5:5" } }, nth: 1, absolute: null },
+      after: { container: { grid: true }, nth: 4, absolute: null },
+    });
+    expect(layerName(changes.list()[0])).toBe("A");
+    editor.undo();
+    expect(order()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  test("a layer from elsewhere, or a new one, takes a cell of the Grid", () => {
+    const { editor, layer, order } = open();
+
+    expect(editor.canHold(layer("grid"))).toBe(true);
+    editor.move(layer("f"), { parent: layer("grid"), index: 1 });
+    expect(order()).toEqual(["a", "f", "b", "c", "d"]);
+    const text = editor.create("text", { parent: layer("grid"), index: 0 });
+    expect(text.absolute).toBe(false);
+    expect(order()[1]).toBe("a");
+  });
+
+  test("nudged, a layer in a Grid takes the cell before or after it with ← and →, the one above or below with ↑ and ↓, and stays at the ends; the run is one move", () => {
+    const { editor, changes, layer, order } = open();
+
+    let [a] = editor.nudge([layer("a")], 1, 0);
+    expect(order()).toEqual(["b", "a", "c", "d"]);
+    [a] = editor.nudge([a], 0, 1, { continues: true });
+    expect(order()).toEqual(["b", "c", "d", "a"]);
+    [a] = editor.nudge([a], 0, 10, { continues: true });
+    [a] = editor.nudge([a], 1, 0, { continues: true });
+    expect(order()).toEqual(["b", "c", "d", "a"]);
+    [a] = editor.nudge([a], -1, 0, { continues: true });
+    expect(order()).toEqual(["b", "c", "a", "d"]);
+
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ before: { nth: 1 }, after: { nth: 3 } });
+    editor.undo();
+    expect(order()).toEqual(["a", "b", "c", "d"]);
+  });
+});
+

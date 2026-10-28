@@ -39,8 +39,8 @@ export interface Target {
 
 /** Where a moved layer is: the container it is in, its place there, and its position when absolute. */
 export interface Place {
-  /** The container: its id on the canvas, and how the Agent finds it in the source. */
-  container: { layer: string; target: Target };
+  /** The container: its id on the canvas, how the Agent finds it in the source, and whether it is a Grid, whose places are its cells. */
+  container: { layer: string; target: Target; grid?: true };
   /** Its place among the container's layers, from 1. */
   nth: number;
   /** Its place among the container element's child nodes on the canvas, to put it back by. */

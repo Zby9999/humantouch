@@ -277,6 +277,23 @@ test("dragged back elsewhere in the same round, into a Stack of the phone view, 
   expect(await changeNames(page)).toEqual(["Move · Vernier Kit"]);
 });
 
+test("dragged back between the cards of the Grid, it takes the cell there, in every view", async ({ page }) => {
+  await moveTitleOff(page);
+  await zoomOut(page);
+  const freeze = (await desktop(page).contentFrame().locator("article").nth(0).boundingBox())!;
+  const arrange = (await desktop(page).contentFrame().locator("article").nth(1).boundingBox())!;
+
+  // In the gap between the first two cards, in the Grid itself: a card is the deepest that could hold it.
+  await dragOffTo(page, { x: (freeze.x + freeze.width + arrange.x) / 2 - 3, y: arrange.y + arrange.height / 2 - 3 });
+
+  await expect(offCanvas(page)).toHaveCount(0);
+  for (const shown of [desktop(page), tablet(page), phone(page)]) {
+    const cells = shown.contentFrame().locator("main > div:has(> article) > *");
+    await expect.poll(() => cells.evaluateAll((els) => els.map((el) => el.localName))).toEqual(["article", "h1", "article", "article", "article"]);
+  }
+  expect(await changeNames(page)).toEqual(["Move · Vernier Kit"]);
+});
+
 test("edited off the canvas, dragged back into a Frame's empty space, it is put back there, free, looking as it does off the canvas, in every view; undone, it is off the canvas again", async ({ page }) => {
   await page.evaluate(() => {
     const board = Object.assign(document.createElement("div"), { id: "board" });
