@@ -1,9 +1,10 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
-import type { Align, Fill, Padding, Radius, Size } from "./client/edits";
+import type { Align, ColorStop, Fill, Padding, Radius, Size, Stroke } from "./client/edits";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
+  stroke: "Stroke",
   radius: "Corner radius",
   x: "X",
   y: "Y",
@@ -128,12 +129,45 @@ export function layerName({ target }: Change): string {
   return target.context.path.at(-1) ?? "Layer";
 }
 
+/** A color, with its opacity when it has some see-through: "#FF0000", "#FF0000 at 50% opacity". */
+function colorValue({ color, opacity }: { color: string; opacity: number }): string {
+  return opacity === 1 ? color : `${color} at ${Math.round(opacity * 100)}% opacity`;
+}
+
+/**
+ * Which way a linear gradient runs, for the angles that run from side to side.
+ * Not the diagonals: toward a corner runs along the box's own diagonal, at an angle that depends on its size.
+ */
+const DIRECTIONS: Record<number, string> = { 0: "bottom to top", 90: "left to right", 180: "top to bottom", 270: "right to left" };
+
+function fillValue(fill: Fill | null): string {
+  if (!fill) return "no fill";
+  const stops = (stops: ColorStop[]) => stops.map((stop) => `${colorValue(stop)} at ${stop.position}%`).join(", ");
+  switch (fill.type) {
+    case "solid":
+      return colorValue(fill);
+    case "linear": {
+      const direction = DIRECTIONS[fill.angle];
+      return `a linear gradient at ${fill.angle}°${direction ? ` (${direction})` : ""}: ${stops(fill.stops)}`;
+    }
+    case "radial":
+      return `a radial gradient ${fill.shape ? `shaped and centered as the page has it (\`${fill.shape}\`)` : "from the middle out"}: ${stops(fill.stops)}`;
+    case "conic":
+      return "a conic gradient";
+  }
+}
+
 export function value(property: string, v: unknown): string {
   switch (property) {
-    case "fill": {
-      const fill = v as Fill | null;
-      if (!fill) return "no fill";
-      return fill.opacity === 1 ? fill.color : `${fill.color} at ${Math.round(fill.opacity * 100)}% opacity`;
+    case "fill":
+      return fillValue(v as Fill | null);
+    case "stroke": {
+      const stroke = v as Stroke | null;
+      if (!stroke) return "no stroke";
+      const { weight } = stroke;
+      if (typeof weight === "number") return `${weight}px ${stroke.style} ${colorValue(stroke)}`;
+      const sides = ["top", "right", "bottom", "left"].map((side, i) => `${side} ${weight[i]}px`).join(", ");
+      return `${stroke.style} ${colorValue(stroke)}, on some sides: ${sides}`;
     }
     case "radius": {
       const radius = v as Radius;

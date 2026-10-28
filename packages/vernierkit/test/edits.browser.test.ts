@@ -3,7 +3,7 @@ import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
-import { createEditor } from "../src/client/edits";
+import { createEditor, type Fill, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
@@ -117,6 +117,169 @@ describe("solid fill", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("gradient fill", () => {
+  const sunset: Fill & { type: "linear" } = {
+    type: "linear",
+    angle: 90,
+    stops: [
+      { color: "#FF0000", opacity: 1, position: 0 },
+      { color: "#0000FF", opacity: 0.5, position: 100 },
+    ],
+  };
+
+  test("a linear gradient paints every instance at its angle, over no color, and reads back as set", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.set(layerOf(cards[0]), "fill", sunset);
+
+    expect(cards.map((card) => style(card).backgroundImage)).toEqual([
+      ...Array(3).fill("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(0, 0, 255, 0.5) 100%)"),
+      "none",
+    ]);
+    expect(style(cards[0]).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(editor.read(layerOf(cards[1]), "fill")).toEqual(sunset);
+    const [change] = changes.list();
+    expect(change.style).toEqual({
+      "background-color": "transparent",
+      "background-image": "linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)",
+    });
+    expect(change.before).toEqual({ type: "solid", color: "#FFFFFF", opacity: 1 });
+  });
+
+  test("the page's own gradients read as angle and stops, wherever CSS leaves the positions out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!; // 800 × 40
+    const read = (css: string) => {
+      box.style.backgroundImage = css;
+      return editor.read(layerOf(box), "fill");
+    };
+    const red = { color: "#FF0000", opacity: 1 };
+    const blue = { color: "#0000FF", opacity: 1 };
+
+    expect(read("linear-gradient(red, blue)")).toEqual({ type: "linear", angle: 180, stops: [{ ...red, position: 0 }, { ...blue, position: 100 }] });
+    // Tailwind v3's bg-gradient-to-r from-red-500 via-… to-transparent, in short.
+    expect(read("linear-gradient(to right, red, rgb(0 0 255 / 0.5), transparent)")).toEqual({
+      type: "linear",
+      angle: 90,
+      stops: [
+        { ...red, position: 0 },
+        { color: "#0000FF", opacity: 0.5, position: 50 },
+        { color: "#000000", opacity: 0, position: 100 },
+      ],
+    });
+    // Tailwind v4 blends in oklab: the stops read the same.
+    expect(read("linear-gradient(to left in oklab, red 20%, blue 400px)")).toEqual({
+      type: "linear",
+      angle: 270,
+      stops: [{ ...red, position: 20 }, { ...blue, position: 50 }],
+    });
+    // A corner: square to the diagonal of the 800 × 40 box.
+    expect((read("linear-gradient(to top right, red, blue)") as { angle: number }).angle).toBe(2.86);
+    expect(read("linear-gradient(0.25turn, red 10% 30%, blue)")).toEqual({
+      type: "linear",
+      angle: 90,
+      stops: [{ ...red, position: 10 }, { ...red, position: 30 }, { ...blue, position: 100 }],
+    });
+    expect(read("radial-gradient(red, blue)")).toEqual({ type: "radial", shape: "", stops: [{ ...red, position: 0 }, { ...blue, position: 100 }] });
+    expect(read("radial-gradient(circle at 30% 20%, red, blue 80%)")).toEqual({
+      type: "radial",
+      shape: "circle at 30% 20%",
+      stops: [{ ...red, position: 0 }, { ...blue, position: 80 }],
+    });
+    expect(read("conic-gradient(red, blue)")).toEqual({ type: "conic", css: "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))" });
+  });
+
+  test("a conic gradient is shown, not edited: no other fill replaces it from the panel, and none is set", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.backgroundImage = "conic-gradient(red, blue)";
+    const conic = editor.read(layerOf(box), "fill");
+
+    expect(editor.can(layerOf(box), "fill")).toBe(true);
+    expect(editor.can(layerOf(box), "fill", conic)).toBe(false);
+  });
+
+  test("a gradient set over a page's gradient, and a color set back over it, replace it; undo brings the page's back", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.backgroundImage = "radial-gradient(circle, red, blue)";
+    const layer = layerOf(box);
+
+    editor.set(layer, "fill", { ...sunset, angle: 45 });
+    expect(style(box).backgroundImage).toBe("linear-gradient(45deg, rgb(255, 0, 0) 0%, rgba(0, 0, 255, 0.5) 100%)");
+    // The page's color under its gradient stays, as it shows through.
+    expect(style(box).backgroundColor).toBe("rgb(0, 0, 0)");
+    expect(Object.keys(changes.list()[0].style)).toEqual(["background-image"]);
+    expect(changes.list()[0].sources!.flatMap((source) => source.properties)).toEqual(["background-color", "background-image"]);
+
+    editor.set(layer, "fill", { type: "solid", color: "#00FF00", opacity: 1 });
+    expect([style(box).backgroundImage, style(box).backgroundColor]).toEqual(["none", "rgb(0, 255, 0)"]);
+    expect(changes.list()[0].style).toEqual({ "background-color": "rgb(0 255 0 / 1)", "background-image": "none" });
+
+    editor.undo();
+    editor.undo();
+    expect([style(box).backgroundImage, style(box).backgroundColor]).toEqual(["radial-gradient(circle, rgb(255, 0, 0), rgb(0, 0, 255))", "rgb(0, 0, 0)"]);
+  });
+});
+
+describe("stroke", () => {
+  test("a stroke on every side, then on some sides, dashed, then none: each paints every instance and reads back as set", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+    const borders = (el: Element) => {
+      const s = style(el);
+      return [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth, s.borderTopStyle, s.borderTopColor].join(" ");
+    };
+
+    expect(editor.read(card, "stroke")).toBeNull();
+
+    const stroke = { color: "#E5E7EB", opacity: 1, weight: 2, style: "solid" } as const;
+    editor.set(card, "stroke", stroke);
+    expect(cards.map(borders)).toEqual([
+      ...Array(3).fill("2px 2px 2px 2px solid rgb(229, 231, 235)"),
+      "0px 0px 0px 0px none rgb(0, 0, 0)",
+    ]);
+    expect(editor.read(layerOf(cards[2]), "stroke")).toEqual(stroke);
+
+    const sides: Stroke = { color: "#FF0000", opacity: 0.5, weight: [0, 0, 1, 4], style: "dashed" };
+    editor.set(card, "stroke", sides);
+    expect(borders(cards[1])).toBe("0px 0px 1px 4px dashed rgba(255, 0, 0, 0.5)");
+    expect(editor.read(card, "stroke")).toEqual(sides);
+    expect(changes.list()[0]).toMatchObject({
+      property: "stroke",
+      before: null,
+      after: sides,
+      style: { "border-width": "0px 0px 1px 4px", "border-style": "dashed", "border-color": "rgb(255 0 0 / 0.5)" },
+    });
+
+    editor.set(card, "stroke", null);
+    expect(borders(cards[1])).toBe("0px 0px 0px 0px none rgb(0, 0, 0)");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("the page's own borders read as one stroke: the color of the first side drawn, a side with no line as 0", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    const read = (css: string) => {
+      box.style.cssText = `height: 40px; ${css}`;
+      return editor.read(layerOf(box), "stroke");
+    };
+
+    // Tailwind's preflight: every element has a solid border of 0.
+    expect(read("border: 0 solid #e5e7eb")).toBeNull();
+    expect(read("border: 1px solid oklch(92.8% 0.006 264.531)")).toEqual({ color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" });
+    expect(read("border-bottom: 2px dotted blue; border-top: 3px none red")).toEqual({ color: "#0000FF", opacity: 1, weight: [0, 0, 2, 0], style: "dashed" });
+  });
+
+  test("text and locked layers offer no stroke", () => {
+    const { doc, editor, cards, layerOf } = openCanvas();
+
+    expect(editor.can(layerOf(cards[0]), "stroke")).toBe(true);
+    expect(editor.can(layerOf(doc.querySelector("h3")!), "stroke")).toBe(false);
+    expect(editor.can(layerOf(doc.querySelector("span")!), "stroke")).toBe(false);
   });
 });
 
@@ -327,12 +490,18 @@ describe("what can be edited", () => {
     expect(changes.list()).toEqual([]);
   });
 
-  test("a layer painted with a gradient or an image offers no solid fill, which would not show", () => {
+  test("a layer painted with an image, or with layers of background, offers no fill; one gradient is a fill", () => {
     const { doc, editor, layerOf } = openCanvas();
     const box = doc.getElementById("unmarked")!;
-    box.style.backgroundImage = "linear-gradient(red, blue)";
+    const offers = (image: string) => {
+      box.style.backgroundImage = image;
+      return editor.can(layerOf(box), "fill");
+    };
 
-    expect(editor.can(layerOf(box), "fill")).toBe(false);
+    expect(offers("url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)")).toBe(false);
+    expect(offers("linear-gradient(red, blue), linear-gradient(green, white)")).toBe(false);
+    expect(offers("repeating-linear-gradient(red 0 10px, blue 10px 20px)")).toBe(false);
+    expect(offers("linear-gradient(red, blue)")).toBe(true);
     expect(editor.can(layerOf(box), "radius")).toBe(true);
   });
 

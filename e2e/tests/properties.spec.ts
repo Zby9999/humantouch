@@ -19,7 +19,7 @@ async function selectRow(page: Page, name: string, nth = 0) {
 }
 
 /** A computed style of every card on the canvas, in page order. */
-function cardStyles(page: Page, property: "backgroundColor" | "borderRadius") {
+function cardStyles(page: Page, property: "backgroundColor" | "backgroundImage" | "borderRadius" | "borderStyle" | "borderWidth" | "borderColor") {
   return canvas(page)
     .locator("article")
     .evaluateAll((cards, property) => cards.map((card) => getComputedStyle(card)[property]), property);
@@ -73,6 +73,138 @@ test("fill opacity, and removing and adding a fill", async ({ page }) => {
 
   await fill.getByRole("button", { name: "Add fill" }).click();
   expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
+});
+
+test("a fill made a linear gradient: its angle and its stops, dragged, added, moved and taken off, paint the canvas at once", async ({ page }) => {
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("group", { name: "Fill" });
+  const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
+
+  await fill.getByRole("combobox", { name: "Fill type" }).selectOption("Linear");
+  // The card's white, fading out, top to bottom; on every instance of the usage and no other.
+  expect(await cardStyles(page, "backgroundImage")).toEqual([
+    ...Array(3).fill("linear-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)"),
+    "none",
+  ]);
+
+  const angle = fill.getByRole("textbox", { name: "Angle" });
+  await angle.fill("90");
+  await angle.press("Enter");
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
+
+  const first = fill.getByRole("textbox", { name: "Stop 1 color", exact: true });
+  await first.fill("ff0000");
+  await first.press("Enter");
+  await fill.getByRole("slider", { name: "Stop 2 position" }).press("Shift+ArrowLeft");
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(255, 255, 255, 0) 90%)");
+
+  // Dragged along the bar: the canvas follows the handle.
+  const bar = fill.getByRole("group", { name: "Gradient stops" });
+  const box = (await bar.boundingBox())!;
+  const handle = (await fill.getByRole("slider", { name: "Stop 1 position" }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 4 });
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 10%, rgba(255, 255, 255, 0) 90%)");
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 255, 255, 0) 90%)");
+  await expect(fill.getByRole("textbox", { name: "Stop 1 at" })).toHaveValue("20%");
+  // The whole drag is one step to undo.
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(255, 255, 255, 0) 90%)");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 255, 255, 0) 90%)");
+
+  // A click on the bar adds a stop there, in the color the gradient has there.
+  await bar.click({ position: { x: box.width * 0.55, y: box.height / 2 } });
+  await expect(fill.getByRole("slider")).toHaveCount(3);
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%, rgba(255, 255, 255, 0) 90%)");
+
+  await fill.getByRole("slider", { name: "Stop 2 position" }).press("Delete");
+  await fill.getByRole("button", { name: "Add stop" }).click();
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%, rgba(255, 255, 255, 0) 90%)");
+  await fill.getByRole("button", { name: "Remove stop 3" }).click();
+  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%)");
+  await expect(fill.getByRole("button", { name: "Remove stop 1" })).toBeDisabled();
+});
+
+test("a radial gradient keeps the stops, and a color again takes the first of them", async ({ page }) => {
+  await selectRow(page, "Card");
+  const type = design(page).getByRole("group", { name: "Fill" }).getByRole("combobox", { name: "Fill type" });
+
+  await type.selectOption("Radial");
+  expect((await cardStyles(page, "backgroundImage"))[0]).toBe("radial-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
+
+  await type.selectOption("Solid");
+  expect((await cardStyles(page, "backgroundImage"))[0]).toBe("none");
+  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
+});
+
+test("a conic gradient the page has shows, and cannot be edited", async ({ page }) => {
+  await canvas(page)
+    .locator("article")
+    // The three cards of one usage; "Your turn" is another.
+    .evaluateAll((cards) => cards.slice(0, 3).forEach((card) => ((card as HTMLElement).style.backgroundImage = "conic-gradient(red, blue)")));
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("group", { name: "Fill" });
+
+  await expect(fill.getByText("Conic gradient", { exact: true })).toBeVisible();
+  await expect(fill.getByRole("combobox")).toHaveCount(0);
+  await expect(fill.getByRole("textbox")).toHaveCount(0);
+  await expect(fill.getByRole("button")).toHaveCount(0);
+
+  // With a layer of another fill, Mixed: still nothing to change it with.
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).nth(3).click({ modifiers: ["Shift"] });
+  await expect(fill.getByText("Mixed")).toBeVisible();
+  await expect(fill.getByRole("combobox")).toHaveCount(0);
+  await expect(fill.getByRole("button")).toHaveCount(0);
+});
+
+test("a stroke: the page's own as it is; its weight and line, one side, each side its own, and none, on the canvas at once", async ({ page }) => {
+  await selectRow(page, "Card");
+  const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
+  // border border-stone-200
+  await expect(stroke.getByRole("textbox", { name: "Stroke color", exact: true })).toHaveValue("E7E5E4");
+  const weight = stroke.getByRole("textbox", { name: "Stroke weight" });
+  await expect(weight).toHaveValue("1");
+
+  await weight.fill("3");
+  await weight.press("Enter");
+  expect(await cardStyles(page, "borderWidth")).toEqual(["3px", "3px", "3px", "1px"]);
+
+  await stroke.getByRole("combobox", { name: "Stroke style" }).selectOption("Dashed");
+  expect((await cardStyles(page, "borderStyle"))[0]).toBe("dashed");
+
+  const sides = stroke.getByRole("combobox", { name: "Stroke sides" });
+  await sides.selectOption("Bottom");
+  expect((await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 3px");
+
+  await sides.selectOption("Custom");
+  const left = stroke.getByRole("textbox", { name: "Stroke left" });
+  await left.fill("5");
+  await left.press("Enter");
+  expect((await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 3px 5px");
+
+  await sides.selectOption("All");
+  expect((await cardStyles(page, "borderWidth"))[0]).toBe("5px");
+
+  // A weight of 0 is no stroke.
+  await weight.fill("0");
+  await weight.press("Enter");
+  expect((await cardStyles(page, "borderStyle"))[0]).toBe("none");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await cardStyles(page, "borderWidth"))[0]).toBe("5px");
+
+  await stroke.getByRole("button", { name: "Remove stroke" }).click();
+  expect((await cardStyles(page, "borderStyle"))[0]).toBe("none");
+  await stroke.getByRole("button", { name: "Add stroke" }).click();
+  expect([(await cardStyles(page, "borderWidth"))[0], (await cardStyles(page, "borderStyle"))[0], (await cardStyles(page, "borderColor"))[0]]).toEqual([
+    "1px",
+    "solid",
+    "rgb(0, 0, 0)",
+  ]);
 });
 
 test("a uniform corner radius, typed or stepped with the arrow keys", async ({ page }) => {

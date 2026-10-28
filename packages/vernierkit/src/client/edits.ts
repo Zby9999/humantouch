@@ -34,6 +34,7 @@ import {
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
+import { colorReader, fillApplies, fillSets, readFill, readStroke, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -42,13 +43,7 @@ import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf 
 import { CHAIN_ATTR } from "./usage-chain";
 
 export { LAYER_ID_ATTR };
-
-/** A solid fill: a color as `#RRGGBB`, and its opacity from 0 to 1. */
-export interface Fill {
-  type: "solid";
-  color: string;
-  opacity: number;
-}
+export type { ColorStop, Fill, Gradient, Stroke } from "./paint";
 
 /** Corner radius in px: one for all corners, or top-left, top-right, bottom-right, bottom-left. */
 export type Radius = number | [number, number, number, number];
@@ -78,6 +73,8 @@ export interface Align {
 /** What the Design panel edits, by property. A fill of null: no fill. A minimum or maximum of null: none. */
 export interface PropertyValues {
   fill: Fill | null;
+  /** A stroke of null: no stroke. */
+  stroke: Stroke | null;
   radius: Radius;
   /** An absolute layer's place in its parent, in px. */
   x: number;
@@ -238,6 +235,8 @@ interface Definition<V> {
   writes: string[];
   /** The CSS properties the value is read from, to find what sets them now. */
   sets: string[];
+  /** Of `sets`, those the value is read from on the layer as it is now, when not all of them. */
+  setsOn?(el: Element): string[];
   /** A Stack's own property: on a plain top-to-bottom flow, writing it makes the flow a real Stack. */
   stack?: true;
 }
@@ -255,12 +254,21 @@ const absolute = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el)
 const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   fill: {
     kinds: CONTAINERS,
-    // A gradient or an image paints over the solid color. Those fills are edited elsewhere.
-    applies: (el) => getComputedStyle(el).backgroundImage === "none",
-    read: (el, colors) => colors.fill(getComputedStyle(el).backgroundColor),
-    write: (fill) => ({ "background-color": fill ? cssColor(fill) : "transparent" }),
-    writes: ["background-color"],
-    sets: ["background-color"],
+    // An image, or layers of background, cannot be read as a fill. A conic gradient is shown, not edited.
+    applies: fillApplies,
+    accepts: (_, fill) => fill?.type !== "conic",
+    read: readFill,
+    write: writeFill,
+    writes: ["background-color", "background-image"],
+    sets: ["background-color", "background-image"],
+    setsOn: fillSets,
+  },
+  stroke: {
+    kinds: ["stack", "grid", "frame", "image", "still"],
+    read: readStroke,
+    write: writeStroke,
+    writes: ["border-width", "border-style", "border-color"],
+    sets: STROKE_SETS,
   },
   radius: {
     kinds: ["stack", "grid", "frame", "image", "still"],
@@ -384,7 +392,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     // A layer made this round has no style of the page's to change.
-    const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(layer.el, definition.sets);
+    const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(layer.el, definition.setsOn?.(layer.el) ?? definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
     const asStack = definition.stack && (layer.el.hasAttribute(AS_STACK_ATTR) || !asShown(layer.el, () => stackOf(layer.el).flex));
@@ -1431,40 +1439,6 @@ export function openingTag(el: Element): string {
   if (classes) tag += ` class="${classes.length > MAX_CLASSES ? `${classes.slice(0, MAX_CLASSES - 1)}…` : classes}"`;
   return `${tag}>`;
 }
-
-interface ColorReader {
-  /** Any CSS color (oklch included) as a fill in sRGB; null when fully transparent. */
-  fill(css: string): Fill | null;
-}
-
-/** Reads colors back by painting them: the one way that handles every CSS color space. */
-function colorReader(doc: Document): ColorReader {
-  const canvas = doc.createElement("canvas");
-  canvas.width = canvas.height = 1;
-  const context = canvas.getContext("2d", { willReadFrequently: true })!;
-  const paint = (css: string) => {
-    context.clearRect(0, 0, 1, 1);
-    context.fillStyle = css;
-    context.fillRect(0, 0, 1, 1);
-    return context.getImageData(0, 0, 1, 1).data;
-  };
-  return {
-    fill(css) {
-      const alpha = paint(css)[3];
-      if (alpha === 0) return null;
-      // Painted opaque: a see-through color loses precision to premultiplied alpha.
-      const [r, g, b] = paint(`rgb(from ${css} r g b / 1)`);
-      const color = `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
-      return { type: "solid", color, opacity: Math.round((alpha / 255) * 100) / 100 };
-    },
-  };
-}
-
-function cssColor({ color, opacity }: Fill): string {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-  return `rgb(${r} ${g} ${b} / ${opacity})`;
-}
-
 
 /** Larger radii (Tailwind v4's rounded-full is infinite) read as this: still a pill, and still a number. */
 const MAX_RADIUS = 9999;

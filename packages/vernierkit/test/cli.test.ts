@@ -206,6 +206,52 @@ describe("claim, layout changes", () => {
   });
 });
 
+describe("claim, fills and strokes", () => {
+  test("say gradients and strokes in design language, with the reference style that draws them", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
+    const stops = [
+      { color: "#FF0000", opacity: 1, position: 0 },
+      { color: "#0000FF", opacity: 0.5, position: 100 },
+    ];
+    saveRound(
+      change(1, "fill", { type: "solid", color: "#FFFFFF", opacity: 1 }, { type: "linear", angle: 90, stops }, {
+        "background-color": "transparent",
+        "background-image": "linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)",
+      }),
+      change(2, "fill", { type: "linear", angle: 30, stops }, { type: "radial", shape: "circle at 30% 20%", stops }, {}),
+      change(3, "fill", { type: "radial", shape: "", stops }, { type: "linear", angle: 45, stops }, {}),
+      change(4, "stroke", null, { color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" }, {
+        "border-width": "1px",
+        "border-style": "solid",
+        "border-color": "rgb(229 231 235 / 1)",
+      }),
+      change(5, "stroke", { color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" }, { color: "#FF0000", opacity: 0.5, weight: [0, 0, 1, 4], style: "dashed" }, {}),
+      change(6, "stroke", { color: "#E5E7EB", opacity: 1, weight: 2, style: "dashed" }, null, {}),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the fill from #FFFFFF to a linear gradient at 90° (left to right): #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
+    );
+    expect(section(output, 1)).toContain(
+      "- **Reference style:** `background-color: transparent`, `background-image: linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)`\n",
+    );
+    expect(section(output, 2)).toContain(
+      "Change the fill from a linear gradient at 30°: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a radial gradient shaped and centered as the page has it (`circle at 30% 20%`): #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
+    );
+    expect(section(output, 3)).toContain(
+      "Change the fill from a radial gradient from the middle out: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a linear gradient at 45°: #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
+    );
+    expect(section(output, 4)).toMatch(/^4\. Stroke\n[^]*- \*\*Design intent:\*\* Change the stroke from no stroke to 1px solid #E5E7EB\.\n/);
+    expect(section(output, 4)).toContain("- **Reference style:** `border-width: 1px`, `border-style: solid`, `border-color: rgb(229 231 235 / 1)`\n");
+    expect(section(output, 5)).toContain(
+      "Change the stroke from 1px solid #E5E7EB to dashed #FF0000 at 50% opacity, on some sides: top 0px, right 0px, bottom 1px, left 4px.\n",
+    );
+    expect(section(output, 6)).toContain("Change the stroke from 2px dashed #E5E7EB to no stroke.\n");
+  });
+});
+
 describe("claim, moves", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const board = { ...list, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="h-64">' } };

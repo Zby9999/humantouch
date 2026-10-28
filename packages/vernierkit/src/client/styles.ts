@@ -450,6 +450,46 @@ export const styles = /* css */ `
 .vk-swatch::-webkit-color-swatch-wrapper { padding: 0; }
 .vk-swatch::-webkit-color-swatch { border: 0; border-radius: 3px; }
 .vk-swatch::-moz-color-swatch { border: 0; border-radius: 3px; }
+.vk-section-header .vk-row { gap: 2px; }
+.vk-section-header .vk-select { height: 22px; }
+.vk-subtitle { color: var(--vk-text-muted); font-weight: 400; }
+.vk-read-only { color: var(--vk-text-muted); }
+.vk-stop-position { flex: none; width: 44px; }
+/* A see-through color shows over a checkerboard, as in Figma. */
+.vk-gradient-bar, .vk-gradient-swatch {
+  --vk-checker: repeating-conic-gradient(#e6e6e6 0% 25%, #ffffff 0% 50%) 0 0 / 8px 8px;
+}
+.vk-gradient-bar {
+  position: relative;
+  height: 16px;
+  margin-inline: 6px;
+  border-radius: 3px;
+  background: var(--vk-gradient), var(--vk-checker);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+  cursor: copy;
+}
+.vk-stop-handle {
+  position: absolute;
+  top: 50%;
+  box-sizing: border-box;
+  width: 12px;
+  height: 22px;
+  border: 2px solid #ffffff;
+  border-radius: 3px;
+  background: linear-gradient(var(--vk-stop), var(--vk-stop)), var(--vk-checker);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25), 0 1px 3px rgb(0 0 0 / 0.2);
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.vk-stop-handle:focus-visible, .vk-stop-handle:focus { outline: none; box-shadow: 0 0 0 2px var(--vk-accent), 0 1px 3px rgb(0 0 0 / 0.2); }
+.vk-gradient-swatch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+}
 .vk-icon-button {
   all: unset;
   display: grid;

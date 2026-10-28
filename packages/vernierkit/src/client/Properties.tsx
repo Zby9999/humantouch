@@ -1,9 +1,10 @@
 /** @jsxImportSource preact */
 import type { TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useRef, useState } from "preact/hooks";
-import type { Align, Alignment, Editor, Fill, Padding, Property, PropertyValues, Size } from "./edits";
+import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Property, PropertyValues, Size, Stroke } from "./edits";
 import { Icon, type IconName } from "./icons";
 import type { Layer } from "./layers";
+import { cssColor, fillAs, nextStopPosition, stop, stopAt, strokeWith, turned, type Color } from "./paint";
 
 interface Props {
   editor: Editor;
@@ -19,6 +20,8 @@ interface Props {
 
 /** A fill added to a layer that has none, as in Figma. */
 const NEW_FILL: Fill = { type: "solid", color: "#FFFFFF", opacity: 1 };
+/** A stroke added to a layer that has none, as in Figma. Fields in the order the editor reads them back in. */
+const NEW_STROKE: Stroke = { color: "#000000", opacity: 1, weight: 1, style: "solid" };
 
 /** A value the selected layers do not share: shown as Mixed. */
 const MIXED = Symbol("mixed");
@@ -61,6 +64,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const radius = shown("radius");
   const clip = shown("clip");
   const fill = shown("fill");
+  const stroke = shown("stroke");
   return (
     <>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
@@ -126,7 +130,15 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           {clip !== undefined && <Check label="Clip content" checked={clip} onChange={set("clip")} />}
         </section>
       )}
-      {fill !== undefined && <FillSection fill={fill} onChange={set("fill")} />}
+      {fill !== undefined && (
+        <FillSection
+          fill={fill}
+          conic={layers.some((layer) => editor.read(layer, "fill")?.type === "conic")}
+          onChange={set("fill")}
+          update={update}
+        />
+      )}
+      {stroke !== undefined && <StrokeSection key={keyOf(layers)} stroke={stroke} onChange={set("stroke")} update={update} />}
     </>
   );
 }
@@ -337,59 +349,363 @@ function PercentField({ label, icon, value, onChange }: {
   );
 }
 
-function FillSection({ fill, onChange }: { fill: Shown<Fill | null>; onChange(fill: Fill | null, continues?: boolean): void }) {
-  /** The color picker is open and has moved: the colors it goes through are one adjustment. */
-  const picking = useRef(false);
+const FILL_TYPES = [
+  { type: "solid", label: "Solid" },
+  { type: "linear", label: "Linear" },
+  { type: "radial", label: "Radial" },
+] as const;
+
+/**
+ * A fill: a color, or a linear or radial gradient, its stops dragged along a
+ * bar and listed below it, as in Figma. A conic gradient the page has is shown, not edited.
+ */
+function FillSection({ fill, conic, onChange, update }: {
+  fill: Shown<Fill | null>;
+  /** Some selected layer has a conic gradient: the fills are shown, and none of them is changed. */
+  conic: boolean;
+  onChange(fill: Fill | null, continues?: boolean): void;
+  update: Update;
+}) {
   return (
     <section class="vk-section" role="group" aria-label="Fill">
       <div class="vk-section-header">
         <h3 class="vk-section-title">Fill</h3>
-        {!fill && (
+        {!fill ? (
           <button type="button" class="vk-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
+            <Icon name="plus" />
+          </button>
+        ) : (
+          !conic && (
+            <div class="vk-row">
+              <select
+                class="vk-select"
+                aria-label="Fill type"
+                value={fill === MIXED ? "" : fill.type}
+                onChange={(event) => update("fill", (current) => fillAs(current, event.currentTarget.value as (typeof FILL_TYPES)[number]["type"]))}
+              >
+                {fill === MIXED && (
+                  <option value="" disabled>
+                    Mixed
+                  </option>
+                )}
+                {FILL_TYPES.map(({ type, label }) => (
+                  <option key={type} value={type}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button type="button" class="vk-icon-button" aria-label="Remove fill" onClick={() => onChange(null)}>
+                <Icon name="minus" />
+              </button>
+            </div>
+          )
+        )}
+      </div>
+      {fill === MIXED ? (
+        <span class="vk-field vk-mixed">Mixed</span>
+      ) : fill?.type === "solid" ? (
+        <ColorField name="Fill" color={fill} onChange={(color, continues) => onChange({ type: "solid", ...color }, continues)} />
+      ) : fill?.type === "conic" ? (
+        <>
+          <div class="vk-row">
+            <span class="vk-gradient-swatch" style={{ backgroundImage: fill.css }} aria-hidden="true" />
+            <span class="vk-field vk-read-only">Conic gradient</span>
+          </div>
+          <p class="vk-layer-note">A conic gradient is shown here, not edited.</p>
+        </>
+      ) : (
+        fill && (
+          <>
+            {fill.type === "linear" && (
+              <NumberField
+                label="Angle"
+                glyph="∠"
+                value={fill.angle}
+                onChange={(angle, continues) => onChange({ ...fill, angle: turned(angle) }, continues)}
+              />
+            )}
+            <GradientStops gradient={fill} onChange={(stops, continues) => onChange({ ...fill, stops }, continues)} />
+          </>
+        )
+      )}
+    </section>
+  );
+}
+
+/** The stops sorted by position, as the editor reads them back. */
+function sorted(stops: ColorStop[]): ColorStop[] {
+  return [...stops].sort((a, b) => a.position - b.position);
+}
+
+/**
+ * A gradient's stops: on a bar showing the gradient, each a handle dragged
+ * left and right or moved with the arrow keys (10% with ⇧) and taken off with
+ * Delete; a click on the bar adds one there. Below, each stop's position and color.
+ */
+function GradientStops({ gradient, onChange }: { gradient: Gradient; onChange(stops: ColorStop[], continues?: boolean): void }) {
+  const bar = useRef<HTMLDivElement>(null);
+  /** The handle being dragged: the stop, by where it is in the sorted stops as it moves among them, and whether it has moved yet. */
+  const drag = useRef<{ pointerId: number; index: number; moved: boolean } | null>(null);
+  const { stops } = gradient;
+  /** Moves stop `index` to `position`: returns where it is among the stops now. */
+  const move = (index: number, position: number, continues = false) => {
+    const moved = stop(stops[index], Math.min(100, Math.max(0, position)));
+    const next = sorted(stops.map((s, i) => (i === index ? moved : s)));
+    onChange(next, continues);
+    return next.indexOf(moved);
+  };
+  const remove = (index: number) => stops.length > 2 && onChange(stops.filter((_, i) => i !== index));
+  const add = (position: number) => onChange(sorted([...stops, stopAt(stops, position)]));
+  const along = (clientX: number) => {
+    const box = bar.current!.getBoundingClientRect();
+    return Math.round(((clientX - box.left) / box.width) * 100);
+  };
+  const preview = `linear-gradient(90deg, ${stops.map((s) => `${cssColor(s)} ${s.position}%`).join(", ")})`;
+  return (
+    <>
+      <div
+        ref={bar}
+        class="vk-gradient-bar"
+        role="group"
+        aria-label="Gradient stops"
+        style={{ "--vk-gradient": preview }}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || event.target !== event.currentTarget) return;
+          add(along(event.clientX));
+        }}
+      >
+        {stops.map((s, index) => (
+          <span
+            key={index}
+            class="vk-stop-handle"
+            role="slider"
+            tabIndex={0}
+            aria-label={`Stop ${index + 1} position`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={s.position}
+            aria-valuetext={`${s.position}%`}
+            style={{ left: `${s.position}%`, "--vk-stop": cssColor(s) }}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              event.currentTarget.focus();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              drag.current = { pointerId: event.pointerId, index, moved: false };
+            }}
+            onPointerMove={(event) => {
+              const d = drag.current;
+              if (d?.pointerId !== event.pointerId) return;
+              const position = Math.min(100, Math.max(0, along(event.clientX)));
+              if (position === stops[d.index].position) return;
+              d.index = move(d.index, position, d.moved);
+              d.moved = true;
+            }}
+            onPointerUp={(event) => {
+              if (drag.current?.pointerId === event.pointerId) drag.current = null;
+            }}
+            onPointerCancel={() => (drag.current = null)}
+            onKeyDown={(event) => {
+              const by = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[event.key];
+              if (by) {
+                event.preventDefault();
+                move(index, s.position + by * (event.shiftKey ? 10 : 1));
+              } else if (event.key === "Delete" || event.key === "Backspace") {
+                event.preventDefault();
+                remove(index);
+              }
+            }}
+          />
+        ))}
+      </div>
+      <div class="vk-section-header">
+        <h4 class="vk-section-title vk-subtitle">Stops</h4>
+        <button type="button" class="vk-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops))}>
+          <Icon name="plus" />
+        </button>
+      </div>
+      {stops.map((s, index) => (
+        <div class="vk-row" key={index} role="group" aria-label={`Stop ${index + 1}`}>
+          <label class="vk-field vk-stop-position" title="Position">
+            <TextField
+              label={`Stop ${index + 1} at`}
+              value={`${s.position}%`}
+              parse={(text) => parseNumber(text, 0, 100)}
+              step={(by) => move(index, s.position + by)}
+              onChange={(position) => move(index, position)}
+            />
+          </label>
+          <ColorField
+            name={`Stop ${index + 1}`}
+            color={s}
+            onChange={(color, continues) => onChange(stops.map((other, i) => (i === index ? stop(color, s.position) : other)), continues)}
+          />
+          <button type="button" class="vk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
+            <Icon name="minus" />
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+
+const SIDE_NAMES = ["Top", "Right", "Bottom", "Left"];
+type Sides = "all" | "custom" | 0 | 1 | 2 | 3;
+
+/** Which sides a stroke is drawn on: all of them, one of them (by index, top first), or each as it says. */
+function sidesOf(weight: Stroke["weight"]): Sides {
+  if (typeof weight === "number") return "all";
+  const drawn = weight.flatMap((w, i) => (w > 0 ? [i] : []));
+  return drawn.length === 1 ? (drawn[0] as Sides) : "custom";
+}
+
+/** The weight a stroke is drawn at, wherever it is drawn: its widest side. */
+function widest(weight: Stroke["weight"]): number {
+  return typeof weight === "number" ? weight : Math.max(...weight);
+}
+
+/**
+ * A stroke: its color, weight and line, and the sides it is drawn on, as in
+ * Figma: all, one side, or each side its own weight (Custom).
+ */
+function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | null>; onChange(stroke: Stroke | null, continues?: boolean): void; update: Update }) {
+  /** Custom chosen with every side alike: the four sides stay out until another choice. */
+  const [custom, setCustom] = useState(false);
+  const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
+  return (
+    <section class="vk-section" role="group" aria-label="Stroke">
+      <div class="vk-section-header">
+        <h3 class="vk-section-title">Stroke</h3>
+        {!stroke && (
+          <button type="button" class="vk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
             <Icon name="plus" />
           </button>
         )}
       </div>
-      {fill === MIXED ? (
+      {stroke && (
         <div class="vk-row">
-          <span class="vk-field vk-mixed">Mixed</span>
-          <button type="button" class="vk-icon-button" aria-label="Remove fill" onClick={() => onChange(null)}>
-            <Icon name="minus" />
-          </button>
-        </div>
-      ) : fill && (
-        <div class="vk-row">
-          <div class="vk-field vk-color-field">
-            <input
-              type="color"
-              class="vk-swatch"
-              aria-label="Pick fill color"
-              value={fill.color.toLowerCase()}
-              onInput={(event) => {
-                onChange({ ...fill, color: event.currentTarget.value.toUpperCase() }, picking.current);
-                picking.current = true;
-              }}
-              onChange={() => (picking.current = false)}
-            />
-            <TextField label="Fill color" value={fill.color.slice(1)} parse={parseHex} onChange={(color) => onChange({ ...fill, color })} />
-            <TextField
-              label="Fill opacity"
-              class="vk-opacity"
-              value={`${Math.round(fill.opacity * 100)}%`}
-              parse={(text) => {
-                const percent = parseNumber(text, 0, 100);
-                return percent === null ? null : percent / 100;
-              }}
-              onChange={(opacity) => onChange({ ...fill, opacity })}
-            />
-          </div>
-          <button type="button" class="vk-icon-button" aria-label="Remove fill" onClick={() => onChange(null)}>
+          {stroke === MIXED ? (
+            <span class="vk-field vk-mixed">Mixed</span>
+          ) : (
+            <ColorField name="Stroke" color={stroke} onChange={(color, continues) => onChange({ ...color, weight: stroke.weight, style: stroke.style }, continues)} />
+          )}
+          <button type="button" class="vk-icon-button" aria-label="Remove stroke" onClick={() => onChange(null)}>
             <Icon name="minus" />
           </button>
         </div>
       )}
+      {stroke && stroke !== MIXED && (
+        <div class="vk-row">
+          {sides !== "custom" && (
+            <NumberField
+              label="Stroke weight"
+              glyph="≡"
+              value={widest(stroke.weight)}
+              min={0}
+              onChange={(weight, continues) => onChange(strokeWith(stroke, typeof stroke.weight === "number" ? weight : stroke.weight.map((w) => (w > 0 ? weight : 0)) as Stroke["weight"]), continues)}
+            />
+          )}
+          <select
+            class="vk-select"
+            aria-label="Stroke style"
+            value={stroke.style}
+            onChange={(event) => onChange({ ...stroke, style: event.currentTarget.value as Stroke["style"] })}
+          >
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+          </select>
+          <select
+            class="vk-select"
+            aria-label="Stroke sides"
+            value={String(sides)}
+            onChange={(event) => {
+              const choice = event.currentTarget.value;
+              setCustom(choice === "custom");
+              update("stroke", (current) => {
+                if (!current) return current;
+                const weight = widest(current.weight) || 1;
+                // Custom keeps the weights as they are: the four sides show, to be set one by one.
+                if (choice === "all" || choice === "custom") return strokeWith(current, choice === "all" ? weight : current.weight);
+                return strokeWith(current, SIDE_NAMES.map((_, i) => (i === Number(choice) ? weight : 0)) as Stroke["weight"]);
+              });
+            }}
+          >
+            <option value="all">All</option>
+            {SIDE_NAMES.map((name, i) => (
+              <option key={name} value={String(i)}>
+                {name}
+              </option>
+            ))}
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      )}
+      {stroke && stroke !== MIXED && sides === "custom" && (
+        <div class="vk-grid-2" role="group" aria-label="Stroke weight per side">
+          {SIDE_NAMES.map((name, i) => {
+            const weights = typeof stroke.weight === "number" ? [stroke.weight, stroke.weight, stroke.weight, stroke.weight] : stroke.weight;
+            return (
+              <NumberField
+                key={name}
+                label={`Stroke ${name.toLowerCase()}`}
+                glyph={name[0]}
+                value={weights[i]}
+                min={0}
+                onChange={(weight, continues) => onChange(strokeWith(stroke, weights.map((w, j) => (i === j ? weight : w)) as Stroke["weight"]), continues)}
+              />
+            );
+          })}
+        </div>
+      )}
     </section>
   );
+}
+
+/** A color and its opacity: picked, or typed as hex and as a percentage. `name` names its fields: "Fill color", "Fill opacity". */
+function ColorField({ name, color, onChange }: { name: string; color: Color; onChange(color: Color, continues?: boolean): void }) {
+  /** The color picker is open and has moved: the colors it goes through are one adjustment. */
+  const picking = useRef(false);
+  const lower = name.toLowerCase();
+  return (
+    <div class="vk-field vk-color-field">
+      <input
+        type="color"
+        class="vk-swatch"
+        aria-label={`Pick ${lower} color`}
+        value={color.color.toLowerCase()}
+        onInput={(event) => {
+          onChange({ color: event.currentTarget.value.toUpperCase(), opacity: color.opacity }, picking.current);
+          picking.current = true;
+        }}
+        onChange={() => (picking.current = false)}
+      />
+      <TextField label={`${name} color`} value={color.color.slice(1)} parse={parseHex} onChange={(hex) => onChange({ color: hex, opacity: color.opacity })} />
+      <TextField
+        label={`${name} opacity`}
+        class="vk-opacity"
+        value={`${Math.round(color.opacity * 100)}%`}
+        parse={(text) => {
+          const percent = parseNumber(text, 0, 100);
+          return percent === null ? null : percent / 100;
+        }}
+        onChange={(opacity) => onChange({ color: color.color, opacity })}
+      />
+    </div>
+  );
+}
+
+/** Each element is given a number the first time it is asked for, to tell selections apart by. */
+const elementKeys = new WeakMap<Element, number>();
+let lastKey = 0;
+
+/** A key that changes with the selected layers: state a section keeps for them goes when they do. */
+function keyOf(layers: Layer[]): string {
+  return layers
+    .map((layer) => {
+      if (!elementKeys.has(layer.el)) elementKeys.set(layer.el, ++lastKey);
+      return elementKeys.get(layer.el);
+    })
+    .join(" ");
 }
 
 interface NumberFieldProps {

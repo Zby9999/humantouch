@@ -809,6 +809,7 @@ function clamp(zoom: number): number {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
+/** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
 export function isEditable(target: EventTarget | undefined): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName));
+  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || target.getAttribute("role") === "slider");
 }

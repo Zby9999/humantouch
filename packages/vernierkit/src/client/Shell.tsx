@@ -222,7 +222,10 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
       const { editor, onEdit, select, playing } = latest.current;
       if (playing) return;
       const target = event.composedPath()[0];
-      const field = target instanceof HTMLElement && target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing");
+      // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
+      const field =
+        target instanceof HTMLElement &&
+        ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
       if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return;
       // By the letter typed, wherever the keyboard has it.
       const key = event.key.toLowerCase();
