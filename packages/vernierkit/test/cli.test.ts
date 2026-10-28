@@ -333,6 +333,74 @@ describe("claim, corners and effects", () => {
   });
 });
 
+describe("claim, text", () => {
+  const change = (id: number, property: string, before: unknown, after: unknown, style: object, more: object = {}) => ({ ...redFill, id, property, before, after, style, ...more });
+
+  test("say each text style in design language, with the CSS that shows it as the reference style", async () => {
+    saveRound(
+      change(1, "fontFamily", "Georgia", "Space Grotesk", { "font-family": '"Space Grotesk", sans-serif' }),
+      change(2, "fontWeight", 400, 600, { "font-weight": "600" }),
+      change(3, "fontSize", 14, 18, { "font-size": "18px" }),
+      change(4, "lineHeight", { value: 180, unit: "%" }, { value: 24, unit: "px" }, { "line-height": "24px" }),
+      change(5, "lineHeight", "auto", { value: 150, unit: "%" }, { "line-height": "1.5" }),
+      change(6, "letterSpacing", { value: 2, unit: "%" }, { value: -0.5, unit: "px" }, { "letter-spacing": "-0.5px" }),
+      change(7, "textAlign", "left", "justify", { "text-align": "justify" }),
+      change(8, "textColor", { color: "#57534D", opacity: 1 }, { color: "#FF0000", opacity: 0.5 }, { color: "rgb(255 0 0 / 0.5)" }),
+      change(9, "textCase", "none", "upper", { "text-transform": "uppercase" }),
+      change(10, "textDecoration", "none", "strikethrough", { "text-decoration-line": "line-through" }),
+    );
+
+    const output = (await cli("claim")).output;
+    const intent = (id: number) => /- \*\*Design intent:\*\* (.*)\n/.exec(section(output, id))?.[1];
+
+    expect([1, 2, 3, 4, 6, 7, 8, 9, 10].map((id) => /^\d+\. (.*)\n/.exec(section(output, id))?.[1])).toEqual([
+      "Font",
+      "Font weight",
+      "Font size",
+      "Line height",
+      "Letter spacing",
+      "Text alignment",
+      "Text color",
+      "Case",
+      "Decoration",
+    ]);
+    expect(intent(1)).toBe("Change the font from Georgia to Space Grotesk.");
+    expect(intent(2)).toBe("Change the font weight from Regular (400) to Semi Bold (600).");
+    expect(intent(3)).toBe("Change the font size from 14px to 18px.");
+    expect(intent(4)).toBe("Change the line height from 180% of the font size to 24px.");
+    expect(intent(5)).toBe("Change the line height from Auto (the font's own) to 150% of the font size.");
+    expect(intent(6)).toBe("Change the letter spacing from 2% of the font size to -0.5px.");
+    expect(intent(7)).toBe("Change the text alignment from left to justified.");
+    expect(intent(8)).toBe("Change the text color from #57534D to #FF0000 at 50% opacity.");
+    expect(intent(9)).toBe("Change the case from as typed to upper case.");
+    expect(intent(10)).toBe("Change the decoration from none to strikethrough.");
+    expect(section(output, 1)).toContain('- **Reference style:** `font-family: "Space Grotesk", sans-serif`\n');
+    expect(section(output, 5)).toContain("- **Reference style:** `line-height: 1.5`\n");
+    expect(section(output, 10)).toContain("- **Reference style:** `text-decoration-line: line-through`\n");
+  });
+
+  test("say that the change is made on the text layer as a whole, and which inline fragments keep a value of their own", async () => {
+    const keeps = [
+      { element: '<a class="text-blue-600">', text: "a link", value: { color: "#2563EB", opacity: 1 } },
+      { element: "<code>", text: "npm i", value: { color: "#000000", opacity: 1 } },
+    ];
+    saveRound(
+      change(1, "textColor", { color: "#57534D", opacity: 1 }, { color: "#FF0000", opacity: 1 }, { color: "rgb(255 0 0 / 1)" }, { keeps }),
+      change(2, "fontWeight", 400, 300, { "font-weight": "300" }, { keeps: [{ element: "<strong>", text: "any", value: 400 }] }),
+      change(3, "fontSize", 14, 18, { "font-size": "18px" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Inline fragments:** make the change on the text layer as a whole: the bold runs, links and other fragments in it follow it. " +
+        "These have a text color of their own, which they keep: “a link” (`<a class=\"text-blue-600\">`, #2563EB), “npm i” (`<code>`, #000000).\n",
+    );
+    expect(section(output, 2)).toContain("These have a font weight of their own, which they keep: “any” (`<strong>`, Regular (400)).\n");
+    expect(section(output, 3)).not.toContain("Inline fragments");
+  });
+});
+
 describe("claim, moves", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const board = { ...list, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="h-64">' } };

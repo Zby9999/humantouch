@@ -95,6 +95,13 @@ export interface Created {
   brief?: string;
 }
 
+/** An inline fragment of a text layer (a bold run, a link): its element as an opening tag, its words, and its own value of a property, in design language. */
+export interface Fragment {
+  element: string;
+  text: string;
+  value: unknown;
+}
+
 export interface Change {
   id: number;
   /**
@@ -131,6 +138,8 @@ export interface Change {
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
   reference?: true;
+  /** A change to a text layer, made on it as a whole: its inline fragments with a value of their own, which they keep. The others follow the layer. */
+  keeps?: Fragment[];
   /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
@@ -156,7 +165,7 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order"> & {
+    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "keeps"> & {
       kind?: Change["kind"];
     },
   ): void;
@@ -190,7 +199,12 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
-      else if (earlier) Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
+      else if (earlier) {
+        Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
+        // Which fragments keep their own value depends on the value now.
+        if (change.keeps) earlier.keeps = change.keeps;
+        else delete earlier.keeps;
+      }
       else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
     },
     remove(id) {

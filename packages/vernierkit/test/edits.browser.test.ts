@@ -3,10 +3,11 @@ import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
-import { createEditor, type Fill, type Shadow, type Stroke } from "../src/client/edits";
+import { createEditor, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
+import { fontsOf } from "../src/client/typography";
 import { createViews } from "../src/client/views";
 
 /** Usage chains as the freezer writes them onto the canvas. */
@@ -211,7 +212,7 @@ describe("gradient fill", () => {
     const red = { color: "#FF0000", opacity: 1 };
     const blue = { color: "#0000FF", opacity: 1 };
     const pc = (value: number) => ({ value, unit: "%" });
-    const px = (value: number) => ({ value, unit: "px" });
+    const px = (value: number) => ({ value, unit: "px" as const });
 
     // The default: an ellipse from the middle out to the farthest corner.
     expect(read("radial-gradient(red, blue)")).toEqual({
@@ -652,6 +653,268 @@ describe("text shadows", () => {
       { type: "drop", x: 1, y: 1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 },
     ]);
     expect(read("0 0 #0000, 0 0 3px blue")).toEqual([{ type: "drop", x: 0, y: 0, blur: 3, spread: 0, color: "#0000FF", opacity: 1 }]);
+  });
+});
+
+/**
+ * Text set in each way a page writes line height and letter spacing: on the
+ * body (inherited), and on the text itself in each unit.
+ */
+const TEXT_PAGE = `<!DOCTYPE html>
+<style>
+  body { margin: 0; font: 16px Georgia, serif; line-height: 1.5; letter-spacing: 0.02em }
+  #percent { line-height: 150% }
+  #em { line-height: 1.25em; letter-spacing: 0.1em }
+  #rem { line-height: 1.5rem; letter-spacing: 0.125rem }
+  #px { line-height: 30px; letter-spacing: 1px }
+  #normal { line-height: normal; letter-spacing: normal }
+</style>
+<body>
+  <p id="inherited">Inherited</p>
+  <h1 id="big" style="font-size: 32px">Big</h1>
+  <p id="percent">Percent</p>
+  <p id="em">Em</p>
+  <p id="rem">Rem</p>
+  <p id="px">Px</p>
+  <p id="normal">Normal</p>
+</body>`;
+
+/**
+ * Fonts the page loads (one face it never uses), and stacks of fonts it uses
+ * on text, one of which asks first for a font that is not there.
+ */
+const FONT_PAGE = `<!DOCTYPE html>
+<style>
+  @font-face { font-family: Brand; src: local("Arial"); font-weight: 400 700 }
+  @font-face { font-family: Brand; src: local("Arial Black"); font-weight: 900 }
+  @font-face { font-family: Unused; src: local("Arial") }
+  body { margin: 0; font: 16px "No Such Font", Georgia, serif }
+</style>
+<body>
+  <h1 style="font-family: Brand, sans-serif; font-weight: 400">Brand</h1>
+  <h2 style="font-family: Brand, sans-serif; font-weight: 900">Heavy</h2>
+  <p>Body <code style="font-family: 'Courier New', monospace">x</code></p>
+  <h3>Bold body</h3>
+  <pre style="font-family: Menlo, monospace">code</pre>
+</body>`;
+
+describe("text", () => {
+  test("line height and letter spacing read in px or as % of the font size, as the page writes them, and are written in the page's unit", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(TEXT_PAGE);
+    const text = (id: string) => layerOf(doc.getElementById(id)!);
+    const read = (id: string) => [editor.read(text(id), "lineHeight"), editor.read(text(id), "letterSpacing")];
+    const percent = (value: number) => ({ value, unit: "%" as const });
+    const px = (value: number) => ({ value, unit: "px" as const });
+
+    // A line height without a unit, and one in % or em, is a share of the font size; one in px or rem a length.
+    expect(read("inherited")).toEqual([percent(150), percent(2)]);
+    // Inherited in em, the letter spacing is the body's, in px, against this text's own size.
+    expect(read("big")).toEqual([percent(150), percent(1)]);
+    expect(read("percent")).toEqual([percent(150), percent(2)]);
+    expect(read("em")).toEqual([percent(125), percent(10)]);
+    expect(read("rem")).toEqual([px(24), px(2)]);
+    expect(read("px")).toEqual([px(30), px(1)]);
+    expect(read("normal")).toEqual(["auto", percent(0)]);
+
+    const written = (id: string, property: "lineHeight" | "letterSpacing", value: PropertyValues["lineHeight"]) => {
+      editor.set(text(id), property, value as never);
+      expect(editor.read(text(id), property)).toEqual(value);
+      const css = property === "lineHeight" ? "line-height" : "letter-spacing";
+      // The reference style is what the canvas shows.
+      const change = changes.list().find((c) => c.layer === text(id).el.getAttribute("data-vk-layer") && c.property === property)!;
+      expect(change.style).toEqual({ [css]: (doc.getElementById(id) as HTMLElement).style.getPropertyValue(css) });
+      return change.style[css];
+    };
+    expect(written("inherited", "lineHeight", percent(160))).toBe("1.6");
+    expect(written("percent", "lineHeight", percent(120))).toBe("120%");
+    expect(written("em", "lineHeight", percent(140))).toBe("1.4em");
+    expect(written("rem", "lineHeight", px(32))).toBe("2rem");
+    expect(written("px", "lineHeight", px(28))).toBe("28px");
+    expect(written("rem", "lineHeight", "auto")).toBe("normal");
+    expect(written("big", "letterSpacing", percent(5))).toBe("0.05em");
+    expect(written("rem", "letterSpacing", px(4))).toBe("0.25rem");
+    expect(written("px", "letterSpacing", px(-0.5))).toBe("-0.5px");
+
+    // A value in the other unit, as Figma has it: % of the font size without a unit, px in px.
+    expect(written("px", "lineHeight", percent(150))).toBe("1.5");
+    expect(written("em", "lineHeight", px(18))).toBe("18px");
+    expect(written("px", "letterSpacing", percent(-2))).toBe("-0.02em");
+    expect(written("em", "letterSpacing", px(3))).toBe("3px");
+    expect(written("normal", "lineHeight", px(20))).toBe("20px");
+    expect(doc.getElementById("normal")!.getBoundingClientRect().height).toBe(20);
+  });
+
+  test("inline fragments follow the text layer; those with a value of their own keep it, and the change says which", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(`<!DOCTYPE html>
+      <body style="margin: 0; font-size: 16px">
+        <p id="text" style="color: rgb(0, 0, 0)">Read <strong style="color: rgb(255, 0, 0)">this</strong>, <a href="#" class="link" style="color: rgb(0, 0, 255)">a link</a>, <code style="font-size: 12px">code</code> and <em style="font-size: 0.75em">so <b style="font-weight: 900">on</b></em>.</p>
+      </body>`);
+    const p = doc.getElementById("text")!;
+    const text = layerOf(p);
+    const fragment = (selector: string) => style(p.querySelector(selector)!);
+    const keeps = (property: string) => changes.list().find((change) => change.property === property)?.keeps;
+
+    // A size of its own in em follows the text's, at its share of it; one in px is kept.
+    editor.set(text, "fontSize", 20);
+    expect(["strong", "a", "code", "em", "b"].map((s) => fragment(s).fontSize)).toEqual(["20px", "20px", "12px", "15px", "15px"]);
+    expect(keeps("fontSize")).toEqual([{ element: "<code>", text: "code", value: 12 }]);
+
+    // A fragment with a color of its own keeps it, even one that is the color the text is given.
+    editor.set(text, "textColor", { color: "#FF0000", opacity: 1 });
+    expect(["strong", "a", "b"].map((s) => fragment(s).color)).toEqual(["rgb(255, 0, 0)", "rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    expect(keeps("textColor")).toEqual([
+      { element: "<strong>", text: "this", value: { color: "#FF0000", opacity: 1 } },
+      { element: '<a class="link">', text: "a link", value: { color: "#0000FF", opacity: 1 } },
+    ]);
+
+    // Decorations are drawn across the fragments: a link's own underline is kept only where it differs.
+    editor.set(text, "textDecoration", "underline");
+    expect(keeps("textDecoration")).toBeUndefined();
+    editor.set(text, "textDecoration", "strikethrough");
+    expect(keeps("textDecoration")).toEqual([{ element: '<a class="link">', text: "a link", value: "underline" }]);
+    editor.set(text, "textDecoration", "underline");
+    expect(keeps("textDecoration")).toBeUndefined();
+
+    // A bold run is bolder than the text around it, whatever its weight: it follows. A weight of its own is kept.
+    editor.set(text, "fontWeight", 300);
+    expect(fragment("strong").fontWeight).toBe("400");
+    expect(keeps("fontWeight")).toEqual([{ element: "<b>", text: "on", value: 900 }]);
+    editor.set(text, "letterSpacing", { value: 1, unit: "px" });
+    expect(fragment("code").letterSpacing).toBe("1px");
+    expect(keeps("letterSpacing")).toBeUndefined();
+    // The text is as it was, after looking at how its fragments follow it.
+    expect(p.style.getPropertyValue("font-weight")).toBe("300");
+  });
+
+  test("the fonts offered are those the page has loaded, each with its loaded weights, and the first font of each stack the page uses that is there", async () => {
+    const { doc } = openCanvas(FONT_PAGE);
+    await doc.fonts.ready;
+
+    expect(fontsOf(doc)).toEqual([
+      // Its faces from 400 to 700, as a variable font has them, and a 900 of its own.
+      { family: "Brand", weights: [400, 500, 600, 700, 900] },
+      // Where the page asks for a font that is not there, the one it falls back to: in the weights the page uses it in.
+      { family: "Courier New", weights: [400] },
+      { family: "Georgia", weights: [400, 700] },
+      { family: "Menlo", weights: [400] },
+    ]);
+  });
+
+  test("a text layer's font is the first of its stack that is there; changed, it takes the stack the page uses that font in", async () => {
+    const { doc, editor, changes, layerOf } = openCanvas(FONT_PAGE);
+    await doc.fonts.ready;
+    const text = (selector: string) => layerOf(doc.querySelector(selector)!);
+
+    expect(editor.read(text("h1"), "fontFamily")).toBe("Brand");
+    expect(editor.read(text("p"), "fontFamily")).toBe("Georgia");
+
+    editor.set(text("p"), "fontFamily", "Menlo");
+    expect(style(doc.querySelector("p")!).fontFamily).toBe("Menlo, monospace");
+    expect(editor.read(text("p"), "fontFamily")).toBe("Menlo");
+    expect(changes.list()[0]).toMatchObject({ property: "fontFamily", before: "Georgia", after: "Menlo", style: { "font-family": "Menlo, monospace" } });
+    // Code in the text has a font of its own.
+    expect(changes.list()[0].keeps).toEqual([{ element: "<code>", text: "x", value: "Courier New" }]);
+
+    editor.set(text("p"), "fontFamily", "Brand");
+    expect(changes.list()[0].style).toEqual({ "font-family": "Brand, sans-serif" });
+  });
+
+  test("what sets an inherited text style is the rule on the element it is inherited from; one not inherited, its own", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(TEXT_PAGE);
+    const text = layerOf(doc.getElementById("inherited")!);
+
+    editor.set(text, "lineHeight", { value: 200, unit: "%" });
+    editor.set(text, "textDecoration", "underline");
+
+    const [lineHeight, decoration] = changes.list();
+    expect(lineHeight.sources).toEqual([expect.objectContaining({ kind: "rule", selector: "body", declaration: "line-height: 1.5" })]);
+    expect(decoration.sources).toEqual([expect.objectContaining({ kind: "none" })]);
+  });
+
+  test("a text layer's font size paints every instance in px, reads back as set, and is offered on text only", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const titles = [...doc.querySelectorAll("h3")];
+    const title = layerOf(titles[0]);
+
+    expect(editor.can(layerOf(cards[0]), "fontSize")).toBe(false);
+    expect(editor.read(title, "fontSize")).toBe(18.72);
+
+    editor.set(title, "fontSize", 24);
+    expect(titles.map((el) => style(el).fontSize)).toEqual(["24px", "24px", "24px", "18.72px"]);
+    expect(editor.read(layerOf(titles[1]), "fontSize")).toBe(24);
+    expect(changes.list()[0]).toMatchObject({ property: "fontSize", before: 18.72, after: 24, style: { "font-size": "24px" } });
+  });
+
+  test("weight, color, alignment, case and decoration paint every instance, read back as set, and record the CSS that shows them", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const titles = [...doc.querySelectorAll("h3")];
+    const title = layerOf(titles[0]);
+
+    expect([
+      editor.read(title, "fontWeight"),
+      editor.read(title, "textColor"),
+      editor.read(title, "textAlign"),
+      editor.read(title, "textCase"),
+      editor.read(title, "textDecoration"),
+    ]).toEqual([700, { color: "#000000", opacity: 1 }, "left", "none", "none"]);
+
+    editor.set(title, "fontWeight", 300);
+    editor.set(title, "textColor", { color: "#FF0000", opacity: 0.5 });
+    editor.set(title, "textAlign", "center");
+    editor.set(title, "textCase", "title");
+    editor.set(title, "textDecoration", "strikethrough");
+
+    const [second, other] = [titles[2], titles[3]].map(style);
+    expect([second.fontWeight, second.color, second.textAlign, second.textTransform, second.textDecorationLine]).toEqual([
+      "300",
+      "rgba(255, 0, 0, 0.5)",
+      "center",
+      "capitalize",
+      "line-through",
+    ]);
+    expect([other.fontWeight, other.textAlign, other.textTransform]).toEqual(["700", "start", "none"]);
+    const again = layerOf(titles[1]);
+    expect([
+      editor.read(again, "fontWeight"),
+      editor.read(again, "textColor"),
+      editor.read(again, "textAlign"),
+      editor.read(again, "textCase"),
+      editor.read(again, "textDecoration"),
+    ]).toEqual([300, { color: "#FF0000", opacity: 0.5 }, "center", "title", "strikethrough"]);
+    expect(changes.list().map(({ property, style }) => [property, style])).toEqual([
+      ["fontWeight", { "font-weight": "300" }],
+      ["textColor", { color: "rgb(255 0 0 / 0.5)" }],
+      ["textAlign", { "text-align": "center" }],
+      ["textCase", { "text-transform": "capitalize" }],
+      ["textDecoration", { "text-decoration-line": "line-through" }],
+    ]);
+
+    // Upper and lower case, an underline, right and justified, each in its CSS word.
+    for (const [property, value, css] of [
+      ["textCase", "upper", "uppercase"],
+      ["textCase", "lower", "lowercase"],
+      ["textDecoration", "underline", "underline"],
+      ["textAlign", "right", "right"],
+      ["textAlign", "justify", "justify"],
+    ] as const) {
+      editor.set(title, property, value);
+      expect(editor.read(title, property)).toBe(value);
+      expect(Object.values(changes.list().find((change) => change.property === property)!.style)).toEqual([css]);
+    }
+  });
+
+  test("the page's own alignment, case and decoration read in design language", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const el = doc.querySelector("h3")! as HTMLElement;
+    const read = (css: Partial<CSSStyleDeclaration>) => {
+      Object.assign(el.style, css);
+      const title = layerOf(el);
+      return [editor.read(title, "textAlign"), editor.read(title, "textCase"), editor.read(title, "textDecoration")];
+    };
+
+    expect(read({ textAlign: "end", textTransform: "uppercase", textDecoration: "underline line-through" })).toEqual(["right", "upper", "underline"]);
+    expect(read({ textAlign: "-webkit-center", textTransform: "lowercase", textDecoration: "line-through" })).toEqual(["center", "lower", "strikethrough"]);
+    expect(read({ direction: "rtl", textAlign: "start", textTransform: "none", textDecoration: "overline" })).toEqual(["right", "none", "none"]);
   });
 });
 
@@ -2598,6 +2861,24 @@ const STRUCTURE = `<!DOCTYPE html>
   <section id="flow" ${loc("10:5")}><p id="one" ${loc("11:7")} style="margin: 0">One</p><p id="two" ${loc("12:7")} style="margin: 4px 0 0">Two</p></section>
   <div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>
 </body>`;
+
+describe("text styles are checked on the live page", () => {
+  test("a line height and a font size show as the Agent writes them in the project's own units", async () => {
+    const { doc, editor, changes, layerOf } = openCanvas(STRUCTURE);
+    const one = layerOf(doc.getElementById("one")!);
+    editor.set(one, "lineHeight", { value: 150, unit: "%" });
+    editor.set(one, "fontSize", 20);
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(STRUCTURE.replace('style="margin: 0">One', 'style="margin: 0; line-height: 150%; font-size: 1.25rem">One'));
+    page.close();
+
+    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[1])).toEqual({ outcome: "shown" });
+  });
+});
 
 describe("a stroke is checked on the live page as the code writes it, else as the browser draws it", () => {
   /** The canvas, edited; and the live page, as the page is, its board as the Agent writes its border in the code. */

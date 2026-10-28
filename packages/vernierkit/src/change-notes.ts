@@ -52,6 +52,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
+    ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
@@ -241,6 +242,12 @@ function dataChange({ kind, target: { instances } }: Change): string {
 /** A sentence's first letter in capitals. */
 function capitalized(text: string): string {
   return text[0].toUpperCase() + text.slice(1);
+}
+
+/** A change to a text layer whose inline fragments do not all follow it: those that keep a value of their own. */
+function fragments({ property, keeps }: Change): string {
+  const kept = keeps!.map(({ element, text, value: own }) => `${quoted(text)} (\`${element}\`, ${value(property, own)})`);
+  return `**Inline fragments:** make the change on the text layer as a whole: the bold runs, links and other fragments in it follow it. These have a ${propertyName(property)} of their own, which they keep: ${kept.join(", ")}.`;
 }
 
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";

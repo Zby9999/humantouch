@@ -1,7 +1,8 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
 import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/edits";
-import { isCircle, isMiddle, lengthCss, type RadialGradient } from "./client/paint";
+import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
+import type { LineHeight, TextCase, TextLength } from "./client/typography";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -28,6 +29,15 @@ const PROPERTIES: Record<string, string> = {
   opacity: "Opacity",
   visible: "Visibility",
   clip: "Clip content",
+  fontFamily: "Font",
+  fontWeight: "Font weight",
+  fontSize: "Font size",
+  lineHeight: "Line height",
+  letterSpacing: "Letter spacing",
+  textAlign: "Text alignment",
+  textColor: "Text color",
+  textCase: "Case",
+  textDecoration: "Decoration",
 };
 /** Where the title does not read well in a sentence. */
 const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", clip: "content clipping" };
@@ -181,8 +191,51 @@ function shadowValue(s: Shadow, spread: boolean): string {
   return `${s.type === "drop" ? "a drop" : "an inner"} shadow (x ${s.x}px, y ${s.y}px, blur ${s.blur}px, ${spread ? `spread ${s.spread}px, ` : ""}${colorValue(s)})`;
 }
 
+/** Font weights by the names Figma gives them. */
+const WEIGHTS: Record<number, string> = {
+  100: "Thin",
+  200: "Extra Light",
+  300: "Light",
+  400: "Regular",
+  500: "Medium",
+  600: "Semi Bold",
+  700: "Bold",
+  800: "Extra Bold",
+  900: "Black",
+};
+
+/** A font weight's name: "Semi Bold"; a weight between the named ones, its number. */
+export function weightName(weight: number): string {
+  return WEIGHTS[weight] ?? String(weight);
+}
+
+/** "24px", "150% of the font size". */
+function textLength({ value, unit }: TextLength): string {
+  return unit === "px" ? `${value}px` : `${value}% of the font size`;
+}
+
+const CASES: Record<TextCase, string> = { none: "as typed", upper: "upper case", lower: "lower case", title: "title case" };
+
 export function value(property: string, v: unknown): string {
   switch (property) {
+    case "fontFamily":
+      return v as string;
+    case "fontWeight":
+      return WEIGHTS[v as number] ? `${weightName(v as number)} (${v})` : String(v);
+    case "fontSize":
+      return `${v as number}px`;
+    case "lineHeight":
+      return v === "auto" ? "Auto (the font's own)" : textLength(v as Exclude<LineHeight, "auto">);
+    case "letterSpacing":
+      return textLength(v as TextLength);
+    case "textAlign":
+      return v === "justify" ? "justified" : (v as string);
+    case "textColor":
+      return colorValue(v as Color);
+    case "textCase":
+      return CASES[v as TextCase];
+    case "textDecoration":
+      return v as string;
     case "fill":
       return fillValue(v as Fill | null);
     case "stroke": {

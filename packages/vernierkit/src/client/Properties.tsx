@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import type { TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
+import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useRef, useState } from "preact/hooks";
 import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./edits";
 import { Icon, type IconName } from "./icons";
@@ -27,6 +27,8 @@ import {
 } from "./paint";
 import { stepped } from "./stroke-weight";
 import { useToast } from "./Toast";
+import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
+import { weightName } from "../design-values";
 
 interface Props {
   editor: Editor;
@@ -148,6 +150,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const fill = shown("fill");
   const stroke = shown("stroke");
   const shadows = shownEffect("shadows");
+  const fontSize = shown("fontSize");
+  const textColor = shown("textColor");
   return (
     <>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
@@ -208,6 +212,28 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           set={set}
           update={update}
         />
+      )}
+      {fontSize !== undefined && (
+        <TextSection
+          size={fontSize}
+          families={layers.map((layer) => editor.read(layer, "fontFamily"))}
+          weight={shown("fontWeight")!}
+          lineHeight={shown("lineHeight")!}
+          letterSpacing={shown("letterSpacing")!}
+          align={shown("textAlign")!}
+          textCase={shown("textCase")!}
+          decoration={shown("textDecoration")!}
+          fonts={fontsOf(layers[0].el.ownerDocument)}
+          set={set}
+          updateEach={updateEach}
+        />
+      )}
+      {textColor !== undefined && (
+        // Text is filled with its color, as in Figma.
+        <section class="vk-section" role="group" aria-label="Fill">
+          <h3 class="vk-section-title">Fill</h3>
+          {textColor === MIXED ? <span class="vk-field vk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} />}
+        </section>
       )}
       {fill !== undefined && (
         <FillSection
@@ -533,6 +559,194 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
       {visible !== undefined && <Check label="Visible" checked={visible} onChange={set("visible")} />}
       {clip !== undefined && <Check label="Clip content" checked={clip} onChange={set("clip")} />}
     </section>
+  );
+}
+
+const TEXT_ALIGNS: { align: TextAlign; label: string }[] = [
+  { align: "left", label: "Align left" },
+  { align: "center", label: "Align center" },
+  { align: "right", label: "Align right" },
+  { align: "justify", label: "Justify" },
+];
+
+/** Figma's Case, each shown as it makes "Ag" look; As typed leaves the words as written. */
+const TEXT_CASES: { textCase: TextCase; label: string; glyph: string }[] = [
+  { textCase: "none", label: "As typed", glyph: "—" },
+  { textCase: "upper", label: "Upper case", glyph: "AG" },
+  { textCase: "lower", label: "Lower case", glyph: "ag" },
+  { textCase: "title", label: "Title case", glyph: "Ag" },
+];
+
+const DECORATIONS: { decoration: TextDecoration; label: string; glyph: string }[] = [
+  { decoration: "none", label: "No decoration", glyph: "—" },
+  { decoration: "underline", label: "Underline", glyph: "U" },
+  { decoration: "strikethrough", label: "Strikethrough", glyph: "S" },
+];
+
+/**
+ * Text, as in Figma: the font (one the page has loaded) and its weight (one it
+ * has loaded) and size, line height and letter spacing, alignment, case and
+ * decoration. Its color is its Fill.
+ */
+function TextSection({ size, families, weight, lineHeight, letterSpacing, align, textCase, decoration, fonts, set, updateEach }: {
+  size: Shown<number>;
+  /** Each selected layer's font. */
+  families: string[];
+  weight: Shown<number>;
+  lineHeight: Shown<LineHeight>;
+  letterSpacing: Shown<TextLength>;
+  align: Shown<TextAlign>;
+  textCase: Shown<TextCase>;
+  decoration: Shown<TextDecoration>;
+  /** The fonts the page has: those it can be set in. */
+  fonts: Font[];
+  set: Setter;
+  updateEach(next: (layer: Layer) => Partial<PropertyValues>): void;
+}) {
+  const family = shared(families);
+  const loaded = fonts.filter((font) => families.includes(font.family)).flatMap((font) => font.weights);
+  // The text's own font and weight show where the page has not loaded them, and cannot be chosen again.
+  const names = [...fonts.map((font) => font.family), ...(family === MIXED || fonts.some((font) => font.family === family) ? [] : [family])];
+  const weights = [...new Set([...loaded, ...(weight === MIXED ? [] : [weight])])].sort((a, b) => a - b);
+  /** A font changed, as in Figma: in the weight the text has, where the font has it loaded, else the nearest that it has. */
+  const changeFont = (next: string) => {
+    const has = fonts.find((font) => font.family === next)?.weights ?? [];
+    updateEach(() => {
+      const own = weight === MIXED ? null : weight;
+      if (own === null || !has.length || has.includes(own)) return { fontFamily: next };
+      return { fontFamily: next, fontWeight: has.reduce((a, b) => (Math.abs(b - own) < Math.abs(a - own) ? b : a)) };
+    });
+  };
+  return (
+    <section class="vk-section" role="group" aria-label="Text">
+      <h3 class="vk-section-title">Text</h3>
+      <Choice
+        label="Font"
+        class="vk-font"
+        value={family === MIXED ? null : family}
+        options={names.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name, disabled: !fonts.some((font) => font.family === name) }))}
+        onChange={changeFont}
+      />
+      <div class="vk-grid-2">
+        <Choice
+          label="Font weight"
+          value={weight === MIXED ? null : String(weight)}
+          options={weights.map((w) => ({ value: String(w), label: weightName(w), disabled: !loaded.includes(w) }))}
+          onChange={(w) => set("fontWeight")(Number(w))}
+        />
+        <NumberField label="Font size" glyph="Aa" value={number(size)} min={1} onChange={set("fontSize")} />
+        {/* Auto is about 1.2 times the font size: a drag from it starts there. */}
+        <TextLengthField label="Line height" glyph="↕" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
+        <TextLengthField label="Letter spacing" glyph="↔" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
+      </div>
+      <Segmented label="Text alignment" value={align} options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))} onChange={set("textAlign")} />
+      <div class="vk-row">
+        <Segmented
+          label="Case"
+          value={textCase}
+          options={TEXT_CASES.map(({ textCase, label, glyph }) => ({ value: textCase, label, content: <span class="vk-text-glyph">{glyph}</span> }))}
+          onChange={set("textCase")}
+        />
+        <Segmented
+          label="Decoration"
+          value={decoration}
+          options={DECORATIONS.map(({ decoration, label, glyph }) => ({
+            value: decoration,
+            label,
+            content: <span class={`vk-text-glyph vk-${decoration}`}>{glyph}</span>,
+          }))}
+          onChange={set("textDecoration")}
+        />
+      </div>
+    </section>
+  );
+}
+
+/** A choice of one of `options`; null shows Mixed. */
+function Choice({ label, class: className, value, options, onChange }: {
+  label: string;
+  class?: string;
+  value: string | null;
+  options: { value: string; label: string; disabled?: boolean }[];
+  onChange(value: string): void;
+}) {
+  return (
+    <select class={`vk-select${className ? ` ${className}` : ""}`} aria-label={label} value={value ?? ""} onChange={(event) => onChange(event.currentTarget.value)}>
+      {value === null && (
+        <option value="" disabled>
+          Mixed
+        </option>
+      )}
+      {options.map((option) => (
+        <option key={option.value} value={option.value} disabled={option.disabled}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Buttons of which one is on, side by side; Mixed: none of them. */
+function Segmented<T extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: Shown<T>;
+  options: { value: T; label: string; content: ComponentChildren }[];
+  onChange(value: T): void;
+}) {
+  return (
+    <div class="vk-segmented-field" role="radiogroup" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          class="vk-icon-button"
+          aria-checked={value === option.value}
+          aria-label={option.label}
+          title={option.label}
+          onClick={() => onChange(option.value)}
+        >
+          {option.content}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A line height or a letter spacing: in px, or in % of the font size, as
+ * typed, and else in the unit it is in; a line height can be Auto. Stepped and
+ * dragged in its unit; from Auto, in px from what Auto comes to.
+ */
+function TextLengthField({ label, glyph, value, min = -Infinity, auto, onChange }: {
+  label: string;
+  glyph: string;
+  value: Shown<LineHeight>;
+  min?: number;
+  /** A line height: it can be Auto, which comes to this many px. */
+  auto?: number;
+  onChange(value: LineHeight, continues?: boolean): void;
+}) {
+  const length = value === MIXED || value === "auto" ? null : value;
+  const unit = length?.unit ?? "px";
+  const change = (n: number, continues?: boolean) => onChange({ value: Math.max(min, Math.round(n * 100) / 100), unit }, continues);
+  return (
+    <label class="vk-field" title={label}>
+      <Scrub glyph={glyph} value={length?.value ?? (value === "auto" ? auto! : null)} min={min} onChange={change} />
+      <TextField
+        label={label}
+        value={value === MIXED ? "Mixed" : value === "auto" ? "Auto" : `${value.value}${value.unit}`}
+        parse={(text): LineHeight | null => {
+          if (/^\s*auto\s*$/i.test(text)) return auto === undefined ? null : "auto";
+          const n = parseNumber(text, min);
+          if (n === null) return null;
+          const typed = /(px|%)\s*$/i.exec(text.trim())?.[1].toLowerCase() as TextLength["unit"] | undefined;
+          return { value: n, unit: typed ?? unit };
+        }}
+        step={length ? (by) => change(length.value + by) : value === "auto" ? (by) => change(auto! + by) : undefined}
+        onChange={onChange}
+      />
+    </label>
   );
 }
 

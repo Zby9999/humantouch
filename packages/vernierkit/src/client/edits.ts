@@ -30,6 +30,7 @@ import {
   type Composed,
   type Created,
   type Dissolved,
+  type Fragment,
   type Place,
   type StackSettings,
   type Target,
@@ -38,6 +39,7 @@ import { PAGE_ATTR } from "./freezer";
 import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
+import { TYPOGRAPHY, type TypographyValues } from "./typography";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -76,7 +78,7 @@ export interface Align {
 }
 
 /** What the Design panel edits, by property. A fill of null: no fill. A minimum or maximum of null: none. */
-export interface PropertyValues {
+export interface PropertyValues extends TypographyValues {
   fill: Fill | null;
   /** A stroke of null: no stroke. */
   stroke: Stroke | null;
@@ -229,7 +231,7 @@ interface Step {
 }
 
 
-interface Definition<V> {
+export interface Definition<V> {
   /** Layers the property applies to. */
   kinds: LayerKind[];
   /** Further, whether the layer as it is now can take the property. */
@@ -251,6 +253,10 @@ interface Definition<V> {
   setsOn?(el: Element): string[];
   /** A Stack's own property: on a plain top-to-bottom flow, writing it makes the flow a real Stack. */
   stack?: true;
+  /** An inherited style: the element whose styles set the value, the layer's own or one above it. */
+  setOn?(el: Element): Element;
+  /** A text style: the layer's inline fragments that keep a value of their own, as it is now. */
+  keeps?(el: Element, colors: ColorReader): Fragment[];
   /** The reference style, from the CSS `write` declares, when not all of it: `before` is where the change started. */
   reference?(style: Record<string, string>, before: V, after: V): Record<string, string>;
 }
@@ -385,6 +391,7 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     writes: ["overflow"],
     sets: ["overflow-x", "overflow-y"],
   },
+  ...TYPOGRAPHY,
 };
 
 /** `property` of an element as it is now, in design language: on the canvas, or on the live page. */
@@ -426,7 +433,7 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     const started = definition.reference && known ? changes.list().find((change) => change.layer === known && change.property === property) : undefined;
     // A layer made this round has no style of the page's to change.
-    const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(layer.el, definition.setsOn?.(layer.el) ?? definition.sets);
+    const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(definition.setOn?.(layer.el) ?? layer.el, definition.setsOn?.(layer.el) ?? definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
     const asStack = definition.stack && (layer.el.hasAttribute(AS_STACK_ATTR) || !asShown(layer.el, () => stackOf(layer.el).flex));
@@ -442,6 +449,7 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       if (property !== "visible" && known && changes.has(known, "visible")) declare(instance.el, { display: "none" });
     }
     const id = idOf(layer, instances);
+    const keeps = definition.keeps?.(layer.el, colors);
     changes.record(id, {
       target: targetOf(layer, instances.length),
       scope: "usage",
@@ -451,6 +459,7 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       style: definition.reference?.(declarations, started ? (started.before as PropertyValues[P]) : before, value) ?? declarations,
       sources,
       ...(asStack && { asStack: true }),
+      ...(keeps?.length ? { keeps } : {}),
     });
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property)) {

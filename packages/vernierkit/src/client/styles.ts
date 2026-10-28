@@ -579,6 +579,10 @@ export const styles = /* css */ `
 }
 .vk-segmented-field .vk-icon-button { width: 22px; color: var(--vk-text-muted); }
 .vk-segmented-field .vk-icon-button[aria-checked="true"] { color: var(--vk-text); background: var(--vk-panel); box-shadow: 0 0 0 1px var(--vk-border); }
+.vk-select.vk-font, .vk-grid-2 > .vk-select { width: 100%; }
+.vk-text-glyph { font-size: 11px; font-weight: 500; }
+.vk-text-glyph.vk-underline { text-decoration: underline; }
+.vk-text-glyph.vk-strikethrough { text-decoration: line-through; }
 .vk-align-row { align-items: flex-start; gap: 12px; }
 .vk-align {
   display: grid;

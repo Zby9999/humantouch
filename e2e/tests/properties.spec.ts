@@ -582,10 +582,13 @@ test("a locked layer offers no fill or corner radius", async ({ page }) => {
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
 });
 
-test("a text layer offers no fill or corner radius here", async ({ page }) => {
+test("a text layer's fill is its color, with no gradient and no taking it off, and it has no corner radius", async ({ page }) => {
   await selectRow(page, "Freeze");
+  const fill = design(page).getByRole("group", { name: "Fill" });
 
-  await expect(design(page).getByRole("group", { name: "Fill" })).toHaveCount(0);
+  await expect(fill.getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("1C1917");
+  await expect(fill.getByRole("combobox", { name: "Fill type" })).toHaveCount(0);
+  await expect(fill.getByRole("button", { name: "Remove fill" })).toHaveCount(0);
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
 });
 
@@ -741,4 +744,104 @@ test("dragging left and right on a number's icon changes it, 1 per px and 10 wit
   await drag(-50);
   await expect(radius).toHaveValue("0");
   expect(await cardStyles(page, "borderRadius")).toEqual(["0px", "0px", "0px", "12px"]);
+});
+
+const INTRO = "A Framer-style editor layer for any page.";
+
+/** A computed style of the intro paragraph on the canvas, and of the bold run in it. */
+function introStyle(page: Page, property: keyof CSSStyleDeclaration & string, selector = "[data-testid=hero] p") {
+  return canvas(page)
+    .locator(selector)
+    .evaluate((el, property) => getComputedStyle(el).getPropertyValue(property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)), property);
+}
+
+test("a text layer's font, weight and size, line height and letter spacing, alignment, case, decoration and color change the canvas at once", async ({ page }) => {
+  await selectRow(page, INTRO);
+  const text = design(page).getByRole("group", { name: "Text" });
+  const field = (name: string) => text.getByRole("textbox", { name, exact: true });
+  const enter = async (name: string, value: string) => {
+    await field(name).fill(value);
+    await field(name).press("Enter");
+  };
+  const font = text.getByRole("combobox", { name: "Font", exact: true });
+  const weight = text.getByRole("combobox", { name: "Font weight" });
+
+  // The fonts the page has loaded, or uses from the system: Georgia for its body, Space Grotesk for its title, in bold only.
+  await expect(font).toHaveValue("Georgia");
+  await expect(font.getByRole("option")).toHaveText(["Georgia", "Space Grotesk"]);
+  await expect(weight).toHaveValue("400");
+  await font.selectOption("Space Grotesk");
+  expect(await introStyle(page, "fontFamily")).toBe('"Space Grotesk", sans-serif');
+  // As in Figma, the text takes the nearest weight the font has loaded: it has only bold.
+  expect(await introStyle(page, "fontWeight")).toBe("700");
+  await expect(weight).toHaveValue("700");
+  await expect(weight.getByRole("option")).toHaveText(["Bold"]);
+  // One undo takes back the font and its weight together.
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await introStyle(page, "fontWeight")).toBe("400");
+  await expect(font).toHaveValue("Georgia");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(font).toHaveValue("Space Grotesk");
+
+  // The body's line height of 1.8 and letter spacing of 0.02em: shares of the font size.
+  await expect(field("Line height")).toHaveValue("180%");
+  await expect(field("Letter spacing")).toHaveValue("2%");
+
+  await enter("Font size", "20");
+  expect(await introStyle(page, "fontSize")).toBe("20px");
+  // The line height grows with it; the spacing, set in em on the body, is what it came to there.
+  await expect(field("Line height")).toHaveValue("180%");
+  await expect(field("Letter spacing")).toHaveValue("1.6%");
+  await enter("Line height", "30px");
+  expect(await introStyle(page, "lineHeight")).toBe("30px");
+  await expect(field("Line height")).toHaveValue("30px");
+  await enter("Line height", "auto");
+  expect(await introStyle(page, "lineHeight")).toBe("normal");
+  await enter("Letter spacing", "5");
+  expect(await introStyle(page, "letterSpacing")).toBe("1px");
+
+  await text.getByRole("radio", { name: "Align center" }).click();
+  expect(await introStyle(page, "textAlign")).toBe("center");
+  await text.getByRole("radio", { name: "Upper case" }).click();
+  expect(await introStyle(page, "textTransform")).toBe("uppercase");
+  await text.getByRole("radio", { name: "Strikethrough" }).click();
+  expect(await introStyle(page, "textDecorationLine")).toBe("line-through");
+  await expect(text.getByRole("radio", { name: "Strikethrough" })).toHaveAttribute("aria-checked", "true");
+
+  // Its color in Fill, as in Figma; the bold run in it follows.
+  const color = design(page).getByRole("group", { name: "Fill" }).getByRole("textbox", { name: "Fill color", exact: true });
+  await expect(color).toHaveValue("57534D");
+  await color.fill("ff0000");
+  await color.press("Enter");
+  expect(await introStyle(page, "color")).toBe("rgb(255, 0, 0)");
+  expect(await introStyle(page, "color", "[data-testid=hero] p strong")).toBe("rgb(255, 0, 0)");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  // Back to the page's own: Tailwind's stone-600.
+  expect(await introStyle(page, "color")).toBe("oklch(0.444 0.011 73.639)");
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await introStyle(page, "textDecorationLine")).toBe("none");
+});
+
+test("text layers selected together show what they share, Mixed otherwise, and take a change together", async ({ page }) => {
+  await selectRow(page, "Freeze");
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: INTRO, exact: true }).click({ modifiers: ["Shift"] });
+  const text = design(page).getByRole("group", { name: "Text" });
+  const size = text.getByRole("textbox", { name: "Font size" });
+
+  await expect(size).toHaveValue("Mixed");
+  await expect(text.getByRole("combobox", { name: "Font weight" })).toHaveValue("");
+  await expect(text.getByRole("textbox", { name: "Line height" })).toHaveValue("Mixed");
+  await size.fill("22");
+  await size.press("Enter");
+
+  expect(await introStyle(page, "fontSize")).toBe("22px");
+  expect(await introStyle(page, "fontSize", "article h3 >> nth=0")).toBe("22px");
+  await expect(size).toHaveValue("22");
+});
+
+test("a layer that is not text has no Text section", async ({ page }) => {
+  await selectRow(page, "Card");
+
+  await expect(design(page).getByRole("group", { name: "Text" })).toHaveCount(0);
 });
