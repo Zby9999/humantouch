@@ -582,12 +582,123 @@ test("a locked layer offers no fill or corner radius", async ({ page }) => {
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
 });
 
-test("a text layer offers no fill, corner radius or effects here", async ({ page }) => {
+test("a text layer offers no fill or corner radius here", async ({ page }) => {
   await selectRow(page, "Freeze");
 
   await expect(design(page).getByRole("group", { name: "Fill" })).toHaveCount(0);
-  await expect(design(page).getByRole("group", { name: "Effects" })).toHaveCount(0);
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveCount(0);
+});
+
+/** The text-shadow of every card's title on the canvas, in page order. */
+function titleShadows(page: Page) {
+  return canvas(page)
+    .locator("article h3")
+    .evaluateAll((titles) => titles.map((title) => getComputedStyle(title).textShadow));
+}
+
+/** Sets a style on the canvas's cards, or their titles, as if the page had it. */
+function styleOnCanvas(page: Page, selector: "article" | "article h3", style: Record<string, string>) {
+  return canvas(page)
+    .locator(selector)
+    .evaluateAll((els, style) => els.forEach((el) => Object.assign((el as HTMLElement).style, style)), style);
+}
+
+test("a text layer's drop shadows: added, changed and taken off, on the canvas at once as text-shadow, with no spread and no other effect", async ({ page }) => {
+  await selectRow(page, "Freeze");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const field = (name: string) => effects.getByRole("textbox", { name, exact: true });
+  const enter = async (name: string, value: string) => {
+    await field(name).fill(value);
+    await field(name).press("Enter");
+  };
+  await expect(effects.getByRole("textbox")).toHaveCount(0);
+  const cardShadow = (await cardStyles(page, "boxShadow"))[0];
+
+  // As in Figma, a new effect is a drop shadow.
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  await expect(field("Shadow 1 Y")).toHaveValue("4");
+  await expect(field("Shadow 1 blur")).toHaveValue("4");
+  await expect(field("Shadow 1 opacity")).toHaveValue("25%");
+  await expect(field("Shadow 1 spread")).toHaveCount(0);
+  // Text draws drop shadows only.
+  const type = effects.getByRole("combobox", { name: "Shadow 1 type" });
+  await expect(type.getByRole("option")).toHaveText(["Drop shadow"]);
+  // On every instance of the usage, and no other; the card keeps its own shadow.
+  expect(await titleShadows(page)).toEqual([...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px"), "none"]);
+  expect((await cardStyles(page, "boxShadow"))[0]).toBe(cardShadow);
+
+  // A second one, below the first, each changed on its own.
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  await enter("Shadow 2 X", "2");
+  await enter("Shadow 2 blur", "0");
+  await enter("Shadow 2 color", "ff0000");
+  await enter("Shadow 1 Y", "8");
+  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px, rgba(255, 0, 0, 0.25) 2px 4px 0px");
+
+  await effects.getByRole("button", { name: "Remove shadow 1" }).click();
+  expect((await titleShadows(page))[0]).toBe("rgba(255, 0, 0, 0.25) 2px 4px 0px");
+  await effects.getByRole("button", { name: "Remove shadow 1" }).click();
+  expect((await titleShadows(page))[0]).toBe("none");
+  await expect(effects.getByRole("textbox")).toHaveCount(0);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(field("Shadow 1 X")).toHaveValue("2");
+  expect((await titleShadows(page))[0]).toBe("rgba(255, 0, 0, 0.25) 2px 4px 0px");
+});
+
+test("a text layer's text-shadow on the page reads as its drop shadows", async ({ page }) => {
+  await styleOnCanvas(page, "article h3", { textShadow: "0 1px 2px rgb(0 0 0 / 0.5), 3px 3px #00f" });
+  await selectRow(page, "Freeze");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const field = (name: string) => effects.getByRole("textbox", { name, exact: true });
+
+  await expect(effects.getByRole("combobox", { name: "Shadow 1 type" })).toHaveValue("drop");
+  await expect(field("Shadow 1 Y")).toHaveValue("1");
+  await expect(field("Shadow 1 blur")).toHaveValue("2");
+  await expect(field("Shadow 1 opacity")).toHaveValue("50%");
+  await expect(field("Shadow 2 X")).toHaveValue("3");
+  await expect(field("Shadow 2 color")).toHaveValue("0000FF");
+});
+
+test("text and other layers selected together take drop shadows each its own way: text-shadow and box-shadow", async ({ page }) => {
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const selectBoth = async () => {
+    await selectRow(page, "Card");
+    await tree.getByRole("treeitem", { name: "Freeze", exact: true }).click({ modifiers: ["Shift"] });
+  };
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const field = (name: string) => effects.getByRole("textbox", { name, exact: true });
+
+  // The card's shadow-sm, and none on the text.
+  await selectBoth();
+  await expect(effects.getByText("Mixed shadows")).toBeVisible();
+  // As in Figma, a new effect replaces the mixed ones, on each layer as it draws shadows.
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  expect((await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px");
+  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px");
+  // No spread, and drop shadows only, as text has them.
+  await expect(field("Shadow 1 spread")).toHaveCount(0);
+  await expect(effects.getByRole("combobox", { name: "Shadow 1 type" }).getByRole("option")).toHaveText(["Drop shadow"]);
+
+  // A card's spread is its own: the text shows the same shadow, and a change leaves the spread as it is.
+  await styleOnCanvas(page, "article", { boxShadow: "0 4px 4px 2px rgb(0 0 0 / 0.25)" });
+  await selectBoth();
+  await expect(field("Shadow 1 Y")).toHaveValue("4");
+  await field("Shadow 1 Y").fill("8");
+  await field("Shadow 1 Y").press("Enter");
+  expect((await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px 2px");
+  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px");
+
+  // An inner shadow, or a blur, that text cannot have shows as Mixed.
+  await styleOnCanvas(page, "article", { boxShadow: "inset 0 8px 4px rgb(0 0 0 / 0.25)", filter: "blur(2px)" });
+  await selectBoth();
+  await expect(effects.getByText("Mixed shadows")).toBeVisible();
+  await expect(field("Layer blur")).toHaveValue("Mixed");
+  await effects.getByRole("button", { name: "Remove layer blur" }).click();
+  expect((await cardStyles(page, "filter"))[0]).toBe("none");
+  await effects.getByRole("button", { name: "Remove shadows" }).click();
+  expect((await cardStyles(page, "boxShadow"))[0]).toBe("none");
+  expect((await titleShadows(page))[0]).toBe("none");
 });
 
 test("the selection box steps aside while a value changes, so the change can be seen, and comes back after", async ({ page }) => {

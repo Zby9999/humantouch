@@ -312,6 +312,25 @@ describe("claim, corners and effects", () => {
     expect(section(output, 5)).toMatch(/^5\. Background blur\n[^]*- \*\*Design intent:\*\* Change the background blur from 12px to none\.\n/);
     expect(section(output, 5)).toContain("- **Reference style:** `backdrop-filter: none`\n");
   });
+
+  test("say a text layer's drop shadows as shadows, with no spread, and text-shadow as the reference style", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
+    const drop = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+    const red = { type: "drop", x: 2, y: -1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 };
+    saveRound(
+      change(1, "textShadows", [], [drop, red], { "text-shadow": "0px 4px 4px rgb(0 0 0 / 0.25), 2px -1px 0px rgb(255 0 0 / 1)" }),
+      change(2, "textShadows", [drop], [], { "text-shadow": "none" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Shadows\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the shadows from no shadow to a drop shadow (x 0px, y 4px, blur 4px, #000000 at 25% opacity) and a drop shadow (x 2px, y -1px, blur 0px, #FF0000), the first on top.\n",
+    );
+    expect(section(output, 1)).toContain("- **Reference style:** `text-shadow: 0px 4px 4px rgb(0 0 0 / 0.25), 2px -1px 0px rgb(255 0 0 / 1)`\n");
+    expect(section(output, 2)).toContain("Change the shadows from a drop shadow (x 0px, y 4px, blur 4px, #000000 at 25% opacity) to no shadow.\n");
+  });
 });
 
 describe("claim, moves", () => {

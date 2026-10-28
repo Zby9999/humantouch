@@ -8,6 +8,8 @@ const PROPERTIES: Record<string, string> = {
   stroke: "Stroke",
   radius: "Corner radius",
   shadows: "Shadows",
+  // A text layer's: said as its shadows too.
+  textShadows: "Shadows",
   layerBlur: "Layer blur",
   backgroundBlur: "Background blur",
   x: "X",
@@ -174,9 +176,9 @@ function radialShape({ center, size }: RadialGradient): string {
   return `${from}, ${isCircle(size) ? `${lengthCss(size.x)} out` : `out ${lengthCss(size.x)} across and ${lengthCss(size.y)} down`}`;
 }
 
-/** "a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity)". */
-function shadowValue(s: Shadow): string {
-  return `${s.type === "drop" ? "a drop" : "an inner"} shadow (x ${s.x}px, y ${s.y}px, blur ${s.blur}px, spread ${s.spread}px, ${colorValue(s)})`;
+/** "a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity)"; a text layer's has no spread. */
+function shadowValue(s: Shadow, spread: boolean): string {
+  return `${s.type === "drop" ? "a drop" : "an inner"} shadow (x ${s.x}px, y ${s.y}px, blur ${s.blur}px, ${spread ? `spread ${s.spread}px, ` : ""}${colorValue(s)})`;
 }
 
 export function value(property: string, v: unknown): string {
@@ -191,10 +193,11 @@ export function value(property: string, v: unknown): string {
       const sides = ["top", "right", "bottom", "left"].map((side, i) => `${side} ${weight[i]}px`).join(", ");
       return `${stroke.style} ${colorValue(stroke)}, on some sides: ${sides}`;
     }
-    case "shadows": {
+    case "shadows":
+    case "textShadows": {
       const shadows = v as Shadow[];
       if (!shadows.length) return "no shadow";
-      return `${shadows.map(shadowValue).join(" and ")}${shadows.length > 1 ? ", the first on top" : ""}`;
+      return `${shadows.map((s) => shadowValue(s, property === "shadows")).join(" and ")}${shadows.length > 1 ? ", the first on top" : ""}`;
     }
     case "layerBlur":
     case "backgroundBlur":

@@ -35,7 +35,7 @@ import {
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
-import { blur, readShadows, writeShadows, type Blur, type Shadow } from "./effects";
+import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
@@ -83,6 +83,8 @@ export interface PropertyValues {
   radius: Radius;
   /** Drop and inner shadows, first on top; none when empty. */
   shadows: Shadow[];
+  /** A text layer's drop shadows, first on top, drawn as text-shadow: no inner shadow, no spread. */
+  textShadows: Shadow[];
   /** A blur on the layer, and on what is behind it, in px; null for none. */
   layerBlur: Blur;
   backgroundBlur: Blur;
@@ -296,6 +298,14 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     write: writeShadows,
     writes: ["box-shadow"],
     sets: ["box-shadow"],
+  },
+  textShadows: {
+    kinds: ["text"],
+    accepts: (_, shadows) => textCanDraw(shadows),
+    read: readTextShadows,
+    write: writeTextShadows,
+    writes: ["text-shadow"],
+    sets: ["text-shadow"],
   },
   layerBlur: { kinds: ["stack", "grid", "frame", "image", "still"], ...blur("filter") },
   backgroundBlur: { kinds: ["stack", "grid", "frame", "image", "still"], ...blur("backdrop-filter") },

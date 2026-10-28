@@ -1,7 +1,8 @@
 /**
  * Effects in design language, read from and written as CSS: drop and inner
- * shadows are a layer's box shadows, a layer blur its filter's blur, a
- * background blur its backdrop filter's blur.
+ * shadows are a layer's box shadows (a text layer's drop shadows its text
+ * shadows), a layer blur its filter's blur, a background blur its backdrop
+ * filter's blur.
  */
 import { cssColor, split, type Color, type ColorReader } from "./paint";
 
@@ -35,7 +36,18 @@ export function draws({ x, y, blur, spread }: Shadow): boolean {
  * `0 0 #0000`, and a ring's `0 0 0 0px #fff` offset, there to compose with) are left out.
  */
 export function readShadows(el: Element, colors: ColorReader): Shadow[] {
-  const css = getComputedStyle(el).boxShadow;
+  return parseShadows(getComputedStyle(el).boxShadow, colors);
+}
+
+/**
+ * A text layer's shadows, first on top: drop shadows, with no spread, as CSS
+ * draws a text shadow. One that draws nothing is left out.
+ */
+export function readTextShadows(el: Element, colors: ColorReader): Shadow[] {
+  return parseShadows(getComputedStyle(el).textShadow, colors);
+}
+
+function parseShadows(css: string, colors: ColorReader): Shadow[] {
   if (css === "none") return [];
   return split(css, ",").flatMap((one) => {
     const tokens = split(one, " ");
@@ -53,6 +65,17 @@ const LENGTH = /^-?(\d*\.)?\d+(px)?$/;
 export function writeShadows(shadows: Shadow[]): Record<string, string> {
   const css = shadows.map((s) => `${s.type === "inner" ? "inset " : ""}${s.x}px ${s.y}px ${s.blur}px ${s.spread}px ${cssColor(s)}`);
   return { "box-shadow": css.length ? css.join(", ") : "none" };
+}
+
+/** Whether a text layer can draw the shadows: drop shadows only, with no spread. */
+export function textCanDraw(shadows: Shadow[]): boolean {
+  return shadows.every((s) => s.type === "drop" && !s.spread);
+}
+
+/** The CSS that draws a text layer's drop shadows; none takes them off. */
+export function writeTextShadows(shadows: Shadow[]): Record<string, string> {
+  const css = shadows.map((s) => `${s.x}px ${s.y}px ${s.blur}px ${cssColor(s)}`);
+  return { "text-shadow": css.length ? css.join(", ") : "none" };
 }
 
 /** A blur in px, as CSS draws `blur()`; null for none. */

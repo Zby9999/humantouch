@@ -601,6 +601,60 @@ describe("shadows", () => {
   });
 });
 
+describe("text shadows", () => {
+  const drop: Shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+  const red: Shadow = { type: "drop", x: 2, y: -1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 };
+
+  test("a text layer's drop shadows, several at once, paint every instance as text-shadow in their order and read back as set; none takes them off", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const titles = [...doc.querySelectorAll("h3")];
+    const title = layerOf(titles[0]);
+
+    expect(editor.can(title, "shadows")).toBe(false);
+    expect(editor.read(title, "textShadows")).toEqual([]);
+
+    editor.set(title, "textShadows", [drop, red]);
+    expect(titles.map((el) => style(el).textShadow)).toEqual([...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px, rgb(255, 0, 0) 2px -1px 0px"), "none"]);
+    expect(style(titles[0]).boxShadow).toBe("none");
+    expect(editor.read(layerOf(titles[2]), "textShadows")).toEqual([drop, red]);
+    expect(changes.list()[0]).toMatchObject({
+      property: "textShadows",
+      before: [],
+      after: [drop, red],
+      style: { "text-shadow": "0px 4px 4px rgb(0 0 0 / 0.25), 2px -1px 0px rgb(255 0 0 / 1)" },
+    });
+
+    editor.set(title, "textShadows", []);
+    expect(style(titles[1]).textShadow).toBe("none");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("only text layers have text shadows, and they take no inner shadow and no spread", () => {
+    const { doc, editor, cards, layerOf } = openCanvas();
+    const title = layerOf(doc.querySelector("h3")!);
+
+    expect(editor.can(layerOf(cards[0]), "textShadows")).toBe(false);
+    expect(editor.can(title, "textShadows", [drop])).toBe(true);
+    expect(editor.can(title, "textShadows", [{ ...drop, type: "inner" }])).toBe(false);
+    expect(editor.can(title, "textShadows", [{ ...drop, spread: 2 }])).toBe(false);
+  });
+
+  test("the page's own text-shadow reads as drop shadows in their order; one that draws nothing is left out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const el = doc.querySelector("h3")!;
+    const read = (css: string) => {
+      el.style.textShadow = css;
+      return editor.read(layerOf(el), "textShadows");
+    };
+
+    expect(read("0 1px 2px rgb(0 0 0 / 0.1), 1px 1px oklch(62.8% 0.2577 29.23)")).toEqual([
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#000000", opacity: 0.1 },
+      { type: "drop", x: 1, y: 1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 },
+    ]);
+    expect(read("0 0 #0000, 0 0 3px blue")).toEqual([{ type: "drop", x: 0, y: 0, blur: 3, spread: 0, color: "#0000FF", opacity: 1 }]);
+  });
+});
+
 describe("blurs", () => {
   test("a layer blur and a background blur, added and taken off, paint every instance and read back as set", () => {
     const { editor, changes, cards, layerOf } = openCanvas();

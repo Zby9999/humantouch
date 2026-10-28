@@ -63,8 +63,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   /** The value all selected layers share, or Mixed; undefined when not all of them offer it. */
   const shown = <P extends Property>(property: P): Shown<PropertyValues[P]> | undefined => {
     if (!offers(property)) return undefined;
-    const [first, ...rest] = layers.map((layer) => editor.read(layer, property));
-    return rest.every((value) => JSON.stringify(value) === JSON.stringify(first)) ? first : MIXED;
+    return shared(layers.map((layer) => editor.read(layer, property)));
   };
   /**
    * Changes the property of each selected layer to what `next` makes of its
@@ -87,6 +86,55 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
     onEdit();
   };
 
+  /** Selected text layers: their shadows are text shadows, and they have no blur. */
+  const texts = layers.filter((layer) => editor.can(layer, "textShadows"));
+  /** Where a layer keeps an effect: a text layer's shadows are its text shadows; null for a blur, which text has none of. */
+  const effectOf = <P extends EffectProperty>(layer: Layer, property: P): P | null => {
+    if (!texts.includes(layer)) return property;
+    // Text shadows are shadows too, of the same values.
+    return property === "shadows" ? ("textShadows" as P) : null;
+  };
+  /** A layer's effect, where it keeps it; a blur on text is none. */
+  const readEffect = <P extends EffectProperty>(layer: Layer, property: P): PropertyValues[P] => {
+    const kept = effectOf(layer, property);
+    return kept ? editor.read(layer, kept) : (null as PropertyValues[P]);
+  };
+  /** The effect all selected layers share, or Mixed: text layers' shadows have no spread, and they have no blur. */
+  const shownEffect = <P extends EffectProperty>(property: P): Shown<PropertyValues[P]> | undefined => {
+    if (!texts.length) return shown(property);
+    const others = layers.filter((layer) => !texts.includes(layer));
+    // Text alone has no blur.
+    if ((property !== "shadows" && !others.length) || !others.every((layer) => editor.can(layer, property))) return undefined;
+    return shared(
+      layers.map((layer) => {
+        const value = readEffect(layer, property);
+        return property === "shadows" ? ((value as Shadow[]).map((s) => shadow({ ...s, spread: 0 })) as PropertyValues[P]) : value;
+      }),
+    );
+  };
+  /** Changes an effect of each selected layer, where the layer keeps it. */
+  const updateEffect: EffectUpdate = (property, next, continues = false) => {
+    editor.batch(() => {
+      for (const layer of layers) {
+        const kept = effectOf(layer, property);
+        if (kept) editor.set(layer, kept, next(editor.read(layer, kept), layer));
+      }
+    }, { continues });
+    onEdit();
+  };
+  /** Changes several effects of each selected layer, where the layer keeps them, as one edit. */
+  const updateEffects = (next: (layer: Layer) => Partial<EffectValues>) => {
+    editor.batch(() => {
+      for (const layer of layers) {
+        for (const [property, value] of Object.entries(next(layer))) {
+          const kept = effectOf(layer, property as EffectProperty);
+          if (kept) editor.set(layer, kept, value as PropertyValues[EffectProperty]);
+        }
+      }
+    });
+    onEdit();
+  };
+
   const locked = layers.some((layer) => layer.kind === "locked");
   const x = shown("x");
   const y = shown("y");
@@ -99,7 +147,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const clip = shown("clip");
   const fill = shown("fill");
   const stroke = shown("stroke");
-  const shadows = shown("shadows");
+  const shadows = shownEffect("shadows");
   return (
     <>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
@@ -174,16 +222,21 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
       {shadows !== undefined && (
         <EffectsSection
           shadows={shadows}
-          layerBlur={shown("layerBlur")}
-          backgroundBlur={shown("backgroundBlur")}
-          read={(layer, property) => editor.read(layer, property)}
-          set={set}
-          update={update}
-          updateEach={updateEach}
+          layerBlur={shownEffect("layerBlur")}
+          backgroundBlur={shownEffect("backgroundBlur")}
+          withText={texts.length > 0}
+          read={readEffect}
+          update={updateEffect}
+          updateEach={updateEffects}
         />
       )}
     </>
   );
+}
+
+/** The value the layers share, or Mixed. */
+function shared<T>([first, ...rest]: T[]): Shown<T> {
+  return rest.every((value) => JSON.stringify(value) === JSON.stringify(first)) ? first : MIXED;
 }
 
 function number(value: Shown<number>): number | null {
@@ -858,6 +911,9 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
 }
 
 type BlurProperty = "layerBlur" | "backgroundBlur";
+type EffectProperty = "shadows" | BlurProperty;
+type EffectValues = Pick<PropertyValues, EffectProperty>;
+type EffectUpdate = <P extends EffectProperty>(property: P, next: (current: PropertyValues[P], layer: Layer) => PropertyValues[P], continues?: boolean) => void;
 type EffectType = Shadow["type"] | BlurProperty;
 
 const isShadow = (type: EffectType): type is Shadow["type"] => type === "drop" || type === "inner";
@@ -873,18 +929,24 @@ const EFFECT_TYPES: { type: EffectType; label: string }[] = [
  * Effects, as in Figma: drop and inner shadows, as many as wanted, first on
  * top; one layer blur and one background blur. Each can be made another type,
  * keeping its blur, and taken off; a new one is a drop shadow, in place of
- * shadows the layers do not share.
+ * shadows the layers do not share. Text has drop shadows only, with no
+ * spread, and no blur: with text selected, the shadows are drop shadows
+ * without spread, and a blur only the other layers have shows as Mixed.
  */
-function EffectsSection({ shadows, layerBlur, backgroundBlur, read, set, update, updateEach }: {
+function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, read, update, updateEach }: {
   shadows: Shown<Shadow[]>;
   /** Undefined when not all selected layers offer it. */
   layerBlur: Shown<Blur> | undefined;
   backgroundBlur: Shown<Blur> | undefined;
-  read<P extends Property>(layer: Layer, property: P): PropertyValues[P];
-  set: Setter;
-  update: Update;
-  updateEach(next: (layer: Layer) => Partial<PropertyValues>): void;
+  /** Whether text is among the selected layers. */
+  withText: boolean;
+  /** A layer's effect; a blur on a layer that cannot have one is none. */
+  read<P extends EffectProperty>(layer: Layer, property: P): PropertyValues[P];
+  /** Changes an effect of each selected layer that can have it. */
+  update: EffectUpdate;
+  updateEach(next: (layer: Layer) => Partial<EffectValues>): void;
 }) {
+  const set = <P extends EffectProperty>(property: P) => (value: PropertyValues[P], continues = false) => update(property, () => value, continues);
   const blurs = { layerBlur, backgroundBlur };
   /** Whether an effect of type `from` can become `type`: not a blur the layers have already, or cannot have. */
   const canBecome = (type: EffectType, from: EffectType) => type === from || isShadow(type) || blurs[type] === null;
@@ -909,7 +971,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, read, set, update,
     });
   const typeSelect = (label: string, from: EffectType, onChange: (type: EffectType) => void) => (
     <select class="vk-select vk-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
-      {EFFECT_TYPES.map(({ type, label }) => (
+      {/* Text draws drop shadows only. */}
+      {EFFECT_TYPES.filter(({ type }) => !withText || type === "drop" || type === from).map(({ type, label }) => (
         <option key={type} value={type} disabled={!canBecome(type, from)}>
           {label}
         </option>
@@ -956,7 +1019,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, read, set, update,
                 {lengthField("x", "X", "X")}
                 {lengthField("y", "Y", "Y")}
                 {lengthField("blur", "blur", "B", 0)}
-                {lengthField("spread", "spread", "S")}
+                {!withText && lengthField("spread", "spread", "S")}
               </div>
               <ColorField name={name} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} />
             </div>
