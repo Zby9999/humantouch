@@ -36,6 +36,9 @@ function selectionBoxes(page: Page) {
   );
 }
 
+/** Once the views have been fitted and painted, a couple of frames on. */
+const painted = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+
 async function boxOf(view: Locator, selector: string) {
   return (await view.contentFrame().locator(selector).first().boundingBox())!;
 }
@@ -96,6 +99,11 @@ test("selecting in one view selects the same layer in every view; an edit shows 
     expect(boxes[i].width).toBeCloseTo(at.width, 0);
   }
 
+  // Edited in the desktop view, at every width (in the phone view, it would apply at its breakpoint only).
+  const desktopPoint = await pointOn(desktop(page), "article:last-child h3");
+  await page.keyboard.down("Meta");
+  await page.mouse.click(desktopPoint.x, desktopPoint.y);
+  await page.keyboard.up("Meta");
   const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
   await opacity.fill("50");
   await opacity.press("Enter");
@@ -167,4 +175,151 @@ test("a dialog open when the page was frozen is open in every view, laid out at 
     expect(left).toBeCloseTo(right, 0);
     expect(width).toBe(Number(await view.evaluate((frame: HTMLIFrameElement) => frame.offsetWidth)));
   }
+});
+
+test("a double click on text in the phone view types in it there, the caret in that view; the words show in every view as they are typed", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
+  const title = phone(page).contentFrame().locator("h1");
+  const point = await pointOn(phone(page), "h1");
+  await page.mouse.dblclick(point.x, point.y);
+
+  /** Whether the caret is in the title, in the view the title is in. */
+  const caretIn = (h1: Locator) =>
+    h1.evaluate((el) => {
+      const doc = el.ownerDocument;
+      const at = doc.getSelection()?.anchorNode;
+      return doc.hasFocus() && doc.activeElement === el && (el as HTMLElement).isContentEditable && !!at && el.contains(at);
+    });
+  await expect.poll(() => caretIn(title)).toBe(true);
+  expect(await caretIn(titles[0])).toBe(false);
+  expect(await caretIn(titles[1])).toBe(false);
+
+  await page.keyboard.type("Vernier ");
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier ");
+  // Words composed with an input method show as they are composed, and stay composed in the phone view.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.imeSetComposition", { text: "ji", selectionStart: 2, selectionEnd: 2 });
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier ji");
+  await cdp.send("Input.insertText", { text: "基" });
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier 基");
+  expect(await caretIn(title)).toBe(true);
+  expect(await title.evaluate((el) => el.ownerDocument.getSelection()!.anchorOffset)).toBe("Vernier 基".length);
+
+  // Esc ends it, as in the desktop view.
+  await page.keyboard.press("Escape");
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier 基");
+  expect(await caretIn(title)).toBe(false);
+  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier 基", exact: true })).toBeVisible();
+  // The same change as typed in the desktop view: words for every width.
+  await page.getByRole("button", { name: /not applied yet/ }).click();
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“Vernier Kit” → “Vernier 基”/]);
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier Kit");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier 基");
+
+  // Typed in the tablet view, a click outside it ends it there.
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier 基", exact: true }).click();
+  const there = await pointOn(tablet(page), "h1");
+  await page.mouse.dblclick(there.x, there.y);
+  await expect.poll(() => caretIn(titles[1])).toBe(true);
+  await page.keyboard.type("Kit");
+  for (const h1 of titles) await expect(h1).toHaveText("Kit");
+  const area = (await viewportArea(page).boundingBox())!;
+  await page.mouse.click(area.x + 4, area.y + area.height - 4);
+  expect(await caretIn(titles[1])).toBe(false);
+  for (const h1 of titles) await expect(h1).toHaveText("Kit");
+  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Kit", exact: true })).toBeVisible();
+});
+
+test("every view grows with what it shows and shrinks back, nothing cut off; the labels, the selection and ⇧1 follow", async ({ page }) => {
+  await enterEditMode(page);
+  const views = [desktop(page), tablet(page), phone(page)];
+  /** How tall each view is, and how tall what it shows is. */
+  const heights = () =>
+    Promise.all(
+      views.map((view) =>
+        view.evaluate((frame: HTMLIFrameElement) => {
+          const doc = frame.contentDocument!;
+          const cards = doc.querySelectorAll("article");
+          return { view: frame.offsetHeight, page: doc.documentElement.scrollHeight, lastCard: cards[cards.length - 1].getBoundingClientRect().bottom };
+        }),
+      ),
+    );
+  const before = await heights();
+
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).last().click();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ControlOrMeta+d");
+  await expect(phone(page).contentFrame().locator("article")).toHaveCount(10);
+  await expect.poll(async () => (await heights())[2].view).toBeGreaterThan(before[2].view + 6 * 100);
+  for (const [i, now] of (await heights()).entries()) {
+    expect(now.view).toBeGreaterThan(before[i].view);
+    expect(now.view).toBe(now.page);
+    expect(now.lastCard).toBeLessThanOrEqual(now.view);
+  }
+  // `h-screen` is as tall as the window still, in views far taller than it.
+  const windowHeight = await page.evaluate(() => innerHeight);
+  for (const view of views) await expect(view.contentFrame().getByTestId("hero")).toHaveCSS("height", `${windowHeight}px`);
+
+  // ⇧1 fits every view, all of it, with its label above it.
+  await page.keyboard.press("Shift+Digit1");
+  const area = (await viewportArea(page).boundingBox())!;
+  for (const [i, view] of views.entries()) {
+    const box = (await view.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(area.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height + 1);
+    const label = (await page.getByRole("group", { name: `${["Desktop", "Tablet", "Phone"][i]} view` }).boundingBox())!;
+    expect(label.y + label.height).toBeLessThanOrEqual(box.y);
+  }
+  // The selection, the last card made, is outlined where it is in each view, at the bottom of the phone view.
+  const boxes = await selectionBoxes(page);
+  const lastCard = await boxOf(phone(page), "article:last-child");
+  expect(boxes[2].y).toBeCloseTo(lastCard.y, 0);
+  expect(boxes[2].height).toBeCloseTo(lastCard.height, 0);
+  // Pointed at, the bottom of the phone view is found there: the view takes the pointer all the way down.
+  await page.mouse.click(area.x + 4, area.y + area.height - 4);
+  await expect(page.locator(".vk-selection")).toHaveCount(0);
+  await page.mouse.move(lastCard.x + lastCard.width / 2, lastCard.y + lastCard.height - 2);
+  await expect(page.locator('.vk-hover[data-view="Phone"]')).toHaveCount(1);
+
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).last().click();
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ControlOrMeta+z");
+  await expect(phone(page).contentFrame().locator("article")).toHaveCount(4);
+  await expect.poll(async () => (await heights()).map((h) => h.view)).toEqual(before.map((h) => h.view));
+});
+
+test("a layer dragged below the bottom of a view leaves every view as tall as it was while dragged; let go there, it goes off the canvas", async ({ page }) => {
+  await enterEditMode(page);
+  const views = [desktop(page), tablet(page), phone(page)];
+  const heights = () => Promise.all(views.map((view) => view.evaluate((frame: HTMLIFrameElement) => frame.offsetHeight)));
+  // ⇧1: every view in sight, with room below the desktop view, the shortest.
+  await page.keyboard.press("Shift+Digit1");
+  const before = await heights();
+
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).last().click();
+  const card = await boxOf(desktop(page), "article:last-child");
+  const view = (await desktop(page).boundingBox())!;
+  const area = (await viewportArea(page).boundingBox())!;
+  const below = Math.min(area.y + area.height - 4, view.y + view.height + 150);
+  expect(below).toBeGreaterThan(view.y + view.height + 20);
+  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(card.x + card.width / 2, below, { steps: 8 });
+  // A few frames on, the card is far past the bottom of the desktop view, and no view has grown with it.
+  await painted(page);
+  const past = await desktop(page).evaluate((frame: HTMLIFrameElement) => {
+    const cards = frame.contentDocument!.querySelectorAll("article");
+    return cards[cards.length - 1].getBoundingClientRect().bottom - frame.offsetHeight;
+  });
+  expect(past).toBeGreaterThan(0);
+  expect(await heights()).toEqual(before);
+
+  // Let go outside every view, it goes off the canvas (ADR 0009): gone from every view, there beside them.
+  await page.mouse.up();
+  await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
+  for (const view of views) await expect(view.contentFrame().locator("article:last-child")).toBeHidden();
 });

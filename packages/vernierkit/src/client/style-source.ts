@@ -5,6 +5,7 @@
  * The browser offers no such lookup to pages, so the cascade is resolved here:
  * importance, the style attribute, CSS layers, specificity, then order.
  */
+import { EDIT_STYLES_ATTR } from "./style-marks";
 
 /** What sets some of the CSS properties a change is about. */
 export interface StyleSource {
@@ -28,7 +29,7 @@ export interface StyleSource {
   declaration: string | null;
 }
 
-/** Before any edit, the element's own style attribute: edits write theirs into it. */
+/** Before any edit, the element's own style attribute, as the page wrote it: edits may take the important declarations off it. */
 export const ORIGINAL_STYLE_ATTR = "data-vk-original-style";
 /**
  * On an element the freezer pinned where the designer saw it (placed against
@@ -173,7 +174,7 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
 
   for (const sheet of doc.styleSheets) {
     const owner = sheet.ownerNode as Element | null;
-    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
+    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || owner?.hasAttribute(EDIT_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
     const rules = readRules(sheet);
     if (!rules) unreadable = true;
     else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);

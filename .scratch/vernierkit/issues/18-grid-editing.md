@@ -6,8 +6,14 @@
 
 **Blocked by:** 15
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 修改列数、间距后画布立即生效
-- [ ] 在格子之间拖动换序正确
-- [ ] 改动说明与 Skill 覆盖 Grid 改动
+- [x] 修改列数、间距后画布立即生效
+- [x] 在格子之间拖动换序正确
+- [x] 改动说明与 Skill 覆盖 Grid 改动
+
+## Comments
+
+**修复记录（2026-10-29）**
+
+- 自行放置图层的 Grid（有图层用具体的 `grid-row` / `grid-column` / `grid-area` 线或 `order ≠ 0`，或 `grid-auto-flow` 含 `dense`；只有 `span N` 不算）不提供换序：其中的图层拖动或微移原地不动、不记改动；从别处拖入的图层放在最后（a095c4d）。只用 `span` 的 Grid 按视图排出的格子换序（a89984a）。

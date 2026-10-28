@@ -127,8 +127,8 @@ function notShown(change: Change, actual: unknown): string {
   );
 }
 
-/** Longest wait for a page's answer: the page waits for the dev server itself, and a page in a background tab is slow. */
-const CHECK_WAIT_MS = CHECK_SETTLE_MS + 3000;
+/** Longest wait for a page's answer: the page waits for the dev server itself, may load itself at a breakpoint's width first, and a page in a background tab is slow. */
+const CHECK_WAIT_MS = CHECK_SETTLE_MS + 6000;
 const CHECK_POLL_MS = 50;
 
 /**

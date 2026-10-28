@@ -6,6 +6,8 @@ import { Icon, LayerIcon } from "./icons";
 
 interface Props {
   tree: LayerTree;
+  /** The layers of each layer off the canvas (ADR 0009): listed beside the canvas's, as Framer lists them. */
+  offCanvas: LayerTree[];
   selected: Layer[];
   /** `extend`: ⇧ held, the layer joins the selection or leaves it. */
   onSelect(layer: Layer, extend: boolean): void;
@@ -14,15 +16,23 @@ interface Props {
 /** Rows shown open at first. Deeper levels start collapsed, so a large page's tree is quick to show. */
 const MAX_OPEN_ROWS = 200;
 
-/** The left panel's tree: one row per layer, outermost layers first. */
-export function LayerTreeView({ tree, selected, onSelect }: Props) {
-  const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => initiallyCollapsed(tree.root));
+/**
+ * The left panel's tree: one row per layer, outermost layers first. The
+ * layers off the canvas come first, each as it is named on the canvas, at
+ * the level of the canvas's outermost layers; the canvas's follow.
+ */
+export function LayerTreeView({ tree, offCanvas, selected, onSelect }: Props) {
+  const trees = [...offCanvas, tree];
+  const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => new Set([...initiallyCollapsed(tree.root), ...offCanvas.flatMap(closedOutside)]));
   const list = useRef<HTMLDivElement>(null);
-  // Built anew after a move: the same layers stay collapsed.
-  const shown = useRef(tree);
-  if (shown.current !== tree) {
-    shown.current = tree;
-    const next = new Set([...collapsed].map((layer) => tree.layerOf(layer.el)).filter((layer) => layer !== null));
+  // Built anew after a move: the same layers stay collapsed. A layer new off the canvas starts so.
+  const shown = useRef(trees);
+  if (shown.current.length !== trees.length || shown.current.some((t, i) => t !== trees[i])) {
+    const known = new Set(shown.current.map((t) => t.root.el.ownerDocument));
+    shown.current = trees;
+    const treeOf = (layer: Layer) => trees.find((t) => t.root.el.ownerDocument === layer.el.ownerDocument);
+    const kept = [...collapsed].map((layer) => treeOf(layer)?.layerOf(layer.el) ?? null).filter((layer) => layer !== null);
+    const next = new Set([...kept, ...offCanvas.filter((t) => !known.has(t.root.el.ownerDocument)).flatMap(closedOutside)]);
     if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
   }
 
@@ -34,12 +44,14 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selected, collapsed]);
 
-  const rows: { layer: Layer; level: number }[] = [];
-  const add = (layer: Layer, level: number) => {
-    rows.push({ layer, level });
-    if (!collapsed.has(layer)) for (const child of layer.children) add(child, level + 1);
+  const rows: { layer: Layer; level: number; outside: boolean }[] = [];
+  const add = (layer: Layer, level: number, outside: boolean) => {
+    rows.push({ layer, level, outside });
+    if (!collapsed.has(layer)) for (const child of layer.children) add(child, level + 1, outside);
   };
-  for (const layer of tree.root.children) add(layer, 1);
+  for (const t of offCanvas) for (const layer of t.root.children) add(layer, 1, true);
+  const canvasStart = rows.length;
+  for (const layer of tree.root.children) add(layer, 1, false);
 
   const toggle = (layer: Layer) => {
     const next = new Set(collapsed);
@@ -49,17 +61,18 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
 
   return (
     <div ref={list} class="vk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
-      {rows.map(({ layer, level }, i) => {
+      {rows.map(({ layer, level, outside }, i) => {
         const open = layer.children.length ? !collapsed.has(layer) : undefined;
         return (
           <div
             key={i}
-            class={`vk-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}`}
+            class={`vk-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}${i === canvasStart && i > 0 ? " is-first-on-canvas" : ""}`}
             role="treeitem"
             aria-level={level}
             aria-selected={selected.includes(layer)}
             aria-expanded={open}
-            aria-description={typeLabel(layer)}
+            aria-description={outside && level === 1 ? `${typeLabel(layer)} · Off canvas` : typeLabel(layer)}
+            data-off-canvas={outside || undefined}
             style={{ paddingLeft: `${8 + (level - 1) * 12}px` }}
             onPointerDown={(event) => {
               if (event.button === 0) onSelect(layer, event.shiftKey);
@@ -88,6 +101,11 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
       })}
     </div>
   );
+}
+
+/** A layer off the canvas starts with what is in it closed: it is one row beside the canvas's. */
+function closedOutside(tree: LayerTree): Layer[] {
+  return tree.root.children.filter((layer) => layer.children.length > 0);
 }
 
 /** Opens level after level while the rows fit; everything from the first level that does not fit stays closed. */

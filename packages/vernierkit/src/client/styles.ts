@@ -308,6 +308,8 @@ export const styles = /* css */ `
 }
 .vk-tree-row:hover { box-shadow: inset 0 0 0 1px var(--vk-accent); }
 .vk-tree-row.is-selected { background: var(--vk-accent-soft); }
+/* The canvas's layers after those off it. */
+.vk-tree-row.is-first-on-canvas { margin-top: 4px; border-top: 1px solid var(--vk-border); }
 .vk-tree-row.is-instance .vk-icon { color: var(--vk-instance); }
 .vk-tree-row .vk-icon { flex: none; color: var(--vk-text-muted); }
 .vk-tree-name { overflow: hidden; text-overflow: ellipsis; }
@@ -353,6 +355,17 @@ export const styles = /* css */ `
 .vk-layer-info dt { color: var(--vk-text-muted); }
 .vk-layer-info dd { margin: 0; overflow-wrap: anywhere; }
 .vk-layer-note { margin: 8px 0 0; color: var(--vk-text-muted); }
+/* The breakpoint the view worked in stands for, and the properties changed there on their own (ADR 0008). */
+.vk-breakpoint { --vk-breakpoint: #8a38f5; }
+@media (prefers-color-scheme: dark) { .vk-breakpoint { --vk-breakpoint: #b48aff; } }
+.vk-breakpoint-range { color: var(--vk-breakpoint); font-variant-numeric: tabular-nums; }
+.vk-breakpoint-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.vk-breakpoint .vk-layer-note { margin: 0; }
+.vk-breakpoint-changes { list-style: none; margin: 4px 0 0; padding: 0; }
+.vk-breakpoint-change { display: flex; align-items: center; gap: 8px; height: 24px; }
+.vk-breakpoint-mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--vk-breakpoint); }
+.vk-breakpoint-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vk-breakpoint); }
+.vk-change-breakpoint { color: #b48aff; }
 .vk-source { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-unlocated { color: var(--vk-text-muted); font-style: italic; }
 
@@ -575,6 +588,17 @@ export const styles = /* css */ `
 }
 /* The views beside the desktop view, on the stage to its right. */
 .vk-canvas.is-beside { position: absolute; top: 0; }
+/* The layers off the canvas (ADR 0009), where they were left on the stage, each as it looks, on nothing of its own. */
+.vk-off-canvas-layers { position: absolute; top: 0; left: 0; }
+.vk-off-canvas {
+  position: absolute;
+  display: block;
+  border: 0;
+  color-scheme: normal;
+  background: transparent;
+  pointer-events: none;
+}
+.vk-off-canvas[hidden] { display: none; }
 /* Above each view, as a Frame's name in Figma: what it is, and that it shows only what CSS does at its width. */
 .vk-view-label {
   position: absolute;
@@ -589,6 +613,7 @@ export const styles = /* css */ `
 }
 .vk-view-name { color: var(--vk-text); font-weight: 500; }
 .vk-view-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.vk-view-breakpoint { flex: none; color: var(--vk-breakpoint, #8a38f5); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-view-delete { width: 20px; height: 20px; margin-left: auto; }
 .vk-add-view { position: absolute; display: flex; height: 20px; align-items: center; }
 .vk-add-view .vk-icon-button { width: 20px; height: 20px; }
@@ -664,6 +689,38 @@ export const styles = /* css */ `
   background: var(--vk-accent-soft);
   pointer-events: none;
 }
+
+/* Marks over a view, as in Figma's guides: red where a layer lines up and for distances measured with ⌥, magenta for equal spacing. 1px, labels one size, at any zoom. */
+.vk-marks { --vk-line: #f24822; --vk-spacing: #e81cc4; pointer-events: none; }
+.vk-mark {
+  --vk-mark-color: var(--vk-line);
+  position: absolute;
+  box-sizing: border-box;
+  width: 0;
+  height: 0;
+  border-left: 1px solid var(--vk-mark-color);
+  transform: translateX(-0.5px);
+}
+.vk-mark[data-across] { border-left: 0; border-top: 1px solid var(--vk-mark-color); transform: translateY(-0.5px); }
+.vk-mark[data-type="gap"] { --vk-mark-color: var(--vk-spacing); }
+.vk-mark[data-type="extension"] { border-left-style: dashed; border-top-style: dashed; }
+.vk-mark-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--vk-mark-color);
+  color: #fff;
+  font-size: 11px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A space between layers is labelled beside it, out of the way of the line. */
+.vk-mark[data-type="gap"][data-across] .vk-mark-label { top: auto; bottom: 4px; transform: translateX(-50%); }
+.vk-mark[data-type="gap"]:not([data-across]) .vk-mark-label { left: 4px; transform: translateY(-50%); }
 
 @media (prefers-reduced-motion: reduce) {
   .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }

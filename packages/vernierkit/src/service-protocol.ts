@@ -1,5 +1,6 @@
 /** How the editor layer and the local service talk. Shared by both sides. */
-import type { SavedChangeSet } from "./client/changeset";
+import type { Place, SavedChangeSet, Target } from "./client/changeset";
+import type { Snippet } from "./source-snippet";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__VERNIERKIT__";
@@ -18,6 +19,16 @@ export const EVENTS_PATH = "/events";
 export const UNLOCK_PATH = "/unlock";
 /** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */
 export const CHECKS_PATH = "/checks";
+/** `GET`: the project's own breakpoints from its Tailwind theme, as `ProjectBreakpoints` (204: none to be read). */
+export const BREAKPOINTS_PATH = "/breakpoints";
+
+/**
+ * `GET`: the layers off the canvas, as `{ layers: SavedOffCanvasLayer[] }` (204:
+ * none). `PUT` saves them all, and answers with their snippets, as
+ * `OffCanvasSaveAnswer`. They belong to no round (ADR 0009): saved while a round
+ * is claimed too, and kept when it ends.
+ */
+export const OFF_CANVAS_PATH = "/off-canvas";
 
 /** `done` asking the page to check change `id`; `at` tells one ask from the next. */
 export interface CheckAsk {
@@ -68,4 +79,48 @@ export interface SavedRound {
   /** The edited canvas, as an HTML document. */
   canvas: string;
   changeSet: SavedChangeSet;
+}
+
+/**
+ * An Off-canvas Layer (ADR 0009) as saved in `.vernier/off-canvas.json`: where
+ * it is in the workspace, how it looked, frozen, where it came from, and what
+ * was done to it off the canvas.
+ */
+export interface SavedOffCanvasLayer {
+  id: string;
+  /** Its top left in the workspace, in the desktop view's px from its top left. */
+  x: number;
+  y: number;
+  /**
+   * The layer as an HTML document of its own: every style it had frozen into
+   * it, as it looked when moved out, with what was edited off the canvas over it.
+   */
+  look: string;
+  origin: OffCanvasOrigin;
+  /** The edits made to it off the canvas: no changes of the round's, but kept, to go with it when it is put back. */
+  edits: SavedChangeSet;
+}
+
+/** The answer to saving the layers off the canvas: the JSX that writes each, by its id, as kept. */
+export interface OffCanvasSaveAnswer {
+  snippets: Record<string, Snippet | null>;
+}
+
+/** Where a layer off the canvas came from, as it was when moved out. */
+export interface OffCanvasOrigin {
+  /** How the Agent finds it in the source, its component and usage chain included. */
+  target: Target;
+  /** Where it was: its container and its place there. Null for a layer with none (new this round, say). */
+  place: Place | null;
+  /** `file:line:column` of the JSX that writes it (an instance's: its usage); null when not in the source (new this round). */
+  written: string | null;
+  /**
+   * That JSX as the source had it, read by the local service when the layer
+   * is first saved; null when it could not be read. Missing until then.
+   */
+  snippet?: Snippet | null;
+  /** Moved out as a copy: the layer it copies stayed on the canvas, and its code in the source. */
+  copy?: true;
+  /** When it was moved out, as an ISO date. */
+  at: string;
 }

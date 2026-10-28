@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
 import type { TargetedKeyboardEvent } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { changeTitle, changeValues, layerName } from "../design-values";
+import { breakpointName } from "./breakpoints";
 import type { Change } from "./changeset";
 import { Icon } from "./icons";
 
@@ -29,7 +30,8 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
   const latestOnClose = useRef(onClose);
   latestOnClose.current = onClose;
 
-  useEffect(() => {
+  // Focused as it shows, not a frame later: a key pressed once it is there is its own (Esc closes it).
+  useLayoutEffect(() => {
     dialog.current!.focus({ preventScroll: true });
     // A press anywhere else closes it; what opened it (the badge, or the count in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {
@@ -77,7 +79,11 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
               <span class="vk-change-name">
                 {changeTitle(change)} · {layerName(change)}
               </span>
-              <span class="vk-change-values">{changeValues(change)}</span>
+              <span class="vk-change-values">
+                {changeValues(change)}
+                {change.breakpoint && <span class="vk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+                {!!change.copiedBreakpoints?.length && <span class="vk-change-breakpoint"> · with copied breakpoints</span>}
+              </span>
             </span>
             {!readOnly && (
               <button

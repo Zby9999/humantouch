@@ -53,6 +53,9 @@ function livePage(): Window {
   return live.contentWindow!;
 }
 
+/** Once the next frame is painted. */
+const painted = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+
 const style = (doc: Document, id: string) => getComputedStyle(doc.getElementById(id)!);
 
 /** How the page answers to a window `width` wide and 600 tall, as a view `doc` shows it. */
@@ -80,6 +83,85 @@ describe("the canvas shown at several widths", () => {
     expectAt(canvas.document, 800);
     expectAt(phone.document, 390);
     expectAt(tablet.document, 450);
+  });
+
+  test("each view is as tall as what it shows, grows and shrinks with it before the next paint, and is never shorter than the window; heights still answer to the window", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const [desktop] = views.list();
+    let resized = 0;
+    views.onResize(() => resized++);
+    const frameOf = (doc: Document) => doc.defaultView!.frameElement as HTMLIFrameElement;
+    /** Every view as tall as its page, and its iframe as tall as the view. */
+    const fitted = () => {
+      for (const view of [desktop, phone]) {
+        expect(frameOf(view.document).offsetHeight).toBe(view.height);
+        expect(view.document.documentElement.scrollHeight).toBe(view.height);
+      }
+    };
+    const before = desktop.height;
+    fitted();
+
+    const more = canvas.document.createElement("div");
+    more.style.height = "3000px";
+    canvas.document.body.append(more);
+    await painted();
+    expect(desktop.height).toBe(before + 3000);
+    expect(phone.height).toBeGreaterThanOrEqual(before + 3000);
+    expect(resized).toBeGreaterThan(0);
+    fitted();
+
+    more.remove();
+    await painted();
+    expect(desktop.height).toBe(before);
+    fitted();
+
+    // All but the top of the page gone: as tall as the window it was frozen in.
+    for (const el of [...canvas.document.body.children].slice(2)) el.remove();
+    await painted();
+    for (const view of [desktop, phone]) {
+      expect(view.height).toBe(600);
+      expect(frameOf(view.document).offsetHeight).toBe(600);
+    }
+    // What answers to the height answers to the window still, whatever the view's height.
+    canvas.document.body.append(Object.assign(canvas.document.createElement("div"), { id: "units" }));
+    await painted();
+    expect(style(phone.document, "units").height).toBe("300px");
+    expect(style(desktop.document, "tall").color).toBe("rgb(0, 128, 0)");
+  });
+
+  test("while a drag holds the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const [desktop] = views.list();
+    await painted();
+    let resized = 0;
+    views.onResize(() => resized++);
+    const frameOf = (doc: Document) => doc.defaultView!.frameElement as HTMLIFrameElement;
+    const heights = () => [desktop, phone].map((view) => [view.height, frameOf(view.document).offsetHeight]);
+    const before = heights();
+
+    const release = views.holdHeights();
+    // Dragged far below the bottom of the page, as a drag shifts it: on the canvas, so in every view.
+    const dragged = canvas.document.getElementById("narrow")!;
+    dragged.style.setProperty("translate", "0 5000px", "important");
+    await painted();
+    expect(heights()).toEqual(before);
+    expect(resized).toBe(0);
+
+    // Let go: the layer is back where it was, and what it was dropped into made the page taller.
+    dragged.style.removeProperty("translate");
+    const more = canvas.document.createElement("div");
+    more.style.height = "500px";
+    canvas.document.body.append(more);
+    release();
+    await painted();
+    expect(desktop.height).toBe(before[0][0] + 500);
+    expect(frameOf(desktop.document).offsetHeight).toBe(desktop.height);
+    expect(phone.height).toBeGreaterThanOrEqual(before[1][0] + 500);
+    expect(resized).toBeGreaterThan(0);
   });
 
   test("a canvas saved and put back answers to each view's width the same way", async () => {

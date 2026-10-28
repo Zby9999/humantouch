@@ -4,3 +4,6 @@
 
 /** Tag of the element that hosts the editor layer's Shadow DOM. */
 export const HOST_TAG = "vernier-kit";
+
+/** On the hidden iframe the live page is loaded in, at another width, for `done` to check a change there: no editor layer is mounted in it. */
+export const CHECK_FRAME_ATTR = "data-vk-check";

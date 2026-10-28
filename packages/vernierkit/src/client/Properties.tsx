@@ -3,6 +3,7 @@ import type { TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } 
 import { useRef, useState } from "preact/hooks";
 import type { Align, Alignment, Editor, Fill, Padding, Property, PropertyValues, Size } from "./edits";
 import { Icon, type IconName } from "./icons";
+import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 
 interface Props {
@@ -111,6 +112,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           update={update}
         />
       )}
+      <GridSection editor={editor} layers={layers} onEdit={onEdit} />
       {(opacity !== undefined || visible !== undefined) && (
         <section class="vk-section" aria-labelledby="vk-appearance">
           <h3 id="vk-appearance" class="vk-section-title">Appearance</h3>
@@ -405,7 +407,7 @@ interface NumberFieldProps {
 }
 
 /** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
-function NumberField({ label, icon, glyph, value, min = -Infinity, onChange }: NumberFieldProps) {
+export function NumberField({ label, icon, glyph, value, min = -Infinity, onChange }: NumberFieldProps) {
   return (
     <label class="vk-field" title={label}>
       <Scrub icon={icon} glyph={glyph} value={value} min={min} onChange={onChange} />
