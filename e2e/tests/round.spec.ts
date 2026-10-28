@@ -176,8 +176,29 @@ test.describe("done checks the change on the page", () => {
   const CSS = `${EXAMPLE}src/index.css`;
   const CARD = `${EXAMPLE}src/components/Card.tsx`;
   const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8"), [CARD]: readFileSync(CARD, "utf8") };
-  test.afterEach(() => {
-    for (const [file, text] of Object.entries(originals)) writeFileSync(file, text);
+  /**
+   * The three files as the dev server serves them to the page, `?t=` stamps on
+   * the imports of modules it has hot-updated left out. Of the CSS, what the
+   * file itself writes: Tailwind keeps every class it has seen in a source, one
+   * written back out too, so the layers and properties it generates are left out.
+   */
+  const served = () =>
+    Promise.all(
+      Object.keys(originals).map(async (file) => {
+        const text = (await (await fetch(`${DEV_URL}/${file.slice(EXAMPLE.length)}`)).text()).replace(/[?&]t=\d+/g, "");
+        if (file !== CSS) return text;
+        const css: string = JSON.parse(/^const __vite__css = (".*")$/m.exec(text)![1]);
+        return css.replace(/^(@layer (theme|utilities|properties)|@property) [^\n]*\{\n[\s\S]*?^\}\n/gm, "");
+      }),
+    );
+  let servedOriginals: string[];
+  test.beforeAll(async () => {
+    servedOriginals = await served();
+  });
+  test.afterEach(async () => {
+    for (const [file, text] of Object.entries(originals)) if (readFileSync(file, "utf8") !== text) writeFileSync(file, text);
+    // The dev server serves the edited code until its watcher sees the files written back: the next test's page would open on it.
+    await expect.poll(served).toEqual(servedOriginals);
   });
 
   /** As the Agent does: an edit to the example's source, which the dev server brings into the page. */
