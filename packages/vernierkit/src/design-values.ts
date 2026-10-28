@@ -155,7 +155,7 @@ function fillValue(fill: Fill | null): string {
       return `a linear gradient at ${fill.angle}°${direction ? ` (${direction})` : ""}: ${stops(fill.stops)}`;
     }
     case "radial":
-      return `a radial gradient ${radialShape(fill)}: ${stops(fill.stops)}`;
+      return `a radial gradient ${"shape" in fill ? "centered and sized as the page has it" : radialShape(fill)}: ${stops(fill.stops)}`;
     case "conic":
       return "a conic gradient";
   }

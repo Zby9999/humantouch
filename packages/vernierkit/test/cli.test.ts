@@ -255,7 +255,7 @@ describe("claim, fills and strokes", () => {
     expect(section(output, 6)).toContain("Change the stroke from 2px dashed #E5E7EB to no stroke.\n");
   });
 
-  test("say a radial gradient's center and size in design language, by keyword or across and down", async () => {
+  test("say a radial gradient's center and size in design language, by keyword or across and down, or as the page has them", async () => {
     const pc = (value: number) => ({ value, unit: "%" });
     const px = (value: number) => ({ value, unit: "px" });
     const stops = [
@@ -269,6 +269,8 @@ describe("claim, fills and strokes", () => {
       change(1, radial({ x: pc(50), y: pc(50) }, { extent: "closest-side", circle: true })),
       change(2, radial({ x: px(40), y: pc(50) }, { extent: "farthest-corner", circle: false })),
       change(3, radial({ x: pc(0), y: pc(0) }, { x: pc(50), y: px(30) })),
+      // Centered by calc(): kept as the page has it.
+      change(4, { type: "radial", shape: "circle farthest-side at calc(100% - 10px) calc(100% - 20px)", stops }),
     );
 
     const output = (await cli("claim")).output;
@@ -276,6 +278,7 @@ describe("claim, fills and strokes", () => {
     expect(section(output, 1)).toContain("to a radial gradient from the middle, a circle out to the closest side: #FF0000 at 0%, #0000FF at 100%.\n");
     expect(section(output, 2)).toContain("to a radial gradient centered 40px across and 50% down, an ellipse out to the farthest corner: #FF0000 at 0%, #0000FF at 100%.\n");
     expect(section(output, 3)).toContain("to a radial gradient centered 0% across and 0% down, out 50% across and 30px down: #FF0000 at 0%, #0000FF at 100%.\n");
+    expect(section(output, 4)).toContain("to a radial gradient centered and sized as the page has it: #FF0000 at 0%, #0000FF at 100%.\n");
   });
 });
 

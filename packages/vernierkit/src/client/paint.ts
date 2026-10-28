@@ -54,13 +54,26 @@ export interface RadialGradient {
   stops: ColorStop[];
 }
 
+/**
+ * A radial gradient the page centers or sizes in a way the editor does not
+ * model, as with `calc()` (Chrome writes one offset from the right or bottom
+ * edge, `at right 10px bottom 20px`, as `calc(100% - 10px)`): its center and
+ * size kept as the page has them, its stops and type changed. `shape`: its
+ * shape, size and center as CSS computes them.
+ */
+export interface KeptRadialGradient {
+  type: "radial";
+  shape: string;
+  stops: ColorStop[];
+}
+
 /** A conic gradient the page already has: shown, not edited. `css`: as the page has it. */
 export interface ConicGradient {
   type: "conic";
   css: string;
 }
 
-export type Gradient = LinearGradient | RadialGradient;
+export type Gradient = LinearGradient | RadialGradient | KeptRadialGradient;
 export type Fill = Solid | Gradient | ConicGradient;
 
 /**
@@ -166,7 +179,9 @@ export function isMiddle({ x, y }: RadialGradient["center"]): boolean {
 }
 
 /** A radial gradient's shape, size and center as CSS writes them, leaving out the defaults: an ellipse, to the farthest corner, from the middle. */
-function radialLead({ center, size }: RadialGradient): string {
+function radialLead(gradient: RadialGradient | KeptRadialGradient): string {
+  if ("shape" in gradient) return gradient.shape;
+  const { center, size } = gradient;
   const sizeCss =
     "extent" in size
       ? [size.circle ? "circle" : "", size.extent === "farthest-corner" ? "" : size.extent]
@@ -198,10 +213,10 @@ function gradientOf(css: string, el: Element, colors: ColorReader): Fill | null 
     const stops = stopsOf(args, gradientLength({ type: "linear", angle }, box), colors);
     return stops && { type: "linear", angle, stops };
   }
-  const shape = radialShapeOf(lead);
-  if (!shape) return null;
-  const stops = stopsOf(args, gradientLength({ type: "radial", ...shape }, box), colors);
-  return stops && { type: "radial", ...shape, stops };
+  // A center or size that cannot be told in one length is kept as the page has it.
+  const radial = { type: "radial" as const, ...(radialShapeOf(lead) ?? { shape: lead }) };
+  const stops = stopsOf(args, gradientLength(radial, box), colors);
+  return stops && { ...radial, stops };
 }
 
 /** The size of the box a layer's background is laid out in, in px: what its gradient is sized to. */
@@ -228,11 +243,16 @@ export function paintArea(el: Element): PaintArea {
  * as. A linear gradient runs corner to corner along its angle; a radial one
  * out to the right, as far as its ending shape is wide.
  */
-export function gradientLength(gradient: Pick<LinearGradient, "type" | "angle"> | Omit<RadialGradient, "stops">, box: PaintArea): number {
+export function gradientLength(
+  gradient: Pick<LinearGradient, "type" | "angle"> | Omit<RadialGradient, "stops"> | Omit<KeptRadialGradient, "stops">,
+  box: PaintArea,
+): number {
   if (gradient.type === "linear") {
     const turn = (gradient.angle * Math.PI) / 180;
     return Math.abs(box.width * Math.sin(turn)) + Math.abs(box.height * Math.cos(turn));
   }
+  // A shape kept as the page has it, told for this box; the default ellipse, near enough, when it cannot be.
+  if ("shape" in gradient) return radiiOf(radialShapeOf(gradient.shape, box) ?? middleOut(), box).x;
   return radiiOf(gradient, box).x;
 }
 
@@ -304,11 +324,37 @@ function lengthOf(token: string): Length | null {
 }
 
 /**
+ * A length as CSS writes it, and, given the `whole` px that 100% is, a sum of
+ * px and % as Chrome writes one (`calc(100% - 10px)`) in px; null for anything else.
+ */
+function lengthOrCalc(token: string, whole: number | undefined): Length | null {
+  const length = lengthOf(token);
+  const inside = /^calc\((.*)\)$/.exec(token)?.[1];
+  if (length || whole === undefined || !inside) return length;
+  const parts = inside.trim().split(/\s+/);
+  if (parts.length % 2 === 0) return null;
+  let px = 0;
+  for (let i = 0; i < parts.length; i += 2) {
+    const term = lengthOf(parts[i]);
+    const sign = i === 0 || parts[i - 1] === "+" ? 1 : parts[i - 1] === "-" ? -1 : 0;
+    if (!term || !sign) return null;
+    px += sign * lengthPx(term, whole);
+  }
+  return { value: px, unit: "px" };
+}
+
+/** The center and size CSS gives a radial gradient when the page says nothing of them: an ellipse from the middle out to the farthest corner. */
+function middleOut(): Omit<RadialGradient, "type" | "stops"> {
+  return { center: { x: { value: 50, unit: "%" }, y: { value: 50, unit: "%" } }, size: { extent: "farthest-corner", circle: false } };
+}
+
+/**
  * A radial gradient's size and center from what comes before its stops
  * (`circle closest-side at 30% 20%`); null for what cannot be told in one
- * length (a center offset from the right edge, `calc()`).
+ * length (`calc()`, as Chrome writes a center offset from the right edge).
+ * Given the layer's box, a `calc()` of px and % is told, in px, for that box.
  */
-function radialShapeOf(lead: string): Omit<RadialGradient, "type" | "stops"> | null {
+function radialShapeOf(lead: string, box?: PaintArea): Omit<RadialGradient, "type" | "stops"> | null {
   const tokens = split(lead, " ");
   const at = tokens.indexOf("at");
   const [shapeTokens, centerTokens] = at < 0 ? [tokens, []] : [tokens.slice(0, at), tokens.slice(at + 1)];
@@ -316,13 +362,14 @@ function radialShapeOf(lead: string): Omit<RadialGradient, "type" | "stops"> | n
   let extent: Extent = "farthest-corner";
   const lengths: Length[] = [];
   for (const token of shapeTokens) {
-    const l = lengthOf(token);
+    // A radius across, then one down.
+    const l = lengthOrCalc(token, lengths.length ? box?.height : box?.width);
     if (token === "circle") circle = true;
     else if (EXTENTS.includes(token)) extent = token as Extent;
     else if (l) lengths.push(l);
     else if (token !== "ellipse") return null;
   }
-  const center = centerOfTokens(centerTokens);
+  const center = centerOfTokens(centerTokens, box);
   if (!center) return null;
   if (lengths.length === 1) return { center, size: { x: lengths[0], y: lengths[0] } };
   if (lengths.length === 2) return { center, size: { x: lengths[0], y: lengths[1] } };
@@ -330,18 +377,16 @@ function radialShapeOf(lead: string): Omit<RadialGradient, "type" | "stops"> | n
 }
 
 /** A center from `at …`: one or two keywords or lengths, across first unless the keyword says otherwise; the middle when there is none. */
-function centerOfTokens(tokens: string[]): RadialGradient["center"] | null {
-  const middle: Length = { value: 50, unit: "%" };
+function centerOfTokens(tokens: string[], box?: PaintArea): RadialGradient["center"] | null {
   if (tokens.length > 2) return null;
-  const parsed = tokens.map((token) => (token in KEYWORD_POSITIONS ? token : lengthOf(token)));
-  if (parsed.some((p) => p === null)) return null;
-  const asLength = (p: string | Length | null | undefined): Length => (typeof p === "string" ? { value: KEYWORD_POSITIONS[p], unit: "%" } : p ?? middle);
+  const [a, b] = tokens;
   // `top left`, `bottom 20%`: down named first.
-  const downFirst = (p: unknown) => p === "top" || p === "bottom";
-  const acrossNamed = (p: unknown) => p === "left" || p === "right";
-  const [a, b] = parsed;
-  const swap = downFirst(a) || acrossNamed(b);
-  return swap ? { x: asLength(b), y: asLength(a) } : { x: asLength(a), y: asLength(b) };
+  const swap = a === "top" || a === "bottom" || b === "left" || b === "right";
+  const [across, down] = swap ? [b, a] : [a, b];
+  const position = (token: string | undefined, whole: number | undefined): Length | null =>
+    token === undefined ? { value: 50, unit: "%" } : token in KEYWORD_POSITIONS ? { value: KEYWORD_POSITIONS[token], unit: "%" } : lengthOrCalc(token, whole);
+  const [x, y] = [position(across, box?.width), position(down, box?.height)];
+  return x && y ? { x, y } : null;
 }
 
 /** `in oklab`, `in oklch longer hue`: how the colors blend. The editor blends in the default space. */
@@ -439,7 +484,7 @@ export function fillAs(fill: Fill | null, type: "solid" | Gradient["type"]): Fil
   if (type === "solid") return { type, color: stops[0].color, opacity: stops[0].opacity };
   if (type === "linear") return { type, angle: fill?.type === "linear" ? fill.angle : 180, stops };
   if (fill?.type === "radial") return fill;
-  return { type, center: { x: { value: 50, unit: "%" }, y: { value: 50, unit: "%" } }, size: { extent: "farthest-corner", circle: false }, stops };
+  return { type, ...middleOut(), stops };
 }
 
 const BLACK: Color = { color: "#000000", opacity: 1 };

@@ -560,7 +560,8 @@ function FillSection({ fill, box, conic, onChange, update }: {
                 onChange={(angle, continues) => onChange({ ...fill, angle: turned(angle) }, continues)}
               />
             )}
-            {fill.type === "radial" && <RadialFields gradient={fill} box={box} update={update} />}
+            {/* A center or size the page works out in a way the panel does not show is kept as it is: no fields for it. */}
+            {fill.type === "radial" && "center" in fill && <RadialFields gradient={fill} box={box} update={update} />}
             <GradientStops gradient={fill} length={gradientLength(fill, box)} onChange={(stops, continues) => onChange({ ...fill, stops }, continues)} />
           </>
         )
@@ -577,7 +578,7 @@ function FillSection({ fill, box, conic, onChange, update }: {
 function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box: PaintArea; update: Update }) {
   const radii = radiiOf(gradient, box);
   const change = (next: (current: RadialGradient, value: number, box: PaintArea) => RadialGradient) => (value: number, continues?: boolean) =>
-    update("fill", (current, layer) => (current?.type === "radial" ? next(current, value, paintArea(layer.el)) : current), continues);
+    update("fill", (current, layer) => (current?.type === "radial" && "center" in current ? next(current, value, paintArea(layer.el)) : current), continues);
   return (
     <div class="vk-grid-2">
       {(["x", "y"] as const).map((axis) => (

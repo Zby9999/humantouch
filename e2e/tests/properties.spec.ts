@@ -206,6 +206,51 @@ test("a radial gradient's center and size: the page's own kept until changed, ch
   await expect(field("Stop 1 at")).toHaveValue("21px");
 });
 
+test("a radial gradient centered with calc() keeps the page's own center and size: no fields for them, its stops changed, its type changed", async ({ page }) => {
+  await canvas(page)
+    .locator("article")
+    // The three cards of one usage, inside their 1px border 200 × 100, centered 10px from the right and 20px from the bottom.
+    .evaluateAll((cards) =>
+      cards.slice(0, 3).forEach((card) => {
+        Object.assign((card as HTMLElement).style, { width: "202px", height: "102px", boxSizing: "border-box" });
+        (card as HTMLElement).style.backgroundImage = "radial-gradient(circle farthest-side at right 10px bottom 20px, red 38px, blue)";
+      }),
+    );
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("group", { name: "Fill" });
+  const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
+  const kept = "radial-gradient(circle farthest-side at calc(100% - 10px) calc(100% - 20px)";
+  const field = (name: string) => fill.getByRole("textbox", { name, exact: true });
+
+  await expect(fill.getByRole("combobox", { name: "Fill type" })).toHaveValue("radial");
+  for (const name of ["Center X", "Center Y", "Radius X", "Radius Y"]) await expect(field(name)).toHaveCount(0);
+  // The circle reaches the far left side, 190px out: the stop at 38px is a fifth of the way along the bar.
+  const first = fill.getByRole("slider", { name: "Stop 1 position" });
+  await expect(first).toHaveAttribute("aria-valuetext", "38px");
+  const bar = (await fill.getByRole("group", { name: "Gradient stops" }).boundingBox())!;
+  const handle = (await first.boundingBox())!;
+  expect(Math.round(((handle.x + handle.width / 2 - bar.x) / bar.width) * 100)).toBe(20);
+
+  await field("Stop 1 color").fill("00ff00");
+  await field("Stop 1 color").press("Enter");
+  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 38px, rgb(0, 0, 255) 100%)`);
+  await first.press("ArrowRight");
+  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
+  // A new stop in the widest gap, from 39px of 190px to the end.
+  await fill.getByRole("button", { name: "Add stop" }).click();
+  await expect(field("Stop 2 at")).toHaveValue("60.26%");
+  await fill.getByRole("button", { name: "Remove stop 2" }).click();
+  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
+
+  // Another type, and back with undo: the page's own center and size again.
+  await fill.getByRole("combobox", { name: "Fill type" }).selectOption("Linear");
+  expect(await gradient()).toMatch(/^linear-gradient\(/);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
+  await expect(fill.getByRole("combobox", { name: "Fill type" })).toHaveValue("radial");
+  await expect(field("Center X")).toHaveCount(0);
+});
+
 test("a conic gradient the page has shows, and cannot be edited", async ({ page }) => {
   await canvas(page)
     .locator("article")

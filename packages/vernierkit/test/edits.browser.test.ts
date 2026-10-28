@@ -249,9 +249,81 @@ describe("gradient fill", () => {
         { ...blue, position: 60, unit: "%" },
       ],
     });
-    // A center offset from the right or bottom edge cannot be told in one length: not offered as a fill.
-    read("radial-gradient(at right 10px bottom 20px, red, blue)");
-    expect(editor.can(layerOf(box), "fill")).toBe(false);
+  });
+
+  test("a radial gradient centered or sized with calc() keeps the page's own center and size; its stops in px are measured along it as the layer's size works it out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    const read = (css: string) => {
+      box.style.backgroundImage = css;
+      return editor.read(layerOf(box), "fill");
+    };
+    const stops = (red: number) => [
+      { color: "#FF0000", opacity: 1, position: red, unit: "px" },
+      // Between px and %, halfway in %: 20% and 60%.
+      { color: "#008000", opacity: 1, position: 40, unit: "%" },
+      { color: "#0000FF", opacity: 1, position: 60, unit: "%" },
+    ];
+
+    // Offset from the right and bottom edges, centered 190px across and 80px down: the circle to the farthest side is 190px.
+    expect(read("radial-gradient(circle farthest-side at right 10px bottom 20px, red 38px, green, blue 60%)")).toEqual({
+      type: "radial",
+      shape: "circle farthest-side at calc(100% - 10px) calc(100% - 20px)",
+      stops: stops(38),
+    });
+    expect(editor.can(layerOf(box), "fill")).toBe(true);
+    // Centered 110px across and 20% down: the circle to the closest side is 20px.
+    expect(read("radial-gradient(circle closest-side at calc(50% + 10px) 20%, red 4px, green, blue 60%)")).toEqual({
+      type: "radial",
+      shape: "circle closest-side at calc(50% + 10px) 20%",
+      stops: stops(4),
+    });
+    // 90px to the left of the layer: the ellipse to the farthest side reaches its right edge, 290px across.
+    expect(read("radial-gradient(farthest-side at calc(10px - 50%) 20%, red 58px, green, blue 60%)")).toEqual({
+      type: "radial",
+      shape: "farthest-side at calc(-50% + 10px) 20%",
+      stops: stops(58),
+    });
+    // A size in calc() is in px by the time Chrome computes it (it takes no % in one): a size like any other, 90px across.
+    expect(read("radial-gradient(calc(80px + 10px) 30px, red 18px, green, blue 60%)")).toEqual({
+      type: "radial",
+      center: { x: { value: 50, unit: "%" }, y: { value: 50, unit: "%" } },
+      size: { x: { value: 90, unit: "px" }, y: { value: 30, unit: "px" } },
+      stops: stops(18),
+    });
+    // What cannot be worked out is kept all the same; its stops in px measured along the default ellipse, 141.42px across.
+    expect(read("radial-gradient(at min(50%, 30px) 20%, red, green, blue 70.71px)")).toEqual({
+      type: "radial",
+      shape: "at min(50%, 30px) 20%",
+      stops: [
+        { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+        { color: "#008000", opacity: 1, position: 25, unit: "%" },
+        { color: "#0000FF", opacity: 1, position: 70.71, unit: "px" },
+      ],
+    });
+  });
+
+  test("a radial gradient centered with calc(), its stops changed, keeps the page's own center and size, and its stops in order along it", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    box.style.backgroundImage = "radial-gradient(circle farthest-side at right 10px bottom 20px, red 38px, blue)";
+    const layer = layerOf(box);
+    const page = editor.read(layer, "fill") as Extract<Fill, { stops: unknown }>;
+    // The circle is 190px: 38px is 20% out, before a new stop at 25%.
+    const changed: Fill = { ...page, stops: [{ ...page.stops[0], color: "#00FF00" }, page.stops[1], { color: "#FFFFFF", opacity: 1, position: 25, unit: "%" }] };
+
+    editor.set(layer, "fill", changed);
+    expect(style(box).backgroundImage).toBe(
+      "radial-gradient(circle farthest-side at calc(100% - 10px) calc(100% - 20px), rgb(0, 255, 0) 38px, rgb(255, 255, 255) 25%, rgb(0, 0, 255) 100%)",
+    );
+    expect(changes.list()[0].style["background-image"]).toBe(
+      "radial-gradient(circle farthest-side at calc(100% - 10px) calc(100% - 20px), rgb(0 255 0 / 1) 38px, rgb(255 255 255 / 1) 25%, rgb(0 0 255 / 1) 100%)",
+    );
+    expect(editor.read(layer, "fill")).toEqual({ ...changed, stops: [changed.stops[0], changed.stops[2], changed.stops[1]] });
   });
 
   test("a radial gradient paints at its center and size, its stops in their own units, and reads back as set", () => {
