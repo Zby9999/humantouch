@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { EXIT_LABEL, NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
+import { clearVernier } from "./project-files";
 
 /** A round on the Next.js example, saved into its `.vernier/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -14,8 +15,8 @@ const VERNIER = `${EXAMPLE}.vernier/`;
 const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
 const CARD_CSS = `${EXAMPLE}components/Card.module.css`;
 
-test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.beforeEach(() => clearVernier(VERNIER));
+test.afterAll(() => clearVernier(VERNIER));
 
 async function vernierkit(...args: string[]) {
   const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: EXAMPLE });

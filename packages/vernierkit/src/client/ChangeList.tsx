@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import type { TargetedKeyboardEvent } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { changeTitle, changeValues, layerName } from "../design-values";
 import type { Change } from "./changeset";
 import { Icon } from "./icons";
@@ -29,7 +29,8 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
   const latestOnClose = useRef(onClose);
   latestOnClose.current = onClose;
 
-  useEffect(() => {
+  // As it goes on the page, not a frame later: a key pressed meanwhile would go to what opened it, and Esc would not close it.
+  useLayoutEffect(() => {
     dialog.current!.focus({ preventScroll: true });
     // A press anywhere else closes it; what opened it (the badge, or the count in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {

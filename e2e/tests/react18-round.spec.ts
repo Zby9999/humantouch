@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
+import { clearVernier } from "./project-files";
 
 /** A round on the React 18 + Tailwind v3 example, saved into its `.vernier/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -14,8 +15,8 @@ const VERNIER = `${EXAMPLE}.vernier/`;
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
 
-test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.beforeEach(() => clearVernier(VERNIER));
+test.afterAll(() => clearVernier(VERNIER));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
 function locate(file: string, snippet: string) {

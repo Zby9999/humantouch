@@ -157,6 +157,25 @@ test("in edit mode, an X beside the Design title goes back to preview mode, and 
   await expect(badge(page)).toHaveText("3");
 });
 
+test("the change list has the keys as soon as it is on the page: Esc pressed before the next frame closes it", async ({ page }) => {
+  await makeThreeChanges(page);
+
+  // In the page, so no frame passes between the press on the count and Esc. The key goes where a real one would: to what has focus.
+  const closed = await page.evaluate(async () => {
+    const root = document.querySelector("vernier-kit")!.shadowRoot!;
+    const settle = () => new Promise((resolve) => setTimeout(resolve));
+    root.querySelector<HTMLElement>(".vk-count")!.click();
+    await settle();
+    if (!root.querySelector('[role="dialog"]')) throw new Error("The change list did not open");
+    (root.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+    await settle();
+    return !root.querySelector('[role="dialog"]');
+  });
+
+  expect(closed).toBe(true);
+  await expect(design(page).getByRole("button", { name: "3 changes not applied yet" })).toBeFocused();
+});
+
 test("the badge opens the change list, where each change can be undone on its own; ⌘Z brings it back", async ({ page }) => {
   await makeThreeChanges(page);
 

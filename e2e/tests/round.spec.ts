@@ -1,13 +1,13 @@
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
 
 /** These tests save into the example project's `.vernier/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.beforeEach(() => clearVernier(VERNIER));
+test.afterAll(() => clearVernier(VERNIER));
 
 const LOCKED_LABEL = /^Vernier Kit: applying design changes/;
 
