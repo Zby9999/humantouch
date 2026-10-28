@@ -36,6 +36,9 @@ function selectionBoxes(page: Page) {
   );
 }
 
+/** Once the views have been fitted and painted, a couple of frames on. */
+const painted = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+
 async function boxOf(view: Locator, selector: string) {
   return (await view.contentFrame().locator(selector).first().boundingBox())!;
 }
@@ -282,4 +285,37 @@ test("every view grows with what it shows and shrinks back, nothing cut off; the
   for (let i = 0; i < 6; i++) await page.keyboard.press("ControlOrMeta+z");
   await expect(phone(page).contentFrame().locator("article")).toHaveCount(4);
   await expect.poll(async () => (await heights()).map((h) => h.view)).toEqual(before.map((h) => h.view));
+});
+
+test("a layer dragged below the bottom of a view leaves every view as tall as it was, while dragged and once let go there", async ({ page }) => {
+  await enterEditMode(page);
+  const views = [desktop(page), tablet(page), phone(page)];
+  const heights = () => Promise.all(views.map((view) => view.evaluate((frame: HTMLIFrameElement) => frame.offsetHeight)));
+  // ⇧1: every view in sight, with room below the desktop view, the shortest.
+  await page.keyboard.press("Shift+Digit1");
+  const before = await heights();
+
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).last().click();
+  const card = await boxOf(desktop(page), "article:last-child");
+  const view = (await desktop(page).boundingBox())!;
+  const area = (await viewportArea(page).boundingBox())!;
+  const below = Math.min(area.y + area.height - 4, view.y + view.height + 150);
+  expect(below).toBeGreaterThan(view.y + view.height + 20);
+  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(card.x + card.width / 2, below, { steps: 8 });
+  // A few frames on, the card is far past the bottom of the desktop view, and no view has grown with it.
+  await painted(page);
+  const past = await desktop(page).evaluate((frame: HTMLIFrameElement) => {
+    const cards = frame.contentDocument!.querySelectorAll("article");
+    return cards[cards.length - 1].getBoundingClientRect().bottom - frame.offsetHeight;
+  });
+  expect(past).toBeGreaterThan(0);
+  expect(await heights()).toEqual(before);
+
+  // Let go outside every view: nothing moves, and every view is as tall as it was.
+  await page.mouse.up();
+  await expect(phone(page).contentFrame().locator("article")).toHaveCount(4);
+  await painted(page);
+  expect(await heights()).toEqual(before);
 });

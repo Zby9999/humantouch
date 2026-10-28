@@ -131,6 +131,39 @@ describe("the canvas shown at several widths", () => {
     expect(style(desktop.document, "tall").color).toBe("rgb(0, 128, 0)");
   });
 
+  test("while a drag holds the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const [desktop] = views.list();
+    await painted();
+    let resized = 0;
+    views.onResize(() => resized++);
+    const frameOf = (doc: Document) => doc.defaultView!.frameElement as HTMLIFrameElement;
+    const heights = () => [desktop, phone].map((view) => [view.height, frameOf(view.document).offsetHeight]);
+    const before = heights();
+
+    const release = views.holdHeights();
+    // Dragged far below the bottom of the page, as a drag shifts it: on the canvas, so in every view.
+    const dragged = canvas.document.getElementById("narrow")!;
+    dragged.style.setProperty("translate", "0 5000px", "important");
+    await painted();
+    expect(heights()).toEqual(before);
+    expect(resized).toBe(0);
+
+    // Let go: the layer is back where it was, and what it was dropped into made the page taller.
+    dragged.style.removeProperty("translate");
+    const more = canvas.document.createElement("div");
+    more.style.height = "500px";
+    canvas.document.body.append(more);
+    release();
+    await painted();
+    expect(desktop.height).toBe(before[0][0] + 500);
+    expect(frameOf(desktop.document).offsetHeight).toBe(desktop.height);
+    expect(phone.height).toBeGreaterThanOrEqual(before[1][0] + 500);
+    expect(resized).toBeGreaterThan(0);
+  });
+
   test("a canvas saved and put back answers to each view's width the same way", async () => {
     const saved = serializeCanvas(await freeze(livePage(), iframe()));
     const canvas = await restore(saved, iframe());

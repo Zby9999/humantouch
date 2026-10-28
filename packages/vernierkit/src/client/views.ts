@@ -56,6 +56,12 @@ export interface Views {
   sync(): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
+  /**
+   * Keeps every view as tall as it is, whatever is shifted on the canvas
+   * meanwhile, as a drag shifts layers: returns what lets go, and each view
+   * is as tall as what it shows again before the next paint.
+   */
+  holdHeights(): () => void;
 }
 
 /** The canvas, shown so far in the desktop view only. */
@@ -68,8 +74,11 @@ export function createViews(canvas: Canvas): Views {
 
   /** Each view made as tall as what it shows, once a frame, when anything may have changed it. */
   let frame = 0;
+  /** What holds every view as tall as it is: while any does, none is fitted. */
+  const holds = new Set<object>();
   const fit = () => {
     frame = 0;
+    if (holds.size) return;
     let changed = false;
     for (const fitting of fittings.values()) {
       const height = fitHeight(fitting.doc, fitting.iframe, canvas.windowHeight);
@@ -131,6 +140,13 @@ export function createViews(canvas: Canvas): Views {
     onResize(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    holdHeights() {
+      const hold = {};
+      holds.add(hold);
+      return () => {
+        if (holds.delete(hold)) refit();
+      };
     },
   };
 }

@@ -592,17 +592,19 @@ export function CanvasView(props: Props) {
   /**
    * Starts dragging in a view: the layer stops taking the pointer, and where its
    * neighbours are there is noted before any of them shifts. What shifts is
-   * shifted on the canvas, so in every view.
+   * shifted on the canvas, so in every view; no view grows or shrinks with it
+   * until the drop.
    */
   const startDrag = (layer: Layer, shown: Shown): DragSession => {
     const { view } = shown;
     const start = view.boxOf(layer) ?? new DOMRect();
-    const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null };
+    const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, release: () => {} };
     for (const child of layer.parent!.children) {
       const r = !child.text && view.boxOf(child);
       if (r) session.rects.set(child.el, r);
     }
     if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
+    session.release = views!.holdHeights();
     return session;
   };
 
@@ -689,6 +691,8 @@ export function CanvasView(props: Props) {
     if (!session) return;
     dragging.current = null;
     press.current = null;
+    // Each view is as tall as what it shows again before the next paint, the drop in it.
+    session.release();
     for (const [el, saved] of session.touched) {
       for (const [name, [value, priority]] of Object.entries(saved.original)) {
         if (value) (el as HTMLElement).style.setProperty(name, value, priority);
@@ -934,6 +938,8 @@ interface DragSession {
   rects: Map<Element, DOMRect>;
   touched: Map<Element, { original: Record<string, [string, string]>; translate: boolean }>;
   drop: Drop | null;
+  /** Lets the views grow and shrink again, which they do not while the drag shifts layers. */
+  release: () => void;
 }
 
 /**
