@@ -8,7 +8,7 @@ export const styles = /* css */ `
   /* Cut off everything the page could pass down by inheritance. */
   all: initial !important;
   /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
-  --vk-icon-size: 13px;
+  --vk-icon-size: 14px;
   --vk-icon-stroke: 1px;
 }
 
