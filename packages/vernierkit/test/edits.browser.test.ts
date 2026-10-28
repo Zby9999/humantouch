@@ -58,7 +58,7 @@ function openCanvas(page = PAGE) {
   doc.open();
   doc.write(page);
   doc.close();
-  const views = createViews({ document: doc, width: 800, height: 600, scrollY: 0 });
+  const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
   const changes = createChangeSet();
   const editor = createEditor(views, changes);
   const tree = editor.tree();
@@ -283,7 +283,7 @@ describe("undo and redo", () => {
 
 describe("taking a change back from a saved round, with no canvas open", () => {
   const save = ({ doc, changes }: ReturnType<typeof openCanvas>) => ({
-    canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }),
+    canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }),
     changeSet: changes.save(),
   });
   const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
@@ -956,7 +956,7 @@ describe("moving layers", () => {
     const opened = open();
     opened.editor.move(opened.layer("c"), { parent: opened.layer("list"), index: 0 });
     opened.editor.move(opened.layer("b"), { parent: opened.layer("board"), x: 10, y: 10 });
-    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: opened.changes.save() };
 
     const reverted = revertSaved(revertSaved(saved, 2)!, 1);
 
@@ -1026,7 +1026,7 @@ describe("moves, taken back in any order", () => {
     editor.move(layer("a"), { parent: layer("list"), index: 2 });
     editor.move(layer("b"), { parent: layer("list"), index: 2 });
     expect(order("list")).toEqual(["c", "a", "b"]);
-    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
     expect(order("list")[0]).toBe("a");
@@ -1322,7 +1322,7 @@ describe("making a Stack", () => {
     editor.set(stack, "gap", 4);
     const id = stack.el.getAttribute("data-vk-layer");
     expect(changes.list()[1]).toMatchObject({ property: "gap", target: { loc: null, made: id, unlocated: false, context: { path: ["Page", "App", "Stack"] } } });
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     expect(editor.revert(changes.list()[0].id)?.el.id).toBe("a");
     expect([...doc.getElementById("list")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
@@ -1337,7 +1337,7 @@ describe("making a Stack", () => {
     const opened = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("") + placed("c", [0, 200, 10, 10])));
     opened.editor.stack([opened.layer("b"), opened.layer("a")]);
     opened.editor.set(opened.layer("c"), "opacity", 0.5);
-    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: opened.changes.save() };
 
     const reverted = revertSaved(saved, saved.changeSet.changes[0].id)!;
 
@@ -1408,7 +1408,7 @@ describe("dissolving a Stack", () => {
     editor.redo();
     expect(style(doc.getElementById("a")!).position).toBe("absolute");
 
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
   });
 
@@ -1580,7 +1580,7 @@ describe("new text and Frames", () => {
     expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
     expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-vk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
     expect(text.el.parentElement).toBe(frame.el);
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
     expect(doc.querySelectorAll("[data-vk-made]")).toHaveLength(0);
@@ -1665,7 +1665,7 @@ describe("editing text", () => {
     const { doc, editor, changes, layer } = open(`<!DOCTYPE html><p id="t" ${at("3:3")}>Some <b>bold</b> words</p><p id="u" ${at("4:3")}>Other</p>`);
     editor.setText(layer("t"), "Plain");
     editor.setText(layer("u"), "Changed");
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
     expect(doc.getElementById("t")!.innerHTML).toBe("Some <b>bold</b> words");
@@ -1889,7 +1889,7 @@ describe("deleting layers", () => {
       // The page still renders three.
       ["delete-2", true, 3],
     ]);
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
     expect([...reverted.querySelectorAll("article")].map((card) => card.style.display)).toEqual(["none", "", "", ""]);
 
@@ -1984,7 +1984,7 @@ describe("duplicating layers", () => {
     expect([style(copy).position, style(copy).left, style(copy).top, style(copy).width]).toEqual(["absolute", "12px", "8px", "200px"]);
     expect(changes.list()[1].after).toMatchObject({ absolute: { x: 12, y: 8 } });
 
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[1].id)!.canvas, "text/html");
     expect(reverted.getElementById("board")!.children).toHaveLength(0);
     expect(reverted.getElementById("board")!.style.position).toBe("");
@@ -2178,6 +2178,46 @@ describe("views", () => {
 
     alike();
     expect(phone.document.getElementById("a")!.textContent).toBe("Typed");
+  });
+
+  test("words typed into text in another view are written to the canvas and show in every view at once; the view typed in keeps its own nodes", async () => {
+    const { doc, views, phone, alike } = await open();
+    const tabletFrame = document.createElement("iframe");
+    document.body.append(tabletFrame);
+    try {
+      const tablet = await views.add(tabletFrame, 600);
+      const typing = phone.typeIn(doc.getElementById("a")!);
+      const el = typing.el;
+      expect(el).toBe(phone.document.getElementById("a"));
+      const words = el.firstChild as Text;
+
+      // As the browser types: into the text there, then a line break and more words after it.
+      el.setAttribute("contenteditable", "plaintext-only");
+      words.appendData("lpha");
+      el.append(phone.document.createElement("br"), phone.document.createTextNode("Beta"));
+      // In every view as soon as the view typed in has taken it, before anything renders on it.
+      await Promise.resolve();
+
+      for (const view of [doc, tablet.document]) expect(view.getElementById("a")!.innerHTML).toBe("Alpha<br>Beta");
+      // The view typed in is left as it is: the caret stays in the words it is in.
+      expect(el.firstChild).toBe(words);
+      expect(el.getAttribute("contenteditable")).toBe("plaintext-only");
+      expect(doc.getElementById("a")!.hasAttribute("contenteditable")).toBe(false);
+
+      words.data = "Al";
+      await new Promise(requestAnimationFrame);
+      expect(doc.getElementById("a")!.innerHTML).toBe("Al<br>Beta");
+
+      // Done typing, the view follows the canvas again.
+      el.removeAttribute("contenteditable");
+      typing.done();
+      doc.getElementById("a")!.textContent = "Typed";
+      await new Promise(requestAnimationFrame);
+      alike();
+      expect(tablet.document.documentElement.outerHTML).toBe(doc.documentElement.outerHTML);
+    } finally {
+      tabletFrame.remove();
+    }
   });
 
   test("a view taken away stops following the canvas; the desktop view cannot be taken away", async () => {

@@ -125,7 +125,9 @@ export function CanvasView(props: Props) {
   /** The widths of the views beside the desktop view, widest first, as the designer left them. */
   const [widths, setWidths] = useState(readViewWidths);
   /** Each view beside the desktop view, by width, once it is laid out. */
-  const [beside, setBeside] = useState<Map<number, { view: View; height: number }>>(new Map());
+  const [beside, setBeside] = useState<Map<number, View>>(new Map());
+  /** Bumped as a view's height follows what it shows. */
+  const [, resized] = useReducer((n: number) => n + 1, 0);
   const frames = useRef(new Map<number, HTMLIFrameElement>());
   /** Each view beside the desktop view shown on the canvas so far, by width; `gone` once taken away before it was laid out. */
   const attached = useRef(new Map<number, { view: View | null; gone: boolean }>());
@@ -158,15 +160,17 @@ export function CanvasView(props: Props) {
   /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first. */
   const placed: Placed[] = [];
   if (canvas) {
-    placed.push({ view: desktop, name: viewName(canvas.width, true), desktop: true, x: 0, width: canvas.width, height: canvas.height });
+    placed.push({ view: desktop, name: viewName(canvas.width, true), desktop: true, x: 0, width: canvas.width, height: desktop!.height });
     let x = canvas.width;
     for (const width of widths) {
-      const laidOut = beside.get(width);
-      placed.push({ view: laidOut?.view ?? null, name: viewName(width, false), desktop: false, x: x + VIEW_GAP, width, height: laidOut?.height ?? 0 });
+      const view = beside.get(width) ?? null;
+      placed.push({ view, name: viewName(width, false), desktop: false, x: x + VIEW_GAP, width, height: view?.height ?? 0 });
       x += VIEW_GAP + width;
     }
   }
   const bounds: Bounds | null = canvas && boundsOf(placed);
+  /** What playing shows: the desktop view, as tall as it is now. */
+  const played: Bounds | null = placed[0] ?? null;
 
   /**
    * Plays a mode switch animation, taking over from one still running.
@@ -261,7 +265,7 @@ export function CanvasView(props: Props) {
         (view) => {
           if (entry.gone) return views.remove(view);
           entry.view = view;
-          setBeside((laidOut) => new Map(laidOut).set(width, { view, height: frame.offsetHeight }));
+          setBeside((laidOut) => new Map(laidOut).set(width, view));
         },
         (error: unknown) => console.error(error),
       );
@@ -280,6 +284,8 @@ export function CanvasView(props: Props) {
       });
     }
   }, [views, widths]);
+  // Each view is as tall as what it shows: the views are placed, outlined and fitted anew as it grows or shrinks.
+  useEffect(() => views?.onResize(() => resized(undefined)), [views]);
   // Leaving edit mode: the views beside the desktop view stop following the canvas.
   useEffect(
     () => () => {
@@ -301,14 +307,14 @@ export function CanvasView(props: Props) {
   playingRef.current = playing;
   const beforePlaying = useRef<Camera | null>(null);
   useLayoutEffect(() => {
-    if (!canvas) return;
+    if (!played) return;
     if (playing) {
       beforePlaying.current = camera;
       onTool(null);
       setHover(null);
       const area = viewport.current!.getBoundingClientRect();
       const top = Math.max(0, -camera.y / camera.zoom);
-      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, canvas, area));
+      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, played, area));
       viewport.current!.focus({ preventScroll: true });
     } else if (beforePlaying.current) {
       setCamera(beforePlaying.current);
@@ -346,15 +352,15 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ canvas, bounds, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, onTool, playing, onStopPlaying });
-  latest.current = { canvas, bounds, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying };
+  const latest = useRef({ played, bounds, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, onTool, playing, onStopPlaying });
+  latest.current = { played, bounds, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { canvas, bounds, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying } = latest.current;
+      const { played, bounds, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying } = latest.current;
       // Playing, the keys scroll as on a page, and Esc stops.
       if (playing) {
-        if (event.type !== "keydown" || !canvas || event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.type !== "keydown" || !played || event.metaKey || event.ctrlKey || event.altKey) return;
         const area = viewport.current!.getBoundingClientRect();
         const page = area.height - 40;
         const by: Record<string, number> = { ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page, Home: -Infinity, End: Infinity };
@@ -365,7 +371,7 @@ export function CanvasView(props: Props) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (event.key === "Escape") onStopPlaying();
-        else if (dy !== undefined) setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, canvas, area));
+        else if (dy !== undefined) setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, played, area));
         return;
       }
       if (event.key === "Meta" || event.key === "Control") {
@@ -436,8 +442,8 @@ export function CanvasView(props: Props) {
     let left = el.getBoundingClientRect().left;
     const observer = new ResizeObserver(() => {
       if (playingRef.current) {
-        const { canvas } = latest.current;
-        if (canvas) setCamera((v) => scrolled(v, canvas, el.getBoundingClientRect()));
+        const { played } = latest.current;
+        if (played) setCamera((v) => scrolled(v, played, el.getBoundingClientRect()));
         return;
       }
       const now = el.getBoundingClientRect().left;
@@ -459,9 +465,9 @@ export function CanvasView(props: Props) {
       let dx = event.deltaX * unit;
       let dy = event.deltaY * unit;
       if (playingRef.current) {
-        const { canvas } = latest.current;
+        const { played } = latest.current;
         if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
-        if (canvas) setCamera((v) => scrolled({ ...v, x: v.x - dx, y: v.y - dy }, canvas, el.getBoundingClientRect()));
+        if (played) setCamera((v) => scrolled({ ...v, x: v.x - dx, y: v.y - dy }, played, el.getBoundingClientRect()));
         return;
       }
       if (event.ctrlKey || event.metaKey) {
@@ -633,15 +639,21 @@ export function CanvasView(props: Props) {
     if (!to) return;
     const clicked = box.width < DRAG_THRESHOLD && box.height < DRAG_THRESHOLD;
     const layer = onCreate(type, to, clicked ? undefined : { width: box.width, height: box.height });
-    if (type === "text") beginTyping(layer);
+    if (type === "text") beginTyping(layer, view);
   };
 
-  /** Types in a text layer, on the canvas itself: Enter, Esc or going elsewhere ends it, and the words are set. */
-  const beginTyping = (layer: Layer) => {
+  /**
+   * Types in a text layer, in the view it was double-clicked or drawn in: the
+   * words show in every view as they are typed. Enter, Esc or going elsewhere
+   * ends it, and the words are set on the canvas, as an edit.
+   */
+  const beginTyping = (layer: Layer, view: View) => {
     const own = onBeginText(layer);
-    const el = own.el as HTMLElement;
-    typing.current = { layer: own, html: el.innerHTML };
+    const onCanvas = own.el as HTMLElement;
+    typing.current = { layer: own, html: onCanvas.innerHTML };
     setTypingLayer(own);
+    const typed = view.typeIn(onCanvas);
+    const el = typed.el;
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);
@@ -656,13 +668,14 @@ export function CanvasView(props: Props) {
       el.removeEventListener("input", onInput);
       el.removeEventListener("blur", end);
       setTypingLayer(null);
-      const typed = typing.current;
+      const saved = typing.current;
       typing.current = null;
       el.removeAttribute("contenteditable");
       const text = el.textContent!.replace(/\s+/g, " ").trim();
+      typed.done();
       // The words are set as an edit, from what was there before typing.
-      el.innerHTML = typed!.html;
-      onEditText(typed!.layer, text);
+      onCanvas.innerHTML = saved!.html;
+      onEditText(saved!.layer, text);
       viewport.current?.focus({ preventScroll: true });
     };
     el.addEventListener("keydown", onKey);
@@ -716,10 +729,11 @@ export function CanvasView(props: Props) {
       onPointerLeave={() => setHover(null)}
       onDblClick={(event) => {
         if (playing) return;
+        const over = viewAt(event);
         const hit = layerAt(event);
         const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
-        // On the text selected, a double click types in it.
-        if (layer && layer === primary && layer.kind === "text" && editor) beginTyping(layer);
+        // On the text selected, a double click types in it, in the view clicked in.
+        if (layer && over && layer === primary && layer.kind === "text" && editor) beginTyping(layer, over.at.view);
         else if (layer) onSelect([layer]);
       }}
     >
@@ -976,11 +990,11 @@ function currentCamera(stage: HTMLElement): Camera {
   return { x: m.e, y: m.f, zoom: m.a };
 }
 
-/** At 100%, kept within the canvas: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
-function scrolled(camera: Camera, canvas: Canvas, area: DOMRect): Camera {
+/** At 100%, kept within the view played: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
+function scrolled(camera: Camera, played: Bounds, area: DOMRect): Camera {
   const within = (n: number, min: number) => Math.max(Math.min(0, min), Math.min(0, n));
-  const x = canvas.width <= area.width ? Math.round((area.width - canvas.width) / 2) : within(camera.x, area.width - canvas.width);
-  return { zoom: 1, x, y: within(camera.y, area.height - canvas.height) };
+  const x = played.width <= area.width ? Math.round((area.width - played.width) / 2) : within(camera.x, area.width - played.width);
+  return { zoom: 1, x, y: within(camera.y, area.height - played.height) };
 }
 
 /** At most 100%, every view across, and the part of the page the designer was looking at on top. */

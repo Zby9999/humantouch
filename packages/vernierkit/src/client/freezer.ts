@@ -12,9 +12,11 @@ import { HAS_VIEWPORT_UNIT, mediaForViews, unitsForViews, VIEWPORT_MEDIA, type F
 export interface Canvas {
   /** The frozen copy. Lives in the iframe that was passed to `freeze`. */
   document: Document;
-  /** Laid-out size of the whole page, in CSS px. */
+  /** Laid-out size of the whole page, in CSS px, when it was frozen or put back. Each view's height follows what it shows since: `View.height`. */
   width: number;
   height: number;
+  /** The height of the window the page was frozen in, px: what answers to the height in its CSS answers to this, and no view is shorter. */
+  windowHeight: number;
   /** How far the page was scrolled down when it was frozen. */
   scrollY: number;
 }
@@ -140,7 +142,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     resolveViewport(rules, frozen);
     owner.textContent = serialize(rules, null);
   }
-  return present(doc, iframe, { width: root.clientWidth, height: frozen.height, scrollY: viewport.scrollY });
+  return present(doc, iframe, { width: root.clientWidth, height: frozen.height, windowHeight: frozen.height, scrollY: viewport.scrollY });
 }
 
 /**
@@ -186,7 +188,7 @@ export function serializeCanvas(canvas: Canvas): string {
         break;
     }
   }
-  const layout: Layout = { width: canvas.width, height: canvas.height, scrollY: canvas.scrollY };
+  const layout: Layout = { width: canvas.width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY };
   copy.setAttribute(LAYOUT_ATTR, JSON.stringify(layout));
   return doctypeOf(doc) + copy.outerHTML;
 }
@@ -204,8 +206,10 @@ export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas
   doc.write(html);
   doc.close();
   const root = doc.documentElement;
-  const layout = JSON.parse(root.getAttribute(LAYOUT_ATTR) ?? "null") as Layout | null;
-  if (!layout) return Promise.reject(new Error("Vernier Kit: the saved canvas has no layout"));
+  const saved = JSON.parse(root.getAttribute(LAYOUT_ATTR) ?? "null") as (Omit<Layout, "windowHeight"> & Partial<Layout>) | null;
+  if (!saved) return Promise.reject(new Error("Vernier Kit: the saved canvas has no layout"));
+  // Saved before the window's height was: no view shorter than the canvas was then.
+  const layout: Layout = { ...saved, windowHeight: saved.windowHeight ?? saved.height };
   root.removeAttribute(LAYOUT_ATTR);
   const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
     const image = new Image();
@@ -219,8 +223,8 @@ export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas
   return present(doc, iframe, layout, pixels);
 }
 
-/** How a canvas is laid out: its width, its height at least, and how far down the designer was. */
-type Layout = Pick<Canvas, "width" | "height" | "scrollY">;
+/** How a canvas is laid out: its width, its height, the window's height, and how far down the designer was. */
+type Layout = Pick<Canvas, "width" | "height" | "windowHeight" | "scrollY">;
 
 /** Brings a copy written into `iframe` to rest, sized to the whole page. */
 function present(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
@@ -252,10 +256,10 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
     if (froms[i].localName === "canvas") drawInto(copies[i] as HTMLCanvasElement, froms[i] as HTMLCanvasElement);
     else if (froms[i].localName === "option") (copies[i] as HTMLOptionElement).selected = (froms[i] as HTMLOptionElement).selected;
   }
-  return layOut(doc, iframe, { width, height: canvas.height, scrollY: canvas.scrollY });
+  return layOut(doc, iframe, { width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY });
 }
 
-/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page, once what it loads is in. */
+/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page there, once what it loads is in. */
 function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
   for (const el of doc.querySelectorAll<HTMLElement>(`[${TOP_LAYER_ATTR}]`)) {
     try {
@@ -279,14 +283,29 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
   iframe.style.height = `${layout.height}px`;
 
   return Promise.all([settle(doc), ...loading]).then(() => {
-    const height = Math.max(layout.height, doc.documentElement.scrollHeight);
-    iframe.style.height = `${height}px`;
+    const height = fitHeight(doc, iframe, layout.windowHeight);
     for (const el of doc.querySelectorAll(`[${SCROLL_ATTR}]`)) {
       const [left, top] = el.getAttribute(SCROLL_ATTR)!.split(" ").map(Number);
       el.scrollTo(left, top);
     }
-    return { document: doc, width, height, scrollY: layout.scrollY };
+    return { document: doc, width, height, windowHeight: layout.windowHeight, scrollY: layout.scrollY };
   });
+}
+
+/**
+ * Makes `iframe` as tall as what `doc` in it shows, and no shorter than
+ * `floor`, the window's height; returns its height, px. What is pinned where
+ * the designer saw it counts too: fixed, it would not make the page taller.
+ * The page's CSS settled what answers to the height when it was frozen, so
+ * nothing in it changes with the iframe's height.
+ */
+export function fitHeight(doc: Document, iframe: HTMLIFrameElement, floor: number): number {
+  // Measured at its shortest: a page shorter than its window is laid out as tall as the window.
+  iframe.style.height = `${floor}px`;
+  let height = Math.max(floor, doc.documentElement.scrollHeight);
+  for (const el of doc.querySelectorAll(`[${PINNED_ATTR}]`)) height = Math.max(height, Math.ceil(el.getBoundingClientRect().bottom));
+  iframe.style.height = `${height}px`;
+  return height;
 }
 
 /** Waits, briefly, for what the copy loads again: fonts and cross-origin stylesheets. */
