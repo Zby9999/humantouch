@@ -186,9 +186,7 @@ export function buildLayerTree(doc: Document): LayerTree {
       let layer: Layer | undefined;
       const hit = skip ? doc.elementsFromPoint(x, y).find((e) => !skip.contains(e)) : doc.elementFromPoint(x, y);
       for (let e = hit ?? null; e && !layer; e = e.parentElement) layer = layers.get(e);
-      if (!layer) return null;
-      // Text is not an element, so the point lands on the layer the text sits in.
-      return layer.children.find((child) => child.text && [...rangeOf(child).getClientRects()].some((r) => contains(r, x, y))) ?? layer;
+      return layer ? runAt(layer, x, y, rangeOf) : null;
     },
     layerOf(node) {
       if (node.nodeType === Node.ELEMENT_NODE) return layers.get(node as Element) ?? null;
@@ -222,12 +220,21 @@ export function nodeOf(layer: Layer): Element | Text {
 
 /** Where the layer is on the canvas, in canvas px. */
 export function boxOf(layer: Layer): DOMRect {
-  return layer.text ? rangeOf(layer).getBoundingClientRect() : layer.el.getBoundingClientRect();
+  return layer.text ? rangeOf(layer.text).getBoundingClientRect() : layer.el.getBoundingClientRect();
 }
 
-/** The text of a run, without the white space around it. */
-function rangeOf(layer: Layer): Range {
-  const run = layer.text!;
+/**
+ * Text is not an element, so a point on it lands on the layer the text sits
+ * in: the run of loose text of `layer` at the point, if there is one, or
+ * `layer`. `range`: where a run is shown, null where it is not.
+ */
+export function runAt(layer: Layer, x: number, y: number, range: (run: Text[]) => Range | null): Layer {
+  const at = (child: Layer) => !!child.text && [...(range(child.text)?.getClientRects() ?? [])].some((r) => contains(r, x, y));
+  return layer.children.find(at) ?? layer;
+}
+
+/** The text of a run of loose text, without the white space around it. */
+export function rangeOf(run: Text[]): Range {
   const range = run[0].ownerDocument.createRange();
   const first = run[0].textContent!;
   const last = run.at(-1)!.textContent!;

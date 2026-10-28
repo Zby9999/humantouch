@@ -217,6 +217,36 @@ function present(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadi
   const styles = Object.assign(doc.createElement("style"), { textContent: CANVAS_STYLES });
   styles.setAttribute(CANVAS_STYLES_ATTR, "");
   doc.head.append(styles);
+  return layOut(doc, iframe, layout, loading);
+}
+
+/**
+ * Shows `canvas` in `iframe` too, `width` px wide: one more view of it (ADR
+ * 0008). The copy is of the canvas as it is now, edits included, its tree the
+ * same node for node; it is made before this returns its promise, which
+ * settles once it is laid out.
+ */
+export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: number): Promise<Canvas> {
+  const from = canvas.document;
+  const doc = iframe.contentDocument;
+  if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
+  doc.open();
+  doc.write(doctypeOf(from));
+  doc.close();
+  const copy = doc.importNode(from.documentElement, true);
+  doc.replaceChild(copy, doc.documentElement);
+  // What lives outside the markup: the pixels of stills, the options chosen.
+  const froms = from.documentElement.getElementsByTagName("*");
+  const copies = copy.getElementsByTagName("*");
+  for (let i = 0; i < froms.length; i++) {
+    if (froms[i].localName === "canvas") drawInto(copies[i] as HTMLCanvasElement, froms[i] as HTMLCanvasElement);
+    else if (froms[i].localName === "option") (copies[i] as HTMLOptionElement).selected = (froms[i] as HTMLOptionElement).selected;
+  }
+  return layOut(doc, iframe, { width, height: canvas.height, scrollY: canvas.scrollY });
+}
+
+/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page, once what it loads is in. */
+function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
   for (const el of doc.querySelectorAll<HTMLElement>(`[${TOP_LAYER_ATTR}]`)) {
     try {
       if (el.getAttribute(TOP_LAYER_ATTR) === "modal") {
@@ -269,7 +299,7 @@ function setImportant(el: Element, name: string, value: string) {
   (el as HTMLElement).style.setProperty(name, value, "important");
 }
 
-function drawInto(still: HTMLCanvasElement, source: CanvasImageSource) {
+export function drawInto(still: HTMLCanvasElement, source: CanvasImageSource) {
   try {
     still.getContext("2d")?.drawImage(source, 0, 0);
   } catch {} // A canvas already holding a WebGL context, or a source with no frame yet.

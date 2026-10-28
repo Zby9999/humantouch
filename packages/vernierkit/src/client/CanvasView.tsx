@@ -9,9 +9,10 @@ import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { boxOf, nodeOf, role, type Layer, type LayerTree } from "./layers";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
+import { createViews, type View, type Views } from "./views";
 
 /** Where the canvas sits in the viewport: its top-left corner and its scale. */
-interface View {
+interface Camera {
   x: number;
   y: number;
   zoom: number;
@@ -33,8 +34,8 @@ export type Tool = Created["type"] | null;
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
   restoreFrom: string | null;
-  /** Called once the page is frozen, or the saved canvas restored, and laid out. */
-  onCanvas(canvas: Canvas): void;
+  /** Called once the page is frozen, or the saved canvas restored, and laid out: with the views that show it. */
+  onCanvas(views: Views): void;
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
   /** The selected layers, the one selected last at the end: clicks go on from its depth. */
@@ -78,9 +79,13 @@ export function CanvasView(props: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
-  const [canvas, setCanvas] = useState<Canvas | null>(null);
+  /** The canvas, shown as views (ADR 0008): for now the desktop view only, in the iframe on the stage. */
+  const [views, setViews] = useState<Views | null>(null);
+  /** The canvas the desktop view shows: what the camera frames, and what playing shows at full size. */
+  const canvas = views?.canvas ?? null;
+  const desktop = views?.list()[0] ?? null;
   const [failed, setFailed] = useState(false);
-  const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 });
+  const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [spaceHeld, setSpaceHeld] = useState(false);
   /** The deepest layer under the pointer, and whether ⌘ / Ctrl is held: the layer a click would select is outlined. */
   const [hover, setHover] = useState<{ hit: Layer; deep: boolean } | null>(null);
@@ -149,10 +154,11 @@ export function CanvasView(props: Props) {
     body.inert = true;
     frozen.then((frozen) => {
       if (!mounted) return;
-      setCanvas(frozen);
-      onCanvas(frozen);
-      const start = initialView(frozen, viewport.current!.getBoundingClientRect());
-      setView(start);
+      const canvasViews = createViews(frozen);
+      setViews(canvasViews);
+      onCanvas(canvasViews);
+      const start = initialCamera(frozen, viewport.current!.getBoundingClientRect());
+      setCamera(start);
       shell.style.opacity = "";
       if (animate && prefersReducedMotion()) {
         play(shell, [{ opacity: 0 }, { opacity: 1 }], { duration: MODE_FADE_MS, easing: EASE_OUT });
@@ -184,22 +190,22 @@ export function CanvasView(props: Props) {
     };
   }, []);
 
-  // Playing shows the canvas at 100%, from the part at the top of the viewport; stopping puts the view back as it was.
+  // Playing shows the canvas at 100%, from the part at the top of the viewport; stopping puts the camera back as it was.
   const playingRef = useRef(playing);
   playingRef.current = playing;
-  const beforePlaying = useRef<View | null>(null);
+  const beforePlaying = useRef<Camera | null>(null);
   useLayoutEffect(() => {
     if (!canvas) return;
     if (playing) {
-      beforePlaying.current = view;
+      beforePlaying.current = camera;
       onTool(null);
       setHover(null);
       const area = viewport.current!.getBoundingClientRect();
-      const top = Math.max(0, -view.y / view.zoom);
-      setView(scrolled({ zoom: 1, x: 0, y: -top }, canvas, area));
+      const top = Math.max(0, -camera.y / camera.zoom);
+      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, canvas, area));
       viewport.current!.focus({ preventScroll: true });
     } else if (beforePlaying.current) {
-      setView(beforePlaying.current);
+      setCamera(beforePlaying.current);
       beforePlaying.current = null;
     }
   }, [playing]);
@@ -222,8 +228,8 @@ export function CanvasView(props: Props) {
       play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
       return;
     }
-    const from = transformOf(currentView(stage.current!));
-    const to = leaving ? overPage() : transformOf(view);
+    const from = transformOf(currentCamera(stage.current!));
+    const to = leaving ? overPage() : transformOf(camera);
     // Over the page, a changed canvas would cut to a page without the changes.
     const fadeIntoPage = () => {
       const shell = viewport.current!.parentElement!;
@@ -253,7 +259,7 @@ export function CanvasView(props: Props) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (event.key === "Escape") onStopPlaying();
-        else if (dy !== undefined) setView((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, canvas, area));
+        else if (dy !== undefined) setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, canvas, area));
         return;
       }
       if (event.key === "Meta" || event.key === "Control") {
@@ -300,7 +306,7 @@ export function CanvasView(props: Props) {
       if (event.code === "Digit1" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         event.stopPropagation();
-        if (canvas) setView(fitView(canvas, viewport.current!.getBoundingClientRect()));
+        if (canvas) setCamera(fitCamera(canvas, viewport.current!.getBoundingClientRect()));
       }
     };
     const release = () => {
@@ -325,14 +331,14 @@ export function CanvasView(props: Props) {
     const observer = new ResizeObserver(() => {
       if (playingRef.current) {
         const { canvas } = latest.current;
-        if (canvas) setView((v) => scrolled(v, canvas, el.getBoundingClientRect()));
+        if (canvas) setCamera((v) => scrolled(v, canvas, el.getBoundingClientRect()));
         return;
       }
       const now = el.getBoundingClientRect().left;
       if (now === left) return;
       const moved = left - now;
       left = now;
-      setView((v) => ({ ...v, x: v.x + moved }));
+      setCamera((v) => ({ ...v, x: v.x + moved }));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -349,31 +355,31 @@ export function CanvasView(props: Props) {
       if (playingRef.current) {
         const { canvas } = latest.current;
         if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
-        if (canvas) setView((v) => scrolled({ ...v, x: v.x - dx, y: v.y - dy }, canvas, el.getBoundingClientRect()));
+        if (canvas) setCamera((v) => scrolled({ ...v, x: v.x - dx, y: v.y - dy }, canvas, el.getBoundingClientRect()));
         return;
       }
       if (event.ctrlKey || event.metaKey) {
         const rect = el.getBoundingClientRect();
         const step = Math.max(-MAX_ZOOM_STEP, Math.min(MAX_ZOOM_STEP, dy));
-        setView((v) => zoomAt(v, Math.exp(-step * ZOOM_SPEED), event.clientX - rect.left, event.clientY - rect.top));
+        setCamera((v) => zoomAt(v, Math.exp(-step * ZOOM_SPEED), event.clientX - rect.left, event.clientY - rect.top));
         return;
       }
       if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
-      setView((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
+      setCamera((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   const primary = selected.at(-1) ?? null;
-  /** The deepest layer under the pointer. The canvas itself takes no pointer input, so this asks its document. */
+  /** The deepest layer under the pointer. The view itself takes no pointer input, so this asks what it shows. */
   const layerAt = (event: MouseEvent): Layer | null => {
-    if (!canvas || !tree) return null;
+    if (!canvas || !desktop || !tree) return null;
     const area = viewport.current!.getBoundingClientRect();
-    const x = (event.clientX - area.left - view.x) / view.zoom;
-    const y = (event.clientY - area.top - view.y) / view.zoom;
+    const x = (event.clientX - area.left - camera.x) / camera.zoom;
+    const y = (event.clientY - area.top - camera.y) / camera.zoom;
     if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
-    return tree.layerAt(x, y);
+    return desktop.layerAt(tree, x, y);
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
@@ -432,7 +438,7 @@ export function CanvasView(props: Props) {
     const dy = event.clientY - p.y;
     p.x = event.clientX;
     p.y = event.clientY;
-    setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+    setCamera((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
@@ -456,7 +462,7 @@ export function CanvasView(props: Props) {
   /** Where the pointer is on the canvas, in canvas px. */
   const toCanvas = (event: MouseEvent) => {
     const area = viewport.current!.getBoundingClientRect();
-    return { x: (event.clientX - area.left - view.x) / view.zoom, y: (event.clientY - area.top - view.y) / view.zoom };
+    return { x: (event.clientX - area.left - camera.x) / camera.zoom, y: (event.clientY - area.top - camera.y) / camera.zoom };
   };
 
   /** Starts dragging: the layer stops taking the pointer, and where its neighbours are is noted before any of them shifts. */
@@ -468,8 +474,8 @@ export function CanvasView(props: Props) {
   };
 
   const moveDrag = (session: DragSession, event: MouseEvent, from: { x: number; y: number }) => {
-    const dx = (event.clientX - from.x) / view.zoom;
-    const dy = (event.clientY - from.y) / view.zoom;
+    const dx = (event.clientX - from.x) / camera.zoom;
+    const dy = (event.clientY - from.y) / camera.zoom;
     const { layer, start } = session;
     const box = new DOMRect(start.x + dx, start.y + dy, start.width, start.height);
     const rectOf = (l: Layer) => {
@@ -589,22 +595,22 @@ export function CanvasView(props: Props) {
         ref={stage}
         class="vk-stage"
         style={{
-          transform: transformOf(view),
+          transform: transformOf(camera),
           visibility: canvas ? "visible" : "hidden",
         }}
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
-      {canvas && hovered && !selected.includes(hovered) && !travelling && !playing && <Outline layer={hovered} view={view} hover />}
-      {canvas && !travelling && !playing && selected.map((layer, i) => layer !== typingLayer && <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
-      {canvas && typingLayer && !travelling && !playing && <Outline layer={typingLayer} view={view} typing />}
-      {canvas && editor && primary && selected.length === 1 && !travelling && !playing && !drag && !hideSelection && editor.brief(primary) !== null && (
-        <Brief key={primary.el.getAttribute("data-vk-layer")} layer={primary} brief={editor.brief(primary)!} view={view} onSetBrief={onSetBrief} />
+      {desktop && hovered && !selected.includes(hovered) && !travelling && !playing && <Outline layer={hovered} view={desktop} camera={camera} hover />}
+      {desktop && !travelling && !playing && selected.map((layer, i) => layer !== typingLayer && <Outline key={i} layer={layer} view={desktop} camera={camera} hidden={hideSelection} />)}
+      {desktop && typingLayer && !travelling && !playing && <Outline layer={typingLayer} view={desktop} camera={camera} typing />}
+      {desktop && editor && primary && selected.length === 1 && !travelling && !playing && !drag && !hideSelection && editor.brief(primary) !== null && (
+        <Brief key={primary.el.getAttribute("data-vk-layer")} layer={primary} view={desktop} brief={editor.brief(primary)!} camera={camera} onSetBrief={onSetBrief} />
       )}
-      {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
-      {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
-      {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
-      {drawn && <div class="vk-drag-ghost" aria-hidden="true" style={place(drawn, view)} />}
+      {desktop && drag?.drop && <Outline layer={drag.drop.to.parent} view={desktop} camera={camera} hover />}
+      {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, camera)} />}
+      {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, camera)} />}
+      {drawn && <div class="vk-drag-ghost" aria-hidden="true" style={place(drawn, camera)} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
@@ -613,7 +619,9 @@ export function CanvasView(props: Props) {
 interface BriefProps {
   layer: Layer;
   brief: string;
+  /** The view it sits beside the layer in. */
   view: View;
+  camera: Camera;
   onSetBrief(layer: Layer, brief: string): void;
 }
 
@@ -622,17 +630,18 @@ interface BriefProps {
  * Agent is to make in it. Typed in freely, set once left or on Enter; Esc
  * leaves it as it was.
  */
-function Brief({ layer, brief, view, onSetBrief }: BriefProps) {
+function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
   const [open, setOpen] = useState(false);
-  const r = boxOf(layer);
+  const r = view.boxOf(layer);
   const close = (text: string | null) => {
     setOpen(false);
     if (text !== null && text.trim() !== brief) onSetBrief(layer, text.trim());
   };
+  if (!r) return null;
   return (
     <div
       class="vk-brief"
-      style={{ left: `${view.x + r.right * view.zoom + 8}px`, top: `${view.y + r.top * view.zoom}px` }}
+      style={{ left: `${camera.x + r.right * camera.zoom + 8}px`, top: `${camera.y + r.top * camera.zoom}px` }}
       // A press here is not on the canvas.
       onPointerDown={(event) => event.stopPropagation()}
       onDblClick={(event) => event.stopPropagation()}
@@ -666,7 +675,9 @@ function Brief({ layer, brief, view, onSetBrief }: BriefProps) {
 
 interface OutlineProps {
   layer: Layer;
+  /** The view it outlines the layer in. */
   view: View;
+  camera: Camera;
   /** The layer under the pointer rather than the selected one. */
   hover?: boolean;
   /** The text being typed in: blue, whatever the layer is. */
@@ -679,8 +690,9 @@ interface OutlineProps {
  * above the canvas, so its lines stay 1px at any zoom. Blue, purple for an
  * instance, gray for a locked layer.
  */
-function Outline({ layer, view, hover, hidden, typing }: OutlineProps) {
-  const r = boxOf(layer);
+function Outline({ layer, view, camera, hover, hidden, typing }: OutlineProps) {
+  const r = view.boxOf(layer);
+  if (!r) return null;
   const kind = typing ? "typing" : role(layer);
   return (
     <div
@@ -689,10 +701,10 @@ function Outline({ layer, view, hover, hidden, typing }: OutlineProps) {
       data-hidden={hidden || undefined}
       aria-hidden="true"
       style={{
-        left: `${view.x + r.left * view.zoom}px`,
-        top: `${view.y + r.top * view.zoom}px`,
-        width: `${r.width * view.zoom}px`,
-        height: `${r.height * view.zoom}px`,
+        left: `${camera.x + r.left * camera.zoom}px`,
+        top: `${camera.y + r.top * camera.zoom}px`,
+        width: `${r.width * camera.zoom}px`,
+        height: `${r.height * camera.zoom}px`,
       }}
     >
       {kind === "locked" && !hover && (
@@ -762,47 +774,47 @@ function boxFrom(a: { x: number; y: number }, b: { x: number; y: number }): DOMR
 }
 
 /** A box on the canvas, placed over it in the viewport. */
-function place(r: { x: number; y: number; width: number; height: number }, view: View) {
-  return { left: `${view.x + r.x * view.zoom}px`, top: `${view.y + r.y * view.zoom}px`, width: `${r.width * view.zoom}px`, height: `${r.height * view.zoom}px` };
+function place(r: { x: number; y: number; width: number; height: number }, camera: Camera) {
+  return { left: `${camera.x + r.x * camera.zoom}px`, top: `${camera.y + r.y * camera.zoom}px`, width: `${r.width * camera.zoom}px`, height: `${r.height * camera.zoom}px` };
 }
 
-function transformOf({ x, y, zoom }: View): string {
+function transformOf({ x, y, zoom }: Camera): string {
   return `translate(${x}px, ${y}px) scale(${zoom})`;
 }
 
 /** Where the stage is right now, partway through an animation included. */
-function currentView(stage: HTMLElement): View {
+function currentCamera(stage: HTMLElement): Camera {
   const m = new DOMMatrix(getComputedStyle(stage).transform);
   return { x: m.e, y: m.f, zoom: m.a };
 }
 
 /** At 100%, kept within the canvas: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
-function scrolled(view: View, canvas: Canvas, area: DOMRect): View {
+function scrolled(camera: Camera, canvas: Canvas, area: DOMRect): Camera {
   const within = (n: number, min: number) => Math.max(Math.min(0, min), Math.min(0, n));
-  const x = canvas.width <= area.width ? Math.round((area.width - canvas.width) / 2) : within(view.x, area.width - canvas.width);
-  return { zoom: 1, x, y: within(view.y, area.height - canvas.height) };
+  const x = canvas.width <= area.width ? Math.round((area.width - canvas.width) / 2) : within(camera.x, area.width - canvas.width);
+  return { zoom: 1, x, y: within(camera.y, area.height - canvas.height) };
 }
 
 /** At most 100%, the full width in view, and the part of the page the designer was looking at on top. */
-function initialView(canvas: Canvas, area: DOMRect): View {
+function initialCamera(canvas: Canvas, area: DOMRect): Camera {
   const zoom = clamp(Math.min(1, (area.width - 2 * PADDING) / canvas.width));
   return { ...centered(canvas, area, zoom), y: PADDING - canvas.scrollY * zoom };
 }
 
-function fitView(canvas: Canvas, area: DOMRect): View {
+function fitCamera(canvas: Canvas, area: DOMRect): Camera {
   const zoom = clamp(Math.min((area.width - 2 * PADDING) / canvas.width, (area.height - 2 * PADDING) / canvas.height));
   return centered(canvas, area, zoom);
 }
 
-function centered(canvas: Canvas, area: DOMRect, zoom: number): View {
+function centered(canvas: Canvas, area: DOMRect, zoom: number): Camera {
   return { zoom, x: (area.width - canvas.width * zoom) / 2, y: (area.height - canvas.height * zoom) / 2 };
 }
 
 /** Scales by `factor`, keeping the point (`px`, `py`) of the viewport fixed. */
-function zoomAt(view: View, factor: number, px: number, py: number): View {
-  const zoom = clamp(view.zoom * factor);
-  const k = zoom / view.zoom;
-  return { zoom, x: px - (px - view.x) * k, y: py - (py - view.y) * k };
+function zoomAt(camera: Camera, factor: number, px: number, py: number): Camera {
+  const zoom = clamp(camera.zoom * factor);
+  const k = zoom / camera.zoom;
+  return { zoom, x: px - (px - camera.x) * k, y: py - (py - camera.y) * k };
 }
 
 function clamp(zoom: number): number {
