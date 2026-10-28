@@ -338,6 +338,10 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
           select([layer]);
           return layer;
         }}
+        onSetBrief={(layer, brief) => {
+          editor!.setBrief(layer, brief);
+          onEdit();
+        }}
         onBeginText={(layer) => {
           const own = editor!.ownElement(layer);
           // Loose text got an element of its own: the layers are built anew.
@@ -363,7 +367,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
         <div class="vk-panel-header">
           <h2 class="vk-panel-title">Design</h2>
           {tree && (
-            <button ref={playButton} type="button" class="vk-icon-button" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
+            <button ref={playButton} type="button" class="vk-icon-button vk-play" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
               <Icon name="play" />
             </button>
           )}

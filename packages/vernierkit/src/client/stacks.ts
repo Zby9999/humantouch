@@ -117,19 +117,6 @@ export function marginsOf(el: Element): [number, number, number, number] {
   return (["top", "right", "bottom", "left"] as const).map((side) => parseFloat(style.getPropertyValue(`margin-${side}`)) || 0) as [number, number, number, number];
 }
 
-/**
- * The margin a new Stack takes over from its layers, which then have none:
- * along it, the first one's before and the last one's after; across it, what
- * they all have. Null with none.
- */
-export function outerMargin(margins: [number, number, number, number][], direction: StackSettings["direction"]): string | null {
-  const [top, right, bottom, left] = [0, 1, 2, 3].map((side) => Math.min(...margins.map((m) => m[side])));
-  const first = margins[0];
-  const last = margins.at(-1)!;
-  const outer = direction === "vertical" ? [first[0], right, last[2], left] : [top, last[1], bottom, first[3]];
-  return outer.some((m) => m) ? outer.map((m) => `${round(m)}px`).join(" ") : null;
-}
-
 /** The box absolute layers are placed in: inside the element's border. */
 export function paddingBox(el: Element): Box {
   const r = el.getBoundingClientRect();

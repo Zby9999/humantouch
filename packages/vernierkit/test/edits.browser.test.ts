@@ -1196,7 +1196,7 @@ describe("making a Stack", () => {
     expect(changes.list()[0].style["align-items"]).toBe("stretch");
   });
 
-  test("of layers with margins: the room between them is the gap, the outer margins the Stack's own, and nothing moves; undone, the margins are back", () => {
+  test("of layers with margins: the room between them is the gap, the Stack has none of its own; undone, the margins are back", () => {
     const { doc, editor, changes, layer, rects } = open(`<!DOCTYPE html><body style="margin: 0">
       <section id="hero" ${at("5:5")} style="display: flex; flex-direction: column; width: 400px">
         <header id="h" ${at("6:7")} style="height: 30px">Title</header>
@@ -1207,10 +1207,14 @@ describe("making a Stack", () => {
 
     const stack = editor.stack([layer("p"), layer("btn")]);
 
-    expect(drift(before, rects("h", "p", "btn"))).toBe(0);
+    // The paragraph's margin above it goes: the Stack is right under the header, and hugs its layers.
+    const [h, p, btn] = rects("h", "p", "btn");
+    expect(p.top).toBe(h.bottom);
+    expect(btn.top - p.bottom).toBe(24);
+    expect(stack.el.getBoundingClientRect().height).toBe(btn.bottom - p.top);
     expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 24, padding: [0, 0, 0, 0] });
     expect(changes.list()[0].after).toMatchObject({ layers: [{ unmargined: true }, { unmargined: true }] });
-    expect(changes.list()[0].style.margin).toBe("16px 0px 4px 0px");
+    expect(changes.list()[0].style.margin).toBeUndefined();
     expect([style(doc.getElementById("p")!).marginTop, style(doc.getElementById("btn")!).marginTop]).toEqual(["0px", "0px"]);
 
     // No gap: they touch.

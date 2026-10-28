@@ -253,6 +253,9 @@ export const styles = /* css */ `
   border-bottom: 1px solid var(--vk-border);
 }
 .vk-panel-header .vk-panel-title { flex: 1; border-bottom: 0; }
+/* Play sits right by the Design title; the changes and the way back stay at the right. */
+.vk-panel-header .vk-panel-title:has(+ .vk-play) { flex: none; padding-right: 4px; }
+.vk-panel-header .vk-play { margin-right: auto; }
 .vk-count {
   all: unset;
   box-sizing: border-box;
@@ -577,8 +580,27 @@ export const styles = /* css */ `
 .vk-selection[data-hidden] { opacity: 0; transition: none; }
 :is(.vk-selection, .vk-hover)[data-kind="instance"] { --vk-selection: var(--vk-instance); }
 :is(.vk-selection, .vk-hover)[data-kind="locked"] { --vk-selection: var(--vk-locked); }
-/* Typing in text, as in Framer: a blue box round the words, which grows as they do. */
-.vk-selection[data-kind="typing"] { border-width: 2px; transition: none; }
+/* Beside a new Frame selected: its brief, a button that opens a field. */
+.vk-brief { position: absolute; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.vk-brief-button {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 4px;
+  border-radius: 6px;
+  background: var(--vk-accent);
+  color: #fff;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+.vk-brief-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
+.vk-brief-text { width: 220px; min-height: 72px; background: var(--vk-panel); box-shadow: 0 0 0 1px var(--vk-border), 0 4px 12px rgb(0 0 0 / 0.12); }
+
+/* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
+.vk-selection[data-kind="typing"] { transition: none; }
 .vk-selection-lock {
   position: absolute;
   bottom: 100%;

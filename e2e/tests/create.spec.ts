@@ -89,6 +89,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   await drawFrom(page, { x: board.x + 20, y: board.y + 20 }, { x: board.x + 20, y: board.y + 20 });
   const box = page.locator('.vk-selection[data-kind="typing"]');
   await expect(box).toHaveCSS("border-color", "rgb(13, 153, 255)");
+  await expect(box).toHaveCSS("border-top-width", "1px");
   const narrow = (await boxOf(box)).width;
   await page.keyboard.type("A much longer line of words");
   await expect.poll(async () => (await boxOf(box)).width).toBeGreaterThan(narrow);
@@ -98,7 +99,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("F and a drag in a Frame's empty space make an absolute Frame, plain and with no fill; its brief is marked in the Layers panel", async ({ page }) => {
+test("F and a drag in a Frame's empty space make an absolute Frame, with no fill or outline; a button beside it writes its brief", async ({ page }) => {
   await addBoard(page);
   await enterEditMode(page);
   const board = await boxOf(canvas(page).locator("#board"));
@@ -117,9 +118,16 @@ test("F and a drag in a Frame's empty space make an absolute Frame, plain and wi
   for (const [side, value] of [["x", 40], ["y", 20], ["width", 200], ["height", 120]] as const) expect(Math.abs(placed[side] - value)).toBeLessThanOrEqual(2);
   expect(placed.fill).toBe("rgba(0, 0, 0, 0)");
 
-  const brief = design(page).getByRole("textbox", { name: "Brief" });
+  // Beside the Frame selected, a button opens its brief; the Design panel has none.
+  await expect(design(page).getByRole("textbox", { name: "Brief" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Add brief" }).click();
+  const brief = page.getByRole("textbox", { name: "Brief" });
   await brief.fill("A pricing table with three plans");
-  await brief.blur();
+  await brief.press("Enter");
+  await expect(brief).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Brief", exact: true })).toBeVisible();
+  // No outline of its own on the canvas: a stroke will say that.
+  expect(await frame.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
   await expect(frame).toHaveAttribute("data-vk-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   expect(await frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");

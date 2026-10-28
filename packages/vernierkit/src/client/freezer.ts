@@ -34,7 +34,6 @@ const CANVAS_STYLES = `
 *, *::before, *::after { transition: none !important; }
 * { pointer-events: auto !important; }
 html { scrollbar-width: none !important; }
-[data-vk-new="frame"] { outline: 1px solid rgb(128 128 128 / 0.3) !important; outline-offset: -1px !important; }
 [contenteditable] { outline: none !important; caret-color: #0d99ff !important; }
 [contenteditable]::selection, [contenteditable] ::selection { background: rgb(13 153 255 / 0.3) !important; }
 `;

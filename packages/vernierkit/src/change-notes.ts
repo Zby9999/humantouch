@@ -176,13 +176,12 @@ function joinLayout({ layers }: Composed): string[] {
   return [`**Join the layout:** ${which} placed absolute now. In the Stack, they are laid out by it: take their absolute positioning off.`];
 }
 
-/** The layers of a Stack that have margins now, and lose them: its gap, padding and own margin hold that room. */
+/** The layers of a Stack that have margins now, and lose them: its gap and padding hold that room, the Stack none. */
 function dropMargins(change: Change): string[] {
   const { layers, place } = change.after as Composed;
   const margined = layers.filter((member) => member.unmargined).map(({ target }) => target.context.path.at(-1));
   if (!margined.length) return [];
-  const outer = change.style.margin ? `, and the room around them is the Stack's own margin (\`margin: ${change.style.margin}\`)` : "";
-  const room = place ? `the room between them is its gap${outer}` : "the room between them is its gap, and the room around them its padding";
+  const room = place ? "the room between them is its gap, and the Stack has no margin" : "the room between them is its gap, and the room around them its padding";
   return [`**Drop the margins:** ${margined.join(", ")} ${margined.length === 1 ? "has" : "have"} margins now. In the Stack, ${room}: take their margins off.`];
 }
 

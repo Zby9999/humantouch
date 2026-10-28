@@ -37,7 +37,7 @@ import { PAGE_ATTR } from "./freezer";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, outerMargin, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
+import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { ORIGINAL_STYLE_ATTR, PIN_OFFSET_ATTR, pinnedOf, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -783,7 +783,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       const members = frame ? frame.children : layers;
       const container = frame ?? layers[0].parent!;
       const count = tree.acrossInstances(container).length;
-      // Measured as they show, margins left out: in the Stack, the room between them is its gap.
+      // Measured as they show, margins left out: in the Stack, the room between them is its gap. The Stack has no
+      // margin of its own either, which no one could see or set: the room the margins made around them goes.
       const inferred = inferStack(
         members.map((member) => borderBox(member.el)),
         frame && paddingBox(frame.el),
@@ -813,10 +814,6 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
           const boxes = members.map((member) => borderBox(member.el));
           absolute = { x: round(Math.min(...boxes.map((b) => b.left)) - reference.left), y: round(Math.min(...boxes.map((b) => b.top)) - reference.top) };
           style = { ...style, ...absoluteAt(absolute) };
-        } else {
-          // In the layout, the room the layers' margins made around them is the Stack's.
-          const margin = outerMargin(margins, inferred.settings.direction);
-          if (margin) style = { ...style, margin };
         }
         composed.place = {
           container: { layer: idOf(container, tree.acrossInstances(container)), target: targetOf(container, count) },

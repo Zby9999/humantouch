@@ -53,6 +53,8 @@ interface Props {
   onTool(tool: Tool): void;
   /** A layer drawn with the text or Frame tool; `size` when drawn rather than clicked. Returns the new layer. */
   onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
+  /** A new Frame's brief written, from the button beside it. */
+  onSetBrief(layer: Layer, brief: string): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
@@ -72,7 +74,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onBeginText, onEditText, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -596,11 +598,68 @@ export function CanvasView(props: Props) {
       {canvas && hovered && !selected.includes(hovered) && !travelling && !playing && <Outline layer={hovered} view={view} hover />}
       {canvas && !travelling && !playing && selected.map((layer, i) => layer !== typingLayer && <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
       {canvas && typingLayer && !travelling && !playing && <Outline layer={typingLayer} view={view} typing />}
+      {canvas && editor && primary && selected.length === 1 && !travelling && !playing && !drag && !hideSelection && editor.brief(primary) !== null && (
+        <Brief key={primary.el.getAttribute("data-vk-layer")} layer={primary} brief={editor.brief(primary)!} view={view} onSetBrief={onSetBrief} />
+      )}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
       {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
       {drawn && <div class="vk-drag-ghost" aria-hidden="true" style={place(drawn, view)} />}
       {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
+    </div>
+  );
+}
+
+interface BriefProps {
+  layer: Layer;
+  brief: string;
+  view: View;
+  onSetBrief(layer: Layer, brief: string): void;
+}
+
+/**
+ * Beside a new Frame selected: the button that opens its brief, what the
+ * Agent is to make in it. Typed in freely, set once left or on Enter; Esc
+ * leaves it as it was.
+ */
+function Brief({ layer, brief, view, onSetBrief }: BriefProps) {
+  const [open, setOpen] = useState(false);
+  const r = boxOf(layer);
+  const close = (text: string | null) => {
+    setOpen(false);
+    if (text !== null && text.trim() !== brief) onSetBrief(layer, text.trim());
+  };
+  return (
+    <div
+      class="vk-brief"
+      style={{ left: `${view.x + r.right * view.zoom + 8}px`, top: `${view.y + r.top * view.zoom}px` }}
+      // A press here is not on the canvas.
+      onPointerDown={(event) => event.stopPropagation()}
+      onDblClick={(event) => event.stopPropagation()}
+    >
+      <button type="button" class="vk-brief-button" aria-expanded={open} title={brief || undefined} onClick={() => setOpen(!open)}>
+        <Icon name="brief" />
+        {brief ? "Brief" : "Add brief"}
+      </button>
+      {open && (
+        <textarea
+          class="vk-textarea vk-brief-text"
+          aria-label="Brief"
+          placeholder="What should the Agent make here?"
+          defaultValue={brief}
+          ref={(el) => el?.focus()}
+          onBlur={(event) => close(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              close(null);
+            } else if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

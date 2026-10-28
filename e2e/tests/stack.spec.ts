@@ -46,10 +46,12 @@ test("⇧A makes the selected layers a Stack where they are, which is selected; 
 
   expect(await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "div"]);
   expect(await canvas(page).locator(`${HERO} > div > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["p", "button"]);
+  // In the Stack they are as they were to each other; the paragraph's margin above goes with it (the Stack has none).
   const after = await boxes(page, `${HERO} > div > p, ${HERO} > div > button`);
+  const shift = after[0].y - before[0].y;
   after.forEach((box, i) => {
     expect(Math.abs(box.x - before[i].x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(box.y - before[i].y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.y - shift - before[i].y)).toBeLessThanOrEqual(1);
   });
   const selected = layerTree(page).locator('[role="treeitem"][aria-selected="true"]');
   await expect(selected).toHaveCount(1);
