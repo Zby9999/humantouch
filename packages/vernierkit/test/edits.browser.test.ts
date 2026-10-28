@@ -274,6 +274,84 @@ describe("stroke", () => {
     expect(read("border-bottom: 2px dotted blue; border-top: 3px none red")).toEqual({ color: "#0000FF", opacity: 1, weight: [0, 0, 2, 0], style: "dashed" });
   });
 
+  test("the page's own weight reads as the style that sets it writes it, though a 1x screen draws it narrower; through var(), as drawn", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML(
+      "beforeend",
+      `<style>
+        .half { border: 1.5px solid red }
+        .sides { border-style: solid; border-color: red; border-width: 0 0 0.5px 2.5px }
+        .through { --w: 1.5px; border: var(--w) solid red }
+      </style>`,
+    );
+    const box = doc.getElementById("unmarked")!;
+    const read = (className: string, css = "") => {
+      box.className = className;
+      box.style.cssText = `height: 40px; ${css}`;
+      return editor.read(layerOf(box), "stroke");
+    };
+    const red = { color: "#FF0000", opacity: 1, style: "solid" };
+
+    expect(read("half")).toEqual({ ...red, weight: 1.5 });
+    // A 1x screen: whole pixels.
+    expect(style(box).borderTopWidth).toBe("1px");
+    expect(read("sides")).toEqual({ ...red, weight: [0, 0, 0.5, 2.5] });
+    expect(read("half", "border-width: 2.5px")).toEqual({ ...red, weight: 2.5 });
+    expect(read("through")).toEqual({ ...red, weight: 1 });
+  });
+
+  test("a weight set this round reads back as set, though a 1x screen draws it narrower", () => {
+    const { editor, cards, layerOf } = openCanvas();
+    const stroke: Stroke = { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" };
+
+    editor.set(layerOf(cards[0]), "stroke", stroke);
+
+    expect(style(cards[1]).borderTopWidth).toBe("1px");
+    expect(editor.read(layerOf(cards[1]), "stroke")).toEqual(stroke);
+  });
+
+  test("a change to the color or line alone leaves the weight out of its reference style, so the code keeps its own", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.half { border: 1.5px solid red } .through { --w: 1.5px; border: var(--w) solid red }</style>");
+    const box = doc.getElementById("unmarked")!;
+    box.className = "half";
+    const layer = layerOf(box);
+    const page = editor.read(layer, "stroke")!;
+
+    editor.set(layer, "stroke", { ...page, color: "#0000FF" });
+    editor.set(layer, "stroke", { ...page, color: "#0000FF", style: "dashed" });
+    expect(changes.list()[0].style).toEqual({ "border-style": "dashed", "border-color": "rgb(0 0 255 / 1)" });
+    expect(style(box).borderTopColor).toBe("rgb(0, 0, 255)");
+
+    // The weight changed too, then back: the weight is left out again.
+    editor.set(layer, "stroke", { ...page, color: "#0000FF", weight: 3 });
+    expect(changes.list()[0].style).toMatchObject({ "border-width": "3px" });
+    editor.set(layer, "stroke", { ...page, color: "#0000FF" });
+    expect(changes.list()[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(0 0 255 / 1)" });
+    expect(style(box).borderTopWidth).toBe("1px");
+
+    // Through var(): the weight reads as drawn, and is left out all the same.
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    box.className = "through";
+    editor.set(layer, "stroke", { ...editor.read(layer, "stroke")!, color: "#0000FF" });
+    expect(changes.list()[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(0 0 255 / 1)" });
+  });
+
+  test("on some sides only, a change to the color alone gives the line to those sides only: the others are not drawn at the default width", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.cssText = "height: 40px; border-bottom: 1.5px solid #eeeeee";
+    const layer = layerOf(box);
+
+    editor.set(layer, "stroke", { ...editor.read(layer, "stroke")!, color: "#0000FF" });
+
+    expect(changes.list()[0].style).toEqual({ "border-bottom-style": "solid", "border-color": "rgb(0 0 255 / 1)" });
+  });
+
   test("text and locked layers offer no stroke", () => {
     const { doc, editor, cards, layerOf } = openCanvas();
 
@@ -2273,6 +2351,69 @@ const STRUCTURE = `<!DOCTYPE html>
   <section id="flow" ${loc("10:5")}><p id="one" ${loc("11:7")} style="margin: 0">One</p><p id="two" ${loc("12:7")} style="margin: 4px 0 0">Two</p></section>
   <div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>
 </body>`;
+
+describe("a stroke is checked on the live page as the browser draws it", () => {
+  /** The canvas, edited; and the live page, as the page is, its board as the Agent writes its border in the code. */
+  const open = () => {
+    const canvas = openCanvas(STRUCTURE);
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(STRUCTURE);
+    page.close();
+    const board = canvas.layerOf(canvas.doc.getElementById("board")!);
+    const write = (css: string) => (page.getElementById("board")!.style.cssText = `width: 300px; height: 100px; ${css}`);
+    return { ...canvas, page, board, write };
+  };
+  const check = async (page: Document, change: Parameters<typeof checkChange>[1]) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const result = checkChange(page, change);
+      vi.advanceTimersByTime(CHECK_SETTLE_MS);
+      return await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  test("1.5px written in the code is shown, though a 1x screen draws it 1px; 3px is not, and says so", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+
+    write("border: 1.5px solid #ff0000");
+    expect(getComputedStyle(page.getElementById("board")!).borderTopWidth).toBe("1px");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+
+    write("border: 3px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 3, style: "solid" } });
+  });
+
+  test("written through a design variable, or a step off, it is shown as long as the page draws it so", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+
+    write("--stroke: 1.5px; border: var(--stroke) solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("border: 1.25px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+  });
+
+  test("each side is drawn as it says; a color that is not the one set is not shown", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: [0, 0, 0.5, 2.5], style: "dashed" });
+    const [change] = changes.list();
+
+    write("border: 0 dashed #ff0000; border-bottom-width: 0.5px; border-left-width: 2.5px");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+
+    write("border: 0 dashed #0000ff; border-bottom-width: 0.5px; border-left-width: 2.5px");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#0000FF", opacity: 1, weight: [0, 0, 0.5, 2.5], style: "dashed" } });
+  });
+});
 
 describe("changes to the structure are checked on the live page", () => {
   /** The canvas, edited; and the live page, as the page is. */

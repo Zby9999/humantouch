@@ -35,7 +35,8 @@ import {
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
 import { blur, readShadows, writeShadows, type Blur, type Shadow } from "./effects";
-import { colorReader, fillApplies, fillSets, readFill, readStroke, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
+import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
+import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -246,6 +247,8 @@ interface Definition<V> {
   setsOn?(el: Element): string[];
   /** A Stack's own property: on a plain top-to-bottom flow, writing it makes the flow a real Stack. */
   stack?: true;
+  /** The reference style, from the CSS `write` declares, when not all of it: `before` is where the change started. */
+  reference?(style: Record<string, string>, before: V, after: V): Record<string, string>;
 }
 
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
@@ -272,8 +275,9 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   },
   stroke: {
     kinds: ["stack", "grid", "frame", "image", "still"],
-    read: readStroke,
+    read: readWrittenStroke,
     write: writeStroke,
+    reference: strokeReference,
     writes: ["border-width", "border-style", "border-color"],
     sets: STROKE_SETS,
   },
@@ -407,6 +411,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
     const before = readAsShown(layer.el, property, colors);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
+    const started = definition.reference && known ? changes.list().find((change) => change.layer === known && change.property === property) : undefined;
     // A layer made this round has no style of the page's to change.
     const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(layer.el, definition.setsOn?.(layer.el) ?? definition.sets);
     const instances = tree.acrossInstances(layer);
@@ -430,7 +435,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       property,
       before,
       after: value,
-      style: declarations,
+      style: definition.reference?.(declarations, started ? (started.before as PropertyValues[P]) : before, value) ?? declarations,
       sources,
       ...(asStack && { asStack: true }),
     });

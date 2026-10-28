@@ -174,7 +174,8 @@ test("the page shows the code all along: before the claim, while the round is ap
 test.describe("done checks the change on the page", () => {
   const APP = `${EXAMPLE}src/App.tsx`;
   const CSS = `${EXAMPLE}src/index.css`;
-  const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8") };
+  const CARD = `${EXAMPLE}src/components/Card.tsx`;
+  const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8"), [CARD]: readFileSync(CARD, "utf8") };
   test.afterEach(() => {
     for (const [file, text] of Object.entries(originals)) writeFileSync(file, text);
   });
@@ -206,6 +207,39 @@ test.describe("done checks the change on the page", () => {
 
     expect(await vernierkit("finish")).toBe("Round finished: 1 of 1 change applied.\n");
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
+  });
+
+  test("a stroke weight is checked as the page draws it: 1.5px in the code is shown on a 1x screen, which draws it 1px; 3px is not", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+    await setField(page, "Stroke weight", "1.5");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
+
+    const drawn = () => page.locator("article").first().evaluate((card) => getComputedStyle(card).borderTopWidth);
+    // On this 1x screen the page's 1px already draws as 1.5px would: the check is let in once the edit is.
+    editSource(CARD, "rounded-xl border border-stone-200", "rounded-xl border-[3px] border-stone-200");
+    await expect.poll(drawn).toBe("3px");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4.");
+
+    editSource(CARD, "border-[3px]", "border-[1.5px]");
+    await expect.poll(drawn).toBe("1px");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+  });
+
+  test("a stroke's color changed alone leaves the weight to the code: the reference style has none", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+    await setField(page, "Stroke color", "ff0000");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    expect(readVernier("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
+    await vernierkit("claim");
+
+    editSource(CARD, "border border-stone-200", "border border-[#ff0000]");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layout change is checked in design language: the button fills its Stack once the code stretches it", async ({ page }) => {

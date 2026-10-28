@@ -4,13 +4,27 @@
  * what it shows is what the code does. The dev server may still be bringing the edit in: a value
  * that does not match yet is read again each time the page changes, until it
  * does or time is up. Changes to the page are watched rather than polled, as a
- * page in a background tab gets its timers slowed.
+ * page in a background tab gets its timers slowed. What the browser draws
+ * otherwise than written is drawn on the page to compare: on an element put
+ * in and taken out at once, before anything is painted.
  */
 import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
 import { isReorder, type Change, type Place } from "./changeset";
-import { openingTag, readValue, type Property } from "./edits";
+import { openingTag, readValue, type Property, type Stroke } from "./edits";
 import { signOf, usageKey } from "./layers";
 import { elementsOf, usageKeyOf } from "./page-elements";
+import { colorReader, readStroke } from "./paint";
+import { drawnStroke } from "./stroke-weight";
+
+/**
+ * Properties the browser draws otherwise than written: the page is read as it
+ * draws them, and the value after is drawn on the page first to compare with,
+ * so a value the code writes right is not taken for one it does not.
+ */
+const AS_DRAWN: Partial<Record<Property, { read(el: Element): unknown; draw(doc: Document, value: unknown): unknown }>> = {
+  // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen.
+  stroke: { read: (el) => readStroke(el, colorReader(el.ownerDocument)), draw: (doc, value) => drawnStroke(doc, value as Stroke | null) },
+};
 
 /** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
 function uncheckable(change: Change): string | null {
@@ -43,15 +57,21 @@ function checkable(change: Change): boolean {
 export function checkChange(doc: Document, change: Change): Promise<CheckResult> {
   const reason = uncheckable(change);
   if (reason) return Promise.resolve({ outcome: "unchecked", reason });
-  const look = (): CheckResult => {
+  const property = change.property as Property;
+  const drawn = AS_DRAWN[property];
+  // Drawn once, before the page is watched: drawing it changes the page.
+  const expected = drawn && change.kind === "style" ? drawn.draw(doc, change.after) : change.after;
+  /** `reportActual`: read what the page has instead, when it does not show the change; read as written, which may change the page too. */
+  const look = (reportActual: boolean): CheckResult => {
     if (change.kind === "delete") return lookDeleted(doc, change);
     if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
     const els = elementsOf(doc, change.target);
     if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-    const wrong = els.map((el) => readValue(el, change.property as Property)).find((value) => !sameValue(value, change.after));
-    return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: wrong };
+    const read = drawn ? drawn.read : (el: Element) => readValue(el, property);
+    const wrong = els.find((el) => !sameValue(read(el), expected));
+    return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: reportActual ? readValue(wrong, property) : undefined };
   };
-  const first = look();
+  const first = look(false);
   if (first.outcome === "shown") return Promise.resolve(first);
   return new Promise((resolve) => {
     const settle = (result: CheckResult) => {
@@ -61,11 +81,11 @@ export function checkChange(doc: Document, change: Change): Promise<CheckResult>
     };
     // Styles and markup the dev server swaps in, a stylesheet's text included.
     const observer = new MutationObserver(() => {
-      const result = look();
+      const result = look(false);
       if (result.outcome === "shown") settle(result);
     });
     observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    const timer = setTimeout(() => settle(look()), CHECK_SETTLE_MS);
+    const timer = setTimeout(() => settle(look(true)), CHECK_SETTLE_MS);
   });
 }
 
