@@ -4,7 +4,7 @@
 
 参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准，用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策（视图与断点见 ADR 0008，挪出画布的图层见 ADR 0009）。
 
-**Blocked by:** 37
+**Blocked by:** 37, 50
 
 **Status:** ready-for-agent
 

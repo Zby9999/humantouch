@@ -1,10 +1,10 @@
 # 22: 兼容性与性能基线
 
-**What to build:** 新增 Vite + React 18 + Tailwind v3 示例项目，已有端到端测试全部通过；用约 5000 个元素的大页面建立并达成 docs/goals.md 中的 Flex 性能指标：进入编辑模式 ≤ 150ms、改数值到画面变化 ≤ 1 帧、拖拽 60fps。当前进入编辑模式的标准是 02 时定的 300ms，达不到新指标时在本 ticket 中优化。
+**What to build:** 在 50 的 React 18 + Tailwind v3 示例项目上，已有端到端测试全部通过；用约 5000 个元素的大页面建立并达成 docs/goals.md 中的 Flex 性能指标：进入编辑模式 ≤ 150ms、改数值到画面变化 ≤ 1 帧、拖拽 60fps。当前进入编辑模式的标准是 02 时定的 300ms，达不到新指标时在本 ticket 中优化。
 
 参考本功能的 spec.md（同目录上一级），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
-**Blocked by:** 15, 36
+**Blocked by:** 15, 36, 50
 
 **Status:** ready-for-agent
 
