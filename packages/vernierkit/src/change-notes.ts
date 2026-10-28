@@ -48,7 +48,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
-    `**Design intent:** ${intent(change)}`,
+    `**Design intent:** ${intent(change, list)}`,
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
@@ -61,7 +61,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
 }
 
 /** What the designer wants of the change, in design language. */
-function intent(change: Change): string {
+function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
@@ -81,7 +81,10 @@ function intent(change: Change): string {
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
     case "delete": {
       const from = change.before as Place;
-      return `Delete this layer, and all in it, from ${container(from)}, where it is ${ordinal(from.nth)}.`;
+      // Its layers moved out first (it is ungrouped): only the layer itself goes.
+      const out = list.filter((c) => c.kind === "move" && (c.before as Place).container.layer === change.layer && c.id < change.id).map((c) => c.id);
+      const what = out.length ? `, once its layers are out of it (${out.length === 1 ? "change" : "changes"} ${out.join(", ")}): only the layer itself goes, not what was in it` : ", and all in it";
+      return `Delete this layer${what}, from ${container(from)}, where it is ${ordinal(from.nth)}.`;
     }
     case "duplicate": {
       const to = change.after as Place;

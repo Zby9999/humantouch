@@ -177,10 +177,25 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
     select(stacks.map((stack) => editor.tree().layerOf(stack.el)).filter((layer) => layer !== null));
   };
 
+  /** ⌘⇧G: each Stack or Frame taken away, its layers left where they are and selected. */
+  const ungroup = (layers: Layer[]) => {
+    if (!editor) return;
+    const out: (Element | Text)[] = [];
+    editor.batch(() => {
+      for (const layer of layers) {
+        const now = editor.tree().layerOf(nodeOf(layer));
+        if (now && editor.canUngroup(now)) out.push(...editor.ungroup(now).map(nodeOf));
+      }
+    });
+    if (!out.length) return;
+    onEdit();
+    select(out.map((node) => editor.tree().layerOf(node)).filter((layer) => layer !== null));
+  };
+
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, playing });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, playing };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, playing });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -203,11 +218,11 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
-  // As in Figma: ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, Delete deletes and ⌘D
-  // copies them. Fields and dialogs keep their keys.
+  // As in Figma: ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, ⌘⇧G ungroups them,
+  // Delete deletes and ⌘D copies them. Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve, remove, duplicate, playing } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate, ungroup, playing } = latest.current;
       const target = event.composedPath()[0];
       if (playing || !selected.length || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
@@ -217,6 +232,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
       if (a && event.shiftKey && !command) act = () => (event.altKey ? dissolve(selected) : makeStack(selected));
       else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
       else if (event.key.toLowerCase() === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
+      else if (event.key.toLowerCase() === "g" && command && event.shiftKey && !event.altKey) act = () => ungroup(selected);
       if (!act) return;
       event.preventDefault();
       event.stopPropagation();

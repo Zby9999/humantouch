@@ -6,10 +6,23 @@
 
 **Blocked by:** 42
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Stack 中的 Stack 解除分组后，子图层依次加入外层 Stack，位置几乎不跳
-- [ ] Frame 中的 Frame 解除分组后，子图层自由定位在原处
-- [ ] 解除本轮新合成的 Stack 等于撤回那次合成
-- [ ] 改动说明写明去掉哪个图层、子图层按顺序放到哪里；Skill 补充落地规则
-- [ ] 可撤销，改动列表中可单独撤回
+- [x] Stack 中的 Stack 解除分组后，子图层依次加入外层 Stack，位置几乎不跳
+- [x] Frame 中的 Frame 解除分组后，子图层自由定位在原处
+- [x] 解除本轮新合成的 Stack 等于撤回那次合成
+- [x] 改动说明写明去掉哪个图层、子图层按顺序放到哪里；Skill 补充落地规则
+- [x] 可撤销，改动列表中可单独撤回
+
+## Comments
+
+**实现记录（2026-10-28）**
+
+- 编辑命令 `canUngroup` / `ungroup`（`edits.ts`）：在已有命令上组合，一步撤销。子图层依次移到所在容器里这一层原来的位置（所在容器是 Stack 且这一层不是自由定位时），否则按此刻的位置（减去外边距）自由定位在所在容器中；然后删除这一层。本轮新合成的 Stack 解除分组时撤回那次合成。
+- 能解除分组：Stack 或 Frame，不是页面本身，不是组件实例的根（那是组件自己的结构），有子图层，子图层都是元素、都能放进所在容器。
+- 改动说明：仍是若干移动加一条删除；删除这一层时，若之前的改动已把它的子图层移出，写成 "Delete this layer, once its layers are out of it (changes 1, 2): only the layer itself goes, not what was in it"。
+- 界面：⌘⇧G（Shell），解除后选中原来的子图层。
+
+**已知限制**
+
+- 子图层加入方向不同的外层 Stack 时（例如横排的 Header 放进竖排的 hero），按外层的方向排列，位置会变，与 Figma 相同。

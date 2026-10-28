@@ -1557,6 +1557,77 @@ describe("editing text", () => {
   });
 });
 
+describe("ungrouping", () => {
+  const open = (page: string) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const rects = (...ids: string[]) => ids.map((id) => canvas.doc.getElementById(id)!.getBoundingClientRect().toJSON() as DOMRect);
+    return { ...canvas, layer, rects };
+  };
+  const NESTED = `<!DOCTYPE html><body style="margin: 0">
+    <div id="outer" ${at("5:5")} style="display: flex; flex-direction: column; gap: 8px; width: 300px">
+      <div id="top" ${at("6:7")} style="height: 20px">Top</div>
+      <div id="inner" ${at("7:7")} style="display: flex; flex-direction: column; gap: 8px">
+        <div id="x" ${at("8:9")} style="height: 20px">X</div>
+        <div id="y" ${at("9:9")} style="height: 20px">Y</div>
+      </div>
+      <div id="end" ${at("11:7")} style="height: 20px">End</div>
+    </div></body>`;
+
+  test("a Stack in a Stack: its layers join the outer one in its place, in order, nothing moving; the Stack goes; undone, all is back", () => {
+    const { doc, editor, changes, layer, rects } = open(NESTED);
+    const before = rects("top", "x", "y", "end");
+    expect(editor.canUngroup(layer("inner"))).toBe(true);
+
+    const out = editor.ungroup(layer("inner"));
+
+    expect(out.map((l) => l.el.id)).toEqual(["x", "y"]);
+    expect(editor.tree().root.children[0].children.map((l) => l.el.id)).toEqual(["top", "x", "y", "end"]);
+    expect(rects("top", "x", "y", "end")).toEqual(before);
+    expect(style(doc.getElementById("inner")!).display).toBe("none");
+    expect(changes.list().map((c) => [c.kind, c.target.loc])).toEqual([
+      ["move", "src/App.tsx:8:9"],
+      ["move", "src/App.tsx:9:9"],
+      ["delete", "src/App.tsx:7:7"],
+    ]);
+
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    expect(editor.tree().root.children[0].children.map((l) => l.el.id)).toEqual(["top", "inner", "end"]);
+  });
+
+  test("a Frame in a Frame: its layers are placed absolute in the outer one, where they were", () => {
+    const { editor, layer, rects } = open(
+      board(`<div id="card" ${at("22:7")} style="position: absolute; left: 20px; top: 30px; width: 200px; height: 100px">
+        <div id="p" ${at("23:9")} style="position: absolute; left: 10px; top: 5px; width: 50px; height: 20px; margin: 4px"></div>
+      </div>`),
+    );
+    const before = rects("p");
+
+    editor.ungroup(layer("card"));
+
+    expect(layer("p").parent!.el.id).toBe("board");
+    expect(layer("p").absolute).toBe(true);
+    expect(rects("p")).toEqual(before);
+  });
+
+  test("a Stack made this round: ungrouped, it is taken back", () => {
+    const { editor, changes, layer } = open(NESTED);
+    const stack = editor.stack([layer("top"), layer("end")]);
+
+    editor.ungroup(stack);
+
+    expect(changes.list()).toEqual([]);
+    expect(editor.tree().root.children[0].children.map((l) => l.el.id)).toEqual(["top", "inner", "end"]);
+  });
+
+  test("not the page, text, or a layer with no layers in it", () => {
+    const { editor, layer } = open(NESTED);
+    expect(editor.canUngroup(editor.tree().root)).toBe(false);
+    expect(editor.canUngroup(layer("x"))).toBe(false);
+  });
+});
+
 describe("deleting layers", () => {
   const open = (page = MOVES) => {
     const canvas = openCanvas(page);

@@ -422,6 +422,20 @@ describe("claim, new layers, words, deleting and copying", () => {
     );
   });
 
+  test("an ungrouped layer: its layers moved out of it, then it alone deleted", async () => {
+    saveRound(
+      change(1, "move", { property: "move", before: place(1, null, "13"), after: place(2), kind: "move" }),
+      change(2, "move", { property: "move", before: place(2, null, "13"), after: place(3), kind: "move" }),
+      change(3, "delete", { property: "delete", before: place(2), after: null, style: { display: "none" } }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 3)).toContain(
+      "- **Design intent:** Delete this layer, once its layers are out of it (changes 1, 2): only the layer itself goes, not what was in it, from Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), where it is 2nd.\n",
+    );
+  });
+
   test("deleting and copying, and in a loop, as data changes", async () => {
     saveRound(
       change(1, "delete", { property: "delete", before: place(2), after: null, style: { display: "none" } }),

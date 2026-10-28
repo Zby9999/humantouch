@@ -158,6 +158,17 @@ export interface Editor {
   canUnstack(layer: Layer): boolean;
   /** Dissolves the Stack: it becomes a Frame of its size, its layers absolute where they are. Returns the Frame. */
   unstack(layer: Layer): Layer;
+  /**
+   * Whether the layer can be ungrouped: a Stack or a Frame, not the page nor
+   * a component's own, whose layers are elements that can all go into its container.
+   */
+  canUngroup(layer: Layer): boolean;
+  /**
+   * Takes the Stack or Frame away, its layers left where they are (⌘⇧G): in
+   * its container's layout, in its place and in order, or absolute where they
+   * are. One made this round is taken back instead. Returns its layers.
+   */
+  ungroup(layer: Layer): Layer[];
   /** Whether new layers can go in the layer: a Stack or a Frame that holds layers. */
   canHold(layer: Layer): boolean;
   /**
@@ -820,6 +831,41 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
       return layerById(id)!;
     },
     canUnstack: (layer) => layer.kind === "stack" && !!layer.parent && layer.children.every((child) => placeable(child) && repeatsWith(child, layer)),
+    canUngroup: (layer) =>
+      !!layer.parent &&
+      ["stack", "frame"].includes(layer.kind) &&
+      !layer.isInstance &&
+      layer.children.length > 0 &&
+      layer.children.every((child) => placeable(child) && editor.canDrop(child, layer.parent!)),
+    ungroup(layer) {
+      if (!editor.canUngroup(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be ungrouped`);
+      const els = layer.children.map((child) => child.el);
+      const found = () => els.map((el) => tree.layerOf(el)).filter((l) => l !== null);
+      const maker = makerOf(idOf(layer, tree.acrossInstances(layer)));
+      if (maker?.kind === "stack") {
+        editor.revert(maker.id);
+        return found();
+      }
+      const group = layer.el;
+      const container = layer.parent!.el;
+      // In its container's layout, its layers take its place; anywhere else, they stay where they are, absolute.
+      const inLayout = layer.parent!.kind === "stack" && !layer.absolute;
+      const index = layer.parent!.children.indexOf(layer);
+      const reference = paddingBox(container);
+      const spots = els.map((el) => {
+        const r = el.getBoundingClientRect();
+        const [top, , , left] = marginsOf(el);
+        return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
+      });
+      editor.batch(() => {
+        els.forEach((el, i) => {
+          const parent = tree.layerOf(container)!;
+          editor.move(tree.layerOf(el)!, inLayout ? { parent, index: index + i } : { parent, ...spots[i] });
+        });
+        editor.remove(tree.layerOf(group)!);
+      });
+      return found();
+    },
     canHold: (layer) => holdsLayers(layer),
     create(type, to, size) {
       const container = to.parent;

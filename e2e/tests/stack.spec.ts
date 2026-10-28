@@ -130,3 +130,16 @@ test("making and dissolving Stacks are listed as such", async ({ page }) => {
     /Make Stack.*Stack.*2 layers, vertical, gap 24px/,
   ]);
 });
+
+test("⌘⇧G ungroups: the Header's layers take its place in the hero's layout, in order, and the Header goes", async ({ page }) => {
+  await enterEditMode(page);
+  await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
+
+  await page.keyboard.press("ControlOrMeta+Shift+G");
+
+  await expect(layerTree(page).getByRole("treeitem", { name: "Header", exact: true })).toHaveCount(0);
+  await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveCount(2);
+  expect(await canvas(page).locator(`${HERO} > :not([style*="display: none"])`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["h1", "span", "p", "button"]);
+  await page.getByRole("button", { name: /not applied yet/ }).click();
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Move/, /Move/, /Delete.*Header/]);
+});
