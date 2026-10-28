@@ -5,7 +5,7 @@ import { createEditor, createHistory } from "../src/client/edits";
 import type { Destination } from "../src/client/edits";
 import type { Layer } from "../src/client/layers";
 import { freezeLook, serializeLook } from "../src/client/look";
-import { createOffCanvas, type Aside } from "../src/client/off-canvas";
+import { createOffCanvas, type OffCanvasLayer } from "../src/client/off-canvas";
 import { revertSaved } from "../src/client/saved-round";
 import { createViews } from "../src/client/views";
 
@@ -140,7 +140,7 @@ describe("a layer's look, frozen", () => {
 });
 
 describe("moving a layer off the canvas, in the editor", () => {
-  /** The page as a canvas to edit, with what is set aside, and the history its edits share with those off the canvas. */
+  /** The page as a canvas to edit, with what is moved off the canvas, and the history its edits share with those off the canvas. */
   function canvas(history = createHistory()) {
     const doc = page();
     const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
@@ -150,11 +150,11 @@ describe("moving a layer off the canvas, in the editor", () => {
     return { doc, changes, editor, layerOf, history };
   }
 
-  test("deletes it on the canvas as one change, marked with the layer off the canvas; undone, it is back, and what was set aside goes", () => {
+  test("deletes it on the canvas as one change, marked with the layer off the canvas; undone, it is back, and what was moved off the canvas goes", () => {
     const { doc, changes, editor, layerOf } = canvas();
     const set: string[] = [];
     const title = doc.querySelector("h3")!;
-    const where = editor.whereIs(layerOf(title));
+    const where = editor.originOf(layerOf(title));
 
     editor.batch(() => {
       editor.remove(layerOf(title), { offCanvas: "a" });
@@ -166,7 +166,7 @@ describe("moving a layer off the canvas, in the editor", () => {
 
     expect(where).toMatchObject({ target: { loc: "src/Card.tsx:4:7", component: "Card" }, place: { nth: 1, absolute: null }, written: "src/Card.tsx:4:7" });
     // An instance is written where it is used.
-    expect(editor.whereIs(layerOf(doc.querySelector("article")!)).written).toBe("src/App.tsx:6:9");
+    expect(editor.originOf(layerOf(doc.querySelector("article")!)).written).toBe("src/App.tsx:6:9");
     expect(changes.list()).toMatchObject([{ kind: "delete", offCanvas: "a", before: where.place, target: { loc: "src/Card.tsx:4:7" } }]);
     expect(getComputedStyle(title).display).toBe("none");
     expect(set).toEqual(["a"]);
@@ -238,25 +238,25 @@ describe("the layers off the canvas", () => {
     const doc = page();
     const offCanvas = createOffCanvas(workspace(), [], createHistory());
 
-    const aside = offCanvas.moveOut(doc.querySelector("article")!, { x: -400, y: 120 }, ORIGIN);
-    offCanvas.put(aside);
+    const outside = offCanvas.moveOut(doc.querySelector("article")!, { x: -400, y: 120 }, ORIGIN);
+    offCanvas.put(outside);
 
-    expect(offCanvas.list()).toEqual([aside]);
-    const iframe = aside.document.defaultView!.frameElement as HTMLIFrameElement;
+    expect(offCanvas.list()).toEqual([outside]);
+    const iframe = outside.document.defaultView!.frameElement as HTMLIFrameElement;
     expect([iframe.style.left, iframe.style.top]).toEqual(["-400px", "120px"]);
-    expect([aside.width, aside.height]).toEqual([300, Math.round(doc.querySelector("article")!.getBoundingClientRect().height)]);
-    const layer = aside.layer()!;
+    expect([outside.width, outside.height]).toEqual([300, Math.round(doc.querySelector("article")!.getBoundingClientRect().height)]);
+    const layer = outside.layer()!;
     expect(layer.name).toBe("Card");
-    expect(aside.view.layerAt(aside.editor.tree(), 10, 10)).toBe(layer);
-    expect(offCanvas.of(layer.el)).toBe(aside);
-    aside.editor.set(layer, "radius", 0);
+    expect(outside.view.layerAt(outside.editor.tree(), 10, 10)).toBe(layer);
+    expect(offCanvas.of(layer.el)).toBe(outside);
+    outside.editor.set(layer, "radius", 0);
 
     const saved = offCanvas.save();
-    expect(saved).toMatchObject([{ id: aside.id, x: -400, y: 120, origin: ORIGIN, edits: { changes: [{ property: "radius", after: 0 }] } }]);
+    expect(saved).toMatchObject([{ id: outside.id, x: -400, y: 120, origin: ORIGIN, edits: { changes: [{ property: "radius", after: 0 }] } }]);
 
     const again = createOffCanvas(workspace(), saved, createHistory());
     const [back] = again.list();
-    expect([back.id, back.x, back.y]).toEqual([aside.id, -400, 120]);
+    expect([back.id, back.x, back.y]).toEqual([outside.id, -400, 120]);
     expect(getComputedStyle(back.layer()!.el).borderTopLeftRadius).toBe("0px");
     expect(getComputedStyle(back.layer()!.el).backgroundColor).toBe("rgb(255, 255, 255)");
     back.editor.undo();
@@ -266,17 +266,17 @@ describe("the layers off the canvas", () => {
   test("taken away, one is no longer there, nor kept; put back, it is again, as it was", () => {
     const doc = page();
     const offCanvas = createOffCanvas(workspace(), [], createHistory());
-    const aside = offCanvas.moveOut(doc.querySelector("h3")!, { x: 0, y: -100 }, ORIGIN);
-    offCanvas.put(aside);
-    aside.editor.set(aside.layer()!, "opacity", 0.5);
+    const outside = offCanvas.moveOut(doc.querySelector("h3")!, { x: 0, y: -100 }, ORIGIN);
+    offCanvas.put(outside);
+    outside.editor.set(outside.layer()!, "opacity", 0.5);
 
-    offCanvas.take(aside);
+    offCanvas.take(outside);
     expect(offCanvas.list()).toEqual([]);
     expect(offCanvas.save()).toEqual([]);
 
-    offCanvas.put(aside);
-    expect(getComputedStyle(aside.layer()!.el).opacity).toBe("0.5");
-    offCanvas.place(aside, 20, -80);
+    offCanvas.put(outside);
+    expect(getComputedStyle(outside.layer()!.el).opacity).toBe("0.5");
+    offCanvas.place(outside, 20, -80);
     expect(offCanvas.save()).toMatchObject([{ x: 20, y: -80 }]);
   });
 });
@@ -306,24 +306,24 @@ describe("putting a layer off the canvas back", () => {
     /** Moves the layer of `el` off the canvas, as the designer drags it out (`copy`: with ⌥ held). */
     const moveOff = (el: Element, copy = false) => {
       const layer = layerOf(el);
-      const aside = offCanvas.moveOut(el, { x: -400, y: 0 }, { ...editor.whereIs(layer), at: "2026-10-29T00:00:00.000Z" });
+      const outside = offCanvas.moveOut(el, { x: -400, y: 0 }, { ...editor.originOf(layer), at: "2026-10-29T00:00:00.000Z" });
       editor.batch(() => {
-        if (!copy) editor.remove(layer, { offCanvas: aside.id });
+        if (!copy) editor.remove(layer, { offCanvas: outside.id });
         editor.along(
-          () => offCanvas.put(aside),
-          () => offCanvas.take(aside),
+          () => offCanvas.put(outside),
+          () => offCanvas.take(outside),
         );
       });
-      return aside;
+      return outside;
     };
     /** Puts it back at `to`, as the designer lets it go over a view. */
-    const putBack = (aside: Aside, to: Destination) => {
+    const putBack = (outside: OffCanvasLayer, to: Destination) => {
       let layer: Layer | null = null;
       editor.batch(() => {
-        layer = editor.putBack({ el: aside.layer()!.el, kept: aside.keep() }, to);
+        layer = editor.putBack({ el: outside.layer()!.el, kept: outside.keep() }, to);
         editor.along(
-          () => offCanvas.take(aside),
-          () => offCanvas.put(aside),
+          () => offCanvas.take(outside),
+          () => offCanvas.put(outside),
         );
       });
       return layer!;
@@ -335,9 +335,9 @@ describe("putting a layer off the canvas back", () => {
     const { doc, changes, offCanvas, layerOf, moveOff, putBack } = canvas();
     const card = doc.querySelector("article")!;
     const title = doc.querySelector("h3")!;
-    const aside = moveOff(title);
+    const outside = moveOff(title);
 
-    const back = putBack(aside, { parent: layerOf(card), index: 0 });
+    const back = putBack(outside, { parent: layerOf(card), index: 0 });
 
     expect(changes.list()).toEqual([]);
     expect(back.el).toBe(title);
@@ -350,39 +350,39 @@ describe("putting a layer off the canvas back", () => {
     const { doc, changes, editor, offCanvas, layerOf, moveOff, putBack } = canvas();
     const card = doc.querySelector("article")!;
     const title = doc.querySelector("h3")!;
-    const aside = moveOff(title);
+    const outside = moveOff(title);
 
-    const back = putBack(aside, { parent: layerOf(card), index: 2 });
+    const back = putBack(outside, { parent: layerOf(card), index: 2 });
 
     expect(changes.list()).toMatchObject([{ kind: "move", before: { nth: 1 }, after: { nth: 3, container: { layer: "4" } } }]);
     expect(back.el).toBe(title);
     expect(card.lastElementChild).toBe(title);
 
     editor.undo();
-    expect(changes.list()).toMatchObject([{ kind: "delete", offCanvas: aside.id }]);
+    expect(changes.list()).toMatchObject([{ kind: "delete", offCanvas: outside.id }]);
     expect(getComputedStyle(title).display).toBe("none");
-    expect(offCanvas.list()).toEqual([aside]);
+    expect(offCanvas.list()).toEqual([outside]);
   });
 
   test("edited off the canvas, it comes back as an insertion, looking as it does off the canvas, with its source, look and edits; undone, it is off the canvas again", () => {
     const { doc, changes, editor, offCanvas, layerOf, moveOff, putBack } = canvas();
     const card = doc.querySelector("article")!;
     const title = doc.querySelector("h3")!;
-    const aside = moveOff(title);
-    aside.editor.set(aside.layer()!, "opacity", 0.5);
-    const shown = css(aside.layer()!.el, ...LOOK);
+    const outside = moveOff(title);
+    outside.editor.set(outside.layer()!, "opacity", 0.5);
+    const shown = css(outside.layer()!.el, ...LOOK);
 
-    const back = putBack(aside, { parent: layerOf(card), index: 0 });
+    const back = putBack(outside, { parent: layerOf(card), index: 0 });
 
     expect(changes.list()).toMatchObject([
-      { kind: "delete", offCanvas: aside.id },
+      { kind: "delete", offCanvas: outside.id },
       {
         kind: "putBack",
         layer: back.el.getAttribute("data-vk-layer"),
         target: { loc: "src/Card.tsx:3:5" },
         after: {
           place: { container: { layer: "4" }, nth: 1, absolute: null },
-          layer: { id: aside.id, origin: { written: "src/Card.tsx:4:7", place: { nth: 1 } }, edits: { changes: [{ property: "opacity", after: 0.5 }] } },
+          layer: { id: outside.id, origin: { written: "src/Card.tsx:4:7", place: { nth: 1 } }, edits: { changes: [{ property: "opacity", after: 0.5 }] } },
         },
       },
     ]);
@@ -399,7 +399,7 @@ describe("putting a layer off the canvas back", () => {
     editor.undo();
     expect(changes.list()).toMatchObject([{ kind: "delete" }]);
     expect(card.querySelectorAll("h3")).toHaveLength(1);
-    expect(offCanvas.list()).toEqual([aside]);
+    expect(offCanvas.list()).toEqual([outside]);
     editor.redo();
     expect(changes.list()).toHaveLength(2);
     expect(card.querySelectorAll("h3")).toHaveLength(2);
@@ -411,11 +411,11 @@ describe("putting a layer off the canvas back", () => {
     const before = page();
     const { doc, changes, editor, offCanvas, layerOf, putBack } = canvas(after);
     const badge = before.querySelector("p")!;
-    const aside = offCanvas.moveOut(badge, { x: -400, y: 0 }, { ...ORIGIN, written: "src/Card.tsx:5:7", snippet: { loc: "src/Card.tsx:5:7", code: '<p className="badge">Words</p>' } });
-    offCanvas.put(aside);
+    const outside = offCanvas.moveOut(badge, { x: -400, y: 0 }, { ...ORIGIN, written: "src/Card.tsx:5:7", snippet: { loc: "src/Card.tsx:5:7", code: '<p className="badge">Words</p>' } });
+    offCanvas.put(outside);
     const card = doc.querySelector("article")!;
 
-    const back = putBack(aside, { parent: layerOf(card), index: 1 });
+    const back = putBack(outside, { parent: layerOf(card), index: 1 });
 
     expect(changes.list()).toMatchObject([{ kind: "putBack", after: { place: { nth: 2 }, layer: { origin: { snippet: { code: '<p className="badge">Words</p>' } } } } }]);
     expect(back.el.previousElementSibling).toBe(card.querySelector("h3"));
@@ -434,9 +434,9 @@ describe("putting a layer off the canvas back", () => {
   test("an insertion goes with the deletion it put back: taking back the deletion takes it too, on the canvas and on a saved one; taken back alone, the deletion stays", () => {
     const { doc, changes, editor, layerOf, moveOff, putBack } = canvas();
     const card = doc.querySelector("article")!;
-    const aside = moveOff(doc.querySelector("h3")!);
-    aside.editor.set(aside.layer()!, "opacity", 0.5);
-    const back = putBack(aside, { parent: layerOf(card), index: 0 });
+    const outside = moveOff(doc.querySelector("h3")!);
+    outside.editor.set(outside.layer()!, "opacity", 0.5);
+    const back = putBack(outside, { parent: layerOf(card), index: 0 });
     const [deletion, insertion] = changes.list();
     const saved = { canvas: doc.documentElement.outerHTML, changeSet: changes.save() };
 
@@ -458,11 +458,11 @@ describe("putting a layer off the canvas back", () => {
   test("put back new, it is where it came from still, its source with it: moved off again, it takes them along, and its putting back is taken back", () => {
     const { doc, changes, editor, offCanvas, layerOf, putBack } = canvas();
     const snippet = { loc: "src/Card.tsx:5:7", code: '<p className="badge">Words</p>' };
-    const aside = offCanvas.moveOut(doc.querySelector("p")!, { x: -400, y: 0 }, { ...ORIGIN, written: "src/Card.tsx:5:7", snippet });
-    offCanvas.put(aside);
-    const back = putBack(aside, { parent: layerOf(doc.querySelector("article")!), index: 0 });
+    const outside = offCanvas.moveOut(doc.querySelector("p")!, { x: -400, y: 0 }, { ...ORIGIN, written: "src/Card.tsx:5:7", snippet });
+    offCanvas.put(outside);
+    const back = putBack(outside, { parent: layerOf(doc.querySelector("article")!), index: 0 });
 
-    expect(editor.whereIs(back)).toMatchObject({ target: ORIGIN.target, written: "src/Card.tsx:5:7", snippet, place: { nth: 1 } });
+    expect(editor.originOf(back)).toMatchObject({ target: ORIGIN.target, written: "src/Card.tsx:5:7", snippet, place: { nth: 1 } });
     editor.remove(back, { offCanvas: "again" });
     expect(changes.list()).toEqual([]);
   });

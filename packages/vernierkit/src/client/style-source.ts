@@ -5,6 +5,7 @@
  * The browser offers no such lookup to pages, so the cascade is resolved here:
  * importance, the style attribute, CSS layers, specificity, then order.
  */
+import { EDIT_STYLES_ATTR } from "./style-marks";
 
 /** What sets some of the CSS properties a change is about. */
 export interface StyleSource {
@@ -44,8 +45,6 @@ export const SHEET_HREF_ATTR = "data-vk-href";
 const VITE_ID_ATTR = "data-vite-dev-id";
 /** Styles of the canvas itself, not the page's. */
 const CANVAS_STYLES_ATTR = "data-vk-canvas-styles";
-/** The edits' styles on the canvas, not the page's (canvas-style). */
-const EDIT_STYLES_ATTR = "data-vk-edit-styles";
 
 /** The shorthands that can set a longhand, as written in a rule. */
 const SHORTHANDS: Record<string, string[]> = {

@@ -4,7 +4,7 @@
  * and again stays a single change, from the first value to the latest.
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
-import type { OffCanvasLayer } from "../service-protocol";
+import type { SavedOffCanvasLayer } from "../service-protocol";
 import type { Align, Padding } from "./edits";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -106,7 +106,7 @@ export interface Created {
  */
 export interface PutBack {
   place: Place;
-  layer: OffCanvasLayer;
+  layer: SavedOffCanvasLayer;
 }
 
 /** A value a layer has at a breakpoint of its own, as a copy of it takes it over. */
@@ -236,11 +236,11 @@ export interface SavedChangeSet {
 
 /** A new ChangeSet, or the one `saved` was saved from. */
 export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
-  const changes = new Map<string, Change>(saved?.changes.map((change) => [keyOf(change.layer, change.property, change.breakpoint), change]));
+  const changes = new Map<string, Change>(saved?.changes.map((change) => [changeKey(change.layer, change.property, change.breakpoint), change]));
   let lastId = saved?.lastId ?? 0;
   return {
     record(layerId, change) {
-      const key = keyOf(layerId, change.property, change.breakpoint);
+      const key = changeKey(layerId, change.property, change.breakpoint);
       const earlier = changes.get(key);
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
@@ -256,12 +256,12 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
     },
     restore(change) {
       for (const [key, other] of changes) if (other.id === change.id) changes.delete(key);
-      const entries = [...changes, [keyOf(change.layer, change.property, change.breakpoint), change] as [string, Change]].sort(([, a], [, b]) => a.id - b.id);
+      const entries = [...changes, [changeKey(change.layer, change.property, change.breakpoint), change] as [string, Change]].sort(([, a], [, b]) => a.id - b.id);
       changes.clear();
       for (const [key, value] of entries) changes.set(key, value);
     },
-    has: (layerId, property, breakpoint) => changes.has(keyOf(layerId, property, breakpoint)),
-    find: (layerId, property, breakpoint) => changes.get(keyOf(layerId, property, breakpoint)) ?? null,
+    has: (layerId, property, breakpoint) => changes.has(changeKey(layerId, property, breakpoint)),
+    find: (layerId, property, breakpoint) => changes.get(changeKey(layerId, property, breakpoint)) ?? null,
     list: () => [...changes.values()],
     save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
@@ -303,8 +303,13 @@ export function movedOffBy(changes: Change[], id: string): Change | null {
   return changes.find((change) => change.kind === "delete" && change.offCanvas === id) ?? null;
 }
 
+/** The change among `changes` that put back onto the canvas the layer off it with id `id` (ADR 0009), if one does. */
+export function putBackOf(changes: Change[], id: string): Change | null {
+  return changes.find((change) => change.kind === "putBack" && (change.after as PutBack).layer.id === id) ?? null;
+}
+
 /** The layers off the canvas that `changes` put back onto it, as they were kept there. */
-export function putBackBy(changes: Change[]): OffCanvasLayer[] {
+export function putBackBy(changes: Change[]): SavedOffCanvasLayer[] {
   return changes.filter((change) => change.kind === "putBack").map((change) => (change.after as PutBack).layer);
 }
 
@@ -344,8 +349,8 @@ function placesOf(change: Change): Place[] {
   return [...(place ? [place] : []), ...layers.map((member) => member.from)];
 }
 
-/** One change per property of a layer, at every width and at each breakpoint. */
-function keyOf(layerId: string, property: string, breakpoint?: Breakpoint | null): string {
+/** What tells changes apart: one per property of a layer, at every width and at each breakpoint. An edit of one is one undo step by it too. */
+export function changeKey(layerId: string, property: string, breakpoint?: Breakpoint | null): string {
   return breakpoint ? `${layerId} ${property} ${breakpointKey(breakpoint)}` : `${layerId} ${property}`;
 }
 

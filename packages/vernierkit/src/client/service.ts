@@ -10,8 +10,8 @@ import {
   TOKEN_HEADER,
   UNLOCK_PATH,
   type CheckReport,
-  type OffCanvasLayer,
-  type OffCanvasSaved,
+  type SavedOffCanvasLayer,
+  type OffCanvasSaveAnswer,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -34,9 +34,9 @@ export interface RoundStore {
   /** The project's own breakpoints from its Tailwind theme; null when it has none to be read. */
   breakpoints(): Promise<ProjectBreakpoints | null>;
   /** The layers off the canvas, kept apart from any round (ADR 0009). */
-  loadOffCanvas(): Promise<OffCanvasLayer[]>;
+  loadOffCanvas(): Promise<SavedOffCanvasLayer[]>;
   /** Keeps the layers off the canvas, all of them. Answers with the JSX that writes each, as kept. */
-  saveOffCanvas(layers: OffCanvasLayer[]): Promise<OffCanvasSaved["snippets"]>;
+  saveOffCanvas(layers: SavedOffCanvasLayer[]): Promise<OffCanvasSaveAnswer["snippets"]>;
 }
 
 /** The store the dev server set up for this page, or null when it set up none. */
@@ -96,12 +96,12 @@ export function connectRoundStore(): RoundStore | null {
     },
     async loadOffCanvas() {
       const response = await request("GET", { path: OFF_CANVAS_PATH });
-      return response.status === 204 ? [] : ((await response.json()) as { layers: OffCanvasLayer[] }).layers;
+      return response.status === 204 ? [] : ((await response.json()) as { layers: SavedOffCanvasLayer[] }).layers;
     },
     saveOffCanvas(layers) {
       const next = savingOffCanvas.then(() => request("PUT", { path: OFF_CANVAS_PATH, body: JSON.stringify({ layers }) }));
       savingOffCanvas = next.catch(() => {});
-      return next.then(async (response) => (response.status === 200 ? ((await response.json()) as OffCanvasSaved).snippets : {}));
+      return next.then(async (response) => (response.status === 200 ? ((await response.json()) as OffCanvasSaveAnswer).snippets : {}));
     },
   };
 }

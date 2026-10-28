@@ -24,8 +24,8 @@ import {
   TOKEN_HEADER,
   UNLOCK_PATH,
   type CheckReport,
-  type OffCanvasLayer,
-  type OffCanvasSaved,
+  type SavedOffCanvasLayer,
+  type OffCanvasSaveAnswer,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -161,7 +161,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
       }
       case `PUT ${OFF_CANVAS_PATH}`: {
         // No round's: saved whether or not one is claimed.
-        const { layers } = JSON.parse(body) as { layers: OffCanvasLayer[] };
+        const { layers } = JSON.parse(body) as { layers: SavedOffCanvasLayer[] };
         if (!Array.isArray(layers) || !layers.every((layer) => typeof layer?.id === "string" && typeof layer.look === "string" && typeof layer.origin === "object")) return send(res, 400);
         const kept = new Map((await readOffCanvas(files)).map((layer) => [layer.id, layer]));
         for (const layer of layers) {
@@ -172,7 +172,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
         }
         await writeOffCanvas(files, layers);
         // The editor layer keeps each with its layer: it goes with it when put back, and comes back with it when that is undone.
-        return send(res, 200, JSON.stringify({ snippets: Object.fromEntries(layers.map((layer) => [layer.id, layer.origin.snippet ?? null])) } satisfies OffCanvasSaved));
+        return send(res, 200, JSON.stringify({ snippets: Object.fromEntries(layers.map((layer) => [layer.id, layer.origin.snippet ?? null])) } satisfies OffCanvasSaveAnswer));
       }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);

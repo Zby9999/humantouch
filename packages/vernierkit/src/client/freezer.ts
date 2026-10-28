@@ -3,8 +3,9 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { dropUnusedRules, EDIT_STYLES_ATTR, moveInlineEdits, orderEditStyles } from "./canvas-style";
+import { dropUnusedRules, moveInlineEdits, orderEditStyles } from "./canvas-style";
 import { HOST_TAG } from "./host";
+import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";

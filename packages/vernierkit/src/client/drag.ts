@@ -3,9 +3,11 @@
  * layers around it make room. Nothing changes structure until the drop; while
  * the layer is dragged, layers are only shifted.
  */
-import { placesItself, trackCount, type Destination, type Editor } from "./edits";
+import { placesItself, type Destination, type Editor } from "./edits";
+import { trackCount } from "./grid-tracks";
 import type { Layer } from "./layers";
 import { snap, type Mark } from "./snap";
+import { insideBorder, paddingBox } from "./stacks";
 import type { View } from "./views";
 
 export interface Drop {
@@ -59,9 +61,7 @@ export function findDrop(
   const area = rectOf(container);
   if (container.kind === "frame") {
     // Inside its border, where absolute layers are placed: as wide as it is laid out, to the fraction of a px.
-    const border = getComputedStyle(el(container));
-    const [left, top, right, bottom] = ["left", "top", "right", "bottom"].map((side) => parseFloat(border.getPropertyValue(`border-${side}-width`)) || 0);
-    const inside = new DOMRect(area.left + left, area.top + top, area.width - left - right, area.height - top - bottom);
+    const inside = insideBorder(el(container), area);
     let marks: Mark[] = [];
     let snapped = { x: false, y: false };
     if (snapWithin !== null) {
@@ -230,9 +230,8 @@ export function findPlace(editor: Editor, view: View, start: { x: number; y: num
   while (container && !editor.canHold(container)) container = container.parent;
   if (!container) return null;
   if (container.kind === "frame") {
-    const el = view.elementOf(container.el) ?? container.el;
-    const area = el.getBoundingClientRect();
-    return { parent: container, x: Math.round(box.left - area.left - el.clientLeft), y: Math.round(box.top - area.top - el.clientTop) };
+    const inside = paddingBox(view.elementOf(container.el) ?? container.el);
+    return { parent: container, x: Math.round(box.left - inside.left), y: Math.round(box.top - inside.top) };
   }
   if (container.kind === "grid") {
     const el = view.elementOf(container.el) ?? container.el;

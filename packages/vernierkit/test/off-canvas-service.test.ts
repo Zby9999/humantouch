@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { startService, type Service } from "../src/service";
-import { OFF_CANVAS_PATH, ROUND_PATH, TOKEN_HEADER, type OffCanvasLayer } from "../src/service-protocol";
+import { OFF_CANVAS_PATH, ROUND_PATH, TOKEN_HEADER, type SavedOffCanvasLayer } from "../src/service-protocol";
 import { archiveRound, vernierFolder, writeState } from "../src/vernier-folder";
 
 const APP = `export function App() {
@@ -31,7 +31,7 @@ afterEach(async () => {
 const call = (method: string, path: string, body?: unknown) =>
   fetch(`${service.url}${path}`, { method, headers: { [TOKEN_HEADER]: service.token, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
-function layer(id: string, written: string | null, x = 10): OffCanvasLayer {
+function layer(id: string, written: string | null, x = 10): SavedOffCanvasLayer {
   return {
     id,
     x,
@@ -47,7 +47,7 @@ function layer(id: string, written: string | null, x = 10): OffCanvasLayer {
   };
 }
 
-const saved = () => JSON.parse(readFileSync(join(root, ".vernier/off-canvas.json"), "utf8")).layers as OffCanvasLayer[];
+const saved = () => JSON.parse(readFileSync(join(root, ".vernier/off-canvas.json"), "utf8")).layers as SavedOffCanvasLayer[];
 
 describe("layers off the canvas, in the local service", () => {
   test("are kept in .vernier/, each with the JSX that writes it as the source had it when first saved", async () => {
@@ -61,7 +61,7 @@ describe("layers off the canvas, in the local service", () => {
     writeFileSync(join(root, "src/App.tsx"), APP.replace(/ *<h1.*\n/, ""));
     await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", "src/App.tsx:4:7", 50)] });
     const response = await call("GET", OFF_CANVAS_PATH);
-    const { layers } = (await response.json()) as { layers: OffCanvasLayer[] };
+    const { layers } = (await response.json()) as { layers: SavedOffCanvasLayer[] };
     expect(layers).toMatchObject([{ id: "a", x: 50, origin: { snippet: { code: '<h1 className="text-4xl">Hello</h1>' } } }]);
   });
 

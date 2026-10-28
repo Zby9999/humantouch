@@ -9,7 +9,7 @@ import { freeze, restore, type Canvas } from "./freezer";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { nodeOf, role, type Layer, type LayerTree } from "./layers";
-import type { Aside, OffCanvas } from "./off-canvas";
+import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances, type Mark } from "./snap";
 import { createViews, type View, type Views } from "./views";
@@ -47,12 +47,12 @@ interface Placed {
   width: number;
   height: number;
   /** A layer off the canvas (ADR 0009), rather than a view of it. */
-  aside?: Aside;
+  offCanvasLayer?: OffCanvasLayer;
 }
 
 /** What tells views apart: their width, but for the desktop view, which may be as wide as another. */
 function keyOf(placed: Placed): string {
-  return placed.aside ? `off ${placed.aside.id}` : placed.desktop ? "desktop" : String(placed.width);
+  return placed.offCanvasLayer ? `off ${placed.offCanvasLayer.id}` : placed.desktop ? "desktop" : String(placed.width);
 }
 
 /** A view laid out, where it is on the stage. */
@@ -89,9 +89,9 @@ interface Props {
   /** A layer dragged from `view` to outside every view, let go with its top left at `at` on the stage; with ⌥ held, a copy of it. */
   onMoveOff(layer: Layer, view: View, at: { x: number; y: number }, copy: boolean): void;
   /** A layer off the canvas dragged elsewhere off it, its top left to `x` and `y` on the stage. */
-  onPlaceOff(aside: Aside, x: number, y: number): void;
+  onPlaceOff(offCanvasLayer: OffCanvasLayer, x: number, y: number): void;
   /** A layer off the canvas dragged over a view and let go where it can go there: back onto the canvas (ADR 0009). */
-  onPutBack(aside: Aside, to: Destination): void;
+  onPutBack(offCanvasLayer: OffCanvasLayer, to: Destination): void;
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
   /** The selected layers, the one selected last at the end: clicks go on from its depth. */
@@ -194,11 +194,17 @@ export function CanvasView(props: Props) {
   }
   const bounds: Bounds | null = canvas && boundsOf(placed);
   /** The layers off the canvas, where they are on the stage. */
-  const outside: Shown[] = (canvas && offCanvas?.list().map((aside) => ({ view: aside.view, name: "Off canvas", desktop: false, x: aside.x, y: aside.y, width: aside.width, height: aside.height, aside }))) || [];
+  const outside: Shown[] =
+    (canvas &&
+      offCanvas?.list().map((offCanvasLayer) => {
+        const { view, x, y, width, height } = offCanvasLayer;
+        return { view, name: "Off canvas", desktop: false, x, y, width, height, offCanvasLayer };
+      })) ||
+    [];
   /** The layers of a view, or of a layer off the canvas. */
-  const treeIn = (shown: Placed): LayerTree | null => (shown.aside ? shown.aside.editor.tree() : tree);
+  const treeIn = (shown: Placed): LayerTree | null => (shown.offCanvasLayer ? shown.offCanvasLayer.editor.tree() : tree);
   /** What edits there. */
-  const editorIn = (shown: Placed): Editor | null => (shown.aside ? shown.aside.editor : editor);
+  const editorIn = (shown: Placed): Editor | null => (shown.offCanvasLayer ? shown.offCanvasLayer.editor : editor);
   /** The layers `layer` is one of: the canvas's, or those of a layer off it. */
   const treeOf = (layer: Layer): LayerTree | null => offCanvas?.of(layer.el)?.editor.tree() ?? tree;
   /**
@@ -557,7 +563,7 @@ export function CanvasView(props: Props) {
     const layers = hit && treeIn(hit.at);
     const layer = hit && layers ? hit.at.view.layerAt(layers, hit.x, hit.y) : null;
     // Off the canvas, there is no page around the layer to select.
-    return !layer || (layer === layers?.root && hit?.at.aside) ? null : { layer, in: hit!.at };
+    return !layer || (layer === layers?.root && hit?.at.offCanvasLayer) ? null : { layer, in: hit!.at };
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
@@ -574,7 +580,7 @@ export function CanvasView(props: Props) {
     }
     if (event.button === 0 && !spaceHeld) {
       const over = viewAt(event);
-      if (over && !over.at.aside) setActive(over.at.view);
+      if (over && !over.at.offCanvasLayer) setActive(over.at.view);
       const hit = layerAt(event);
       const layer = hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, primary));
       if (event.shiftKey) {
@@ -661,12 +667,12 @@ export function CanvasView(props: Props) {
    * until the drop.
    */
   const startDrag = (layer: Layer, shown: Shown): DragSession => {
-    const { view, aside } = shown;
+    const { view, offCanvasLayer } = shown;
     const start = view.boxOf(layer) ?? new DOMRect();
     const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
     // A layer off the canvas itself is moved about the workspace, whole, or back onto the canvas.
-    if (aside?.layer()?.el === layer.el) {
-      session.to = { x: aside.x, y: aside.y };
+    if (offCanvasLayer?.layer()?.el === layer.el) {
+      session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
       session.whole = true;
       return session;
     }
@@ -675,7 +681,7 @@ export function CanvasView(props: Props) {
       if (r) session.rects.set(child.el, r);
     }
     if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
-    if (!aside) session.release = views!.holdHeights();
+    if (!offCanvasLayer) session.release = views!.holdHeights();
     return session;
   };
 
@@ -691,24 +697,24 @@ export function CanvasView(props: Props) {
     let dy = (event.clientY - from.y) / camera.zoom;
     const { layer, start, in: shown } = session;
     const box = new DOMRect(start.x + dx, start.y + dy, start.width, start.height);
-    const aside = shown.aside;
-    if (session.whole && aside) {
+    const offCanvasLayer = shown.offCanvasLayer;
+    if (session.whole && offCanvasLayer) {
       // Let go over a view, it goes back onto the canvas, where it can go there, as any layer dragged in it does (ADR 0009).
       const into = viewAt(event, placed)?.at ?? null;
       const rectOf = (l: Layer) => into?.view.boxOf(l) ?? new DOMRect();
-      const there = into && new DOMRect(aside.x + box.x - into.x, aside.y + box.y - into.y, box.width, box.height);
+      const there = into && new DOMRect(offCanvasLayer.x + box.x - into.x, offCanvasLayer.y + box.y - into.y, box.width, box.height);
       const drop = into && there && editor ? findDrop(editor, into.view, null, toView(event, into), there, rectOf, snapWithin) : null;
       // Snapped, it is shown where it snaps to.
       if (drop && there) [dx, dy] = [dx + drop.box.x - there.x, dy + drop.box.y - there.y];
-      setStyles(session, aside.document.defaultView!.frameElement!, { translate: `${dx}px ${dy}px` });
-      session.to = into ? null : { x: aside.x + dx, y: aside.y + dy };
+      setStyles(session, offCanvasLayer.document.defaultView!.frameElement!, { translate: `${dx}px ${dy}px` });
+      session.to = into ? null : { x: offCanvasLayer.x + dx, y: offCanvasLayer.y + dy };
       session.back = drop;
       // Nothing makes room for it: coming from outside, the layers would slide away from under the pointer as it enters.
       setDrag({ layer, in: into ?? shown, box: drop?.box ?? there ?? box, drop, out: false });
       return;
     }
     // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it.
-    session.out = !aside && !viewAt(event) && !!editor?.canRemove(layer);
+    session.out = !offCanvasLayer && !viewAt(event) && !!editor?.canRemove(layer);
     const rectOf = (l: Layer) => {
       if (l.text) return shown.view.boxOf(l) ?? new DOMRect();
       let r = session.rects.get(l.el);
@@ -808,10 +814,10 @@ export function CanvasView(props: Props) {
     setDrag(null);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back } = session;
-    if (shown.aside && session.whole) {
-      if (to && (to.x !== shown.aside.x || to.y !== shown.aside.y)) onPlaceOff(shown.aside, to.x, to.y);
+    if (shown.offCanvasLayer && session.whole) {
+      if (to && (to.x !== shown.offCanvasLayer.x || to.y !== shown.offCanvasLayer.y)) onPlaceOff(shown.offCanvasLayer, to.x, to.y);
       // Over a view where it cannot go, it stays off the canvas, where it was.
-      else if (back) onPutBack(shown.aside, back.to);
+      else if (back) onPutBack(shown.offCanvasLayer, back.to);
       return;
     }
     if (out && box) {
@@ -838,7 +844,7 @@ export function CanvasView(props: Props) {
   /** A new Frame's brief shows beside it in the view last pressed in, or else the desktop view. */
   const briefIn = shownViews.find((p) => p.view === active) ?? shownViews[0];
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
-  const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.aside ? shown.aside.document : canvas?.document);
+  const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
   /**
    * ⌥ held: the distances from the layers selected, all of them as one box,
    * to the layer pointed at, in the view pointed in; pointed at one of them or

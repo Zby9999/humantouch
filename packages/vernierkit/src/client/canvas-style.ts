@@ -11,6 +11,7 @@
  */
 import { mediaOf, sameBreakpoint, widestFirst, type Breakpoint } from "./breakpoints";
 import type { Change, Composed, Dissolved } from "./changeset";
+import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER } from "./style-marks";
 import { ORIGINAL_STYLE_ATTR, pinOffsetOf } from "./style-source";
 
 /** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
@@ -52,8 +53,6 @@ export function keepOriginal(el: Element) {
 
 /** On a canvas element edits have given styles: the key its rules go by in the edit styles. */
 export const STYLE_KEY_ATTR = "data-vk-style";
-/** On the editor's own style elements in the canvas: the layer order, and each element's rules. The page's styles are the others. */
-export const EDIT_STYLES_ATTR = "data-vk-edit-styles";
 /** On a style element of an element's rules: the element's key. */
 const RULES_FOR_ATTR = "data-vk-rules-for";
 /** On a style element of an element's rules: the rules, as JSON, which its CSS is written from. */
@@ -64,17 +63,17 @@ const SHOWN_ATTR = "data-vk-shown";
 const EDIT_LAYER = "vernierkit-edits";
 
 /** What edits declare on an element, at every width or at one breakpoint: CSS, and whether it is hidden. */
-interface Section {
+interface RuleBlock {
   style: Record<string, string>;
   /** True: hidden (`display: none`). False, at a breakpoint: shown there, though hidden at every width. */
   hidden?: boolean;
 }
-interface AtBreakpoint extends Section {
+interface AtBreakpoint extends RuleBlock {
   breakpoint: Breakpoint;
 }
 /** Declarations at every width, and at breakpoints. */
-interface Sections {
-  base: Section;
+interface RuleBlocks {
+  base: RuleBlock;
   at: AtBreakpoint[];
 }
 /** An element's rules. */
@@ -82,9 +81,9 @@ interface Rules {
   /** Important declarations the style attribute had (the freezer's), taken into the rules so the edits can win over them. */
   lifted: Record<string, string>;
   /** A copy's: how the layer it copies looked, edits included. It starts as it looks. */
-  copied?: Sections;
+  copied?: RuleBlocks;
   /** The edits'. */
-  edits: Sections;
+  edits: RuleBlocks;
 }
 
 /** Writes declarations onto a canvas element, over the page's: at every width, or only at `breakpoint`. Where the freezer pinned it, shifted as it was. */
@@ -124,10 +123,10 @@ export function restoreStyle(el: Element, names: string[], others: Change[], bre
         edits.at = [];
         return;
       }
-      const section = sectionOf(edits, breakpoint, false);
-      if (section) {
-        for (const name of names) delete section.style[name];
-        if (names.includes("display")) delete section.hidden;
+      const block = blockOf(edits, breakpoint, false);
+      if (block) {
+        for (const name of names) delete block.style[name];
+        if (names.includes("display")) delete block.hidden;
       }
       for (const change of others) put(el, edits, change.style, change.breakpoint ?? null);
     });
@@ -160,9 +159,9 @@ export function hiddenByEdit(el: Element): boolean {
 export function declaredByEdit(el: Element, property: string): string {
   const rules = readRules(el);
   if (!rules) return "";
-  const sections = effective({ ...rules, lifted: {} });
-  let value = sections.base.style[property] ?? "";
-  for (const at of applying(el, sections)) value = at.style[property] ?? value;
+  const blocks = effective({ ...rules, lifted: {} });
+  let value = blocks.base.style[property] ?? "";
+  for (const at of applying(el, blocks)) value = at.style[property] ?? value;
   return value;
 }
 
@@ -218,11 +217,11 @@ export function moveInlineEdits(doc: Document) {
 export function orderEditStyles(doc: Document) {
   const head = doc.head;
   if (!head) return;
-  let order = head.querySelector(`style[${EDIT_STYLES_ATTR}="order"]`);
+  let order = head.querySelector(`style[${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}"]`);
   if (order && head.firstElementChild === order) return;
   if (!order) {
     order = doc.createElement("style");
-    order.setAttribute(EDIT_STYLES_ATTR, "order");
+    order.setAttribute(EDIT_STYLES_ATTR, EDIT_STYLES_ORDER);
     order.textContent = `@layer ${EDIT_LAYER};`;
   }
   head.prepend(order);
@@ -241,7 +240,7 @@ export function dropUnusedRules(root: Element) {
 }
 
 /** Puts `declarations` into `edits`, at every width or at `breakpoint`: `display: none` hides, an empty value takes a declaration off. */
-function put(el: Element, edits: Sections, declarations: Record<string, string>, breakpoint: Breakpoint | null) {
+function put(el: Element, edits: RuleBlocks, declarations: Record<string, string>, breakpoint: Breakpoint | null) {
   const [dx, dy] = pinOffsetOf(el);
   const shift = { left: dx, top: dy } as Record<string, number>;
   const shifted: Record<string, string> = {};
@@ -249,45 +248,45 @@ function put(el: Element, edits: Sections, declarations: Record<string, string>,
     const value = declarations[name];
     shifted[name] = shift[name] && value.endsWith("px") ? `${parseFloat(value) + shift[name]}px` : value;
   }
-  const section = sectionOf(edits, breakpoint, true)!;
-  putAsIs(section, shifted);
+  const block = blockOf(edits, breakpoint, true)!;
+  putAsIs(block, shifted);
 }
 
-function putAsIs(section: Section, declarations: Record<string, string>) {
+function putAsIs(block: RuleBlock, declarations: Record<string, string>) {
   for (const name in declarations) {
     const value = declarations[name];
-    if (name === "display" && value === "none") section.hidden = true;
-    else if (name === "display" && value === "") section.hidden = false;
-    else if (value === "") delete section.style[name];
-    else section.style[name] = value;
+    if (name === "display" && value === "none") block.hidden = true;
+    else if (name === "display" && value === "") block.hidden = false;
+    else if (value === "") delete block.style[name];
+    else block.style[name] = value;
   }
-  if (section.hidden === false && !("breakpoint" in section)) delete section.hidden;
+  if (block.hidden === false && !("breakpoint" in block)) delete block.hidden;
 }
 
-/** The section of `sections` at `breakpoint` (null: every width), made when `make` and there is none. */
-function sectionOf(sections: Sections, breakpoint: Breakpoint | null, make: boolean): Section | null {
-  if (!breakpoint) return sections.base;
-  let at = sections.at.find((a) => sameBreakpoint(a.breakpoint, breakpoint)) ?? null;
-  if (!at && make) sections.at.push((at = { breakpoint: { ...breakpoint }, style: {} }));
+/** The block of `blocks` at `breakpoint` (null: every width), made when `make` and there is none. */
+function blockOf(blocks: RuleBlocks, breakpoint: Breakpoint | null, make: boolean): RuleBlock | null {
+  if (!breakpoint) return blocks.base;
+  let at = blocks.at.find((a) => sameBreakpoint(a.breakpoint, breakpoint)) ?? null;
+  if (!at && make) blocks.at.push((at = { breakpoint: { ...breakpoint }, style: {} }));
   return at;
 }
 
-/** The sections at the breakpoints the element's document is shown in, wider ones first. */
-function applying(el: Element, sections: Sections): AtBreakpoint[] {
+/** The blocks at the breakpoints the element's document is shown in, wider ones first. */
+function applying(el: Element, blocks: RuleBlocks): AtBreakpoint[] {
   const view = el.ownerDocument.defaultView;
   if (!view) return [];
-  return [...sections.at].sort((a, b) => widestFirst(a.breakpoint, b.breakpoint)).filter((at) => view.matchMedia(mediaOf(at.breakpoint)).matches);
+  return [...blocks.at].sort((a, b) => widestFirst(a.breakpoint, b.breakpoint)).filter((at) => view.matchMedia(mediaOf(at.breakpoint)).matches);
 }
 
 /** What applies, all told: the lifted declarations, then what a copy took over, then the edits. */
-function effective(rules: Rules): Sections {
-  const all: Sections = { base: { style: { ...rules.lifted } }, at: [] };
-  for (const sections of [rules.copied, rules.edits]) {
-    if (!sections) continue;
-    Object.assign(all.base.style, sections.base.style);
-    if (sections.base.hidden !== undefined) all.base.hidden = sections.base.hidden;
-    for (const at of sections.at) {
-      const into = sectionOf(all, at.breakpoint, true)!;
+function effective(rules: Rules): RuleBlocks {
+  const all: RuleBlocks = { base: { style: { ...rules.lifted } }, at: [] };
+  for (const blocks of [rules.copied, rules.edits]) {
+    if (!blocks) continue;
+    Object.assign(all.base.style, blocks.base.style);
+    if (blocks.base.hidden !== undefined) all.base.hidden = blocks.base.hidden;
+    for (const at of blocks.at) {
+      const into = blockOf(all, at.breakpoint, true)!;
       Object.assign(into.style, at.style);
       if (at.hidden !== undefined) into.hidden = at.hidden;
     }
@@ -303,7 +302,7 @@ function readRules(el: Element): Rules | null {
 }
 
 /** Changes the element's edits, as `change` does; its rules are made on the first, with what of its style attribute is important taken in. */
-function editRules(el: Element, change: (edits: Sections) => void) {
+function editRules(el: Element, change: (edits: RuleBlocks) => void) {
   let rules = readRules(el);
   if (!rules) {
     keepOriginal(el);
@@ -378,7 +377,7 @@ function nextKey(doc: Document): number {
  * own, more particular, so it wins over any display the edits declare; it
  * holds wherever no breakpoint shows the element again.
  */
-function cssOf(key: string, { base, at }: Sections): string {
+function cssOf(key: string, { base, at }: RuleBlocks): string {
   const element = `[${STYLE_KEY_ATTR}="${key}"]`;
   const hide = `${element}:not([${SHOWN_ATTR}]){display:none!important}`;
   const block = (style: Record<string, string>) => {

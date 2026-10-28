@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { SavedChangeSet } from "./client/changeset";
-import type { CheckResult, CodeSnapshot, OffCanvasLayer, RoundStatus } from "./service-protocol";
+import type { CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 
 export const VERNIER_DIR = ".vernier";
 
@@ -124,13 +124,13 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
 }
 
 /** The layers off the canvas; none when there are none. */
-export async function readOffCanvas(folder: VernierFolder): Promise<OffCanvasLayer[]> {
+export async function readOffCanvas(folder: VernierFolder): Promise<SavedOffCanvasLayer[]> {
   const text = await readIfThere(folder.offCanvas);
-  return text === null ? [] : (JSON.parse(text) as { layers: OffCanvasLayer[] }).layers;
+  return text === null ? [] : (JSON.parse(text) as { layers: SavedOffCanvasLayer[] }).layers;
 }
 
 /** Keeps the layers off the canvas; with none, nothing is kept. */
-export async function writeOffCanvas(folder: VernierFolder, layers: OffCanvasLayer[]) {
+export async function writeOffCanvas(folder: VernierFolder, layers: SavedOffCanvasLayer[]) {
   if (!layers.length) return rm(folder.offCanvas, { force: true });
   await mkdir(folder.dir, { recursive: true });
   await writeAtomically(folder.offCanvas, `${JSON.stringify({ layers }, null, 2)}\n`);

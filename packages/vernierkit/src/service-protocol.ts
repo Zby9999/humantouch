@@ -23,9 +23,9 @@ export const CHECKS_PATH = "/checks";
 export const BREAKPOINTS_PATH = "/breakpoints";
 
 /**
- * `GET`: the layers off the canvas, as `{ layers: OffCanvasLayer[] }` (204:
+ * `GET`: the layers off the canvas, as `{ layers: SavedOffCanvasLayer[] }` (204:
  * none). `PUT` saves them all, and answers with their snippets, as
- * `OffCanvasSaved`. They belong to no round (ADR 0009): saved while a round
+ * `OffCanvasSaveAnswer`. They belong to no round (ADR 0009): saved while a round
  * is claimed too, and kept when it ends.
  */
 export const OFF_CANVAS_PATH = "/off-canvas";
@@ -82,10 +82,11 @@ export interface SavedRound {
 }
 
 /**
- * A layer moved off the canvas (ADR 0009): where it is in the workspace, how
- * it looked, frozen, where it came from, and what was done to it off the canvas.
+ * An Off-canvas Layer (ADR 0009) as saved in `.vernier/off-canvas.json`: where
+ * it is in the workspace, how it looked, frozen, where it came from, and what
+ * was done to it off the canvas.
  */
-export interface OffCanvasLayer {
+export interface SavedOffCanvasLayer {
   id: string;
   /** Its top left in the workspace, in the desktop view's px from its top left. */
   x: number;
@@ -101,7 +102,7 @@ export interface OffCanvasLayer {
 }
 
 /** The answer to saving the layers off the canvas: the JSX that writes each, by its id, as kept. */
-export interface OffCanvasSaved {
+export interface OffCanvasSaveAnswer {
   snippets: Record<string, Snippet | null>;
 }
 

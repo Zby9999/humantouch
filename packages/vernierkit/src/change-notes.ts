@@ -9,6 +9,7 @@ import {
   madeBy,
   movedOffBy,
   placedAt,
+  putBackOf,
   type Change,
   type Composed,
   type CopiedBreakpoint,
@@ -20,6 +21,8 @@ import {
   type Target,
 } from "./client/changeset";
 import { breakpointName, mediaOf, type Breakpoint } from "./client/breakpoints";
+import { equalColumns } from "./client/grid-tracks";
+import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
@@ -203,7 +206,7 @@ function placedFreely({ after, style }: Change): string {
 function gridNotes({ property, after }: Change): string[] {
   if (property === "columns") {
     return [
-      `**Equal columns:** each column takes an equal share of the Grid's width, as \`grid-template-columns: repeat(${after}, minmax(0, 1fr))\` does (Tailwind's \`grid-cols-${after}\`). ` +
+      `**Equal columns:** each column takes an equal share of the Grid's width, as \`grid-template-columns: ${equalColumns(after as number)}\` does (Tailwind's \`grid-cols-${after}\`). ` +
         "Where its columns are sized some other way now, they become equal.",
     ];
   }
@@ -249,7 +252,7 @@ function putBackFrom({ layer }: PutBack): string[] {
 
 /** A deletion that moved a layer off the canvas this round, and put it back this round too: the code moves, rather than going. */
 function putBackIn(change: Change, list: Change[]): string[] {
-  const back = change.offCanvas && list.find((c) => c.kind === "putBack" && (c.after as PutBack).layer.id === change.offCanvas);
+  const back = change.offCanvas && putBackOf(list, change.offCanvas);
   return back ? [`**Put back:** the layer was moved off the canvas and is put back in change ${back.id}. Do not delete its code: move it to where change ${back.id} puts it.`] : [];
 }
 
@@ -262,7 +265,7 @@ function lookOf(look: string): string {
     look
       .replace(/^<!DOCTYPE[^>]*>/i, "")
       // What lays the document out around it, and orders the editor's own styles.
-      .replace(/<style data-vk-(look-styles="base"|edit-styles="order")>[^<]*<\/style>/g, "")
+      .replace(new RegExp(`<style (${LOOK_STYLES_ATTR}="${LOOK_STYLES_BASE}"|${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}")>[^<]*</style>`, "g"), "")
       .replace(/@import url\("(?:[^"\\]|\\.)*"\) layer\(page\);/g, "")
       .replace(/@font-face\s*\{[^}]*\}/g, "")
       .trim()

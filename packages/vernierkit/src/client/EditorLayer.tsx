@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { OffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
+import type { SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ENTER_MARK } from "./CanvasView";
 import { ChangeList } from "./ChangeList";
 import type { ProjectBreakpoints } from "./breakpoints";
@@ -19,8 +19,8 @@ type Mode = "preview" | "edit" | "leaving";
 interface ListStep {
   before: SavedRound | null;
   after: SavedRound | null;
-  offCanvasBefore: OffCanvasLayer[];
-  offCanvasAfter: OffCanvasLayer[];
+  offCanvasBefore: SavedOffCanvasLayer[];
+  offCanvasAfter: SavedOffCanvasLayer[];
 }
 
 /**
@@ -28,7 +28,7 @@ interface ListStep {
  * moved out, which are back on the canvas instead; and with those they put
  * back, which are off it again, as they were, unless moved out by them too.
  */
-function offCanvasWithout(layers: OffCanvasLayer[], changes: Change[]): OffCanvasLayer[] {
+function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): SavedOffCanvasLayer[] {
   const out = new Set(changes.map((change) => change.offCanvas));
   const known = new Set(layers.map((layer) => layer.id));
   const back = putBackBy(changes).filter((layer) => !out.has(layer.id) && !known.has(layer.id));
@@ -55,7 +55,7 @@ export function EditorLayer() {
   /** Undefined until the saved round, if any, has loaded. */
   const [round, setRound] = useState<SavedRound | null | undefined>(store ? undefined : null);
   /** The layers off the canvas (ADR 0009), which belong to no round; undefined until they have loaded. */
-  const [offCanvas, setOffCanvas] = useState<OffCanvasLayer[] | undefined>(store ? undefined : []);
+  const [offCanvas, setOffCanvas] = useState<SavedOffCanvasLayer[] | undefined>(store ? undefined : []);
   /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
   const [live, setLive] = useState<Change[] | null>(null);
   const [listOpen, setListOpen] = useState(false);
@@ -132,7 +132,7 @@ export function EditorLayer() {
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
   };
-  const saveOffCanvas = (layers: OffCanvasLayer[]) => {
+  const saveOffCanvas = (layers: SavedOffCanvasLayer[]) => {
     setOffCanvas(layers);
     return (
       store?.saveOffCanvas(layers).catch((error: unknown) => {

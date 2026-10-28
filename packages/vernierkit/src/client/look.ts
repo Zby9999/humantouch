@@ -11,12 +11,11 @@ import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { DELETED_ATTR } from "./canvas-style";
 import { readValue } from "./edits";
 import { doctypeOf, editable, FROZEN, serializeEditable } from "./freezer";
+import { LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./style-marks";
 import { CHAIN_ATTR } from "./usage-chain";
 
 /** On each element of a frozen look: the key its frozen style goes by. */
 export const LOOK_ATTR = "data-vk-look";
-/** On the style element that holds a frozen look. */
-const LOOK_STYLES_ATTR = "data-vk-look-styles";
 /** What of an element's marks a frozen copy keeps: where it is written, its usage chain, and that it is a still. */
 const KEPT = new Set([LOC_ATTR, USAGE_ATTR, CHAIN_ATTR, FROZEN]);
 /** On a frozen copy: the classes it had, kept to tell it by, where no rule of the page's can match them. */
@@ -42,7 +41,7 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
   const doc = into.contentDocument;
   if (!doc) throw new Error("Vernier Kit: the iframe to freeze a look into is not in the document");
   doc.open();
-  doc.write(`${doctypeOf(from)}<html><head><style ${LOOK_STYLES_ATTR}="base">${BASE}</style></head><body></body></html>`);
+  doc.write(`${doctypeOf(from)}<html><head><style ${LOOK_STYLES_ATTR}="${LOOK_STYLES_BASE}">${BASE}</style></head><body></body></html>`);
   doc.close();
 
   // What an element of each kind has as it is, in this document: what the frozen style need not say.

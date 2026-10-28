@@ -5,8 +5,8 @@
  * canvas. Every edit can be undone.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import type { OffCanvasLayer } from "../service-protocol";
-import { breakpointKey, breakpointOf, clearOf, contains, widestFirst, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
+import type { OffCanvasOrigin, SavedOffCanvasLayer } from "../service-protocol";
+import { breakpointOf, clearOf, contains, widestFirst, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import {
   AS_STACK_ATTR,
   asShown,
@@ -26,6 +26,7 @@ import {
   WRAP_ATTR,
 } from "./canvas-style";
 import {
+  changeKey,
   madeBy,
   MOVE,
   movedOffBy,
@@ -41,6 +42,7 @@ import {
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
+import { equalColumns, trackCount } from "./grid-tracks";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -264,10 +266,10 @@ export interface Editor {
   /**
    * How the Agent finds the layer in the source, where it is, and the JSX that
    * writes it (an instance's: its usage; none for a layer made this round):
-   * what a layer moved off the canvas keeps of where it came from. A layer
-   * put back from off the canvas new is where it came from still, its source as written then with it.
+   * the origin a layer moved off the canvas keeps, all but when it was moved
+   * out. A layer put back from off the canvas new is where it came from still, its source as written then with it.
    */
-  whereIs(layer: Layer): { target: Target; place: Place | null; written: string | null } & Pick<OffCanvasLayer["origin"], "snippet" | "copy">;
+  originOf(layer: Layer): Omit<OffCanvasOrigin, "at">;
   /**
    * Makes `make`, a change to something besides the canvas (a layer off it),
    * one step with the edits, undone by `unmake`: taken back and made again
@@ -291,13 +293,13 @@ export interface Editor {
    * change puts it in with where it came from, its source as written then,
    * its look and its edits there, for the Agent to put it back by.
    */
-  putBack(from: Returning, to: Destination): Layer;
+  putBack(from: LayerToPutBack, to: Destination): Layer;
 }
 
-/** A layer off the canvas coming back onto it: its element there, as it looks now, and it as kept. */
-export interface Returning {
+/** An Off-canvas Layer being put back onto the canvas: its element off the canvas, as it looks now, and it as kept. */
+export interface LayerToPutBack {
   el: Element;
-  kept: OffCanvasLayer;
+  kept: SavedOffCanvasLayer;
 }
 
 /**
@@ -458,7 +460,7 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     read: (el) => trackCount(getComputedStyle(el).gridTemplateColumns),
     // As Tailwind's `grid-cols-*` writes them: equal columns, which shrink below their content as the Grid does.
     accepts: (_, columns) => Number.isInteger(columns) && columns >= 1,
-    write: (columns) => ({ "grid-template-columns": `repeat(${columns}, minmax(0, 1fr))` }),
+    write: (columns) => ({ "grid-template-columns": equalColumns(columns) }),
     writes: ["grid-template-columns"],
     sets: ["grid-template-columns"],
   },
@@ -752,7 +754,7 @@ export function createEditor(
       const target = layerById(id);
       if (target) apply(target, property, v, breakpoint);
     };
-    push({ layers: [id], key: `${id} ${property} ${breakpointKey(breakpoint)}`, undo: to(before), redo: to(value) }, continues);
+    push({ layers: [id], key: changeKey(id, property, breakpoint), undo: to(before), redo: to(value) }, continues);
   };
 
   /** A container as a place names it: a Grid's places are its cells. */
@@ -782,6 +784,20 @@ export function createEditor(
     if ("x" in to) return { container: where, nth: container.children.length + 1, slot: slots.length, absolute: { x: round(to.x), y: round(to.y) } };
     const next = container.children[to.index];
     return { container: where, nth: to.index + 1, slot: next ? slots.indexOf(nodeOf(next)) : slots.length, absolute: null };
+  };
+
+  /**
+   * What a layer new on the canvas at `to` goes into, as its change records
+   * it: the container, which must be able to hold it, with its id and how the
+   * Agent finds it, and the place the layer takes there.
+   */
+  const newAt = (to: Destination) => {
+    const container = to.parent;
+    if (!editor.canHold(container)) throw new Error(`Vernier Kit: nothing can go into ${container.name}`);
+    const count = tree.acrossInstances(container).length;
+    const containerId = idOf(container, tree.acrossInstances(container));
+    const place = placeNew(to);
+    return { container, containerId, place, target: targetOf(container, count) };
   };
 
   /** The layer's place at `to`, worked out before it moves. */
@@ -1392,7 +1408,7 @@ export function createEditor(
         editor.revert(maker.id);
         return found();
       }
-      const group = layer.el;
+      const ungrouped = layer.el;
       const container = layer.parent!.el;
       // In its container's layout, its layers in its layout take its place; any other stays where it is, absolute.
       const inLayout = layer.children.map((child) => layer.parent!.kind !== "frame" && !layer.absolute && !child.absolute);
@@ -1404,17 +1420,13 @@ export function createEditor(
           const parent = tree.layerOf(container)!;
           editor.move(tree.layerOf(el)!, inLayout[i] ? { parent, index: index + n++ } : { parent, ...spots[i] });
         });
-        editor.remove(tree.layerOf(group)!);
+        editor.remove(tree.layerOf(ungrouped)!);
       });
       return found();
     },
     canHold: (layer) => holdsLayers(layer),
     create(type, to, size) {
-      const container = to.parent;
-      if (!editor.canHold(container)) throw new Error(`Vernier Kit: nothing can go into ${container.name}`);
-      const count = tree.acrossInstances(container).length;
-      const containerId = idOf(container, tree.acrossInstances(container));
-      const place = placeNew(to);
+      const { container, containerId, place, target } = newAt(to);
       // Text drawn wider than a click keeps the width it was drawn at; its height follows its words.
       const frame = type === "frame";
       const width = size ? round(size.width) : frame ? NEW_FRAME_SIZE : null;
@@ -1427,7 +1439,7 @@ export function createEditor(
         ...(place.absolute && absoluteAt(place.absolute)),
       };
       const id = String(++lastId);
-      const record: StructureRecord = { kind: "create", target: targetOf(container, count), scope: "usage", property: "new", before: null, after: created, style, sources: [] };
+      const record: StructureRecord = { kind: "create", target, scope: "usage", property: "new", before: null, after: created, style, sources: [] };
       const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);
         insertNew(doc, id, created, style);
@@ -1496,7 +1508,7 @@ export function createEditor(
       structural([id], [id], words(id, record, text), words(id, record, now));
     },
     canRemove: (layer) => layer.parent !== null,
-    whereIs(layer) {
+    originOf(layer) {
       const made = layer.made !== null && layer.el.getAttribute(LAYER_ID_ATTR) === layer.made;
       const maker = made ? makerOf(layer.made!) : null;
       if (maker?.kind === "putBack") {
@@ -1619,15 +1631,11 @@ export function createEditor(
         return back!;
       }
       // Otherwise new on the canvas, as it looks off it.
-      const container = to.parent;
-      if (!editor.canHold(container)) throw new Error(`Vernier Kit: nothing can go into ${container.name}`);
-      const count = tree.acrossInstances(container).length;
-      const containerId = idOf(container, tree.acrossInstances(container));
-      const place = placeNew(to);
+      const { container, containerId, place, target } = newAt(to);
       const style = place.absolute ? absoluteAt(place.absolute) : {};
       const id = String(++lastId);
       const putBack: PutBack = { place, layer: structuredClone(from.kept) };
-      const record: StructureRecord = { kind: "putBack", target: targetOf(container, count), scope: "usage", property: "put back", before: null, after: putBack, style, sources: [] };
+      const record: StructureRecord = { kind: "putBack", target, scope: "usage", property: "put back", before: null, after: putBack, style, sources: [] };
       const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);
         insertPutBack(doc, id, from.el, place, style);
@@ -1751,16 +1759,6 @@ function stackOf(el: Element): StackLayout {
 }
 
 /**
- * How many columns (or rows) a Grid is laid out in, from its computed
- * `grid-template-columns` (or `-rows`): the sizes of its tracks, with any
- * line names between them. None: one, the Grid's own width.
- */
-export function trackCount(computed: string): number {
-  if (computed === "none") return 1;
-  return computed.replace(/\[[^\]]*\]/g, " ").trim().split(/\s+/).filter(Boolean).length || 1;
-}
-
-/**
  * Whether a Grid, as `el` lays it out, places its layers otherwise than in
  * the order they are written: one of them in a cell or area of its own
  * (a line of `grid-row`, `grid-column`, `grid-area`, not a span alone) or in another order (`order`), or
@@ -1811,7 +1809,7 @@ function stackAround(el: Element): StackLayout | null {
 }
 
 /** Whether the axis runs along the Stack (its main axis), rather than across it. */
-function along(stack: { direction: "horizontal" | "vertical" }, axis: "width" | "height"): boolean {
+function onMainAxis(stack: { direction: "horizontal" | "vertical" }, axis: "width" | "height"): boolean {
   return (stack.direction === "horizontal") === (axis === "width");
 }
 
@@ -1826,12 +1824,12 @@ function size(axis: "width" | "height"): Definition<Size> {
     accepts(el, value) {
       if (value.type !== "fill") return true;
       const stack = stackAround(el);
-      return !!stack && (stack.flex || !along(stack, axis));
+      return !!stack && (stack.flex || !onMainAxis(stack, axis));
     },
     read(el) {
       const style = getComputedStyle(el);
       const stack = stackAround(el);
-      const main = !!stack && along(stack, axis);
+      const main = !!stack && onMainAxis(stack, axis);
       if (stack?.flex && main && parseFloat(style.flexGrow) > 0) return { type: "fill" };
       // The computed size is always in px: whether it is set, and how, is in what the page declares.
       const declared = declaredValue(el, axis);
@@ -1846,7 +1844,7 @@ function size(axis: "width" | "height"): Definition<Size> {
       const stack = stackAround(el);
       const fill = value.type === "fill";
       const css = value.type === "fixed" ? `${round(Math.max(0, value.value - extra(el, axis)))}px` : fill ? "auto" : "fit-content";
-      if (stack?.flex && along(stack, axis)) {
+      if (stack?.flex && onMainAxis(stack, axis)) {
         return { [axis]: css, "flex-grow": fill ? "1" : "0", "flex-shrink": fill ? "1" : "0", "flex-basis": fill ? "0%" : "auto" };
       }
       if (stack?.flex) return { [axis]: css, "align-self": fill ? "stretch" : "auto" };
