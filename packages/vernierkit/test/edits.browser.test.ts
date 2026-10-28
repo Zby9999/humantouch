@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS } from "../src/service-protocol";
-import { startChangePreview } from "../src/client/change-preview";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createEditor } from "../src/client/edits";
@@ -1674,8 +1673,8 @@ const STRUCTURE = `<!DOCTYPE html>
   <div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>
 </body>`;
 
-describe("the live page shows changes to the structure", () => {
-  /** The canvas, edited; and the live page, as the page is, with the Change Preview on it. */
+describe("changes to the structure are checked on the live page", () => {
+  /** The canvas, edited; and the live page, as the page is. */
   const open = () => {
     const canvas = openCanvas(STRUCTURE);
     live = document.createElement("iframe");
@@ -1685,120 +1684,9 @@ describe("the live page shows changes to the structure", () => {
     page.open();
     page.write(STRUCTURE);
     page.close();
-    const preview = startChangePreview(page);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
-    const box = (doc: Document, id: string) => {
-      const r = doc.getElementById(id)!.getBoundingClientRect();
-      return [r.x, r.y, r.width, r.height];
-    };
-    const show = () => preview.show(canvas.changes.list());
-    return { ...canvas, page, preview, layer, show, box };
+    return { ...canvas, page, layer };
   };
-  const order = (doc: Document, id: string) => [...doc.getElementById(id)!.children].map((el) => el.id);
-
-  test("a reorder in a Stack: in the canvas's order, the others making room, the page's elements where they were in its markup", () => {
-    const { doc, page, editor, layer, show, box } = open();
-    editor.move(layer("c"), { parent: layer("list"), index: 0 });
-
-    show();
-
-    expect(["a", "b", "c"].map((id) => box(page, id))).toEqual(["a", "b", "c"].map((id) => box(doc, id)));
-    expect(order(page, "list")).toEqual(["a", "b", "c"]);
-  });
-
-  test("a reorder in a plain flow, laid out as a column so the order holds", () => {
-    const { doc, page, editor, layer, show, box } = open();
-    editor.move(layer("two"), { parent: layer("flow"), index: 0 });
-
-    show();
-
-    expect(box(page, "two")[1]).toBeLessThan(box(page, "one")[1]);
-    expect(box(page, "two")).toEqual(box(doc, "two"));
-  });
-
-  test("the order of each reorder is the container's as the canvas has it now, however many layers moved in it", () => {
-    const { changes, editor, layer } = open();
-    editor.move(layer("c"), { parent: layer("list"), index: 0 });
-    editor.move(layer("a"), { parent: layer("list"), index: 2 });
-
-    const keys = ["8:7", "7:7", "6:7"].map((at) => `src/App.tsx:${at} []`);
-    // Each one's check leaves out the layer the other moves.
-    expect(changes.list().map((change) => change.order)).toEqual([
-      { keys, signs: ["div C", "div B", "div A"], flow: false, self: 0, others: [2] },
-      { keys, signs: ["div C", "div B", "div A"], flow: false, self: 2, others: [0] },
-    ]);
-  });
-
-  test("a layer placed absolute in its own Frame stays where the canvas has it, the Frame its positioning reference", () => {
-    const { doc, page, editor, changes, layer, show, box } = open();
-    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
-    expect(changes.list()[0].reference).toBe(true);
-
-    show();
-
-    expect(box(page, "tag")).toEqual(box(doc, "tag"));
-    expect(getComputedStyle(page.getElementById("board")!).position).toBe("relative");
-  });
-
-  test("a deleted layer is hidden, and the others take its room", () => {
-    const { doc, page, editor, layer, show, box } = open();
-    editor.remove(layer("b"));
-
-    show();
-
-    expect(getComputedStyle(page.getElementById("b")!).display).toBe("none");
-    expect(box(page, "c")).toEqual(box(doc, "c"));
-  });
-
-  test("what the page cannot show it leaves out: a move into another container, a new layer, a Stack made", () => {
-    const { page, editor, changes, layer, show } = open();
-    const before = page.body.innerHTML;
-    editor.move(layer("tag"), { parent: layer("list"), index: 0 });
-    editor.create("text", { parent: layer("list"), index: 0 });
-    editor.stack([editor.tree().layerOf(editor.tree().root.el.querySelector("#one")!)!]);
-
-    show();
-
-    expect(changes.list()).toHaveLength(3);
-    expect(page.body.innerHTML).toBe(before);
-  });
-
-  test("shown again as the round grows and shrinks; off, the page is as it was", () => {
-    const { page, editor, changes, layer, show, preview } = open();
-    const drawn = () =>
-      [...page.getElementById("list")!.children]
-        .filter((el) => getComputedStyle(el).display !== "none")
-        .sort((x, y) => x.getBoundingClientRect().y - y.getBoundingClientRect().y)
-        .map((el) => el.id);
-    show();
-    editor.move(layer("c"), { parent: layer("list"), index: 0 });
-    show();
-    editor.remove(layer("b"));
-    show();
-    expect(drawn()).toEqual(["c", "a"]);
-
-    editor.revert(changes.list()[0].id);
-    show();
-    expect(drawn()).toEqual(["a", "c"]);
-
-    preview.stop();
-    expect(getComputedStyle(page.getElementById("b")!).display).toBe("block");
-    expect(page.querySelectorAll("[data-vk-preview], [data-vk-preview-order]")).toHaveLength(0);
-  });
-
-  test("an element the page renders anew is given its place in the order at once", async () => {
-    const { page, editor, layer, show } = open();
-    editor.move(layer("c"), { parent: layer("list"), index: 0 });
-    show();
-
-    // As React would, the page renders C again as a new element.
-    const again = page.getElementById("c")!.cloneNode(true) as Element;
-    page.getElementById("c")!.remove();
-    page.getElementById("list")!.append(again);
-    await Promise.resolve();
-
-    expect(again.getBoundingClientRect().y).toBeLessThan(page.getElementById("a")!.getBoundingClientRect().y);
-  });
 
   test("a reorder is checked by what the layers look like: moving the JSX moves their markers along", async () => {
     const { page, editor, changes, layer } = open();

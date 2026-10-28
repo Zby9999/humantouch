@@ -1,4 +1,4 @@
-import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
+import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
@@ -16,11 +16,6 @@ function rows(page: Page, name: string) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-}
-
-async function backToPreviewMode(page: Page) {
-  await page.getByRole("button", { name: EXIT_LABEL }).click();
-  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 }
 
 async function setField(page: Page, name: string, value: string) {
@@ -128,7 +123,7 @@ test("opacity, clipping, and a hidden layer that stays in the layer tree and the
   expect(await canvasStyle(page, "article", "display")).toBe("block");
 });
 
-test("an absolute layer's X and Y are the page's own, even frozen scrolled down; the live page previews them", async ({ page }) => {
+test("an absolute layer's X and Y are the page's own, even frozen scrolled down", async ({ page }) => {
   await page.evaluate(() => scrollTo(0, 120));
   await page.getByRole("button", { name: "Get started" }).click();
   await enterEditMode(page);
@@ -141,9 +136,6 @@ test("an absolute layer's X and Y are the page's own, even frozen scrolled down;
     .locator('[role="dialog"]')
     .evaluate((dialog) => dialog.parentElement!.getBoundingClientRect().top);
   expect(top).toBe(130);
-
-  await backToPreviewMode(page);
-  await expect.poll(() => page.locator('[role="dialog"]').evaluate((dialog) => dialog.parentElement!.getBoundingClientRect().top)).toBe(10);
 });
 
 test("a locked layer offers its size and nothing else", async ({ page }) => {
@@ -189,18 +181,18 @@ test("⇧ + click on the canvas adds a layer to the selection", async ({ page })
   await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { selected: true })).toHaveCount(2);
 });
 
-test("a new size and gap show on the live page in preview mode", async ({ page }) => {
+test("a new size and gap show when the canvas is played at full size", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Button").click();
   await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await rows(page, "Card").first().click();
   await setField(page, "Gap", "8");
-  await backToPreviewMode(page);
+  await page.getByRole("button", { name: "Play", exact: true }).click();
 
-  const button = page.locator(`${HERO} > button`);
-  expect(await button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await page.locator(HERO).evaluate((el) => el.getBoundingClientRect().width));
-  await expect(page.locator("article").first()).toHaveCSS("display", "flex");
-  await expect(page.locator("article").first()).toHaveCSS("row-gap", "8px");
+  const button = canvas(page).locator(`${HERO} > button`);
+  expect(await button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await canvas(page).locator(HERO).evaluate((el) => el.getBoundingClientRect().width));
+  await expect(canvas(page).locator("article").first()).toHaveCSS("display", "flex");
+  await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "8px");
 });
 
 test("minimum and maximum sizes sit in two columns: width on the left, height on the right, minimum above maximum", async ({ page }) => {

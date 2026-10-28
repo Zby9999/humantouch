@@ -157,7 +157,7 @@ test("Esc while dragging puts everything back", async ({ page }) => {
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
 
-test("a reorder shows on the live page, and is listed as one", async ({ page }) => {
+test("a reorder is listed as one; the page keeps the code's order", async ({ page }) => {
   await enterEditMode(page);
   await selectButton(page);
   await drag(page, canvas(page).locator(`${HERO} > button`), async () => {
@@ -167,10 +167,7 @@ test("a reorder shows on the live page, and is listed as one", async ({ page }) 
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
-  await expect(page.getByText(/shows? once applied/)).toHaveCount(0);
-  // Shown by its order, the page's own markup as it was.
   expect(await page.locator(HERO).evaluate((el) => [...el.children].map((child) => child.localName))).toEqual(["header", "p", "button"]);
-  await expect(page.locator(`${HERO} > button`)).toHaveCSS("order", "3");
   await page.getByRole("button", { name: /not applied yet/ }).click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Reorder.*Button.*3rd → 2nd/]);
 });

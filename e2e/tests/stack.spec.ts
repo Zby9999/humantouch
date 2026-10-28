@@ -113,7 +113,7 @@ test("a Stack dissolved from the Design panel is a Frame, its layers absolute wh
   await expect(layerTree(page).getByRole("treeitem", { name: "Header", exact: true })).toHaveAttribute("aria-description", "Frame");
 });
 
-test("making and dissolving Stacks show once applied, and are listed as such", async ({ page }) => {
+test("making and dissolving Stacks are listed as such", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
   await page.keyboard.press("Alt+Shift+A");
@@ -123,7 +123,6 @@ test("making and dissolving Stacks show once applied, and are listed as such", a
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
-  await expect(page.getByText("2 changes show once applied")).toBeVisible();
   await page.getByRole("button", { name: /not applied yet/ }).click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([
     /Dissolve Stack.*Header.*horizontal Stack → Frame/,

@@ -4,7 +4,6 @@ import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
 import { CanvasView, isEditable } from "./CanvasView";
 import { Icon } from "./icons";
-import { canPreview } from "./change-preview";
 import { createChangeSet, type Change, type ChangeSet } from "./changeset";
 import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
@@ -35,8 +34,6 @@ interface Props {
   onChanges(changes: Change[]): void;
   /** Set once there is a canvas, for the change list to reach it. */
   control: { current: RoundControl | null };
-  /** The Change Preview is on: back in preview mode, the page shows the changes it can. */
-  previewing: boolean;
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -50,7 +47,7 @@ const ADJUSTING_MS = 200;
 const AUTOSAVE_MS = 500;
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, onSave, onChanges, control, previewing, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, onSave, onChanges, control, leaving, animate, onLeft }: Props) {
   /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
   const [layersShown, setLayersShown] = useState(readLayersShown);
   const layersToggle = useRef<HTMLButtonElement>(null);
@@ -64,6 +61,19 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
   useEffect(() => {
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
+
+  /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
+  const [playing, setPlaying] = useState(false);
+  const playButton = useRef<HTMLButtonElement>(null);
+  const stopped = useRef(false);
+  const play = (on: boolean) => {
+    stopped.current = !on;
+    setPlaying(on);
+  };
+  // Back from playing, focus goes back to the button that started it.
+  useEffect(() => {
+    if (!playing && stopped.current) playButton.current?.focus();
+  }, [playing]);
 
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
@@ -167,11 +177,12 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, playing });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { editor, onEdit, select } = latest.current;
+      const { editor, onEdit, select, playing } = latest.current;
+      if (playing) return;
       const target = event.composedPath()[0];
       const field = target instanceof HTMLElement && target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing");
       if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return;
@@ -194,9 +205,9 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
   // copies them. Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve, remove, duplicate } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate, playing } = latest.current;
       const target = event.composedPath()[0];
-      if (!selected.length || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      if (playing || !selected.length || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
       const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
@@ -214,7 +225,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
   }, []);
 
   return (
-    <div class={layersShown ? "vk-shell" : "vk-shell is-layers-hidden"}>
+    <div class={`vk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
       {layersShown ? (
         <aside class="vk-panel is-layers" aria-label="Layers">
           <div class="vk-panel-header">
@@ -288,14 +299,21 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
           const now = editor!.tree().layerOf(layer.el);
           if (now) select([now]);
         }}
+        playing={playing}
+        onStopPlaying={() => play(false)}
         leaving={leaving}
         animate={animate}
-        changed={!!round.current?.changeSet.list().some((change) => !previewing || !canPreview(change))}
+        changed={!!round.current?.changeSet.list().length}
         onLeft={onLeft}
       />
       <aside class="vk-panel is-design" aria-label="Design">
         <div class="vk-panel-header">
           <h2 class="vk-panel-title">Design</h2>
+          {tree && (
+            <button ref={playButton} type="button" class="vk-icon-button" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
+              <Icon name="play" />
+            </button>
+          )}
           {controls}
         </div>
         {tree && editor && selected.length ? (
@@ -307,6 +325,11 @@ export function Shell({ controls, saved, onSave, onChanges, control, previewing,
           <p class="vk-panel-empty">Select a layer to see its properties.</p>
         )}
       </aside>
+      {playing && (
+        <button type="button" class="vk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={() => play(false)}>
+          <Icon name="close" />
+        </button>
+      )}
     </div>
   );
 }

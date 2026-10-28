@@ -511,7 +511,7 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const structural = (layers: string[], back: string[], make: () => void, unmake: () => void) => {
     const run = (f: () => void) => () => {
       f();
-      syncOrders(doc, changes, isFlow);
+      syncOrders(doc, changes);
       tree = buildLayerTree(doc);
     };
     run(make)();
@@ -643,13 +643,8 @@ export function createEditor(initialTree: LayerTree, changes: ChangeSet): Editor
   const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
     changes.record(id, { ...record, before: from, after: to, style });
     relocate(doc, id, record.property, from, to, style, changes.list());
-    syncOrders(doc, changes, isFlow);
+    syncOrders(doc, changes);
     tree = buildLayerTree(doc);
-  };
-  /** Whether the container with id `id` lays its layers out as a plain top-to-bottom flow of blocks, not as flex or grid. */
-  const isFlow = (id: string) => {
-    const [el] = elementsOf(doc, id);
-    return !!el && FLOW.test(getComputedStyle(el).display);
   };
 
   const editor: Editor = {

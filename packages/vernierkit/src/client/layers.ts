@@ -316,12 +316,6 @@ export function wordsAsPage(el: Element): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** The usage key of an element on a canvas, from its markers alone: null with no source marker. */
-export function canvasKey(el: Element): string | null {
-  const { loc, chain } = originOf(el, chainOf(el));
-  return loc && usageKey(loc, chain);
-}
-
 function chainOf(el: Element): UsageLevel[] {
   const json = el.getAttribute(CHAIN_ATTR);
   if (!json) return [];

@@ -94,21 +94,7 @@ function lowestShellOpacity(page: Page) {
   );
 }
 
-test("with the Change Preview on, the page already shows the changes: the editor goes as soon as the canvas is back over it", async ({ page }) => {
-  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
-  await expectSettled(page);
-  await fillCardsRed(page);
-  await playbackRate(cdp, 0.1);
-
-  await page.getByRole("button", { name: EXIT_LABEL }).click();
-
-  expect(await lowestShellOpacity(page)).toBe(1);
-  await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 0, 0)");
-});
-
-test("with the Change Preview switched to Now, the canvas fades into the page once it has grown back over it", async ({ page }) => {
-  await page.evaluate(() => localStorage.setItem("vernierkit:change-preview", "off"));
-  await page.reload();
+test("with changes not yet applied, the canvas fades into the page once it has grown back over it", async ({ page }) => {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expectSettled(page);
   await fillCardsRed(page);

@@ -77,7 +77,7 @@ test("claim folds the editor into a locked toggle; each done fills the ring and 
   expect(results()).toMatchObject([{ ended: "finished", done: [1, 2] }]);
 });
 
-test("an edit not yet saved when the Agent claims stays out of the round, on the toggle and the page alike", async ({ page }) => {
+test("an edit not yet saved when the Agent claims stays out of the round", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
   // Claimed well within the autosave delay of this edit.
@@ -86,7 +86,6 @@ test("an edit not yet saved when the Agent claims stays out of the round, on the
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
-  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
   expect(readVernier("changeset.json").changes[1].after).toBe(2);
 });
 
@@ -157,46 +156,20 @@ function cardStyles(page: Page, property: "backgroundColor" | "borderRadius") {
   return page.locator("article").evaluateAll((cards, property) => cards.map((card) => getComputedStyle(card)[property]), property);
 }
 
-const RED = "rgb(255, 0, 0)";
 const WHITE = "rgb(255, 255, 255)";
 
-test("each change done leaves the Change Preview, so the page shows what the code really does; after finish, nothing is previewed", async ({ page }) => {
+test("the page shows the code all along: before the claim, while the round is applied, and after it", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
-  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
-  expect(await cardStyles(page, "backgroundColor")).toEqual([RED, RED, RED, WHITE]);
-  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
+  expect(await cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
 
-  // The test applies nothing to the code: once done, a change shows as the code has it, unchanged.
+  await vernierkit("claim");
   await vernierkit("done", "1");
-  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
-  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
-
+  expect(await cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   await vernierkit("finish");
-  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
-  await expect(page.locator("[data-vk-preview], style[data-vk-preview-styles]")).toHaveCount(0);
-  await expect(page.getByRole("radiogroup", { name: "Change Preview" })).toHaveCount(0);
-});
-
-test("after unlocking by hand, neither the done changes nor the others are previewed", async ({ page }) => {
-  await page.goto(DEV_URL);
-  await changeTheCards(page);
-  await vernierkit("claim");
-  await vernierkit("done", "2");
-  await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
-  expect(await cardStyles(page, "backgroundColor")).toEqual([RED, RED, RED, WHITE]);
-
-  const toggle = page.getByRole("button", { name: LOCKED_LABEL });
-  await toggle.hover();
-  await page.mouse.down();
-  await page.waitForTimeout(1200);
-  await page.mouse.up();
-
-  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   expect(await cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
-  await expect(page.locator("[data-vk-preview]")).toHaveCount(0);
 });
+
 
 test.describe("done checks the change on the page", () => {
   const APP = `${EXAMPLE}src/App.tsx`;
@@ -249,7 +222,7 @@ test.describe("done checks the change on the page", () => {
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
-  test("an edit that moves the layer's lines in its file: the check still finds it, and the file's other changes stay previewed", async ({ page }) => {
+  test("an edit that moves the layer's lines in its file: the check still finds it", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
     const layers = page.getByRole("tree", { name: "Layers" });
@@ -260,14 +233,11 @@ test.describe("done checks the change on the page", () => {
     await setField(page, "Fill color", "2563eb");
     await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
     await vernierkit("claim");
-    const header = page.locator("header");
-    await expect(header).toHaveCSS("background-color", "rgb(232, 240, 255)");
 
     // Applying the button's fill, the Agent adds a line at the top of App.tsx: every marker below moves.
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
     editSource(APP, 'import { Badge, Surface } from "acme-ui";', '// Buttons are blue now.\nimport { Badge, Surface } from "acme-ui";');
 
     expect(await vernierkit("done", "2")).toContain("Checked on the page: it shows the change.");
-    await expect(header).toHaveCSS("background-color", "rgb(232, 240, 255)");
   });
 });

@@ -35,7 +35,7 @@ interface Props {
   onUnlock(): void;
   /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
   onToggle(animate: boolean): void;
-  /** Shown beside the toggle, and the change list above or below it. */
+  /** The change list, above or below the toggle. */
   children?: ComponentChildren;
 }
 

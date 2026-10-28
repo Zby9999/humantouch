@@ -44,7 +44,7 @@ Every section has:
 For each change, in order:
 
 1. Make the change in the source.
-2. Right away, run `npx vernierkit done <number>` with the change's number. Do this after every change, not all at the end: it is how the designer sees your progress, and how the page stops previewing a change once it is in the code.
+2. Right away, run `npx vernierkit done <number>` with the change's number. Do this after every change, not all at the end: it is how the designer sees your progress, and how the change is checked on the page while you still have it in mind.
 3. Read what `done` says. It checks the change on the designer's open page:
    - **it shows the change**: go on to the next one.
    - **it does not show the change**: something overrides your edit; the output says what the page shows instead. Look again at **Currently set by**, fix it, and run `done` with the same number again. Go on only once it shows, or once you know it cannot: then report it.

@@ -1,0 +1,85 @@
+import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
+import { expect, test, type Page } from "./fixtures";
+
+const RED = "rgb(255, 0, 0)";
+
+function canvas(page: Page) {
+  return page.locator('iframe[title="Canvas"]').contentFrame();
+}
+const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
+const layers = (page: Page) => page.getByRole("complementary", { name: "Layers" });
+const playButton = (page: Page) => page.getByRole("button", { name: "Play", exact: true });
+const stopButton = (page: Page) => page.getByRole("button", { name: "Stop playing" });
+
+/** Where the canvas is in the window, and at what scale. */
+function canvasBox(page: Page) {
+  return page.locator('iframe[title="Canvas"]').evaluate((iframe) => {
+    const r = iframe.getBoundingClientRect();
+    return { x: r.x, y: r.y, scale: Math.round((r.width / (iframe as HTMLIFrameElement).offsetWidth) * 1000) / 1000 };
+  });
+}
+
+/** Fills the cards of the loop red, the first card selected. */
+async function fillTheCards(page: Page) {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const field = design(page).getByRole("textbox", { name: "Fill color", exact: true });
+  await field.fill("ff0000");
+  await field.press("Enter");
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto(DEV_URL);
+  await expect(page.locator("h1")).toBeVisible();
+});
+
+test("play shows the canvas alone, at full size, with its changes; Esc goes back to editing as it was", async ({ page }) => {
+  await fillTheCards(page);
+  const before = await canvasBox(page);
+
+  await playButton(page).click();
+  await expect(layers(page)).toBeHidden();
+  await expect(design(page)).toBeHidden();
+  await expect(page.locator(".vk-selection")).toHaveCount(0);
+  expect((await canvasBox(page)).scale).toBe(1);
+  await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", RED);
+
+  // It scrolls like a page.
+  const top = (await canvasBox(page)).y;
+  await page.mouse.move(400, 300);
+  await page.mouse.wheel(0, 300);
+  await expect.poll(async () => (await canvasBox(page)).y).toBeLessThan(top);
+
+  await page.keyboard.press("Escape");
+  await expect(design(page)).toBeVisible();
+  await expect(design(page).getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FF0000");
+  expect(await canvasBox(page)).toEqual(before);
+  await expect(playButton(page)).toBeFocused();
+});
+
+test("while playing, nothing is selected or edited: clicks and keys leave the canvas as it is", async ({ page }) => {
+  await fillTheCards(page);
+  await playButton(page).click();
+  await expect(stopButton(page)).toBeVisible();
+
+  await canvas(page).locator("h1").click({ force: true });
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("t");
+
+  await stopButton(page).click();
+  await expect(design(page).getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FF0000");
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", RED);
+  await expect(page.getByRole("region", { name: "Canvas viewport" })).not.toHaveClass(/is-drawing/);
+});
+
+test("back in preview mode, the page is as the code has it: the changes are on the canvas only", async ({ page }) => {
+  await fillTheCards(page);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+
+  await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.getByRole("radiogroup")).toHaveCount(0);
+});

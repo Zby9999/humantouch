@@ -145,13 +145,12 @@ test("⌥ held as a dragged layer is let go leaves it where it was, and puts a c
   expect(await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "button", "p", "button"]);
 });
 
-test("new layers, words, deletions and copies all show once applied", async ({ page }) => {
+test("a copy is on the canvas only: back in preview mode, the page is as the code has it", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
   await page.keyboard.press("ControlOrMeta+d");
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
-  await expect(page.getByText("1 change shows once applied")).toBeVisible();
   await expect(page.locator(`${HERO} > button`)).toHaveCount(1);
 });

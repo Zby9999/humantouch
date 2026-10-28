@@ -1,26 +1,43 @@
 /**
  * The check (ADR 0006): once the Agent reports a change done, whether the live
- * page shows it. The change's preview is off by then, so what the page shows is
- * what the code does. The dev server may still be bringing the edit in: a value
+ * page shows it. The page never shows changes not yet applied (ADR 0010), so
+ * what it shows is what the code does. The dev server may still be bringing the edit in: a value
  * that does not match yet is read again each time the page changes, until it
  * does or time is up. Changes to the page are watched rather than polled, as a
  * page in a background tab gets its timers slowed.
  */
 import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
-import { canPreview, elementsOf, usageKeyOf } from "./change-preview";
 import { isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property } from "./edits";
 import { signOf, usageKey } from "./layers";
+import { elementsOf, usageKeyOf } from "./page-elements";
 
-/** Why a change cannot be checked, when it cannot: as for the Change Preview, the page must be able to find and show it. */
+/** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
 function uncheckable(change: Change): string | null {
   if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
-  if (canPreview(change)) return null;
+  if (checkable(change)) return null;
   if (change.kind === "style") return "the layer's container cannot be found on the page";
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
+}
+
+/**
+ * Of the changes to the structure, those the page can be measured for: a
+ * reorder in the same container (unless text runs on among its layers), a
+ * placement absolute in the same container, a deletion; not when one of a
+ * loop's instances is changed alone, which the page cannot tell apart.
+ */
+function checkable(change: Change): boolean {
+  if (change.kind === "style") return true;
+  if (change.data) return false;
+  if (change.kind === "delete") return true;
+  if (change.kind !== "move" || change.wrap) return false;
+  const [before, after] = [change.before, change.after] as Place[];
+  const container = after.container.target;
+  if (before.container.layer !== after.container.layer || !container.loc || container.made) return false;
+  return after.absolute ? true : !before.absolute && !!change.order;
 }
 
 export function checkChange(doc: Document, change: Change): Promise<CheckResult> {

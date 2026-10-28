@@ -78,49 +78,6 @@ export const styles = /* css */ `
 .is-holding .vk-progress-hold { opacity: 1; animation: vk-hold var(--vk-hold) linear forwards; }
 @keyframes vk-hold { to { stroke-dashoffset: 0; } }
 
-/* Change Preview: "Changed / Now" beside the toggle, dark like it. */
-.vk-preview {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.vk-dock[data-corner$="right"] .vk-preview { flex-direction: row-reverse; }
-.vk-segmented {
-  display: flex;
-  padding: 2px;
-  border-radius: 8px;
-  background: #1e1e1e;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 4px 12px rgb(0 0 0 / 0.18);
-}
-.vk-segment {
-  all: unset;
-  box-sizing: border-box;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 6px;
-  color: rgb(255 255 255 / 0.6);
-  font: 500 11px/24px ${FONT_STACK};
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-.vk-segment:hover { color: #fff; }
-.vk-segment[aria-checked="true"] { background: #444444; color: #fff; }
-.vk-segment:focus-visible { outline: 2px solid #0d99ff; outline-offset: 1px; }
-.vk-preview-note {
-  margin: 0;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: #1e1e1e;
-  color: rgb(255 255 255 / 0.8);
-  font: 500 11px/16px ${FONT_STACK};
-  white-space: nowrap;
-}
-
 /* Changes not yet applied, on the toggle's top-right edge. It opens the change list. */
 .vk-badge {
   all: unset;
@@ -242,7 +199,7 @@ export const styles = /* css */ `
 .vk-panel.is-design { border-left: 1px solid var(--vk-border); }
 /* The Layers panel starts hidden: the canvas takes its column, and a button at its top left brings it back. */
 .vk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) 240px; }
-.vk-show-layers {
+.vk-show-layers, .vk-stop-playing {
   all: unset;
   position: absolute;
   top: 8px;
@@ -257,8 +214,13 @@ export const styles = /* css */ `
   box-shadow: 0 0 0 1px var(--vk-border), 0 2px 6px rgb(0 0 0 / 0.08);
   color: var(--vk-text);
 }
-.vk-show-layers:hover { background: var(--vk-field); }
-.vk-show-layers:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
+:is(.vk-show-layers, .vk-stop-playing):hover { background: var(--vk-field); }
+:is(.vk-show-layers, .vk-stop-playing):focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
+/* Playing: the canvas alone, at full size; a button at the top right goes back to editing. */
+.vk-shell.is-playing { grid-template-columns: minmax(0, 1fr); }
+.vk-shell.is-playing > :is(.vk-panel, .vk-show-layers) { display: none; }
+.vk-shell.is-playing .vk-canvas { box-shadow: none; }
+.vk-stop-playing { left: auto; right: 8px; }
 .vk-panel-title {
   margin: 0;
   padding: 12px 16px;

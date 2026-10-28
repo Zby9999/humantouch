@@ -32,8 +32,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
     else for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest));
   }
-  // A reorder's container's order is as recorded when it was a plain flow: it has no styles to tell here.
-  syncOrders(doc, changes, () => false);
+  syncOrders(doc, changes);
   if (!changes.list().length) return null;
   const doctype = /^<!DOCTYPE html>/i.test(round.canvas) ? "<!DOCTYPE html>" : "";
   return { canvas: doctype + doc.documentElement.outerHTML, changeSet: changes.save() };

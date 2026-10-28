@@ -128,15 +128,13 @@ export interface Change {
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
   reference?: true;
   /**
-   * A reorder: the layers of the container in their order now, by usage key
-   * (null for one with no source marker) and by what they look like (`signs`:
-   * tag and words, which survive the Agent moving the JSX), and whether the
-   * container is a plain top-to-bottom flow; what the live page shows the
-   * order by, and checks it by. `self`: which of them the change moves;
-   * `others`: those other reorders move, which this one's check leaves out.
-   * Null: the page cannot show it, as text runs on among the layers.
+   * A reorder: the layers of the container in their order now, by what they
+   * look like (`signs`: tag and words, which survive the Agent moving the
+   * JSX); what the check measures the live page by. `self`: which of them the
+   * change moves; `others`: those other reorders move, which this one's check
+   * leaves out. Null: the page cannot tell their order, as text runs on among the layers.
    */
-  order?: { keys: (string | null)[]; signs: string[]; flow: boolean; self: number; others: number[] } | null;
+  order?: { signs: string[]; self: number; others: number[] } | null;
 }
 
 /**

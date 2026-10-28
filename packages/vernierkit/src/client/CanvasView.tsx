@@ -51,6 +51,10 @@ interface Props {
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
   onEditText(layer: Layer, text: string): void;
+  /** Playing: the canvas alone at 100%, scrolled like a page; nothing on it can be selected or edited. */
+  playing: boolean;
+  /** Esc, while playing. */
+  onStopPlaying(): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -62,7 +66,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, onCreate, onBeginText, onEditText, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, onCreate, onBeginText, onEditText, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -170,6 +174,26 @@ export function CanvasView(props: Props) {
     };
   }, []);
 
+  // Playing shows the canvas at 100%, from the part at the top of the viewport; stopping puts the view back as it was.
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const beforePlaying = useRef<View | null>(null);
+  useLayoutEffect(() => {
+    if (!canvas) return;
+    if (playing) {
+      beforePlaying.current = view;
+      setTool(null);
+      setHover(null);
+      const area = viewport.current!.getBoundingClientRect();
+      const top = Math.max(0, -view.y / view.zoom);
+      setView(scrolled({ zoom: 1, x: 0, y: -top }, canvas, area));
+      viewport.current!.focus({ preventScroll: true });
+    } else if (beforePlaying.current) {
+      setView(beforePlaying.current);
+      beforePlaying.current = null;
+    }
+  }, [playing]);
+
   // Leaving grows the canvas back over the page; a click on the way turns it around.
   const wasLeaving = useRef(false);
   useLayoutEffect(() => {
@@ -200,12 +224,26 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {}, tool });
-  latest.current = { canvas, selected, onSelect, endDrag, tool };
+  const latest = useRef({ canvas, selected, onSelect, endDrag: (_commit: boolean) => {}, tool, playing, onStopPlaying });
+  latest.current = { canvas, selected, onSelect, endDrag, tool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { canvas, selected, onSelect, endDrag, tool } = latest.current;
+      const { canvas, selected, onSelect, endDrag, tool, playing, onStopPlaying } = latest.current;
+      // Playing, the keys scroll as on a page, and Esc stops.
+      if (playing) {
+        if (event.type !== "keydown" || !canvas || event.metaKey || event.ctrlKey || event.altKey) return;
+        const area = viewport.current!.getBoundingClientRect();
+        const page = area.height - 40;
+        const by: Record<string, number> = { ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page, Home: -Infinity, End: Infinity };
+        const dy = event.code === "Space" ? (event.shiftKey ? -page : page) : by[event.key];
+        if (event.key !== "Escape" && dy === undefined) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === "Escape") onStopPlaying();
+        else setView((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, canvas, area));
+        return;
+      }
       if (event.key === "Meta" || event.key === "Control") {
         const deep = event.metaKey || event.ctrlKey;
         setHover((h) => h && { ...h, deep });
@@ -268,10 +306,16 @@ export function CanvasView(props: Props) {
   }, []);
 
   // A panel opening or closing beside the viewport moves its left edge: the canvas stays where it is on screen.
+  // Playing hides the panels for a while, and the canvas keeps to the middle; the edge is back where it was after.
   useEffect(() => {
     const el = viewport.current!;
     let left = el.getBoundingClientRect().left;
     const observer = new ResizeObserver(() => {
+      if (playingRef.current) {
+        const { canvas } = latest.current;
+        if (canvas) setView((v) => scrolled(v, canvas, el.getBoundingClientRect()));
+        return;
+      }
       const now = el.getBoundingClientRect().left;
       if (now === left) return;
       const moved = left - now;
@@ -290,6 +334,12 @@ export function CanvasView(props: Props) {
       const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? el.clientHeight : 1;
       let dx = event.deltaX * unit;
       let dy = event.deltaY * unit;
+      if (playingRef.current) {
+        const { canvas } = latest.current;
+        if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
+        if (canvas) setView((v) => scrolled({ ...v, x: v.x - dx, y: v.y - dy }, canvas, el.getBoundingClientRect()));
+        return;
+      }
       if (event.ctrlKey || event.metaKey) {
         const rect = el.getBoundingClientRect();
         const step = Math.max(-MAX_ZOOM_STEP, Math.min(MAX_ZOOM_STEP, dy));
@@ -315,6 +365,7 @@ export function CanvasView(props: Props) {
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (playing) return;
     if (event.button === 0 && !spaceHeld && tool && editor) {
       event.currentTarget.setPointerCapture(event.pointerId);
       const start = toCanvas(event);
@@ -344,6 +395,7 @@ export function CanvasView(props: Props) {
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (playing) return;
     if (drawing.current?.pointerId === event.pointerId) {
       setDrawn(boxFrom(drawing.current.start, toCanvas(event)));
       return;
@@ -508,6 +560,7 @@ export function CanvasView(props: Props) {
       onPointerCancel={endPan}
       onPointerLeave={() => setHover(null)}
       onDblClick={(event) => {
+        if (playing) return;
         const hit = layerAt(event);
         const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
         // On the text selected, a double click types in it.
@@ -525,8 +578,8 @@ export function CanvasView(props: Props) {
       >
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
-      {canvas && hovered && !selected.includes(hovered) && !travelling && <Outline layer={hovered} view={view} hover />}
-      {canvas && !travelling && selected.map((layer, i) => <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
+      {canvas && hovered && !selected.includes(hovered) && !travelling && !playing && <Outline layer={hovered} view={view} hover />}
+      {canvas && !travelling && !playing && selected.map((layer, i) => <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
       {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
@@ -647,6 +700,13 @@ function currentView(stage: HTMLElement): View {
 }
 
 /** At most 100%, the full width in view, and the part of the page the designer was looking at on top. */
+/** At 100%, kept within the canvas: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
+function scrolled(view: View, canvas: Canvas, area: DOMRect): View {
+  const within = (n: number, min: number) => Math.max(Math.min(0, min), Math.min(0, n));
+  const x = canvas.width <= area.width ? Math.round((area.width - canvas.width) / 2) : within(view.x, area.width - canvas.width);
+  return { zoom: 1, x, y: within(view.y, area.height - canvas.height) };
+}
+
 function initialView(canvas: Canvas, area: DOMRect): View {
   const zoom = clamp(Math.min(1, (area.width - 2 * PADDING) / canvas.width));
   return { ...centered(canvas, area, zoom), y: PADDING - canvas.scrollY * zoom };

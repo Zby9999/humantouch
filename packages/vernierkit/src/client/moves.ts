@@ -5,7 +5,7 @@
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
-import { canvasKey, NOT_DRAWN, signOf } from "./layers";
+import { NOT_DRAWN, signOf } from "./layers";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -50,20 +50,16 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
 
 /**
  * Puts the order of each reordered container's layers, as the canvas has them
- * now, into its reorders: what the live page shows the order by.
- * `flow(id)`: whether the container with that id is a plain top-to-bottom flow,
- * when no reorder says yet.
+ * now, into its reorders: what the check measures the live page by.
  */
-export function syncOrders(doc: Document, changes: ChangeSet, flow: (id: string) => boolean) {
+export function syncOrders(doc: Document, changes: ChangeSet) {
   const reorders = changes.list().filter(isReorder);
   for (const change of reorders) {
     const id = (change.after as Place).container.layer;
     const layers = layersIn(doc, id);
     const moved = (layer: string | null) => reorders.some((other) => other !== change && other.layer === layer && (other.after as Place).container.layer === id);
     const order = layers && {
-      keys: layers.map(canvasKey),
       signs: layers.map(signOf),
-      flow: change.order?.flow ?? flow(id),
       self: layers.findIndex((el) => el.getAttribute(LAYER_ID_ATTR) === change.layer),
       others: layers.flatMap((el, i) => (moved(el.getAttribute(LAYER_ID_ATTR)) ? [i] : [])),
     };
