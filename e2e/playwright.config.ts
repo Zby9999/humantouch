@@ -33,7 +33,8 @@ export default defineConfig({
   fullyParallel: true,
   reporter: process.env.CI ? "github" : "list",
   // Mode switches animate; tests that measure the canvas want it to settle at once. motion.spec.ts opts back in.
-  use: { ...devices["Desktop Chrome"], channel: "chrome", trace: "retain-on-failure", reducedMotion: "reduce" },
+  // Playwright's own headless shell, not the installed Chrome: on macOS, Chrome takes focus as it starts.
+  use: { ...devices["Desktop Chrome"], trace: "retain-on-failure", reducedMotion: "reduce" },
   projects: [
     { name: "page", testIgnore: PROJECT_FILES },
     { name: "project files", testMatch: PROJECT_FILES, workers: 1 },
