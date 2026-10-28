@@ -6,9 +6,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 示例项目使用 React 18 与 Tailwind v3，主题中有自定义的颜色、间距、圆角、字号与断点，页面上用到了它们
-- [ ] e2e 中加入这个项目的开发服务器（端口随 `VK_E2E_PORT` 偏移，不与已有端口冲突），并有覆盖一轮的端到端测试：进入编辑模式、改一处、`claim`、`done` 核对通过
-- [ ] 在 React 18 上读出的使用链与 React 19 示例一致；不一致处在本 ticket 中修好
-- [ ] 已有示例项目的测试全部通过
+- [x] 示例项目使用 React 18 与 Tailwind v3，主题中有自定义的颜色、间距、圆角、字号与断点，页面上用到了它们
+- [x] e2e 中加入这个项目的开发服务器（端口随 `VK_E2E_PORT` 偏移，不与已有端口冲突），并有覆盖一轮的端到端测试：进入编辑模式、改一处、`claim`、`done` 核对通过
+- [x] 在 React 18 上读出的使用链与 React 19 示例一致；不一致处在本 ticket 中修好
+- [x] 已有示例项目的测试全部通过

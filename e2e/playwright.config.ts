@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 const example = fileURLToPath(new URL("../examples/vite-react19-tw4", import.meta.url));
 const nextExample = fileURLToPath(new URL("../examples/next-app-css-modules", import.meta.url));
+const react18Example = fileURLToPath(new URL("../examples/vite-react18-tw3", import.meta.url));
 
 /**
  * The dev server on this port, the production preview on the next, and the
@@ -19,6 +20,8 @@ export const INSTALL_PORT = PORT + 2;
 export const NEXT_URL = `http://localhost:${PORT + 3}`;
 /** Where `next-install.spec.ts` serves its copy of the Next.js example, with webpack. */
 export const NEXT_INSTALL_PORT = PORT + 4;
+/** The React 18 + Tailwind v3 example's dev server. */
+export const REACT18_URL = `http://localhost:${PORT + 5}`;
 export const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
 export const EXIT_LABEL = "Vernier Kit: back to preview mode";
 
@@ -55,6 +58,13 @@ export default defineConfig({
       cwd: nextExample,
       command: `pnpm exec next dev --port ${PORT + 3}`,
       url: NEXT_URL,
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      name: "react 18",
+      cwd: react18Example,
+      command: `pnpm exec vite --port ${PORT + 5} --strictPort`,
+      url: REACT18_URL,
       reuseExistingServer: !process.env.CI,
     },
   ],
