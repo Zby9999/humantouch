@@ -8,7 +8,7 @@
 
 **Status:** done
 
-- [x] `icons.tsx` 中的 20 个图标全部换成 Hugeicons Stroke Rounded，16px 显示，线宽 1px
+- [x] `icons.tsx` 中的 20 个图标全部换成 Hugeicons Stroke Rounded，14px 显示，线宽 1.25px
 - [x] 不增加运行时依赖，SVG 内联
 - [x] 附上 Hugeicons 的 MIT 许可，打包产物中保留
 
@@ -19,6 +19,10 @@
 - 对照：stack-vertical → `layout-2-row`，stack-horizontal → `layout-2-column`，grid → `grid-view`，frame → `frame`，text → `text`，image → `image-03`，still → `play-square`，instance → `component`，lock → `square-lock-02`，radius → `square-round-corner`，plus → `plus-sign`，minus → `minus-sign`，gap → `align-horizontal-space-between`，close → `cancel-01`，opacity → `transparency`，undo → `undo-02`，sidebar → `sidebar-left`，play → `play`，pointer → `cursor-01`，brief → `sticky-note-03`。
 - SVG 取自 Iconify 的 `hugeicons` 集（MIT）；上游许可为 github.com/hugeicons/hugeicons 的 LICENSE.md，原文以 `/*! */` 注释放在 `icons.tsx` 顶部，构建后保留在 `react.dev.js` 中。
 - 浮动开关按钮上的图案是 Vernier Kit 自己的标志，没有换。
+
+**调整（2026-10-28）**
+
+- 设计师用滑块对比后定为 14px、线宽 1.25px。两个值是 `styles.ts` 里 `:host` 上的样式变量 `--vk-icon-size` 与 `--vk-icon-stroke`；线宽用 `vector-effect: non-scaling-stroke` 按屏幕像素算，不随图标大小缩放，改其中一个不影响另一个。
 
 **已知限制**
 

@@ -7,7 +7,13 @@ export const styles = /* css */ `
 :host {
   /* Cut off everything the page could pass down by inheritance. */
   all: initial !important;
+  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
+  --vk-icon-size: 14px;
+  --vk-icon-stroke: 1.25px;
 }
+
+.vk-icon { flex: none; width: var(--vk-icon-size); height: var(--vk-icon-size); }
+.vk-icon * { stroke-width: var(--vk-icon-stroke); vector-effect: non-scaling-stroke; }
 
 .vk-dock {
   --vk-gap: 16px;

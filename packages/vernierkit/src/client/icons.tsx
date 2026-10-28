@@ -28,7 +28,8 @@ import { role, type Layer } from "./layers";
 
 /**
  * Hugeicons Stroke Rounded, as Iconify serves them: the markup inside a 24px
- * square, drawn in the current text color. Shown at 16px, the 1.5 stroke is 1px.
+ * square, drawn in the current text color. Their size and the width of their
+ * lines are the styles' (`--vk-icon-size`, `--vk-icon-stroke`).
  * Each is named for what it shows here, and above it, its Hugeicons name.
  */
 const ICONS: Record<string, string> = {
@@ -78,7 +79,7 @@ export type IconName = keyof typeof ICONS;
 
 export function Icon({ name }: { name: IconName }) {
   return (
-    <svg class="vk-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICONS[name] }} />
+    <svg class="vk-icon" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICONS[name] }} />
   );
 }
 
