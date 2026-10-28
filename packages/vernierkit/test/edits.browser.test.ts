@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS } from "../src/service-protocol";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
+import { createClipboard } from "../src/client/clipboard";
 import { createEditor } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { buildLayerTree, type Layer } from "../src/client/layers";
@@ -1625,6 +1626,66 @@ describe("ungrouping", () => {
     const { editor, layer } = open(NESTED);
     expect(editor.canUngroup(editor.tree().root)).toBe(false);
     expect(editor.canUngroup(layer("x"))).toBe(false);
+  });
+});
+
+describe("copy, cut and paste", () => {
+  const open = (page = MOVES) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = (id: string) => [...canvas.doc.getElementById(id)!.children].filter((el) => style(el).display !== "none").map((el) => el.textContent);
+    return { ...canvas, layer, order, clipboard: createClipboard(canvas.editor, canvas.changes) };
+  };
+
+  test("copied and pasted into a Stack selected: a copy at its end, as ⌘D makes one", () => {
+    const { editor, changes, layer, order, clipboard } = open();
+
+    expect(clipboard.copy([layer("a")])).toBe(true);
+    const pasted = clipboard.paste([layer("row")]);
+
+    expect(order("row")).toEqual(["D", "A"]);
+    expect(pasted.map((l) => l.el.textContent)).toEqual(["A"]);
+    expect(changes.list().map((c) => c.kind)).toEqual(["duplicate"]);
+    editor.undo();
+    expect(order("row")).toEqual(["D"]);
+  });
+
+  test("pasted with a layer selected that holds none: right after it", () => {
+    const { layer, order, clipboard } = open();
+
+    clipboard.copy([layer("d")]);
+    clipboard.paste([layer("b")]);
+
+    expect(order("list")).toEqual(["A", "B", "D", "C"]);
+  });
+
+  test("cut: gone at once, as a deletion; pasted elsewhere, a move instead, which pastes again as copies", () => {
+    const { doc, changes, layer, order, clipboard } = open();
+
+    expect(clipboard.cut([layer("b")])).toBe(true);
+    expect(style(doc.getElementById("b")!).display).toBe("none");
+    expect(changes.list().map((c) => c.kind)).toEqual(["delete"]);
+
+    clipboard.paste([layer("row")]);
+    expect(order("row")).toEqual(["D", "B"]);
+    expect(order("list")).toEqual(["A", "C"]);
+    expect(changes.list().map((c) => [c.kind, c.layer === doc.getElementById("b")!.getAttribute("data-vk-layer")])).toEqual([["move", true]]);
+
+    clipboard.paste([layer("list")]);
+    expect(order("list")).toEqual(["A", "C", "B"]);
+    expect(changes.list().map((c) => c.kind)).toEqual(["move", "duplicate"]);
+  });
+
+  test("into a Frame selected: placed where it was in its own", () => {
+    const { layer, clipboard, doc } = open(
+      board(placed("a", [20, 30, 100, 40])).replace("</body>", `<div id="frame2" ${at("40:5")} style="position: relative; width: 300px; height: 200px"></div></body>`),
+    );
+
+    clipboard.copy([layer("a")]);
+    const [copy] = clipboard.paste([layer("frame2")]);
+
+    expect(copy.el.parentElement).toBe(doc.getElementById("frame2"));
+    expect([style(copy.el).left, style(copy.el).top]).toEqual(["20px", "30px"]);
   });
 });
 

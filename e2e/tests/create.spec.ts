@@ -184,3 +184,22 @@ test("a copy is on the canvas only: back in preview mode, the page is as the cod
 
   await expect(page.locator(`${HERO} > button`)).toHaveCount(1);
 });
+
+test("⌘C and ⌘V paste a copy into the Stack selected; ⌘X takes a layer away at once, and ⌘V puts it there: a move", async ({ page }) => {
+  await enterEditMode(page);
+  const header = canvas(page).locator(`${HERO} > header`);
+  await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+c");
+  await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(header.locator("> button")).toHaveCount(1);
+
+  await layerTree(page).getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(canvas(page).locator(`${HERO} > p`)).toBeHidden();
+  await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(header.locator("> p")).toBeVisible();
+
+  await expect(await changeRows(page)).toHaveText([/Duplicate.*Button/, /Move.*A Framer-style/]);
+});

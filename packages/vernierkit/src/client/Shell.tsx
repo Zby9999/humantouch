@@ -1,10 +1,11 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren } from "preact";
-import { useEffect, useReducer, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
 import { CanvasView, isEditable } from "./CanvasView";
 import { Icon } from "./icons";
 import { createChangeSet, type Change, type ChangeSet, type Created } from "./changeset";
+import { createClipboard } from "./clipboard";
 import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { buildLayerTree, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -177,6 +178,26 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
     select(stacks.map((stack) => editor.tree().layerOf(stack.el)).filter((layer) => layer !== null));
   };
 
+  /** ⌘C / ⌘X / ⌘V, within the editor. */
+  const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet) : null), [editor]);
+  /** ⌘C or ⌘X: whether there was anything to copy or cut. Cut layers are gone, and nothing is selected. */
+  const hold = (cut: boolean, layers: Layer[]) => {
+    if (!clipboard || !(cut ? clipboard.cut(layers) : clipboard.copy(layers))) return false;
+    if (cut) {
+      onEdit();
+      select([]);
+    }
+    return true;
+  };
+  /** ⌘V: the layers pasted, selected. */
+  const paste = (layers: Layer[]) => {
+    const pasted = clipboard?.paste(layers) ?? [];
+    if (!pasted.length) return false;
+    onEdit();
+    select(pasted);
+    return true;
+  };
+
   /** ⌘⇧G: each Stack or Frame taken away, its layers left where they are and selected. */
   const ungroup = (layers: Layer[]) => {
     if (!editor) return;
@@ -194,8 +215,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, playing });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, playing };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, hold, paste, playing });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, hold, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -219,13 +240,23 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
   }, []);
 
   // As in Figma: ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, ⌘⇧G ungroups them,
-  // Delete deletes and ⌘D copies them. Fields and dialogs keep their keys.
+  // Delete deletes and ⌘D copies them; ⌘C, ⌘X and ⌘V copy, cut and paste. Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve, remove, duplicate, ungroup, playing } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate, ungroup, hold, paste, playing } = latest.current;
       const target = event.composedPath()[0];
-      if (playing || !selected.length || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      if (playing || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
+      const letter = event.key.toLowerCase();
+      // Only what the editor holds is pasted, and only when it holds something: the system clipboard is left alone.
+      if (command && !event.shiftKey && !event.altKey && ["c", "x", "v"].includes(letter)) {
+        if (letter === "v" ? paste(selected) : selected.length > 0 && hold(letter === "x", selected)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+      if (!selected.length) return;
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
       const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
       let act: (() => void) | null = null;
