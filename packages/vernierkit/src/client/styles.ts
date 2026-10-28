@@ -221,6 +221,22 @@ export const styles = /* css */ `
 .vk-shell.is-playing > :is(.vk-panel, .vk-show-layers) { display: none; }
 .vk-shell.is-playing .vk-canvas { box-shadow: none; }
 .vk-stop-playing { left: auto; right: 8px; }
+
+/* The tools, at the top right of the canvas, by the Design panel. */
+.vk-tools {
+  position: absolute;
+  top: 8px;
+  right: 248px;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--vk-panel);
+  box-shadow: 0 0 0 1px var(--vk-border), 0 2px 6px rgb(0 0 0 / 0.08);
+}
+.vk-tools .vk-icon-button[aria-pressed="true"] { background: var(--vk-accent); color: #fff; }
+.vk-shell.is-playing > .vk-tools { display: none; }
 .vk-panel-title {
   margin: 0;
   padding: 12px 16px;
@@ -286,6 +302,7 @@ export const styles = /* css */ `
 .vk-tree-row.is-instance .vk-icon { color: var(--vk-instance); }
 .vk-tree-row .vk-icon { flex: none; color: var(--vk-text-muted); }
 .vk-tree-name { overflow: hidden; text-overflow: ellipsis; }
+.vk-tree-brief { display: flex; margin-left: auto; color: var(--vk-text-muted); }
 .vk-tree-chevron {
   flex: none;
   width: 12px;
@@ -560,6 +577,8 @@ export const styles = /* css */ `
 .vk-selection[data-hidden] { opacity: 0; transition: none; }
 :is(.vk-selection, .vk-hover)[data-kind="instance"] { --vk-selection: var(--vk-instance); }
 :is(.vk-selection, .vk-hover)[data-kind="locked"] { --vk-selection: var(--vk-locked); }
+/* Typing in text, as in Framer: a blue box round the words, which grows as they do. */
+.vk-selection[data-kind="typing"] { border-width: 2px; transition: none; }
 .vk-selection-lock {
   position: absolute;
   bottom: 100%;

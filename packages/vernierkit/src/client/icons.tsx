@@ -21,6 +21,8 @@ const PATHS: Record<string, string> = {
   undo: "M5.5 4 3 6.5 5.5 9M3 6.5h6.5a3.25 3.25 0 0 1 0 6.5H7",
   sidebar: "M2.5 3.5h11v9h-11zM6 3.5v9",
   play: "M5 3.5v9l7-4.5z",
+  pointer: "M5 2.5v10l2.8-2.6 1.9 3.6 1.4-.7-1.9-3.6h3.8z",
+  brief: "M4 2.5h6l2 2v9H4zM6 7h4M6 9.5h4",
 };
 
 export type IconName = keyof typeof PATHS;

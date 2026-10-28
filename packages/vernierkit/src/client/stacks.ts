@@ -11,7 +11,7 @@ import { MOVE_CSS, slotsOf } from "./moves";
 import { CHAIN_ATTR } from "./usage-chain";
 
 /** Every CSS property making a Stack may declare on it: what taking it apart takes off. */
-export const STACK_CSS = ["display", "flex-direction", "gap", "padding", "justify-content", "align-items", "position", "left", "top", "right", "bottom"];
+export const STACK_CSS = ["display", "flex-direction", "gap", "padding", "margin", "justify-content", "align-items", "position", "left", "top", "right", "bottom"];
 /** Every CSS property dissolving a Stack may declare on it. */
 export const DISSOLVED_CSS = ["display", "position", "width", "height"];
 
@@ -100,9 +100,33 @@ export function stackStyle({ direction, gap, padding, align }: StackSettings, st
 /** An element's box with its margins, as it takes up room in a layout. */
 export function marginBox(el: Element): Box {
   const r = el.getBoundingClientRect();
+  const [top, right, bottom, left] = marginsOf(el);
+  return { left: r.left - left, top: r.top - top, right: r.right + right, bottom: r.bottom + bottom };
+}
+
+/** An element's box, its border included: what shows of it. */
+export function borderBox(el: Element): Box {
+  const { left, top, right, bottom } = el.getBoundingClientRect();
+  return { left, top, right, bottom };
+}
+
+/** An element's margins, in px: top, right, bottom, left. */
+export function marginsOf(el: Element): [number, number, number, number] {
   const style = getComputedStyle(el);
-  const margin = (side: string) => parseFloat(style.getPropertyValue(`margin-${side}`)) || 0;
-  return { left: r.left - margin("left"), top: r.top - margin("top"), right: r.right + margin("right"), bottom: r.bottom + margin("bottom") };
+  return (["top", "right", "bottom", "left"] as const).map((side) => parseFloat(style.getPropertyValue(`margin-${side}`)) || 0) as [number, number, number, number];
+}
+
+/**
+ * The margin a new Stack takes over from its layers, which then have none:
+ * along it, the first one's before and the last one's after; across it, what
+ * they all have. Null with none.
+ */
+export function outerMargin(margins: [number, number, number, number][], direction: StackSettings["direction"]): string | null {
+  const [top, right, bottom, left] = [0, 1, 2, 3].map((side) => Math.min(...margins.map((m) => m[side])));
+  const first = margins[0];
+  const last = margins.at(-1)!;
+  const outer = direction === "vertical" ? [first[0], right, last[2], left] : [top, last[1], bottom, first[3]];
+  return outer.some((m) => m) ? outer.map((m) => `${round(m)}px`).join(" ") : null;
 }
 
 /** The box absolute layers are placed in: inside the element's border. */
@@ -136,10 +160,11 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
     keepOriginal(stack);
     declare(stack, style);
     stack.append(...(members as Element[]));
-    composed.layers.forEach(({ from }, i) => {
-      if (!from.absolute) return;
+    composed.layers.forEach((member, i) => {
+      const style = memberStyle(member);
+      if (!Object.keys(style).length) return;
       keepOriginal(members[i]!);
-      declare(members[i]!, memberStyle(true));
+      declare(members[i]!, style);
     });
   }
 }
@@ -158,7 +183,10 @@ export function decompose(doc: Document, id: string, composed: Composed, changes
     if (composed.place) stack.remove();
     // Each back at its place among the others, from the first: those before it are back by then.
     for (const { el, from } of [...members].sort((a, b) => a.from.slot - b.from.slot)) container.insertBefore(el!, slotsOf(container)[from.slot] ?? null);
-    for (const { el, from, layer } of members) if (from.absolute) restoreStyle(el!, ["position"], changesOn(layer, changes));
+    for (const member of members) {
+      const joined = Object.keys(memberStyle(member));
+      if (joined.length) restoreStyle(member.el!, joined, changesOn(member.layer, changes));
+    }
     if (!composed.place) restoreStyle(container, STACK_CSS, changesOn(id, changes));
   }
 }

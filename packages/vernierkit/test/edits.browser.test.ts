@@ -676,6 +676,21 @@ describe("Stack", () => {
     expect(style(el("column")).flexWrap).toBe("wrap");
   });
 
+  test("a Stack turned the other way is laid out the other way in the layers too, as a drag reads them; undone, back again", () => {
+    const { editor, at, el } = open();
+    expect(at("row").direction).toBe("horizontal");
+
+    editor.set(at("row"), "direction", "vertical");
+    expect(editor.tree().layerOf(el("row"))!.direction).toBe("vertical");
+    editor.set(at("flow"), "direction", "horizontal");
+    expect(editor.tree().layerOf(el("flow"))!.direction).toBe("horizontal");
+
+    editor.undo();
+    editor.undo();
+    expect(editor.tree().layerOf(el("row"))!.direction).toBe("horizontal");
+    expect(editor.tree().layerOf(el("flow"))!.direction).toBe("vertical");
+  });
+
   test("a plain flow becomes a real Stack once its gap or alignment changes, and the change says so", () => {
     const { editor, changes, at, el } = open();
     const flow = at("flow");
@@ -1178,6 +1193,33 @@ describe("making a Stack", () => {
     expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 10, align: { x: "start" }, place: { nth: 1, absolute: null } });
     // Its layers were as wide as the Stack they were in: they still are.
     expect(changes.list()[0].style["align-items"]).toBe("stretch");
+  });
+
+  test("of layers with margins: the room between them is the gap, the outer margins the Stack's own, and nothing moves; undone, the margins are back", () => {
+    const { doc, editor, changes, layer, rects } = open(`<!DOCTYPE html><body style="margin: 0">
+      <section id="hero" ${at("5:5")} style="display: flex; flex-direction: column; width: 400px">
+        <header id="h" ${at("6:7")} style="height: 30px">Title</header>
+        <p id="p" ${at("7:7")} style="height: 20px; margin: 16px 0 0">Words</p>
+        <button id="btn" ${at("8:7")} style="height: 30px; margin: 24px 0 4px; align-self: flex-start">Go</button>
+      </section></body>`);
+    const before = rects("h", "p", "btn");
+
+    const stack = editor.stack([layer("p"), layer("btn")]);
+
+    expect(drift(before, rects("h", "p", "btn"))).toBe(0);
+    expect(changes.list()[0].after).toMatchObject({ direction: "vertical", gap: 24, padding: [0, 0, 0, 0] });
+    expect(changes.list()[0].after).toMatchObject({ layers: [{ unmargined: true }, { unmargined: true }] });
+    expect(changes.list()[0].style.margin).toBe("16px 0px 4px 0px");
+    expect([style(doc.getElementById("p")!).marginTop, style(doc.getElementById("btn")!).marginTop]).toEqual(["0px", "0px"]);
+
+    // No gap: they touch.
+    editor.set(stack, "gap", 0);
+    expect(doc.getElementById("btn")!.getBoundingClientRect().top).toBe(doc.getElementById("p")!.getBoundingClientRect().bottom);
+
+    editor.undo();
+    editor.undo();
+    expect(rects("h", "p", "btn")).toEqual(before);
+    expect([style(doc.getElementById("p")!).marginTop, style(doc.getElementById("btn")!).marginTop]).toEqual(["16px", "24px"]);
   });
 
   test("in every instance of the usage; not of instances a loop renders", () => {

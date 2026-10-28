@@ -4,7 +4,7 @@ import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedRound } from "../service-protocol";
 import { CanvasView, isEditable } from "./CanvasView";
 import { Icon } from "./icons";
-import { createChangeSet, type Change, type ChangeSet } from "./changeset";
+import { createChangeSet, type Change, type ChangeSet, type Created } from "./changeset";
 import { createEditor, type Destination, type Editor } from "./edits";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { buildLayerTree, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -62,6 +62,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
 
+  /** The tool picked, from the toolbar or the keyboard: null to select, or what the next drag draws. */
+  const [tool, setTool] = useState<Created["type"] | null>(null);
   /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
   const [playing, setPlaying] = useState(false);
   const playButton = useRef<HTMLButtonElement>(null);
@@ -275,6 +277,8 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
           onEdit();
           select([moved]);
         }}
+        tool={tool}
+        onTool={setTool}
         onDuplicate={(layer: Layer, to: Destination) => {
           const copy = editor!.duplicate(layer, to);
           onEdit();
@@ -306,6 +310,7 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
         changed={!!round.current?.changeSet.list().length}
         onLeft={onLeft}
       />
+      <Tools tool={tool} onTool={setTool} />
       <aside class="vk-panel is-design" aria-label="Design">
         <div class="vk-panel-header">
           <h2 class="vk-panel-title">Design</h2>
@@ -330,6 +335,25 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
           <Icon name="close" />
         </button>
       )}
+    </div>
+  );
+}
+
+const TOOLS = [
+  { tool: null, label: "Select", key: "V", icon: "pointer" },
+  { tool: "frame", label: "Frame", key: "F", icon: "frame" },
+  { tool: "text", label: "Text", key: "T", icon: "text" },
+] as const;
+
+/** At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. */
+function Tools({ tool, onTool }: { tool: Created["type"] | null; onTool(tool: Created["type"] | null): void }) {
+  return (
+    <div class="vk-tools" role="toolbar" aria-label="Tools">
+      {TOOLS.map((t) => (
+        <button key={t.label} type="button" class="vk-icon-button" aria-label={t.label} aria-pressed={tool === t.tool} title={`${t.label} (${t.key})`} onClick={() => onTool(t.tool)}>
+          <Icon name={t.icon} />
+        </button>
+      ))}
     </div>
   );
 }

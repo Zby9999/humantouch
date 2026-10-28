@@ -65,8 +65,12 @@ export interface Member {
 export interface Composed extends StackSettings {
   /** Where the new Stack is. Null: the Frame the change is made to became the Stack. */
   place: Place | null;
-  /** The layers in it, in order, each with where it was. */
-  layers: (Member & { from: Place })[];
+  /**
+   * The layers in it, in order, each with where it was. `unmargined`: it had
+   * margins, which the Stack takes over: the room between the layers is its
+   * gap, the room around them its own margin.
+   */
+  layers: (Member & { from: Place; unmargined?: true })[];
 }
 
 /** A Stack dissolved (the `after` of an `unstack` change): a Frame of its size, its layers absolute in it. */

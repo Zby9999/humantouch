@@ -45,6 +45,10 @@ interface Props {
   onMove(layer: Layer, to: Destination): void;
   /** A dragged layer let go with ⌥ held: a copy goes there. */
   onDuplicate(layer: Layer, to: Destination): void;
+  /** The tool picked: the next drag on the canvas draws new text or a new Frame. Null: the selection tool. */
+  tool: Created["type"] | null;
+  /** A tool picked from the keyboard (V, F, T, Esc), or put down once a layer is drawn. */
+  onTool(tool: Created["type"] | null): void;
   /** A layer drawn with the text or Frame tool; `size` when drawn rather than clicked. Returns the new layer. */
   onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
@@ -66,7 +70,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, onCreate, onBeginText, onEditText, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onBeginText, onEditText, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const iframe = useRef<HTMLIFrameElement>(null);
@@ -83,13 +87,16 @@ export function CanvasView(props: Props) {
   const dragging = useRef<DragSession | null>(null);
   /** The drag under way: how far the layer has gone, in canvas px, and where it would go. */
   const [drag, setDrag] = useState<{ layer: Layer; box: DOMRect; drop: Drop | null } | null>(null);
-  /** T or F pressed: the next drag on the canvas draws new text or a new Frame. */
-  const [tool, setTool] = useState<Created["type"] | null>(null);
+  const toolPicked = useRef(onTool);
+  toolPicked.current = onTool;
+  const setTool = (next: Created["type"] | null) => toolPicked.current(next);
   /** A layer being drawn: where the drawing started, and where the pointer is, in canvas px. */
   const drawing = useRef<{ pointerId: number; start: { x: number; y: number } } | null>(null);
   const [drawn, setDrawn] = useState<DOMRect | null>(null);
   /** The text being typed in, and what was in it. */
   const typing = useRef<{ layer: Layer; html: string } | null>(null);
+  /** The text being typed in, outlined in blue as it grows; null when none is. */
+  const [typed, setTyped] = useState<{ layer: Layer; words: string } | null>(null);
   const modeSwitch = useRef<Animation | null>(null);
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
@@ -265,12 +272,12 @@ export function CanvasView(props: Props) {
         setTool(null);
         return;
       }
-      // T and F, as in Figma: draw new text, or a new Frame.
+      // T and F, as in Figma: draw new text, or a new Frame; V goes back to selecting.
       const key = event.key.toLowerCase();
-      if ((key === "t" || key === "f") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      if ((key === "t" || key === "f" || key === "v") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        setTool(key === "t" ? "text" : "frame");
+        setTool(key === "t" ? "text" : key === "f" ? "frame" : null);
         return;
       }
       if (event.key === "Escape" && dragging.current) {
@@ -496,6 +503,7 @@ export function CanvasView(props: Props) {
     const own = onBeginText(layer);
     const el = own.el as HTMLElement;
     typing.current = { layer: own, html: el.innerHTML };
+    setTyped({ layer: own, words: el.textContent! });
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);
@@ -504,9 +512,12 @@ export function CanvasView(props: Props) {
       event.preventDefault();
       el.blur();
     };
+    const onInput = () => setTyped({ layer: own, words: el.textContent! });
     const end = () => {
       el.removeEventListener("keydown", onKey);
+      el.removeEventListener("input", onInput);
       el.removeEventListener("blur", end);
+      setTyped(null);
       const typed = typing.current;
       typing.current = null;
       el.removeAttribute("contenteditable");
@@ -517,6 +528,7 @@ export function CanvasView(props: Props) {
       viewport.current?.focus({ preventScroll: true });
     };
     el.addEventListener("keydown", onKey);
+    el.addEventListener("input", onInput);
     el.addEventListener("blur", end);
   };
 
@@ -579,7 +591,8 @@ export function CanvasView(props: Props) {
         <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
       </div>
       {canvas && hovered && !selected.includes(hovered) && !travelling && !playing && <Outline layer={hovered} view={view} hover />}
-      {canvas && !travelling && !playing && selected.map((layer, i) => <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
+      {canvas && !travelling && !playing && selected.map((layer, i) => layer !== typed?.layer && <Outline key={i} layer={layer} view={view} hidden={hideSelection} />)}
+      {canvas && typed && <Outline layer={typed.layer} view={view} typing />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={view} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, view)} />}
       {drag?.layer.text && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, view)} />}
@@ -594,6 +607,8 @@ interface OutlineProps {
   view: View;
   /** The layer under the pointer rather than the selected one. */
   hover?: boolean;
+  /** The text being typed in: blue, whatever the layer is. */
+  typing?: boolean;
   hidden?: boolean;
 }
 
@@ -602,9 +617,9 @@ interface OutlineProps {
  * above the canvas, so its lines stay 1px at any zoom. Blue, purple for an
  * instance, gray for a locked layer.
  */
-function Outline({ layer, view, hover, hidden }: OutlineProps) {
+function Outline({ layer, view, hover, hidden, typing }: OutlineProps) {
   const r = boxOf(layer);
-  const kind = role(layer);
+  const kind = typing ? "typing" : role(layer);
   return (
     <div
       class={hover ? "vk-hover" : "vk-selection"}

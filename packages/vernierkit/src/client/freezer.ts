@@ -34,11 +34,9 @@ const CANVAS_STYLES = `
 *, *::before, *::after { transition: none !important; }
 * { pointer-events: auto !important; }
 html { scrollbar-width: none !important; }
-[data-vk-new="frame"] { outline: 1px dashed rgb(128 128 128 / 0.8) !important; outline-offset: -1px !important; box-shadow: inset 0 0 0 100vmax rgb(128 128 128 / 0.06) !important; }
-[data-vk-new="frame"][data-vk-brief]::before {
-  content: attr(data-vk-brief); display: block; box-sizing: border-box; max-width: 100%; max-height: 100%; overflow: hidden;
-  padding: 8px; font: 12px/1.4 system-ui, sans-serif; color: rgb(110 110 110); white-space: pre-wrap;
-}
+[data-vk-new="frame"] { outline: 1px solid rgb(128 128 128 / 0.3) !important; outline-offset: -1px !important; }
+[contenteditable] { outline: none !important; caret-color: #0d99ff !important; }
+[contenteditable]::selection, [contenteditable] ::selection { background: rgb(13 153 255 / 0.3) !important; }
 `;
 
 /** Marks what the canvas shows in place of content it cannot copy: `video`, `iframe`. */

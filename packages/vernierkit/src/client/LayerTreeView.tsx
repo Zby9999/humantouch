@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
 import { useEffect, useRef, useState } from "preact/hooks";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
-import { LayerIcon } from "./icons";
+import { BRIEF_ATTR } from "./canvas-style";
+import { Icon, LayerIcon } from "./icons";
 
 interface Props {
   tree: LayerTree;
@@ -76,6 +77,12 @@ export function LayerTreeView({ tree, selected, onSelect }: Props) {
             />
             <LayerIcon layer={layer} />
             <span class="vk-tree-name">{layer.name}</span>
+            {/* A new Frame the designer wrote a brief for: what the Agent is to make in it. */}
+            {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
+              <span class="vk-tree-brief" title={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
+                <Icon name="brief" />
+              </span>
+            )}
           </div>
         );
       })}

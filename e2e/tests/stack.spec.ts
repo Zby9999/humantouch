@@ -126,6 +126,7 @@ test("making and dissolving Stacks are listed as such", async ({ page }) => {
   await page.getByRole("button", { name: /not applied yet/ }).click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([
     /Dissolve Stack.*Header.*horizontal Stack → Frame/,
-    /Make Stack.*Stack.*2 layers, vertical, gap 0px/,
+    // The button's margin above it is the gap now.
+    /Make Stack.*Stack.*2 layers, vertical, gap 24px/,
   ]);
 });

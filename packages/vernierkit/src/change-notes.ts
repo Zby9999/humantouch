@@ -52,7 +52,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),
-    ...(change.kind === "stack" ? joinLayout(change.after as Composed) : []),
+    ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
@@ -170,6 +170,17 @@ function joinLayout({ layers }: Composed): string[] {
   if (!absolute) return [];
   const which = absolute === layers.length ? "the layers are" : `${absolute} of the layers are`;
   return [`**Join the layout:** ${which} placed absolute now. In the Stack, they are laid out by it: take their absolute positioning off.`];
+}
+
+/** The layers of a Stack that have margins now, and lose them: its gap, padding and own margin hold that room. */
+function dropMargins(change: Change): string[] {
+  const { layers, place } = change.after as Composed;
+  const margined = layers.filter((member) => member.unmargined).length;
+  if (!margined) return [];
+  const which = margined === layers.length ? "the layers have" : `${margined} of the layers have`;
+  const outer = change.style.margin ? `, and the room around them is the Stack's own margin (\`margin: ${change.style.margin}\`)` : "";
+  const room = place ? `the room between them is its gap${outer}` : "the room between them is its gap, and the room around them its padding";
+  return [`**Drop the margins:** ${which} margins now. In the Stack, ${room}: take their margins off.`];
 }
 
 /** The Stack as it was, the Frame it becomes, and where each of its layers is placed. */

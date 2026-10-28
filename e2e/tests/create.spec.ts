@@ -70,7 +70,35 @@ test("T and a drag in a Stack make new text there, in the page's body text style
   await expect(await changeRows(page)).toHaveText([/New text.*“Hello there”/]);
 });
 
-test("F and a drag in a Frame's empty space make an absolute Frame; its brief shows in its place", async ({ page }) => {
+test("the toolbar picks the same tools as V, F and T; text typed in is boxed in blue as it grows", async ({ page }) => {
+  await addBoard(page);
+  await enterEditMode(page);
+  const tools = page.getByRole("toolbar", { name: "Tools" });
+  await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
+
+  await tools.getByRole("button", { name: "Text" }).click();
+  await expect(tools.getByRole("button", { name: "Text" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("f");
+  await expect(tools.getByRole("button", { name: "Frame" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("v");
+  await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
+
+  // Clicked in a Frame's empty space: absolute, as wide as its words.
+  await tools.getByRole("button", { name: "Text" }).click();
+  const board = await boxOf(canvas(page).locator("#board"));
+  await drawFrom(page, { x: board.x + 20, y: board.y + 20 }, { x: board.x + 20, y: board.y + 20 });
+  const box = page.locator('.vk-selection[data-kind="typing"]');
+  await expect(box).toHaveCSS("border-color", "rgb(13, 153, 255)");
+  const narrow = (await boxOf(box)).width;
+  await page.keyboard.type("A much longer line of words");
+  await expect.poll(async () => (await boxOf(box)).width).toBeGreaterThan(narrow);
+  await page.keyboard.press("Enter");
+  await expect(box).toHaveCount(0);
+  // Drawn, the tool is put down.
+  await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("F and a drag in a Frame's empty space make an absolute Frame, plain and with no fill; its brief is marked in the Layers panel", async ({ page }) => {
   await addBoard(page);
   await enterEditMode(page);
   const board = await boxOf(canvas(page).locator("#board"));
@@ -93,7 +121,9 @@ test("F and a drag in a Frame's empty space make an absolute Frame; its brief sh
   await brief.fill("A pricing table with three plans");
   await brief.blur();
   await expect(frame).toHaveAttribute("data-vk-brief", "A pricing table with three plans");
-  expect(await frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe('"A pricing table with three plans"');
+  // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
+  expect(await frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
+  await expect(page.locator('.vk-tree-row[aria-selected="true"] .vk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
   await expect(await changeRows(page)).toHaveText([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
 });
 

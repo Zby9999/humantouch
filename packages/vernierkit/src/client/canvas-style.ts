@@ -104,13 +104,13 @@ export function changesOn(layer: string, changes: Change[]): Change[] {
     }
     if (change.kind === "stack") {
       const member = (change.after as Composed).layers.find((m) => m.layer === layer);
-      return member ? [{ ...change, style: memberStyle(member.from.absolute !== null) }] : [];
+      return member ? [{ ...change, style: memberStyle(member) }] : [];
     }
     return [];
   });
 }
 
-/** What joining a Stack declares on a layer: one that was absolute joins its layout. */
-export function memberStyle(absolute: boolean): Record<string, string> {
-  return absolute ? { position: "static" } : {};
+/** What joining a Stack declares on a layer: one that was absolute joins its layout; one with margins has them no more. */
+export function memberStyle({ from, unmargined }: Composed["layers"][number]): Record<string, string> {
+  return { ...(from.absolute && { position: "static" }), ...(unmargined && { margin: "0px" }) };
 }
