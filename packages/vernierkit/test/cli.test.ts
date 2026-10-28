@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -736,7 +736,11 @@ function history() {
 function openPage(answer: (id: number) => object | null, pages = 1) {
   const dir = join(project, ".vernier");
   // The local service runs in this very process, as far as the command line can tell.
-  const write = (results: object) => writeFileSync(join(dir, "checks.json"), JSON.stringify({ pages, service: process.pid, results }));
+  // Written whole, as the service writes it: `done` reads the file in several steps, and must never see half of it.
+  const write = (results: object) => {
+    writeFileSync(join(dir, "checks.json.tmp"), JSON.stringify({ pages, service: process.pid, results }));
+    renameSync(join(dir, "checks.json.tmp"), join(dir, "checks.json"));
+  };
   let results: Record<string, object> = {};
   write(results);
   const timer = setInterval(() => {
