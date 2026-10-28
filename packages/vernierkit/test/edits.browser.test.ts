@@ -305,6 +305,33 @@ describe("stroke", () => {
     expect(read("through")).toEqual({ ...red, weight: 1 });
   });
 
+  test("through a design variable in a shorthand, a rule below it that writes px is not taken for what sets the weight: it reads as drawn, and is the source", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.half { border: 1.5px solid red } .through { --w: 1px; border: var(--w) solid red }</style>");
+    const box = doc.getElementById("unmarked")!;
+    box.className = "half through";
+    const layer = layerOf(box);
+
+    expect(editor.read(layer, "stroke")).toEqual({ color: "#FF0000", opacity: 1, weight: 1, style: "solid" });
+    editor.set(layer, "stroke", { color: "#FF0000", opacity: 1, weight: 2, style: "solid" });
+    expect(changes.list()[0].sources).toMatchObject([{ kind: "rule", selector: ".through", declaration: "border: var(--w) solid red" }]);
+  });
+
+  test("a side written by a logical property in a later rule reads as written there; right to left, inline-start is the right", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.all { border: 1px solid red } .x { border-inline-width: 1.5px }</style>");
+    const box = doc.getElementById("unmarked")!;
+    const layer = layerOf(box);
+    const red = { color: "#FF0000", opacity: 1, style: "solid" };
+
+    box.className = "all x";
+    expect(editor.read(layer, "stroke")).toEqual({ ...red, weight: [1, 1.5, 1, 1.5] });
+    box.className = "all";
+    box.dir = "rtl";
+    box.style.setProperty("border-inline-start-width", "2.5px");
+    expect(editor.read(layer, "stroke")).toEqual({ ...red, weight: [1, 2.5, 1, 1] });
+  });
+
   test("a weight set this round reads back as set, though a 1x screen draws it narrower", () => {
     const { editor, cards, layerOf } = openCanvas();
     const stroke: Stroke = { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" };
@@ -2357,7 +2384,7 @@ const STRUCTURE = `<!DOCTYPE html>
   <div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>
 </body>`;
 
-describe("a stroke is checked on the live page as the browser draws it", () => {
+describe("a stroke is checked on the live page as the code writes it, else as the browser draws it", () => {
   /** The canvas, edited; and the live page, as the page is, its board as the Agent writes its border in the code. */
   const open = () => {
     const canvas = openCanvas(STRUCTURE);
@@ -2396,15 +2423,59 @@ describe("a stroke is checked on the live page as the browser draws it", () => {
     expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 3, style: "solid" } });
   });
 
-  test("written through a design variable, or a step off, it is shown as long as the page draws it so", async () => {
+  test("the weight the code writes is compared first: 1px or 1.25px is not 1.5px, though a 1x screen draws all three 1px", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+
+    write("border: 1px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1, style: "solid" } });
+    write("border: 1.25px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1.25, style: "solid" } });
+  });
+
+  test("while the dev server brings the edit in, each change to the page is looked at once: still wrong, then right", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    write("border: 1px solid #ff0000");
+
+    const result = checkChange(page, change);
+    write("border: 3px solid #ff0000");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    write("border: 1.5px solid #ff0000");
+
+    expect(await result).toEqual({ outcome: "shown" });
+  });
+
+  test("written through a design variable, it is compared as the page draws it", async () => {
     const { page, editor, changes, board, write } = open();
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
     const [change] = changes.list();
 
     write("--stroke: 1.5px; border: var(--stroke) solid #ff0000");
     expect(await check(page, change)).toEqual({ outcome: "shown" });
-    write("border: 1.25px solid #ff0000");
+  });
+
+  test("written through a design variable in a shorthand, a rule below it that writes px is not taken for the code: compared as drawn", async () => {
+    const { page, editor, changes, board, write } = open();
+    page.head.insertAdjacentHTML("beforeend", "<style>#board { border: 1.5px solid #ff0000 }</style>");
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1, style: "solid" });
+    const [change] = changes.list();
+
+    write("--stroke: 1px; border: var(--stroke) solid #ff0000");
     expect(await check(page, change)).toEqual({ outcome: "shown" });
+  });
+
+  test("a side written by a logical property, as Tailwind's border-x writes it, is compared as written there, not as the rule below it writes it", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: [1, 1.5, 1, 1.5], style: "solid" });
+    const [change] = changes.list();
+
+    write("border: 1px solid #ff0000; border-inline-width: 1.5px");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("border-style: solid; border-color: #ff0000; border-block-width: 1px; border-inline-width: 1.5px; border-left-width: 1px");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: [1, 1.5, 1, 1], style: "solid" } });
   });
 
   test("each side is drawn as it says; a color that is not the one set is not shown", async () => {

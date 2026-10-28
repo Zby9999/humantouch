@@ -5,25 +5,30 @@
  * that does not match yet is read again each time the page changes, until it
  * does or time is up. Changes to the page are watched rather than polled, as a
  * page in a background tab gets its timers slowed. What the browser draws
- * otherwise than written is drawn on the page to compare: on an element put
- * in and taken out at once, before anything is painted.
+ * otherwise than written is drawn on the page to compare where the code that
+ * writes it cannot be read: on an element put in and taken out at once, before
+ * anything is painted.
  */
 import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
 import { isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property, type Stroke } from "./edits";
 import { signOf, usageKey } from "./layers";
 import { elementsOf, usageKeyOf } from "./page-elements";
-import { colorReader, readStroke } from "./paint";
-import { drawnStroke } from "./stroke-weight";
+import { colorReader } from "./paint";
+import { drawnStroke, showsStroke } from "./stroke-weight";
 
 /**
- * Properties the browser draws otherwise than written: the page is read as it
- * draws them, and the value after is drawn on the page first to compare with,
- * so a value the code writes right is not taken for one it does not.
+ * Properties the browser draws otherwise than written: compared as the code
+ * writes them, or else as the page draws them, the value after drawn on the
+ * page first (`draw`), so a value the code writes right is not taken for one it
+ * does not, nor one it writes wrong for one it does.
  */
-const AS_DRAWN: Partial<Record<Property, { read(el: Element): unknown; draw(doc: Document, value: unknown): unknown }>> = {
-  // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen.
-  stroke: { read: (el) => readStroke(el, colorReader(el.ownerDocument)), draw: (doc, value) => drawnStroke(doc, value as Stroke | null) },
+const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown): unknown; shows(el: Element, value: unknown, drawn: unknown): boolean }>> = {
+  // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen, as 1px is.
+  stroke: {
+    draw: (doc, value) => drawnStroke(doc, value as Stroke | null),
+    shows: (el, value, drawn) => showsStroke(el, colorReader(el.ownerDocument), value as Stroke | null, drawn as Stroke | null),
+  },
 };
 
 /** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
@@ -58,17 +63,17 @@ export function checkChange(doc: Document, change: Change): Promise<CheckResult>
   const reason = uncheckable(change);
   if (reason) return Promise.resolve({ outcome: "unchecked", reason });
   const property = change.property as Property;
-  const drawn = AS_DRAWN[property];
+  const comparison = AS_WRITTEN[property];
   // Drawn once, before the page is watched: drawing it changes the page.
-  const expected = drawn && change.kind === "style" ? drawn.draw(doc, change.after) : change.after;
-  /** `reportActual`: read what the page has instead, when it does not show the change; read as written, which may change the page too. */
+  const drawn = comparison && change.kind === "style" ? comparison.draw(doc, change.after) : undefined;
+  /** `reportActual`: read what the page has instead, when it does not show the change. Looking may change the page, to draw a value. */
   const look = (reportActual: boolean): CheckResult => {
     if (change.kind === "delete") return lookDeleted(doc, change);
     if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
     const els = elementsOf(doc, change.target);
     if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-    const read = drawn ? drawn.read : (el: Element) => readValue(el, property);
-    const wrong = els.find((el) => !sameValue(read(el), expected));
+    const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
+    const wrong = els.find((el) => !shows(el));
     return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: reportActual ? readValue(wrong, property) : undefined };
   };
   const first = look(false);
@@ -82,6 +87,8 @@ export function checkChange(doc: Document, change: Change): Promise<CheckResult>
     // Styles and markup the dev server swaps in, a stylesheet's text included.
     const observer = new MutationObserver(() => {
       const result = look(false);
+      // What looking put in the page and took out again is not the dev server's: left unseen, it would be looked at again, and again.
+      observer.takeRecords();
       if (result.outcome === "shown") settle(result);
     });
     observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });

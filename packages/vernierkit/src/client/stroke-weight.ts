@@ -3,7 +3,7 @@
  * number of physical pixels wide (at least one), and reads it back so: 1.5px
  * is drawn 1px on a 1x screen, and as it is on a 2x one. The editor reads a
  * weight as the style that sets it writes it, so the panel shows what the code
- * says on any screen.
+ * says on any screen, and `done` compares it so (ADR 0006).
  */
 import { readStroke, strokeWith, type ColorReader, type Stroke } from "./paint";
 import { sourcesOf } from "./style-source";
@@ -16,13 +16,48 @@ const SIDES = ["top", "right", "bottom", "left"];
  * or does not draw as the layer is drawn (a rule that is not the one that applies).
  */
 export function readWrittenStroke(el: Element, colors: ColorReader): Stroke | null {
+  const sides = readSides(el, colors);
+  return sides && asWritten(sides);
+}
+
+/**
+ * Whether the layer shows `after` (ADR 0006): each side's weight compared as
+ * the style that sets it writes it, so 1.5px is told from the 1px a 1x screen
+ * draws both at; where that cannot be read, as drawn, `drawnAfter` being
+ * `after` drawn in the layer's document beforehand (see `drawnStroke`).
+ */
+export function showsStroke(el: Element, colors: ColorReader, after: Stroke | null, drawnAfter: Stroke | null): boolean {
+  const sides = readSides(el, colors);
+  if (!sides || !after || !drawnAfter) return !sides && !after;
+  const [weights, drawnWeights] = [perSide(after.weight), perSide(drawnAfter.weight)];
+  const actual = asWritten(sides);
+  const expected = strokeWith(after, weights.map((weight, i) => (sides.written[i] === null ? drawnWeights[i] : weight)) as Stroke["weight"]);
+  return JSON.stringify(actual) === JSON.stringify(expected);
+}
+
+/**
+ * The layer's stroke as drawn, with each side's weight as drawn and as
+ * written: null for a side not drawn, or whose weight as written cannot be
+ * read or does not draw as the side is drawn.
+ */
+function readSides(el: Element, colors: ColorReader): Sides | null {
   const stroke = readStroke(el, colors);
   if (!stroke) return null;
   const drawn = perSide(stroke.weight);
   const written = drawn.map((weight, i) => (weight > 0 ? writtenWidth(el, `border-${SIDES[i]}-width`) : null));
-  const check = drawnWidths(el.ownerDocument, written.map((w) => w ?? 0));
-  const weights = drawn.map((weight, i) => (written[i] !== null && check[i] === weight ? written[i]! : weight));
-  return strokeWith(stroke, weights as Stroke["weight"]);
+  const redrawn = drawnWidths(el.ownerDocument, written.map((w) => w ?? 0));
+  return { stroke, drawn, written: written.map((w, i) => (w !== null && redrawn[i] === drawn[i] ? w : null)) };
+}
+
+interface Sides {
+  stroke: Stroke;
+  drawn: number[];
+  written: (number | null)[];
+}
+
+/** The stroke, each side as written where it can be read, else as drawn. */
+function asWritten({ stroke, drawn, written }: Sides): Stroke | null {
+  return strokeWith(stroke, drawn.map((weight, i) => written[i] ?? weight) as Stroke["weight"]);
 }
 
 /**

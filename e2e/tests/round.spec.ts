@@ -209,7 +209,7 @@ test.describe("done checks the change on the page", () => {
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
 
-  test("a stroke weight is checked as the page draws it: 1.5px in the code is shown on a 1x screen, which draws it 1px; 3px is not", async ({ page }) => {
+  test("a stroke weight is checked as the code writes it: on a 1x screen, which draws 1px and 1.5px alike, the code's 1px is not 1.5px; 3px is not; 1.5px is", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
@@ -218,8 +218,10 @@ test.describe("done checks the change on the page", () => {
     await vernierkit("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
+    // The code is not edited yet: its 1px draws as 1.5px would on this 1x screen, and is not 1.5px all the same.
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4.");
+
     const drawn = () => page.locator("article").first().evaluate((card) => getComputedStyle(card).borderTopWidth);
-    // On this 1x screen the page's 1px already draws as 1.5px would: the check is let in once the edit is.
     editSource(CARD, "rounded-xl border border-stone-200", "rounded-xl border-[3px] border-stone-200");
     await expect.poll(drawn).toBe("3px");
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4.");
