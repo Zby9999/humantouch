@@ -4,12 +4,12 @@
 
 参考本功能的 spec.md（同目录上一级），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
-**Blocked by:** 15
+**Blocked by:** 15, 36
 
 **Status:** ready-for-agent
 
 - [ ] React 18 + Tailwind v3 示例项目上全链路测试通过（含使用链读取与设计变量读取）
-- [ ] 大页面上进入编辑模式 ≤ 150ms
+- [ ] 大页面上、三个视图同时显示时，进入编辑模式 ≤ 150ms
 - [ ] 大页面上改数值到画面变化 ≤ 1 帧
 - [ ] 大页面上拖拽保持 60fps
 - [ ] 性能测试可重复运行，结果记录在 Comments 中
