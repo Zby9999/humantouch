@@ -1115,6 +1115,132 @@ const board = (layers: string) => `<!DOCTYPE html>
 const placed = (id: string, [left, top, width, height]: number[]) =>
   `<div id="${id}" ${at(`2${id.charCodeAt(0) - 96}:7`)} style="position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px"></div>`;
 
+const NUDGES = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="list" ${at("5:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
+    <div id="a" ${at("6:7")} style="height: 20px">A</div>
+    <div id="b" ${at("7:7")} style="height: 20px">B</div>
+    <div id="c" ${at("8:7")} style="height: 20px">C</div>
+  </div>
+  <div id="board" ${at("10:5")} style="position: relative; width: 300px; height: 200px">
+    <div id="free" ${at("11:7")} style="position: absolute; left: 12px; top: 8px; width: 30px; height: 20px"></div>
+  </div>
+  <div id="frame" ${at("13:5")} style="width: 300px; height: 100px"><span id="tag" ${at("13:30")} style="display: inline-block; width: 40px; height: 20px; margin-left: 5px">Tag</span></div>
+</body>`;
+
+describe("nudging layers, as the arrow keys do", () => {
+  const open = () => {
+    const canvas = openCanvas(NUDGES);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = () => [...canvas.doc.getElementById("list")!.children].map((el) => el.id);
+    /** Where an element is in its container, in px. */
+    const place = (id: string, doc = canvas.doc) => {
+      const r = doc.getElementById(id)!.getBoundingClientRect();
+      const p = doc.getElementById(id)!.parentElement!.getBoundingClientRect();
+      return [r.left - p.left, r.top - p.top];
+    };
+    return { ...canvas, layer, order, place };
+  };
+
+  test("a layer placed freely moves by as much, its X and Y; a run of nudges is one step, undone at once", () => {
+    const { editor, changes, layer, place } = open();
+
+    editor.nudge([layer("free")], 1, 0);
+    editor.nudge([layer("free")], 10, 0, { continues: true });
+    editor.nudge([layer("free")], 0, -1, { continues: true });
+
+    expect(place("free")).toEqual([23, 7]);
+    expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual([
+      ["x", 12, 23],
+      ["y", 8, 7],
+    ]);
+    editor.undo();
+    expect(place("free")).toEqual([12, 8]);
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(place("free")).toEqual([23, 7]);
+  });
+
+  test("nudges apart are steps apart", () => {
+    const { editor, layer, place } = open();
+
+    editor.nudge([layer("free")], 1, 0);
+    editor.nudge([layer("free")], 1, 0);
+    editor.undo();
+
+    expect(place("free")).toEqual([13, 8]);
+  });
+
+  test("a nudge of other layers is a step of its own, though it comes right after; undone, the run leaves its layer selected", () => {
+    const { editor, layer, place, order } = open();
+
+    editor.nudge([layer("free")], 1, 0);
+    editor.nudge([layer("free")], 1, 0, { continues: true });
+    editor.nudge([layer("a")], 0, 1, { continues: true });
+    editor.undo();
+
+    expect(order()).toEqual(["a", "b", "c"]);
+    expect(place("free")).toEqual([14, 8]);
+    expect(editor.undo().map((l) => l.el.id)).toEqual(["free"]);
+    expect(place("free")).toEqual([12, 8]);
+  });
+
+  test("in a Stack, a layer swaps places with the next one along it that way; at the end, or across the Stack, it stays", () => {
+    const { editor, changes, layer, order } = open();
+
+    editor.nudge([layer("a")], 0, 1);
+    expect(order()).toEqual(["b", "a", "c"]);
+    editor.nudge([layer("a")], 0, 10, { continues: true });
+    expect(order()).toEqual(["b", "c", "a"]);
+    editor.nudge([layer("a")], 0, 1, { continues: true });
+    editor.nudge([layer("a")], 1, 0, { continues: true });
+    expect(order()).toEqual(["b", "c", "a"]);
+
+    // One move, from where it was to where it is; one step.
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ kind: "move", before: { nth: 1 }, after: { nth: 3 } });
+    editor.undo();
+    expect(order()).toEqual(["a", "b", "c"]);
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("several layers side by side in a Stack move together, until the first reaches the end", () => {
+    const { editor, layer, order } = open();
+
+    const moved = editor.nudge([layer("a"), layer("b")], 0, 1);
+    expect(order()).toEqual(["c", "a", "b"]);
+    expect(moved.map((l) => l.el.id)).toEqual(["a", "b"]);
+    editor.nudge(moved, 0, 1);
+    expect(order()).toEqual(["c", "a", "b"]);
+    editor.nudge(moved, 0, -1);
+    expect(order()).toEqual(["a", "b", "c"]);
+  });
+
+  test("in a Frame, a layer in its flow is placed freely where it is, nudged on from there", () => {
+    const { editor, changes, layer, place } = open();
+
+    const was = place("tag");
+    const [moved] = editor.nudge([layer("tag")], 0, 10);
+
+    expect(place("tag")).toEqual([was[0], was[1] + 10]);
+    expect(moved.absolute).toBe(true);
+    expect(changes.list()[0]).toMatchObject({ kind: "move", after: { absolute: { x: 0, y: 10 } } });
+    editor.nudge([moved], 1, 0, { continues: true });
+    expect(place("tag")).toEqual([was[0] + 1, was[1] + 10]);
+    expect(changes.list()).toHaveLength(1);
+    editor.undo();
+    expect(style(layer("tag").el).position).toBe("static");
+    expect(place("tag")).toEqual(was);
+  });
+
+  test("the page stays", () => {
+    const { editor, changes } = open();
+
+    expect(editor.nudge([editor.tree().root], 1, 0)).toEqual([editor.tree().root]);
+    expect(changes.list()).toEqual([]);
+  });
+});
+
 describe("making a Stack", () => {
   const open = (page = MOVES) => {
     const canvas = openCanvas(page);
@@ -2699,6 +2825,33 @@ describe("breakpoints", () => {
     expect([place(doc), place(phone.document)]).toEqual([
       [30, 30],
       [5, 50],
+    ]);
+  });
+
+  test("nudged in the phone view, a layer placed freely is placed anew at its breakpoint; one in a Stack swaps places in every view", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    const place = (d: Document) => {
+      const r = d.getElementById("free")!.getBoundingClientRect();
+      const b = d.getElementById("board")!.getBoundingClientRect();
+      return [r.left - b.left, r.top - b.top];
+    };
+    const order = (d: Document) => [...d.getElementById("list")!.children].map((el) => el.id);
+
+    editor.at(phone);
+    editor.nudge([layer("free")], 10, 0);
+    editor.nudge([layer("a")], 0, 1);
+
+    expect([place(doc), place(phone.document)]).toEqual([
+      [12, 8],
+      [22, 8],
+    ]);
+    expect([order(doc), order(phone.document)]).toEqual([
+      ["b", "a", "c"],
+      ["b", "a", "c"],
+    ]);
+    expect(changes.list().map((change) => [change.property, change.breakpoint ?? "every width"])).toEqual([
+      ["x", { min: null, max: 800 }],
+      ["move", "every width"],
     ]);
   });
 

@@ -177,6 +177,17 @@ export interface Editor {
    */
   move(layer: Layer, to: Destination): Layer;
   /**
+   * Nudges the layers `dx` and `dy` px, as the arrow keys do. A layer placed
+   * freely in the view worked in moves that far, as dragging it there would
+   * place it (at its breakpoint, beside the desktop view); a layer in a
+   * Frame's flow is placed freely where it is, and moved on from there. A
+   * layer in a Stack's layout swaps places with the next one along the Stack
+   * that way, in every view, and stays at its end or nudged across it; layers
+   * side by side move together. `continues`: one more nudge of a run, undone
+   * with the nudges before it. Returns the layers where they are now.
+   */
+  nudge(layers: Layer[], dx: number, dy: number, options?: SetOptions): Layer[];
+  /**
    * Whether the layers can be made a Stack: layers side by side in one
    * container, each in every instance of it; or a Frame alone, of its layers.
    */
@@ -306,6 +317,8 @@ interface Step {
   back?: string[];
   /** Steps of one adjustment are one step: the same edit to the same layers, as this tells. */
   key: string;
+  /** One of a run of steps that may each change something else (nudges): one step with those before it, undone back through each. */
+  run?: boolean;
   undo(): void;
   redo(): void;
 }
@@ -588,6 +601,32 @@ export function createEditor(
 
   /** Steps of the batch under way, if any. */
   let batching: Step[] | null = null;
+  /**
+   * Makes the edits `edits` makes one step. `run`: one of a run of such steps
+   * (nudges) that may each change something else of the same layers, made one step with those before it.
+   */
+  const group = (edits: () => void, continues: boolean, run = false) => {
+    if (batching) return edits();
+    const steps: Step[] = [];
+    batching = steps;
+    try {
+      edits();
+    } finally {
+      batching = null;
+    }
+    if (!steps.length) return;
+    push(
+      {
+        layers: steps.flatMap((step) => step.layers),
+        back: steps.flatMap((step) => step.back ?? step.layers),
+        key: run ? `run ${[...new Set(steps.flatMap((step) => step.layers))].sort().join(" ")}` : steps.map((step) => step.key).join(", "),
+        ...(run && { run: true }),
+        undo: () => [...steps].reverse().forEach((step) => step.undo()),
+        redo: () => steps.forEach((step) => step.redo()),
+      },
+      continues,
+    );
+  };
   /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a batch. */
   const show = () => {
     if (!batching) views.sync();
@@ -601,8 +640,22 @@ export function createEditor(
     history.future.length = 0;
     const last = history.past.at(-1);
     // One adjustment is one step: the same edit to the same layers, in this editor.
-    if (continues && last?.show === show && last.step.key === step.key) last.step.redo = step.redo;
-    else history.past.push({ step, found, show });
+    if (continues && last?.show === show && last.step.key === step.key) {
+      if (step.run) {
+        const { undo, redo } = last.step;
+        last.step.undo = () => {
+          step.undo();
+          undo();
+        };
+        last.step.redo = () => {
+          redo();
+          step.redo();
+        };
+        // Undone, the run leaves the layers as they were before it; redone, as they are after its last step.
+        last.step.back ??= last.step.layers;
+        last.step.layers = step.layers;
+      } else last.step.redo = step.redo;
+    } else history.past.push({ step, found, show });
     show();
   };
   /** The layers a step was made to, as they are now. */
@@ -662,6 +715,24 @@ export function createEditor(
     const next = others[to.index];
     const slot = next ? nodes.indexOf(nodeOf(next)) : nodes.length;
     return { container, nth: to.index + 1, slot, absolute: null };
+  };
+
+  /**
+   * Where a layer is in its container, in the view worked in, as a drop
+   * there places it freely: placed freely already, where its CSS has it;
+   * otherwise from inside the container's border, its margins aside.
+   */
+  const freePlaceOf = (layer: Layer): { x: number; y: number } => {
+    const container = shownIn(current, layer.parent!.el);
+    if (layer.text) {
+      const box = editor.measure(layer);
+      const inside = paddingBox(container);
+      return { x: round(box.left - inside.left), y: round(box.top - inside.top) };
+    }
+    const el = shownIn(current, layer.el);
+    if (!absolute(el)) return spotIn(el, container);
+    const style = getComputedStyle(el);
+    return { x: parseFloat(style.left) || 0, y: parseFloat(style.top) || 0 };
   };
 
   /**
@@ -1029,6 +1100,59 @@ export function createEditor(
       moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, sizeOf(el), record);
       return tree.layerOf(el) ?? layer;
     },
+    nudge(layers, dx, dy, { continues = false } = {}) {
+      /** Each layer by its node, found again as each move builds the layers anew; loose text gets an element on its first. */
+      const nodes = layers.map(nodeOf);
+      const found = (i: number) => tree.layerOf(nodes[i]);
+      const moved = (i: number, layer: Layer) => (nodes[i] = nodeOf(layer));
+      /** Placed freely in the view worked in. */
+      const free = (layer: Layer) => !layer.text && (layer.absolute || absolute(shownIn(current, layer.el)));
+      group(
+        () => {
+          // Placed freely, or in a Frame: moved that far, from where they are.
+          layers.forEach((_, i) => {
+            const layer = found(i);
+            const parent = layer?.parent;
+            if (!layer || !parent || (!dx && !dy) || !(free(layer) || parent.kind === "frame") || !editor.canDrop(layer, parent)) return;
+            const { x, y } = freePlaceOf(layer);
+            moved(i, editor.move(layer, { parent, x: x + dx, y: y + dy }));
+          });
+          // In a Stack's layout: each a place along it, the furthest that way first, so side by side they go together.
+          const stacked = layers.map((_, i) => i).filter((i) => {
+            const layer = found(i);
+            return layer?.parent?.kind === "stack" && !free(layer) && editor.canDrop(layer, layer.parent);
+          });
+          const stuck = new Set<Node>();
+          for (const parentNode of new Set(stacked.map((i) => nodeOf(found(i)!.parent!)))) {
+            const along = Math.sign(tree.layerOf(parentNode)!.direction === "horizontal" ? dx : dy);
+            if (!along) continue;
+            const flowOf = (i: number) => {
+              const parent = found(i)!.parent!;
+              return { parent, flow: parent.children.filter((child) => !free(child)) };
+            };
+            const mine = stacked
+              .filter((i) => nodeOf(found(i)!.parent!) === parentNode)
+              .sort((a, b) => along * (flowOf(b).flow.indexOf(found(b)!) - flowOf(a).flow.indexOf(found(a)!)));
+            for (const i of mine) {
+              const layer = found(i)!;
+              const { parent, flow } = flowOf(i);
+              const to = flow.indexOf(layer) + along;
+              if (to < 0 || to >= flow.length || stuck.has(nodeOf(flow[to]))) {
+                stuck.add(nodes[i]);
+                continue;
+              }
+              // Before the layer that will come after it, the layer itself taken out, as a drop places it.
+              const rest = flow.filter((child) => child !== layer);
+              const others = parent.children.filter((child) => child !== layer);
+              moved(i, editor.move(layer, { parent, index: to < rest.length ? others.indexOf(rest[to]) : others.length }));
+            }
+          }
+        },
+        continues,
+        true,
+      );
+      return layers.map((layer, i) => found(i) ?? layer);
+    },
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
       if (layer.text || !kinds.includes(layer.kind)) return false;
@@ -1047,25 +1171,7 @@ export function createEditor(
       edit(layer, property, value, continues, breakpointFor(layer, property));
     },
     batch(edits, { continues = false } = {}) {
-      if (batching) return edits();
-      const steps: Step[] = [];
-      batching = steps;
-      try {
-        edits();
-      } finally {
-        batching = null;
-      }
-      if (!steps.length) return;
-      push(
-        {
-          layers: steps.flatMap((step) => step.layers),
-          back: steps.flatMap((step) => step.back ?? step.layers),
-          key: steps.map((step) => step.key).join(", "),
-          undo: () => [...steps].reverse().forEach((step) => step.undo()),
-          redo: () => steps.forEach((step) => step.redo()),
-        },
-        continues,
-      );
+      group(edits, continues);
     },
     undo() {
       const entry = history.past.pop();

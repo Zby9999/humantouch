@@ -56,6 +56,10 @@ interface Props {
 const ADJUSTING_MS = 200;
 /** How long after the last edit the round is saved. */
 const AUTOSAVE_MS = 500;
+/** Nudges of the same layers this close together are a run: one step, undone at once. */
+const NUDGE_RUN_MS = 1000;
+/** Which way each arrow key nudges. */
+const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
 export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, leaving, animate, onLeft }: Props) {
@@ -285,6 +289,28 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select(stacks.map((stack) => editor.tree().layerOf(stack.el)).filter((layer) => layer !== null));
   };
 
+  /** The last nudge: when, and the layers nudged, as they are after it. */
+  const lastNudge = useRef<{ at: number; layers: Layer[] } | null>(null);
+  /**
+   * The arrow keys: the layers nudged `dx` and `dy` px, as Figma does, and
+   * still selected. Nudged again soon after, it is one step. A layer off the
+   * canvas itself moves about the workspace, the layers in it with it.
+   */
+  const nudge = (layers: Layer[], dx: number, dy: number) => {
+    const itself = layers.find(isOutside);
+    const outside = itself && outsideOf(itself);
+    if (outside) return placeOff(outside, outside.x + dx, outside.y + dy);
+    const editor = editorOf(layers[0]);
+    if (!editor) return;
+    const now = performance.now();
+    const last = lastNudge.current;
+    const continues = !!last && now - last.at < NUDGE_RUN_MS && last.layers.length === layers.length && last.layers.every((layer, i) => nodeOf(layer) === nodeOf(layers[i]));
+    const nudged = editor.nudge(layers, dx, dy, { continues });
+    lastNudge.current = { at: now, layers: nudged };
+    onEdit();
+    select(nudged);
+  };
+
   /** ⌘C / ⌘X / ⌘V, within the editor. */
   const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet) : null), [editor]);
   /** Layers on the canvas: the clipboard holds only those. */
@@ -326,8 +352,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, copy, cut, paste, playing });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, copy, cut, paste, playing };
+  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
+  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -343,6 +369,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       event.stopPropagation();
       // One history for the canvas and the layers off it: whichever edit came last is undone.
       const steps = history.past.length;
+      // Nudged next, it is a run of its own: the one undone or redone stays a step apart.
+      lastNudge.current = null;
       const layers = redo ? editor.redo() : editor.undo();
       if (history.past.length === steps) return;
       select(layers);
@@ -353,10 +381,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   // As in Figma: ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, ⌘⇧G ungroups them,
-  // Delete deletes and ⌘D copies them; ⌘C, ⌘X and ⌘V copy, cut and paste. Fields and dialogs keep their keys.
+  // Delete deletes and ⌘D copies them, the arrow keys nudge them 1px (10px with ⇧); ⌘C, ⌘X and ⌘V copy, cut and paste.
+  // Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve, remove, duplicate, ungroup, copy, cut, paste, playing } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing } = latest.current;
       const target = event.composedPath()[0];
       if (playing || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
@@ -378,6 +407,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
       else if (letter === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
       else if (letter === "g" && command && event.shiftKey && !event.altKey) act = () => ungroup(selected);
+      else if (ARROWS[event.key] && !command && !event.altKey) {
+        const [x, y] = ARROWS[event.key].map((n) => n * (event.shiftKey ? 10 : 1));
+        act = () => nudge(selected, x, y);
+      }
       if (!act) return;
       event.preventDefault();
       event.stopPropagation();

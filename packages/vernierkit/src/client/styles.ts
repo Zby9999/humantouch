@@ -690,6 +690,38 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 
+/* Marks over a view, as in Figma's guides: red where a layer lines up and for distances measured with ⌥, magenta for equal spacing. 1px, labels one size, at any zoom. */
+.vk-marks { --vk-line: #f24822; --vk-spacing: #e81cc4; pointer-events: none; }
+.vk-mark {
+  --vk-mark-color: var(--vk-line);
+  position: absolute;
+  box-sizing: border-box;
+  width: 0;
+  height: 0;
+  border-left: 1px solid var(--vk-mark-color);
+  transform: translateX(-0.5px);
+}
+.vk-mark[data-across] { border-left: 0; border-top: 1px solid var(--vk-mark-color); transform: translateY(-0.5px); }
+.vk-mark[data-type="gap"] { --vk-mark-color: var(--vk-spacing); }
+.vk-mark[data-type="extension"] { border-left-style: dashed; border-top-style: dashed; }
+.vk-mark-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--vk-mark-color);
+  color: #fff;
+  font-size: 11px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A space between layers is labelled beside it, out of the way of the line. */
+.vk-mark[data-type="gap"][data-across] .vk-mark-label { top: auto; bottom: 4px; transform: translateX(-50%); }
+.vk-mark[data-type="gap"]:not([data-across]) .vk-mark-label { left: 4px; transform: translateY(-50%); }
+
 @media (prefers-reduced-motion: reduce) {
   .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
 }
