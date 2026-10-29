@@ -104,6 +104,8 @@ test("on React 18, claim reads the usage chain as on React 19: the card's usage 
 
   expect(fill).toMatch(/- \*\*Location:\*\* `src\/components\/Card\.tsx:\d+:\d+`\n/);
   expect(fill).toMatch(/- \*\*Scope:\*\* This usage only: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`\. It renders 3 instances/);
+  // Typed as a hex value, it is exactly the project's lightest brand color: the notes name it.
+  expect(fill).toContain("- **Variables:** the fill color is the Variable `brand-50`, from the Tailwind theme: use its class, `bg-brand-50`.\n");
   // Tailwind v3 writes its utilities in no CSS layer.
   expect(fill).toContain("- **Currently set by:** class `bg-white`: rule `.bg-white` in no CSS layer, of `src/index.css`");
 });

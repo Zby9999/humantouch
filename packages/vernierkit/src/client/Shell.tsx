@@ -16,6 +16,7 @@ import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
 import { bind, resolveVariables, type Catalog } from "./variables";
+import { CatalogProvider } from "./VariablePicker";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
 
@@ -400,7 +401,9 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
             <LayerInfo tree={tree} layers={selected} />
             {/* The Design panel's short notes show in the toast. */}
             <ToastProvider value={showToast}>
-              <Properties editor={editor} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+              <CatalogProvider value={catalog}>
+                <Properties editor={editor} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+              </CatalogProvider>
             </ToastProvider>
           </>
         ) : (

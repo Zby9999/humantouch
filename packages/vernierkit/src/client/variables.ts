@@ -83,6 +83,24 @@ export interface Slot {
   drawn: Drawn;
 }
 
+/** The group each property's Variables are in, for those that can be Variables. */
+export const GROUPS: Partial<Record<string, VariableGroup>> = {
+  gap: "spacing",
+  padding: "spacing",
+  width: "spacing",
+  height: "spacing",
+  minWidth: "spacing",
+  maxWidth: "spacing",
+  minHeight: "spacing",
+  maxHeight: "spacing",
+  radius: "radius",
+  fontSize: "fontSize",
+  fill: "color",
+  stroke: "color",
+  textColor: "color",
+  shadows: "shadow",
+};
+
 const SIDES = ["top", "right", "bottom", "left"];
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
 const colorOf = ({ color, opacity }: Color): Color => ({ color, opacity });
@@ -152,4 +170,40 @@ export function pickedIn(bindings: Bindings | undefined): Picked | undefined {
   if (!bindings) return undefined;
   const picked = Object.entries(bindings).filter(([, bound]) => bound?.picked);
   return picked.length ? Object.fromEntries(picked.map(([slot, bound]) => [slot, bound])) : undefined;
+}
+
+/**
+ * The value with part `slot` made what a Variable draws: a side of the
+ * padding, a corner, the color of a fill or a stop, the shadows as a whole.
+ * Null when the value has no such part (a stroke that is none, say).
+ */
+export function withPart(property: string, value: unknown, slot: string, drawn: Drawn): unknown {
+  const px = drawn as number;
+  const color = drawn as Color;
+  switch (property) {
+    case "padding":
+      return (value as number[]).map((p, i) => (SIDES[i] === slot ? px : p));
+    case "width":
+    case "height":
+      return { type: "fixed", value: px };
+    case "radius": {
+      if (!slot) return px;
+      const corners = typeof value === "number" ? [value, value, value, value] : (value as number[]);
+      const next = corners.map((r, i) => (CORNERS[i] === slot ? px : r));
+      return next.every((r) => r === next[0]) ? next[0] : next;
+    }
+    case "textColor":
+      return colorOf(color);
+    case "stroke":
+      return value ? { ...(value as Stroke), ...colorOf(color) } : null;
+    case "fill": {
+      const fill = value as Fill | null;
+      if (slot === "color") return { type: "solid", ...colorOf(color) };
+      if (fill?.type !== "linear" && fill?.type !== "radial") return null;
+      return { ...fill, stops: fill.stops.map((s, i) => (`stop ${i + 1}` === slot ? { ...s, ...colorOf(color) } : s)) };
+    }
+    default:
+      // A gap, a minimum or maximum, a font size, shadows: the whole value.
+      return drawn;
+  }
 }

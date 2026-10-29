@@ -29,6 +29,8 @@ import { stepped } from "./stroke-weight";
 import { useToast } from "./Toast";
 import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
 import { weightName } from "../design-values";
+import { ColorPicker, useCatalog, VariableSlot, type Slot } from "./VariablePicker";
+import { GROUPS, withPart, type Resolved } from "./variables";
 
 interface Props {
   editor: Editor;
@@ -86,6 +88,31 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
       }
     });
     onEdit();
+  };
+
+  const catalog = useCatalog();
+  /** The Variable every selected layer has picked for part `part` of `property`; null when none, or not the same. */
+  const boundTo = (property: Property, part: string) => {
+    const [first, ...rest] = layers.map((layer) => editor.variables(layer, property)?.[part]);
+    const same = rest.every((other) => other?.picked && other.name === first?.name && other.from === first.from);
+    return first?.picked && same ? first : null;
+  };
+  /** Makes part `part` of `property` the Variable `entry` draws, on each selected layer, as one edit; null detaches it, keeping the value. */
+  const pick = (property: Property, part: string, entry: Resolved | null) => {
+    editor.batch(() => {
+      for (const layer of layers) {
+        const current = editor.read(layer, property);
+        const next = entry ? withPart(property, current, part, entry.drawn) : current;
+        if (next !== null) editor.set(layer, property, next as PropertyValues[Property], { variables: { [part]: entry?.variable ?? null } });
+      }
+    });
+    onEdit();
+  };
+  /** Part `part` of `property` as a field that can be a Variable; undefined when the project has none. */
+  const variable: SlotOf = (property, part = "") => {
+    const group = GROUPS[property];
+    if (!catalog || !group) return undefined;
+    return { group, bound: boundTo(property, part), onPick: (entry) => pick(property, part, entry) };
   };
 
   /** Selected text layers: their shadows are text shadows, and they have no blur. */
@@ -167,15 +194,19 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
       {(width !== undefined || height !== undefined) && (
         <section class="vk-section" aria-labelledby="vk-size">
           <h3 id="vk-size" class="vk-section-title">Size</h3>
-          {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} measure={editor.measure} update={update} />}
-          {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} />}
+          {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("width")} />}
+          {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("height")} />}
           {offers("minWidth") && (
             <div class="vk-grid-2">
               {/* Width on the left, height on the right; minimum above maximum. */}
-              <LimitField label="Min width" glyph="W" value={shown("minWidth")!} onChange={set("minWidth")} />
-              <LimitField label="Min height" glyph="H" value={shown("minHeight")!} onChange={set("minHeight")} />
-              <LimitField label="Max width" glyph="W" value={shown("maxWidth")!} onChange={set("maxWidth")} />
-              <LimitField label="Max height" glyph="H" value={shown("maxHeight")!} onChange={set("maxHeight")} />
+              {(["minWidth", "minHeight", "maxWidth", "maxHeight"] as const).map((property) => {
+                const label = LIMIT_LABELS[property];
+                return (
+                  <VariableSlot key={property} label={label} slot={variable(property)}>
+                    <LimitField label={label} glyph={property.endsWith("Width") ? "W" : "H"} value={shown(property)!} onChange={set(property)} />
+                  </VariableSlot>
+                );
+              })}
             </div>
           )}
         </section>
@@ -200,6 +231,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           wrap={shown("wrap")!}
           set={set}
           update={update}
+          variable={variable}
         />
       )}
       {(opacity !== undefined || visible !== undefined) && (
@@ -211,6 +243,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           clip={clip}
           set={set}
           update={update}
+          variable={variable}
         />
       )}
       {fontSize !== undefined && (
@@ -224,6 +257,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           textCase={shown("textCase")!}
           decoration={shown("textDecoration")!}
           fonts={fontsOf(layers[0].el.ownerDocument)}
+          fontSize={variable("fontSize")}
           set={set}
           updateEach={updateEach}
         />
@@ -232,7 +266,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         // Text is filled with its color, as in Figma.
         <section class="vk-section" role="group" aria-label="Fill">
           <h3 class="vk-section-title">Fill</h3>
-          {textColor === MIXED ? <span class="vk-field vk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} />}
+          {textColor === MIXED ? <span class="vk-field vk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
         </section>
       )}
       {fill !== undefined && (
@@ -242,15 +276,17 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           conic={layers.some((layer) => editor.read(layer, "fill")?.type === "conic")}
           onChange={set("fill")}
           update={update}
+          variable={variable}
         />
       )}
-      {stroke !== undefined && <StrokeSection key={keyOf(layers)} stroke={stroke} onChange={set("stroke")} update={update} />}
+      {stroke !== undefined && <StrokeSection key={keyOf(layers)} stroke={stroke} onChange={set("stroke")} update={update} variable={variable("stroke", "color")} />}
       {shadows !== undefined && (
         <EffectsSection
           shadows={shadows}
           layerBlur={shownEffect("layerBlur")}
           backgroundBlur={shownEffect("backgroundBlur")}
           withText={texts.length > 0}
+          variable={texts.length ? undefined : variable("shadows")}
           read={readEffect}
           update={updateEffect}
           updateEach={updateEffects}
@@ -269,6 +305,11 @@ function number(value: Shown<number>): number | null {
   return value === MIXED ? null : value;
 }
 
+/** Part `part` of a property's value ("" for all of it) as a field that can be a Variable. */
+type SlotOf = (property: Property, part?: string) => Slot | undefined;
+
+const LIMIT_LABELS = { minWidth: "Min width", minHeight: "Min height", maxWidth: "Max width", maxHeight: "Max height" };
+
 type Update = <P extends Property>(property: P, next: (current: PropertyValues[P], layer: Layer) => PropertyValues[P], continues?: boolean) => void;
 type Setter = <P extends Property>(property: P) => (value: PropertyValues[P], continues?: boolean) => void;
 
@@ -279,8 +320,10 @@ const SIZINGS = [
 ] as const;
 
 /** Width or height: Fixed, Hug or Fill, and the size it comes to. Typing a size makes it Fixed. */
-function SizeRow({ axis, size, layers, offers, measure, update }: {
+function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
   axis: "width" | "height";
+  /** Its size as a Variable, when the project has them. */
+  variable: Slot | undefined;
   measure(layer: Layer): DOMRect;
   size: Shown<Size>;
   layers: Layer[];
@@ -292,13 +335,15 @@ function SizeRow({ axis, size, layers, offers, measure, update }: {
   const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   return (
     <div class="vk-row vk-size-row">
-      <NumberField
-        label={label}
-        glyph={axis === "width" ? "W" : "H"}
-        value={shownSize}
-        min={0}
-        onChange={(value, continues) => update(axis, () => ({ type: "fixed", value }), continues)}
-      />
+      <VariableSlot label={label} slot={variable}>
+        <NumberField
+          label={label}
+          glyph={axis === "width" ? "W" : "H"}
+          value={shownSize}
+          min={0}
+          onChange={(value, continues) => update(axis, () => ({ type: "fixed", value }), continues)}
+        />
+      </VariableSlot>
       <select
         class="vk-select"
         aria-label={`${label} sizing`}
@@ -328,7 +373,7 @@ const ALIGNMENTS: Alignment[] = ["start", "center", "end"];
 const ROWS = { start: "Top", center: "Center", end: "Bottom" };
 const COLUMNS = { start: "left", center: "center", end: "right" };
 
-function StackSection({ direction, dissolve, gap, padding, align, wrap, set, update }: {
+function StackSection({ direction, dissolve, gap, padding, align, wrap, set, update, variable }: {
   direction: Shown<PropertyValues["direction"]>;
   /** Dissolves the Stacks; null when they cannot be. */
   dissolve: (() => void) | null;
@@ -338,6 +383,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
   wrap: Shown<boolean>;
   set: Setter;
   update: Update;
+  variable: SlotOf;
 }) {
   const side = (i: number) => (padding === MIXED ? null : padding[i]);
   const setSide = (i: number) => (value: number, continues?: boolean) =>
@@ -368,7 +414,9 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
             </button>
           ))}
         </div>
-        <NumberField label="Gap" icon="gap" value={number(gap)} min={0} onChange={set("gap")} />
+        <VariableSlot label="Gap" slot={variable("gap")}>
+          <NumberField label="Gap" icon="gap" value={number(gap)} min={0} onChange={set("gap")} />
+        </VariableSlot>
       </div>
       <div class="vk-row vk-align-row">
         <div class="vk-align" role="radiogroup" aria-label="Alignment">
@@ -401,7 +449,9 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
       </div>
       <div class="vk-grid-2" role="group" aria-label="Padding">
         {["Top", "Right", "Bottom", "Left"].map((name, i) => (
-          <NumberField key={name} label={`Padding ${name.toLowerCase()}`} glyph={name[0]} value={side(i)} min={0} onChange={setSide(i)} />
+          <VariableSlot key={name} label={`Padding ${name.toLowerCase()}`} slot={variable("padding", name.toLowerCase())}>
+            <NumberField label={`Padding ${name.toLowerCase()}`} glyph={name[0]} value={side(i)} min={0} onChange={setSide(i)} />
+          </VariableSlot>
         ))}
       </div>
     </section>
@@ -493,7 +543,7 @@ function radiusOf(corners: [number, number, number, number]): Radius {
  * Independent corners is on, from the start when they differ.
  * Not remade for each selection: a value typed and not yet applied still goes to the layer it was typed for.
  */
-function AppearanceSection({ selection, opacity, radii, visible, clip, set, update }: {
+function AppearanceSection({ selection, opacity, radii, visible, clip, set, update, variable }: {
   /** Tells the selected layers apart: Independent corners, turned on or off, holds while they stay selected. */
   selection: string;
   opacity: Shown<number> | undefined;
@@ -503,6 +553,7 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
   clip: Shown<boolean> | undefined;
   set: Setter;
   update: Update;
+  variable: SlotOf;
 }) {
   /** Counts selections: the same layers selected again are a new one. */
   const selected = useRef({ selection, count: 0 });
@@ -525,7 +576,9 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
         {opacity !== undefined && <PercentField label="Opacity" icon="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
         {radii && (
           <div class="vk-row">
-            <NumberField label="Corner radius" icon="radius" value={uniform} min={0} onChange={set("radius")} />
+            <VariableSlot label="Corner radius" slot={variable("radius")}>
+              <NumberField label="Corner radius" icon="radius" value={uniform} min={0} onChange={set("radius")} />
+            </VariableSlot>
             <button
               type="button"
               class="vk-icon-button"
@@ -542,8 +595,8 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
       {radii && independent && (
         <div class="vk-grid-2" role="group" aria-label="Radius per corner">
           {CORNER_GRID.map((i) => (
+            <VariableSlot key={i} label={`${CORNER_NAMES[i]} radius`} slot={variable("radius", CORNER_NAMES[i].toLowerCase().replace(" ", "-"))}>
             <NumberField
-              key={i}
               label={`${CORNER_NAMES[i]} radius`}
               glyph={CORNER_GLYPHS[i]}
               value={corner(i)}
@@ -553,6 +606,7 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
                 update("radius", (current) => radiusOf(cornersOf(current).map((r, j) => (i === j ? value : r)) as [number, number, number, number]), continues);
               }}
             />
+            </VariableSlot>
           ))}
         </div>
       )}
@@ -588,7 +642,7 @@ const DECORATIONS: { decoration: TextDecoration; label: string; glyph: string }[
  * has loaded) and size, line height and letter spacing, alignment, case and
  * decoration. Its color is its Fill.
  */
-function TextSection({ size, families, weight, lineHeight, letterSpacing, align, textCase, decoration, fonts, set, updateEach }: {
+function TextSection({ size, families, weight, lineHeight, letterSpacing, align, textCase, decoration, fonts, fontSize, set, updateEach }: {
   size: Shown<number>;
   /** Each selected layer's font. */
   families: string[];
@@ -600,6 +654,8 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
   decoration: Shown<TextDecoration>;
   /** The fonts the page has: those it can be set in. */
   fonts: Font[];
+  /** The font size as a Variable, when the project has them. */
+  fontSize: Slot | undefined;
   set: Setter;
   updateEach(next: (layer: Layer) => Partial<PropertyValues>): void;
 }) {
@@ -634,7 +690,9 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           options={weights.map((w) => ({ value: String(w), label: weightName(w), disabled: !loaded.includes(w) }))}
           onChange={(w) => set("fontWeight")(Number(w))}
         />
-        <NumberField label="Font size" glyph="Aa" value={number(size)} min={1} onChange={set("fontSize")} />
+        <VariableSlot label="Font size" slot={fontSize}>
+          <NumberField label="Font size" glyph="Aa" value={number(size)} min={1} onChange={set("fontSize")} />
+        </VariableSlot>
         {/* Auto is about 1.2 times the font size: a drag from it starts there. */}
         <TextLengthField label="Line height" glyph="↕" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
         <TextLengthField label="Letter spacing" glyph="↔" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
@@ -760,7 +818,7 @@ const FILL_TYPES = [
  * A fill: a color, or a linear or radial gradient, its stops dragged along a
  * bar and listed below it, as in Figma. A conic gradient the page has is shown, not edited.
  */
-function FillSection({ fill, box, conic, onChange, update }: {
+function FillSection({ fill, box, conic, onChange, update, variable }: {
   fill: Shown<Fill | null>;
   /** The first selected layer's box its gradient is sized to, for what the panel shows; each layer changes by its own. */
   box: PaintArea;
@@ -768,6 +826,7 @@ function FillSection({ fill, box, conic, onChange, update }: {
   conic: boolean;
   onChange(fill: Fill | null, continues?: boolean): void;
   update: Update;
+  variable: SlotOf;
 }) {
   return (
     <section class="vk-section" role="group" aria-label="Fill">
@@ -807,7 +866,7 @@ function FillSection({ fill, box, conic, onChange, update }: {
       {fill === MIXED ? (
         <span class="vk-field vk-mixed">Mixed</span>
       ) : fill?.type === "solid" ? (
-        <ColorField name="Fill" color={fill} onChange={(color, continues) => onChange({ type: "solid", ...color }, continues)} />
+        <ColorField name="Fill" color={fill} onChange={(color, continues) => onChange({ type: "solid", ...color }, continues)} variable={variable("fill", "color")} />
       ) : fill?.type === "conic" ? (
         <>
           <div class="vk-row">
@@ -829,7 +888,12 @@ function FillSection({ fill, box, conic, onChange, update }: {
             )}
             {/* A center or size the page works out in a way the panel does not show is kept as it is: no fields for it. */}
             {fill.type === "radial" && "center" in fill && <RadialFields gradient={fill} box={box} update={update} />}
-            <GradientStops gradient={fill} length={gradientLength(fill, box)} onChange={(stops, continues) => onChange({ ...fill, stops }, continues)} />
+            <GradientStops
+              gradient={fill}
+              length={gradientLength(fill, box)}
+              onChange={(stops, continues) => onChange({ ...fill, stops }, continues)}
+              variable={(i) => variable("fill", `stop ${i + 1}`)}
+            />
           </>
         )
       )}
@@ -880,7 +944,13 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
  * color. A stop stays in the unit the page writes it in, % or px; the bar shows
  * it where it falls along the gradient, `length` px long. New stops are in %.
  */
-function GradientStops({ gradient, length, onChange }: { gradient: Gradient; length: number; onChange(stops: ColorStop[], continues?: boolean): void }) {
+function GradientStops({ gradient, length, onChange, variable }: {
+  gradient: Gradient;
+  length: number;
+  onChange(stops: ColorStop[], continues?: boolean): void;
+  /** Stop `index`'s color as a Variable, when the project has them. */
+  variable(index: number): Slot | undefined;
+}) {
   const bar = useRef<HTMLDivElement>(null);
   /** The handle being dragged: the stop, by where it is in the sorted stops as it moves among them, and whether it has moved yet. */
   const drag = useRef<{ pointerId: number; index: number; moved: boolean } | null>(null);
@@ -984,6 +1054,7 @@ function GradientStops({ gradient, length, onChange }: { gradient: Gradient; len
             name={`Stop ${index + 1}`}
             color={s}
             onChange={(color, continues) => onChange(stops.map((other, i) => (i === index ? stop(color, s.position, s.unit) : other)), continues)}
+            variable={variable(index)}
           />
           <button type="button" class="vk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
             <Icon name="minus" />
@@ -1021,7 +1092,13 @@ function widest(weight: Stroke["weight"]): number {
  * A stroke: its color, weight and line, and the sides it is drawn on, as in
  * Figma: all, one side, or each side its own weight (Custom).
  */
-function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | null>; onChange(stroke: Stroke | null, continues?: boolean): void; update: Update }) {
+function StrokeSection({ stroke, onChange, update, variable }: {
+  stroke: Shown<Stroke | null>;
+  onChange(stroke: Stroke | null, continues?: boolean): void;
+  update: Update;
+  /** The stroke's color as a Variable, when the project has them. */
+  variable: Slot | undefined;
+}) {
   /** Custom chosen with every side alike: the four sides stay out until another choice. */
   const [custom, setCustom] = useState(false);
   const showToast = useToast();
@@ -1048,7 +1125,12 @@ function StrokeSection({ stroke, onChange, update }: { stroke: Shown<Stroke | nu
           {stroke === MIXED ? (
             <span class="vk-field vk-mixed">Mixed</span>
           ) : (
-            <ColorField name="Stroke" color={stroke} onChange={(color, continues) => onChange({ ...color, weight: stroke.weight, style: stroke.style }, continues)} />
+            <ColorField
+              name="Stroke"
+              color={stroke}
+              onChange={(color, continues) => onChange({ ...color, weight: stroke.weight, style: stroke.style }, continues)}
+              variable={variable}
+            />
           )}
           <button type="button" class="vk-icon-button" aria-label="Remove stroke" onClick={() => onChange(null)}>
             <Icon name="minus" />
@@ -1147,13 +1229,15 @@ const EFFECT_TYPES: { type: EffectType; label: string }[] = [
  * spread, and no blur: with text selected, the shadows are drop shadows
  * without spread, and a blur only the other layers have shows as Mixed.
  */
-function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, read, update, updateEach }: {
+function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable, read, update, updateEach }: {
   shadows: Shown<Shadow[]>;
   /** Undefined when not all selected layers offer it. */
   layerBlur: Shown<Blur> | undefined;
   backgroundBlur: Shown<Blur> | undefined;
   /** Whether text is among the selected layers. */
   withText: boolean;
+  /** The shadows as one Variable, when the project has them: picked, it stands for all of them. */
+  variable: Slot | undefined;
   /** A layer's effect; a blur on a layer that cannot have one is none. */
   read<P extends EffectProperty>(layer: Layer, property: P): PropertyValues[P];
   /** Changes an effect of each selected layer that can have it. */
@@ -1197,11 +1281,17 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, read, up
     <section class="vk-section" role="group" aria-label="Effects">
       <div class="vk-section-header">
         <h3 class="vk-section-title">Effects</h3>
-        <button type="button" class="vk-icon-button" aria-label="Add effect" onClick={() => update("shadows", (current) => (shadows === MIXED ? [NEW_SHADOW] : [...current, NEW_SHADOW]))}>
-          <Icon name="plus" />
-        </button>
+        <div class="vk-row">
+          {!variable?.bound && <VariableSlot label="Shadow" slot={variable}>{null}</VariableSlot>}
+          <button type="button" class="vk-icon-button" aria-label="Add effect" onClick={() => update("shadows", (current) => (shadows === MIXED ? [NEW_SHADOW] : [...current, NEW_SHADOW]))}>
+            <Icon name="plus" />
+          </button>
+        </div>
       </div>
-      {shadows === MIXED ? (
+      {variable?.bound ? (
+        // A shadow Variable stands for the shadows, as an effect style does in Figma.
+        <VariableSlot label="Shadow" slot={variable}>{null}</VariableSlot>
+      ) : shadows === MIXED ? (
         <div class="vk-row">
           <span class="vk-field vk-mixed">Mixed shadows</span>
           <button type="button" class="vk-icon-button" aria-label="Remove shadows" onClick={() => set("shadows")([])}>
@@ -1260,24 +1350,35 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, read, up
   );
 }
 
-/** A color and its opacity: picked, or typed as hex and as a percentage. `name` names its fields: "Fill color", "Fill opacity". */
-function ColorField({ name, color, onChange }: { name: string; color: Color; onChange(color: Color, continues?: boolean): void }) {
+/**
+ * A color and its opacity: picked, or typed as hex and as a percentage. `name`
+ * names its fields: "Fill color", "Fill opacity". Where the project has color
+ * Variables, its swatch opens a picker with a Variables tab, as in Figma, and a
+ * Variable picked shows by name in place of the hex and opacity.
+ */
+function ColorField({ name, color, onChange, variable }: { name: string; color: Color; onChange(color: Color, continues?: boolean): void; variable?: Slot }) {
   /** The color picker is open and has moved: the colors it goes through are one adjustment. */
   const picking = useRef(false);
+  const catalog = useCatalog();
+  /** The swatch or the Variable's name the picker is open from. */
+  const [open, setOpen] = useState<HTMLElement | null>(null);
   const lower = name.toLowerCase();
-  return (
-    <div class="vk-field vk-color-field">
-      <input
-        type="color"
-        class="vk-swatch"
-        aria-label={`Pick ${lower} color`}
-        value={color.color.toLowerCase()}
-        onInput={(event) => {
-          onChange({ color: event.currentTarget.value.toUpperCase(), opacity: color.opacity }, picking.current);
-          picking.current = true;
-        }}
-        onChange={() => (picking.current = false)}
-      />
+  const offered = variable && catalog?.of("color").length ? variable : undefined;
+  const system = (
+    <input
+      type="color"
+      class="vk-swatch"
+      aria-label={`Pick ${lower} color`}
+      value={color.color.toLowerCase()}
+      onInput={(event) => {
+        onChange({ color: event.currentTarget.value.toUpperCase(), opacity: color.opacity }, picking.current);
+        picking.current = true;
+      }}
+      onChange={() => (picking.current = false)}
+    />
+  );
+  const typed = (
+    <>
       <TextField label={`${name} color`} value={color.color.slice(1)} parse={parseHex} onChange={(hex) => onChange({ color: hex, opacity: color.opacity })} />
       <TextField
         label={`${name} opacity`}
@@ -1289,6 +1390,53 @@ function ColorField({ name, color, onChange }: { name: string; color: Color; onC
         }}
         onChange={(opacity) => onChange({ color: color.color, opacity })}
       />
+    </>
+  );
+  if (!offered) {
+    return (
+      <div class="vk-field vk-color-field">
+        {system}
+        {typed}
+      </div>
+    );
+  }
+  const toggle = (event: { currentTarget: HTMLElement }) => setOpen(open ? null : event.currentTarget);
+  return (
+    <div class="vk-field vk-color-field">
+      <button
+        type="button"
+        class="vk-swatch vk-swatch-button"
+        aria-label={`${name} color picker`}
+        aria-haspopup="dialog"
+        style={{ "--vk-swatch": cssColor(color) }}
+        onClick={toggle}
+      />
+      {offered.bound ? (
+        <>
+          <button type="button" class="vk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" title={`${offered.bound.name}: ${offered.bound.value}`} onClick={toggle}>
+            {offered.bound.name}
+          </button>
+          <button type="button" class="vk-icon-button" aria-label={`Detach ${lower} color variable`} title="Detach variable" onClick={() => offered.onPick(null)}>
+            <Icon name="detach" />
+          </button>
+        </>
+      ) : (
+        typed
+      )}
+      {open && (
+        <ColorPicker
+          label={name}
+          anchor={open}
+          slot={offered}
+          custom={
+            <label class="vk-field">
+              {system}
+              <span class="vk-read-only">{color.color}</span>
+            </label>
+          }
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   );
 }

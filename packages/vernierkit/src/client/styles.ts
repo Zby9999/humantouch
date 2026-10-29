@@ -748,6 +748,101 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 
+/* Variables, as in Figma: a button beside a field lists them; a field set to one shows its name. */
+.vk-variable-slot {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.vk-variable-slot > .vk-field { min-width: 0; }
+.vk-variable-button { width: 20px; color: var(--vk-text-muted); }
+.vk-variable-chip { gap: 4px; padding-right: 0; }
+.vk-variable-chip-name {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--vk-panel);
+  box-shadow: inset 0 0 0 1px var(--vk-border);
+  line-height: 18px;
+  cursor: default;
+}
+.vk-variable-chip-name:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+.vk-swatch-button {
+  display: block;
+  background: var(--vk-swatch);
+}
+.vk-swatch-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 1px; }
+.vk-popover {
+  position: fixed;
+  z-index: 2;
+  box-sizing: border-box;
+  max-height: min(480px, calc(100vh - 16px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  border-radius: 12px;
+  background: var(--vk-panel);
+  box-shadow:
+    inset 0 0 0 1px var(--vk-border),
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 8px 24px rgb(0 0 0 / 0.16);
+  color: var(--vk-text);
+  outline: none;
+}
+.vk-popover-header { display: flex; align-items: center; justify-content: space-between; }
+.vk-popover-header .vk-section-title { margin: 0; }
+.vk-tabs { display: flex; gap: 4px; }
+.vk-tab {
+  all: unset;
+  padding: 0 8px;
+  border-radius: 5px;
+  line-height: 24px;
+  color: var(--vk-text-muted);
+}
+.vk-tab[aria-selected="true"] { background: var(--vk-field); color: var(--vk-text); font-weight: 600; }
+.vk-tab:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+.vk-variable-search {
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: var(--vk-field);
+}
+.vk-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
+.vk-variable-list .vk-subtitle { margin: 8px 0 4px; }
+.vk-variable-option {
+  all: unset;
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 5px;
+}
+.vk-variable-option:hover, .vk-variable-option[aria-selected="true"] { background: var(--vk-field); }
+.vk-variable-option:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+.vk-variable-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vk-variable-value { color: var(--vk-text-muted); font-variant-numeric: tabular-nums; }
+.vk-variable-preview {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--vk-swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+}
+.vk-variable-preview.is-shadow { background: #fff; }
+
 @media (prefers-reduced-motion: reduce) {
   .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
   /* A toast only fades: it does not rise or sink. */

@@ -55,7 +55,9 @@ test("a new fill shows on every instance of the usage, and on no other", async (
 test("the color picker paints the canvas while it moves", async ({ page }) => {
   await selectRow(page, "Card", 3);
 
-  await design(page).getByLabel("Pick fill color").fill("#00ff00");
+  // The project has Variables (Tailwind's default theme): the system's picker is in the color picker's Custom tab.
+  await design(page).getByRole("button", { name: "Fill color picker" }).click();
+  await page.getByRole("dialog", { name: "Fill color" }).getByLabel("Pick fill color").fill("#00ff00");
 
   expect(await cardStyles(page, "backgroundColor")).toEqual([
     "rgb(255, 255, 255)",

@@ -70,7 +70,10 @@ test("layout changes are told in design language; a plain flow given a gap is to
   expect(width).toContain("- **Design intent:** Change the width from Hug to Fill.\n");
   expect(width).toContain("- **Reference style:** `width: auto`, `align-self: stretch`\n");
   expect(width).toContain("class `self-start`");
-  expect(gap).toContain("- **Design intent:** Change the gap from 0px to 8px.\n- **Make it a Stack:**");
+  // 8px is exactly Tailwind's spacing step 2: the notes name it.
+  expect(gap).toContain(
+    "- **Design intent:** Change the gap from 0px to 8px.\n- **Variables:** the gap is the Variable `2`, from the Tailwind theme: use its class, `gap-2` (in CSS, `calc(var(--spacing) * 2)`).\n- **Make it a Stack:**",
+  );
   expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 8px`\n");
 });
 
