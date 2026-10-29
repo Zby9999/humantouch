@@ -16,37 +16,8 @@ import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances, type Mark } from "./snap";
 import { createViews, type View, type Views } from "./views";
+import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
-
-/** Between one view and the next, in canvas px. */
-const VIEW_GAP = 80;
-/** A view's label sits this far above it, on screen. */
-const LABEL_OFFSET = 26;
-
-/**
- * A view of the canvas, or a layer off it, where it is on the stage: `x` and
- * `y` from the desktop view's top left edge, in canvas px.
- */
-interface Placed {
-  /** Null until it is laid out. */
-  view: View | null;
-  name: string;
-  desktop: boolean;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  /** A layer off the canvas (ADR 0009), rather than a view of it. */
-  offCanvasLayer?: OffCanvasLayer;
-}
-
-/** What tells views apart: their width, but for the desktop view, which may be as wide as another. */
-function keyOf(placed: Placed): string {
-  return placed.offCanvasLayer ? `off ${placed.offCanvasLayer.id}` : placed.desktop ? "desktop" : String(placed.width);
-}
-
-/** A view laid out, where it is on the stage. */
-type Shown = Placed & { view: View };
 
 /** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
 export type Tool = Created["type"] | null;
@@ -156,25 +127,10 @@ export function CanvasView(props: Props) {
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
   /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first. */
-  const placed: Placed[] = [];
-  if (canvas) {
-    placed.push({ view: desktop, name: viewName(canvas.width, true), desktop: true, x: 0, y: 0, width: canvas.width, height: desktop!.height });
-    let x = canvas.width;
-    for (const width of widths) {
-      const view = beside.get(width) ?? null;
-      placed.push({ view, name: viewName(width, false), desktop: false, x: x + VIEW_GAP, y: 0, width, height: view?.height ?? 0 });
-      x += VIEW_GAP + width;
-    }
-  }
+  const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside) : [];
   const bounds: Bounds | null = canvas && boundsOf(placed);
   /** The layers off the canvas, where they are on the stage. */
-  const outside: Shown[] =
-    (canvas &&
-      offCanvas?.list().map((offCanvasLayer) => {
-        const { view, x, y, width, height } = offCanvasLayer;
-        return { view, name: "Off canvas", desktop: false, x, y, width, height, offCanvasLayer };
-      })) ||
-    [];
+  const outside: Shown[] = canvas ? placeOffCanvas(offCanvas) : [];
   /** The layers of a view, or of a layer off the canvas. */
   const treeIn = (shown: Placed): LayerTree | null => (shown.offCanvasLayer ? shown.offCanvasLayer.editor.tree() : tree);
   /** What edits there. */
@@ -238,7 +194,7 @@ export function CanvasView(props: Props) {
       const canvasViews = createViews(frozen);
       setViews(canvasViews);
       onCanvas(canvasViews, workspace.current!);
-      const start = initialCamera(frozen, { width: frozen.width + widths.reduce((sum, width) => sum + VIEW_GAP + width, 0), height: frozen.height }, viewport.current!.getBoundingClientRect());
+      const start = initialCamera(frozen, { width: viewsWidth(frozen.width, widths), height: frozen.height }, viewport.current!.getBoundingClientRect());
       setCamera(start);
       shell.style.opacity = "";
       if (animate && prefersReducedMotion()) {
@@ -525,8 +481,7 @@ export function CanvasView(props: Props) {
   /** The view under the pointer, or the layer off the canvas (those first: they are drawn over the views), and where the pointer is in it, in its px. */
   const viewAt = (event: At, among: Placed[] = [...outside.slice().reverse(), ...placed]): { at: Shown; x: number; y: number } | null => {
     const { x, y } = toCanvas(event);
-    const at = among.find((p): p is Shown => p.view !== null && x >= p.x && x < p.x + p.width && y >= p.y && y < p.y + p.height);
-    return at ? { at, x: x - at.x, y: y - at.y } : null;
+    return shownAt(among, x, y);
   };
   /** The deepest layer under the pointer, in whichever view it is over. The views take no pointer input, so this asks what they show. */
   const layerAt = (event: At): Layer | null => pointedAt(event)?.layer ?? null;
