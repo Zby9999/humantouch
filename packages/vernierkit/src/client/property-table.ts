@@ -5,7 +5,7 @@
  * edits, views or the ChangeSet: the editor reads and writes through it.
  */
 import { asShown, declaredByEdit } from "./canvas-style";
-import type { Fragment } from "./changeset";
+import type { Change, Fragment } from "./changeset";
 import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
@@ -138,6 +138,8 @@ export function isTextProperty(property: Property): boolean {
   const { kinds } = PROPERTIES[property];
   return kinds.length > 0 && kinds.every((kind) => kind === "text");
 }
+/** A change to text styles or to words: on a Frame drawn around its text, its text's. */
+export const ofText = (change: Pick<Change, "kind" | "property">) => (change.kind === "style" ? isTextProperty(change.property as Property) : change.kind === "text");
 
 /** Width and height do not apply to inline boxes. */
 const sized = (el: Element) => !/^(inline|contents)$/.test(getComputedStyle(el).display);
@@ -555,4 +557,9 @@ function readRadius(el: Element): Radius {
     return Math.round(px * 100) / 100;
   }) as [number, number, number, number];
   return corners.every((r) => r === corners[0]) ? corners[0] : corners;
+}
+
+/** Values in design language, and places, are plain data: the same when they are written the same. */
+export function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
