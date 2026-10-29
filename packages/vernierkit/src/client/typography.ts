@@ -7,7 +7,7 @@
  */
 import { declaredByEdit, rematch } from "./canvas-style";
 import type { Fragment } from "./changeset";
-import { openingTag } from "./edits";
+import { openingTag } from "./layer-target";
 import type { Definition } from "./property-table";
 import { wordsOf } from "./layer-changes";
 import { cssColor, type Color, type ColorReader } from "./paint";

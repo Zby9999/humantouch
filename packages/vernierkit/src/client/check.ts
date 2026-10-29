@@ -12,7 +12,7 @@
 import { breakpointName, mediaOf, widthIn } from "./breakpoints";
 import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Place } from "./changeset";
-import { openingTag } from "./edits";
+import { openingTag } from "./layer-target";
 import { readValue, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
 import { CHECK_FRAME_ATTR } from "./host";
