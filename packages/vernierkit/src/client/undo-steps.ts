@@ -1,0 +1,170 @@
+/**
+ * Undo and redo: the edits an editor makes, each a step, and the rules that
+ * make several of them one. The steps of one adjustment (a drag on a number,
+ * a color being picked) are one step; so are those of a batch, and those of a
+ * run of nudges. Editors that work side by side (the canvas's, and those of
+ * the layers off it) share one History, each with Steps of its own.
+ */
+import { LAYER_ID_ATTR } from "./canvas-style";
+import { framedText, type Layer } from "./layers";
+
+/**
+ * The edits made, in order, to undo and redo, shared by editors that work
+ * side by side (the canvas's, and those of the layers off it): undo goes
+ * back through all of them, in the order they were made.
+ */
+export interface History {
+  readonly past: Entry[];
+  readonly future: Entry[];
+}
+
+/** A step in a history, with the editor's own ways to find its layers and show it. */
+interface Entry {
+  step: Step;
+  found(ids: string[]): Layer[];
+  show(): void;
+}
+
+export function createHistory(): History {
+  return { past: [], future: [] };
+}
+
+/**
+ * One edit, as undo and redo replay it: the layers it was made to, by id, so
+ * they are found again however the layer tree changes meanwhile.
+ */
+export interface Step {
+  layers: string[];
+  /** The layers undoing it leaves, when not the same: those a Stack was made of, say. */
+  back?: string[];
+  /** Steps of one adjustment are one step: the same edit to the same layers, as this tells. */
+  key: string;
+  /** One of a run of steps that may each change something else (nudges): one step with those before it, undone back through each. */
+  run?: boolean;
+  /** Of `layers`, those whose only text it was made to: a Frame's only text, which has the Frame's id. */
+  texts?: string[];
+  /** Done first each time the step is redone, whichever later steps of the same adjustment are made one with it: cutting back a change it made way for. */
+  first?(): void;
+  undo(): void;
+  redo(): void;
+}
+
+/** One editor's steps, in the History it shares. */
+export interface Steps {
+  /**
+   * Records a step just made. `continues`: one more step of the adjustment
+   * under way, made one with the step before it when that is the same edit
+   * (the same key) by this editor: undone back to before the first, redone to
+   * after the last. A run (`run`) is undone back through each of its steps.
+   * In a group, the step is one of the group's. `found`: what undoing or
+   * redoing it leaves, as the layers are then; by default, those of its layer ids.
+   */
+  push(step: Step, continues: boolean, found?: (ids: string[]) => Layer[]): void;
+  /**
+   * Makes the steps `edits` makes one step, undone last first. `run`: one of
+   * a run of such steps (nudges) that may each change something else of the
+   * same layers, made one step with those before it. A group in a group is one with it.
+   */
+  group(edits: () => void, continues: boolean, run?: boolean): void;
+  /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a group. */
+  show(): void;
+  /** Takes back the latest step in the History not yet undone, whichever editor made it. Returns the layers it leaves. */
+  undo(): Layer[];
+  /** Makes again the latest step undone. Returns the layers it leaves. */
+  redo(): Layer[];
+}
+
+/**
+ * Steps of an editor, going into `history`. `sync` shows the canvas in every
+ * view; `layersOf` finds the layers a step was made to, by id, as they are now.
+ */
+export function createSteps(history: History, sync: () => void, layersOf: (ids: string[]) => Layer[]): Steps {
+  /** Steps of the group under way, if any. */
+  let batching: Step[] | null = null;
+  const show = () => {
+    if (!batching) sync();
+  };
+  const push = (step: Step, continues: boolean, found: (ids: string[]) => Layer[] = layersOf) => {
+    if (batching) {
+      batching.push(step);
+      return;
+    }
+    history.future.length = 0;
+    const last = history.past.at(-1);
+    // One adjustment is one step: the same edit to the same layers, in this editor.
+    if (continues && last?.show === show && last.step.key === step.key) {
+      if (step.run) {
+        const { undo, redo } = last.step;
+        last.step.undo = () => {
+          step.undo();
+          undo();
+        };
+        last.step.redo = () => {
+          redo();
+          step.redo();
+        };
+        // Undone, the run leaves the layers as they were before it; redone, as they are after its last step.
+        last.step.back ??= last.step.layers;
+        last.step.layers = step.layers;
+      } else {
+        const { first } = last.step;
+        last.step.redo = first
+          ? () => {
+              first();
+              step.redo();
+            }
+          : step.redo;
+      }
+    } else history.past.push({ step, found, show });
+    show();
+  };
+  const group = (edits: () => void, continues: boolean, run = false) => {
+    if (batching) return edits();
+    const steps: Step[] = [];
+    batching = steps;
+    try {
+      edits();
+    } finally {
+      batching = null;
+    }
+    if (!steps.length) return;
+    push(
+      {
+        layers: steps.flatMap((step) => step.layers),
+        back: steps.flatMap((step) => step.back ?? step.layers),
+        texts: steps.flatMap((step) => step.texts ?? []),
+        key: run ? `run ${[...new Set(steps.flatMap((step) => step.layers))].sort().join(" ")}` : steps.map((step) => step.key).join(", "),
+        ...(run && { run: true }),
+        undo: () => [...steps].reverse().forEach((step) => step.undo()),
+        redo: () => steps.forEach((step) => step.redo()),
+      },
+      continues,
+    );
+  };
+  return {
+    push,
+    group,
+    show,
+    undo() {
+      const entry = history.past.pop();
+      if (!entry) return [];
+      history.future.push(entry);
+      entry.step.undo();
+      entry.show();
+      return textsIn(entry.step, entry.found(entry.step.back ?? entry.step.layers));
+    },
+    redo() {
+      const entry = history.future.pop();
+      if (!entry) return [];
+      history.past.push(entry);
+      entry.step.redo();
+      entry.show();
+      return textsIn(entry.step, entry.found(entry.step.layers));
+    },
+  };
+}
+
+/** Those of `layers` whose text the step was made to, as that text. */
+function textsIn(step: Step, layers: Layer[]): Layer[] {
+  return layers.map((layer) => (step.texts?.includes(layer.el.getAttribute(LAYER_ID_ATTR)!) && framedText(layer)) || layer);
+}

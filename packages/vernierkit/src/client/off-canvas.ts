@@ -10,7 +10,8 @@
  */
 import type { SavedOffCanvasLayer, OffCanvasOrigin } from "../service-protocol";
 import { createChangeSet, type ChangeSet } from "./changeset";
-import { createEditor, type Editor, type History } from "./edits";
+import { createEditor, type Editor } from "./edits";
+import type { History } from "./undo-steps";
 import { editable, fitHeight } from "./freezer";
 import type { Layer } from "./layers";
 import { freezeLook, serializeLook } from "./look";
