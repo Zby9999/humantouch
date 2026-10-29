@@ -67,3 +67,11 @@ test("the package has nothing but what is built and the Skill: no example projec
   // Nor in what is built.
   expect(files.filter((file) => /fixtures|\.(test|spec)\.|\.tsx?$/.test(file) && !file.endsWith(".d.ts") && !file.endsWith(".d.cts"))).toEqual([]);
 });
+
+test("the package has no source map, nor code pointing to one: a project's dev server has none to warn is missing", () => {
+  expect(files.filter((file) => file.endsWith(".map"))).toEqual([]);
+  const pointing = files
+    .filter((file) => /\.c?js$/.test(file))
+    .filter((file) => /[#@] sourceMappingURL=/.test(readFileSync(join(dir, "package", file), "utf8")));
+  expect(pointing).toEqual([]);
+});

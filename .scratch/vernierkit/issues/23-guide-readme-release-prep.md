@@ -38,3 +38,10 @@ Guide 草稿：
 > 4. Run `npx vernierkit doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 >
 > To remove Vernier Kit, run `npx vernierkit remove` in the project's root folder. It takes out everything `init` added and deletes `.vernier/`, with any layers I set aside off the canvas, leaving `git diff` empty. It refuses while I have design changes not applied yet, or while you are applying a round.
+
+**去掉 source map（2026-10-29）**
+
+- 用户决定发布包里不带 source map。`tsup.config.ts` 的浏览器端构建不再生成 source map（34 加的 `sourcemap: true` 去掉），仓库里的示例和发布包用的是同一份 `dist/`。没有只在 `files` 里排除 `.map`：那样打出的 js 末尾仍有 `//# sourceMappingURL=…`，在全新 Vite 项目里实测开发服务器会报 "Failed to load source map … ENOENT"。
+- `package.spec.ts` 加一条：包里没有 `.map`，也没有 js/cjs 带 `sourceMappingURL` 注释。
+- `npm pack --dry-run` 现在 15 个文件：打包 264.8 kB，解开 1.0 MB（之前 636.5 kB / 2.3 MB）。全新 Vite 项目（本地 tgz）里切换按钮出现、进得了编辑模式，开发服务器和浏览器控制台都没有 source map 警告，doctor 全部 ✓。
+- 代价：在浏览器开发者工具里看到的是压缩后的编辑层代码，仓库里调试也一样；需要时临时在 `tsup.config.ts` 打开 `sourcemap` 再构建。
