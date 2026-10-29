@@ -4,8 +4,8 @@ import { avatar, picture } from "./images";
 import { ArticleCard, ProductCard, StatTile, Testimonial, UserRow } from "./parts";
 
 /**
- * A large page, as a real store's dashboard would be: nested Flex and Grid
- * layouts, text, buttons and image placeholders, about 5000 elements in all.
+ * A large page, as a real store's dashboard would be: nested Stacks (flex)
+ * and Grids, text, buttons and image placeholders, about 5000 elements in all.
  * The performance tests (e2e/perf) measure the editor layer on it, with the
  * desktop, tablet and phone views all showing it. The counts below set its size.
  */

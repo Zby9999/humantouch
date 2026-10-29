@@ -19,6 +19,7 @@ import { report, summarize, type Summary } from "./stats";
 
 /** The views shown, by their iframes' titles: the defaults, as the designer first sees them. */
 const VIEWS = ["Canvas", "Tablet 768", "Phone 390"];
+/** The large page's product cards: `PRODUCTS` in `BigPage.tsx`. */
 const PRODUCTS = 96;
 /** One frame at 60fps. */
 const FRAME_MS = 1000 / 60;
@@ -94,6 +95,11 @@ async function openBigPage(page: Page) {
  * view, whose time is taken too, as that frame begins; the views beside it
  * are hidden till the transition ends.
  */
+/** `scheduler.postTask`, which Chrome has and TypeScript's DOM types do not yet. */
+interface WithScheduler {
+  scheduler: { postTask(task: () => void, options: { priority: "user-blocking" | "user-visible" | "background" }): Promise<void> };
+}
+
 interface Entered {
   click: number;
   /** The first frame with the desktop view on screen begins: the page starts shrinking into the canvas. Its drawing is not counted. */
@@ -122,7 +128,7 @@ function armEnter(views: string[]) {
      * priority, before what the page has queued meanwhile.
      */
     const drawn = (then: (at: number) => void) =>
-      (window as unknown as { scheduler: { postTask(task: () => void, options: { priority: string }): Promise<void> } }).scheduler.postTask(() => then(performance.now()), {
+      (window as unknown as WithScheduler).scheduler.postTask(() => then(performance.now()), {
         priority: "user-blocking",
       });
     addEventListener(
@@ -196,7 +202,7 @@ interface ValueSample {
  */
 function armValue({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
   const w = window as unknown as { vkValue: Promise<ValueSample> };
-  const { scheduler } = window as unknown as { scheduler: { postTask(task: () => void, options: { priority: string }): Promise<void> } };
+  const { scheduler } = window as unknown as WithScheduler;
   w.vkValue = new Promise((resolve) => {
     const root = document.querySelector("vernier-kit")!.shadowRoot!;
     const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
@@ -257,13 +263,25 @@ async function stepValue(page: Page, field: string, selector: string, property: 
 /**
  * The frames drawn while dragging: the time of each, from
  * `requestAnimationFrame`, and so the time between them; frames that never
- * came show as longer gaps. Also the long tasks (over 50ms) meanwhile, and
- * the frames in which the drag showed where the layer would go.
+ * came show as longer gaps. Also the long tasks (over 50ms) meanwhile, the
+ * frames in which the drag showed where the layer would go, and how many
+ * pointer moves reached the page: as many as frames, or each frame had a
+ * move of the drag to show.
  */
+interface FrameRecord {
+  times: number[];
+  withLine: number;
+  long: number[];
+  moves: number;
+  stop(): void;
+}
+
 function armFrames() {
-  const w = window as unknown as { vkFrames: { times: number[]; withLine: number; long: number[]; stop(): void } };
+  const w = window as unknown as { vkFrames: FrameRecord };
   const root = document.querySelector("vernier-kit")!.shadowRoot!;
-  const record = { times: [] as number[], withLine: 0, long: [] as number[], stop() {} };
+  const record: FrameRecord = { times: [], withLine: 0, long: [], moves: 0, stop() {} };
+  const moved = () => record.moves++;
+  addEventListener("pointermove", moved, true);
   let on = true;
   const loop = (time: number) => {
     record.times.push(time);
@@ -276,6 +294,7 @@ function armFrames() {
   record.stop = () => {
     on = false;
     observer.disconnect();
+    removeEventListener("pointermove", moved, true);
   };
   w.vkFrames = record;
 }
@@ -288,17 +307,30 @@ async function dragCard(page: Page, n: number) {
   await page.mouse.move(from.x, from.y);
   await page.evaluate(armFrames);
   await page.mouse.down();
+  // Sent straight to the browser every few ms, each without waiting for the last to be taken: as a mouse reports,
+  // whether or not the page keeps up. (Playwright's own moves each wait for the page, so a busy page would get fewer.)
+  const cdp = await page.context().newCDPSession(page);
+  const sent: Promise<unknown>[] = [];
   const started = Date.now();
-  for (let elapsed = 0; elapsed < DRAG_MS; elapsed = Date.now() - started) {
-    // Across two cards and back, and down a row and back, once every 1.25s.
-    const phase = (elapsed / 1250) * 2 * Math.PI;
-    await page.mouse.move(from.x + Math.sin(phase) * step * 2, from.y + (1 - Math.cos(phase)) * box.height * 0.6);
-    await page.waitForTimeout(POINTER_EVERY_MS);
-  }
+  await new Promise<void>((done) => {
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - started;
+      if (elapsed >= DRAG_MS) {
+        clearInterval(timer);
+        return done();
+      }
+      // Across two cards and back, and down a row and back, once every 1.25s.
+      const phase = (elapsed / 1250) * 2 * Math.PI;
+      const [x, y] = [from.x + Math.sin(phase) * step * 2, from.y + (1 - Math.cos(phase)) * box.height * 0.6];
+      sent.push(cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 }));
+    }, POINTER_EVERY_MS);
+  });
+  await Promise.all(sent);
+  await cdp.detach();
   const record = await page.evaluate(() => {
-    const record = (window as unknown as { vkFrames: { times: number[]; withLine: number; long: number[]; stop(): void } }).vkFrames;
+    const record = (window as unknown as { vkFrames: FrameRecord }).vkFrames;
     record.stop();
-    return { times: record.times, withLine: record.withLine, long: record.long };
+    return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
   });
   // Esc puts the card back as it was: the next drag starts from the same page.
   await page.keyboard.press("Escape");
@@ -367,11 +399,12 @@ test("a value changed shows in every view in the next frame", async ({ page }) =
     const work = summarize(samples.map((s) => s.work));
     const latency = summarize(samples.map((s) => s.latency));
     const inFirstFrame = samples.filter((s) => s.firstFrame).length;
-    const ok = inFirstFrame === samples.length && work.median <= FRAME_MS;
+    // Every step in the first frame, and 19 in 20 within it: the odd one may meet a garbage collection.
+    const ok = inFirstFrame === samples.length && work.p95 <= FRAME_MS;
     met &&= ok;
     summaries[name] = { work, latency, inFirstFrame, frames: samples.map((s) => s.frames) };
     rows.push(
-      { name: `${name}: work`, summary: work, target: `median ≤ ${FRAME_MS.toFixed(1)}ms, in the first frame`, met: ok },
+      { name: `${name}: work`, summary: work, target: `p95 ≤ ${FRAME_MS.toFixed(1)}ms, in the first frame`, met: ok },
       { name: `${name}: key to frame drawn`, summary: latency },
     );
   }
@@ -393,6 +426,8 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
   const intervals: number[] = [];
   const fps: number[] = [];
   const long: number[] = [];
+  /** Pointer moves that reached the page, per second of each drag; Chrome hands the page at most one a frame. */
+  const moves: number[] = [];
   for (let i = 0; i < DRAGS; i++) {
     const record = await dragCard(page, 6);
     expect(record.withLine, "the drag shows where the card would go").toBeGreaterThan(0);
@@ -400,18 +435,21 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
     intervals.push(...gaps);
     fps.push(((record.times.length - 1) / (record.times.at(-1)! - record.times[0])) * 1000);
     long.push(...record.long);
+    moves.push((record.moves / (record.times.at(-1)! - record.times[0])) * 1000);
   }
   const frameSummary = summarize(intervals);
   const fpsSummary = summarize(fps, { higherIsBetter: true });
   const dropped = intervals.filter((gap) => gap > FRAME_MS * 1.5).length;
   // 60fps kept: as many frames as that, give or take the odd one, and 19 in 20 frames on time.
   const met = fpsSummary.worst >= 58 && frameSummary.p95 <= FRAME_MS * 1.25;
-  keep("drag", { fps: fpsSummary, frameIntervals: frameSummary, dropped, frames: intervals.length, longTasks: long });
+  const movesSummary = summarize(moves, { higherIsBetter: true });
+  keep("drag", { fps: fpsSummary, frameIntervals: frameSummary, dropped, frames: intervals.length, longTasks: long, pointerMovesPerSecond: movesSummary });
   print(
     report(
       `Dragging a card, ${elements} elements, ${VIEWS.length} views — ${mode}`,
       [
         { name: "frames per second, per drag", summary: fpsSummary, unit: (v) => v.toFixed(1), target: "every drag ≥ 58", met: fpsSummary.worst >= 58 },
+        { name: "pointer moves per second, per drag", summary: movesSummary, unit: (v) => v.toFixed(0) },
         { name: "time between frames", summary: frameSummary, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: frameSummary.p95 <= FRAME_MS * 1.25 },
       ],
       [`${dropped} of ${intervals.length} frames late (more than 1.5 frames apart); ${long.length} long tasks${long.length ? `, the longest ${Math.max(...long).toFixed(0)}ms` : ""}.`],

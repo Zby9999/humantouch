@@ -51,6 +51,7 @@ export default defineConfig({
     cwd: react18Example,
     command: `pnpm exec vite --port ${PORT} --strictPort`,
     url: BIG_URL,
-    reuseExistingServer: !process.env.CI,
+    // Always this checkout's: one left running on the port, from another checkout, would be measured instead.
+    reuseExistingServer: false,
   },
 });
