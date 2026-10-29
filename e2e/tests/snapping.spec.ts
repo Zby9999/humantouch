@@ -256,7 +256,7 @@ test("nudged in the phone view, a free layer moves there only, at the phone's br
   await expect.poll(() => placeIn(phone(page), "#mark")).toEqual({ x: 110, y: 120 });
   expect(await placeIn(desktop(page), "#mark")).toEqual({ x: 100, y: 120 });
   await page.locator("[data-vk-changes-opener]").click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toContainText(["below 640px"]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toContainText(["below 768px"]);
 });
 
 test("nudged in the phone view, a layer in a Frame's flow is placed freely there only, which the breakpoint panel lists and resets to the flow", async ({ page }) => {
@@ -283,7 +283,7 @@ test("nudged in the phone view, a layer in a Frame's flow is placed freely there
   const changed = design(page).locator('.vk-breakpoint-change[data-vk-property="absolute"]');
   await expect(changed).toHaveText("Absolute");
   await page.locator("[data-vk-changes-opener]").click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Absolute.*in the layout → X 8px, Y 18px.*below 640px/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Absolute.*in the layout → X 8px, Y 18px.*below 768px/]);
   await page.keyboard.press("Escape");
 
   await changed.getByRole("button", { name: "Reset Absolute to inherit" }).click();

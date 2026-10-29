@@ -52,7 +52,7 @@ test("played, the canvas is as wide as the window: a change made in the phone vi
   const width = () => page.locator('iframe[title="Canvas"]').evaluate((iframe) => (iframe as HTMLIFrameElement).offsetWidth);
   expect(await width()).toBe(page.viewportSize()!.width);
   await expect(card).toHaveCSS("background-color", WHITE);
-  // Below the example's `sm`, 640px: the phone's breakpoint.
+  // Below the example's `md`, 768px, where the tablet view's range starts: the phone's breakpoint.
   await page.setViewportSize({ width: 500, height: 720 });
   await expect(card).toHaveCSS("background-color", RED);
   await expect.poll(width).toBe(500);

@@ -289,14 +289,14 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.click(box.x + 4, box.y + 4);
     await page.keyboard.up("Meta");
     await setField(page, "Fill color", "ff0000");
-    await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint?.max).toBe(640);
+    await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
     await vernierkit("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // Not applied yet: the cards are white at the phone's width too.
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The fill is #FFFFFF, not #FF0000.");
-    // Applied below `sm` only, as the notes say: the window, 1280px wide, still shows them white.
-    editSource(CARD, "bg-white p-5", "bg-white p-5 max-sm:bg-[#ff0000]");
+    // Applied below `md` only, as the notes say: the window, 1280px wide, still shows them white.
+    editSource(CARD, "bg-white p-5", "bg-white p-5 max-md:bg-[#ff0000]");
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
     // Only the page itself is left: the one loaded at the phone's width is gone.
