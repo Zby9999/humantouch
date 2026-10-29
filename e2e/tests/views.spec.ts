@@ -113,7 +113,7 @@ test("selecting in one view selects the same layer in every view; an edit shows 
 });
 
 test("a layer dragged in the phone view goes where it is let go there, and moves in every view", async ({ page }) => {
-  // The layers making room slide aside, unless motion is reduced.
+  // With motion not reduced, too.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
@@ -130,11 +130,12 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   const line = (await page.locator(".vk-drop-line").boundingBox())!;
   expect(line.x).toBeGreaterThanOrEqual(p.x - 1);
   expect(line.x + line.width).toBeLessThanOrEqual(p.x + p.width + 1);
-  // The paragraph makes room in every view; it slides aside in the phone view only, and goes straight there in the others.
-  const making = async (view: Locator) =>
-    view.contentFrame().locator(`${hero} > p`).evaluate((el) => ({ translate: getComputedStyle(el).translate, slides: getComputedStyle(el).transitionDuration !== "0s" }));
-  await expect.poll(() => making(phone(page))).toEqual({ translate: expect.not.stringMatching(/^none$/), slides: true });
-  for (const view of [desktop(page), tablet(page)]) expect(await making(view)).toEqual({ translate: expect.not.stringMatching(/^none$/), slides: false });
+  // The paragraph makes room in every view, going straight to its place: no view slides it there.
+  for (const view of [desktop(page), tablet(page), phone(page)]) {
+    const making = await view.contentFrame().locator(`${hero} > p`).evaluate((el) => ({ translate: getComputedStyle(el).translate, duration: getComputedStyle(el).transitionDuration }));
+    expect(making.translate).not.toBe("none");
+    expect(making.duration).toBe("0s");
+  }
   await page.mouse.up();
 
   for (const view of [desktop(page), tablet(page), phone(page)]) {
