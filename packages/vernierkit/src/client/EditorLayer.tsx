@@ -1,11 +1,11 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
-import { ENTER_MARK } from "./CanvasView";
 import { ChangeList } from "./ChangeList";
 import type { ProjectBreakpoints } from "./breakpoints";
 import { putBackBy, withDependents, type Change } from "./changeset";
 import { checkChange, pageAt } from "./check";
+import { ENTER_MARK } from "./host";
 import { Icon } from "./icons";
 import { revertSaved } from "./saved-round";
 import { connectRoundStore } from "./service";
@@ -45,15 +45,18 @@ function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): Sav
  * folds into the toggle, locked until the round ends, and each change it
  * applies is checked on the page. The toggle's badge opens the change list, where changes
  * are undone one by one, or all discarded, in either mode.
+ *
+ * It loads after the toggle (`LazyEditorLayer`): `enter` when edit mode was
+ * asked for as it loaded, and `saved`, the saved round, when that has loaded already.
  */
-export function EditorLayer() {
-  const [mode, setMode] = useState<Mode>("preview");
-  const [animate, setAnimate] = useState(true);
+export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; saved?: SavedRound | null }) {
+  const [mode, setMode] = useState<Mode>(enter ? "edit" : "preview");
+  const [animate, setAnimate] = useState(enter?.animate ?? true);
   const [store] = useState(connectRoundStore);
   /** The project's breakpoints from its Tailwind theme, as the local service reads them; undefined until it has said. */
   const [breakpoints, setBreakpoints] = useState<ProjectBreakpoints | null | undefined>(store ? undefined : null);
   /** Undefined until the saved round, if any, has loaded. */
-  const [round, setRound] = useState<SavedRound | null | undefined>(store ? undefined : null);
+  const [round, setRound] = useState<SavedRound | null | undefined>(store ? saved : null);
   /** The layers off the canvas (ADR 0009), which belong to no round; undefined until they have loaded. */
   const [offCanvas, setOffCanvas] = useState<SavedOffCanvasLayer[] | undefined>(store ? undefined : []);
   /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
@@ -78,7 +81,7 @@ export function EditorLayer() {
       setRound(null);
     });
   useEffect(() => {
-    void load();
+    if (saved === undefined) void load();
     store?.breakpoints().then(setBreakpoints, (error: unknown) => {
       console.warn(error);
       setBreakpoints(null);
@@ -266,6 +269,8 @@ export function EditorLayer() {
           applying={claimed && { done: claimed.done.length, total: changes.length }}
           onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
           onToggle={switchMode}
+          // Edit mode has been asked for, and the canvas is not up yet: what it needs is still loading.
+          busy={mode === "edit" && !ready}
         >
           {list}
         </Toggle>

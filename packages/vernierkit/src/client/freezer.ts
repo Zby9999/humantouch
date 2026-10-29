@@ -7,7 +7,7 @@ import { dropUnusedRules, moveInlineEdits, orderEditStyles } from "./canvas-styl
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
-import { FONT_STACK } from "./styles";
+import { FONT_STACK } from "./toggle-styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
 import { HAS_VIEWPORT_UNIT, mediaForViews, unitsForViews, VIEWPORT_MEDIA, type FrozenWindow } from "./viewport";
 

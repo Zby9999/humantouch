@@ -1,69 +1,12 @@
-import { EASE_OUT, TOAST_FADE_MS, UNLOCK_HOLD_MS } from "./motion";
+import { EASE_OUT, TOAST_FADE_MS } from "./motion";
+import { FONT_STACK } from "./toggle-styles";
 
-export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-
-/** Editor layer styles. They live inside the Shadow DOM and never touch the page. */
+/** The editor layer's styles, but for the toggle's (`toggleStyles`), which come before them. They live inside the Shadow DOM and never touch the page. */
 export const styles = /* css */ `
-:host {
-  /* Cut off everything the page could pass down by inheritance. */
-  all: initial !important;
-  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
-  --vk-icon-size: 14px;
-  --vk-icon-stroke: 1px;
-}
-
 .vk-icon { flex: none; width: var(--vk-icon-size); height: var(--vk-icon-size); }
 .vk-icon * { stroke-width: var(--vk-icon-stroke); vector-effect: non-scaling-stroke; }
 
-.vk-dock {
-  --vk-gap: 16px;
-  --vk-hold: ${UNLOCK_HOLD_MS}ms;
-  position: fixed;
-  z-index: 2147483647;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: 500 12px/16px ${FONT_STACK};
-  letter-spacing: normal;
-  color: #fff;
-  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.vk-dock[data-corner="top-left"] { top: var(--vk-gap); left: var(--vk-gap); }
-.vk-dock[data-corner="top-right"] { top: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
-.vk-dock[data-corner="bottom-left"] { bottom: var(--vk-gap); left: var(--vk-gap); }
-.vk-dock[data-corner="bottom-right"] { bottom: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
-.vk-dock.is-dragging { transition: none; }
-
-.vk-toggle {
-  all: unset;
-  box-sizing: border-box;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #1e1e1e;
-  color: #fff;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 4px 12px rgb(0 0 0 / 0.18);
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: background-color 120ms ease, scale 120ms ease;
-}
-.vk-toggle:hover { background: #2c2c2c; }
-.vk-toggle:active { scale: 0.96; }
-.vk-dock.is-dragging .vk-toggle { cursor: grabbing; scale: 1.04; }
-.vk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
-
-.vk-toggle-wrap { position: relative; }
-
-/* Locked while the Agent applies the round: a ring fills as changes are done. */
-.vk-toggle[aria-disabled="true"] { cursor: progress; color: rgb(255 255 255 / 0.5); }
-.vk-toggle[aria-disabled="true"]:hover { background: #1e1e1e; }
+/* The toggle while the Agent applies the round: a ring fills as changes are done. */
 .vk-progress {
   position: absolute;
   inset: -4px;
@@ -976,7 +919,7 @@ export const styles = /* css */ `
 .vk-mark[data-type="gap"]:not([data-across]) .vk-mark-label { left: 4px; transform: translateY(-50%); }
 
 @media (prefers-reduced-motion: reduce) {
-  .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
+  .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
   /* A toast only fades: it does not rise or sink. */
   .vk-toast { animation-name: vk-toast-fade-in; transition-property: opacity; }
   .vk-toast.is-fading { translate: none; }

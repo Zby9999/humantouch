@@ -25,21 +25,26 @@ interface Drag {
  * it unlocks it.
  */
 interface Props {
+  // Until the rest of the editor layer has loaded there is no round to show: the badge, the list and the lock come with it.
   /** Changes not yet applied, shown as a badge, which opens the change list. */
-  changeCount: number;
+  changeCount?: number;
   /** The change list is open. */
-  changesOpen: boolean;
-  onShowChanges(): void;
+  changesOpen?: boolean;
+  onShowChanges?(): void;
   /** The Agent is applying the round: how many of its changes are done. */
-  applying: { done: number; total: number } | null;
-  onUnlock(): void;
+  applying?: { done: number; total: number } | null;
+  onUnlock?(): void;
   /** `animate` is false when the toggle was pressed from the keyboard: then the switch is instant. */
   onToggle(animate: boolean): void;
+  /** Edit mode has been asked for and is on its way: the editor layer is loading, or the canvas getting ready. Pressing it again does nothing. */
+  busy?: boolean;
+  /** The pointer is over the toggle, or it has focus: edit mode may well be asked for next. */
+  onReady?(): void;
   /** The change list, above or below the toggle. */
   children?: ComponentChildren;
 }
 
-export function Toggle({ changeCount, changesOpen, onShowChanges, applying, onUnlock, onToggle, children }: Props) {
+export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, onUnlock, onToggle, busy = false, onReady, children }: Props) {
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [dragging, setDragging] = useState(false);
   const [settles, setSettles] = useState(0);
@@ -60,7 +65,7 @@ export function Toggle({ changeCount, changesOpen, onShowChanges, applying, onUn
       setHolding(false);
       // Letting go clicks, and by then the toggle may be unlocked: that click is not a switch.
       suppressClick.current = true;
-      latestOnUnlock.current();
+      latestOnUnlock.current?.();
     }, UNLOCK_HOLD_MS);
   };
   const endHold = () => {
@@ -137,7 +142,7 @@ export function Toggle({ changeCount, changesOpen, onShowChanges, applying, onUn
       suppressClick.current = false;
       return;
     }
-    if (applying || keyHeld.current) return;
+    if (applying || busy || keyHeld.current) return;
     // A click from Enter or Space carries no click count.
     onToggle(event.detail > 0);
   };
@@ -167,6 +172,9 @@ export function Toggle({ changeCount, changesOpen, onShowChanges, applying, onUn
           aria-label={label}
           title={applying ? "Applying design changes. Press and hold to unlock." : undefined}
           aria-disabled={applying ? "true" : undefined}
+          aria-busy={busy && !applying ? "true" : undefined}
+          onPointerEnter={onReady}
+          onFocus={onReady}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}

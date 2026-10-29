@@ -7,6 +7,7 @@ import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
 import { freeze, restore, type Canvas } from "./freezer";
+import { ENTER_MARK } from "./host";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { nodeOf, role, type Layer, type LayerTree } from "./layers";
@@ -74,8 +75,6 @@ interface Bounds {
 /** Wheel distance (px) per e-fold of zoom. Mouse wheel notches are clamped so one notch is a modest step. */
 const ZOOM_SPEED = 0.01;
 const MAX_ZOOM_STEP = 30;
-/** Performance entries: a mark when the designer asks for edit mode, a measure once the canvas is on screen. */
-export const ENTER_MARK = "vernierkit:enter-edit-mode";
 
 /** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
 export type Tool = Created["type"] | null;
