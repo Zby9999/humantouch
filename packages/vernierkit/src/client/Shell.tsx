@@ -14,6 +14,7 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { BreakpointSection } from "./BreakpointSection";
+import { BriefSection } from "./BriefSection";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
 import type { View } from "./views";
 import { toggleIn } from "./selection";
@@ -203,6 +204,17 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     setAdjusting(false);
     const doc = layers.at(-1)?.el.ownerDocument;
     setSelected(layers.every((layer) => layer.el.ownerDocument === doc) ? layers : layers.filter((layer) => layer.el.ownerDocument === doc));
+  };
+  /**
+   * A brief written on a layer of the canvas, or taken off: from the Design
+   * panel, or beside a new Frame. Loose text gets an element of its own for
+   * it, which is then selected; any other layer stays as selected.
+   */
+  const writeBrief = (layer: Layer, brief: string) => {
+    if (!editor) return;
+    const own = editor.setBrief(layer, brief);
+    onEdit();
+    if (own.el !== layer.el) select([own]);
   };
   /** ⇧A: the layers made a Stack, which is then selected. */
   const makeStack = (layers: Layer[]) => {
@@ -548,10 +560,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           select([layer]);
           return layer;
         }}
-        onSetBrief={(layer, brief) => {
-          editorOf(layer)!.setBrief(layer, brief);
-          onEdit();
-        }}
+        onSetBrief={writeBrief}
         onBeginText={(layer) => {
           const own = editorOf(layer)!.ownElement(layer);
           // Loose text got an element of its own: the layers are built anew (those off the canvas are read as they are).
@@ -600,6 +609,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
                 <Properties editor={editorOf(selected[0])!} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
               </CatalogProvider>
             </ToastProvider>
+            {/* A brief is on one layer of the canvas at a time; off the canvas, a layer is kept as it looks. */}
+            {selected.length === 1 && !outsideOf(selected[0]) && <BriefSection editor={editor} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />}
           </>
         ) : (
           <p class="vk-panel-empty">Select a layer to see its properties.</p>

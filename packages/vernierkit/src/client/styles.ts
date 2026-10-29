@@ -743,6 +743,22 @@ export const styles = /* css */ `
 }
 .vk-brief-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
 .vk-brief-text { width: 220px; min-height: 72px; background: var(--vk-panel); box-shadow: 0 0 0 1px var(--vk-border), 0 4px 12px rgb(0 0 0 / 0.12); }
+/* On a layer with a brief, in every view: the brief button's mark, small, centered on its top right corner. */
+.vk-brief-mark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 5px;
+  background: var(--vk-accent);
+  color: #fff;
+  box-shadow: 0 0 0 1px #fff;
+  pointer-events: none;
+}
+.vk-brief-mark svg { width: 12px; height: 12px; }
 
 /* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
 .vk-selection[data-kind="typing"] { transition: none; }

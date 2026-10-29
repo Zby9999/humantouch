@@ -2576,6 +2576,7 @@ describe("new text and Frames", () => {
     const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 12 });
 
     expect(editor.brief(editor.tree().layerOf(frame.el)!)).toBe("A pricing table with three plans");
+    expect(editor.isNewFrame(editor.tree().layerOf(frame.el)!)).toBe(true);
     expect(frame.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
     expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
     expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-vk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
@@ -2589,8 +2590,9 @@ describe("new text and Frames", () => {
     expect(changes.list()).toHaveLength(2);
 
     expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
-    // Only the brief, in an editor without it, for a layer the designer did not make.
-    expect(editor.brief(layer("a"))).toBeNull();
+    // A layer the designer did not make has no brief to make anything by, and none yet.
+    expect(editor.isNewFrame(layer("a"))).toBe(false);
+    expect(editor.brief(layer("a"))).toBe("");
   });
 
   test("where a new layer can go: a Stack or a Frame that holds layers, not text or a field", () => {
@@ -2600,6 +2602,138 @@ describe("new text and Frames", () => {
     expect(editor.canHold(layer("board"))).toBe(true);
     expect(editor.canHold(layer("a"))).toBe(false);
     expect(editor.canHold(layer("field"))).toBe(false);
+  });
+});
+
+describe("a brief on any layer", () => {
+  test("a layer that is there takes a brief: a change of its own, for its usage at every width, marked on every instance", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.setBrief(layerOf(cards[1]), "Bounce back harder when pressed");
+
+    expect(editor.brief(layerOf(cards[0]))).toBe("Bounce back harder when pressed");
+    expect(cards.map((card) => card.getAttribute("data-vk-brief"))).toEqual([
+      "Bounce back harder when pressed",
+      "Bounce back harder when pressed",
+      "Bounce back harder when pressed",
+      null,
+    ]);
+    expect(changes.list()).toEqual([
+      {
+        id: 1,
+        kind: "brief",
+        layer: "1",
+        target: {
+          loc: "src/Card.tsx:3:5",
+          chain: cardAt("src/App.tsx:6:9"),
+          component: "Card",
+          instances: 3,
+          locked: false,
+          unlocated: false,
+          context: { path: ["Page", "App", "Card"], element: "<article>" },
+        },
+        scope: "usage",
+        property: "brief",
+        before: null,
+        after: "Bounce back harder when pressed",
+        style: {},
+        sources: [],
+      },
+    ]);
+    // Not a new Frame: its brief is not what to make in it.
+    expect(editor.isNewFrame(layerOf(cards[1]))).toBe(false);
+    expect(editor.brief(layerOf(cards[3]))).toBe("");
+  });
+
+  test("changed, it stays one change with the latest words; taken off, no change is left; each an undo step of its own", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+
+    editor.setBrief(card, "Bounce back harder");
+    editor.setBrief(card, "Bounce back harder when pressed");
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ id: 1, kind: "brief", after: "Bounce back harder when pressed" });
+
+    editor.setBrief(card, "");
+    expect(changes.list()).toEqual([]);
+    expect(cards.some((c) => c.hasAttribute("data-vk-brief"))).toBe(false);
+
+    expect(editor.undo().map((layer) => layer.el)).toEqual([cards[0]]);
+    expect(editor.brief(card)).toBe("Bounce back harder when pressed");
+    expect(cards[2].getAttribute("data-vk-brief")).toBe("Bounce back harder when pressed");
+    editor.undo();
+    expect(editor.brief(card)).toBe("Bounce back harder");
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    expect(cards[1].hasAttribute("data-vk-brief")).toBe(false);
+    editor.redo();
+    expect(editor.brief(card)).toBe("Bounce back harder");
+
+    // The same words again are no edit.
+    editor.setBrief(card, "Bounce back harder");
+    editor.undo();
+    expect(editor.brief(card)).toBe("");
+  });
+
+  test("taken back from the change list, on the canvas or on the saved round, the brief and its marks go; the other changes stay", () => {
+    const opened = openCanvas();
+    const { doc, editor, changes, cards, layerOf } = opened;
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.setBrief(layerOf(cards[0]), "Truncate the title past two lines");
+    const brief = changes.list().find((change) => change.kind === "brief")!;
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    expect(editor.revert(brief.id)!.el).toBe(cards[0]);
+    expect(changes.list().map((change) => change.kind)).toEqual(["style"]);
+    expect(cards.some((c) => c.hasAttribute("data-vk-brief"))).toBe(false);
+    editor.undo();
+    expect(editor.brief(layerOf(cards[0]))).toBe("Truncate the title past two lines");
+
+    const reverted = revertSaved(saved, brief.id)!;
+    expect(reverted.changeSet.changes.map((change) => change.kind)).toEqual(["style"]);
+    expect(new DOMParser().parseFromString(reverted.canvas, "text/html").querySelectorAll("[data-vk-brief]")).toHaveLength(0);
+  });
+
+  test("on a layer made this round, it goes with the change that made it; a copy of a layer with a brief has none", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const copy = editor.duplicate(layerOf(cards[3]));
+    editor.setBrief(copy, "A card for the newest plan");
+    expect(changes.list()[1]).toMatchObject({ kind: "brief", target: { made: copy.el.getAttribute("data-vk-layer") } });
+
+    editor.setBrief(layerOf(cards[3]), "Bounce back harder");
+    const again = editor.duplicate(editor.tree().layerOf(cards[3])!);
+    expect(again.el.hasAttribute("data-vk-brief")).toBe(false);
+    expect(editor.brief(again)).toBe("");
+
+    editor.revert(changes.list()[0].id);
+    expect(changes.list().map((change) => change.kind)).toEqual(["brief", "duplicate"]);
+    expect(doc.querySelectorAll("[data-vk-brief]")).toHaveLength(1);
+  });
+
+  test("the live page cannot check a brief: no value shows it", async () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    editor.setBrief(layerOf(cards[0]), "Bounce back harder when pressed");
+
+    expect(await checkChange(doc, changes.list()[0])).toEqual({
+      outcome: "unchecked",
+      reason: "a brief asks for what the Design panel cannot set, so the page has no value to check it by",
+    });
+  });
+
+  test("loose text gets an element of its own to take a brief", () => {
+    const { doc, editor, changes } = openCanvas(
+      `<!DOCTYPE html><body><p data-vk-loc="src/App.tsx:4:5" ${chain(APP)}>Hello <span data-vk-loc="src/App.tsx:4:14" ${chain(APP)} style="display: inline-block">pill</span> world</p></body>`,
+    );
+    const run = find(editor.tree().root, (l) => l.name === "Hello")!;
+
+    const own = editor.setBrief(run, "Keep it on one line");
+
+    const span = doc.querySelector("[data-vk-brief]")!;
+    expect(own.el).toBe(span);
+    expect(span.localName).toBe("span");
+    expect(span.textContent!.trim()).toBe("Hello");
+    expect(changes.list()[0]).toMatchObject({ kind: "brief", target: { loc: "src/App.tsx:4:5", run: 0 } });
+    expect(editor.brief(own)).toBe("Keep it on one line");
   });
 });
 

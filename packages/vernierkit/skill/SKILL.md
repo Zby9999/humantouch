@@ -23,7 +23,7 @@ Running `claim` again prints the notes once more, with the changes done so far.
 
 Every section has:
 
-- **Kind**: what sort of change it is: **Style** (a property of the layer), or a move: **Reorder** (to another place among its container's layers), **Move** (into another container's layout) or **Absolute** (placed by coordinates in a container); or a change to the structure: **Make Stack** (layers wrapped in a new Stack, or a Frame made one), **Dissolve Stack** (a Stack made a Frame, its layers placed absolute in it), **New text** or **New Frame** (a layer the designer drew), **Text** (new words), **Delete**, **Duplicate** or **Put back** (a layer the designer had moved off the canvas, set aside beside it, put back onto it).
+- **Kind**: what sort of change it is: **Style** (a property of the layer), or a move: **Reorder** (to another place among its container's layers), **Move** (into another container's layout) or **Absolute** (placed by coordinates in a container); or a change to the structure: **Make Stack** (layers wrapped in a new Stack, or a Frame made one), **Dissolve Stack** (a Stack made a Frame, its layers placed absolute in it), **New text** or **New Frame** (a layer the designer drew), **Text** (new words), **Delete**, **Duplicate** or **Put back** (a layer the designer had moved off the canvas, set aside beside it, put back onto it); or a **Brief** (what the designer wants achieved in a layer, in their words, where the Design panel has nothing to set it with).
 - **Layer**: the layer's name, its element as an opening tag, and its place on the page (layer names from the page down).
 - **Location**: `file:line:column` of the JSX that writes the layer. **Not located** means the layer has no source marker: find it from its element and place on the page. **New** means the layer is made this round, by the change it names: apply that one first, then change the layer where you wrote it.
 - **Scope**: which instances the change is for.
@@ -35,7 +35,7 @@ Every section has:
 - **Inline fragments** (only on some text changes): the change is made on the text layer as a whole, and the bold runs and links in it follow it. The fragments it names have a value of their own, which they keep: leave theirs as it is.
 - **Copied breakpoints** (only on some copies): the layer, or a layer in it, has values of its own at narrower breakpoints, which the copy keeps. Each is listed with its width range, the layer it is on, and its value, and with the change that gave it while that change is still in the round.
 - **Data change** (on some moves, new words, deletions and copies): the layer is one of the instances a loop renders, so its place, its words, or whether it is there at all, come from the data the loop goes through. Change the data, not the JSX.
-- **Brief** (only on a new Frame): what the designer wants made in the Frame, in their words.
+- **Brief** (on a new Frame, and on a **Brief** change): what the designer wants, in their words: on a new Frame, what to make in it; on a layer that is there, what to achieve in it.
 - **Sketch** (on a new Frame with a brief, and on what is drawn in it): the text and Frames the designer drew in the Frame, with where they are, to show the layout they have in mind.
 - **Source**, **Look** and **Edited off the canvas** (only on a put back): the JSX that wrote the layer, as it was when the designer moved it off the canvas, with where it was written then; how it looked off the canvas, as an HTML document with every style written onto it (its classes as they were in `data-vk-class`); and what the designer changed on it there, each as a change of its own would read.
 - **Put back** (only on a deletion): the designer moved the layer off the canvas and put it back elsewhere in the same round, in the change named.
@@ -57,7 +57,7 @@ For each change, in order:
 3. Read what `done` says. It checks the change on the designer's open page:
    - **it shows the change**: go on to the next one.
    - **it does not show the change**: something overrides your edit; the output says what the page shows instead. Look again at **Currently set by**, fix it, and run `done` with the same number again. Go on only once it shows, or once you know it cannot: then report it.
-   - **Not checked**: no page could check it (none is open, the layer is not on it now, or it could not be shown at the change's breakpoint), or the change is not one the page can tell (a new layer, a Stack made or dissolved, a move into another container, a copy, a layer put back, new words). Go on; it is not an error.
+   - **Not checked**: no page could check it (none is open, the layer is not on it now, or it could not be shown at the change's breakpoint), or the change is not one the page can tell (a new layer, a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief). Go on; it is not an error. For a brief, `done` says so at once: say in the report how you achieved it.
 
    A change at a breakpoint is checked at a width in its range: the page loads itself that wide, out of sight, when its window is not, so a change at `below 640px` is checked as a phone shows it. If it could not load in time, the change is **Not checked**.
 
@@ -77,6 +77,7 @@ While you apply them:
 - **Making a Stack**: for a new Stack, wrap the layers listed, in the order listed, in one new element (a `<div>`, unless the project has a Stack component it uses for this), placed where the design intent says; lay it out as a flex row or column with the gap, padding and alignment given. To make a Frame a Stack, make that element the flex container, and put its layers in the order listed. Keep each layer's own JSX as it is: only its place changes.
 - **New text**: write the words given, where the design intent places them, in the style the page already gives its body text (the class or element it uses for paragraphs), not as the reference style's raw values unless nothing else fits.
 - **New Frame**: an element of the size given, with no fill. When it has a **Brief**, make what the brief asks for in it: build it from the components and styles the project already has (its buttons, cards, type and colors), and lay it out as the **Sketch** shows; the sketch's own changes are a guide to that layout, not words and boxes to copy as they are. Say in the report what you made.
+- **Brief** (a change of its own, on a layer that is there): achieve what the brief asks of that layer ("bounce back harder when pressed", "truncate the title past two lines"). It is the designer's intent, not a value: work out what it takes in the code (a style, a transition or animation, a state, a prop, a limit on the text), and do it the way the project already does such things, from its own components, styles and Variables, within the scope given. It holds at every width. `done` never checks it on the page: say in the report what you did to achieve it, under ✓ when you did, under ⚠️ when you could only come close or not at all.
 - **Text**: change the words in the JSX, and keep the bold, links and other pieces around the words where they still fit. When the words come from a prop or a variable, change them where they are given.
 - **Delete**: take the JSX of the layer out, with all in it. When its layers were moved out of it first (the designer ungrouped it: moves out of it, then its deletion), take out only its own element, its layers staying where those moves put them. **Duplicate**: copy the JSX of the layer, with all in it, to the place given. When it has **Copied breakpoints**, the copy has the values listed at those widths, as the layer had them when copied: copying the JSX with its responsive classes usually does it, but where a media query reaches the layer by something the copy does not share (an id, `:nth-child`), or the layer's value there has changed since, give the copy its own, written as **Breakpoint changes** are.
 - **Put back**: a layer the designer moved off the canvas comes back onto it, at the place given. Moved off in an earlier round, its code was deleted then: write its **Source** back as it is, where the design intent places it, adjusting it only where the code around it has changed since (a prop it took, an import it needs, a component renamed). Moved off this round (the intent names the deletion, which says **Put back** too), its code is still there: move it there instead, rather than deleting it and writing it again. Then make the **Edited off the canvas** changes to it, as those changes are written. Where its classes no longer give it the **Look** (their rules went with its code, a CSS file deleted say), give it styles that do, as the project writes styles. A layer with no **Source** kept (it was new when moved off) is written from its **Look**, as the project writes markup and styles.
@@ -104,9 +105,10 @@ End your reply with this report, in this form:
 ✓ Applied
 - 1. Fill: the cards of the feature grid, white → red
 - 2. Corner radius: …
+- 3. Brief on Button: pressed, it shrinks a little and springs back (`active:scale-95` with a springy transition)
 
 ⚠️ Not applied 1:1
-- 3. Corner radius: <which layer>
+- 4. Corner radius: <which layer>
   Why: <the reason, e.g. the component library sets it and cannot be changed from the usage>
   Instead: <what you did, or "left as it was">
 ```

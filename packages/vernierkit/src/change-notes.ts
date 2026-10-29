@@ -77,6 +77,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
+    ...(change.kind === "brief" ? [`**Brief:** ${quoted(change.after as string)}`] : []),
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
@@ -152,6 +153,11 @@ function intent(change: Change, list: Change[]): string {
     }
     case "text":
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "brief":
+      return (
+        "Achieve what the brief asks of this layer: something the Design panel cannot set. " +
+        "Do it the way the project already writes such things, within the scope given, and say in your report what you did."
+      );
     case "delete": {
       const from = change.before as Place;
       // Its layers moved out first (it is ungrouped): only the layer itself goes.
@@ -232,6 +238,7 @@ const NO_STYLE: Record<Change["kind"], string> = {
   delete: "none: the layer goes",
   duplicate: "none: the copy is as the layer is",
   putBack: "none: it is to look as its look shows",
+  brief: "none: a brief is the designer's words, not a style",
 };
 
 /**

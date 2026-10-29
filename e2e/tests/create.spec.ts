@@ -132,6 +132,10 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   expect(await frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
   await expect(page.locator('.vk-tree-row[aria-selected="true"] .vk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  // Marked on the canvas in the other views; in the one worked in, its button stands for the mark.
+  await expect(page.locator('.vk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
+  await expect(page.locator('.vk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
+  await expect(page.locator('.vk-brief-mark[data-view="Phone"]')).toHaveCount(1);
   await expect(await changeRows(page)).toHaveText([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
 });
 

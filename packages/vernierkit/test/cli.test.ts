@@ -779,6 +779,44 @@ describe("claim, new layers, words, deleting and copying", () => {
   });
 });
 
+describe("claim and done, a brief on a layer", () => {
+  const brief = { ...redFill, id: 2, kind: "brief", property: "brief", before: null, after: "Bounce back harder when pressed", style: {} };
+
+  test("a section of its own: the layer, where it is in the source, its scope, and the brief in the designer's words", async () => {
+    saveRound(redFill, brief);
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 2)).toBe(`2. Brief
+
+- **Kind:** Brief
+- **Layer:** Card, \`<article class="rounded-xl border bg-white p-5">\` (Page › Stack › Grid › Card)
+- **Location:** \`src/components/Card.tsx:3:5\`
+- **Scope:** This usage only: Card used at \`src/App.tsx:40:11\`, inside App used at \`src/main.tsx:8:5\`. It renders 3 instances, which change together. Other usages of Card stay as they are.
+- **Breakpoint:** all breakpoints.
+- **Design intent:** Achieve what the brief asks of this layer: something the Design panel cannot set. Do it the way the project already writes such things, within the scope given, and say in your report what you did.
+- **Brief:** “Bounce back harder when pressed”
+- **Reference style:** none: a brief is the designer's words, not a style
+
+`);
+  });
+
+  test("done: not checked on the page, which has no value to check it by; the report is to say how it was achieved", async () => {
+    saveRound(redFill, brief);
+    await cli("claim");
+
+    const { code, output } = await cli("done", "2");
+
+    expect(code).toBe(0);
+    expect(state()).toMatchObject({ done: [2] });
+    expect(output).toBe(
+      "Change 2 done: 1 of 2 changes applied.\n" +
+        "Not checked on the page: a brief asks for what the Design panel cannot set, so the page has no value to check it by. " +
+        "Say in your report how you achieved it: what you changed, and where.\n",
+    );
+  });
+});
+
 describe("claim, layers off the canvas put back", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });

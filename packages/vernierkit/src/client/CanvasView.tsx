@@ -2,6 +2,7 @@
 import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
+import { BriefMark, briefedLayers } from "./BriefMark";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
@@ -845,6 +846,13 @@ export function CanvasView(props: Props) {
   const briefIn = shownViews.find((p) => p.view === active) ?? shownViews[0];
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
+  /** The new Frame selected alone, which has the button that writes its brief beside it, in `briefIn`. */
+  const newFrame =
+    briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !hideSelection && editor.isNewFrame(primary)
+      ? { layer: primary, in: briefIn, brief: editor.brief(primary) }
+      : null;
+  /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
+  const briefed = canvas && tree ? briefedLayers(canvas.document, tree) : [];
   /**
    * ⌥ held: the distances from the layers selected, all of them as one box,
    * to the layer pointed at, in the view pointed in; pointed at one of them or
@@ -926,16 +934,20 @@ export function CanvasView(props: Props) {
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
+              {briefed.map(
+                (layer, i) =>
+                  shows(shown, layer) && !(shown === newFrame?.in && layer === newFrame.layer) && <BriefMark key={`brief ${i}`} layer={layer} view={view} name={name} camera={at} />,
+              )}
             </Fragment>
           );
         })}
-      {briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !hideSelection && editor.brief(primary) !== null && (
+      {newFrame && (
         <Brief
-          key={primary.el.getAttribute("data-vk-layer")}
-          layer={primary}
-          view={briefIn.view}
-          brief={editor.brief(primary)!}
-          camera={cameraIn(camera, briefIn)}
+          key={newFrame.layer.el.getAttribute("data-vk-layer")}
+          layer={newFrame.layer}
+          view={newFrame.in.view}
+          brief={newFrame.brief}
+          camera={cameraIn(camera, newFrame.in)}
           onSetBrief={onSetBrief}
         />
       )}

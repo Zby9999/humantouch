@@ -82,6 +82,8 @@ export function kindTitle(change: Change): string {
       return "Duplicate";
     case "putBack":
       return "Put back";
+    case "brief":
+      return "Brief";
   }
 }
 
@@ -106,8 +108,9 @@ export function changeValues(change: Change): string {
   if (change.kind === "create") {
     const { type, text, width, height, brief } = change.after as Created;
     if (type === "text") return quoted(text ?? "");
-    return `${width} × ${height}px${brief ? `, ${quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief)}` : ""}`;
+    return `${width} × ${height}px${brief ? `, ${briefShown(brief)}` : ""}`;
   }
+  if (change.kind === "brief") return briefShown(change.after as string);
   if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
   const name = (place: Place) => place.container.target.context.path.at(-1);
   if (change.kind === "delete") return `from ${name(change.before as Place)}`;
@@ -142,6 +145,11 @@ export function moveKind(change: Change): "Reorder" | "Move" | "Absolute" {
 
 /** How much of a brief the change list shows. */
 const MAX_BRIEF = 40;
+
+/** A brief as the change list shows it: quoted, cut short when long. */
+function briefShown(brief: string): string {
+  return quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief);
+}
 
 /** 1st, 2nd, 3rd, 4th, … */
 export function ordinal(n: number): string {

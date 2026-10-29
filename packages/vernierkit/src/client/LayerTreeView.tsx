@@ -90,7 +90,7 @@ export function LayerTreeView({ tree, offCanvas, selected, onSelect }: Props) {
             />
             <LayerIcon layer={layer} />
             <span class="vk-tree-name">{layer.name}</span>
-            {/* A new Frame the designer wrote a brief for: what the Agent is to make in it. */}
+            {/* A layer the designer wrote a brief for: what the Agent is to achieve in it, or make in a new Frame. */}
             {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
               <span class="vk-tree-brief" title={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
                 <Icon name="brief" />

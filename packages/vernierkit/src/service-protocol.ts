@@ -69,6 +69,9 @@ export type RoundStatus = { status: "editing" } | { status: "claimed"; done: num
 /** How long a page waits for the dev server to bring an edit in before it says a change does not show. */
 export const CHECK_SETTLE_MS = 3000;
 
+/** Why a brief is never checked on the page: it asks for what no value of a property shows. */
+export const BRIEF_UNCHECKED = "a brief asks for what the Design panel cannot set, so the page has no value to check it by";
+
 /** The project's code at one moment, as a git tree, to take a round's changes back out by. */
 export interface CodeSnapshot {
   /** The git repository's top folder. */

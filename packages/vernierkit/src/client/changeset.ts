@@ -93,7 +93,7 @@ export interface Created {
   height: number | null;
   /** New text: its words. */
   text?: string;
-  /** A new Frame: what the Agent is to make in it. */
+  /** A new Frame: its brief, what the Agent is to make in it. */
   brief?: string;
 }
 
@@ -154,8 +154,11 @@ export interface Change {
    * `before` is its `Place`. `duplicate`: the layer is a copy of the layer
    * `target` is; `before` is where that one is, `after` where the copy goes.
    * `putBack`: a layer off the canvas comes back onto it, new there; `after` is `PutBack`.
+   * `brief`: the designer's words on what to achieve in the layer, which the
+   * Design panel cannot set; `before` is null, `after` is the brief. It holds
+   * at every width (a new Frame's brief is in its `create` change instead).
    */
-  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack";
+  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack" | "brief";
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
@@ -345,6 +348,9 @@ export function putBackOf(changes: Change[], id: string): Change | null {
 export function putBackBy(changes: Change[]): SavedOffCanvasLayer[] {
   return changes.filter((change) => change.kind === "putBack").map((change) => (change.after as PutBack).layer);
 }
+
+/** The property a brief on a layer is recorded under: one per layer. */
+export const BRIEF = "brief";
 
 /** A move to another place among the layers of the same container, in its layout. */
 export function isReorder(change: Change): boolean {

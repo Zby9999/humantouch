@@ -10,7 +10,7 @@
  * anything is painted.
  */
 import { breakpointName, mediaOf, widthIn } from "./breakpoints";
-import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
+import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
 import { isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property, type Stroke } from "./edits";
 import { signOf, usageKey } from "./layers";
@@ -35,6 +35,7 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
 
 /** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
 function uncheckable(change: Change): string | null {
+  if (change.kind === "brief") return BRIEF_UNCHECKED;
   if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";

@@ -26,6 +26,7 @@ import {
   WRAP_ATTR,
 } from "./canvas-style";
 import {
+  BRIEF,
   changeKey,
   madeBy,
   MOVE,
@@ -265,10 +266,20 @@ export interface Editor {
    * without it, text fits its words and a Frame is 100 × 100. Returns the new layer, in the container `to` names.
    */
   create(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
-  /** A new Frame's brief; null for any other layer. */
-  brief(layer: Layer): string | null;
-  /** Gives a new Frame a brief: what the Agent is to make in it. */
-  setBrief(layer: Layer, brief: string): void;
+  /**
+   * The layer's brief: what the designer wants achieved in it, which the
+   * Design panel cannot set; for a new Frame, what the Agent is to make in it. "" when it has none.
+   */
+  brief(layer: Layer): string;
+  /** Whether the layer is a new Frame, whose brief says what to make in it: it is written beside it on the canvas, and kept in the change that makes it. */
+  isNewFrame(layer: Layer): boolean;
+  /**
+   * Gives the layer a brief, or takes it off (""), as one edit that can be
+   * undone: a new Frame's in the change that makes it; any other layer's as
+   * a change of its own, for its usage (every instance), at every width.
+   * Loose text gets an element of its own first. Returns the layer the brief is on.
+   */
+  setBrief(layer: Layer, brief: string): Layer;
   /** The layer as text with an element of its own, to type in: loose text gets one first. */
   ownElement(layer: Layer): Layer;
   /**
@@ -1007,6 +1018,19 @@ export function createEditor(
     else changes.record(id, { ...record, after: text });
     writeText(doc, id, record.property, changes.has(id, record.property) ? text : null);
   };
+  /** Marks every instance of the layer `id` with the brief `text`, the Layers panel and the canvas showing it; "": none. */
+  const markBrief = (id: string, text: string) => {
+    for (const el of elementsOf(doc, id)) {
+      if (text) el.setAttribute(BRIEF_ATTR, text);
+      else el.removeAttribute(BRIEF_ATTR);
+    }
+  };
+  /** The brief `text` on the layer `id`, as recorded in `record`, a change of its own; "": none. */
+  const briefing = (id: string, record: StructureRecord, text: string) => () => {
+    if (text) changes.record(id, { ...record, after: text });
+    else drop(id, record.property);
+    markBrief(id, text);
+  };
   /** Deleting `els`, the layer `id`, as recorded in `record`. */
   const deleting = (id: string, record: StructureRecord, els: Element[]) => ({
     make: () => {
@@ -1083,6 +1107,12 @@ export function createEditor(
       const els = elementsOf(doc, id).filter((el) => el.getAttribute(DELETED_ATTR) === change.property);
       const { make, bringBack } = deleting(id, record, els);
       structural([id], [id], bringBack, make);
+      return layerById(id);
+    }
+    if (change.kind === "brief") {
+      // Found by its id: a layer deleted since keeps its brief to take off.
+      const { id: _, layer: id, ...record } = change;
+      structural([id], [id], briefing(id, record, ""), briefing(id, record, change.after as string));
       return layerById(id);
     }
     const layer = layerById(change.layer);
@@ -1528,23 +1558,35 @@ export function createEditor(
       return tree.layerOf([...container.el.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
     },
     brief(layer) {
-      const maker = makerOf(layer.el.getAttribute(LAYER_ID_ATTR) ?? "");
-      return maker?.kind === "create" && (maker.after as Created).type === "frame" ? ((maker.after as Created).brief ?? "") : null;
+      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
+      if (!id) return "";
+      if (editor.isNewFrame(layer)) return (makerOf(id)!.after as Created).brief ?? "";
+      return (changes.find(id, BRIEF)?.after as string | undefined) ?? "";
+    },
+    isNewFrame(layer) {
+      const maker = layer.text ? null : makerOf(layer.el.getAttribute(LAYER_ID_ATTR) ?? "");
+      return maker?.kind === "create" && (maker.after as Created).type === "frame";
     },
     setBrief(layer, brief) {
-      const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
-      const maker = makerOf(id);
       const before = editor.brief(layer);
-      if (!maker || before === null || before === brief) return;
-      const { id: _, layer: __, ...record } = maker;
-      const to = (text: string) => () => {
-        changes.record(id, { ...record, after: { ...(maker.after as Created), brief: text || undefined } });
-        for (const el of elementsOf(doc, id)) {
-          if (text) el.setAttribute(BRIEF_ATTR, text);
-          else el.removeAttribute(BRIEF_ATTR);
-        }
-      };
-      structural([id], [id], to(brief), to(before));
+      if (before === brief) return layer;
+      if (editor.isNewFrame(layer)) {
+        // In the change that makes it.
+        const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
+        const maker = makerOf(id)!;
+        const { id: _, layer: __, ...record } = maker;
+        const to = (text: string) => () => {
+          changes.record(id, { ...record, after: { ...(maker.after as Created), brief: text || undefined } });
+          markBrief(id, text);
+        };
+        structural([id], [id], to(brief), to(before));
+        return tree.layerOf(layer.el)!;
+      }
+      const own = editor.ownElement(layer);
+      const id = idOf(own, tree.acrossInstances(own));
+      const record: StructureRecord = { kind: "brief", target: targetOf(own, onPage(own).length), scope: "usage", property: BRIEF, before: null, after: brief, style: {}, sources: [] };
+      structural([id], [id], briefing(id, record, brief), briefing(id, record, before));
+      return tree.layerOf(own.el)!;
     },
     ownElement: (layer) => (layer.text ? wrap(layer) : layer),
     setText(layer, text) {
