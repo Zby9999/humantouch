@@ -14,9 +14,16 @@ import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { BreakpointSection } from "./BreakpointSection";
-import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
-import type { View } from "./views";
+import { BriefSection } from "./BriefSection";
+import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
+import { promotedNote } from "./promote";
+import { viewName } from "./ViewLabels";
+import type { View, Views } from "./views";
 import { toggleIn } from "./selection";
+import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
+import { loadVariables } from "./service";
+import { bind, bindRecorded, resolveVariables, type Catalog } from "./variables";
+import { CatalogProvider } from "./VariablePicker";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
 
@@ -77,6 +84,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
 
+  /** The toast at the bottom of the canvas: a new one takes the old one's place. */
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const toasts = useRef(0);
+  const [showToast] = useState<ShowToast>(() => (text: string) => setToast({ text, key: ++toasts.current }));
+
   /** The tool picked, from the toolbar or the keyboard: null to select, or what the next drag draws. */
   const [tool, setTool] = useState<Tool>(null);
   /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
@@ -97,6 +109,17 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const [restoreOffCanvas] = useState(savedOffCanvas);
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  /** The project's Variables, asked for as edit mode opens; worked out on the canvas once there is one. */
+  const [variables] = useState(loadVariables);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const catalogNow = useRef<Catalog | null>(null);
+  /** The canvas's views, once there is a canvas. */
+  const viewsNow = useRef<Views | null>(null);
+  /** What the view at `breakpoint` is called ("Tablet"); its range in words when no view shows it now. */
+  const viewAt = (breakpoint: Breakpoint) => {
+    const view = viewsNow.current?.list().slice(1).find((v) => contains(breakpoint, v.width));
+    return view ? viewName(view.width, false) : breakpointName(breakpoint);
+  };
   /** The layers off the canvas, once there is a canvas to show them beside. Their edits share the canvas's history. */
   const [offCanvas, setOffCanvas] = useState<OffCanvas | null>(null);
   const [history] = useState(createHistory);
@@ -160,14 +183,23 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   useEffect(() => {
     if (leaving) flush();
   }, [leaving]);
+  /** Edit mode is over: nothing is saved from here on. */
+  const left = useRef(false);
   useEffect(
     () => () => {
       flush();
       control.current = null;
+      left.current = true;
     },
     [],
   );
 
+  /** The round changed: saved soon, and its changes told. */
+  const changed = () => {
+    clearTimeout(pendingSave.current);
+    pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
+    if (round.current) onChanges(round.current.changeSet.list());
+  };
   const onEdit = () => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
@@ -176,9 +208,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       const found = layers.map(refind).filter((layer) => layer !== null);
       return found.length === layers.length && found.every((layer, i) => layer === layers[i]) ? layers : found;
     });
-    clearTimeout(pendingSave.current);
-    pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
-    if (round.current) onChanges(round.current.changeSet.list());
+    changed();
     edited(undefined);
     setAdjusting(true);
     clearTimeout(settle.current);
@@ -190,6 +220,17 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     setAdjusting(false);
     const doc = layers.at(-1)?.el.ownerDocument;
     setSelected(layers.every((layer) => layer.el.ownerDocument === doc) ? layers : layers.filter((layer) => layer.el.ownerDocument === doc));
+  };
+  /**
+   * A brief written on a layer of the canvas, or taken off: from the Design
+   * panel, or beside a new Frame. Loose text gets an element of its own for
+   * it, which is then selected; any other layer stays as selected.
+   */
+  const writeBrief = (layer: Layer, brief: string) => {
+    if (!editor) return;
+    const own = editor.setBrief(layer, brief);
+    onEdit();
+    if (own.el !== layer.el) select([own]);
   };
   /** ⇧A: the layers made a Stack, which is then selected. */
   const makeStack = (layers: Layer[]) => {
@@ -352,14 +393,17 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
+  const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
+  latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
       if (playing) return;
       const target = event.composedPath()[0];
-      const field = target instanceof HTMLElement && target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing");
+      // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
+      const field =
+        target instanceof HTMLElement &&
+        ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
       if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return;
       // By the letter typed, wherever the keyboard has it.
       const key = event.key.toLowerCase();
@@ -448,9 +492,21 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         restoreFrom={restoreFrom?.canvas ?? null}
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
+          viewsNow.current = views;
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
           // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.
-          const editor = createEditor(views, changeSet, breakpoints ?? readMediaBreakpoints(document), { history });
+          // A value is named by the Variable it is, once the Variables are in.
+          const editor = createEditor(views, changeSet, breakpoints ?? readMediaBreakpoints(document), {
+            history,
+            bind: (...args) => (catalogNow.current ? bind(catalogNow.current, ...args) : undefined),
+          });
+          void variables.then((list) => {
+            if (!list.length) return;
+            catalogNow.current = resolveVariables(list, views.canvas.document);
+            setCatalog(catalogNow.current);
+            // Edits made before the Variables were in are named by them now, as their values were, and saved so.
+            if (!left.current && round.current?.changeSet === changeSet && bindRecorded(catalogNow.current, changeSet)) latest.current.changed();
+          });
           // Beside it, the layers off it, where they were left.
           const outside = createOffCanvas(workspace, restoreOffCanvas, history);
           savedOutside.current = JSON.stringify(outside.save());
@@ -523,9 +579,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           select([layer]);
           return layer;
         }}
-        onSetBrief={(layer, brief) => {
-          editorOf(layer)!.setBrief(layer, brief);
+        onSetBrief={writeBrief}
+        onPromote={(layer) => {
+          if (!editor?.canPromote(layer)) return;
+          const { promoted, stays } = editor.promote(layer);
           onEdit();
+          // What stays with the usage, and why, so the designer is not left wondering.
+          const note = promotedNote(promoted.length, layer.chain[0]?.component ?? "its component", stays, viewAt);
+          if (note) showToast(note);
         }}
         onBeginText={(layer) => {
           const own = editorOf(layer)!.ownElement(layer);
@@ -553,6 +614,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         onLeft={onLeft}
       />
       <Tools tool={tool} onTool={setTool} />
+      <Toast message={toast} />
       <aside class="vk-panel is-design" aria-label="Design">
         <div class="vk-panel-header">
           <h2 class="vk-panel-title">Design</h2>
@@ -568,7 +630,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             <LayerInfo tree={treeOf(selected[0])!} layers={selected} />
             {/* Off the canvas, a layer has no breakpoints: its look is frozen, at no width. */}
             {!outsideOf(selected[0]) && <BreakpointSection editor={editor} layers={selected} view={worked?.name ?? "Desktop"} onEdit={onEdit} />}
-            <Properties editor={editorOf(selected[0])!} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+            {/* The Design panel's short notes show in the toast. */}
+            <ToastProvider value={showToast}>
+              <CatalogProvider value={catalog}>
+                <Properties editor={editorOf(selected[0])!} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+              </CatalogProvider>
+            </ToastProvider>
+            {/* A brief is on one layer of the canvas at a time; off the canvas, a layer is kept as it looks. */}
+            {selected.length === 1 && !outsideOf(selected[0]) && <BriefSection editor={editor} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />}
           </>
         ) : (
           <p class="vk-panel-empty">Select a layer to see its properties.</p>

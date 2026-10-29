@@ -1,6 +1,19 @@
-import { defineConfig } from "tsup";
+import { readFile } from "node:fs/promises";
+import { defineConfig, type Options } from "tsup";
+import { compactStyleTemplates } from "./compact-css";
 
 // The configs build side by side, so none of them cleans `dist/`: that would race the others' output. `pnpm build` cleans first.
+
+/** The editor layer's CSS compacted as it builds (`compact-css.ts`): the toggle's counts toward what the page loads. */
+const compactCss: NonNullable<Options["esbuildPlugins"]>[number] = {
+  name: "compact-css",
+  setup(build) {
+    build.onLoad({ filter: /[\\/]src[\\/]client[\\/](toggle-)?styles\.ts$/ }, async ({ path }) => ({
+      contents: compactStyleTemplates(await readFile(path, "utf8"), path),
+      loader: "ts",
+    }));
+  },
+};
 
 export default defineConfig([
   {
@@ -36,8 +49,16 @@ export default defineConfig([
     banner: { js: "#!/usr/bin/env node" },
   },
   {
-    entry: { react: "src/react.ts", "react.dev": "src/react.dev.ts" },
+    // `editor.dev` is the editor layer but for the toggle, which `react.dev` imports once it is needed. An entry of
+    // its own, so that import names a file the tests can tell; what both share (Preact, the toggle) goes in a chunk.
+    entry: { react: "src/react.ts", "react.dev": "src/react.dev.ts", "editor.dev": "src/client/editor.ts" },
     format: "esm",
+    splitting: true,
+    // What the page loads is what the toggle is held to (docs/goals.md).
+    minify: true,
+    esbuildPlugins: [compactCss],
+    // Minified, the editor layer's code is still read as written in the browser's developer tools (its CSS compacted).
+    sourcemap: true,
     platform: "browser",
     target: "es2022",
     external: ["react"],

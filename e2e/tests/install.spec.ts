@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { INSTALL_PORT, TOGGLE_LABEL } from "../playwright.config";
+import { EXIT_LABEL, INSTALL_PORT, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test } from "./fixtures";
 import { CLI, copyWithoutVernier, gitStatus, pack, replaceIn, sh, startServer } from "./install-copy";
+import { codeOf, gzipped, scripts, settle, TOGGLE_BUDGET } from "./loading";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
 
@@ -46,6 +47,31 @@ test("init installs Vernier Kit: once the dev server starts, the toggle is on th
     }).toPass({ timeout: 30_000 });
     await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
     expect(Date.now() - start).toBeLessThan(60_000);
+  } finally {
+    server.stop();
+  }
+});
+
+test("as installed, the page loads only the toggle, under 10KB gzipped as Vite serves it; the rest as edit mode is first entered", async ({ page }) => {
+  const server = startServer(process.execPath, ["node_modules/vite/bin/vite.js", "--port", String(INSTALL_PORT), "--strictPort"], project);
+  try {
+    const loaded = scripts(page);
+    await expect(async () => {
+      await page.goto(`http://localhost:${INSTALL_PORT}`);
+    }).toPass({ timeout: 30_000 });
+    const toggle = page.getByRole("button", { name: TOGGLE_LABEL });
+    await expect(toggle).toBeVisible();
+    await settle(page);
+
+    // From node_modules as published, not bundled again by Vite's dependency optimizer.
+    const ours = (await loaded.all()).filter((script) => script.url.includes("/node_modules/vernierkit/dist/"));
+    expect(ours.length).toBeGreaterThan(0);
+    expect(gzipped(ours.map((script) => codeOf(script.text)))).toBeLessThanOrEqual(TOGGLE_BUDGET);
+    expect(ours.some((script) => script.text.includes(EXIT_LABEL))).toBe(false);
+
+    await toggle.click();
+    await expect(page.locator('iframe[title="Canvas"]').contentFrame().locator("h1")).toBeVisible();
+    expect(await loaded.has(EXIT_LABEL)).toBe(true);
   } finally {
     server.stop();
   }

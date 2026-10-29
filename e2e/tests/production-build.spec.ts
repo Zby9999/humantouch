@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PREVIEW_URL, TOGGLE_LABEL } from "../playwright.config";
+import { EXIT_LABEL, PREVIEW_URL, TOGGLE_LABEL } from "../playwright.config";
 
 const example = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
 
@@ -16,7 +16,8 @@ function expectNoEditorLayerCode(dist: string) {
 
   for (const file of files) {
     const content = readFileSync(path.join(dist, file), "utf8");
-    for (const residue of ["vernier-kit", "data-vk-", TOGGLE_LABEL]) {
+    // The toggle, and the rest of the editor layer, which a page in development loads only as needed.
+    for (const residue of ["vernier-kit", "data-vk-", TOGGLE_LABEL, EXIT_LABEL]) {
       expect(content.includes(residue), `${file} contains "${residue}"`).toBe(false);
     }
   }

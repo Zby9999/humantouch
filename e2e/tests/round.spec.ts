@@ -1,13 +1,13 @@
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
 
 /** These tests save into the example project's `.vernier/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.beforeEach(() => clearVernier(VERNIER));
+test.afterAll(() => clearVernier(VERNIER));
 
 const LOCKED_LABEL = /^Vernier Kit: applying design changes/;
 
@@ -176,8 +176,29 @@ test.describe("done checks the change on the page", () => {
   const CSS = `${EXAMPLE}src/index.css`;
   const CARD = `${EXAMPLE}src/components/Card.tsx`;
   const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8"), [CARD]: readFileSync(CARD, "utf8") };
-  test.afterEach(() => {
-    for (const [file, text] of Object.entries(originals)) writeFileSync(file, text);
+  /**
+   * The three files as the dev server serves them to the page, `?t=` stamps on
+   * the imports of modules it has hot-updated left out. Of the CSS, what the
+   * file itself writes: Tailwind keeps every class it has seen in a source, one
+   * written back out too, so the layers and properties it generates are left out.
+   */
+  const served = () =>
+    Promise.all(
+      Object.keys(originals).map(async (file) => {
+        const text = (await (await fetch(`${DEV_URL}/${file.slice(EXAMPLE.length)}`)).text()).replace(/[?&]t=\d+/g, "");
+        if (file !== CSS) return text;
+        const css: string = JSON.parse(/^const __vite__css = (".*")$/m.exec(text)![1]);
+        return css.replace(/^(@layer (theme|utilities|properties)|@property) [^\n]*\{\n[\s\S]*?^\}\n/gm, "");
+      }),
+    );
+  let servedOriginals: string[];
+  test.beforeAll(async () => {
+    servedOriginals = await served();
+  });
+  test.afterEach(async () => {
+    for (const [file, text] of Object.entries(originals)) if (readFileSync(file, "utf8") !== text) writeFileSync(file, text);
+    // The dev server serves the edited code until its watcher sees the files written back: the next test's page would open on it.
+    await expect.poll(served).toEqual(servedOriginals);
   });
 
   /** As the Agent does: an edit to the example's source, which the dev server brings into the page. */
@@ -207,6 +228,41 @@ test.describe("done checks the change on the page", () => {
 
     expect(await vernierkit("finish")).toBe("Round finished: 1 of 1 change applied.\n");
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
+  });
+
+  test("a stroke weight is checked as the code writes it: on a 1x screen, which draws 1px and 1.5px alike, the code's 1px is not 1.5px; 3px is not; 1.5px is", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+    await setField(page, "Stroke weight", "1.5");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
+
+    // The code is not edited yet: its 1px draws as 1.5px would on this 1x screen, and is not 1.5px all the same.
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4.");
+
+    const drawn = () => page.locator("article").first().evaluate((card) => getComputedStyle(card).borderTopWidth);
+    editSource(CARD, "rounded-xl border border-stone-200", "rounded-xl border-[3px] border-stone-200");
+    await expect.poll(drawn).toBe("3px");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4.");
+
+    editSource(CARD, "border-[3px]", "border-[1.5px]");
+    await expect.poll(drawn).toBe("1px");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+  });
+
+  test("a stroke's color changed alone leaves the weight to the code: the reference style has none", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+    await setField(page, "Stroke color", "ff0000");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    expect(readVernier("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
+    await vernierkit("claim");
+
+    editSource(CARD, "border border-stone-200", "border border-[#ff0000]");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layout change is checked in design language: the button fills its Stack once the code stretches it", async ({ page }) => {

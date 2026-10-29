@@ -46,6 +46,9 @@ const VITE_ID_ATTR = "data-vite-dev-id";
 /** Styles of the canvas itself, not the page's. */
 const CANVAS_STYLES_ATTR = "data-vk-canvas-styles";
 
+const SIDES = ["top", "right", "bottom", "left"];
+const BORDER_PARTS = ["width", "style", "color"];
+
 /** The shorthands that can set a longhand, as written in a rule. */
 const SHORTHANDS: Record<string, string[]> = {
   "background-color": ["background"],
@@ -63,12 +66,25 @@ const SHORTHANDS: Record<string, string[]> = {
   "overflow-y": ["overflow"],
   top: ["inset", "inset-block", "inset-block-start"],
   left: ["inset", "inset-inline", "inset-inline-start"],
-  ...Object.fromEntries(["top", "right", "bottom", "left"].map((side) => [`padding-${side}`, ["padding"]])),
+  ...Object.fromEntries(SIDES.map((side) => [`padding-${side}`, ["padding"]])),
   "border-top-left-radius": ["border-radius"],
   "border-top-right-radius": ["border-radius"],
   "border-bottom-right-radius": ["border-radius"],
   "border-bottom-left-radius": ["border-radius"],
 };
+
+/**
+ * Shorthands that set a longhand reported as itself: written through `var()`,
+ * they leave it empty to read (the browser substitutes only when it computes),
+ * yet set it all the same. The most particular first.
+ */
+const THROUGH_VAR: Record<string, string[]> = Object.fromEntries([
+  ...SIDES.flatMap((side) => BORDER_PARTS.map((part) => [`border-${side}-${part}`, [`border-${side}`, `border-${part}`, "border"]])),
+  ...["block-start", "block-end", "inline-start", "inline-end"].flatMap((side) => {
+    const axis = side.slice(0, side.indexOf("-"));
+    return BORDER_PARTS.map((part) => [`border-${side}-${part}`, [`border-${side}`, `border-${axis}-${part}`, `border-${axis}`]]);
+  }),
+]);
 
 type Specificity = [number, number, number];
 
@@ -90,6 +106,7 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
   const candidates = new Map<string, Candidate[]>(properties.map((p) => [p, []]));
   const layers = new LayerOrder();
   const view = doc.defaultView!;
+  const logical = logicalBorders(el);
   let order = 0;
   let unreadable = false;
 
@@ -99,7 +116,7 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     if (!match) return;
     const position = order++;
     for (const property of properties) {
-      const declared = declarationIn(style, property);
+      const declared = declarationIn(style, property, logical[property]);
       if (!declared) continue;
       candidates.get(property)!.push({
         key: `rule ${position}`,
@@ -188,7 +205,7 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     const pinned = pinnedOf(el);
     for (const property of properties) {
       if (pinned.includes(property)) continue;
-      const declared = declarationIn(style, property);
+      const declared = declarationIn(style, property, logical[property]);
       if (!declared) continue;
       candidates.get(property)!.push({
         key: "inline",
@@ -273,13 +290,40 @@ class LayerOrder {
   }
 }
 
-/** The declaration of `property` in a block, through a shorthand if that is how it is written. */
-function declarationIn(style: CSSStyleDeclaration, property: string): { text: string; important: boolean } | null {
-  for (const name of [...(SHORTHANDS[property] ?? []), property]) {
+/**
+ * The declaration of `property` in a block, through a shorthand if that is
+ * how it is written; or of `logical`, the logical longhand that sets the same
+ * on the element, when the block declares it after.
+ */
+function declarationIn(style: CSSStyleDeclaration, property: string, logical?: string): { text: string; important: boolean } | null {
+  const physical = declaredIn(style, [...(SHORTHANDS[property] ?? []), property, ...(THROUGH_VAR[property] ?? [])]);
+  const other = logical ? declaredIn(style, [logical, ...THROUGH_VAR[logical]]) : null;
+  if (!physical || !other) return physical ?? other;
+  const order = [...style];
+  return order.indexOf(logical!) > order.indexOf(property) ? other : physical;
+}
+
+/** The first of `names` a block declares. Read empty, a longhand may still be set: by a shorthand written through var(). */
+function declaredIn(style: CSSStyleDeclaration, names: string[]): { text: string; important: boolean } | null {
+  for (const name of names) {
     const value = style.getPropertyValue(name);
     if (value) return { text: `${name}: ${value}`, important: style.getPropertyPriority(name) === "important" };
   }
   return null;
+}
+
+/**
+ * For each physical border longhand, the logical one that sets the same on
+ * `el` (as Tailwind's `border-x` and `border-s` write them): in a horizontal
+ * writing mode, the block is top to bottom and the inline left to right, or
+ * right to left. None in a vertical writing mode.
+ */
+function logicalBorders(el: Element): Record<string, string> {
+  const style = getComputedStyle(el);
+  if (style.writingMode !== "horizontal-tb") return {};
+  const [start, end] = style.direction === "rtl" ? ["inline-end", "inline-start"] : ["inline-start", "inline-end"];
+  const sides: Record<string, string> = { top: "block-start", right: end, bottom: "block-end", left: start };
+  return Object.fromEntries(SIDES.flatMap((side) => BORDER_PARTS.map((part) => [`border-${side}-${part}`, `border-${sides[side]}-${part}`])));
 }
 
 /** A nested rule's selector, made whole: `&` stands for the parent; without one, it is a descendant. */

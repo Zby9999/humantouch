@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -291,6 +291,201 @@ describe("claim, layout changes", () => {
   });
 });
 
+describe("claim, fills and strokes", () => {
+  test("say gradients and strokes in design language, with the reference style that draws them", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
+    const stops = [
+      { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+      { color: "#0000FF", opacity: 0.5, position: 100, unit: "%" },
+    ];
+    const pc = (value: number) => ({ value, unit: "%" });
+    const px = (value: number) => ({ value, unit: "px" });
+    const middle = { x: pc(50), y: pc(50) };
+    const spot = { center: { x: pc(30), y: pc(20) }, size: { x: px(20), y: px(20) } };
+    saveRound(
+      change(1, "fill", { type: "solid", color: "#FFFFFF", opacity: 1 }, { type: "linear", angle: 90, stops }, {
+        "background-color": "transparent",
+        "background-image": "linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)",
+      }),
+      change(2, "fill", { type: "linear", angle: 30, stops }, { type: "radial", ...spot, stops: [{ ...stops[0], position: 10, unit: "px" }, stops[1]] }, {}),
+      change(3, "fill", { type: "radial", center: middle, size: { extent: "farthest-corner", circle: false }, stops }, { type: "linear", angle: 45, stops }, {}),
+      change(4, "stroke", null, { color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" }, {
+        "border-width": "1px",
+        "border-style": "solid",
+        "border-color": "rgb(229 231 235 / 1)",
+      }),
+      change(5, "stroke", { color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" }, { color: "#FF0000", opacity: 0.5, weight: [0, 0, 1, 4], style: "dashed" }, {}),
+      change(6, "stroke", { color: "#E5E7EB", opacity: 1, weight: 2, style: "dashed" }, null, {}),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the fill from #FFFFFF to a linear gradient at 90° (left to right): #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
+    );
+    expect(section(output, 1)).toContain(
+      "- **Reference style:** `background-color: transparent`, `background-image: linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)`\n",
+    );
+    expect(section(output, 2)).toContain(
+      "Change the fill from a linear gradient at 30°: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a radial gradient centered 30% across and 20% down, 20px out: #FF0000 at 10px, #0000FF at 50% opacity at 100%.\n",
+    );
+    expect(section(output, 3)).toContain(
+      "Change the fill from a radial gradient from the middle out: #FF0000 at 0%, #0000FF at 50% opacity at 100% to a linear gradient at 45°: #FF0000 at 0%, #0000FF at 50% opacity at 100%.\n",
+    );
+    expect(section(output, 4)).toMatch(/^4\. Stroke\n[^]*- \*\*Design intent:\*\* Change the stroke from no stroke to 1px solid #E5E7EB\.\n/);
+    expect(section(output, 4)).toContain("- **Reference style:** `border-width: 1px`, `border-style: solid`, `border-color: rgb(229 231 235 / 1)`\n");
+    expect(section(output, 5)).toContain(
+      "Change the stroke from 1px solid #E5E7EB to dashed #FF0000 at 50% opacity, on some sides: top 0px, right 0px, bottom 1px, left 4px.\n",
+    );
+    expect(section(output, 6)).toContain("Change the stroke from 2px dashed #E5E7EB to no stroke.\n");
+  });
+
+  test("say a radial gradient's center and size in design language, by keyword or across and down, or as the page has them", async () => {
+    const pc = (value: number) => ({ value, unit: "%" });
+    const px = (value: number) => ({ value, unit: "px" });
+    const stops = [
+      { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+      { color: "#0000FF", opacity: 1, position: 100, unit: "%" },
+    ];
+    const radial = (center: object, size: object) => ({ type: "radial", center, size, stops });
+    const solid = { type: "solid", color: "#FFFFFF", opacity: 1 };
+    const change = (id: number, after: unknown) => ({ ...redFill, id, property: "fill", before: solid, after, style: {} });
+    saveRound(
+      change(1, radial({ x: pc(50), y: pc(50) }, { extent: "closest-side", circle: true })),
+      change(2, radial({ x: px(40), y: pc(50) }, { extent: "farthest-corner", circle: false })),
+      change(3, radial({ x: pc(0), y: pc(0) }, { x: pc(50), y: px(30) })),
+      // Centered by calc(): kept as the page has it.
+      change(4, { type: "radial", shape: "circle farthest-side at calc(100% - 10px) calc(100% - 20px)", stops }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("to a radial gradient from the middle, a circle out to the closest side: #FF0000 at 0%, #0000FF at 100%.\n");
+    expect(section(output, 2)).toContain("to a radial gradient centered 40px across and 50% down, an ellipse out to the farthest corner: #FF0000 at 0%, #0000FF at 100%.\n");
+    expect(section(output, 3)).toContain("to a radial gradient centered 0% across and 0% down, out 50% across and 30px down: #FF0000 at 0%, #0000FF at 100%.\n");
+    expect(section(output, 4)).toContain("to a radial gradient centered and sized as the page has it: #FF0000 at 0%, #0000FF at 100%.\n");
+  });
+});
+
+describe("claim, corners and effects", () => {
+  test("say corners, shadows and blurs in design language, with the reference style that draws them", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
+    const drop = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+    const inner = { type: "inner", x: 0, y: -2, blur: 6, spread: 1, color: "#FF0000", opacity: 1 };
+    saveRound(
+      change(1, "radius", 12, [12, 12, 0, 0], { "border-radius": "12px 12px 0px 0px" }),
+      change(2, "shadows", [], [drop, inner], { "box-shadow": "0px 4px 4px 0px rgb(0 0 0 / 0.25), inset 0px -2px 6px 1px rgb(255 0 0 / 1)" }),
+      change(3, "shadows", [drop], [], { "box-shadow": "none" }),
+      change(4, "layerBlur", null, 4, { filter: "blur(4px)" }),
+      change(5, "backgroundBlur", 12, null, { "backdrop-filter": "none" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the corner radius from 12px to top-left 12px, top-right 12px, bottom-right 0px, bottom-left 0px.\n",
+    );
+    expect(section(output, 1)).toContain("- **Reference style:** `border-radius: 12px 12px 0px 0px`\n");
+    expect(section(output, 2)).toMatch(/^2\. Shadows\n/);
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Change the shadows from no shadow to a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity) and an inner shadow (x 0px, y -2px, blur 6px, spread 1px, #FF0000), the first on top.\n",
+    );
+    expect(section(output, 2)).toContain("- **Reference style:** `box-shadow: 0px 4px 4px 0px rgb(0 0 0 / 0.25), inset 0px -2px 6px 1px rgb(255 0 0 / 1)`\n");
+    expect(section(output, 3)).toContain("Change the shadows from a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity) to no shadow.\n");
+    expect(section(output, 4)).toMatch(/^4\. Layer blur\n[^]*- \*\*Design intent:\*\* Change the layer blur from none to 4px\.\n/);
+    expect(section(output, 4)).toContain("- **Reference style:** `filter: blur(4px)`\n");
+    expect(section(output, 5)).toMatch(/^5\. Background blur\n[^]*- \*\*Design intent:\*\* Change the background blur from 12px to none\.\n/);
+    expect(section(output, 5)).toContain("- **Reference style:** `backdrop-filter: none`\n");
+  });
+
+  test("say a text layer's drop shadows as shadows, with no spread, and text-shadow as the reference style", async () => {
+    const change = (id: number, property: string, before: unknown, after: unknown, style: object) => ({ ...redFill, id, property, before, after, style });
+    const drop = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+    const red = { type: "drop", x: 2, y: -1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 };
+    saveRound(
+      change(1, "textShadows", [], [drop, red], { "text-shadow": "0px 4px 4px rgb(0 0 0 / 0.25), 2px -1px 0px rgb(255 0 0 / 1)" }),
+      change(2, "textShadows", [drop], [], { "text-shadow": "none" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Shadows\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the shadows from no shadow to a drop shadow (x 0px, y 4px, blur 4px, #000000 at 25% opacity) and a drop shadow (x 2px, y -1px, blur 0px, #FF0000), the first on top.\n",
+    );
+    expect(section(output, 1)).toContain("- **Reference style:** `text-shadow: 0px 4px 4px rgb(0 0 0 / 0.25), 2px -1px 0px rgb(255 0 0 / 1)`\n");
+    expect(section(output, 2)).toContain("Change the shadows from a drop shadow (x 0px, y 4px, blur 4px, #000000 at 25% opacity) to no shadow.\n");
+  });
+});
+
+describe("claim, text", () => {
+  const change = (id: number, property: string, before: unknown, after: unknown, style: object, more: object = {}) => ({ ...redFill, id, property, before, after, style, ...more });
+
+  test("say each text style in design language, with the CSS that shows it as the reference style", async () => {
+    saveRound(
+      change(1, "fontFamily", "Georgia", "Space Grotesk", { "font-family": '"Space Grotesk", sans-serif' }),
+      change(2, "fontWeight", 400, 600, { "font-weight": "600" }),
+      change(3, "fontSize", 14, 18, { "font-size": "18px" }),
+      change(4, "lineHeight", { value: 180, unit: "%" }, { value: 24, unit: "px" }, { "line-height": "24px" }),
+      change(5, "lineHeight", "auto", { value: 150, unit: "%" }, { "line-height": "1.5" }),
+      change(6, "letterSpacing", { value: 2, unit: "%" }, { value: -0.5, unit: "px" }, { "letter-spacing": "-0.5px" }),
+      change(7, "textAlign", "left", "justify", { "text-align": "justify" }),
+      change(8, "textColor", { color: "#57534D", opacity: 1 }, { color: "#FF0000", opacity: 0.5 }, { color: "rgb(255 0 0 / 0.5)" }),
+      change(9, "textCase", "none", "upper", { "text-transform": "uppercase" }),
+      change(10, "textDecoration", "none", "strikethrough", { "text-decoration-line": "line-through" }),
+    );
+
+    const output = (await cli("claim")).output;
+    const intent = (id: number) => /- \*\*Design intent:\*\* (.*)\n/.exec(section(output, id))?.[1];
+
+    expect([1, 2, 3, 4, 6, 7, 8, 9, 10].map((id) => /^\d+\. (.*)\n/.exec(section(output, id))?.[1])).toEqual([
+      "Font",
+      "Font weight",
+      "Font size",
+      "Line height",
+      "Letter spacing",
+      "Text alignment",
+      "Text color",
+      "Case",
+      "Decoration",
+    ]);
+    expect(intent(1)).toBe("Change the font from Georgia to Space Grotesk.");
+    expect(intent(2)).toBe("Change the font weight from Regular (400) to Semi Bold (600).");
+    expect(intent(3)).toBe("Change the font size from 14px to 18px.");
+    expect(intent(4)).toBe("Change the line height from 180% of the font size to 24px.");
+    expect(intent(5)).toBe("Change the line height from Auto (the font's own) to 150% of the font size.");
+    expect(intent(6)).toBe("Change the letter spacing from 2% of the font size to -0.5px.");
+    expect(intent(7)).toBe("Change the text alignment from left to justified.");
+    expect(intent(8)).toBe("Change the text color from #57534D to #FF0000 at 50% opacity.");
+    expect(intent(9)).toBe("Change the case from as typed to upper case.");
+    expect(intent(10)).toBe("Change the decoration from none to strikethrough.");
+    expect(section(output, 1)).toContain('- **Reference style:** `font-family: "Space Grotesk", sans-serif`\n');
+    expect(section(output, 5)).toContain("- **Reference style:** `line-height: 1.5`\n");
+    expect(section(output, 10)).toContain("- **Reference style:** `text-decoration-line: line-through`\n");
+  });
+
+  test("say that the change is made on the text layer as a whole, and which inline fragments keep a value of their own", async () => {
+    const keeps = [
+      { element: '<a class="text-blue-600">', text: "a link", value: { color: "#2563EB", opacity: 1 } },
+      { element: "<code>", text: "npm i", value: { color: "#000000", opacity: 1 } },
+    ];
+    saveRound(
+      change(1, "textColor", { color: "#57534D", opacity: 1 }, { color: "#FF0000", opacity: 1 }, { color: "rgb(255 0 0 / 1)" }, { keeps }),
+      change(2, "fontWeight", 400, 300, { "font-weight": "300" }, { keeps: [{ element: "<strong>", text: "any", value: 400 }] }),
+      change(3, "fontSize", 14, 18, { "font-size": "18px" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Inline fragments:** make the change on the text layer as a whole: the bold runs, links and other fragments in it follow it. " +
+        "These have a text color of their own, which they keep: “a link” (`<a class=\"text-blue-600\">`, #2563EB), “npm i” (`<code>`, #000000).\n",
+    );
+    expect(section(output, 2)).toContain("These have a font weight of their own, which they keep: “any” (`<strong>`, Regular (400)).\n");
+    expect(section(output, 3)).not.toContain("Inline fragments");
+  });
+});
+
 describe("claim, Grids", () => {
   const grid = { ...cards, loc: "src/App.tsx:38:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "Stack", "Grid"], element: '<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">' } };
   const list = { ...grid, loc: "src/App.tsx:20:7", context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
@@ -531,6 +726,25 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(notes).toContain("\n  - Text “Plans”: X 10px, Y 40px, 160px wide (change 2)\n  - Button (moved in): X 0px, Y 80px (change 4)\n");
   });
 
+  test("a copy of a new Frame is made by its brief too; a brief written anew on the copy takes the place of the one it was copied with", async () => {
+    const copyTarget = { ...frameTarget, made: "13" };
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "A pricing table with three plans" } }),
+      change(2, "duplicate", { property: "copy", target: frameTarget, before: place(4), after: place(5), brief: "A pricing table with three plans" }),
+      change(3, "duplicate", { property: "copy", before: place(1), after: place(2) }),
+      change(4, "brief", { layer: "13", property: "brief", target: copyTarget, before: "A pricing table with three plans", after: "A pricing table with two plans" }),
+      change(5, "brief", { layer: "14", property: "brief", target: { ...copyTarget, made: "14" }, before: "A pricing table with three plans", after: "" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 2)).toContain("- **Brief:** “A pricing table with three plans”, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.\n");
+    expect(section(output, 3)).not.toContain("Brief");
+    expect(section(output, 4)).toContain("- **Brief:** “A pricing table with two plans”, in place of the brief the copy was made with, “A pricing table with three plans”\n");
+    expect(section(output, 5)).toContain("- **Design intent:** Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.\n");
+    expect(section(output, 5)).toContain("- **Brief:** none: taken off, in place of the brief the copy was made with, “A pricing table with three plans”\n");
+  });
+
   test("new words, and in a loop, new words that come from data", async () => {
     saveRound(
       change(1, "text", { property: "text", before: "Get started", after: "Start now" }),
@@ -581,6 +795,68 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 3)).toContain("- **Reference style:** none: the copy is as the layer is\n");
     expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
     expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
+  });
+});
+
+describe("claim and done, a brief on a layer", () => {
+  const brief = { ...redFill, id: 2, kind: "brief", property: "brief", before: null, after: "Bounce back harder when pressed", style: {} };
+
+  test("a section of its own: the layer, where it is in the source, its scope, and the brief in the designer's words", async () => {
+    saveRound(redFill, brief);
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 2)).toBe(`2. Brief
+
+- **Kind:** Brief
+- **Layer:** Card, \`<article class="rounded-xl border bg-white p-5">\` (Page › Stack › Grid › Card)
+- **Location:** \`src/components/Card.tsx:3:5\`
+- **Scope:** This usage only: Card used at \`src/App.tsx:40:11\`, inside App used at \`src/main.tsx:8:5\`. It renders 3 instances, which change together. Other usages of Card stay as they are.
+- **Breakpoint:** all breakpoints.
+- **Design intent:** Achieve what the brief asks of this layer: something the Design panel cannot set. Do it the way the project already writes such things, within the scope given, and say in your report what you did.
+- **Brief:** “Bounce back harder when pressed”
+- **Reference style:** none: a brief is the designer's words, not a style
+
+`);
+  });
+
+  test("done: not checked on the page, which has no value to check it by; the report is to say how it was achieved", async () => {
+    saveRound(redFill, brief);
+    await cli("claim");
+
+    const { code, output } = await cli("done", "2");
+
+    expect(code).toBe(0);
+    expect(state()).toMatchObject({ done: [2] });
+    expect(output).toBe(
+      "Change 2 done: 1 of 2 changes applied.\n" +
+        "Not checked on the page: a brief asks for what the Design panel cannot set, so the page has no value to check it by. " +
+        "Say in your report how you achieved it: what you changed, and where.\n",
+    );
+  });
+});
+
+describe("claim, changes promoted to a component", () => {
+  const promoted = { ...redFill, layer: "component src/components/Card.tsx:3:5", scope: "component", target: { ...cards, instances: 4 } };
+
+  test("the scope is the component itself: its name and where it writes the layer, to change there for every usage", async () => {
+    saveRound(promoted);
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain(
+      "- **Scope:** The component itself: Card. Change Card where it writes the layer, at Location (`src/components/Card.tsx:3:5`), so every usage of Card shows it, " +
+        "not only the usage the designer made it on (`src/App.tsx:40:11`, inside App used at `src/main.tsx:8:5`). Changes listed for one usage only stay with that usage.\n",
+    );
+  });
+
+  test("a brief written on a usage in place of the component's brief says so", async () => {
+    const own = { ...redFill, id: 2, kind: "brief", property: "brief", before: "Lift on hover", after: "Lift higher", style: {} };
+    saveRound({ ...promoted, kind: "brief", property: "brief", before: null, after: "Lift on hover", style: {} }, own);
+
+    const notes = section((await cli("claim")).output, 2);
+
+    expect(notes).toContain("- **Brief:** “Lift higher”, in place of the brief Card has as a whole (change 1), “Lift on hover”, at this usage.\n");
   });
 });
 
@@ -734,7 +1010,11 @@ function history() {
 function openPage(answer: (id: number) => object | null, pages = 1) {
   const dir = join(project, ".vernier");
   // The local service runs in this very process, as far as the command line can tell.
-  const write = (results: object) => writeFileSync(join(dir, "checks.json"), JSON.stringify({ pages, service: process.pid, results }));
+  // Written whole, as the service writes it: `done` reads the file in several steps, and must never see half of it.
+  const write = (results: object) => {
+    writeFileSync(join(dir, "checks.json.tmp"), JSON.stringify({ pages, service: process.pid, results }));
+    renameSync(join(dir, "checks.json.tmp"), join(dir, "checks.json"));
+  };
   let results: Record<string, object> = {};
   write(results);
   const timer = setInterval(() => {
@@ -1004,5 +1284,74 @@ describe("undoing the last round, in a git repository", () => {
     await cli("finish");
 
     expect((await cli("last")).output).not.toContain("git ");
+  });
+});
+
+describe("claim, Variables", () => {
+  const change = (id: number, property: string, before: unknown, after: unknown, variables: object) => ({ ...redFill, id, property, before, after, style: {}, variables });
+  const gutter = { name: "gutter", group: "spacing", value: "1.375rem", from: "tailwind", own: true };
+  const brand = { name: "brand-500", group: "color", value: "oklch(55% 0.2 265)", from: "tailwind", css: "var(--color-brand-500)", own: true };
+  const danger = { name: "--danger", group: "color", value: "#FF0000", from: "css", css: "var(--danger)", own: true };
+  const rounded = { name: "DEFAULT", group: "radius", value: "0.25rem", from: "tailwind", own: false };
+
+  test("name the Variable a value is, picked or typed, and how the code uses it: a Tailwind class, or var()", async () => {
+    saveRound(
+      change(1, "gap", 8, 22, { "": { ...gutter, picked: true } }),
+      change(2, "fill", { type: "solid", color: "#FFFFFF", opacity: 1 }, { type: "solid", color: "#3D63F5", opacity: 1 }, { color: brand }),
+      change(3, "textColor", { color: "#000000", opacity: 1 }, { color: "#FF0000", opacity: 1 }, { "": { ...danger, picked: true } }),
+      change(4, "radius", 12, 4, { "": rounded }),
+      change(5, "rowGap", 8, 22, { "": gutter }),
+      change(6, "columnGap", 8, 23, { "": null }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the gap from 8px to 22px.\n- **Variables:** the gap is the Variable `gutter`, from the Tailwind theme: use its class, `gap-gutter`.\n",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Variables:** the fill color is the Variable `brand-500`, from the Tailwind theme: use its class, `bg-brand-500` (in CSS, `var(--color-brand-500)`).\n",
+    );
+    expect(section(output, 3)).toContain("- **Variables:** the text color is the Variable `--danger`, a CSS variable: use `var(--danger)`.\n");
+    expect(section(output, 4)).toContain("- **Variables:** the corner radius is the Variable `DEFAULT`, from the Tailwind theme: use its class, `rounded`.\n");
+    // A Grid's gaps, each its own way.
+    expect(section(output, 5)).toContain("- **Variables:** the row gap is the Variable `gutter`, from the Tailwind theme: use its class, `gap-y-gutter`.\n");
+    expect(section(output, 6)).toContain("- **Variables:** no Variable has the column gap's value: use the exact value (with Tailwind, an arbitrary value: `gap-x-[23px]`)");
+  });
+
+  test("say so when no Variable has the value: the exact value, never a class close to it; part by part", async () => {
+    saveRound(
+      change(1, "gap", 8, 23, { "": null }),
+      change(2, "padding", [0, 0, 0, 0], [22, 23, 0, 0], { top: gutter, right: null, bottom: null, left: null }),
+      change(4, "stroke", null, { color: "#3D63F5", opacity: 0.5, weight: 1, style: "solid" }, { color: null }),
+      change(3, "fill", null, { type: "linear", angle: 90, stops: [
+        { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+        { color: "#123456", opacity: 1, position: 100, unit: "%" },
+      ] }, { "stop 1": danger, "stop 2": null }),
+      change(5, "shadows", [], [
+        { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#3D63F5", opacity: 1 },
+        { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#000000", opacity: 0.25 },
+      ], { "": null, "shadow 1": brand, "shadow 2": null }),
+      change(6, "textShadows", [], [{ type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#FF0000", opacity: 1 }], { "shadow 1": danger }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Variables:** no Variable has the gap's value: use the exact value (with Tailwind, an arbitrary value: `gap-[23px]`), not a class or Variable whose value is close.\n",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Variables:** the top padding is the Variable `gutter`, from the Tailwind theme: use its class, `pt-gutter`. No Variable has the right padding's value: use the exact value (with Tailwind, an arbitrary value: `pr-[23px]`), not a class or Variable whose value is close. No Variable has the bottom padding's value: use the exact value (with Tailwind, an arbitrary value: `pb-[0px]`), not a class or Variable whose value is close. No Variable has the left padding's value: use the exact value (with Tailwind, an arbitrary value: `pl-[0px]`), not a class or Variable whose value is close.\n",
+    );
+    // A see-through color, with its opacity.
+    expect(section(output, 4)).toContain("- **Variables:** no Variable has the stroke color's value: use the exact value (with Tailwind, an arbitrary value: `border-[#3D63F5]/50`)");
+    expect(section(output, 3)).toContain(
+      "- **Variables:** stop 1 of the fill is the Variable `--danger`, a CSS variable: use `var(--danger)`. No Variable has stop 2 of the fill's value: use the exact value (with Tailwind, an arbitrary value: `to-[#123456]`), not a class or Variable whose value is close.\n",
+    );
+    // A shadow's color, shadow by shadow, a text layer's too.
+    expect(section(output, 5)).toContain(
+      "The color of shadow 1 is the Variable `brand-500`, from the Tailwind theme: use its class, `shadow-brand-500` (in CSS, `var(--color-brand-500)`). No Variable has the color of shadow 2's value: use the exact value (with Tailwind, an arbitrary value: `shadow-[#000000]/25`), not a class or Variable whose value is close.\n",
+    );
+    expect(section(output, 6)).toContain("- **Variables:** the color of shadow 1 is the Variable `--danger`, a CSS variable: use `var(--danger)`.\n");
   });
 });

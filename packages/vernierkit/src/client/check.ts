@@ -4,18 +4,38 @@
  * what it shows is what the code does. The dev server may still be bringing the edit in: a value
  * that does not match yet is read again each time the page changes, until it
  * does or time is up. Changes to the page are watched rather than polled, as a
- * page in a background tab gets its timers slowed.
+ * page in a background tab gets its timers slowed. What the browser draws
+ * otherwise than written is drawn on the page to compare where the code that
+ * writes it cannot be read: on an element put in and taken out at once, before
+ * anything is painted.
  */
 import { breakpointName, mediaOf, widthIn } from "./breakpoints";
-import { CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
-import { isReorder, type Change, type Place } from "./changeset";
-import { openingTag, readValue, type Property } from "./edits";
+import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
+import { changeKey, isReorder, type Change, type Place } from "./changeset";
+import { openingTag, readValue, type Property, type Stroke } from "./edits";
 import { signOf, usageKey } from "./layers";
 import { CHECK_FRAME_ATTR } from "./host";
-import { elementsOf, usageKeyOf } from "./page-elements";
+import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
+import { colorReader } from "./paint";
+import { drawnStroke, showsStroke } from "./stroke-weight";
+
+/**
+ * Properties the browser draws otherwise than written: compared as the code
+ * writes them, or else as the page draws them, the value after drawn on the
+ * page first (`draw`), so a value the code writes right is not taken for one it
+ * does not, nor one it writes wrong for one it does.
+ */
+const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown): unknown; shows(el: Element, value: unknown, drawn: unknown): boolean }>> = {
+  // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen, as 1px is.
+  stroke: {
+    draw: (doc, value) => drawnStroke(doc, value as Stroke | null),
+    shows: (el, value, drawn) => showsStroke(el, colorReader(el.ownerDocument), value as Stroke | null, drawn as Stroke | null),
+  },
+};
 
 /** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
 function uncheckable(change: Change): string | null {
+  if (change.kind === "brief") return BRIEF_UNCHECKED;
   if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
@@ -48,11 +68,14 @@ export type PageAt = (width: number) => Promise<{ doc: Document; close(): void }
 /**
  * Whether `doc`, the live page, shows the change. A change at a breakpoint
  * shows at its widths only (ADR 0008): with the window at none of them, it is
- * checked on the page shown at one of them, by `at`.
+ * checked on the page shown at one of them, by `at`. `round`: the changes of
+ * its round, where a usage with a change of its own to the property a change
+ * to its component makes shows that one instead.
  */
-export async function checkChange(doc: Document, change: Change, at?: PageAt): Promise<CheckResult> {
+export async function checkChange(doc: Document, change: Change, at?: PageAt, round: Change[] = []): Promise<CheckResult> {
   const { breakpoint } = change;
-  if (!breakpoint || doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches) return checkOn(doc, change);
+  const apart = ownValues(change, round);
+  if (!breakpoint || doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches) return checkOn(doc, change, apart);
   const width = widthIn(breakpoint);
   const cannot: CheckResult = { outcome: "unchecked", reason: `it applies ${breakpointName(breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
   // What cannot be checked on any page needs no other width.
@@ -61,7 +84,7 @@ export async function checkChange(doc: Document, change: Change, at?: PageAt): P
   const page = await at?.(width).catch(() => null);
   if (!page) return cannot;
   try {
-    return page.doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches ? await checkOn(page.doc, change) : cannot;
+    return page.doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches ? await checkOn(page.doc, change, apart) : cannot;
   } finally {
     page.close();
   }
@@ -115,19 +138,37 @@ export function pageAt(page: Window): PageAt {
     });
 }
 
-/** Whether `doc` shows the change, as wide as it is. */
-function checkOn(doc: Document, change: Change): Promise<CheckResult> {
+/**
+ * Of a change to a component itself, the usages that have a value of their own
+ * for the property at the same widths, which they show in its place: by usage key.
+ */
+function ownValues(change: Change, round: Change[]): string[] {
+  const { loc } = change.target;
+  if (change.scope !== "component" || !loc) return [];
+  const key = changeKey(loc, change.property, change.breakpoint);
+  return round.filter((other) => other.scope === "usage" && other.target.loc === loc && changeKey(loc, other.property, other.breakpoint) === key).map((other) => usageKey(loc, other.target.chain));
+}
+
+/** Whether `doc` shows the change, as wide as it is; a change to a component, but in the usages `apart`. */
+function checkOn(doc: Document, change: Change, apart: string[]): Promise<CheckResult> {
   const reason = uncheckable(change);
   if (reason) return Promise.resolve({ outcome: "unchecked", reason });
-  const look = (): CheckResult => {
+  const property = change.property as Property;
+  const comparison = AS_WRITTEN[property];
+  // Drawn once, before the page is watched: drawing it changes the page.
+  const drawn = comparison && change.kind === "style" ? comparison.draw(doc, change.after) : undefined;
+  /** `reportActual`: read what the page has instead, when it does not show the change. Looking may change the page, to draw a value. */
+  const look = (reportActual: boolean): CheckResult => {
     if (change.kind === "delete") return lookDeleted(doc, change);
     if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
-    const els = elementsOf(doc, change.target);
+    // A change to a component itself shows in every usage of it.
+    const els = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
     if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-    const wrong = els.map((el) => readValue(el, change.property as Property)).find((value) => !sameValue(value, change.after));
-    return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: wrong };
+    const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
+    const wrong = els.find((el) => !shows(el));
+    return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: reportActual ? readValue(wrong, property) : undefined };
   };
-  const first = look();
+  const first = look(false);
   if (first.outcome === "shown") return Promise.resolve(first);
   return new Promise((resolve) => {
     const settle = (result: CheckResult) => {
@@ -137,11 +178,13 @@ function checkOn(doc: Document, change: Change): Promise<CheckResult> {
     };
     // Styles and markup the dev server swaps in, a stylesheet's text included.
     const observer = new MutationObserver(() => {
-      const result = look();
+      const result = look(false);
+      // What looking put in the page and took out again is not the dev server's: left unseen, it would be looked at again, and again.
+      observer.takeRecords();
       if (result.outcome === "shown") settle(result);
     });
     observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    const timer = setTimeout(() => settle(look()), CHECK_SETTLE_MS);
+    const timer = setTimeout(() => settle(look(true)), CHECK_SETTLE_MS);
   });
 }
 

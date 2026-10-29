@@ -1,8 +1,8 @@
 /**
  * The change notes: the ChangeSet as Markdown written for the Agent, one
  * section per change with its kind, where it is in the source, its scope, the
- * design intent, the style that showed it on the canvas and what sets the
- * value now.
+ * design intent and the Variables it is, the style that showed it on the
+ * canvas and what sets the value now.
  */
 import { isAbsolute, relative } from "node:path";
 import {
@@ -25,6 +25,7 @@ import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
+import { variablesLine } from "./variable-notes";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
@@ -64,16 +65,20 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Kind:** ${kindTitle(change)}`,
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
-    `**Scope:** ${scope(target)}`,
+    `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
+    ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
+    ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
+    ...(change.kind === "brief" ? [briefLine(change, list)] : []),
+    ...(change.kind === "duplicate" && change.brief ? [`**Brief:** ${quoted(change.brief)}, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.`] : []),
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
@@ -129,6 +134,19 @@ function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
   );
 }
 
+/**
+ * A brief's words; on a copy of a new Frame, with the brief it was copied
+ * with, which they take the place of ("": taken off); on a usage of a
+ * component given a brief as a whole, with that one, which they take the place of there.
+ */
+function briefLine({ before, after, target, scope }: Change, list: Change[]): string {
+  const brief = after ? quoted(after as string) : "none: taken off";
+  if (!before || scope === "component") return `**Brief:** ${brief}`;
+  if (target.made) return `**Brief:** ${brief}, in place of the brief the copy was made with, ${quoted(before as string)}`;
+  const whole = list.find((change) => change.scope === "component" && change.kind === "brief" && change.target.loc === target.loc);
+  return `**Brief:** ${brief}, in place of the brief ${target.component} has as a whole${whole ? ` (change ${whole.id})` : ""}, ${quoted(before as string)}, at this usage.`;
+}
+
 /** What the designer wants of the change, in design language. */
 function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
@@ -149,6 +167,12 @@ function intent(change: Change, list: Change[]): string {
     }
     case "text":
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "brief":
+      if (!change.after) return "Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.";
+      return (
+        "Achieve what the brief asks of this layer: something the Design panel cannot set. " +
+        "Do it the way the project already writes such things, within the scope given, and say in your report what you did."
+      );
     case "delete": {
       const from = change.before as Place;
       // Its layers moved out first (it is ungrouped): only the layer itself goes.
@@ -229,6 +253,7 @@ const NO_STYLE: Record<Change["kind"], string> = {
   delete: "none: the layer goes",
   duplicate: "none: the copy is as the layer is",
   putBack: "none: it is to look as its look shows",
+  brief: "none: a brief is the designer's words, not a style",
 };
 
 /**
@@ -431,6 +456,12 @@ function capitalized(text: string): string {
   return text[0].toUpperCase() + text.slice(1);
 }
 
+/** A change to a text layer whose inline fragments do not all follow it: those that keep a value of their own. */
+function fragments({ property, keeps }: Change): string {
+  const kept = keeps!.map(({ element, text, value: own }) => `${quoted(text)} (\`${element}\`, ${value(property, own)})`);
+  return `**Inline fragments:** make the change on the text layer as a whole: the bold runs, links and other fragments in it follow it. These have a ${propertyName(property)} of their own, which they keep: ${kept.join(", ")}.`;
+}
+
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
 /** Loose text placed freely at a breakpoint: it needs an element to place. */
 const WRAP_TO_PLACE = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>`, at every width, and place that.";
@@ -461,6 +492,19 @@ function scope({ chain, instances, locked, context }: Target): string {
   text += ` Other usages of ${own.component} stay as they are.`;
   if (locked) text += " The layer is drawn by a dependency: change it from the usage, never inside the dependency.";
   return text;
+}
+
+/**
+ * A change promoted to the component itself: its name and where it writes
+ * the layer, to be changed there, for every usage; and the usage it was made on.
+ */
+function componentScope({ chain, loc }: Target): string {
+  const [own, ...outer] = chain;
+  const where = [own.usage ? `\`${own.usage}\`` : "an undetermined place", ...outer.map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`)];
+  return (
+    `The component itself: ${own.component}. Change ${own.component} where it writes the layer, at Location (\`${loc}\`), so every usage of ${own.component} shows it, ` +
+    `not only the usage the designer made it on (${where.join(", inside ")}). Changes listed for one usage only stay with that usage.`
+  );
 }
 
 /** What sets the value now, so the Agent knows which class or rule to change; per property when it differs. */

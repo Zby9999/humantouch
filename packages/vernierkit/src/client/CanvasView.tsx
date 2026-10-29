@@ -2,10 +2,12 @@
 import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
+import { BriefMark, briefedLayers } from "./BriefMark";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
 import { freeze, restore, type Canvas } from "./freezer";
+import { ENTER_MARK } from "./host";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { nodeOf, role, type Layer, type LayerTree } from "./layers";
@@ -73,8 +75,6 @@ interface Bounds {
 /** Wheel distance (px) per e-fold of zoom. Mouse wheel notches are clamped so one notch is a modest step. */
 const ZOOM_SPEED = 0.01;
 const MAX_ZOOM_STEP = 30;
-/** Performance entries: a mark when the designer asks for edit mode, a measure once the canvas is on screen. */
-export const ENTER_MARK = "vernierkit:enter-edit-mode";
 
 /** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
 export type Tool = Created["type"] | null;
@@ -112,6 +112,8 @@ interface Props {
   onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
   /** A new Frame's brief written, from the button beside it. */
   onSetBrief(layer: Layer, brief: string): void;
+  /** Promote, from the selection toolbar: the layer's changes made changes to its component. */
+  onPromote(layer: Layer): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
@@ -133,7 +135,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -845,6 +847,18 @@ export function CanvasView(props: Props) {
   const briefIn = shownViews.find((p) => p.view === active) ?? shownViews[0];
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
+  /** The new Frame selected alone, which has the button that writes its brief beside it, in `briefIn`. */
+  const newFrame =
+    briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !hideSelection && editor.isNewFrame(primary)
+      ? { layer: primary, in: briefIn, brief: editor.brief(primary) }
+      : null;
+  /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `briefIn`. */
+  const toolbar =
+    briefIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !hideSelection && !typingLayer
+      ? { layer: primary, in: briefIn, promote: editor.canPromote(primary) }
+      : null;
+  /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
+  const briefed = canvas && tree ? briefedLayers(canvas.document, tree) : [];
   /**
    * ⌥ held: the distances from the layers selected, all of them as one box,
    * to the layer pointed at, in the view pointed in; pointed at one of them or
@@ -926,17 +940,31 @@ export function CanvasView(props: Props) {
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
+              {briefed.map(
+                (layer, i) =>
+                  shows(shown, layer) && !(shown === newFrame?.in && layer === newFrame.layer) && <BriefMark key={`brief ${i}`} layer={layer} view={view} name={name} camera={at} />,
+              )}
             </Fragment>
           );
         })}
-      {briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !hideSelection && editor.brief(primary) !== null && (
+      {newFrame && (
         <Brief
-          key={primary.el.getAttribute("data-vk-layer")}
-          layer={primary}
-          view={briefIn.view}
-          brief={editor.brief(primary)!}
-          camera={cameraIn(camera, briefIn)}
+          key={newFrame.layer.el.getAttribute("data-vk-layer")}
+          layer={newFrame.layer}
+          view={newFrame.in.view}
+          brief={newFrame.brief}
+          camera={cameraIn(camera, newFrame.in)}
           onSetBrief={onSetBrief}
+        />
+      )}
+      {toolbar && (
+        <SelectionToolbar
+          key={toolbar.layer.el.getAttribute("data-vk-layer") ?? undefined}
+          layer={toolbar.layer}
+          view={toolbar.in.view}
+          camera={cameraIn(camera, toolbar.in)}
+          promote={toolbar.promote}
+          onPromote={onPromote}
         />
       )}
       {!travelling &&
@@ -1025,6 +1053,46 @@ function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+interface SelectionToolbarProps {
+  layer: Layer;
+  /** The view it sits on the layer in. */
+  view: View;
+  camera: Camera;
+  /** The layer has changes for its usage it can promote to its component. */
+  promote: boolean;
+  onPromote(layer: Layer): void;
+}
+
+/**
+ * On the top right of the layer selected alone, always there: the buttons
+ * for that layer, in one row, so none covers another. Promote, while it has
+ * changes for its usage to promote to its component. The second version
+ * puts States first, into the component's Sandbox (ADR 0007); not shown yet.
+ * With no button to show, there is nothing.
+ */
+function SelectionToolbar({ layer, view, camera, promote, onPromote }: SelectionToolbarProps) {
+  const r = view.boxOf(layer);
+  if (!r || !promote) return null;
+  const component = layer.chain[0]?.component;
+  return (
+    <div
+      class="vk-selection-toolbar"
+      role="toolbar"
+      aria-label="Selection"
+      style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}
+      // A press here is not on the canvas.
+      onPointerDown={(event) => event.stopPropagation()}
+      onDblClick={(event) => event.stopPropagation()}
+    >
+      {/* States (second version, ADR 0007): first in the row, for a component. */}
+      <button type="button" class="vk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
+        <Icon name="promote" />
+        Promote
+      </button>
     </div>
   );
 }
@@ -1251,6 +1319,7 @@ function clamp(zoom: number): number {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
+/** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
 export function isEditable(target: EventTarget | undefined): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName));
+  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || target.getAttribute("role") === "slider");
 }

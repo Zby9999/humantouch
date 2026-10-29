@@ -4,7 +4,7 @@
  * and again stays a single change, from the first value to the latest.
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
-import type { SavedOffCanvasLayer } from "../service-protocol";
+import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
 import type { Align, Padding } from "./edits";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -16,7 +16,7 @@ export interface Target {
   /** Usage chain, innermost component first. */
   chain: UsageLevel[];
   component: string | null;
-  /** How many instances of the usage the change shows up in. */
+  /** How many instances of the usage the change shows up in; for a change to the component itself, how many elements it writes there on the canvas, in every usage. */
   instances: number;
   locked: boolean;
   unlocated: boolean;
@@ -93,10 +93,29 @@ export interface Created {
   height: number | null;
   /** New text: its words. */
   text?: string;
-  /** A new Frame: what the Agent is to make in it. */
+  /** A new Frame: its brief, what the Agent is to make in it. */
   brief?: string;
 }
 
+/** An inline fragment of a text layer (a bold run, a link): its element as an opening tag, its words, and its own value of a property, in design language. */
+export interface Fragment {
+  element: string;
+  text: string;
+  value: unknown;
+}
+
+/** A Variable a part of a change's value is. `picked`: the designer chose it, rather than typed its value. */
+export type Bound = Variable & { picked?: true };
+
+/**
+ * Which Variable each part of a style change's value is, by part: "" the
+ * whole value, else a side ("top"), a corner ("top-left"), "color", a gradient
+ * stop ("stop 1"). Null: no Variable has that value.
+ */
+export type Bindings = Record<string, Bound | null>;
+
+/** The Variables the designer chose, by part of the value; null: detached from the one it had. */
+export type Picked = Record<string, Variable | null>;
 /**
  * A layer off the canvas put back onto it (the `after` of a `putBack`
  * change, ADR 0009): where it goes, and the layer as it was kept off the
@@ -135,13 +154,22 @@ export interface Change {
    * `before` is its `Place`. `duplicate`: the layer is a copy of the layer
    * `target` is; `before` is where that one is, `after` where the copy goes.
    * `putBack`: a layer off the canvas comes back onto it, new there; `after` is `PutBack`.
+   * `brief`: the designer's words on what to achieve in the layer, which the
+   * Design panel cannot set; `before` is null, or, on a copy of a new Frame,
+   * the brief it was copied with; `after` is the brief, "" taken off. It holds
+   * at every width (a new Frame's brief is in its `create` change instead).
    */
-  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack";
+  kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack" | "brief";
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
-  /** `usage`: this usage of the component only. */
-  scope: "usage";
+  /**
+   * `usage`: this usage of the component only. `component`: the component
+   * itself, every usage of it: the designer promoted the change from one
+   * usage. Its `layer` is then `componentKey(target.loc)`, not a layer of the
+   * canvas: the change shows on every element the component writes there.
+   */
+  scope: "usage" | "component";
   /**
    * A style change made in a view other than the desktop view: it applies at
    * that view's breakpoint only, the width range it stands for (ADR 0008).
@@ -166,6 +194,8 @@ export interface Change {
    * None: nothing of its own at any breakpoint.
    */
   copiedBreakpoints?: CopiedBreakpoint[];
+  /** A copy of a new Frame with a brief: the brief, which the copy is made by too. */
+  brief?: string;
   /**
    * A deletion that moved the layer off the canvas (ADR 0009): the id of the
    * layer it is there now, which keeps how it looked and its source, to be put back by.
@@ -177,6 +207,10 @@ export interface Change {
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
   reference?: true;
+  /** A change to a text layer, made on it as a whole: its inline fragments with a value of their own, which they keep. The others follow the layer. */
+  keeps?: Fragment[];
+  /** A style change whose value is, or could be, Variables: which part is which, exactly. */
+  variables?: Bindings;
   /**
    * A layer placed freely at a breakpoint (an `absolute` style change), in a
    * container the page does not position at those widths: the container's id.
@@ -209,7 +243,10 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "offCanvas"> & {
+    change: Pick<
+      Change,
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables"
+    > & {
       kind?: Change["kind"];
     },
   ): void;
@@ -245,8 +282,15 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       const before = earlier ? earlier.before : change.before;
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
-      else if (earlier) Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
-      else {
+      else if (earlier) {
+        Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
+        // Which fragments keep their own value depends on the value now.
+        if (change.keeps) earlier.keeps = change.keeps;
+        else delete earlier.keeps;
+        // So do the Variables it is.
+        if (change.variables) earlier.variables = change.variables;
+        else delete earlier.variables;
+      } else {
         const { breakpoint, ...rest } = change;
         changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...(breakpoint && { breakpoint: { ...breakpoint } }), ...rest });
       }
@@ -312,6 +356,9 @@ export function putBackOf(changes: Change[], id: string): Change | null {
 export function putBackBy(changes: Change[]): SavedOffCanvasLayer[] {
   return changes.filter((change) => change.kind === "putBack").map((change) => (change.after as PutBack).layer);
 }
+
+/** The property a brief on a layer is recorded under: one per layer. */
+export const BRIEF = "brief";
 
 /** A move to another place among the layers of the same container, in its layout. */
 export function isReorder(change: Change): boolean {

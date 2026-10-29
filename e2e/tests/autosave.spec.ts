@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
+import { clearVernier } from "./project-files";
 
 /** These tests save into the example project's `.vernier/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
@@ -11,8 +12,8 @@ const VERNIER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.vernier/
 const CHANGESET = `${VERNIER}changeset.json`;
 const CANVAS = `${VERNIER}canvas.html`;
 
-test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.beforeEach(() => clearVernier(VERNIER));
+test.afterAll(() => clearVernier(VERNIER));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();

@@ -1,10 +1,18 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, PutBack, StackSettings } from "./client/changeset";
-import type { Align, Fill, Padding, Radius, Size } from "./client/edits";
+import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/edits";
+import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
+import type { LineHeight, TextCase, TextLength } from "./client/typography";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
+  stroke: "Stroke",
   radius: "Corner radius",
+  shadows: "Shadows",
+  // A text layer's: said as its shadows too.
+  textShadows: "Shadows",
+  layerBlur: "Layer blur",
+  backgroundBlur: "Background blur",
   x: "X",
   y: "Y",
   absolute: "Absolute",
@@ -25,6 +33,15 @@ const PROPERTIES: Record<string, string> = {
   opacity: "Opacity",
   visible: "Visibility",
   clip: "Clip content",
+  fontFamily: "Font",
+  fontWeight: "Font weight",
+  fontSize: "Font size",
+  lineHeight: "Line height",
+  letterSpacing: "Letter spacing",
+  textAlign: "Text alignment",
+  textColor: "Text color",
+  textCase: "Case",
+  textDecoration: "Decoration",
 };
 /** Where the title does not read well in a sentence. */
 const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", absolute: "absolute placement", clip: "content clipping", columns: "number of columns" };
@@ -65,6 +82,8 @@ export function kindTitle(change: Change): string {
       return "Duplicate";
     case "putBack":
       return "Put back";
+    case "brief":
+      return "Brief";
   }
 }
 
@@ -89,8 +108,9 @@ export function changeValues(change: Change): string {
   if (change.kind === "create") {
     const { type, text, width, height, brief } = change.after as Created;
     if (type === "text") return quoted(text ?? "");
-    return `${width} × ${height}px${brief ? `, ${quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief)}` : ""}`;
+    return `${width} × ${height}px${brief ? `, ${briefShown(brief)}` : ""}`;
   }
+  if (change.kind === "brief") return change.after ? briefShown(change.after as string) : "taken off";
   if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
   const name = (place: Place) => place.container.target.context.path.at(-1);
   if (change.kind === "delete") return `from ${name(change.before as Place)}`;
@@ -126,6 +146,11 @@ export function moveKind(change: Change): "Reorder" | "Move" | "Absolute" {
 /** How much of a brief the change list shows. */
 const MAX_BRIEF = 40;
 
+/** A brief as the change list shows it: quoted, cut short when long. */
+function briefShown(brief: string): string {
+  return quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief);
+}
+
 /** 1st, 2nd, 3rd, 4th, … */
 export function ordinal(n: number): string {
   const tens = n % 100;
@@ -140,13 +165,116 @@ export function layerName({ kind, target, after }: Change): string {
   return target.context.path.at(-1) ?? "Layer";
 }
 
+/** A color, with its opacity when it has some see-through: "#FF0000", "#FF0000 at 50% opacity". */
+function colorValue({ color, opacity }: { color: string; opacity: number }): string {
+  return opacity === 1 ? color : `${color} at ${Math.round(opacity * 100)}% opacity`;
+}
+
+/**
+ * Which way a linear gradient runs, for the angles that run from side to side.
+ * Not the diagonals: toward a corner runs along the box's own diagonal, at an angle that depends on its size.
+ */
+const DIRECTIONS: Record<number, string> = { 0: "bottom to top", 90: "left to right", 180: "top to bottom", 270: "right to left" };
+
+function fillValue(fill: Fill | null): string {
+  if (!fill) return "no fill";
+  const stops = (stops: ColorStop[]) => stops.map((stop) => `${colorValue(stop)} at ${stop.position}${stop.unit}`).join(", ");
+  switch (fill.type) {
+    case "solid":
+      return colorValue(fill);
+    case "linear": {
+      const direction = DIRECTIONS[fill.angle];
+      return `a linear gradient at ${fill.angle}°${direction ? ` (${direction})` : ""}: ${stops(fill.stops)}`;
+    }
+    case "radial":
+      return `a radial gradient ${"shape" in fill ? "centered and sized as the page has it" : radialShape(fill)}: ${stops(fill.stops)}`;
+    case "conic":
+      return "a conic gradient";
+  }
+}
+
+/**
+ * Where a radial gradient is centered and how far out it reaches, in the
+ * units the page writes them in: "from the middle out", "centered 30% across
+ * and 20% down, 20px out", "from the middle, a circle out to the closest side".
+ */
+function radialShape({ center, size }: RadialGradient): string {
+  const middle = isMiddle(center);
+  if (middle && "extent" in size && size.extent === "farthest-corner" && !size.circle) return "from the middle out";
+  const from = middle ? "from the middle" : `centered ${lengthCss(center.x)} across and ${lengthCss(center.y)} down`;
+  if ("extent" in size) return `${from}, ${size.circle ? "a circle" : "an ellipse"} out to the ${size.extent.replace("-", " ")}`;
+  return `${from}, ${isCircle(size) ? `${lengthCss(size.x)} out` : `out ${lengthCss(size.x)} across and ${lengthCss(size.y)} down`}`;
+}
+
+/** "a drop shadow (x 0px, y 4px, blur 4px, spread 0px, #000000 at 25% opacity)"; a text layer's has no spread. */
+function shadowValue(s: Shadow, spread: boolean): string {
+  return `${s.type === "drop" ? "a drop" : "an inner"} shadow (x ${s.x}px, y ${s.y}px, blur ${s.blur}px, ${spread ? `spread ${s.spread}px, ` : ""}${colorValue(s)})`;
+}
+
+/** Font weights by the names Figma gives them. */
+const WEIGHTS: Record<number, string> = {
+  100: "Thin",
+  200: "Extra Light",
+  300: "Light",
+  400: "Regular",
+  500: "Medium",
+  600: "Semi Bold",
+  700: "Bold",
+  800: "Extra Bold",
+  900: "Black",
+};
+
+/** A font weight's name: "Semi Bold"; a weight between the named ones, its number. */
+export function weightName(weight: number): string {
+  return WEIGHTS[weight] ?? String(weight);
+}
+
+/** "24px", "150% of the font size". */
+function textLength({ value, unit }: TextLength): string {
+  return unit === "px" ? `${value}px` : `${value}% of the font size`;
+}
+
+const CASES: Record<TextCase, string> = { none: "as typed", upper: "upper case", lower: "lower case", title: "title case" };
+
 export function value(property: string, v: unknown): string {
   switch (property) {
-    case "fill": {
-      const fill = v as Fill | null;
-      if (!fill) return "no fill";
-      return fill.opacity === 1 ? fill.color : `${fill.color} at ${Math.round(fill.opacity * 100)}% opacity`;
+    case "fontFamily":
+      return v as string;
+    case "fontWeight":
+      return WEIGHTS[v as number] ? `${weightName(v as number)} (${v})` : String(v);
+    case "fontSize":
+      return `${v as number}px`;
+    case "lineHeight":
+      return v === "auto" ? "Auto (the font's own)" : textLength(v as Exclude<LineHeight, "auto">);
+    case "letterSpacing":
+      return textLength(v as TextLength);
+    case "textAlign":
+      return v === "justify" ? "justified" : (v as string);
+    case "textColor":
+      return colorValue(v as Color);
+    case "textCase":
+      return CASES[v as TextCase];
+    case "textDecoration":
+      return v as string;
+    case "fill":
+      return fillValue(v as Fill | null);
+    case "stroke": {
+      const stroke = v as Stroke | null;
+      if (!stroke) return "no stroke";
+      const { weight } = stroke;
+      if (typeof weight === "number") return `${weight}px ${stroke.style} ${colorValue(stroke)}`;
+      const sides = ["top", "right", "bottom", "left"].map((side, i) => `${side} ${weight[i]}px`).join(", ");
+      return `${stroke.style} ${colorValue(stroke)}, on some sides: ${sides}`;
     }
+    case "shadows":
+    case "textShadows": {
+      const shadows = v as Shadow[];
+      if (!shadows.length) return "no shadow";
+      return `${shadows.map((s) => shadowValue(s, property === "shadows")).join(" and ")}${shadows.length > 1 ? ", the first on top" : ""}`;
+    }
+    case "layerBlur":
+    case "backgroundBlur":
+      return v === null ? "none" : `${v as number}px`;
     case "radius": {
       const radius = v as Radius;
       if (typeof radius === "number") return `${radius}px`;

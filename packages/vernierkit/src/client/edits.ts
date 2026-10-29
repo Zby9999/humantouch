@@ -20,13 +20,16 @@ import {
   LAYER_ID_ATTR,
   MADE_ATTR,
   MOVE_ATTR,
+  NEW_ATTR,
   REFERENCE_ATTR,
   restoreStyle,
   TEXT_ATTR,
   WRAP_ATTR,
 } from "./canvas-style";
 import {
+  BRIEF,
   changeKey,
+  createChangeSet,
   madeBy,
   MOVE,
   movedOffBy,
@@ -36,29 +39,33 @@ import {
   type Composed,
   type Created,
   type Dissolved,
+  type Bindings,
+  type Fragment,
+  type Picked,
   type Place,
   type PutBack,
   type StackSettings,
   type Target,
 } from "./changeset";
 import { PAGE_ATTR } from "./freezer";
+import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
+import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
+import { readWrittenStroke, strokeReference } from "./stroke-weight";
+import { TYPOGRAPHY, type TypographyValues } from "./typography";
+import { pickedIn } from "./variables";
 import { equalColumns, trackCount } from "./grid-tracks";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
+import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
 import type { View, Views } from "./views";
 
 export { LAYER_ID_ATTR };
-
-/** A solid fill: a color as `#RRGGBB`, and its opacity from 0 to 1. */
-export interface Fill {
-  type: "solid";
-  color: string;
-  opacity: number;
-}
+export type { ColorStop, Fill, Gradient, Stroke } from "./paint";
+export type { Shadow } from "./effects";
 
 /** Corner radius in px: one for all corners, or top-left, top-right, bottom-right, bottom-left. */
 export type Radius = number | [number, number, number, number];
@@ -86,9 +93,18 @@ export interface Align {
 }
 
 /** What the Design panel edits, by property. A fill of null: no fill. A minimum or maximum of null: none. */
-export interface PropertyValues {
+export interface PropertyValues extends TypographyValues {
   fill: Fill | null;
+  /** A stroke of null: no stroke. */
+  stroke: Stroke | null;
   radius: Radius;
+  /** Drop and inner shadows, first on top; none when empty. */
+  shadows: Shadow[];
+  /** A text layer's drop shadows, first on top, drawn as text-shadow: no inner shadow, no spread. */
+  textShadows: Shadow[];
+  /** A blur on the layer, and on what is behind it, in px; null for none. */
+  layerBlur: Blur;
+  backgroundBlur: Blur;
   /** An absolute layer's place in its parent, in px. */
   x: number;
   y: number;
@@ -132,7 +148,15 @@ export type Destination = { parent: Layer; index: number } | { parent: Layer; x:
 export interface SetOptions {
   /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
   continues?: boolean;
+  /** The Variables the designer chose for the value, by part (see `Bindings`); null for a part: detached from its Variable. */
+  variables?: Picked;
 }
+
+/**
+ * Which Variables a property's value is, by part, given those the designer
+ * picked now and those the change had before; undefined when no part can be one.
+ */
+export type Binder = (property: Property, value: unknown, picked: Picked | undefined, previous: Bindings | undefined) => Bindings | undefined;
 
 export interface Editor {
   /**
@@ -168,6 +192,8 @@ export interface Editor {
   set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
   /** Makes the edits `edits` makes one step, undone and redone together: the same change to several layers. */
   batch(edits: () => void, options?: SetOptions): void;
+  /** Which Variables the layer's value of `property` is, as changed this round and shown in the view worked in; undefined when unchanged or none. */
+  variables(layer: Layer, property: Property): Bindings | undefined;
   /** Where the layer is in the view worked in, in its px; for a hidden layer, where it is when shown. */
   measure(layer: Layer): DOMRect;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
@@ -243,10 +269,20 @@ export interface Editor {
    * without it, text fits its words and a Frame is 100 × 100. Returns the new layer, in the container `to` names.
    */
   create(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
-  /** A new Frame's brief; null for any other layer. */
-  brief(layer: Layer): string | null;
-  /** Gives a new Frame a brief: what the Agent is to make in it. */
-  setBrief(layer: Layer, brief: string): void;
+  /**
+   * The layer's brief: what the designer wants achieved in it, which the
+   * Design panel cannot set; for a new Frame, what the Agent is to make in it. "" when it has none.
+   */
+  brief(layer: Layer): string;
+  /** Whether the layer is a new Frame, whose brief says what to make in it: it is written beside it on the canvas, and kept in the change that makes it. */
+  isNewFrame(layer: Layer): boolean;
+  /**
+   * Gives the layer a brief, or takes it off (""), as one edit that can be
+   * undone: a new Frame's in the change that makes it; any other layer's as
+   * a change of its own, for its usage (every instance), at every width.
+   * Loose text gets an element of its own first. Returns the layer the brief is on.
+   */
+  setBrief(layer: Layer, brief: string): Layer;
   /** The layer as text with an element of its own, to type in: loose text gets one first. */
   ownElement(layer: Layer): Layer;
   /**
@@ -294,6 +330,21 @@ export interface Editor {
    * its look and its edits there, for the Agent to put it back by.
    */
   putBack(from: LayerToPutBack, to: Destination): Layer;
+  /**
+   * Whether the layer has changes for its usage alone that can be promoted
+   * to its component: it is in a component used inside another, and has
+   * changes to its styles or its brief not promoted yet.
+   */
+  canPromote(layer: Layer): boolean;
+  /**
+   * Promotes the layer's changes to its styles (at every width and at each
+   * breakpoint) and its brief to the component that writes it, the nearest
+   * on its usage chain, as one edit that can be undone: they become changes
+   * to the component itself, which every usage of it shows, in every view.
+   * Its other changes stay with its usage; edited again, it starts from its usage again.
+   * Returns the changes promoted, as they were, and those that stay with its usage.
+   */
+  promote(layer: Layer): { promoted: Change[]; stays: Change[] };
 }
 
 /** An Off-canvas Layer being put back onto the canvas: its element off the canvas, as it looks now, and it as kept. */
@@ -328,6 +379,8 @@ export interface EditorOptions {
   history?: History;
   /** Whether a change records what set the value before, in the page's styles: not where there are none (off the canvas). */
   sources?: boolean;
+  /** Which Variables a change's value is: none are told when not given. */
+  bind?: Binder;
 }
 
 /**
@@ -347,7 +400,7 @@ interface Step {
 }
 
 
-interface Definition<V> {
+export interface Definition<V> {
   /** Layers the property applies to. */
   kinds: LayerKind[];
   /** Further, whether the layer as it is now can take the property. */
@@ -365,8 +418,16 @@ interface Definition<V> {
   writes: string[];
   /** The CSS properties the value is read from, to find what sets them now. */
   sets: string[];
+  /** Of `sets`, those the value is read from on the layer as it is now, when not all of them. */
+  setsOn?(el: Element): string[];
   /** A Stack's own property: on a plain top-to-bottom flow, writing it makes the flow a real Stack. */
   stack?: true;
+  /** An inherited style: the element whose styles set the value, the layer's own or one above it. */
+  setOn?(el: Element): Element;
+  /** A text style: the layer's inline fragments that keep a value of their own, as it is now. */
+  keeps?(el: Element, colors: ColorReader): Fragment[];
+  /** The reference style, from the CSS `write` declares, when not all of it: `before` is where the change started. */
+  reference?(style: Record<string, string>, before: V, after: V): Record<string, string>;
 }
 
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
@@ -375,6 +436,8 @@ const EVERY_KIND: LayerKind[] = ["stack", "grid", "frame", "text", "image", "sti
 /** Locked layers are moved and resized as a whole, and nothing else. */
 const UNLOCKED: LayerKind[] = EVERY_KIND.filter((kind) => kind !== "locked");
 const CONTAINERS: LayerKind[] = ["stack", "grid", "frame"];
+/** Layers drawn as a box, with a stroke, corners, shadows and blur of their own: all but text and locked ones. */
+const BOXES: LayerKind[] = [...CONTAINERS, "image", "still"];
 /** Width and height do not apply to inline boxes. */
 const sized = (el: Element) => !/^(inline|contents)$/.test(getComputedStyle(el).display);
 const absolute = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el).position);
@@ -382,20 +445,47 @@ const absolute = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el)
 const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   fill: {
     kinds: CONTAINERS,
-    // A gradient or an image paints over the solid color. Those fills are edited elsewhere.
-    applies: (el) => getComputedStyle(el).backgroundImage === "none",
-    read: (el, colors) => colors.fill(getComputedStyle(el).backgroundColor),
-    write: (fill) => ({ "background-color": fill ? cssColor(fill) : "transparent" }),
-    writes: ["background-color"],
-    sets: ["background-color"],
+    // An image, or layers of background, cannot be read as a fill. A conic gradient is shown, not edited.
+    applies: fillApplies,
+    accepts: (_, fill) => fill?.type !== "conic",
+    read: readFill,
+    write: writeFill,
+    writes: ["background-color", "background-image"],
+    sets: ["background-color", "background-image"],
+    setsOn: fillSets,
+  },
+  stroke: {
+    kinds: BOXES,
+    read: readWrittenStroke,
+    write: writeStroke,
+    reference: strokeReference,
+    writes: ["border-width", "border-style", "border-color"],
+    sets: STROKE_SETS,
   },
   radius: {
-    kinds: ["stack", "grid", "frame", "image", "still"],
+    kinds: BOXES,
     read: readRadius,
     write: (radius) => ({ "border-radius": typeof radius === "number" ? `${radius}px` : radius.map((r) => `${r}px`).join(" ") }),
     writes: ["border-radius"],
     sets: CORNERS.map((corner) => `border-${corner}-radius`),
   },
+  shadows: {
+    kinds: BOXES,
+    read: readShadows,
+    write: writeShadows,
+    writes: ["box-shadow"],
+    sets: ["box-shadow"],
+  },
+  textShadows: {
+    kinds: ["text"],
+    accepts: (_, shadows) => textCanDraw(shadows),
+    read: readTextShadows,
+    write: writeTextShadows,
+    writes: ["text-shadow"],
+    sets: ["text-shadow"],
+  },
+  layerBlur: { kinds: BOXES, ...blur("filter") },
+  backgroundBlur: { kinds: BOXES, ...blur("backdrop-filter") },
   x: position("left", "right", 0),
   y: position("top", "bottom", 1),
   absolute: {
@@ -491,6 +581,7 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     writes: ["overflow"],
     sets: ["overflow-x", "overflow-y"],
   },
+  ...TYPOGRAPHY,
 };
 
 /** `property` of an element as it is now, in design language: on the canvas, or on the live page. */
@@ -507,7 +598,7 @@ export function createEditor(
   views: Views,
   changes: ChangeSet,
   project: ProjectBreakpoints | null = null,
-  { history = createHistory(), sources: readSources = true }: EditorOptions = {},
+  { history = createHistory(), sources: readSources = true, bind }: EditorOptions = {},
 ): Editor {
   /** What sets `properties` of `el` in the page's styles, where the editor reads them. */
   const sourcesFor = (el: Element, properties: string[]) => (readSources ? sourcesOf(el, properties) : []);
@@ -595,8 +686,8 @@ export function createEditor(
     return view.elementOf(el) ?? el;
   };
 
-  /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. */
-  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null) => {
+  /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
+  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
     const definition: Definition<PropertyValues[P]> = PROPERTIES[property];
     // Read, and written, as laid out at the breakpoint, in the view that stands for it.
     const el = shownIn(viewAt(breakpoint), layer.el);
@@ -604,8 +695,9 @@ export function createEditor(
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     const earlier = known ? changes.find(known, property, breakpoint) : null;
+    const started = definition.reference ? earlier : null;
     // A layer made this round has no style of the page's to change.
-    const sources = layer.made || earlier ? [] : sourcesFor(el, definition.sets);
+    const sources = layer.made || earlier ? [] : sourcesFor(definition.setOn?.(el) ?? el, definition.setsOn?.(el) ?? definition.sets);
     const instances = tree.acrossInstances(layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
     const flowing = () => !asShown(el, () => stackOf(el).flex);
@@ -631,6 +723,8 @@ export function createEditor(
       declare(instance.el, declarations, breakpoint);
     }
     const id = idOf(layer, instances);
+    const keeps = definition.keeps?.(el, colors);
+    const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       target: targetOf(layer, instances.length),
       scope: "usage",
@@ -638,9 +732,11 @@ export function createEditor(
       property,
       before,
       after: value,
-      style: declarations,
+      style: definition.reference?.(declarations, started ? (started.before as PropertyValues[P]) : before, value) ?? declarations,
       sources,
       ...(asStack && { asStack: true }),
+      ...(keeps?.length ? { keeps } : {}),
+      ...(variables && { variables }),
       ...(within && { within }),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
@@ -738,6 +834,8 @@ export function createEditor(
   /**
    * An edit that can be undone, at every width or at `breakpoint`. `from`: the
    * value it changes, when the canvas cannot tell (on a hidden layer, say).
+   * `picked`: Variables chosen for the value, which make it an edit even when
+   * the value stays as it is (detached).
    */
   const edit = <P extends Property>(
     layer: Layer,
@@ -746,15 +844,20 @@ export function createEditor(
     continues: boolean,
     breakpoint: Breakpoint | null,
     from?: PropertyValues[P],
+    picked?: Picked,
   ) => {
     const before = from === undefined ? readAsShown(shownIn(viewAt(breakpoint), layer.el), property, colors) : from;
-    if (same(before, value)) return;
-    const id = apply(layer, property, value, breakpoint);
-    const to = (v: PropertyValues[P]) => () => {
+    if (same(before, value) && !picked) return;
+    const known = layer.el.getAttribute(LAYER_ID_ATTR);
+    const wasPicked = pickedIn((known ? changes.find(known, property, breakpoint) : null)?.variables);
+    const id = apply(layer, property, value, breakpoint, picked);
+    // A Variable picked for the value the layer has already, with nothing to change: no step.
+    if (same(before, value) && !wasPicked && !changes.has(id, property, breakpoint)) return;
+    const to = (v: PropertyValues[P], chosen: Picked | undefined) => () => {
       const target = layerById(id);
-      if (target) apply(target, property, v, breakpoint);
+      if (target) apply(target, property, v, breakpoint, chosen);
     };
-    push({ layers: [id], key: changeKey(id, property, breakpoint), undo: to(before), redo: to(value) }, continues);
+    push({ layers: [id], key: changeKey(id, property, breakpoint), undo: to(before, wasPicked), redo: to(value, picked) }, continues);
   };
 
   /** A container as a place names it: a Grid's places are its cells. */
@@ -935,6 +1038,26 @@ export function createEditor(
     else changes.record(id, { ...record, after: text });
     writeText(doc, id, record.property, changes.has(id, record.property) ? text : null);
   };
+  /** Marks every instance of the layer `id` with the brief `text`, the Layers panel and the canvas showing it; "": none. */
+  const markBrief = (id: string, text: string) => {
+    // With no brief of its usage's own, the component's, if it has one, shows.
+    const own = !!changes.find(id, BRIEF);
+    for (const el of elementsOf(doc, id)) {
+      const shown = text || (own ? "" : componentBrief(el, changes.list()));
+      if (shown) el.setAttribute(BRIEF_ATTR, shown);
+      else el.removeAttribute(BRIEF_ATTR);
+    }
+  };
+  /**
+   * The brief `text` on the layer `id`, as recorded in `record`, a change of
+   * its own; "": none. The brief the layer was copied with, if any, is the
+   * record's `before`: back to it, there is no change.
+   */
+  const briefing = (id: string, record: StructureRecord, text: string) => () => {
+    if (text === ((record.before as string | null) ?? "")) drop(id, record.property);
+    else changes.record(id, { ...record, after: text });
+    markBrief(id, text);
+  };
   /** Deleting `els`, the layer `id`, as recorded in `record`. */
   const deleting = (id: string, record: StructureRecord, els: Element[]) => ({
     make: () => {
@@ -1003,14 +1126,46 @@ export function createEditor(
     push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off }, false);
   };
 
+  /**
+   * The changes of the layer `id` promoted to the component that writes it at
+   * `loc`, or back with its usage, shown as `changes` has them now: the
+   * usage's own edits on its elements, the component's on all it writes.
+   */
+  const showPromoted = (id: string, loc: string, taken: Change[]) => {
+    const others = changesOn(id, changes.list());
+    for (const el of elementsOf(doc, id)) {
+      for (const change of taken) if (change.kind === "style") restoreStyle(el, cssOf(change.property as Property), others, change.breakpoint ?? null);
+      if (others.some((change) => change.asStack && !change.breakpoint)) el.setAttribute(AS_STACK_ATTR, "");
+    }
+    showComponent(doc, loc, changes.list());
+  };
+
   /** Takes one change back out, as an edit that can be undone. Returns its layer as it is then. */
   const revertOne = (change: Change): Layer | null => {
+    if (change.scope === "component") {
+      // On every element the component writes.
+      const loc = change.target.loc!;
+      const to = (on: boolean) => () => {
+        if (on) changes.restore(structuredClone(change));
+        else changes.remove(change.id);
+        showComponent(doc, loc, changes.list());
+      };
+      structural([], [], to(false), to(true));
+      const [el] = componentElements(doc, loc);
+      return el ? tree.layerOf(el) : null;
+    }
     if (change.kind === "delete") {
       // Deleted, it is no layer: its elements are found by the change.
       const { id: _, layer: id, ...record } = change;
       const els = elementsOf(doc, id).filter((el) => el.getAttribute(DELETED_ATTR) === change.property);
       const { make, bringBack } = deleting(id, record, els);
       structural([id], [id], bringBack, make);
+      return layerById(id);
+    }
+    if (change.kind === "brief") {
+      // Found by its id: a layer deleted since keeps its brief to take off.
+      const { id: _, layer: id, ...record } = change;
+      structural([id], [id], briefing(id, record, (change.before as string | null) ?? ""), briefing(id, record, change.after as string));
       return layerById(id);
     }
     const layer = layerById(change.layer);
@@ -1289,7 +1444,15 @@ export function createEditor(
       if (el === layer.el) return asShown(layer.el, () => boxOf(layer));
       return asShown(el, () => el.getBoundingClientRect());
     },
-    set(layer, property, value, { continues = false } = {}) {
+    variables(layer, property) {
+      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
+      if (!id) return undefined;
+      // As the view worked in shows it: the layer's own value at a breakpoint that holds there, else that at every width.
+      const view = beside();
+      const [here] = view ? changesAt(id, view.width, property) : [];
+      return (here ?? changes.find(id, property, null))?.variables;
+    },
+    set(layer, property, value, { continues = false, variables } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
       if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
@@ -1297,7 +1460,7 @@ export function createEditor(
         edit(layer, "absolute", place, continues, breakpointFor(layer, "absolute"));
         return;
       }
-      edit(layer, property, value, continues, breakpointFor(layer, property));
+      edit(layer, property, value, continues, breakpointFor(layer, property), undefined, variables);
     },
     batch(edits, { continues = false } = {}) {
       group(edits, continues);
@@ -1332,6 +1495,27 @@ export function createEditor(
         }
       });
       return layer && tree.layerOf(nodeOf(layer));
+    },
+    canPromote(layer) {
+      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
+      return !!id && inComponent(layer) && promotable(changes.list(), id).length > 0;
+    },
+    promote(layer) {
+      if (!editor.canPromote(layer)) throw new Error(`Vernier Kit: ${layer.name} has no changes to promote to its component`);
+      const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
+      const loc = layer.loc!;
+      const component = componentKey(loc);
+      const taken = structuredClone(promotable(changes.list(), id));
+      const before = structuredClone(changes.list().filter((change) => change.layer === component));
+      // The component's changes once promoted, worked out apart.
+      const after = promoteIn(createChangeSet(changes.save()), taken, loc, componentElements(doc, loc).length);
+      const swap = (out: Change[], back: Change[]) => () => {
+        for (const change of out) changes.remove(change.id);
+        for (const change of back) changes.restore(structuredClone(change));
+        showPromoted(id, loc, taken);
+      };
+      structural([id], [id], swap([...taken, ...before], after), swap(after, [...before, ...taken]));
+      return { promoted: taken, stays: changes.list().filter((change) => change.layer === id && change.scope === "usage") };
     },
     canStack(layers) {
       if (layers.length === 1 && isFrameOfLayers(layers[0])) return true;
@@ -1448,23 +1632,41 @@ export function createEditor(
       return tree.layerOf([...container.el.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
     },
     brief(layer) {
-      const maker = makerOf(layer.el.getAttribute(LAYER_ID_ATTR) ?? "");
-      return maker?.kind === "create" && (maker.after as Created).type === "frame" ? ((maker.after as Created).brief ?? "") : null;
+      if (layer.text) return "";
+      const id = layer.el.getAttribute(LAYER_ID_ATTR);
+      // Not changed this round: its component's brief, if one is promoted to it.
+      if (!id) return layer.el.getAttribute(BRIEF_ATTR) ?? "";
+      if (editor.isNewFrame(layer)) return (makerOf(id)!.after as Created).brief ?? "";
+      // A copy of a new Frame has the brief it was copied with, until one is written on it.
+      return (changes.find(id, BRIEF)?.after as string | undefined) ?? layer.el.getAttribute(BRIEF_ATTR) ?? "";
+    },
+    isNewFrame(layer) {
+      const maker = layer.text ? null : makerOf(layer.el.getAttribute(LAYER_ID_ATTR) ?? "");
+      return maker?.kind === "create" && (maker.after as Created).type === "frame";
     },
     setBrief(layer, brief) {
-      const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
-      const maker = makerOf(id);
       const before = editor.brief(layer);
-      if (!maker || before === null || before === brief) return;
-      const { id: _, layer: __, ...record } = maker;
-      const to = (text: string) => () => {
-        changes.record(id, { ...record, after: { ...(maker.after as Created), brief: text || undefined } });
-        for (const el of elementsOf(doc, id)) {
-          if (text) el.setAttribute(BRIEF_ATTR, text);
-          else el.removeAttribute(BRIEF_ATTR);
-        }
-      };
-      structural([id], [id], to(brief), to(before));
+      if (before === brief) return layer;
+      if (editor.isNewFrame(layer)) {
+        // In the change that makes it.
+        const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
+        const maker = makerOf(id)!;
+        const { id: _, layer: __, ...record } = maker;
+        const to = (text: string) => () => {
+          changes.record(id, { ...record, after: { ...(maker.after as Created), brief: text || undefined } });
+          markBrief(id, text);
+        };
+        structural([id], [id], to(brief), to(before));
+        return tree.layerOf(layer.el)!;
+      }
+      const own = editor.ownElement(layer);
+      const id = idOf(own, tree.acrossInstances(own));
+      // Before: what the layer shows otherwise, which writing one on it takes the place of: the brief a copy of a new Frame was copied with, or its component's.
+      const written = changes.find(id, BRIEF);
+      const copiedWith = written ? written.before : before || null;
+      const record: StructureRecord = { kind: "brief", target: targetOf(own, onPage(own).length), scope: "usage", property: BRIEF, before: copiedWith, after: brief, style: {}, sources: [] };
+      structural([id], [id], briefing(id, record, brief), briefing(id, record, before));
+      return tree.layerOf(own.el)!;
     },
     ownElement: (layer) => (layer.text ? wrap(layer) : layer),
     setText(layer, text) {
@@ -1597,6 +1799,8 @@ export function createEditor(
         sources: [],
         ...(loop && { data: true }),
         ...(copied.length > 0 && { copiedBreakpoints: copied }),
+        // A new Frame's copy is made by its brief too.
+        ...(layer.el.getAttribute(NEW_ATTR) === "frame" && layer.el.hasAttribute(BRIEF_ATTR) && { brief: layer.el.getAttribute(BRIEF_ATTR)! }),
       };
       const originals = (loop ? [layer] : instances).map((instance) => instance.el);
       const { make, takeOff } = madeLayer(id, record, () => {
@@ -2012,40 +2216,6 @@ export function openingTag(el: Element): string {
   if (classes) tag += ` class="${classes.length > MAX_CLASSES ? `${classes.slice(0, MAX_CLASSES - 1)}…` : classes}"`;
   return `${tag}>`;
 }
-
-interface ColorReader {
-  /** Any CSS color (oklch included) as a fill in sRGB; null when fully transparent. */
-  fill(css: string): Fill | null;
-}
-
-/** Reads colors back by painting them: the one way that handles every CSS color space. */
-function colorReader(doc: Document): ColorReader {
-  const canvas = doc.createElement("canvas");
-  canvas.width = canvas.height = 1;
-  const context = canvas.getContext("2d", { willReadFrequently: true })!;
-  const paint = (css: string) => {
-    context.clearRect(0, 0, 1, 1);
-    context.fillStyle = css;
-    context.fillRect(0, 0, 1, 1);
-    return context.getImageData(0, 0, 1, 1).data;
-  };
-  return {
-    fill(css) {
-      const alpha = paint(css)[3];
-      if (alpha === 0) return null;
-      // Painted opaque: a see-through color loses precision to premultiplied alpha.
-      const [r, g, b] = paint(`rgb(from ${css} r g b / 1)`);
-      const color = `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
-      return { type: "solid", color, opacity: Math.round((alpha / 255) * 100) / 100 };
-    },
-  };
-}
-
-function cssColor({ color, opacity }: Fill): string {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-  return `rgb(${r} ${g} ${b} / ${opacity})`;
-}
-
 
 /** Larger radii (Tailwind v4's rounded-full is infinite) read as this: still a pill, and still a number. */
 const MAX_RADIUS = 9999;

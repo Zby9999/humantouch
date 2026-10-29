@@ -30,7 +30,7 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
   const latestOnClose = useRef(onClose);
   latestOnClose.current = onClose;
 
-  // Focused as it shows, not a frame later: a key pressed once it is there is its own (Esc closes it).
+  // As it goes on the page, not a frame later: a key pressed meanwhile would go to what opened it, and Esc would not close it.
   useLayoutEffect(() => {
     dialog.current!.focus({ preventScroll: true });
     // A press anywhere else closes it; what opened it (the badge, or the count in edit mode) toggles it itself.
@@ -81,6 +81,7 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
               </span>
               <span class="vk-change-values">
                 {changeValues(change)}
+                {change.scope === "component" && <span> · {change.target.component} itself</span>}
                 {change.breakpoint && <span class="vk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
                 {!!change.copiedBreakpoints?.length && <span class="vk-change-breakpoint"> · with copied breakpoints</span>}
               </span>

@@ -37,7 +37,10 @@ export default defineConfig({
   use: { ...devices["Desktop Chrome"], trace: "retain-on-failure", reducedMotion: "reduce" },
   projects: [
     { name: "page", testIgnore: PROJECT_FILES },
-    { name: "project files", testMatch: PROJECT_FILES, workers: 1 },
+    // Both projects use the same dev servers, and these tests edit the examples' source (a 3px border on the
+    // Card, say) that the page tests measure, so they start once the page tests are done. To run only some
+    // of them without the whole page project first, add `--no-deps`.
+    { name: "project files", testMatch: PROJECT_FILES, workers: 1, dependencies: ["page"] },
   ],
   webServer: [
     {

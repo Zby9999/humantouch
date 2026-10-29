@@ -16,6 +16,11 @@ export default function vernier(): Plugin {
     name: "vernierkit",
     apply: "serve",
     enforce: "pre",
+    config() {
+      // Served as published: pre-bundled, the toggle would come again unminified, with a source map inlined in it,
+      // more than the page is to load with it (docs/goals.md). The rest of the editor layer still loads only as needed.
+      return { optimizeDeps: { exclude: ["vernierkit"] } };
+    },
     configResolved(config) {
       root = config.root;
     },

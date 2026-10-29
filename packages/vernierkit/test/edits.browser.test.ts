@@ -5,13 +5,16 @@ import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/bre
 import { createChangeSet, type Place } from "../src/client/changeset";
 import { checkChange, type PageAt } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
-import { moveInlineEdits } from "../src/client/canvas-style";
+import { declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
-import { createEditor } from "../src/client/edits";
+import { createEditor, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
+import { fontsOf } from "../src/client/typography";
 import { createViews } from "../src/client/views";
+import { bind, bindRecorded, resolveVariables, type Catalog } from "../src/client/variables";
+import type { Variable } from "../src/service-protocol";
 
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
@@ -142,6 +145,849 @@ describe("solid fill", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("gradient fill", () => {
+  const sunset: Fill & { type: "linear" } = {
+    type: "linear",
+    angle: 90,
+    stops: [
+      { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+      { color: "#0000FF", opacity: 0.5, position: 100, unit: "%" },
+    ],
+  };
+
+  test("a linear gradient paints every instance at its angle, over no color, and reads back as set", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.set(layerOf(cards[0]), "fill", sunset);
+
+    expect(cards.map((card) => style(card).backgroundImage)).toEqual([
+      ...Array(3).fill("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(0, 0, 255, 0.5) 100%)"),
+      "none",
+    ]);
+    expect(style(cards[0]).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(editor.read(layerOf(cards[1]), "fill")).toEqual(sunset);
+    const [change] = changes.list();
+    expect(change.style).toEqual({
+      "background-color": "transparent",
+      "background-image": "linear-gradient(90deg, rgb(255 0 0 / 1) 0%, rgb(0 0 255 / 0.5) 100%)",
+    });
+    expect(change.before).toEqual({ type: "solid", color: "#FFFFFF", opacity: 1 });
+  });
+
+  test("the page's own gradients read as angle and stops, wherever CSS leaves the positions out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!; // 800 × 40
+    const read = (css: string) => {
+      box.style.backgroundImage = css;
+      return editor.read(layerOf(box), "fill");
+    };
+    const red = { color: "#FF0000", opacity: 1 };
+    const blue = { color: "#0000FF", opacity: 1 };
+
+    const at = (position: number, unit: "%" | "px" = "%") => ({ position, unit });
+
+    expect(read("linear-gradient(red, blue)")).toEqual({ type: "linear", angle: 180, stops: [{ ...red, ...at(0) }, { ...blue, ...at(100) }] });
+    // Tailwind v3's bg-gradient-to-r from-red-500 via-… to-transparent, in short.
+    expect(read("linear-gradient(to right, red, rgb(0 0 255 / 0.5), transparent)")).toEqual({
+      type: "linear",
+      angle: 90,
+      stops: [
+        { ...red, ...at(0) },
+        { color: "#0000FF", opacity: 0.5, ...at(50) },
+        { color: "#000000", opacity: 0, ...at(100) },
+      ],
+    });
+    // Tailwind v4 blends in oklab: the stops read the same. A stop in px stays in px.
+    expect(read("linear-gradient(to left in oklab, red 20%, blue 400px)")).toEqual({
+      type: "linear",
+      angle: 270,
+      stops: [{ ...red, ...at(20) }, { ...blue, ...at(400, "px") }],
+    });
+    // A corner: square to the diagonal of the 800 × 40 box.
+    expect((read("linear-gradient(to top right, red, blue)") as { angle: number }).angle).toBe(2.86);
+    expect(read("linear-gradient(0.25turn, red 10% 30%, blue)")).toEqual({
+      type: "linear",
+      angle: 90,
+      stops: [{ ...red, ...at(10) }, { ...red, ...at(30) }, { ...blue, ...at(100) }],
+    });
+    // A stop left out goes halfway, in the unit of its neighbours, or in % between px and %; 800px along, 200px is 25%.
+    const green = { color: "#008000", opacity: 1 };
+    expect((read("linear-gradient(90deg, red 100px, green, blue 300px)") as { stops: unknown[] }).stops[1]).toEqual({ ...green, ...at(200, "px") });
+    expect((read("linear-gradient(90deg, red 200px, green, blue 75%)") as { stops: unknown[] }).stops[1]).toEqual({ ...green, ...at(50) });
+    // A stop before the one before it is where that one is: 0 after 20% is a hard edge at 20%.
+    expect(read("linear-gradient(90deg, red 20%, blue 0)")).toEqual({ type: "linear", angle: 90, stops: [{ ...red, ...at(20) }, { ...blue, ...at(20) }] });
+    expect(read("conic-gradient(red, blue)")).toEqual({ type: "conic", css: "conic-gradient(rgb(255, 0, 0), rgb(0, 0, 255))" });
+  });
+
+  test("the page's own radial gradients read as center and size, in the units the page writes them; stops in px are measured along the real gradient", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    const read = (css: string) => {
+      box.style.backgroundImage = css;
+      return editor.read(layerOf(box), "fill");
+    };
+    const red = { color: "#FF0000", opacity: 1 };
+    const blue = { color: "#0000FF", opacity: 1 };
+    const pc = (value: number) => ({ value, unit: "%" });
+    const px = (value: number) => ({ value, unit: "px" as const });
+
+    // The default: an ellipse from the middle out to the farthest corner.
+    expect(read("radial-gradient(red, blue)")).toEqual({
+      type: "radial",
+      center: { x: pc(50), y: pc(50) },
+      size: { extent: "farthest-corner", circle: false },
+      stops: [{ ...red, position: 0, unit: "%" }, { ...blue, position: 100, unit: "%" }],
+    });
+    // The keyword size and the center in % stay as written; the stop in px stays in px.
+    expect(read("radial-gradient(circle closest-side at 30% 20%, red 20px, blue)")).toEqual({
+      type: "radial",
+      center: { x: pc(30), y: pc(20) },
+      size: { extent: "closest-side", circle: true },
+      stops: [{ ...red, position: 20, unit: "px" }, { ...blue, position: 100, unit: "%" }],
+    });
+    // The 20px circle reaches 10px out at 50%; a stop at 0 after it is where it is.
+    expect(read("radial-gradient(circle 20px at 40px 10px, red 10px, green, blue 0)")).toEqual({
+      type: "radial",
+      center: { x: px(40), y: px(10) },
+      size: { x: px(20), y: px(20) },
+      stops: [
+        { ...red, position: 10, unit: "px" },
+        { color: "#008000", opacity: 1, position: 10, unit: "px" },
+        { ...blue, position: 10, unit: "px" },
+      ],
+    });
+    // A missing stop between px and %: halfway along a ray as long as the ellipse is wide, 100px.
+    expect(read("radial-gradient(ellipse 50% 30% at left top, red 20px, green, blue 60%)")).toEqual({
+      type: "radial",
+      center: { x: pc(0), y: pc(0) },
+      size: { x: pc(50), y: pc(30) },
+      stops: [
+        { ...red, position: 20, unit: "px" },
+        { color: "#008000", opacity: 1, position: 40, unit: "%" },
+        { ...blue, position: 60, unit: "%" },
+      ],
+    });
+  });
+
+  test("a radial gradient centered or sized with calc() keeps the page's own center and size; its stops in px are measured along it as the layer's size works it out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    const read = (css: string) => {
+      box.style.backgroundImage = css;
+      return editor.read(layerOf(box), "fill");
+    };
+    const stops = (red: number) => [
+      { color: "#FF0000", opacity: 1, position: red, unit: "px" },
+      // Between px and %, halfway in %: 20% and 60%.
+      { color: "#008000", opacity: 1, position: 40, unit: "%" },
+      { color: "#0000FF", opacity: 1, position: 60, unit: "%" },
+    ];
+
+    // Offset from the right and bottom edges, centered 190px across and 80px down: the circle to the farthest side is 190px.
+    expect(read("radial-gradient(circle farthest-side at right 10px bottom 20px, red 38px, green, blue 60%)")).toEqual({
+      type: "radial",
+      shape: "circle farthest-side at calc(100% - 10px) calc(100% - 20px)",
+      stops: stops(38),
+    });
+    expect(editor.can(layerOf(box), "fill")).toBe(true);
+    // Centered 110px across and 20% down: the circle to the closest side is 20px.
+    expect(read("radial-gradient(circle closest-side at calc(50% + 10px) 20%, red 4px, green, blue 60%)")).toEqual({
+      type: "radial",
+      shape: "circle closest-side at calc(50% + 10px) 20%",
+      stops: stops(4),
+    });
+    // 90px to the left of the layer: the ellipse to the farthest side reaches its right edge, 290px across.
+    expect(read("radial-gradient(farthest-side at calc(10px - 50%) 20%, red 58px, green, blue 60%)")).toEqual({
+      type: "radial",
+      shape: "farthest-side at calc(-50% + 10px) 20%",
+      stops: stops(58),
+    });
+    // A size in calc() is in px by the time Chrome computes it (it takes no % in one): a size like any other, 90px across.
+    expect(read("radial-gradient(calc(80px + 10px) 30px, red 18px, green, blue 60%)")).toEqual({
+      type: "radial",
+      center: { x: { value: 50, unit: "%" }, y: { value: 50, unit: "%" } },
+      size: { x: { value: 90, unit: "px" }, y: { value: 30, unit: "px" } },
+      stops: stops(18),
+    });
+    // What cannot be worked out is kept all the same; its stops in px measured along the default ellipse, 141.42px across.
+    expect(read("radial-gradient(at min(50%, 30px) 20%, red, green, blue 70.71px)")).toEqual({
+      type: "radial",
+      shape: "at min(50%, 30px) 20%",
+      stops: [
+        { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+        { color: "#008000", opacity: 1, position: 25, unit: "%" },
+        { color: "#0000FF", opacity: 1, position: 70.71, unit: "px" },
+      ],
+    });
+  });
+
+  test("a radial gradient centered with calc(), its stops changed, keeps the page's own center and size, and its stops in order along it", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    box.style.backgroundImage = "radial-gradient(circle farthest-side at right 10px bottom 20px, red 38px, blue)";
+    const layer = layerOf(box);
+    const page = editor.read(layer, "fill") as Extract<Fill, { stops: unknown }>;
+    // The circle is 190px: 38px is 20% out, before a new stop at 25%.
+    const changed: Fill = { ...page, stops: [{ ...page.stops[0], color: "#00FF00" }, page.stops[1], { color: "#FFFFFF", opacity: 1, position: 25, unit: "%" }] };
+
+    editor.set(layer, "fill", changed);
+    expect(style(box).backgroundImage).toBe(
+      "radial-gradient(circle farthest-side at calc(100% - 10px) calc(100% - 20px), rgb(0, 255, 0) 38px, rgb(255, 255, 255) 25%, rgb(0, 0, 255) 100%)",
+    );
+    expect(changes.list()[0].style["background-image"]).toBe(
+      "radial-gradient(circle farthest-side at calc(100% - 10px) calc(100% - 20px), rgb(0 255 0 / 1) 38px, rgb(255 255 255 / 1) 25%, rgb(0 0 255 / 1) 100%)",
+    );
+    expect(editor.read(layer, "fill")).toEqual({ ...changed, stops: [changed.stops[0], changed.stops[2], changed.stops[1]] });
+  });
+
+  test("a radial gradient paints at its center and size, its stops in their own units, and reads back as set", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.width = "200px";
+    box.style.height = "100px";
+    const layer = layerOf(box);
+    const spot: Fill = {
+      type: "radial",
+      center: { x: { value: 30, unit: "%" }, y: { value: 20, unit: "px" } },
+      size: { x: { value: 20, unit: "px" }, y: { value: 20, unit: "px" } },
+      stops: [
+        { color: "#FF0000", opacity: 1, position: 10, unit: "px" },
+        { color: "#0000FF", opacity: 1, position: 100, unit: "%" },
+      ],
+    };
+
+    editor.set(layer, "fill", spot);
+    expect(style(box).backgroundImage).toBe("radial-gradient(20px at 30% 20px, rgb(255, 0, 0) 10px, rgb(0, 0, 255) 100%)");
+    expect(changes.list()[0].style["background-image"]).toBe("radial-gradient(circle 20px at 30% 20px, rgb(255 0 0 / 1) 10px, rgb(0 0 255 / 1) 100%)");
+    expect(editor.read(layer, "fill")).toEqual(spot);
+
+    // A size and center by keyword, and the default ones, as CSS leaves them out.
+    const keyword: Fill = { ...spot, center: { x: { value: 50, unit: "%" }, y: { value: 50, unit: "%" } }, size: { extent: "farthest-side", circle: false } };
+    editor.set(layer, "fill", keyword);
+    expect(style(box).backgroundImage).toBe("radial-gradient(farthest-side, rgb(255, 0, 0) 10px, rgb(0, 0, 255) 100%)");
+    expect(editor.read(layer, "fill")).toEqual(keyword);
+    const ellipse: Fill = { ...keyword, size: { x: { value: 50, unit: "%" }, y: { value: 30, unit: "px" } } };
+    editor.set(layer, "fill", ellipse);
+    expect(style(box).backgroundImage).toBe("radial-gradient(50% 30px, rgb(255, 0, 0) 10px, rgb(0, 0, 255) 100%)");
+    expect(editor.read(layer, "fill")).toEqual(ellipse);
+  });
+
+  test("a conic gradient is shown, not edited: no other fill replaces it from the panel, and none is set", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.backgroundImage = "conic-gradient(red, blue)";
+    const conic = editor.read(layerOf(box), "fill");
+
+    expect(editor.can(layerOf(box), "fill")).toBe(true);
+    expect(editor.can(layerOf(box), "fill", conic)).toBe(false);
+  });
+
+  test("a gradient set over a page's gradient, and a color set back over it, replace it; undo brings the page's back", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.backgroundImage = "radial-gradient(circle, red, blue)";
+    const layer = layerOf(box);
+
+    editor.set(layer, "fill", { ...sunset, angle: 45 });
+    expect(style(box).backgroundImage).toBe("linear-gradient(45deg, rgb(255, 0, 0) 0%, rgba(0, 0, 255, 0.5) 100%)");
+    // The page's color under its gradient stays, as it shows through.
+    expect(style(box).backgroundColor).toBe("rgb(0, 0, 0)");
+    expect(Object.keys(changes.list()[0].style)).toEqual(["background-image"]);
+    expect(changes.list()[0].sources!.flatMap((source) => source.properties)).toEqual(["background-color", "background-image"]);
+
+    editor.set(layer, "fill", { type: "solid", color: "#00FF00", opacity: 1 });
+    expect([style(box).backgroundImage, style(box).backgroundColor]).toEqual(["none", "rgb(0, 255, 0)"]);
+    expect(changes.list()[0].style).toEqual({ "background-color": "rgb(0 255 0 / 1)", "background-image": "none" });
+
+    editor.undo();
+    editor.undo();
+    expect([style(box).backgroundImage, style(box).backgroundColor]).toEqual(["radial-gradient(circle, rgb(255, 0, 0), rgb(0, 0, 255))", "rgb(0, 0, 0)"]);
+  });
+});
+
+describe("stroke", () => {
+  test("a stroke on every side, then on some sides, dashed, then none: each paints every instance and reads back as set", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+    const borders = (el: Element) => {
+      const s = style(el);
+      return [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth, s.borderTopStyle, s.borderTopColor].join(" ");
+    };
+
+    expect(editor.read(card, "stroke")).toBeNull();
+
+    const stroke = { color: "#E5E7EB", opacity: 1, weight: 2, style: "solid" } as const;
+    editor.set(card, "stroke", stroke);
+    expect(cards.map(borders)).toEqual([
+      ...Array(3).fill("2px 2px 2px 2px solid rgb(229, 231, 235)"),
+      "0px 0px 0px 0px none rgb(0, 0, 0)",
+    ]);
+    expect(editor.read(layerOf(cards[2]), "stroke")).toEqual(stroke);
+
+    const sides: Stroke = { color: "#FF0000", opacity: 0.5, weight: [0, 0, 1, 4], style: "dashed" };
+    editor.set(card, "stroke", sides);
+    expect(borders(cards[1])).toBe("0px 0px 1px 4px dashed rgba(255, 0, 0, 0.5)");
+    expect(editor.read(card, "stroke")).toEqual(sides);
+    expect(changes.list()[0]).toMatchObject({
+      property: "stroke",
+      before: null,
+      after: sides,
+      style: { "border-width": "0px 0px 1px 4px", "border-style": "dashed", "border-color": "rgb(255 0 0 / 0.5)" },
+    });
+
+    editor.set(card, "stroke", null);
+    expect(borders(cards[1])).toBe("0px 0px 0px 0px none rgb(0, 0, 0)");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("the page's own borders read as one stroke: the color of the first side drawn, a side with no line as 0", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    const read = (css: string) => {
+      box.style.cssText = `height: 40px; ${css}`;
+      return editor.read(layerOf(box), "stroke");
+    };
+
+    // Tailwind's preflight: every element has a solid border of 0.
+    expect(read("border: 0 solid #e5e7eb")).toBeNull();
+    expect(read("border: 1px solid oklch(92.8% 0.006 264.531)")).toEqual({ color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" });
+    expect(read("border-bottom: 2px dotted blue; border-top: 3px none red")).toEqual({ color: "#0000FF", opacity: 1, weight: [0, 0, 2, 0], style: "dashed" });
+  });
+
+  test("the page's own weight reads as the style that sets it writes it, though a 1x screen draws it narrower; through var(), as drawn", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML(
+      "beforeend",
+      `<style>
+        .half { border: 1.5px solid red }
+        .sides { border-style: solid; border-color: red; border-width: 0 0 0.5px 2.5px }
+        .through { --w: 1.5px; border: var(--w) solid red }
+      </style>`,
+    );
+    const box = doc.getElementById("unmarked")!;
+    const read = (className: string, css = "") => {
+      box.className = className;
+      box.style.cssText = `height: 40px; ${css}`;
+      return editor.read(layerOf(box), "stroke");
+    };
+    const red = { color: "#FF0000", opacity: 1, style: "solid" };
+
+    expect(read("half")).toEqual({ ...red, weight: 1.5 });
+    // A 1x screen: whole pixels.
+    expect(style(box).borderTopWidth).toBe("1px");
+    expect(read("sides")).toEqual({ ...red, weight: [0, 0, 0.5, 2.5] });
+    expect(read("half", "border-width: 2.5px")).toEqual({ ...red, weight: 2.5 });
+    expect(read("through")).toEqual({ ...red, weight: 1 });
+  });
+
+  test("through a design variable in a shorthand, a rule below it that writes px is not taken for what sets the weight: it reads as drawn, and is the source", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.half { border: 1.5px solid red } .through { --w: 1px; border: var(--w) solid red }</style>");
+    const box = doc.getElementById("unmarked")!;
+    box.className = "half through";
+    const layer = layerOf(box);
+
+    expect(editor.read(layer, "stroke")).toEqual({ color: "#FF0000", opacity: 1, weight: 1, style: "solid" });
+    editor.set(layer, "stroke", { color: "#FF0000", opacity: 1, weight: 2, style: "solid" });
+    expect(changes.list()[0].sources).toMatchObject([{ kind: "rule", selector: ".through", declaration: "border: var(--w) solid red" }]);
+  });
+
+  test("a side written by a logical property in a later rule reads as written there; right to left, inline-start is the right", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.all { border: 1px solid red } .x { border-inline-width: 1.5px }</style>");
+    const box = doc.getElementById("unmarked")!;
+    const layer = layerOf(box);
+    const red = { color: "#FF0000", opacity: 1, style: "solid" };
+
+    box.className = "all x";
+    expect(editor.read(layer, "stroke")).toEqual({ ...red, weight: [1, 1.5, 1, 1.5] });
+    box.className = "all";
+    box.dir = "rtl";
+    box.style.setProperty("border-inline-start-width", "2.5px");
+    expect(editor.read(layer, "stroke")).toEqual({ ...red, weight: [1, 2.5, 1, 1] });
+  });
+
+  test("a weight set this round reads back as set, though a 1x screen draws it narrower", () => {
+    const { editor, cards, layerOf } = openCanvas();
+    const stroke: Stroke = { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" };
+
+    editor.set(layerOf(cards[0]), "stroke", stroke);
+
+    expect(style(cards[1]).borderTopWidth).toBe("1px");
+    expect(editor.read(layerOf(cards[1]), "stroke")).toEqual(stroke);
+  });
+
+  test("a change to the color or line alone leaves the weight out of its reference style, so the code keeps its own", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.half { border: 1.5px solid red } .through { --w: 1.5px; border: var(--w) solid red }</style>");
+    const box = doc.getElementById("unmarked")!;
+    box.className = "half";
+    const layer = layerOf(box);
+    const page = editor.read(layer, "stroke")!;
+
+    editor.set(layer, "stroke", { ...page, color: "#0000FF" });
+    editor.set(layer, "stroke", { ...page, color: "#0000FF", style: "dashed" });
+    expect(changes.list()[0].style).toEqual({ "border-style": "dashed", "border-color": "rgb(0 0 255 / 1)" });
+    expect(style(box).borderTopColor).toBe("rgb(0, 0, 255)");
+
+    // The weight changed too, then back: the weight is left out again.
+    editor.set(layer, "stroke", { ...page, color: "#0000FF", weight: 3 });
+    expect(changes.list()[0].style).toMatchObject({ "border-width": "3px" });
+    editor.set(layer, "stroke", { ...page, color: "#0000FF" });
+    expect(changes.list()[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(0 0 255 / 1)" });
+    expect(style(box).borderTopWidth).toBe("1px");
+
+    // Through var(): the weight reads as drawn, and is left out all the same.
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    box.className = "through";
+    editor.set(layer, "stroke", { ...editor.read(layer, "stroke")!, color: "#0000FF" });
+    expect(changes.list()[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(0 0 255 / 1)" });
+  });
+
+  test("on some sides only, a change to the color alone gives the line to those sides only: the others are not drawn at the default width", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.cssText = "height: 40px; border-bottom: 1.5px solid #eeeeee";
+    const layer = layerOf(box);
+
+    editor.set(layer, "stroke", { ...editor.read(layer, "stroke")!, color: "#0000FF" });
+
+    expect(changes.list()[0].style).toEqual({ "border-bottom-style": "solid", "border-color": "rgb(0 0 255 / 1)" });
+  });
+
+  test("text and locked layers offer no stroke", () => {
+    const { doc, editor, cards, layerOf } = openCanvas();
+
+    expect(editor.can(layerOf(cards[0]), "stroke")).toBe(true);
+    expect(editor.can(layerOf(doc.querySelector("h3")!), "stroke")).toBe(false);
+    expect(editor.can(layerOf(doc.querySelector("span")!), "stroke")).toBe(false);
+  });
+});
+
+describe("shadows", () => {
+  const drop: Shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+  const inner: Shadow = { type: "inner", x: 2, y: -1, blur: 0, spread: 3, color: "#FF0000", opacity: 1 };
+
+  test("drop and inner shadows, several at once, paint every instance in their order and read back as set; none takes them off", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+
+    expect(editor.read(card, "shadows")).toEqual([]);
+
+    editor.set(card, "shadows", [drop, inner]);
+    expect(cards.map((el) => style(el).boxShadow)).toEqual([
+      ...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px, rgb(255, 0, 0) 2px -1px 0px 3px inset"),
+      "none",
+    ]);
+    expect(editor.read(layerOf(cards[2]), "shadows")).toEqual([drop, inner]);
+    expect(changes.list()[0]).toMatchObject({
+      property: "shadows",
+      before: [],
+      after: [drop, inner],
+      style: { "box-shadow": "0px 4px 4px 0px rgb(0 0 0 / 0.25), inset 2px -1px 0px 3px rgb(255 0 0 / 1)" },
+    });
+
+    editor.set(card, "shadows", []);
+    expect(style(cards[1]).boxShadow).toBe("none");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("the page's own shadows read in their order; Tailwind's empty shadows, there to compose with, are left out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    const read = (css: string) => {
+      box.style.boxShadow = css;
+      return editor.read(layerOf(box), "shadows");
+    };
+
+    // Tailwind v4's shadow-sm, after its inset, ring and ring-offset shadows, unset.
+    expect(read("0 0 #0000, 0 0 #0000, 0 0 #0000, 0 0 #0000, 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)")).toEqual([
+      { type: "drop", x: 0, y: 1, blur: 3, spread: 0, color: "#000000", opacity: 0.1 },
+      { type: "drop", x: 0, y: 1, blur: 2, spread: -1, color: "#000000", opacity: 0.1 },
+    ]);
+    expect(read("inset 0 2px 4px oklch(62.8% 0.2577 29.23)")).toEqual([{ type: "inner", x: 0, y: 2, blur: 4, spread: 0, color: "#FF0000", opacity: 1 }]);
+    // A ring is a shadow spread out with no blur; its offset, 0px wide in white, draws nothing.
+    expect(read("0 0 0 0px #fff, 0 0 0 2px blue")).toEqual([{ type: "drop", x: 0, y: 0, blur: 0, spread: 2, color: "#0000FF", opacity: 1 }]);
+  });
+});
+
+describe("text shadows", () => {
+  const drop: Shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
+  const red: Shadow = { type: "drop", x: 2, y: -1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 };
+
+  test("a text layer's drop shadows, several at once, paint every instance as text-shadow in their order and read back as set; none takes them off", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const titles = [...doc.querySelectorAll("h3")];
+    const title = layerOf(titles[0]);
+
+    expect(editor.can(title, "shadows")).toBe(false);
+    expect(editor.read(title, "textShadows")).toEqual([]);
+
+    editor.set(title, "textShadows", [drop, red]);
+    expect(titles.map((el) => style(el).textShadow)).toEqual([...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px, rgb(255, 0, 0) 2px -1px 0px"), "none"]);
+    expect(style(titles[0]).boxShadow).toBe("none");
+    expect(editor.read(layerOf(titles[2]), "textShadows")).toEqual([drop, red]);
+    expect(changes.list()[0]).toMatchObject({
+      property: "textShadows",
+      before: [],
+      after: [drop, red],
+      style: { "text-shadow": "0px 4px 4px rgb(0 0 0 / 0.25), 2px -1px 0px rgb(255 0 0 / 1)" },
+    });
+
+    editor.set(title, "textShadows", []);
+    expect(style(titles[1]).textShadow).toBe("none");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("only text layers have text shadows, and they take no inner shadow and no spread", () => {
+    const { doc, editor, cards, layerOf } = openCanvas();
+    const title = layerOf(doc.querySelector("h3")!);
+
+    expect(editor.can(layerOf(cards[0]), "textShadows")).toBe(false);
+    expect(editor.can(title, "textShadows", [drop])).toBe(true);
+    expect(editor.can(title, "textShadows", [{ ...drop, type: "inner" }])).toBe(false);
+    expect(editor.can(title, "textShadows", [{ ...drop, spread: 2 }])).toBe(false);
+  });
+
+  test("the page's own text-shadow reads as drop shadows in their order; one that draws nothing is left out", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const el = doc.querySelector("h3")!;
+    const read = (css: string) => {
+      el.style.textShadow = css;
+      return editor.read(layerOf(el), "textShadows");
+    };
+
+    expect(read("0 1px 2px rgb(0 0 0 / 0.1), 1px 1px oklch(62.8% 0.2577 29.23)")).toEqual([
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#000000", opacity: 0.1 },
+      { type: "drop", x: 1, y: 1, blur: 0, spread: 0, color: "#FF0000", opacity: 1 },
+    ]);
+    expect(read("0 0 #0000, 0 0 3px blue")).toEqual([{ type: "drop", x: 0, y: 0, blur: 3, spread: 0, color: "#0000FF", opacity: 1 }]);
+  });
+});
+
+/**
+ * Text set in each way a page writes line height and letter spacing: on the
+ * body (inherited), and on the text itself in each unit.
+ */
+const TEXT_PAGE = `<!DOCTYPE html>
+<style>
+  body { margin: 0; font: 16px Georgia, serif; line-height: 1.5; letter-spacing: 0.02em }
+  #percent { line-height: 150% }
+  #em { line-height: 1.25em; letter-spacing: 0.1em }
+  #rem { line-height: 1.5rem; letter-spacing: 0.125rem }
+  #px { line-height: 30px; letter-spacing: 1px }
+  #normal { line-height: normal; letter-spacing: normal }
+</style>
+<body>
+  <p id="inherited">Inherited</p>
+  <h1 id="big" style="font-size: 32px">Big</h1>
+  <p id="percent">Percent</p>
+  <p id="em">Em</p>
+  <p id="rem">Rem</p>
+  <p id="px">Px</p>
+  <p id="normal">Normal</p>
+</body>`;
+
+/**
+ * Fonts the page loads (one face it never uses), and stacks of fonts it uses
+ * on text, one of which asks first for a font that is not there.
+ */
+const FONT_PAGE = `<!DOCTYPE html>
+<style>
+  @font-face { font-family: Brand; src: local("Arial"); font-weight: 400 700 }
+  @font-face { font-family: Brand; src: local("Arial Black"); font-weight: 900 }
+  @font-face { font-family: Unused; src: local("Arial") }
+  body { margin: 0; font: 16px "No Such Font", Georgia, serif }
+</style>
+<body>
+  <h1 style="font-family: Brand, sans-serif; font-weight: 400">Brand</h1>
+  <h2 style="font-family: Brand, sans-serif; font-weight: 900">Heavy</h2>
+  <p>Body <code style="font-family: 'Courier New', monospace">x</code></p>
+  <h3>Bold body</h3>
+  <pre style="font-family: Menlo, monospace">code</pre>
+</body>`;
+
+describe("text", () => {
+  test("line height and letter spacing read in px or as % of the font size, as the page writes them, and are written in the page's unit", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(TEXT_PAGE);
+    const text = (id: string) => layerOf(doc.getElementById(id)!);
+    const read = (id: string) => [editor.read(text(id), "lineHeight"), editor.read(text(id), "letterSpacing")];
+    const percent = (value: number) => ({ value, unit: "%" as const });
+    const px = (value: number) => ({ value, unit: "px" as const });
+
+    // A line height without a unit, and one in % or em, is a share of the font size; one in px or rem a length.
+    expect(read("inherited")).toEqual([percent(150), percent(2)]);
+    // Inherited in em, the letter spacing is the body's, in px, against this text's own size.
+    expect(read("big")).toEqual([percent(150), percent(1)]);
+    expect(read("percent")).toEqual([percent(150), percent(2)]);
+    expect(read("em")).toEqual([percent(125), percent(10)]);
+    expect(read("rem")).toEqual([px(24), px(2)]);
+    expect(read("px")).toEqual([px(30), px(1)]);
+    expect(read("normal")).toEqual(["auto", percent(0)]);
+
+    const written = (id: string, property: "lineHeight" | "letterSpacing", value: PropertyValues["lineHeight"]) => {
+      editor.set(text(id), property, value as never);
+      expect(editor.read(text(id), property)).toEqual(value);
+      const css = property === "lineHeight" ? "line-height" : "letter-spacing";
+      // The reference style is what the canvas shows.
+      const change = changes.list().find((c) => c.layer === text(id).el.getAttribute("data-vk-layer") && c.property === property)!;
+      expect(change.style).toEqual({ [css]: declaredByEdit(doc.getElementById(id)!, css) });
+      return change.style[css];
+    };
+    expect(written("inherited", "lineHeight", percent(160))).toBe("1.6");
+    expect(written("percent", "lineHeight", percent(120))).toBe("120%");
+    expect(written("em", "lineHeight", percent(140))).toBe("1.4em");
+    expect(written("rem", "lineHeight", px(32))).toBe("2rem");
+    expect(written("px", "lineHeight", px(28))).toBe("28px");
+    expect(written("rem", "lineHeight", "auto")).toBe("normal");
+    expect(written("big", "letterSpacing", percent(5))).toBe("0.05em");
+    expect(written("rem", "letterSpacing", px(4))).toBe("0.25rem");
+    expect(written("px", "letterSpacing", px(-0.5))).toBe("-0.5px");
+
+    // A value in the other unit, as Figma has it: % of the font size without a unit, px in px.
+    expect(written("px", "lineHeight", percent(150))).toBe("1.5");
+    expect(written("em", "lineHeight", px(18))).toBe("18px");
+    expect(written("px", "letterSpacing", percent(-2))).toBe("-0.02em");
+    expect(written("em", "letterSpacing", px(3))).toBe("3px");
+    expect(written("normal", "lineHeight", px(20))).toBe("20px");
+    expect(doc.getElementById("normal")!.getBoundingClientRect().height).toBe(20);
+  });
+
+  test("inline fragments follow the text layer; those with a value of their own keep it, and the change says which", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(`<!DOCTYPE html>
+      <body style="margin: 0; font-size: 16px">
+        <p id="text" style="color: rgb(0, 0, 0)">Read <strong style="color: rgb(255, 0, 0)">this</strong>, <a href="#" class="link" style="color: rgb(0, 0, 255)">a link</a>, <code style="font-size: 12px">code</code> and <em style="font-size: 0.75em">so <b style="font-weight: 900">on</b></em>.</p>
+      </body>`);
+    const p = doc.getElementById("text")!;
+    const text = layerOf(p);
+    const fragment = (selector: string) => style(p.querySelector(selector)!);
+    const keeps = (property: string) => changes.list().find((change) => change.property === property)?.keeps;
+
+    // A size of its own in em follows the text's, at its share of it; one in px is kept.
+    editor.set(text, "fontSize", 20);
+    expect(["strong", "a", "code", "em", "b"].map((s) => fragment(s).fontSize)).toEqual(["20px", "20px", "12px", "15px", "15px"]);
+    expect(keeps("fontSize")).toEqual([{ element: "<code>", text: "code", value: 12 }]);
+
+    // A fragment with a color of its own keeps it, even one that is the color the text is given.
+    editor.set(text, "textColor", { color: "#FF0000", opacity: 1 });
+    expect(["strong", "a", "b"].map((s) => fragment(s).color)).toEqual(["rgb(255, 0, 0)", "rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    expect(keeps("textColor")).toEqual([
+      { element: "<strong>", text: "this", value: { color: "#FF0000", opacity: 1 } },
+      { element: '<a class="link">', text: "a link", value: { color: "#0000FF", opacity: 1 } },
+    ]);
+
+    // Decorations are drawn across the fragments: a link's own underline is kept only where it differs.
+    editor.set(text, "textDecoration", "underline");
+    expect(keeps("textDecoration")).toBeUndefined();
+    editor.set(text, "textDecoration", "strikethrough");
+    expect(keeps("textDecoration")).toEqual([{ element: '<a class="link">', text: "a link", value: "underline" }]);
+    editor.set(text, "textDecoration", "underline");
+    expect(keeps("textDecoration")).toBeUndefined();
+
+    // A bold run is bolder than the text around it, whatever its weight: it follows. A weight of its own is kept.
+    editor.set(text, "fontWeight", 300);
+    expect(fragment("strong").fontWeight).toBe("400");
+    expect(keeps("fontWeight")).toEqual([{ element: "<b>", text: "on", value: 900 }]);
+    editor.set(text, "letterSpacing", { value: 1, unit: "px" });
+    expect(fragment("code").letterSpacing).toBe("1px");
+    expect(keeps("letterSpacing")).toBeUndefined();
+    // The text is as it was, after looking at how its fragments follow it.
+    expect(declaredByEdit(p, "font-weight")).toBe("300");
+    expect(style(p).fontWeight).toBe("300");
+  });
+
+  test("the fonts offered are those the page has loaded, each with its loaded weights, and the first font of each stack the page uses that is there", async () => {
+    const { doc } = openCanvas(FONT_PAGE);
+    await doc.fonts.ready;
+
+    expect(fontsOf(doc)).toEqual([
+      // Its faces from 400 to 700, as a variable font has them, and a 900 of its own.
+      { family: "Brand", weights: [400, 500, 600, 700, 900] },
+      // Where the page asks for a font that is not there, the one it falls back to: in the weights the page uses it in.
+      { family: "Courier New", weights: [400] },
+      { family: "Georgia", weights: [400, 700] },
+      { family: "Menlo", weights: [400] },
+    ]);
+  });
+
+  test("a text layer's font is the first of its stack that is there; changed, it takes the stack the page uses that font in", async () => {
+    const { doc, editor, changes, layerOf } = openCanvas(FONT_PAGE);
+    await doc.fonts.ready;
+    const text = (selector: string) => layerOf(doc.querySelector(selector)!);
+
+    expect(editor.read(text("h1"), "fontFamily")).toBe("Brand");
+    expect(editor.read(text("p"), "fontFamily")).toBe("Georgia");
+
+    editor.set(text("p"), "fontFamily", "Menlo");
+    expect(style(doc.querySelector("p")!).fontFamily).toBe("Menlo, monospace");
+    expect(editor.read(text("p"), "fontFamily")).toBe("Menlo");
+    expect(changes.list()[0]).toMatchObject({ property: "fontFamily", before: "Georgia", after: "Menlo", style: { "font-family": "Menlo, monospace" } });
+    // Code in the text has a font of its own.
+    expect(changes.list()[0].keeps).toEqual([{ element: "<code>", text: "x", value: "Courier New" }]);
+
+    editor.set(text("p"), "fontFamily", "Brand");
+    expect(changes.list()[0].style).toEqual({ "font-family": "Brand, sans-serif" });
+  });
+
+  test("what sets an inherited text style is the rule on the element it is inherited from; one not inherited, its own", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(TEXT_PAGE);
+    const text = layerOf(doc.getElementById("inherited")!);
+
+    editor.set(text, "lineHeight", { value: 200, unit: "%" });
+    editor.set(text, "textDecoration", "underline");
+
+    const [lineHeight, decoration] = changes.list();
+    expect(lineHeight.sources).toEqual([expect.objectContaining({ kind: "rule", selector: "body", declaration: "line-height: 1.5" })]);
+    expect(decoration.sources).toEqual([expect.objectContaining({ kind: "none" })]);
+  });
+
+  test("a text layer's font size paints every instance in px, reads back as set, and is offered on text only", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const titles = [...doc.querySelectorAll("h3")];
+    const title = layerOf(titles[0]);
+
+    expect(editor.can(layerOf(cards[0]), "fontSize")).toBe(false);
+    expect(editor.read(title, "fontSize")).toBe(18.72);
+
+    editor.set(title, "fontSize", 24);
+    expect(titles.map((el) => style(el).fontSize)).toEqual(["24px", "24px", "24px", "18.72px"]);
+    expect(editor.read(layerOf(titles[1]), "fontSize")).toBe(24);
+    expect(changes.list()[0]).toMatchObject({ property: "fontSize", before: 18.72, after: 24, style: { "font-size": "24px" } });
+  });
+
+  test("weight, color, alignment, case and decoration paint every instance, read back as set, and record the CSS that shows them", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const titles = [...doc.querySelectorAll("h3")];
+    const title = layerOf(titles[0]);
+
+    expect([
+      editor.read(title, "fontWeight"),
+      editor.read(title, "textColor"),
+      editor.read(title, "textAlign"),
+      editor.read(title, "textCase"),
+      editor.read(title, "textDecoration"),
+    ]).toEqual([700, { color: "#000000", opacity: 1 }, "left", "none", "none"]);
+
+    editor.set(title, "fontWeight", 300);
+    editor.set(title, "textColor", { color: "#FF0000", opacity: 0.5 });
+    editor.set(title, "textAlign", "center");
+    editor.set(title, "textCase", "title");
+    editor.set(title, "textDecoration", "strikethrough");
+
+    const [second, other] = [titles[2], titles[3]].map(style);
+    expect([second.fontWeight, second.color, second.textAlign, second.textTransform, second.textDecorationLine]).toEqual([
+      "300",
+      "rgba(255, 0, 0, 0.5)",
+      "center",
+      "capitalize",
+      "line-through",
+    ]);
+    expect([other.fontWeight, other.textAlign, other.textTransform]).toEqual(["700", "start", "none"]);
+    const again = layerOf(titles[1]);
+    expect([
+      editor.read(again, "fontWeight"),
+      editor.read(again, "textColor"),
+      editor.read(again, "textAlign"),
+      editor.read(again, "textCase"),
+      editor.read(again, "textDecoration"),
+    ]).toEqual([300, { color: "#FF0000", opacity: 0.5 }, "center", "title", "strikethrough"]);
+    expect(changes.list().map(({ property, style }) => [property, style])).toEqual([
+      ["fontWeight", { "font-weight": "300" }],
+      ["textColor", { color: "rgb(255 0 0 / 0.5)" }],
+      ["textAlign", { "text-align": "center" }],
+      ["textCase", { "text-transform": "capitalize" }],
+      ["textDecoration", { "text-decoration-line": "line-through" }],
+    ]);
+
+    // Upper and lower case, an underline, right and justified, each in its CSS word.
+    for (const [property, value, css] of [
+      ["textCase", "upper", "uppercase"],
+      ["textCase", "lower", "lowercase"],
+      ["textDecoration", "underline", "underline"],
+      ["textAlign", "right", "right"],
+      ["textAlign", "justify", "justify"],
+    ] as const) {
+      editor.set(title, property, value);
+      expect(editor.read(title, property)).toBe(value);
+      expect(Object.values(changes.list().find((change) => change.property === property)!.style)).toEqual([css]);
+    }
+  });
+
+  test("the page's own alignment, case and decoration read in design language", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const el = doc.querySelector("h3")! as HTMLElement;
+    const read = (css: Partial<CSSStyleDeclaration>) => {
+      Object.assign(el.style, css);
+      const title = layerOf(el);
+      return [editor.read(title, "textAlign"), editor.read(title, "textCase"), editor.read(title, "textDecoration")];
+    };
+
+    expect(read({ textAlign: "end", textTransform: "uppercase", textDecoration: "underline line-through" })).toEqual(["right", "upper", "underline"]);
+    expect(read({ textAlign: "-webkit-center", textTransform: "lowercase", textDecoration: "line-through" })).toEqual(["center", "lower", "strikethrough"]);
+    expect(read({ direction: "rtl", textAlign: "start", textTransform: "none", textDecoration: "overline" })).toEqual(["right", "none", "none"]);
+  });
+});
+
+describe("blurs", () => {
+  test("a layer blur and a background blur, added and taken off, paint every instance and read back as set", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+
+    expect([editor.read(card, "layerBlur"), editor.read(card, "backgroundBlur")]).toEqual([null, null]);
+
+    editor.set(card, "layerBlur", 4);
+    editor.set(card, "backgroundBlur", 12);
+    expect(cards.map((el) => `${style(el).filter} ${style(el).backdropFilter}`)).toEqual([...Array(3).fill("blur(4px) blur(12px)"), "none none"]);
+    expect([editor.read(layerOf(cards[1]), "layerBlur"), editor.read(layerOf(cards[1]), "backgroundBlur")]).toEqual([4, 12]);
+    expect(changes.list().map(({ property, before, after, style }) => ({ property, before, after, style }))).toEqual([
+      { property: "layerBlur", before: null, after: 4, style: { filter: "blur(4px)" } },
+      { property: "backgroundBlur", before: null, after: 12, style: { "backdrop-filter": "blur(12px)" } },
+    ]);
+
+    editor.set(card, "layerBlur", null);
+    editor.set(card, "backgroundBlur", null);
+    expect(`${style(cards[1]).filter} ${style(cards[1]).backdropFilter}`).toBe("none none");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a blur among the page's other filters is changed in its place, and they stay", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.filter = "grayscale(1) blur(2px) brightness(0.5)";
+    box.style.backdropFilter = "saturate(2)";
+    const layer = layerOf(box);
+
+    expect([editor.read(layer, "layerBlur"), editor.read(layer, "backgroundBlur")]).toEqual([2, null]);
+
+    editor.set(layer, "layerBlur", 6);
+    editor.set(layer, "backgroundBlur", 8);
+    expect([style(box).filter, style(box).backdropFilter]).toEqual(["grayscale(1) blur(6px) brightness(0.5)", "saturate(2) blur(8px)"]);
+
+    editor.set(layer, "layerBlur", null);
+    expect(style(box).filter).toBe("grayscale(1) brightness(0.5)");
+    expect(changes.list().find((change) => change.property === "layerBlur")).toMatchObject({ before: 2, after: null, style: { filter: "grayscale(1) brightness(0.5)" } });
+  });
+
+  test("a layer whose filter blurs twice offers no layer blur, which could not be read as one", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.filter = "blur(2px) blur(3px)";
+
+    expect(editor.can(layerOf(box), "layerBlur")).toBe(false);
+    expect(editor.can(layerOf(box), "backgroundBlur")).toBe(true);
   });
 });
 
@@ -354,12 +1200,18 @@ describe("what can be edited", () => {
     expect(changes.list()).toEqual([]);
   });
 
-  test("a layer painted with a gradient or an image offers no solid fill, which would not show", () => {
+  test("a layer painted with an image, or with layers of background, offers no fill; one gradient is a fill", () => {
     const { doc, editor, layerOf } = openCanvas();
     const box = doc.getElementById("unmarked")!;
-    box.style.backgroundImage = "linear-gradient(red, blue)";
+    const offers = (image: string) => {
+      box.style.backgroundImage = image;
+      return editor.can(layerOf(box), "fill");
+    };
 
-    expect(editor.can(layerOf(box), "fill")).toBe(false);
+    expect(offers("url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)")).toBe(false);
+    expect(offers("linear-gradient(red, blue), linear-gradient(green, white)")).toBe(false);
+    expect(offers("repeating-linear-gradient(red 0 10px, blue 10px 20px)")).toBe(false);
+    expect(offers("linear-gradient(red, blue)")).toBe(true);
     expect(editor.can(layerOf(box), "radius")).toBe(true);
   });
 
@@ -1724,6 +2576,7 @@ describe("new text and Frames", () => {
     const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 12 });
 
     expect(editor.brief(editor.tree().layerOf(frame.el)!)).toBe("A pricing table with three plans");
+    expect(editor.isNewFrame(editor.tree().layerOf(frame.el)!)).toBe(true);
     expect(frame.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
     expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
     expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-vk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
@@ -1737,8 +2590,46 @@ describe("new text and Frames", () => {
     expect(changes.list()).toHaveLength(2);
 
     expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
-    // Only the brief, in an editor without it, for a layer the designer did not make.
-    expect(editor.brief(layer("a"))).toBeNull();
+    // A layer the designer did not make has no brief to make anything by, and none yet.
+    expect(editor.isNewFrame(layer("a"))).toBe(false);
+    expect(editor.brief(layer("a"))).toBe("");
+  });
+
+  test("a copy of a new Frame keeps its brief, in the copy's change too; written anew on the copy, taking it back brings back the one it was copied with", () => {
+    const { doc, editor, changes, layer } = open();
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+    editor.setBrief(frame, "A pricing table with three plans");
+
+    const copy = editor.duplicate(editor.tree().layerOf(frame.el)!);
+
+    expect(copy.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    expect(editor.brief(copy)).toBe("A pricing table with three plans");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
+    expect(changes.list()[1].brief).toBe("A pricing table with three plans");
+
+    editor.setBrief(copy, "A pricing table with two plans");
+    const brief = changes.list()[2];
+    expect(brief).toMatchObject({ kind: "brief", before: "A pricing table with three plans", after: "A pricing table with two plans" });
+    expect(copy.el.getAttribute("data-vk-brief")).toBe("A pricing table with two plans");
+    // The Frame it copies keeps its own.
+    expect(frame.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.undo();
+    expect(editor.brief(copy)).toBe("A pricing table with three plans");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
+    editor.redo();
+    editor.revert(changes.list()[2].id);
+    expect(copy.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
+
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, brief.id)!.canvas, "text/html");
+    expect(reverted.querySelector(`[data-vk-layer="${copy.el.getAttribute("data-vk-layer")}"]`)!.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+
+    // Taken off the copy, it is a change still: the copy is not to be made by it.
+    editor.setBrief(copy, "");
+    expect(copy.el.hasAttribute("data-vk-brief")).toBe(false);
+    expect(changes.list()[2]).toMatchObject({ kind: "brief", before: "A pricing table with three plans", after: "" });
   });
 
   test("where a new layer can go: a Stack or a Frame that holds layers, not text or a field", () => {
@@ -1748,6 +2639,138 @@ describe("new text and Frames", () => {
     expect(editor.canHold(layer("board"))).toBe(true);
     expect(editor.canHold(layer("a"))).toBe(false);
     expect(editor.canHold(layer("field"))).toBe(false);
+  });
+});
+
+describe("a brief on any layer", () => {
+  test("a layer that is there takes a brief: a change of its own, for its usage at every width, marked on every instance", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+
+    editor.setBrief(layerOf(cards[1]), "Bounce back harder when pressed");
+
+    expect(editor.brief(layerOf(cards[0]))).toBe("Bounce back harder when pressed");
+    expect(cards.map((card) => card.getAttribute("data-vk-brief"))).toEqual([
+      "Bounce back harder when pressed",
+      "Bounce back harder when pressed",
+      "Bounce back harder when pressed",
+      null,
+    ]);
+    expect(changes.list()).toEqual([
+      {
+        id: 1,
+        kind: "brief",
+        layer: "1",
+        target: {
+          loc: "src/Card.tsx:3:5",
+          chain: cardAt("src/App.tsx:6:9"),
+          component: "Card",
+          instances: 3,
+          locked: false,
+          unlocated: false,
+          context: { path: ["Page", "App", "Card"], element: "<article>" },
+        },
+        scope: "usage",
+        property: "brief",
+        before: null,
+        after: "Bounce back harder when pressed",
+        style: {},
+        sources: [],
+      },
+    ]);
+    // Not a new Frame: its brief is not what to make in it.
+    expect(editor.isNewFrame(layerOf(cards[1]))).toBe(false);
+    expect(editor.brief(layerOf(cards[3]))).toBe("");
+  });
+
+  test("changed, it stays one change with the latest words; taken off, no change is left; each an undo step of its own", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    const card = layerOf(cards[0]);
+
+    editor.setBrief(card, "Bounce back harder");
+    editor.setBrief(card, "Bounce back harder when pressed");
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ id: 1, kind: "brief", after: "Bounce back harder when pressed" });
+
+    editor.setBrief(card, "");
+    expect(changes.list()).toEqual([]);
+    expect(cards.some((c) => c.hasAttribute("data-vk-brief"))).toBe(false);
+
+    expect(editor.undo().map((layer) => layer.el)).toEqual([cards[0]]);
+    expect(editor.brief(card)).toBe("Bounce back harder when pressed");
+    expect(cards[2].getAttribute("data-vk-brief")).toBe("Bounce back harder when pressed");
+    editor.undo();
+    expect(editor.brief(card)).toBe("Bounce back harder");
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    expect(cards[1].hasAttribute("data-vk-brief")).toBe(false);
+    editor.redo();
+    expect(editor.brief(card)).toBe("Bounce back harder");
+
+    // The same words again are no edit.
+    editor.setBrief(card, "Bounce back harder");
+    editor.undo();
+    expect(editor.brief(card)).toBe("");
+  });
+
+  test("taken back from the change list, on the canvas or on the saved round, the brief and its marks go; the other changes stay", () => {
+    const opened = openCanvas();
+    const { doc, editor, changes, cards, layerOf } = opened;
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.setBrief(layerOf(cards[0]), "Truncate the title past two lines");
+    const brief = changes.list().find((change) => change.kind === "brief")!;
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    expect(editor.revert(brief.id)!.el).toBe(cards[0]);
+    expect(changes.list().map((change) => change.kind)).toEqual(["style"]);
+    expect(cards.some((c) => c.hasAttribute("data-vk-brief"))).toBe(false);
+    editor.undo();
+    expect(editor.brief(layerOf(cards[0]))).toBe("Truncate the title past two lines");
+
+    const reverted = revertSaved(saved, brief.id)!;
+    expect(reverted.changeSet.changes.map((change) => change.kind)).toEqual(["style"]);
+    expect(new DOMParser().parseFromString(reverted.canvas, "text/html").querySelectorAll("[data-vk-brief]")).toHaveLength(0);
+  });
+
+  test("on a layer made this round, it goes with the change that made it; a copy of a layer that is there, with a brief, has none", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    const copy = editor.duplicate(layerOf(cards[3]));
+    editor.setBrief(copy, "A card for the newest plan");
+    expect(changes.list()[1]).toMatchObject({ kind: "brief", target: { made: copy.el.getAttribute("data-vk-layer") } });
+
+    editor.setBrief(layerOf(cards[3]), "Bounce back harder");
+    const again = editor.duplicate(editor.tree().layerOf(cards[3])!);
+    expect(again.el.hasAttribute("data-vk-brief")).toBe(false);
+    expect(editor.brief(again)).toBe("");
+
+    editor.revert(changes.list()[0].id);
+    expect(changes.list().map((change) => change.kind)).toEqual(["brief", "duplicate"]);
+    expect(doc.querySelectorAll("[data-vk-brief]")).toHaveLength(1);
+  });
+
+  test("the live page cannot check a brief: no value shows it", async () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    editor.setBrief(layerOf(cards[0]), "Bounce back harder when pressed");
+
+    expect(await checkChange(doc, changes.list()[0])).toEqual({
+      outcome: "unchecked",
+      reason: "a brief asks for what the Design panel cannot set, so the page has no value to check it by",
+    });
+  });
+
+  test("loose text gets an element of its own to take a brief", () => {
+    const { doc, editor, changes } = openCanvas(
+      `<!DOCTYPE html><body><p data-vk-loc="src/App.tsx:4:5" ${chain(APP)}>Hello <span data-vk-loc="src/App.tsx:4:14" ${chain(APP)} style="display: inline-block">pill</span> world</p></body>`,
+    );
+    const run = find(editor.tree().root, (l) => l.name === "Hello")!;
+
+    const own = editor.setBrief(run, "Keep it on one line");
+
+    const span = doc.querySelector("[data-vk-brief]")!;
+    expect(own.el).toBe(span);
+    expect(span.localName).toBe("span");
+    expect(span.textContent!.trim()).toBe("Hello");
+    expect(changes.list()[0]).toMatchObject({ kind: "brief", target: { loc: "src/App.tsx:4:5", run: 0 } });
+    expect(editor.brief(own)).toBe("Keep it on one line");
   });
 });
 
@@ -2161,6 +3184,131 @@ const STRUCTURE = `<!DOCTYPE html>
   <div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>
 </body>`;
 
+describe("text styles are checked on the live page", () => {
+  test("a line height and a font size show as the Agent writes them in the project's own units", async () => {
+    const { doc, editor, changes, layerOf } = openCanvas(STRUCTURE);
+    const one = layerOf(doc.getElementById("one")!);
+    editor.set(one, "lineHeight", { value: 150, unit: "%" });
+    editor.set(one, "fontSize", 20);
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(STRUCTURE.replace('style="margin: 0">One', 'style="margin: 0; line-height: 150%; font-size: 1.25rem">One'));
+    page.close();
+
+    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[1])).toEqual({ outcome: "shown" });
+  });
+});
+
+describe("a stroke is checked on the live page as the code writes it, else as the browser draws it", () => {
+  /** The canvas, edited; and the live page, as the page is, its board as the Agent writes its border in the code. */
+  const open = () => {
+    const canvas = openCanvas(STRUCTURE);
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(STRUCTURE);
+    page.close();
+    const board = canvas.layerOf(canvas.doc.getElementById("board")!);
+    const write = (css: string) => (page.getElementById("board")!.style.cssText = `width: 300px; height: 100px; ${css}`);
+    return { ...canvas, page, board, write };
+  };
+  const check = async (page: Document, change: Parameters<typeof checkChange>[1]) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const result = checkChange(page, change);
+      vi.advanceTimersByTime(CHECK_SETTLE_MS);
+      return await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  test("1.5px written in the code is shown, though a 1x screen draws it 1px; 3px is not, and says so", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+
+    write("border: 1.5px solid #ff0000");
+    expect(getComputedStyle(page.getElementById("board")!).borderTopWidth).toBe("1px");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+
+    write("border: 3px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 3, style: "solid" } });
+  });
+
+  test("the weight the code writes is compared first: 1px or 1.25px is not 1.5px, though a 1x screen draws all three 1px", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+
+    write("border: 1px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1, style: "solid" } });
+    write("border: 1.25px solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1.25, style: "solid" } });
+  });
+
+  test("while the dev server brings the edit in, each change to the page is looked at once: still wrong, then right", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    write("border: 1px solid #ff0000");
+
+    const result = checkChange(page, change);
+    write("border: 3px solid #ff0000");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    write("border: 1.5px solid #ff0000");
+
+    expect(await result).toEqual({ outcome: "shown" });
+  });
+
+  test("written through a design variable, it is compared as the page draws it", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+
+    write("--stroke: 1.5px; border: var(--stroke) solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+  });
+
+  test("written through a design variable in a shorthand, a rule below it that writes px is not taken for the code: compared as drawn", async () => {
+    const { page, editor, changes, board, write } = open();
+    page.head.insertAdjacentHTML("beforeend", "<style>#board { border: 1.5px solid #ff0000 }</style>");
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1, style: "solid" });
+    const [change] = changes.list();
+
+    write("--stroke: 1px; border: var(--stroke) solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+  });
+
+  test("a side written by a logical property, as Tailwind's border-x writes it, is compared as written there, not as the rule below it writes it", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: [1, 1.5, 1, 1.5], style: "solid" });
+    const [change] = changes.list();
+
+    write("border: 1px solid #ff0000; border-inline-width: 1.5px");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("border-style: solid; border-color: #ff0000; border-block-width: 1px; border-inline-width: 1.5px; border-left-width: 1px");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: [1, 1.5, 1, 1], style: "solid" } });
+  });
+
+  test("each side is drawn as it says; a color that is not the one set is not shown", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: [0, 0, 0.5, 2.5], style: "dashed" });
+    const [change] = changes.list();
+
+    write("border: 0 dashed #ff0000; border-bottom-width: 0.5px; border-left-width: 2.5px");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+
+    write("border: 0 dashed #0000ff; border-bottom-width: 0.5px; border-left-width: 2.5px");
+    expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#0000FF", opacity: 1, weight: [0, 0, 0.5, 2.5], style: "dashed" } });
+  });
+});
+
 describe("changes to the structure are checked on the live page", () => {
   /** The canvas, edited; and the live page, as the page is. */
   const open = () => {
@@ -2408,6 +3556,267 @@ describe("views", () => {
   });
 });
 
+describe("Variables", () => {
+  const variable = (name: string, group: Variable["group"], value: string, extra: Partial<Variable> = {}): Variable => ({ name, group, value, from: "tailwind", own: true, ...extra });
+  const GUTTER = variable("gutter", "spacing", "1.375rem");
+  const FOUR = variable("4", "spacing", "1rem", { own: false });
+  const RED = variable("--danger", "color", "hsl(0 100% 50%)", { from: "css", css: "var(--danger)" });
+  const BRAND = variable("brand-500", "color", "#3d63f5");
+  const CARD = variable("card", "radius", "14px");
+  const RAISED = variable("card", "shadow", "0 1px 2px rgb(27 29 42 / 0.06), 0 4px 12px rgb(27 29 42 / 0.08)");
+  const LEAD = variable("lead", "fontSize", "1.1875rem");
+  const ALL = [GUTTER, FOUR, RED, BRAND, CARD, RAISED, LEAD, variable("nowhere", "color", "not-a-color")];
+  const PAGE_OF_STACKS = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="row" data-vk-loc="src/App.tsx:4:5" style="display: flex; gap: 10px; padding: 4px 8px">
+    <article data-vk-loc="src/Card.tsx:3:5" style="height: 80px; width: 120px; background-color: rgb(255, 255, 255); border-radius: 12px"></article>
+    <h3 data-vk-loc="src/Card.tsx:4:7" style="font-size: 16px; color: rgb(0, 0, 0)">Card</h3>
+  </div>
+  <div id="grid" data-vk-loc="src/App.tsx:8:5" style="display: grid; grid-template-columns: 1fr 1fr; row-gap: 8px; column-gap: 8px">
+    <p data-vk-loc="src/App.tsx:9:7" style="height: 20px; margin: 0"></p>
+    <p data-vk-loc="src/App.tsx:10:7" style="height: 20px; margin: 0"></p>
+  </div>
+</body>`;
+
+  function openWithVariables(variables = ALL) {
+    const canvas = openCanvas(PAGE_OF_STACKS);
+    const catalog = resolveVariables(variables, canvas.doc);
+    const editor = createEditor(canvas.views, canvas.changes, null, { bind: (property, value, picked, previous) => bind(catalog, property, value, picked, previous) });
+    const tree = editor.tree();
+    const layer = (selector: string) => find(tree.root, (l) => l.el === canvas.doc.querySelector(selector) && !l.text)!;
+    const change = (property: string) => canvas.changes.list().find((c) => c.property === property);
+    return { ...canvas, catalog, editor, layer, change };
+  }
+
+  test("each is worked out on the canvas: lengths in px by the page's rem, colors in sRGB, shadows; one that is none of these is left out", () => {
+    const { catalog } = openWithVariables();
+    expect(catalog.of("spacing").map(({ variable, drawn }) => [variable.name, drawn])).toEqual([["gutter", 22], ["4", 16]]);
+    expect(catalog.of("color").map(({ drawn }) => drawn)).toEqual([{ color: "#FF0000", opacity: 1 }, { color: "#3D63F5", opacity: 1 }]);
+    expect(catalog.of("shadow")[0].drawn).toEqual([
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#1B1D2A", opacity: 0.06 },
+      { type: "drop", x: 0, y: 4, blur: 12, spread: 0, color: "#1B1D2A", opacity: 0.08 },
+    ]);
+    expect(catalog.of("fontSize")[0].drawn).toBe(19);
+  });
+
+  test("a value typed in names the Variable it is exactly, and only that: a color in another color space too; a value no Variable has says so", () => {
+    const { editor, layer, change } = openWithVariables();
+    editor.set(layer("#row"), "gap", 22);
+    expect(change("gap")!.variables).toEqual({ "": GUTTER });
+    editor.set(layer("#row"), "gap", 23);
+    expect(change("gap")!.variables).toEqual({ "": null });
+
+    editor.set(layer("article"), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+    expect(change("fill")!.variables).toEqual({ color: RED });
+    // Close is not the same.
+    editor.set(layer("article"), "fill", { type: "solid", color: "#FE0000", opacity: 1 });
+    expect(change("fill")!.variables).toEqual({ color: null });
+
+    editor.set(layer("#row"), "padding", [22, 16, 4, 8]);
+    expect(change("padding")!.variables).toEqual({ top: GUTTER, right: FOUR, bottom: null, left: null });
+    editor.set(layer("h3"), "fontSize", 19);
+    expect(change("fontSize")!.variables).toEqual({ "": LEAD });
+    editor.set(layer("article"), "radius", [14, 14, 0, 0]);
+    expect(change("radius")!.variables).toEqual({ "top-left": CARD, "top-right": CARD, "bottom-right": null, "bottom-left": null });
+    // A Grid's gaps are spacing too.
+    editor.set(layer("#grid"), "rowGap", 22);
+    expect(change("rowGap")!.variables).toEqual({ "": GUTTER });
+    editor.set(layer("#grid"), "columnGap", 23);
+    expect(change("columnGap")!.variables).toEqual({ "": null });
+    // No Variable is offered for X, nor for opacity.
+    editor.set(layer("article"), "opacity", 0.5);
+    expect(change("opacity")!.variables).toBeUndefined();
+  });
+
+  test("a Variable picked in the phone view is the value at its breakpoint only, as the panel shows it in each view", async () => {
+    const { editor, layer, change, views } = openWithVariables();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const row = layer("#row");
+
+    editor.at(phone);
+    editor.set(row, "gap", 22, { variables: { "": GUTTER } });
+    expect(change("gap")).toMatchObject({ breakpoint: { min: null, max: 800 }, variables: { "": { ...GUTTER, picked: true } } });
+    expect(editor.variables(row, "gap")).toEqual({ "": { ...GUTTER, picked: true } });
+    editor.at(null);
+    expect(editor.variables(row, "gap")).toBeUndefined();
+  });
+
+  test("a Variable picked is recorded as picked, kept while that part keeps its value, and undone with the edit", () => {
+    const { editor, layer, change, cards } = openWithVariables();
+    const row = layer("#row");
+    editor.set(row, "padding", [22, 8, 4, 8], { variables: { top: GUTTER } });
+    expect(change("padding")!.variables!.top).toEqual({ ...GUTTER, picked: true });
+    // Another side changes: the top keeps its Variable.
+    editor.set(row, "padding", [22, 16, 4, 8]);
+    expect(change("padding")!.variables).toEqual({ top: { ...GUTTER, picked: true }, right: FOUR, bottom: null, left: null });
+
+    // Detached: the value stays, and is still the Variable it equals, but not as picked.
+    editor.set(row, "padding", [22, 16, 4, 8], { variables: { top: null } });
+    expect(change("padding")!.variables!.top).toEqual(GUTTER);
+    editor.undo();
+    expect(change("padding")!.variables!.top).toEqual({ ...GUTTER, picked: true });
+    editor.undo();
+    editor.undo();
+    expect(change("padding")).toBeUndefined();
+    editor.redo();
+    expect(change("padding")!.variables!.top).toEqual({ ...GUTTER, picked: true });
+
+    // Shadows picked as a whole are drawn on the canvas.
+    const article = layer("article");
+    const shadows = editor.read(article, "shadows");
+    expect(shadows).toEqual([]);
+    editor.set(article, "shadows", [
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#1B1D2A", opacity: 0.06 },
+      { type: "drop", x: 0, y: 4, blur: 12, spread: 0, color: "#1B1D2A", opacity: 0.08 },
+    ], { variables: { "": RAISED } });
+    expect(change("shadows")!.variables).toEqual({ "": { ...RAISED, picked: true } });
+    expect(editor.variables(article, "shadows")).toEqual({ "": { ...RAISED, picked: true } });
+    expect(getComputedStyle(article.el).boxShadow).toContain("0px 4px 12px 0px");
+    void cards;
+  });
+
+  test("a Variable picked for the value the layer has already is no change, and no step to undo", () => {
+    const { editor, layer, changes } = openWithVariables();
+    editor.set(layer("#row"), "gap", 22);
+    editor.set(layer("article"), "radius", 12, { variables: { "": { ...CARD, value: "12px" } } });
+    expect(changes.list().map((c) => c.property)).toEqual(["gap"]);
+    // The one undo takes back the gap.
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a part picked and then given another value is that value's Variable, if any", () => {
+    const { editor, layer, change } = openWithVariables();
+    editor.set(layer("article"), "fill", { type: "solid", color: "#3D63F5", opacity: 1 }, { variables: { color: BRAND } });
+    expect(change("fill")!.variables).toEqual({ color: { ...BRAND, picked: true } });
+    editor.set(layer("article"), "fill", { type: "solid", color: "#3D63F5", opacity: 0.5 });
+    expect(change("fill")!.variables).toEqual({ color: null });
+    editor.set(layer("article"), "fill", { type: "linear", angle: 90, stops: [
+      { color: "#3D63F5", opacity: 1, position: 0, unit: "%" },
+      { color: "#000000", opacity: 1, position: 100, unit: "%" },
+    ] });
+    expect(change("fill")!.variables).toEqual({ "stop 1": BRAND, "stop 2": null });
+  });
+
+  test("a shadow's color is a color Variable, shadow by shadow, a text layer's too; shadows that are a shadow Variable are that alone", () => {
+    const { editor, layer, change } = openWithVariables();
+    const article = layer("article");
+    const drop = { type: "drop", x: 0, y: 4, blur: 4, spread: 0 } as const;
+    editor.set(article, "shadows", [{ ...drop, color: "#3D63F5", opacity: 1 }, { ...drop, color: "#3D63F5", opacity: 0.5 }]);
+    expect(change("shadows")!.variables).toEqual({ "": null, "shadow 1": BRAND, "shadow 2": null });
+
+    // Picked for the second, as the panel does: drawn there, the first kept.
+    editor.set(article, "shadows", [{ ...drop, color: "#3D63F5", opacity: 1 }, { ...drop, color: "#FF0000", opacity: 1 }], { variables: { "shadow 2": RED } });
+    expect(change("shadows")!.variables).toEqual({ "": null, "shadow 1": BRAND, "shadow 2": { ...RED, picked: true } });
+    expect(getComputedStyle(article.el).boxShadow).toContain("rgb(255, 0, 0)");
+
+    // The shadows of a shadow Variable are it, colors and all.
+    editor.set(article, "shadows", [
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#1B1D2A", opacity: 0.06 },
+      { type: "drop", x: 0, y: 4, blur: 12, spread: 0, color: "#1B1D2A", opacity: 0.08 },
+    ]);
+    expect(change("shadows")!.variables).toEqual({ "": RAISED });
+
+    // A text layer's shadows have colors only to be Variables.
+    const title = layer("h3");
+    expect(editor.can(title, "textShadows")).toBe(true);
+    editor.set(title, "textShadows", [{ ...drop, color: "#FF0000", opacity: 1 }]);
+    expect(change("textShadows")!.variables).toEqual({ "shadow 1": RED });
+  });
+
+  test("a value close to a Variable of its group finds the closest: a length within 2px and 10% of it, a color a little apart as the eye sees it; the same value is not close", () => {
+    const { catalog } = openWithVariables();
+    const near = (group: Variable["group"], drawn: Parameters<typeof catalog.near>[1]) => catalog.near(group, drawn)?.variable.name ?? null;
+    // gutter is 22px, 4 is 16px.
+    expect(near("spacing", 20)).toBe("gutter");
+    expect(near("spacing", 23.5)).toBe("gutter");
+    expect(near("spacing", 19.5)).toBeNull();
+    expect(near("spacing", 22)).toBeNull();
+    // 1.5px from 16px is within 2px and within 10% of it, 1.6px.
+    expect(near("spacing", 17.5)).toBe("4");
+    // 1.8px from 16px is within 2px, but more than 10% of it.
+    expect(near("spacing", 14.2)).toBeNull();
+    // Only in the group: a 19px gap is not close to the 19px font size.
+    expect(near("spacing", 18)).toBeNull();
+    expect(near("fontSize", 18)).toBe("lead");
+    expect(near("radius", 13)).toBe("card");
+
+    // brand-500 is #3D63F5: #3E64F4 is a hair apart, #4A70F0 is plainly another blue.
+    expect(near("color", { color: "#3E64F4", opacity: 1 })).toBe("brand-500");
+    expect(near("color", { color: "#4A70F0", opacity: 1 })).toBeNull();
+    expect(near("color", { color: "#3D63F5", opacity: 1 })).toBeNull();
+    expect(near("color", { color: "#FE0101", opacity: 1 })).toBe("--danger");
+    // A see-through color is not close to an opaque one.
+    expect(near("color", { color: "#3E64F4", opacity: 0.5 })).toBeNull();
+  });
+
+  test("of two close, the closer; Variables found by part of their name, as typed, in any case", () => {
+    const { catalog } = openWithVariables([GUTTER, FOUR, variable("tight", "spacing", "21px"), BRAND, variable("brand-600", "color", "#3a5ff0"), RED]);
+    expect(catalog.near("spacing", 21.4)?.variable.name).toBe("tight");
+    expect(catalog.near("spacing", 21.6)?.variable.name).toBe("gutter");
+    // As close to tight as to gutter: gutter, listed first.
+    expect(catalog.near("spacing", 21.5)?.variable.name).toBe("gutter");
+    expect(catalog.named("color", "BRA").map(({ variable }) => variable.name)).toEqual(["brand-500", "brand-600"]);
+    expect(catalog.named("color", " dang ").map(({ variable }) => variable.name)).toEqual(["--danger"]);
+    expect(catalog.named("spacing", "x")).toEqual([]);
+    expect(catalog.named("radius", "")).toEqual([]);
+  });
+
+  test("of those close, the project's own closest before Tailwind's defaults, however close a default is; a default only when none of the project's own is close", () => {
+    const BRAND_50 = variable("brand-50", "color", "#eef4ff");
+    const INDIGO_50 = variable("indigo-50", "color", "#eef2ff", { own: false });
+    const SNUG = variable("snug", "spacing", "17.5px");
+    const FOUR_HALF = variable("4.5", "spacing", "18px", { own: false });
+    const { catalog, doc } = openWithVariables([GUTTER, SNUG, FOUR, FOUR_HALF, BRAND_50, INDIGO_50]);
+    // #EEF3FF is a hair nearer indigo-50 than brand-50 in OKLab: brand-50 is hinted at, listed after it or not.
+    expect(catalog.near("color", { color: "#EEF3FF", opacity: 1 })?.variable.name).toBe("brand-50");
+    expect(resolveVariables([INDIGO_50, BRAND_50], doc).near("color", { color: "#EEF3FF", opacity: 1 })?.variable.name).toBe("brand-50");
+    // 16.5px is 0.5px from 4 (16px), 1px from snug (17.5px): snug.
+    expect(catalog.near("spacing", 16.5)?.variable.name).toBe("snug");
+    // 15px is close to 4 alone: 4.
+    expect(catalog.near("spacing", 15)?.variable.name).toBe("4");
+    // With none of the project's own close, the closest default: 19.5px is 1.5px from 4.5 (18px), and 2px from snug, past its 10%.
+    expect(catalog.near("spacing", 19.5)?.variable.name).toBe("4.5");
+    expect(resolveVariables([GUTTER, FOUR, FOUR_HALF], doc).near("spacing", 17.2)?.variable.name).toBe("4.5");
+  });
+
+  test("a value typed before the Variables are in is named by them once they are, as it was then; a change named already keeps what it has", () => {
+    const canvas = openCanvas(PAGE_OF_STACKS);
+    // As edit mode has it: the Variables come in a while after the canvas.
+    let catalog: Catalog | null = null;
+    const editor = createEditor(canvas.views, canvas.changes, null, { bind: (...args) => (catalog ? bind(catalog, ...args) : undefined) });
+    const tree = editor.tree();
+    const layer = (selector: string) => find(tree.root, (l) => l.el === canvas.doc.querySelector(selector) && !l.text)!;
+    const change = (property: string) => canvas.changes.list().find((c) => c.property === property);
+    editor.set(layer("#row"), "gap", 22);
+    editor.set(layer("#row"), "padding", [23, 16, 4, 8]);
+    editor.set(layer("article"), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+    editor.set(layer("article"), "opacity", 0.5);
+    expect(change("gap")).not.toHaveProperty("variables");
+
+    catalog = resolveVariables(ALL, canvas.doc);
+    expect(bindRecorded(catalog, canvas.changes)).toBe(true);
+    expect(change("gap")!.variables).toEqual({ "": GUTTER });
+    expect(change("padding")!.variables).toEqual({ top: null, right: FOUR, bottom: null, left: null });
+    expect(change("fill")!.variables).toEqual({ color: RED });
+    // No Variable is offered for opacity.
+    expect(change("opacity")).not.toHaveProperty("variables");
+
+    // Named once: again, nothing is.
+    editor.set(layer("#row"), "gap", 16, { variables: { "": FOUR } });
+    expect(bindRecorded(catalog, canvas.changes)).toBe(false);
+    expect(change("gap")!.variables).toEqual({ "": { ...FOUR, picked: true } });
+  });
+
+  test("without Variables, a change names none", () => {
+    const { editor, layer, change } = openWithVariables([]);
+    editor.set(layer("#row"), "gap", 22);
+    expect(change("gap")).not.toHaveProperty("variables");
+  });
+});
+
 describe("breakpoints", () => {
   const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
   const BLUE = { type: "solid", color: "#0000FF", opacity: 1 } as const;
@@ -2435,6 +3844,43 @@ describe("breakpoints", () => {
   afterEach(() => {
     for (const frame of extraFrames) frame.remove();
     extraFrames = [];
+  });
+
+  test("a fill, stroke, corner radius, shadows and text styles changed in the phone view change there only, are listed as changed there, and inherit again", async () => {
+    const { editor, changes, phone, layer, shown } = await open();
+    const [board, text] = [layer("board"), layer("a")];
+    const shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 } as const;
+
+    editor.at(phone);
+    editor.set(board, "fill", RED);
+    editor.set(board, "stroke", { color: "#0000FF", opacity: 1, weight: 1.5, style: "solid" });
+    editor.set(board, "radius", 8);
+    editor.set(board, "shadows", [shadow]);
+    editor.set(text, "fontSize", 20);
+    editor.set(text, "textColor", { color: "#FF0000", opacity: 1 });
+    editor.set(text, "textShadows", [shadow]);
+
+    expect(shown("board").map((s) => [s.backgroundColor, s.borderTopStyle, s.borderTopLeftRadius, s.boxShadow === "none"])).toEqual([
+      ["rgba(0, 0, 0, 0)", "none", "0px", true],
+      ["rgb(255, 0, 0)", "solid", "8px", false],
+    ]);
+    expect(shown("a").map((s) => [s.fontSize, s.color, s.textShadow === "none"])).toEqual([
+      ["16px", "rgb(0, 0, 0)", true],
+      ["20px", "rgb(255, 0, 0)", false],
+    ]);
+    // The weight as written, at the breakpoint too.
+    expect(editor.read(board, "stroke")!.weight).toBe(1.5);
+    expect(changes.list().map((change) => change.breakpoint)).toEqual(Array(7).fill({ min: null, max: 800 }));
+    expect(editor.changesHere(board)).toEqual(["fill", "stroke", "radius", "shadows"]);
+    expect(editor.changesHere(text)).toEqual(["fontSize", "textColor", "textShadows"]);
+
+    editor.inherit(board, "fill");
+    editor.inherit(text, "fontSize");
+    expect(shown("board").map((s) => s.backgroundColor)).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    expect(shown("a").map((s) => s.fontSize)).toEqual(["16px", "16px"]);
+    expect(editor.changesHere(board)).toEqual(["stroke", "radius", "shadows"]);
+    editor.at(null);
+    expect(editor.read(board, "radius")).toBe(0);
   });
 
   /** A Tailwind theme of the project's own, as the local service reads it. */

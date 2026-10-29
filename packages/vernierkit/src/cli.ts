@@ -9,7 +9,7 @@ import { changes, describeChanges, TO_APPLY } from "./change-notes";
 import { ordinal, propertyName, value } from "./design-values";
 import type { Change, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
+import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
   archiveRound,
   findProject,
@@ -93,6 +93,11 @@ async function done(folder: VernierFolder, arg: string | undefined, io: Io): Pro
   await writeState(folder, { ...state, done: doneIds, check });
   io.write(`Change ${id} done: ${doneIds.length} of ${changes(ids.length)} applied.\n`);
   const change = changeSet.changes.find((c) => c.id === id)!;
+  // A brief has no value to check on the page: what the Agent did is for its report.
+  if (change.kind === "brief") {
+    io.write(`Not checked on the page: ${BRIEF_UNCHECKED}. Say in your report how you achieved it: what you changed, and where.\n`);
+    return 0;
+  }
   const result = await waitForCheck(folder, check);
   switch (result.outcome) {
     case "shown":

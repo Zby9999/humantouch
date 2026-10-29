@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
+import { clearVernier } from "./project-files";
 
 /** A round on the React 18 + Tailwind v3 example, saved into its `.vernier/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -15,12 +16,12 @@ const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
 
 test.beforeEach(async () => {
-  rmSync(VERNIER, { recursive: true, force: true });
+  clearVernier(VERNIER);
   // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
   // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
   await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
 });
-test.afterAll(() => rmSync(VERNIER, { recursive: true, force: true }));
+test.afterAll(() => clearVernier(VERNIER));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
 function locate(file: string, snippet: string) {
@@ -108,8 +109,52 @@ test("on React 18, claim reads the usage chain as on React 19: the card's usage 
 
   expect(fill).toMatch(/- \*\*Location:\*\* `src\/components\/Card\.tsx:\d+:\d+`\n/);
   expect(fill).toMatch(/- \*\*Scope:\*\* This usage only: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`\. It renders 3 instances/);
+  // Typed as a hex value, it is exactly the project's lightest brand color: the notes name it.
+  expect(fill).toContain("- **Variables:** the fill color is the Variable `brand-50`, from the Tailwind theme: use its class, `bg-brand-50`.\n");
   // Tailwind v3 writes its utilities in no CSS layer.
   expect(fill).toContain("- **Currently set by:** class `bg-white`: rule `.bg-white` in no CSS layer, of `src/index.css`");
+});
+
+test("a value typed close to a Variable, its hint left unused, is the exact value: the notes say no Variable has it", async ({ page }) => {
+  await page.goto(REACT18_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  // #EEF3FF is a hair from the project's brand-50, #EEF4FF, and as near Tailwind's own indigo-50, #EEF2FF:
+  // the field hints at the project's.
+  await setField(page, "Fill color", "eef3ff");
+  const design = page.getByRole("complementary", { name: "Design" });
+  await expect(design.getByRole("button", { name: "Use variable brand-50" })).toBeVisible();
+  await expect(design.getByRole("button", { name: "Use variable indigo-50" })).toHaveCount(0);
+  await expect.poll(() => savedChanges()?.[0]?.variables).toEqual({ color: null });
+  expect(savedChanges()[0].after).toEqual({ type: "solid", color: "#EEF3FF", opacity: 1 });
+
+  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  expect(fill).toContain(
+    "- **Variables:** no Variable has the fill color's value: use the exact value (with Tailwind, an arbitrary value: `bg-[#EEF3FF]`), not a class or Variable whose value is close.\n",
+  );
+});
+
+test("a value typed before the project's Variables are in is named by them once they are", async ({ page }) => {
+  // The Variables held back till the edit is made and saved.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/variables", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(REACT18_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Fill color", "eef4ff");
+  await expect.poll(() => savedChanges()?.length).toBe(1);
+  expect(savedChanges()[0]).not.toHaveProperty("variables");
+
+  release();
+  await expect.poll(() => savedChanges()?.[0]?.variables?.color?.name).toBe("brand-50");
+  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  expect(fill).toContain("- **Variables:** the fill color is the Variable `brand-50`, from the Tailwind theme: use its class, `bg-brand-50`.\n");
 });
 
 test("a whole round: claim locks the editor, done checks the fill on the page once Card.tsx uses the project's color, finish ends the round", async ({ page }) => {

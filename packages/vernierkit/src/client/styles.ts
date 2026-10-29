@@ -1,69 +1,12 @@
-import { EASE_OUT, UNLOCK_HOLD_MS } from "./motion";
+import { EASE_OUT, TOAST_FADE_MS } from "./motion";
+import { FONT_STACK } from "./toggle-styles";
 
-export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-
-/** Editor layer styles. They live inside the Shadow DOM and never touch the page. */
+/** The editor layer's styles, but for the toggle's (`toggleStyles`), which come before them. They live inside the Shadow DOM and never touch the page. */
 export const styles = /* css */ `
-:host {
-  /* Cut off everything the page could pass down by inheritance. */
-  all: initial !important;
-  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
-  --vk-icon-size: 14px;
-  --vk-icon-stroke: 1px;
-}
-
 .vk-icon { flex: none; width: var(--vk-icon-size); height: var(--vk-icon-size); }
 .vk-icon * { stroke-width: var(--vk-icon-stroke); vector-effect: non-scaling-stroke; }
 
-.vk-dock {
-  --vk-gap: 16px;
-  --vk-hold: ${UNLOCK_HOLD_MS}ms;
-  position: fixed;
-  z-index: 2147483647;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: 500 12px/16px ${FONT_STACK};
-  letter-spacing: normal;
-  color: #fff;
-  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.vk-dock[data-corner="top-left"] { top: var(--vk-gap); left: var(--vk-gap); }
-.vk-dock[data-corner="top-right"] { top: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
-.vk-dock[data-corner="bottom-left"] { bottom: var(--vk-gap); left: var(--vk-gap); }
-.vk-dock[data-corner="bottom-right"] { bottom: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
-.vk-dock.is-dragging { transition: none; }
-
-.vk-toggle {
-  all: unset;
-  box-sizing: border-box;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #1e1e1e;
-  color: #fff;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 4px 12px rgb(0 0 0 / 0.18);
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: background-color 120ms ease, scale 120ms ease;
-}
-.vk-toggle:hover { background: #2c2c2c; }
-.vk-toggle:active { scale: 0.96; }
-.vk-dock.is-dragging .vk-toggle { cursor: grabbing; scale: 1.04; }
-.vk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
-
-.vk-toggle-wrap { position: relative; }
-
-/* Locked while the Agent applies the round: a ring fills as changes are done. */
-.vk-toggle[aria-disabled="true"] { cursor: progress; color: rgb(255 255 255 / 0.5); }
-.vk-toggle[aria-disabled="true"]:hover { background: #1e1e1e; }
+/* The toggle while the Agent applies the round: a ring fills as changes are done. */
 .vk-progress {
   position: absolute;
   inset: -4px;
@@ -243,6 +186,41 @@ export const styles = /* css */ `
 }
 .vk-tools .vk-icon-button[aria-pressed="true"] { background: var(--vk-accent); color: #fff; }
 .vk-shell.is-playing > .vk-tools { display: none; }
+/* A toast, as in Figma: a dark pill of one line, at the bottom middle of the canvas, over it. */
+.vk-toasts {
+  position: absolute;
+  bottom: 16px;
+  left: 240px;
+  right: 240px;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.vk-shell.is-layers-hidden > .vk-toasts { left: 0; }
+.vk-shell.is-playing > .vk-toasts { left: 0; right: 0; }
+.vk-toast {
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 8px 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #1e1e1e;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 4px 12px rgb(0 0 0 / 0.18);
+  color: #fff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  animation: vk-toast-in ${TOAST_FADE_MS}ms ${EASE_OUT};
+  transition: opacity ${TOAST_FADE_MS}ms ${EASE_OUT}, translate ${TOAST_FADE_MS}ms ${EASE_OUT};
+}
+.vk-toast.is-fading { opacity: 0; translate: 0 8px; }
+@keyframes vk-toast-in { from { opacity: 0; translate: 0 8px; } }
+@keyframes vk-toast-fade-in { from { opacity: 0; } }
+
 .vk-panel-title {
   margin: 0;
   padding: 12px 16px;
@@ -463,6 +441,48 @@ export const styles = /* css */ `
 .vk-swatch::-webkit-color-swatch-wrapper { padding: 0; }
 .vk-swatch::-webkit-color-swatch { border: 0; border-radius: 3px; }
 .vk-swatch::-moz-color-swatch { border: 0; border-radius: 3px; }
+.vk-section-header .vk-row { gap: 2px; }
+.vk-section-header .vk-select { height: 22px; }
+.vk-subtitle { color: var(--vk-text-muted); font-weight: 400; }
+.vk-read-only { color: var(--vk-text-muted); }
+.vk-stop-position { flex: none; width: 44px; }
+.vk-effect > * + * { margin-top: 8px; }
+.vk-select.vk-effect-type { flex: 1; width: auto; min-width: 0; }
+/* A see-through color shows over a checkerboard, as in Figma. */
+.vk-gradient-bar, .vk-gradient-swatch {
+  --vk-checker: repeating-conic-gradient(#e6e6e6 0% 25%, #ffffff 0% 50%) 0 0 / 8px 8px;
+}
+.vk-gradient-bar {
+  position: relative;
+  height: 16px;
+  margin-inline: 6px;
+  border-radius: 3px;
+  background: var(--vk-gradient), var(--vk-checker);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+  cursor: copy;
+}
+.vk-stop-handle {
+  position: absolute;
+  top: 50%;
+  box-sizing: border-box;
+  width: 12px;
+  height: 22px;
+  border: 2px solid #ffffff;
+  border-radius: 3px;
+  background: linear-gradient(var(--vk-stop), var(--vk-stop)), var(--vk-checker);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25), 0 1px 3px rgb(0 0 0 / 0.2);
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.vk-stop-handle:focus-visible, .vk-stop-handle:focus { outline: none; box-shadow: 0 0 0 2px var(--vk-accent), 0 1px 3px rgb(0 0 0 / 0.2); }
+.vk-gradient-swatch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+}
 .vk-icon-button {
   all: unset;
   display: grid;
@@ -475,6 +495,8 @@ export const styles = /* css */ `
 }
 .vk-icon-button:hover { background: var(--vk-field); }
 .vk-icon-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+/* A button that stays on in the panel (Independent corners): shown pressed, as in Figma. */
+.vk-section .vk-icon-button[aria-pressed="true"] { background: var(--vk-field); box-shadow: inset 0 0 0 1px var(--vk-border); }
 
 .vk-section > * + * { margin-top: 8px; }
 .vk-section > .vk-section-title + * { margin-top: 0; }
@@ -513,6 +535,10 @@ export const styles = /* css */ `
 }
 .vk-segmented-field .vk-icon-button { width: 22px; color: var(--vk-text-muted); }
 .vk-segmented-field .vk-icon-button[aria-checked="true"] { color: var(--vk-text); background: var(--vk-panel); box-shadow: 0 0 0 1px var(--vk-border); }
+.vk-select.vk-font, .vk-grid-2 > .vk-select { width: 100%; }
+.vk-text-glyph { font-size: 11px; font-weight: 500; }
+.vk-text-glyph.vk-underline { text-decoration: underline; }
+.vk-text-glyph.vk-strikethrough { text-decoration: line-through; }
 .vk-align-row { align-items: flex-start; gap: 12px; }
 .vk-align {
   display: grid;
@@ -660,6 +686,47 @@ export const styles = /* css */ `
 }
 .vk-brief-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
 .vk-brief-text { width: 220px; min-height: 72px; background: var(--vk-panel); box-shadow: 0 0 0 1px var(--vk-border), 0 4px 12px rgb(0 0 0 / 0.12); }
+/*
+ * On the top right of the layer selected alone, above it and clear of its brief's mark: the selection toolbar,
+ * its buttons in one row, its right edge on the layer's. Its buttons look as the brief button does.
+ */
+.vk-selection-toolbar {
+  position: absolute;
+  display: flex;
+  gap: 4px;
+  transform: translate(-100%, calc(-100% - 12px));
+}
+.vk-selection-tool {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 4px;
+  border-radius: 6px;
+  background: var(--vk-instance);
+  color: #fff;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+.vk-selection-tool:focus-visible { outline: 2px solid var(--vk-instance); outline-offset: 2px; }
+/* On a layer with a brief, in every view: the brief button's mark, small, centered on its top right corner. */
+.vk-brief-mark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 5px;
+  background: var(--vk-accent);
+  color: #fff;
+  box-shadow: 0 0 0 1px #fff;
+  pointer-events: none;
+}
+.vk-brief-mark svg { width: 12px; height: 12px; }
 
 /* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
 .vk-selection[data-kind="typing"] { transition: none; }
@@ -690,6 +757,135 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 
+/* Variables, as in Figma: a button beside a field lists them; a field set to one shows its name. */
+.vk-variable-slot {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.vk-variable-slot > .vk-field { min-width: 0; }
+.vk-variable-button { width: 20px; color: var(--vk-text-muted); }
+.vk-variable-chip { gap: 4px; padding-right: 0; }
+.vk-variable-chip-name {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--vk-panel);
+  box-shadow: inset 0 0 0 1px var(--vk-border);
+  line-height: 18px;
+  cursor: default;
+}
+.vk-variable-chip-name:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+/* A Variable close to the value typed: its name at the end of the field, quieter than a Variable's own. */
+.vk-variable-hint {
+  all: unset;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--vk-border);
+  color: var(--vk-text-muted);
+  font-size: 10px;
+  line-height: 16px;
+  cursor: default;
+}
+.vk-variable-hint:hover { background: var(--vk-panel); color: var(--vk-text); }
+.vk-variable-hint:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+/* The Variables whose names have what is typed: a list under the field. */
+.vk-matches {
+  position: fixed;
+  z-index: 2;
+  box-sizing: border-box;
+  max-height: 224px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--vk-panel);
+  box-shadow:
+    inset 0 0 0 1px var(--vk-border),
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 8px 24px rgb(0 0 0 / 0.16);
+  color: var(--vk-text);
+}
+.vk-swatch-button {
+  display: block;
+  background: var(--vk-swatch);
+}
+.vk-swatch-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 1px; }
+.vk-popover {
+  position: fixed;
+  z-index: 2;
+  box-sizing: border-box;
+  max-height: min(480px, calc(100vh - 16px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  border-radius: 12px;
+  background: var(--vk-panel);
+  box-shadow:
+    inset 0 0 0 1px var(--vk-border),
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 8px 24px rgb(0 0 0 / 0.16);
+  color: var(--vk-text);
+  outline: none;
+}
+.vk-popover-header { display: flex; align-items: center; justify-content: space-between; }
+.vk-popover-header .vk-section-title { margin: 0; }
+.vk-tabs { display: flex; gap: 4px; }
+.vk-tab {
+  all: unset;
+  padding: 0 8px;
+  border-radius: 5px;
+  line-height: 24px;
+  color: var(--vk-text-muted);
+}
+.vk-tab[aria-selected="true"] { background: var(--vk-field); color: var(--vk-text); font-weight: 600; }
+.vk-tab:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+.vk-variable-search {
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: var(--vk-field);
+}
+.vk-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
+.vk-variable-list .vk-subtitle { margin: 8px 0 4px; }
+.vk-variable-option {
+  all: unset;
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 5px;
+}
+.vk-variable-option:hover, .vk-variable-option[aria-selected="true"] { background: var(--vk-field); }
+.vk-variable-option:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+.vk-variable-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vk-variable-value { color: var(--vk-text-muted); font-variant-numeric: tabular-nums; }
+.vk-variable-preview {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--vk-swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+}
+.vk-variable-preview.is-shadow { background: #fff; }
 /* Marks over a view, as in Figma's guides: red where a layer lines up and for distances measured with ⌥, magenta for equal spacing. 1px, labels one size, at any zoom. */
 .vk-marks { --vk-line: #f24822; --vk-spacing: #e81cc4; pointer-events: none; }
 .vk-mark {
@@ -723,6 +919,9 @@ export const styles = /* css */ `
 .vk-mark[data-type="gap"]:not([data-across]) .vk-mark-label { left: 4px; transform: translateY(-50%); }
 
 @media (prefers-reduced-motion: reduce) {
-  .vk-dock, .vk-toggle, .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
+  .vk-segment, .vk-selection, .vk-progress-done { transition: none; }
+  /* A toast only fades: it does not rise or sink. */
+  .vk-toast { animation-name: vk-toast-fade-in; transition-property: opacity; }
+  .vk-toast.is-fading { translate: none; }
 }
 `;
