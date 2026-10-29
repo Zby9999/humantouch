@@ -250,7 +250,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         />
       )}
       {direction === undefined && padding !== undefined && (
-        // A Frame that is a box around its text, as a button is: the room around the text.
+        // A Frame around its text alone, as a button is: the room around the text.
         <section class="vk-section" aria-labelledby="vk-padding">
           <h3 id="vk-padding" class="vk-section-title">Padding</h3>
           <PaddingFields padding={padding} update={update} variable={variable} />

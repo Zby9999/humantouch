@@ -486,11 +486,11 @@ describe("claim, text", () => {
   });
 });
 
-describe("claim, the text of a box", () => {
+describe("claim, a Frame's only text", () => {
   /** The words of a button that draws a box around them and nothing else: a text layer in a Frame, written on the button's own element. */
-  const close = { ...cards, loc: "src/components/Dialog.tsx:9:9", chain: [APP], component: "Dialog", instances: 1, boxText: true, context: { path: ["Page", "Dialog", "Button", "Close"], element: '<button type="button" class="mt-4 px-3 py-1.5 text-sm text-white">', text: "Close" } };
+  const close = { ...cards, loc: "src/components/Dialog.tsx:9:9", chain: [APP], component: "Dialog", instances: 1, onlyText: true, context: { path: ["Page", "Dialog", "Button", "Close"], element: '<button type="button" class="mt-4 px-3 py-1.5 text-sm text-white">', text: "Close" } };
 
-  test("say the change is to the text in the box, written on the box's own element, which its words inherit it from", async () => {
+  test("say the change is to the text in its Frame, written on the Frame's own element, which its words inherit it from", async () => {
     saveRound(
       { ...redFill, id: 1, target: close, property: "fontSize", before: 14, after: 18, style: { "font-size": "18px" } },
       { ...redFill, id: 2, kind: "text", target: close, property: "text", before: "Close", after: "Done", style: {} },
@@ -500,10 +500,10 @@ describe("claim, the text of a box", () => {
 
     expect(section(output, 1)).toContain('- **Layer:** Close, the text in Button, `<button type="button" class="mt-4 px-3 py-1.5 text-sm text-white">` (Page › Dialog › Button › Close)\n');
     expect(section(output, 1)).toContain(
-      "- **Text in a box:** the text is all Button draws inside it, and has no element of its own: write its text styles on Button's element itself, whose words inherit them, with no element around the text.\n",
+      "- **The Frame's only text:** the text is all Button draws inside it, and has no element of its own: write its text styles on Button's element itself, whose words inherit them, with no element around the text.\n",
     );
     expect(section(output, 2)).toContain('- **Layer:** Close, the text in Button, `<button type="button" class="mt-4 px-3 py-1.5 text-sm text-white">`');
-    expect(section(output, 2)).not.toContain("Text in a box");
+    expect(section(output, 2)).not.toContain("The Frame's only text");
   });
 });
 

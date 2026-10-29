@@ -55,7 +55,7 @@ import { TYPOGRAPHY, type TypographyValues } from "./typography";
 import { pickedIn } from "./variables";
 import { equalColumns, trackCount } from "./grid-tracks";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
-import { boxOf, buildLayerTree, holdsLayers, isWholeText, nodeOf, SIGN_WORDS, textOfBox, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { aroundText, boxOf, buildLayerTree, holdsLayers, isOnlyText, nodeOf, SIGN_WORDS, onlyTextOf, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
@@ -395,7 +395,7 @@ interface Step {
   key: string;
   /** One of a run of steps that may each change something else (nudges): one step with those before it, undone back through each. */
   run?: boolean;
-  /** Of `layers`, those whose text it was made to: the text a box draws and nothing else, which has the box's id. */
+  /** Of `layers`, those whose only text it was made to: a Frame's only text, which has the Frame's id. */
   texts?: string[];
   undo(): void;
   redo(): void;
@@ -441,10 +441,10 @@ const CONTAINERS: LayerKind[] = ["stack", "grid", "frame"];
 /** Layers drawn as a box, with a stroke, corners, shadows and blur of their own: all but text and locked ones. */
 const BOXES: LayerKind[] = [...CONTAINERS, "image", "still"];
 /**
- * Properties of text alone, not of a box: those the text a box draws and
- * nothing else has, written on the box's element, which its words inherit.
+ * Properties of text alone: those a Frame's only text has, written on the
+ * Frame's element, which its words inherit.
  */
-const textOnly = (kinds: LayerKind[]) => !kinds.some((kind) => CONTAINERS.includes(kind));
+const textOnly = (kinds: LayerKind[]) => kinds.length > 0 && kinds.every((kind) => kind === "text");
 /** Width and height do not apply to inline boxes. */
 const sized = (el: Element) => !/^(inline|contents)$/.test(getComputedStyle(el).display);
 const absolute = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el).position);
@@ -530,9 +530,9 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     sets: ["row-gap", "column-gap"],
   },
   padding: {
-    // And a Frame that is a box around its text and nothing else, as a button is, its words given an element of their own or not.
+    // And a Frame around its text alone, as a button is, its words given an element of their own to edit or not.
     kinds: ["stack", "frame"],
-    applies: (_, layer) => layer.kind === "stack" || (layer.children.length === 1 && layer.children[0].kind === "text"),
+    applies: (_, layer) => layer.kind === "stack" || aroundText(layer),
     read: (el) => SIDES.map((side) => px(getComputedStyle(el).getPropertyValue(`padding-${side}`))) as Padding,
     write: (padding) => ({ padding: padding.map((p) => `${p}px`).join(" ") }),
     writes: ["padding"],
@@ -634,24 +634,22 @@ export function createEditor(
   };
 
   const layerById = (id: string) => find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
-  /** The layer with id `id` that `property` is of: for the text a box draws and nothing else, which has the box's id, the text's own properties are the text's. */
+  /** The layer with id `id` that `property` is of: a Frame's only text has the Frame's id, and the properties of text alone. */
   const layerFor = (id: string, property: Property) => {
     const layer = layerById(id);
-    const text = layer && textOfBox(layer);
+    const text = layer && onlyTextOf(layer);
     return text && textOnly(PROPERTIES[property].kinds) ? text : layer;
   };
-  /** The id of the element the layer's styles are written on, once it has one: none for text with no element of its own, but the text a box draws, whose are the box's. */
-  const styledId = (layer: Layer) => (layer.text && !isWholeText(layer) ? null : layer.el.getAttribute(LAYER_ID_ATTR));
-  /** Of the properties written on the layer's element, whether `property` is the layer's: a box's text has the text's own, the box the rest. */
-  const ownProperty = (layer: Layer, property: Property) => {
-    const text = textOnly(PROPERTIES[property].kinds);
-    return isWholeText(layer) ? text : textOfBox(layer) ? !text : true;
-  };
-  /** Of the changes recorded on the layer's element, whether `change` is the layer's: a box's text has the changes to its styles and words, the box the rest. */
+  /** The id of the element the layer's styles are written on, once it has one: none for text with no element of its own, but a Frame's only text, whose are the Frame's. */
+  const styledId = (layer: Layer) => (layer.text && !isOnlyText(layer) ? null : layer.el.getAttribute(LAYER_ID_ATTR));
+  /**
+   * Of the changes recorded on the layer's element, whether `change` is the
+   * layer's: a Frame's only text has those to its text styles and its words,
+   * the Frame the rest.
+   */
   const ofLayer = (layer: Layer, change: Change) => {
-    if (change.kind === "style") return ownProperty(layer, change.property as Property);
-    const words = change.kind === "text";
-    return isWholeText(layer) ? words : textOfBox(layer) ? !words : true;
+    const text = change.kind === "style" ? textOnly(PROPERTIES[change.property as Property].kinds) : change.kind === "text";
+    return isOnlyText(layer) ? text : onlyTextOf(layer) ? !text : true;
   };
 
   /** The view worked in; null: the desktop view. */
@@ -859,10 +857,10 @@ export function createEditor(
   };
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
-  /** A step to `property` of the layer `id` is made to its text, if the layer is a box of text. */
+  /** A step to `property` of the layer `id` is made to its only text, if it is a Frame of text alone. */
   const textsOf = (id: string, property: Property) => (textOnly(PROPERTIES[property].kinds) ? { texts: [id] } : {});
   /** Those of `layers` whose text the step was made to, as that text. */
-  const textsIn = (step: Step, layers: Layer[]) => layers.map((layer) => (step.texts?.includes(layer.el.getAttribute(LAYER_ID_ATTR)!) && textOfBox(layer)) || layer);
+  const textsIn = (step: Step, layers: Layer[]) => layers.map((layer) => (step.texts?.includes(layer.el.getAttribute(LAYER_ID_ATTR)!) && onlyTextOf(layer)) || layer);
 
   /**
    * An edit that can be undone, at every width or at `breakpoint`. `from`: the
@@ -980,7 +978,7 @@ export function createEditor(
         if (value !== null) span.setAttribute(attr, value);
       }
       span.setAttribute(WRAP_ATTR, String(run));
-      // The text of a box runs on in its inline fragments: they go in with it.
+      // A Frame's only text runs on in its inline fragments: they go in with it.
       const nodes = [...new Set(text.text!.map((node) => childIn(text.el, node)))];
       nodes[0].before(span);
       span.append(...nodes);
@@ -1229,7 +1227,7 @@ export function createEditor(
       structural([id], [id], words(id, record, null), words(id, record, change.after as string));
       return layerById(id);
     }
-    // A style of the text a box draws is the text's.
+    // A text style of a Frame's only text is the text's.
     const styled = layerFor(change.layer, change.property as Property) ?? layer;
     if (change.breakpoint) {
       inheritStep(change);
@@ -1321,7 +1319,7 @@ export function createEditor(
       return [
         ...new Set(
           changesAtBreakpoints(here.id)
-            .filter((change) => holding.has(change) && ownProperty(layer, change.property as Property))
+            .filter((change) => holding.has(change) && ofLayer(layer, change))
             .map((change) => change.property as Property),
         ),
       ];
@@ -1470,8 +1468,8 @@ export function createEditor(
     },
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
-      // Text with no element of its own has no styles, but for the text a box draws and nothing else: those of the box's element.
-      if ((layer.text && !(isWholeText(layer) && textOnly(kinds))) || !kinds.includes(layer.kind)) return false;
+      // Text with no element of its own has no styles, but a Frame's only text: the text styles of the Frame's element.
+      if ((layer.text && !(isOnlyText(layer) && textOnly(kinds))) || !kinds.includes(layer.kind)) return false;
       // A hidden layer offers what it does when shown, so the panel stays as it was.
       const el = shownIn(current, layer.el);
       return asShown(el, () => (!applies || applies(el, layer)) && (value === undefined || !accepts || accepts(el, value)));
@@ -1708,8 +1706,8 @@ export function createEditor(
     },
     ownElement: (layer) => (layer.text ? wrap(layer) : layer),
     setText(layer, text) {
-      // The text a box draws and nothing else has its words in the box's element.
-      const own = isWholeText(layer) ? layer : editor.ownElement(layer);
+      // A Frame's only text has its words in the Frame's element.
+      const own = isOnlyText(layer) ? layer : editor.ownElement(layer);
       const instances = tree.acrossInstances(own);
       const id = idOf(own, instances);
       const maker = makerOf(id);
@@ -2230,13 +2228,13 @@ function targetOf(layer: Layer, instances: number): Target {
   for (let l: Layer | null = layer; l; l = l.parent) path.unshift(l.name);
   // Text given an element of its own is written in its container.
   const written = layer.el.hasAttribute(WRAP_ATTR) && layer.el.parentElement ? layer.el.parentElement : layer.el;
-  // Its words, to tell it apart once its markers move: text has them, containers do not count theirs, but a box of text, as a button is.
-  const words = layer.kind === "text" ? (layer.text ? layer.name : wordsAsPage(layer.el)) : textOfBox(layer) ? wordsAsPage(layer.el) : "";
+  // Its words, to tell it apart once its markers move: text has them, containers do not count theirs, but a Frame of text alone, as a button is.
+  const words = layer.kind === "text" ? (layer.text ? layer.name : wordsAsPage(layer.el)) : onlyTextOf(layer) ? wordsAsPage(layer.el) : "";
   const page = layer.el.ownerDocument.documentElement.getAttribute(PAGE_ATTR);
   const context = { path, element: openingTag(written), ...(words && { text: words.slice(0, SIGN_WORDS) }), ...(page && { page }) };
-  // Text with no element of its own is found by which run of text of its container it is; all the text of a box, by the box's element.
+  // Text with no element of its own is found by which run of text of its container it is; a Frame's only text, by the Frame's element.
   const wrapped = written !== layer.el ? Number(layer.el.getAttribute(WRAP_ATTR)) : null;
-  const run = layer.text && !isWholeText(layer) ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : layer.text ? null : wrapped;
+  const run = layer.text && !isOnlyText(layer) ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : layer.text ? null : wrapped;
   // A layer made this round is not in the source yet: the change that made it says where it goes.
   return {
     loc,
@@ -2247,7 +2245,7 @@ function targetOf(layer: Layer, instances: number): Target {
     unlocated: !loc && !layer.made,
     ...(layer.made && { made: layer.made }),
     ...(run !== null && { run }),
-    ...(layer.text && isWholeText(layer) && { boxText: true as const }),
+    ...(layer.text && isOnlyText(layer) && { onlyText: true as const }),
     context,
   };
 }

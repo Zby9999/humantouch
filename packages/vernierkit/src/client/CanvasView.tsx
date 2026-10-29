@@ -10,7 +10,7 @@ import { freeze, restore, type Canvas } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
-import { isWholeText, nodeOf, role, textOfBox, type Layer, type LayerTree } from "./layers";
+import { isOnlyText, nodeOf, role, onlyTextOf, type Layer, type LayerTree } from "./layers";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances, type Mark } from "./snap";
@@ -673,7 +673,7 @@ export function CanvasView(props: Props) {
     const start = view.boxOf(layer) ?? new DOMRect();
     const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
     // A layer off the canvas itself is moved about the workspace, whole, or back onto the canvas.
-    if (offCanvasLayer?.layer()?.el === layer.el) {
+    if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
       session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
       session.whole = true;
       return session;
@@ -895,8 +895,8 @@ export function CanvasView(props: Props) {
         const over = viewAt(event);
         const hit = layerAt(event);
         const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
-        // On the text selected, a double click types in it, in the view clicked in; on a box of text selected, as a button is, in its text.
-        const text = layer && (layer === primary ? (layer.kind === "text" ? layer : textOfBox(layer)) : layer.parent === primary && isWholeText(layer) ? layer : null);
+        // On the text selected, a double click types in it, in the view clicked in; on a Frame of text alone selected, as a button is, in its text.
+        const text = layer && (layer === primary ? (layer.kind === "text" ? layer : onlyTextOf(layer)) : layer.parent === primary && isOnlyText(layer) ? layer : null);
         if (text && over && editor) beginTyping(text, over.at.view);
         else if (layer) onSelect([layer]);
       }}

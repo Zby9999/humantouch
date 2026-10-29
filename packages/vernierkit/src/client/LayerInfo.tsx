@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { LayerIcon } from "./icons";
-import { isWholeText, role, typeLabel, type Layer, type LayerTree } from "./layers";
+import { isOnlyText, role, typeLabel, type Layer, type LayerTree } from "./layers";
 
 /** Top of the Design panel: what the selected layer is and where it comes from in the source; with several, how many. */
 export function LayerInfo({ tree, layers }: { tree: LayerTree; layers: Layer[] }) {
@@ -55,7 +55,7 @@ export function LayerInfo({ tree, layers }: { tree: LayerTree; layers: Layer[] }
       </dl>
       {layer.text && layer.parent && (
         <p class="vk-layer-note">
-          {isWholeText(layer)
+          {isOnlyText(layer)
             ? `The text of ${layer.parent.name}: its text styles are written on ${layer.parent.name} itself.`
             : `Text styles apply to the layer it sits in, ${layer.parent.name}.`}
         </p>

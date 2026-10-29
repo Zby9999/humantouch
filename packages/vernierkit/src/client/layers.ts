@@ -4,7 +4,7 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
+import { asShown, DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
@@ -122,10 +122,10 @@ export function buildLayerTree(doc: Document): LayerTree {
       set({ kind: "image", name: el.localName === "svg" ? "Vector" : el.getAttribute("alt") || "Image" });
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
-    } else if (isText(el, view) && !drawsBox(style)) {
+    } else if (isText(el, view) && !asShown(el, () => drawsBox(style))) {
       set({ kind: "text", name: textName(el.textContent!) });
     } else {
-      // Text that draws a box, as a button does, is a container of one text layer: all its words, its inline fragments with them.
+      // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
       const children = isText(el, view) ? [textIn(el, view)] : drawnChildren(el, view);
       for (const child of children) {
         layer.children.push(Array.isArray(child) ? makeText(child, layer) : make(child, layer));
@@ -191,7 +191,7 @@ export function buildLayerTree(doc: Document): LayerTree {
     },
     layerOf(node) {
       if (node.nodeType === Node.ELEMENT_NODE) return layers.get(node as Element) ?? null;
-      // The text of a box may run on in its inline fragments: the layer is that of the element it is in.
+      // A Frame's only text may run on in its inline fragments: the layer is that of the element it is in.
       let parent: Layer | undefined;
       for (let e = node.parentElement; e && !parent; e = e.parentElement) parent = layers.get(e);
       return parent?.children.find((child) => child.text?.includes(node as Text)) ?? null;
@@ -204,18 +204,24 @@ export function buildLayerTree(doc: Document): LayerTree {
 }
 
 /**
- * Text that is all its container draws inside it, as a button's words are: it
- * has no element of its own, and its text styles are the container's, which
- * its words inherit.
+ * The only text of a Frame (or a Stack, a Grid), all it draws inside it, as a
+ * button's words are: it has no element of its own, and its text styles are
+ * those of the Frame's element, which its words inherit.
  */
-export function isWholeText(layer: Layer): boolean {
+export function isOnlyText(layer: Layer): boolean {
   return !!layer.text && layer.parent?.children.length === 1;
 }
 
-/** The text a box draws and nothing else, as a button does: the one layer in it; null for a layer that holds others, or none. */
-export function textOfBox(layer: Layer): Layer | null {
+/** The only text of a Frame, as a button's words are: the one layer in it; null for a layer that holds others, or none. */
+export function onlyTextOf(layer: Layer): Layer | null {
   const [only] = layer.children;
-  return only && isWholeText(only) ? only : null;
+  return only && isOnlyText(only) ? only : null;
+}
+
+/** A Frame around its text alone, as a button is: its only text, or that text given an element of its own to edit. */
+export function aroundText(layer: Layer): boolean {
+  const [only] = layer.children;
+  return layer.children.length === 1 && (isOnlyText(only) || (only.kind === "text" && only.el.hasAttribute(WRAP_ATTR)));
 }
 
 /** Whether layers can go in the layer: a Stack, a Grid or a Frame that is not a field or another element that holds no others. */
@@ -433,7 +439,7 @@ function isText(el: Element, view: Window): boolean {
         const e = child as Element;
         if (e.localName === "br" || e.localName === "wbr") continue;
         if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR)) continue;
-        // Text given an element of its own to edit, as the text of a box is, is a layer of its own.
+        // Text given an element of its own to edit, as a Frame's only text may be, is a layer of its own.
         if (e.hasAttribute(WRAP_ATTR)) return false;
         const display = view.getComputedStyle(e).display;
         if (display === "none") continue;

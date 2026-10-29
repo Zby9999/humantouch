@@ -36,4 +36,4 @@
 - 文字图层页面上已有的 `filter: blur()` 不读：和其他图层一起选中时那一行仍显示 Mixed，移除、修改都不会动文字图层的模糊（本 ticket 不给文字图层做模糊）。
 - 多选文字与有模糊的图层时，模糊行一直是 Mixed：输入一个值只改有模糊的图层，文字读作没有，所以不会变成一个统一的值。
 - 阴影按去掉 spread 比较：其他图层的阴影只靠 spread 才画出东西（如 Tailwind 的 ring）时，把 X、Y、Blur 都改成 0 会去掉文字的那个而保留它的，之后显示 Mixed。
-- 只有文字的 `<button>`、`<a>` 也是文字图层：Effects 显示并写它的 `text-shadow`，页面上它已有的 `box-shadow` 不显示。
+- 只有文字的 `<button>`、`<a>` 也是文字图层：Effects 显示并写它的 `text-shadow`，页面上它已有的 `box-shadow` 不显示。（已由 56 解决：只含文字、画出盒子的 button/a 改为带文字的 Frame，Frame 的 Effects 是 `box-shadow`，里面文字图层的是 `text-shadow`。）

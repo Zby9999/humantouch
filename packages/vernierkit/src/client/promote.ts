@@ -12,7 +12,7 @@ import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { BRIEF_ATTR, declarePromoted, LAYER_ID_ATTR, WRAP_ATTR } from "./canvas-style";
 import type { Breakpoint } from "./breakpoints";
 import { BRIEF, type Change, type ChangeSet } from "./changeset";
-import { chainOf, isWholeText, originOf, type Layer } from "./layers";
+import { chainOf, isOnlyText, originOf, type Layer } from "./layers";
 
 /** What a change to the component itself, that writes the elements at `loc`, is recorded under, in place of a layer's id. */
 export function componentKey(loc: string): string {
@@ -24,11 +24,11 @@ export function componentKey(loc: string): string {
  * used inside another component (else the layer is changed where it is
  * written already), that writes the layer in its own source. Not a locked
  * layer, a layer made this round, text beside other layers, nor text given an
- * element of its own, which only the canvas has; the text a box draws and
- * nothing else is, as it is written in the box's own element.
+ * element of its own, which only the canvas has; a Frame's only text is, as
+ * it is written in the Frame's own element.
  */
 export function inComponent(layer: Layer): boolean {
-  return !!layer.loc && (!layer.text || isWholeText(layer)) && !layer.made && layer.kind !== "locked" && layer.chain.length > 1 && !layer.el.hasAttribute(WRAP_ATTR);
+  return !!layer.loc && (!layer.text || isOnlyText(layer)) && !layer.made && layer.kind !== "locked" && layer.chain.length > 1 && !layer.el.hasAttribute(WRAP_ATTR);
 }
 
 /**

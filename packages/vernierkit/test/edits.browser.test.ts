@@ -9,7 +9,7 @@ import { declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
-import { boxOf, type Layer } from "../src/client/layers";
+import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
 import { fontsOf } from "../src/client/typography";
 import { createViews } from "../src/client/views";
@@ -3628,6 +3628,21 @@ describe("Variables", () => {
     expect(change("opacity")!.variables).toBeUndefined();
   });
 
+  test("a button's text takes a Variable for its font size, and the button one for its padding, each its own", () => {
+    const canvas = openCanvas(`<!DOCTYPE html><body style="margin: 0"><button id="go" data-vk-loc="src/App.tsx:4:5" style="padding: 4px 8px">Go</button></body>`);
+    const catalog = resolveVariables(ALL, canvas.doc);
+    const editor = createEditor(canvas.views, canvas.changes, null, { bind: (property, value, picked, previous) => bind(catalog, property, value, picked, previous) });
+    const button = find(editor.tree().root, (l) => l.el === canvas.doc.getElementById("go") && !l.text)!;
+    const [text] = button.children;
+
+    editor.set(text, "fontSize", 19, { variables: { "": LEAD } });
+    editor.set(button, "padding", [22, 8, 4, 8]);
+
+    expect(editor.variables(text, "fontSize")).toEqual({ "": { ...LEAD, picked: true } });
+    expect(editor.variables(button, "padding")).toEqual({ top: GUTTER, right: null, bottom: null, left: null });
+    expect(getComputedStyle(canvas.doc.getElementById("go")!).fontSize).toBe("19px");
+  });
+
   test("a Variable picked in the phone view is the value at its breakpoint only, as the panel shows it in each view", async () => {
     const { editor, layer, change, views } = openWithVariables();
     phoneFrame = document.createElement("iframe");
@@ -4908,7 +4923,7 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     expect([now.kind, now.children[0].kind, editor.read(now, "fill")]).toEqual(["frame", "text", { type: "solid", color: "#000000", opacity: 1 }]);
     const [size] = changes.list();
     expect(size).toMatchObject({ layer: button.getAttribute("data-vk-layer"), property: "fontSize", after: 20, target: { loc: "src/App.tsx:4:5", context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">', text: "Close" } } });
-    expect([size.target.run, size.target.boxText]).toEqual([undefined, true]);
+    expect([size.target.run, size.target.onlyText]).toEqual([undefined, true]);
 
     live = document.createElement("iframe");
     document.body.append(live);
@@ -5000,7 +5015,7 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
   });
 
   test("in a narrower view, the text's changes are listed as changed there on the text, the Frame's on the Frame", async () => {
-    const { doc, editor, views, layerOf } = openCanvas(BOXES_PAGE);
+    const { doc, editor, views, changes, layerOf } = openCanvas(BOXES_PAGE);
     phoneFrame = document.createElement("iframe");
     document.body.append(phoneFrame);
     const phone = await views.add(phoneFrame, 390);
@@ -5017,5 +5032,24 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     editor.inherit(now.children[0], "fontSize");
     expect(style(phone.document.getElementById("close")!).fontSize).toBe("15px");
     expect(editor.changesHere(now)).toEqual(["fill"]);
+
+    // Placed freely there: the Frame is, not its text.
+    editor.move(now, { parent: layerOf(doc.getElementById("main")!), x: 10, y: 10 });
+    const placed = find(editor.tree().root, (layer) => layer.el === doc.getElementById("close") && !layer.text)!;
+    expect([editor.changesHere(placed), editor.changesHere(placed.children[0])]).toEqual([["fill", "absolute"], []]);
+    const absolute = changes.list().find((change) => change.property === "absolute")!;
+    expect([absolute.target.context.path.at(-1), absolute.target.onlyText]).toEqual(["Button", undefined]);
+    expect(editor.undo().map((layer) => layer.kind)).toEqual(["frame"]);
+  });
+
+  test("hidden, a layer of text keeps what it is shown as: inline text with a background is text still", () => {
+    const { doc, editor, layerOf } = openCanvas(BOXES_PAGE);
+    editor.set(layerOf(doc.getElementById("marked")!), "visible", false);
+    editor.set(layerOf(doc.getElementById("close")!), "visible", false);
+    // The layers as built anew, as a structural edit builds them.
+    const at = (id: string) => buildLayerTree(doc).layerOf(doc.getElementById(id)!)!;
+
+    expect([at("marked").kind, at("marked").children]).toEqual(["text", []]);
+    expect([at("close").kind, at("close").children.map((child) => child.kind)]).toEqual(["frame", ["text"]]);
   });
 });

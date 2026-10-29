@@ -74,7 +74,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
-    ...(change.kind === "style" && target.boxText ? [boxText(target)] : []),
+    ...(change.kind === "style" && target.onlyText ? [onlyTextLine(target)] : []),
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
@@ -473,16 +473,16 @@ const AS_STACK =
 const NOT_LOCATED =
   "**Not located.** The layer carries no source marker: it may be markup outside the components (such as `index.html`) or code written without JSX. Find it in the source from its place on the page, above.";
 
-function layer({ context, boxText }: Target): string {
+function layer({ context, onlyText }: Target): string {
   const name = context.path.at(-1);
-  // The text a box draws and nothing else is written in the box's element.
-  return `${boxText ? `${name}, the text in ${context.path.at(-2)}, ` : `${name}, `}\`${context.element}\` (${context.path.join(" › ")})`;
+  // The only text of a Frame, as a button's words are, is written in the Frame's element.
+  return `${onlyText ? `${name}, the text in ${context.path.at(-2)}, ` : `${name}, `}\`${context.element}\` (${context.path.join(" › ")})`;
 }
 
-/** The styles of the text a box draws and nothing else are the box's element's, which the text inherits. */
-function boxText({ context }: Target): string {
-  const box = context.path.at(-2);
-  return `**Text in a box:** the text is all ${box} draws inside it, and has no element of its own: write its text styles on ${box}'s element itself, whose words inherit them, with no element around the text.`;
+/** The styles of a Frame's only text are the Frame's element's, which the text inherits. */
+function onlyTextLine({ context }: Target): string {
+  const frame = context.path.at(-2);
+  return `**The Frame's only text:** the text is all ${frame} draws inside it, and has no element of its own: write its text styles on ${frame}'s element itself, whose words inherit them, with no element around the text.`;
 }
 
 /** Which instances the change is for: those of the usage the layer sits in. */
