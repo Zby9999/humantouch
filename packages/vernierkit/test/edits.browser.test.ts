@@ -518,6 +518,14 @@ describe("stroke", () => {
     expect(editor.read(layer, "stroke")).toEqual({ ...red, weight: [1, 2.5, 1, 1] });
   });
 
+  test("each side reads as its own declaration writes it, when one rule writes them side by side", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.sides { border: 0 solid red; border-top-width: 1.5px; border-right-width: 3px; border-left-width: 2.5px }</style>");
+    const box = doc.getElementById("unmarked")!;
+    box.className = "sides";
+    expect(editor.read(layerOf(box), "stroke")).toEqual({ color: "#FF0000", opacity: 1, style: "solid", weight: [1.5, 3, 0, 2.5] });
+  });
+
   test("a weight set this round reads back as set, though a 1x screen draws it narrower", () => {
     const { editor, cards, layerOf } = openCanvas();
     const stroke: Stroke = { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" };

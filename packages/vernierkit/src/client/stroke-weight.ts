@@ -7,7 +7,7 @@
  */
 import { declaredByEdit } from "./canvas-style";
 import { readStroke, strokeWith, type ColorReader, type Stroke } from "./paint";
-import { sourcesOf } from "./style-source";
+import { declarationsOf } from "./style-source";
 
 const SIDES = ["top", "right", "bottom", "left"];
 
@@ -45,7 +45,7 @@ function readSides(el: Element, colors: ColorReader): Sides | null {
   const stroke = readStroke(el, colors);
   if (!stroke) return null;
   const drawn = perSide(stroke.weight);
-  const written = drawn.map((weight, i) => (weight > 0 ? writtenWidth(el, `border-${SIDES[i]}-width`) : null));
+  const written = writtenWidths(el, drawn.map((weight) => weight > 0));
   const redrawn = drawnWidths(el.ownerDocument, written.map((w) => w ?? 0));
   return { stroke, drawn, written: written.map((w, i) => (w !== null && redrawn[i] === drawn[i] ? w : null)) };
 }
@@ -78,13 +78,23 @@ function drawnWidths(doc: Document, widths: number[]): number[] {
   return drawn;
 }
 
-/** A side's width as written, in px: by an edit on the canvas, or else by what sets it in the page's styles; null when not in px. */
-function writtenWidth(el: Element, property: string): number | null {
+/**
+ * Each side's width as written, in px, top, right, bottom and left: by an
+ * edit on the canvas, or else by what sets it in the page's styles, read in
+ * one pass over them; null for a side not `drawn`, or not written in px.
+ */
+function writtenWidths(el: Element, drawn: boolean[]): (number | null)[] {
+  const properties = SIDES.map((side) => `border-${side}-width`);
   // An edit's declaration, on top of everything.
-  const edited = editedWidth(el, property);
-  if (edited) return pxOf(edited);
-  const [source] = sourcesOf(el, [property]);
-  return source.declaration ? pxOf(source.declaration.slice(source.declaration.indexOf(":") + 1)) : null;
+  const edited = properties.map((property, i) => (drawn[i] ? editedWidth(el, property) : ""));
+  const unread = properties.filter((_, i) => drawn[i] && !edited[i]);
+  const declared = new Map(unread.length ? declarationsOf(el, unread).map((declaration, i) => [unread[i], declaration]) : []);
+  return properties.map((property, i) => {
+    if (!drawn[i]) return null;
+    if (edited[i]) return pxOf(edited[i]);
+    const declaration = declared.get(property);
+    return declaration ? pxOf(declaration.slice(declaration.indexOf(":") + 1)) : null;
+  });
 }
 
 /** A side's width as an edit declares it: on its own, or as one of the four `border-width` sets; empty when no edit does. */
