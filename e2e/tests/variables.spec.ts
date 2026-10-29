@@ -22,7 +22,7 @@ async function selectRow(page: Page, name: string, nth = 0) {
 }
 
 /** A computed style of every card on the canvas, in page order. */
-function cardStyles(page: Page, property: "backgroundColor" | "paddingTop" | "borderTopLeftRadius" | "boxShadow") {
+function cardStyles(page: Page, property: "backgroundColor" | "paddingTop" | "paddingRight" | "borderTopLeftRadius" | "boxShadow") {
   return canvas(page)
     .locator("article")
     .evaluateAll((cards, property) => cards.map((card) => getComputedStyle(card)[property]), property);
@@ -142,6 +142,108 @@ test("corner radius, shadows, size and font size take Variables of their own gro
   await expect(canvas(page).locator("h3").first()).toHaveCSS("font-size", "19px");
   // Line height, letter spacing and stroke weight are in none of the groups.
   await expect(design(page).getByRole("button", { name: "Line height variables" })).toHaveCount(0);
+});
+
+test("typing part of a name in a field lists its group's Variables that have it, under the field: arrows choose, Enter picks, Esc puts the value back", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  const matching = page.getByRole("listbox", { name: "Matching variables" });
+
+  // The fill color: the project's brand colors, in its order.
+  const hex = design(page).getByRole("textbox", { name: "Fill color", exact: true });
+  await hex.click();
+  await hex.pressSequentially("BRA");
+  await expect(matching.getByRole("option")).toHaveText([/^brand-50#EEF4FF$/, /^brand-100#DBE6FF$/, /^brand-500#3D63F5$/, /^brand-700#2440C4$/]);
+  await expect(matching.getByRole("option", { selected: true })).toHaveText(/^brand-50#/);
+  await hex.press("ArrowDown");
+  await hex.press("ArrowDown");
+  await hex.press("ArrowDown");
+  await hex.press("ArrowUp");
+  await expect(matching.getByRole("option", { selected: true })).toHaveText(/^brand-500#/);
+  // Typing goes on: the field keeps the keys.
+  await expect(hex).toBeFocused();
+  await hex.press("Enter");
+  await expect(matching).toBeHidden();
+  await expect(design(page).getByRole("button", { name: "Fill color variable", exact: true })).toHaveText("brand-500");
+  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(61, 99, 245)");
+
+  // A spacing field lists spacing Variables only, and a click picks one.
+  const top = design(page).getByRole("textbox", { name: "Padding top" });
+  await top.click();
+  await top.pressSequentially("sec");
+  await expect(matching.getByRole("option")).toHaveText([/^section72px$/]);
+  await matching.getByRole("option", { name: "section" }).click();
+  await expect(design(page).getByRole("button", { name: "Padding top variable", exact: true })).toHaveText("section");
+  expect((await cardStyles(page, "paddingTop"))[0]).toBe("72px");
+
+  // Esc closes the list and puts back the value; nothing changes.
+  const right = design(page).getByRole("textbox", { name: "Padding right" });
+  await right.click();
+  await right.pressSequentially("gu");
+  await expect(matching.getByRole("option")).toHaveText([/^gutter22px$/]);
+  await right.press("Escape");
+  await expect(matching).toBeHidden();
+  await expect(right).toHaveValue("22");
+  await expect(design(page).getByRole("button", { name: "Padding right variable", exact: true })).toHaveCount(0);
+
+  // A number lists nothing: it is a value, ↑ steps it.
+  await right.fill("2");
+  await expect(matching).toBeHidden();
+  await right.press("ArrowUp");
+  expect((await cardStyles(page, "paddingRight"))[0]).toBe("23px");
+});
+
+test("a value typed close to a Variable of the field's group shows its name in the field, quietly: a click makes it the Variable, typing on leaves it be", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+
+  // 71px is 1px from section, 72px.
+  const top = design(page).getByRole("textbox", { name: "Padding top" });
+  await top.click();
+  await top.pressSequentially("71");
+  const hint = design(page).getByRole("button", { name: "Use variable section" });
+  await expect(hint).toHaveText("section");
+  // The field keeps the keys and the value typed.
+  await expect(top).toBeFocused();
+  await top.press("Enter");
+  expect((await cardStyles(page, "paddingTop"))[0]).toBe("71px");
+  // Still there for the value applied; a click makes it the Variable.
+  await hint.click();
+  await expect(design(page).getByRole("button", { name: "Padding top variable", exact: true })).toHaveText("section");
+  expect((await cardStyles(page, "paddingTop"))[0]).toBe("72px");
+
+  // A value that is a Variable, or near none, hints at nothing.
+  const right = design(page).getByRole("textbox", { name: "Padding right" });
+  await right.click();
+  await right.pressSequentially("24");
+  await expect(design(page).getByRole("button", { name: /^Use variable/ })).toHaveCount(0);
+  // 52px is 4px from Tailwind's 48px and 56px.
+  await right.fill("52");
+  await expect(design(page).getByRole("button", { name: /^Use variable/ })).toHaveCount(0);
+  await right.press("Escape");
+
+  // Only in the field's group: 43px is close to the display font size.
+  await selectRow(page, "Freeze");
+  const size = design(page).getByRole("textbox", { name: "Font size" });
+  const before = await size.inputValue();
+  await size.click();
+  await size.pressSequentially("43");
+  await expect(design(page).getByRole("button", { name: "Use variable display" })).toBeVisible();
+  // Esc puts back the value: nothing typed is applied.
+  await size.press("Escape");
+  await expect(design(page).getByRole("button", { name: /^Use variable/ })).toHaveCount(0);
+  await expect(size).toHaveValue(before);
+
+  // A color a hair from brand-500, picked from the hint as it is typed: one edit, undone in one step.
+  await selectRow(page, "Card");
+  const hex = design(page).getByRole("textbox", { name: "Fill color", exact: true });
+  await hex.click();
+  await hex.pressSequentially("3E64F4");
+  await design(page).getByRole("button", { name: "Use variable brand-500" }).click();
+  await expect(design(page).getByRole("button", { name: "Fill color variable", exact: true })).toHaveText("brand-500");
+  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(61, 99, 245)");
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
 });
 
 test("on a Tailwind v4 project, its default theme's Variables are offered; with none, the panel offers values only", async ({ page }) => {

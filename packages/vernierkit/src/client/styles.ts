@@ -774,6 +774,41 @@ export const styles = /* css */ `
   cursor: default;
 }
 .vk-variable-chip-name:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+/* A Variable close to the value typed: its name at the end of the field, quieter than a Variable's own. */
+.vk-variable-hint {
+  all: unset;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--vk-border);
+  color: var(--vk-text-muted);
+  font-size: 10px;
+  line-height: 16px;
+  cursor: default;
+}
+.vk-variable-hint:hover { background: var(--vk-panel); color: var(--vk-text); }
+.vk-variable-hint:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
+/* The Variables whose names have what is typed: a list under the field. */
+.vk-matches {
+  position: fixed;
+  z-index: 2;
+  box-sizing: border-box;
+  max-height: 224px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--vk-panel);
+  box-shadow:
+    inset 0 0 0 1px var(--vk-border),
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 8px 24px rgb(0 0 0 / 0.16);
+  color: var(--vk-text);
+}
 .vk-swatch-button {
   display: block;
   background: var(--vk-swatch);

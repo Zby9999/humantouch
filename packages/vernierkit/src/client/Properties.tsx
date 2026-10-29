@@ -29,7 +29,7 @@ import { stepped } from "./stroke-weight";
 import { useToast } from "./Toast";
 import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
 import { weightName } from "../design-values";
-import { ColorPicker, useCatalog, VariableSlot, type Slot } from "./VariablePicker";
+import { ColorPicker, namesColor, TypingProvider, useCatalog, useTypeahead, VariableSlot, type Slot } from "./VariablePicker";
 import { GROUPS, sameVariable, withPart, type Resolved } from "./variables";
 
 interface Props {
@@ -112,7 +112,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const variable: SlotOf = (property, part = "") => {
     const group = GROUPS[property];
     if (!catalog || !group) return undefined;
-    return { group, bound: boundTo(property, part), onPick: (entry) => pick(property, part, entry) };
+    return { group, selection: keyOf(layers), bound: boundTo(property, part), onPick: (entry) => pick(property, part, entry) };
   };
 
   /** Selected text layers: their shadows are text shadows, and they have no blur. */
@@ -1377,9 +1377,27 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
       onChange={() => (picking.current = false)}
     />
   );
+  const hex = <TextField label={`${name} color`} value={color.color.slice(1)} parse={parseHex} onChange={(hex) => onChange({ color: hex, opacity: color.opacity })} />;
   const typed = (
     <>
-      <TextField label={`${name} color`} value={color.color.slice(1)} parse={parseHex} onChange={(hex) => onChange({ color: hex, opacity: color.opacity })} />
+      {offered ? (
+        <TypingProvider
+          value={{
+            group: "color",
+            selection: offered.selection,
+            read: (text) => {
+              const hex = parseHex(text);
+              return hex ? { color: hex, opacity: color.opacity } : null;
+            },
+            naming: namesColor,
+            onPick: offered.onPick,
+          }}
+        >
+          {hex}
+        </TypingProvider>
+      ) : (
+        hex
+      )}
       <TextField
         label={`${name} opacity`}
         class="vk-opacity"
@@ -1566,18 +1584,32 @@ interface TextFieldProps<T> {
  * for, even when leaving the field selects another layer.
  */
 function TextField<T>({ label, class: className, value, placeholder, parse, step, onChange }: TextFieldProps<T>) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setShownDraft] = useState<string | null>(null);
+  /** The draft as of now, for a blur that follows at once: Esc drops it before the blur would apply it. */
+  const draftNow = useRef<string | null>(null);
+  const setDraft = (text: string | null) => {
+    draftNow.current = text;
+    setShownDraft(text);
+  };
   /** Set on focus: where the typed value goes. */
   const target = useRef(onChange);
+  const input = useRef<HTMLInputElement>(null);
+  /** Where the field's value can be a Variable: those found as it is typed into. */
+  const typeahead = useTypeahead({ text: draft, value, input, reset: () => setDraft(null) });
 
   const commit = () => {
-    if (draft === null) return;
+    const typed = draftNow.current;
+    if (typed === null) return;
     setDraft(null);
-    const parsed = parse(draft);
-    if (parsed !== null && draft !== value) target.current(parsed);
+    const parsed = parse(typed);
+    if (parsed !== null && typed !== value) {
+      target.current(parsed);
+      typeahead.applied(typed);
+    }
   };
 
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLInputElement>) => {
+    if (typeahead.keyDown(event)) return;
     if (event.key === "Enter") {
       commit();
       event.currentTarget.select();
@@ -1592,10 +1624,13 @@ function TextField<T>({ label, class: className, value, placeholder, parse, step
   };
 
   return (
+    <>
     <input
+      ref={input}
       type="text"
       class={`vk-input${className ? ` ${className}` : ""}`}
       aria-label={label}
+      {...typeahead.input}
       // Something typed, not yet applied: ⌘Z is the field's own until then.
       data-vk-typing={draft !== null && draft !== value ? "" : undefined}
       placeholder={placeholder}
@@ -1610,6 +1645,8 @@ function TextField<T>({ label, class: className, value, placeholder, parse, step
       onKeyDown={onKeyDown}
       onBlur={commit}
     />
+    {typeahead.after}
+    </>
   );
 }
 

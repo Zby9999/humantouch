@@ -2,7 +2,8 @@
  * The project's Variables on the canvas: each worked out to what the canvas
  * draws (px, a color, shadows), and which of them a value is. A value is a
  * Variable only when it is exactly that Variable's value: colors compared in
- * sRGB as the canvas draws them, lengths in px. Never one close to it.
+ * sRGB as the canvas draws them, lengths in px. Never one close to it: a
+ * close one is only for the panel to hint at (`near`).
  */
 import type { Variable, VariableGroup } from "../service-protocol";
 import type { Bindings, Picked } from "./changeset";
@@ -25,7 +26,24 @@ export interface Catalog {
   of(group: VariableGroup): Resolved[];
   /** The first Variable of the group whose value is exactly `drawn`, or null. */
   match(group: VariableGroup, drawn: Drawn): Variable | null;
+  /**
+   * The Variable of the group closest to `drawn`, when one is close (see
+   * `NEAR`) and none is exactly it; of two as close, the one listed first.
+   * Null otherwise. Only for the panel to hint
+   * at: the change notes go by `match` alone.
+   */
+  near(group: VariableGroup, drawn: Drawn): Resolved | null;
+  /** Those of a group whose name has `text` in it, in any case; none for no text. */
+  named(group: VariableGroup, text: string): Resolved[];
 }
+
+/**
+ * How close a value is to a Variable for the panel to hint at it, all in one
+ * place to tune: a color within `color` of it in OKLab, its opacity within
+ * `opacity` of the Variable's (a Variable picked brings its own opacity); a
+ * length within `px` of it and within `ratio` of the Variable's own.
+ */
+export const NEAR = { color: 0.02, opacity: 0.005, px: 2, ratio: 0.1 } as const;
 
 /**
  * The Variables worked out on the canvas's document, so a rem is the page's
@@ -61,10 +79,60 @@ export function resolveVariables(variables: Variable[], doc: Document): Catalog 
   }
   const groups = new Map<VariableGroup, Resolved[]>();
   for (const entry of resolved) groups.set(entry.variable.group, [...(groups.get(entry.variable.group) ?? []), entry]);
+  const of = (group: VariableGroup) => groups.get(group) ?? [];
   return {
-    of: (group) => groups.get(group) ?? [],
-    match: (group, drawn) => groups.get(group)?.find((entry) => equal(entry.drawn, drawn))?.variable ?? null,
+    of,
+    match: (group, drawn) => of(group).find((entry) => equal(entry.drawn, drawn))?.variable ?? null,
+    near: (group, drawn) => {
+      const entries = of(group);
+      if (entries.some((entry) => equal(entry.drawn, drawn))) return null;
+      let closest: Resolved | null = null;
+      let least = Infinity;
+      for (const entry of entries) {
+        const apart = distance(entry.drawn, drawn);
+        if (apart !== null && apart < least) [closest, least] = [entry, apart];
+      }
+      return closest;
+    },
+    named: (group, text) => {
+      const part = text.trim().toLowerCase();
+      return part ? of(group).filter(({ variable }) => variable.name.toLowerCase().includes(part)) : [];
+    },
   };
+}
+
+/**
+ * How far `drawn` is from a Variable's value, when it is close by `NEAR`:
+ * px for a length, the distance in OKLab for a color. Null when not close, or
+ * for shadows, which are never hinted at.
+ */
+function distance(variable: Drawn, drawn: Drawn): number | null {
+  if (typeof variable === "number" || typeof drawn === "number") {
+    if (typeof variable !== "number" || typeof drawn !== "number") return null;
+    const apart = Math.abs(variable - drawn);
+    return apart <= NEAR.px && apart <= NEAR.ratio * Math.abs(variable) ? apart : null;
+  }
+  if (Array.isArray(variable) || Array.isArray(drawn)) return null;
+  if (Math.abs(variable.opacity - drawn.opacity) > NEAR.opacity) return null;
+  const [a, b] = [oklab(variable.color), oklab(drawn.color)];
+  const apart = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  return apart <= NEAR.color ? apart : null;
+}
+
+/** `#RRGGBB` in OKLab: lightness from 0 to 1, and a and b. */
+function oklab(hex: string): [number, number, number] {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
 }
 
 /** Whether two are the same Variable: by name, from the same place. */

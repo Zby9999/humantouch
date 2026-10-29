@@ -3316,6 +3316,44 @@ describe("Variables", () => {
     expect(change("fill")!.variables).toEqual({ "stop 1": BRAND, "stop 2": null });
   });
 
+  test("a value close to a Variable of its group finds the closest: a length within 2px and 10% of it, a color a little apart as the eye sees it; the same value is not close", () => {
+    const { catalog } = openWithVariables();
+    const near = (group: Variable["group"], drawn: Parameters<typeof catalog.near>[1]) => catalog.near(group, drawn)?.variable.name ?? null;
+    // gutter is 22px, 4 is 16px.
+    expect(near("spacing", 20)).toBe("gutter");
+    expect(near("spacing", 23.5)).toBe("gutter");
+    expect(near("spacing", 19.5)).toBeNull();
+    expect(near("spacing", 22)).toBeNull();
+    // 1.5px from 16px is within 2px and within 10% of it, 1.6px.
+    expect(near("spacing", 17.5)).toBe("4");
+    // 1.8px from 16px is within 2px, but more than 10% of it.
+    expect(near("spacing", 14.2)).toBeNull();
+    // Only in the group: a 19px gap is not close to the 19px font size.
+    expect(near("spacing", 18)).toBeNull();
+    expect(near("fontSize", 18)).toBe("lead");
+    expect(near("radius", 13)).toBe("card");
+
+    // brand-500 is #3D63F5: #3E64F4 is a hair apart, #4A70F0 is plainly another blue.
+    expect(near("color", { color: "#3E64F4", opacity: 1 })).toBe("brand-500");
+    expect(near("color", { color: "#4A70F0", opacity: 1 })).toBeNull();
+    expect(near("color", { color: "#3D63F5", opacity: 1 })).toBeNull();
+    expect(near("color", { color: "#FE0101", opacity: 1 })).toBe("--danger");
+    // A see-through color is not close to an opaque one.
+    expect(near("color", { color: "#3E64F4", opacity: 0.5 })).toBeNull();
+  });
+
+  test("of two close, the closer; Variables found by part of their name, as typed, in any case", () => {
+    const { catalog } = openWithVariables([GUTTER, FOUR, variable("tight", "spacing", "21px"), BRAND, variable("brand-600", "color", "#3a5ff0"), RED]);
+    expect(catalog.near("spacing", 21.4)?.variable.name).toBe("tight");
+    expect(catalog.near("spacing", 21.6)?.variable.name).toBe("gutter");
+    // As close to tight as to gutter: gutter, listed first.
+    expect(catalog.near("spacing", 21.5)?.variable.name).toBe("gutter");
+    expect(catalog.named("color", "BRA").map(({ variable }) => variable.name)).toEqual(["brand-500", "brand-600"]);
+    expect(catalog.named("color", " dang ").map(({ variable }) => variable.name)).toEqual(["--danger"]);
+    expect(catalog.named("spacing", "x")).toEqual([]);
+    expect(catalog.named("radius", "")).toEqual([]);
+  });
+
   test("without Variables, a change names none", () => {
     const { editor, layer, change } = openWithVariables([]);
     editor.set(layer("#row"), "gap", 22);

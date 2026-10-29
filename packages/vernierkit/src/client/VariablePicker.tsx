@@ -1,11 +1,11 @@
 /** @jsxImportSource preact */
-import { createContext, type ComponentChildren } from "preact";
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { createContext, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Variable, VariableGroup } from "../service-protocol";
 import { writeShadows, type Shadow } from "./effects";
 import { Icon } from "./icons";
 import { cssColor, type Color } from "./paint";
-import { sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
+import { equal, sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
 
 const CatalogContext = createContext<Catalog | null>(null);
 
@@ -19,6 +19,8 @@ export function useCatalog(): Catalog | null {
 /** What the Design panel needs of a part of a value that can be a Variable. */
 export interface Slot {
   group: VariableGroup;
+  /** Tells the selected layers apart: what was typed for some is not hinted at for others. */
+  selection: string;
   /** The Variable the designer picked for it, shared by the selected layers; null when none. */
   bound: Variable | null;
   /** Picks a Variable for it; null detaches it, keeping the value. */
@@ -111,6 +113,43 @@ function headingOf({ name, group, own }: Variable): string {
 }
 
 /**
+ * A Variable in a list: its preview, name and what it draws. A button in a
+ * picker's list; in the list under a field typed into, a row that leaves the
+ * focus in the field, chosen as the pointer passes over it.
+ */
+function Option({ as, id, entry, selected, onChoose, onPick }: {
+  as: "button" | "div";
+  id?: string;
+  entry: Resolved;
+  selected: boolean;
+  onChoose?(): void;
+  onPick(entry: Resolved): void;
+}) {
+  const { variable, drawn } = entry;
+  const Tag = as;
+  return (
+    <Tag
+      {...(as === "button" ? { type: "button" } : {
+        // The field keeps the focus, and what is typed, until one is picked.
+        onPointerDown: (event: PointerEvent) => event.preventDefault(),
+        onPointerEnter: onChoose,
+      })}
+      id={id}
+      role="option"
+      class="vk-variable-option"
+      aria-selected={selected}
+      aria-label={variable.name}
+      title={`${variable.name}: ${variable.value}`}
+      onClick={() => onPick(entry)}
+    >
+      <Preview drawn={drawn} />
+      <span class="vk-variable-name">{variable.name}</span>
+      <span class="vk-variable-value">{valueText(drawn)}</span>
+    </Tag>
+  );
+}
+
+/**
  * The Variables of a group, under their headings, the project's own first,
  * found by name as one types. The one picked shows as selected.
  */
@@ -119,7 +158,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
   useEffect(() => search.current?.focus(), []);
-  const found = (catalog?.of(group) ?? []).filter(({ variable }) => variable.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const found = !catalog ? [] : query.trim() ? catalog.named(group, query) : catalog.of(group);
   const headings = [...new Set(found.map(({ variable }) => headingOf(variable)))];
   return (
     <>
@@ -142,24 +181,9 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
             {found
               .filter(({ variable }) => headingOf(variable) === heading)
               .map((entry) => {
-                const { variable, drawn } = entry;
+                const { variable } = entry;
                 const selected = sameVariable(bound, variable);
-                return (
-                  <button
-                    key={`${variable.from} ${variable.name}`}
-                    type="button"
-                    role="option"
-                    class="vk-variable-option"
-                    aria-selected={selected}
-                    aria-label={variable.name}
-                    title={`${variable.name}: ${variable.value}`}
-                    onClick={() => onPick(entry)}
-                  >
-                    <Preview drawn={drawn} />
-                    <span class="vk-variable-name">{variable.name}</span>
-                    <span class="vk-variable-value">{valueText(drawn)}</span>
-                  </button>
-                );
+                return <Option key={`${variable.from} ${variable.name}`} as="button" entry={entry} selected={selected} onPick={onPick} />;
               })}
           </div>
         ))}
@@ -184,6 +208,7 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
     onPick(entry);
   };
   const lower = label.toLowerCase();
+  const typing: Typing = { group, selection: slot.selection, read: readLength, naming: namesLength, onPick: pick };
   return (
     <div class="vk-variable-slot">
       {bound ? (
@@ -205,7 +230,7 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
         </div>
       ) : (
         <>
-          {children}
+          <TypingProvider value={typing}>{children}</TypingProvider>
           <button
             type="button"
             class="vk-icon-button vk-variable-button"
@@ -270,3 +295,180 @@ export function ColorPicker({ label, anchor, slot, custom, onClose }: {
     </Popover>
   );
 }
+
+/**
+ * What a field typed into needs to find its Variables as one types: given to
+ * a number field by its VariableSlot, and to a color's hex by its color field.
+ */
+export interface Typing {
+  group: VariableGroup;
+  /** The selected layers it is typed for, as `Slot` tells them apart. */
+  selection: string;
+  /** What the text would draw as a value: null when it is not one (a name, say). */
+  read(text: string): Drawn | null;
+  /** Whether the text is part of a name rather than a value: "pri", not "12" or "3d6". */
+  naming(text: string): boolean;
+  onPick(entry: Resolved): void;
+}
+
+const TypingContext = createContext<Typing | null>(null);
+
+/** Lets the field inside find its Variables as it is typed into. */
+export const TypingProvider = TypingContext.Provider;
+
+/** A length typed in, in px, to two decimals, as a number field reads it. */
+function readLength(text: string): number | null {
+  const n = parseFloat(text);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+/** Text that starts as no number does: a name. */
+function namesLength(text: string): boolean {
+  return /^[^\d+\-.]/.test(text.trim());
+}
+
+/** Text with a letter no hex value has: a name. */
+export function namesColor(text: string): boolean {
+  return /[^\s#0-9a-f]/i.test(text);
+}
+
+/** What a field shows of the Variables as it is typed into: the keys it takes first, its input's attributes, and what follows the input. */
+export interface Typeahead {
+  /** Handles a key the list takes (↑, ↓, Enter, Esc while it is open); false for any other. */
+  keyDown(event: TargetedKeyboardEvent<HTMLInputElement>): boolean;
+  /** The text typed was applied as the value. */
+  applied(text: string): void;
+  input: Record<string, string | undefined>;
+  after: ComponentChildren;
+}
+
+const NONE: Typeahead = { keyDown: () => false, applied: () => {}, input: {}, after: null };
+
+/**
+ * Finds Variables as a field is typed into, as in Figma, for a field inside a
+ * TypingProvider: text that is part of a name lists the group's Variables
+ * that have it, under the field, to choose with ↑ / ↓ and pick with Enter (Esc
+ * puts back the value); a value close to one of them (see `NEAR`) shows its
+ * name quietly at the end of the field, to pick with a click. Neither takes
+ * the focus or stops the typing. `text`: what is typed and not yet applied;
+ * `value`: what the field shows; `reset` drops what is typed.
+ */
+export function useTypeahead({ text, value, input, reset }: { text: string | null; value: string; input: RefObject<HTMLInputElement | null>; reset(): void }): Typeahead {
+  const typing = useContext(TypingContext);
+  const catalog = useCatalog();
+  const id = useId();
+  /** The option chosen with the arrows, for the text it was chosen in: other text starts again at the first. */
+  const [chosen, setChosen] = useState({ text, index: 0 });
+  /** The value last typed in and applied, and for which layers: its hint stays while the field shows it for them, to be clicked. */
+  const [typed, setTyped] = useState<{ drawn: Drawn; selection: string } | null>(null);
+  if (!typing || !catalog) return NONE;
+
+  const { group, selection, read, naming, onPick } = typing;
+  const options = text !== null && naming(text) ? catalog.named(group, text) : [];
+  const open = options.length > 0;
+  const active = chosen.text === text ? Math.min(chosen.index, options.length - 1) : 0;
+  const shown = read(value);
+  const kept = typed?.selection === selection && shown !== null && equal(typed.drawn, shown) ? typed.drawn : null;
+  const drawn = text !== null ? read(text) : kept;
+  const near = drawn !== null ? catalog.near(group, drawn) : null;
+
+  const pick = (entry: Resolved) => {
+    reset();
+    setTyped(null);
+    onPick(entry);
+  };
+  const optionId = (index: number) => `${id}-${index}`;
+
+  return {
+    keyDown(event) {
+      if (!open) return false;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        const by = event.key === "ArrowDown" ? 1 : -1;
+        setChosen({ text, index: (active + by + options.length) % options.length });
+      } else if (event.key === "Enter") pick(options[active]);
+      else if (event.key === "Escape") reset();
+      else return false;
+      event.preventDefault();
+      // Esc closes the list and keeps the field, and the selection.
+      event.stopPropagation();
+      return true;
+    },
+    applied(applied) {
+      const drawn = read(applied);
+      setTyped(drawn === null ? null : { drawn, selection });
+    },
+    input: open ? { "aria-autocomplete": "list", "aria-controls": id, "aria-activedescendant": optionId(active) } : {},
+    after: (
+      <>
+        {near && (
+          <button
+            type="button"
+            class="vk-variable-hint"
+            aria-label={`Use variable ${near.variable.name}`}
+            title={`Close to ${near.variable.name} (${valueText(near.drawn)}): use it`}
+            // A press keeps the field typed into: what is typed is not applied on the way.
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => pick(near)}
+          >
+            {near.variable.name}
+          </button>
+        )}
+        {open && input.current && (
+          <Matches id={id} anchor={input.current} options={options} active={active} optionId={optionId} onChoose={(index) => setChosen({ text, index })} onPick={pick} />
+        )}
+      </>
+    ),
+  };
+}
+
+/** The Variables whose names have what is typed, in a list under the field. */
+function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
+  id: string;
+  anchor: HTMLInputElement;
+  options: Resolved[];
+  active: number;
+  optionId(index: number): string;
+  onChoose(index: number): void;
+  onPick(entry: Resolved): void;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ left: number; top: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const at = (anchor.closest(".vk-field") ?? anchor).getBoundingClientRect();
+    const width = Math.max(at.width, MATCHES_WIDTH);
+    const height = list.current!.offsetHeight;
+    const below = at.bottom + 4;
+    setPlace({
+      left: Math.max(GAP, Math.min(at.left, window.innerWidth - width - GAP)),
+      top: below + height + GAP <= window.innerHeight ? below : Math.max(GAP, at.top - 4 - height),
+      width,
+    });
+  }, [anchor, options.length]);
+  useEffect(() => {
+    list.current?.querySelector(`[id="${optionId(active)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+  return (
+    <div
+      ref={list}
+      id={id}
+      class="vk-matches"
+      role="listbox"
+      aria-label="Matching variables"
+      style={{ width: `${place?.width ?? MATCHES_WIDTH}px`, left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden" }}
+    >
+      {options.map((entry, index) => (
+        <Option
+          key={`${entry.variable.from} ${entry.variable.name}`}
+          as="div"
+          id={optionId(index)}
+          entry={entry}
+          selected={index === active}
+          onChoose={() => onChoose(index)}
+          onPick={onPick}
+        />
+      ))}
+    </div>
+  );
+}
+
+const MATCHES_WIDTH = 200;
