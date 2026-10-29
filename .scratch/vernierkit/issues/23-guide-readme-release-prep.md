@@ -45,3 +45,31 @@ Guide 草稿：
 - `package.spec.ts` 加一条：包里没有 `.map`，也没有 js/cjs 带 `sourceMappingURL` 注释。
 - `npm pack --dry-run` 现在 15 个文件：打包 264.8 kB，解开 1.0 MB（之前 636.5 kB / 2.3 MB）。全新 Vite 项目（本地 tgz）里切换按钮出现、进得了编辑模式，开发服务器和浏览器控制台都没有 source map 警告，doctor 全部 ✓。
 - 代价：在浏览器开发者工具里看到的是压缩后的编辑层代码，仓库里调试也一样；需要时临时在 `tsup.config.ts` 打开 `sourcemap` 再构建。
+
+**按 code-review 修正打包检查与 Guide 草稿（2026-10-29）**
+
+- `package.spec.ts`：
+  - 整个文件只打一次包：`test.describe.configure({ mode: "default" })`，在 `fullyParallel` 下也按顺序跑在同一个 worker 里（之前 5 个 worker 各 `pnpm pack` 一次）。没用 `serial`：这几条检查互不依赖，一条失败不该跳过其余几条。
+  - 解包目录改名 `unpacked`，读包内文件收成一个 `read(file)`；删掉匹配不到任何文件的 `.d.cts` 条件（`.d.cts` 本来就不匹配 `\.tsx?$`）。
+  - "不含 `workspace:`" 那条在 `pnpm pack` 下永远不会失败（它会改写 `workspace:`），改成：dependencies 与 peerDependencies 的每一项都是 registry 能解析的 semver 范围（不是 `workspace:`、`file:`、`link:`、git、URL 或 dist-tag）。临时把 `magic-string` 改成 `github:…` 时这条失败。
+  - 相对引入：ES 模块里补上副作用引入（`import"./x.js"`、`import "./x.js"`），`.cjs` 里查 `require("./…")`；`.cjs` 只查 `require`，因为 next-loader.cjs 内联的 babel 里有像 `from "./module"` 的字符串。三种写法临时加到 dist 里时都失败。
+  - 新增：dist 里的裸引入（去掉 Node 内置模块，tsup 输出时去掉了 `node:` 前缀，所以按 `builtinModules` 判断）都在发布出的 dependencies 或 peerDependencies 里；cli.js 字符串里的 `vernierkit/vite` 等按自引用处理，要求是 `exports` 里的子路径。按实际 dist，裸引入只有 `@babel/parser`（cli/vite/next 三份）、`magic-string`（vite.js）和 `react`（react.dev.js）；vite、next 只在类型里，next-loader.cjs 已内联 babel，只 require 了 `path`。临时加一个 `import "left-pad"` 时这条失败，`node:fs` 不误报。
+  - README/LICENSE 白名单改成 npm 总会打进包的规则（npm-packlist：根目录的 `package.json`，以及 `readme`、`copying`、`license`、`licence` 加任意扩展名，大小写不敏感），注释里写明是 npm 的行为。临时放 `README.md`、`license` 时通过，`files` 里加 `CHANGELOG.md` 时失败。
+  - 测试标题不再说 "as npm would publish it"。
+- Guide 草稿对照 `install.ts` 改了：
+  - `init` 打出 "Finish by hand" 后还有一行 "Then run `npx vernierkit doctor`."（install.ts:288），所以写 "If it prints"；`init` 从 stderr 报错退出（装不上依赖让人装好后重跑 init、找不到 package.json、不是 React 项目、不是 Vite 或 Next.js 16+）时，照报错做，做不到就告诉设计师。
+  - 开发服务器用 `init` 打出的命令（install.ts:291 的 `${script} dev`，如 `npm run dev`、`pnpm dev`）；要手动完成时 `init` 不打这条命令，就用项目自己的 `dev` 脚本。
+  - `remove` 遇到 `init` 加的行之后被改过（或卸载依赖失败）时，打出 "Finish by hand" 并以 1 退出（install.ts:369、:393、:396–399）；照做之后 `git diff` 里不再有 Vernier Kit 的东西（项目自己后来的改动当然还在）。
+  - "layers I set aside off the canvas" 改用 GLOSSARY 的 "off-canvas layers"；其余用词（editor layer、toggle、design changes、applying a round）对过 GLOSSARY，没有用到 _Avoid_ 里的词。
+- 新草稿按原文走过一遍（临时目录、`npm create vite@latest -- --template react-ts`、本地 tgz）：`init` 打出 `npm run dev`，开发服务器起来后 headless 浏览器里切换按钮在右下角、点开进得了编辑模式、控制台无报错，开发服务器运行中 doctor 全部 ✓；`remove` 后 `git status` 为空。另外验证了：先改过 vite.config.ts 里 `init` 加的那行再 `remove`，打出 "Finish by hand" 并退出 1，照做后 `git diff` 里只剩项目自己的那处改动；去掉 vite.config.ts 时 `init` 打出 "Finish by hand"、不打开发服务器命令；空目录里 `init` 从 stderr 报 "No package.json…" 并退出 1。
+
+Guide 草稿（取代上面那份）：
+
+> Install Vernier Kit, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
+>
+> 1. In the project's root folder, run `npx -y vernierkit@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
+> 2. Start the dev server with the command `init` printed (if it printed none, the project's own `dev` script) and leave it running.
+> 3. Open the page it serves and confirm the Vernier Kit toggle is at its bottom right: a round button named "Vernier Kit: enter edit mode". If you cannot open a browser, ask me to look.
+> 4. Run `npx vernierkit doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
+>
+> To remove Vernier Kit, run `npx vernierkit remove` in the project's root folder. It takes out everything `init` added and deletes `.vernier/`, with any off-canvas layers, leaving `git diff` empty. If it prints "Finish by hand" (lines `init` added were changed since), make those edits too; then nothing of Vernier Kit is left in `git diff`. It refuses while I have design changes not applied yet, or while you are applying a round.
