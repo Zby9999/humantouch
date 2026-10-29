@@ -6,7 +6,8 @@
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import type { OffCanvasOrigin, SavedOffCanvasLayer } from "../service-protocol";
-import { breakpointOf, clearOf, contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
+import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
+import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import {
   AS_STACK_ATTR,
   asShown,
@@ -352,7 +353,7 @@ export function createEditor(
   };
   /** The layer's changes at a breakpoint that holds in the view worked in, to `property` or to any, in the order they were first made; none in the desktop view. */
   const changesHereOf = (layer: Layer, property?: string) => {
-    const view = beside();
+    const view = working.beside();
     if (!view) return [];
     return changes
       .list()
@@ -364,39 +365,13 @@ export function createEditor(
     return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
   };
 
-  /** The view worked in; null: the desktop view. */
-  let current: View | null = null;
-  /** The views beside the desktop view. */
-  const others = () => views.list().slice(1);
-  /** The view worked in when it is not the desktop view: null in the desktop view. */
-  const beside = () => (current && others().includes(current) ? current : null);
-  /** The breakpoint of a view `width` px wide, beside the views there are now. */
-  const breakpointAt = (width: number) =>
-    breakpointOf(
-      width,
-      views.canvas.width,
-      others().map((v) => v.width),
-      project,
-    );
-  /** The breakpoint of a view; null for the desktop view. */
-  const breakpointIn = (view: View | null): Breakpoint | null => (view && others().includes(view) ? breakpointAt(view.width) : null);
+  /** The view the designer works in, and the breakpoint it stands for. */
+  const working = createWorkingView(views, project);
   // Changes at breakpoints recorded with no word of the project's (before its breakpoints were read) are written as it writes them, where they can be.
   for (const change of changes.list()) if (change.breakpoint && !change.breakpoint.project) Object.assign(change.breakpoint, writtenWith(change.breakpoint, project));
-  /** A view that shows `breakpoint` now, if one does: the view worked in first. */
-  const viewAt = (breakpoint: Breakpoint | null): View | null => {
-    if (!breakpoint) return null;
-    const view = beside();
-    if (view && contains(breakpoint, view.width)) return view;
-    return others().find((v) => contains(breakpoint, v.width)) ?? null;
-  };
   /** The style changes of the layer with id `id` at a breakpoint, to `property` or to any. */
   const changesAtBreakpoints = (id: string, property?: string) =>
     changes.list().filter((change) => change.kind === "style" && change.layer === id && change.breakpoint && (!property || change.property === property));
-  /** Of those, the ones at a breakpoint that holds at `width`: the narrowest, which wins, first. */
-  const changesAt = (id: string, width: number, property?: string) =>
-    changesAtBreakpoints(id, property)
-      .filter((change) => contains(change.breakpoint, width))
-      .sort((a, b) => widestFirst(b.breakpoint!, a.breakpoint!));
   /**
    * Cuts what of `change`, made at a breakpoint, is in `range` out of it:
    * the change stays, with its value, at what is left of its range outside
@@ -441,32 +416,20 @@ export function createEditor(
    * into it, so no two of them overlap.
    */
   const editHere = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, picked?: Picked) => {
-    const view = beside();
+    const view = working.beside();
     const id = layer.el.getAttribute(LAYER_ID_ATTR);
-    const range = breakpointIn(view);
+    const range = working.breakpoint();
     if (!view || !id) return edit(layer, property, value, continues, range, undefined, picked);
-    const [own] = changesAt(id, view.width, property);
-    if (own && within(own.breakpoint!, range)) return edit(layer, property, value, continues, own.breakpoint!, undefined, picked);
-    if (!range) return edit(layer, property, value, continues, null, undefined, picked);
-    const taken = changesAtBreakpoints(id, property)
-      .filter((change) => change !== own)
-      .map((change) => change.breakpoint!);
-    const clear = clearOf(range, view.width, taken);
-    const breakpoint = clear === range ? range : { ...clear, ...writtenWith(clear, project) };
-    edit(layer, property, value, continues, breakpoint, undefined, picked, own && cutting(own, range));
+    const { breakpoint, cut } = rangeOfEdit(changesAtBreakpoints(id, property), view.width, range, project);
+    edit(layer, property, value, continues, breakpoint, undefined, picked, cut ? cutting(cut, range!) : undefined);
   };
-  /** The element that shows a canvas element in `view`, as it is now; the canvas's own for the desktop view, or a view that shows none of it. */
-  const shownIn = (view: View | null, el: Element): Element => {
-    if (!view || view === views.list()[0]) return el;
-    views.sync();
-    return view.elementOf(el) ?? el;
-  };
+
 
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
   const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
     const definition = definitionOf(property);
     // Read, and written, as laid out at the breakpoint, in the view that stands for it.
-    const el = shownIn(viewAt(breakpoint), layer.el);
+    const el = working.shownAt(breakpoint, layer.el);
     const before = readAsShown(el, property, colors);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
@@ -490,7 +453,7 @@ export function createEditor(
       property === "absolute" && breakpoint && layer.parent
         ? earlier
           ? earlier.within
-          : getComputedStyle(shownIn(viewAt(breakpoint), layer.parent.el)).position === "static"
+          : getComputedStyle(working.shownAt(breakpoint, layer.parent.el)).position === "static"
             ? idOf(layer.parent, tree.acrossInstances(layer.parent))
             : undefined
         : undefined;
@@ -571,7 +534,7 @@ export function createEditor(
     picked?: Picked,
     cut?: { off(): void; on(): void },
   ) => {
-    const read = () => readAsShown(shownIn(viewAt(breakpoint), layer.el), property, colors);
+    const read = () => readAsShown(working.shownAt(breakpoint, layer.el), property, colors);
     let before = from === undefined ? read() : from;
     if (same(before, value) && !picked) return;
     if (cut) {
@@ -617,7 +580,7 @@ export function createEditor(
   const containerOf = (container: Layer): Place["container"] => {
     const instances = tree.acrossInstances(container);
     // A Grid that places its layers itself has no cell to name by their order.
-    const cells = container.kind === "grid" && !placesItself(shownIn(current, container.el));
+    const cells = container.kind === "grid" && !placesItself(working.shown(container.el));
     return { layer: idOf(container, instances), target: targetOf(container, instances.length), ...(cells && { grid: true as const }) };
   };
 
@@ -674,13 +637,13 @@ export function createEditor(
    * otherwise from inside the container's border, its margins aside.
    */
   const freePlaceOf = (layer: Layer): { x: number; y: number } => {
-    const container = shownIn(current, layer.parent!.el);
+    const container = working.shown(layer.parent!.el);
     if (layer.text) {
       const box = editor.measure(layer);
       const inside = paddingBox(container);
       return { x: round(box.left - inside.left), y: round(box.top - inside.top) };
     }
-    const el = shownIn(current, layer.el);
+    const el = working.shown(layer.el);
     if (!absolute(el)) return spotIn(el, container);
     const style = getComputedStyle(el);
     return { x: parseFloat(style.left) || 0, y: parseFloat(style.top) || 0 };
@@ -1023,18 +986,16 @@ export function createEditor(
   };
 
   const editor: Editor = {
-    at(view) {
-      current = view;
-    },
-    breakpoint: () => breakpointIn(current),
-    breakpointAt,
+    at: working.at,
+    breakpoint: working.breakpoint,
+    breakpointAt: working.breakpointAt,
     changedHere: (layer, property) => editor.changesHere(layer).includes(property),
     // In the order they were first changed, each once.
     changesHere: (layer) => [...new Set(changesHereOf(layer).map((change) => change.property as Property))],
     inherit(layer, property) {
       // Two ranges of its own that both hold here, as recorded before the views changed, or recorded on two elements: all go, one step.
       // One reaching past the view's range goes in the range only, and keeps its value outside it.
-      const range = breakpointIn(beside());
+      const range = working.breakpoint();
       editor.batch(() => {
         for (const change of changesHereOf(layer, property)) {
           if (within(change.breakpoint!, range)) inheritStep(change);
@@ -1056,13 +1017,13 @@ export function createEditor(
       // Absolute as the page has it, and staying in its container: only its position changes, as X and Y do.
       // At a breakpoint, so does that of any absolute layer: where it is placed there is its X and Y there.
       const moved = !layer.text && layer.el.hasAttribute(MOVE_ATTR);
-      if ("x" in to && to.parent === layer.parent && (breakpointIn(current) || (layer.absolute && !layer.text && !moved))) {
+      if ("x" in to && to.parent === layer.parent && (working.breakpoint() || (layer.absolute && !layer.text && !moved))) {
         // At a breakpoint, loose text gets an element of its own, to be placed freely there.
         if (layer.text) layer = wrap(layer);
         const [dx, dy] = pinOffsetOf(layer.el);
         const at = { x: round(to.x - dx), y: round(to.y - dy) };
         // At a breakpoint, a layer in its container's flow there is placed freely there only (ADR 0008).
-        if (breakpointIn(current) && !absolute(shownIn(current, layer.el))) editHere(layer, "absolute", at, false);
+        if (working.breakpoint() && !absolute(working.shown(layer.el))) editHere(layer, "absolute", at, false);
         else {
           // Placed freely already: only its position changes, as X and Y do; at a breakpoint, there.
           const placed = layer;
@@ -1121,7 +1082,7 @@ export function createEditor(
       const found = (i: number) => tree.layerOf(nodes[i]);
       const moved = (i: number, layer: Layer) => (nodes[i] = nodeOf(layer));
       /** Placed freely in the view worked in. */
-      const free = (layer: Layer) => !layer.text && (layer.absolute || absolute(shownIn(current, layer.el)));
+      const free = (layer: Layer) => !layer.text && (layer.absolute || absolute(working.shown(layer.el)));
       group(
         () => {
           // Placed freely, or in a Frame: moved that far, from where they are.
@@ -1137,7 +1098,7 @@ export function createEditor(
             const layer = found(i);
             const parent = layer?.parent;
             // A Grid that places its layers itself has no cell along to take: they stay, as they do in a Frame's flow.
-            const along = parent?.kind === "stack" || (parent?.kind === "grid" && !placesItself(shownIn(current, parent.el)));
+            const along = parent?.kind === "stack" || (parent?.kind === "grid" && !placesItself(working.shown(parent.el)));
             return along && !free(layer!) && editor.canDrop(layer!, parent!);
           });
           const stuck = new Set<Node>();
@@ -1146,7 +1107,7 @@ export function createEditor(
             // A Grid's cells run along its rows: a row on is as many cells on as it has columns.
             const along =
               container.kind === "grid"
-                ? Math.sign(dx) || Math.sign(dy) * definitionOf("columns").read(shownIn(current, container.el), colors)
+                ? Math.sign(dx) || Math.sign(dy) * definitionOf("columns").read(working.shown(container.el), colors)
                 : Math.sign(container.direction === "horizontal" ? dx : dy);
             if (!along) continue;
             const flowOf = (i: number) => {
@@ -1181,12 +1142,12 @@ export function createEditor(
       // Text with no element of its own has no styles, but a Frame's only text: the text styles of the Frame's element.
       if ((layer.text && !(isOnlyText(layer) && isTextProperty(property))) || !kinds.includes(layer.kind)) return false;
       // A hidden layer offers what it does when shown, so the panel stays as it was.
-      const el = shownIn(current, layer.el);
+      const el = working.shown(layer.el);
       return asShown(el, () => (!applies || applies(el, layer)) && (value === undefined || !accepts || accepts(el, value)));
     },
-    read: (layer, property) => readAsShown(shownIn(current, layer.el), property, colors),
+    read: (layer, property) => readAsShown(working.shown(layer.el), property, colors),
     measure(layer) {
-      const el = layer.text ? layer.el : shownIn(current, layer.el);
+      const el = layer.text ? layer.el : working.shown(layer.el);
       if (el === layer.el) return asShown(layer.el, () => boxOf(layer));
       return asShown(el, () => el.getBoundingClientRect());
     },
@@ -1551,9 +1512,7 @@ export function createEditor(
       if (deletion && deleted.length && !from.kept.edits.changes.length && canReturn(deletion, deleted[0], to.parent)) {
         let back: Layer | null = null;
         // A change to the structure: at every width, whatever view it is let go in (ADR 0008).
-        const worked = current;
-        current = null;
-        try {
+        working.inDesktop(() =>
           editor.batch(() => {
             editor.revert(deletion.id);
             const layer = tree.layerOf(deleted[0])!;
@@ -1561,10 +1520,8 @@ export function createEditor(
             // Let go by its border box: placed by its margin box.
             const [x, y] = "x" in to ? [to.x - parseFloat(getComputedStyle(layer.el).marginLeft), to.y - parseFloat(getComputedStyle(layer.el).marginTop)] : [0, 0];
             back = editor.move(layer, "x" in to ? { parent, x: round(x), y: round(y) } : { parent, index: to.index });
-          });
-        } finally {
-          current = worked;
-        }
+          }),
+        );
         return back!;
       }
       // Otherwise new on the canvas, as it looks off it.
