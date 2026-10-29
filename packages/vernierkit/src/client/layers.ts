@@ -4,7 +4,7 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { asShown, DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
+import { asPage, DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
@@ -33,6 +33,13 @@ export interface Layer {
   usageLoc: string | null;
   /** Made this round, or in a layer made this round: the id of the layer made. */
   made: string | null;
+  /**
+   * Drawn around its text alone, as a button is: a Frame (or a Stack, a Grid)
+   * whose one layer is all its words, with no element of their own, or given
+   * one to edit them. Told by the page's own styles, not this round's changes,
+   * so a layer stays what it is all round.
+   */
+  framesText: boolean;
   parent: Layer | null;
   children: Layer[];
 }
@@ -102,6 +109,7 @@ export function buildLayerTree(doc: Document): LayerTree {
       isInstance: false,
       usageLoc: null,
       made: el.getAttribute(MADE_ATTR),
+      framesText: false,
       parent,
       children: [],
     };
@@ -122,13 +130,15 @@ export function buildLayerTree(doc: Document): LayerTree {
       set({ kind: "image", name: el.localName === "svg" ? "Vector" : el.getAttribute("alt") || "Image" });
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
-    } else if (isText(el, view) && !asShown(el, () => drawsBox(el, style))) {
+    } else if (isText(el, view) && !drawsBoxAsPage(el, style)) {
       set({ kind: "text", name: textName(el.textContent!) });
     } else {
+      const text = isText(el, view);
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
-      const children = isText(el, view) ? [textIn(el, view)] : drawnChildren(el, view);
+      if (text || (wrapsItsText(el) && drawsBoxAsPage(el, style))) set({ framesText: true });
+      const children = text ? [textIn(el, view)] : drawnChildren(el, view);
       for (const child of children) {
-        layer.children.push(Array.isArray(child) ? makeText(child, layer) : make(child, layer));
+        layer.children.push(Array.isArray(child) ? textLayer(child, layer) : make(child, layer));
       }
       const display = style.display;
       if (/flex$/.test(display)) {
@@ -147,19 +157,6 @@ export function buildLayerTree(doc: Document): LayerTree {
     if (role(layer) === "instance") layer.name = layer.component!;
     return layer;
   };
-
-  const makeText = (run: Text[], parent: Layer): Layer => ({
-    ...parent,
-    text: run,
-    kind: "text",
-    direction: null,
-    absolute: false,
-    name: textName(run.map((node) => node.textContent).join("")),
-    isInstance: false,
-    usageLoc: null,
-    parent,
-    children: [],
-  });
 
   const root = make(doc.body, null);
   root.name = "Page";
@@ -204,24 +201,48 @@ export function buildLayerTree(doc: Document): LayerTree {
 }
 
 /**
- * The only text of a Frame (or a Stack, a Grid), all it draws inside it, as a
- * button's words are: it has no element of its own, and its text styles are
+ * The only text of a Frame (or a Stack, a Grid) drawn around it, as a
+ * button's words are, while it has no element of its own: its text styles are
  * those of the Frame's element, which its words inherit.
  */
 export function isOnlyText(layer: Layer): boolean {
-  return !!layer.text && layer.parent?.children.length === 1;
+  return !!layer.text && !!layer.parent?.framesText;
 }
 
-/** The only text of a Frame, as a button's words are: the one layer in it; null for a layer that holds others, or none. */
+/** The text of a Frame drawn around its text alone, as a button's words are, with or without an element of its own; null for any other layer, or once the text is gone. */
 export function onlyTextOf(layer: Layer): Layer | null {
-  const [only] = layer.children;
-  return only && isOnlyText(only) ? only : null;
+  return (layer.framesText && layer.children[0]) || null;
 }
 
-/** A Frame around its text alone, as a button is: its only text, or that text given an element of its own to edit. */
-export function aroundText(layer: Layer): boolean {
-  const [only] = layer.children;
-  return layer.children.length === 1 && (isOnlyText(only) || (only.kind === "text" && only.el.hasAttribute(WRAP_ATTR)));
+/**
+ * The text of a Frame drawn around its text alone as its text styles are
+ * written: on the Frame's own element, which its words inherit, as they were
+ * before any element of their own was given them to edit.
+ */
+export function textOnFrame(frame: Layer): Layer {
+  const text = onlyTextOf(frame);
+  if (text?.text) return text;
+  const walker = frame.el.ownerDocument.createTreeWalker(frame.el, NodeFilter.SHOW_TEXT);
+  const run: Text[] = [];
+  while (walker.nextNode()) run.push(walker.currentNode as Text);
+  return textLayer(run, frame);
+}
+
+/** A layer of text with no element of its own, `run`, in `parent`, whose element holds its styles. */
+function textLayer(run: Text[], parent: Layer): Layer {
+  return {
+    ...parent,
+    text: run,
+    kind: "text",
+    direction: null,
+    absolute: false,
+    name: textName(run.map((node) => node.textContent).join("")),
+    isInstance: false,
+    usageLoc: null,
+    framesText: false,
+    parent,
+    children: [],
+  };
 }
 
 /** Whether layers can go in the layer: a Stack, a Grid or a Frame that is not a field or another element that holds no others. */
@@ -417,6 +438,19 @@ function drawsBox(el: Element, style: CSSStyleDeclaration): boolean {
 /** A `<button>` or an `<a>`, or what is one by its `role`. */
 function isButtonOrLink(el: Element): boolean {
   return el.localName === "button" || el.localName === "a" || /^(button|link)$/.test(el.getAttribute("role")?.trim() ?? "");
+}
+
+/** Whether the element draws a box around its text, as {@link drawsBox} tells, by the page's own styles: none of this round's changes to it count. */
+function drawsBoxAsPage(el: Element, style: CSSStyleDeclaration): boolean {
+  return asPage(el, () => drawsBox(el, style));
+}
+
+/** Whether all the element holds is its text given an element of its own to edit, shown or deleted. */
+function wrapsItsText(el: Element): boolean {
+  const held = [...el.childNodes].filter((node) =>
+    node.nodeType === Node.TEXT_NODE ? !!node.textContent!.trim() : node.nodeType === Node.ELEMENT_NODE && !NOT_DRAWN.has((node as Element).localName),
+  );
+  return held.length === 1 && held[0].nodeType === Node.ELEMENT_NODE && (held[0] as Element).hasAttribute(WRAP_ATTR);
 }
 
 /** All the text of an element with only text in it, its inline fragments' included, as one run. */

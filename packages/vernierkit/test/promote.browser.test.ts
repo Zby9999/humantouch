@@ -123,6 +123,22 @@ describe("promote", () => {
     ]);
   });
 
+  test("its text given an element of its own, a Button promotes none of the changes made to the text before", () => {
+    const { editor, changes, buttons, layerOf } = openCanvas();
+    const box = () => layerOf(buttons[1]);
+    editor.set(box().children[0], "fontSize", 20);
+    editor.setBrief(box().children[0], "Make it bold");
+
+    // The text's change is no change of the Button's.
+    expect(editor.canPromote(box())).toBe(false);
+    editor.set(box(), "fill", RED);
+    const { promoted, stays } = editor.promote(box());
+
+    expect([promoted.map((change) => change.property), stays]).toEqual([["fill"], []]);
+    expect(changes.list().find((change) => change.property === "fontSize")!.scope).toBe("usage");
+    expect(buttons.map((el) => getComputedStyle(el).fontSize)).toEqual(["13.3333px", "20px", "20px", "20px", "13.3333px"]);
+  });
+
   test("a fill changed on one usage of the Card shows on every usage of it once promoted, and the change is to the Card itself", () => {
     const { editor, changes, cards, layerOf } = openCanvas();
 

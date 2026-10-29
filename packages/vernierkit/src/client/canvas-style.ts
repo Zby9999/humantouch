@@ -165,6 +165,25 @@ export function asShown<T>(el: Element, look: () => T): T {
 }
 
 /**
+ * Runs `look` on an element as the page styles it: none of this round's edits
+ * to it, nor its component's, apply meanwhile, those that hide it among them;
+ * what the freezer wrote on it, and the look a layer was copied or made with,
+ * still do. Nothing of it is painted meanwhile.
+ */
+export function asPage<T>(el: Element, look: () => T): T {
+  const rules = readRules(el);
+  const sheet = rules && sheetOf(el.ownerDocument, el.getAttribute(STYLE_KEY_ATTR)!);
+  if (!sheet) return look();
+  const css = sheet.textContent;
+  sheet.textContent = cssOf(el.getAttribute(STYLE_KEY_ATTR)!, effective({ lifted: rules.lifted, copied: rules.copied, edits: { base: { style: {} }, at: [] } }));
+  try {
+    return look();
+  } finally {
+    sheet.textContent = css;
+  }
+}
+
+/**
  * Has the element's styles worked out anew, edit styles and all. Chromium may
  * keep what a change to the style attribute alone left, its important
  * declarations taken back off since, over the edit styles' important rules:

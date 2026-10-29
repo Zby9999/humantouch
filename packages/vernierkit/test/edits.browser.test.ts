@@ -5013,6 +5013,66 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     expect(style(button.firstElementChild!).display).toBe("none");
   });
 
+  test("given an element of its own, the text keeps the changes made to it before: changed here on the text, not the Frame, and undone, redone and taken back as the text's", async () => {
+    const { doc, editor, views, changes } = openCanvas(BOXES_PAGE);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const button = doc.getElementById("close")!;
+    const box = () => find(editor.tree().root, (layer) => layer.el === button && !layer.text)!;
+
+    editor.at(phone);
+    editor.set(box().children[0], "fontSize", 20);
+    editor.set(box(), "radius", 0);
+    const text = editor.setBrief(box().children[0], "Make it bold");
+    expect([text.kind, text.el.localName, text.parent!.el]).toEqual(["text", "span", button]);
+
+    expect(editor.changesHere(box())).toEqual(["radius"]);
+    expect(editor.changesHere(box().children[0])).toEqual(["fontSize"]);
+
+    editor.undo();
+    editor.undo();
+    const [undone] = editor.undo();
+    expect([undone.kind, undone.el.localName, style(phone.document.getElementById("close")!).fontSize]).toEqual(["text", "span", "15px"]);
+    const [redone] = editor.redo();
+    expect([redone.kind, redone.el.localName, style(phone.document.getElementById("close")!).fontSize]).toEqual(["text", "span", "20px"]);
+    // Recorded again as it was first: the text in the Button, written on the Button.
+    const size = changes.list().find((change) => change.property === "fontSize")!;
+    expect([size.target.context.path, size.target.context.element, size.target.onlyText, size.target.run]).toEqual([
+      ["Page", "Frame", "Button", "Close"],
+      '<button id="close">',
+      true,
+      undefined,
+    ]);
+
+    const back = editor.revert(size.id)!;
+    expect([back.kind, back.el.localName, style(phone.document.getElementById("close")!).fontSize]).toEqual(["text", "span", "15px"]);
+  });
+
+  test("whether a layer of text draws a box is read from the page's own styles: a Frame with its background taken off is a Frame still, built anew, and takes a fill again", () => {
+    const { doc, editor, layerOf } = openCanvas(`<!DOCTYPE html>
+<body style="margin: 0; font: 15px/22px serif">
+  <main id="main" ${loc("3:3")}>
+    <span id="filled" ${loc("4:5")} style="display: inline-block; background-color: rgb(255, 255, 0)">Filled</span>
+    <span id="bare" ${loc("5:5")} style="display: inline-block">Bare</span>
+  </main>
+</body>`);
+    const filled = doc.getElementById("filled")!;
+    const box = () => find(editor.tree().root, (layer) => layer.el === filled && !layer.text)!;
+
+    editor.set(box(), "fill", null);
+    // A change to the structure builds the layers anew.
+    editor.setBrief(layerOf(doc.getElementById("main")!), "Anything");
+
+    expect([box().kind, box().children.map((child) => child.kind)]).toEqual(["frame", ["text"]]);
+    expect(editor.can(box(), "fill")).toBe(true);
+    editor.set(box(), "fill", { type: "solid", color: "#00FF00", opacity: 1 });
+    expect(style(filled).backgroundColor).toBe("rgb(0, 255, 0)");
+    // Text that draws no box is text still.
+    const bare = find(editor.tree().root, (layer) => layer.el === doc.getElementById("bare"))!;
+    expect([bare.kind, bare.children]).toEqual(["text", []]);
+  });
+
   test("a round saved while the button was a text layer goes on: its text styles are the text's, its others the Frame's", () => {
     const opened = openCanvas(BOXES_PAGE);
     const button = opened.doc.getElementById("close")!;
