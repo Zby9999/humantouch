@@ -434,8 +434,9 @@ export function syncEditStyles(root: Element) {
 
 /**
  * Whether `record` is of a change to an edit style element alone: to its
- * rules, or to its text, which a copy writes from its rules (`syncEditStyles`)
- * whatever the canvas's says, as `asPage` puts it back and forth.
+ * rules, or to its text. A copy of the canvas writes its own text from the
+ * rules (`syncEditStyles`), so a change to the text alone, as `asPage` makes,
+ * changes nothing there.
  */
 export function changesEditStyles(record: MutationRecord): boolean {
   if (record.type === "attributes") return record.attributeName === RULES_ATTR && isEditStyles(record.target);

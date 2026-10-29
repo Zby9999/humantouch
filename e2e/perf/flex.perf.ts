@@ -8,8 +8,9 @@ import { report, summarize, type Summary } from "./stats";
 /**
  * docs/goals.md, Flex: on a page of about 5000 elements, with the desktop,
  * tablet and phone views all showing it, edit mode is up within 150ms, a
- * value changed shows in the next frame in the view worked in (the views
- * beside it a frame later), and a drag keeps 60fps. Each test
+ * value changed shows in the next frame, and a drag keeps 60fps. The value
+ * shows in the next frame in the view worked in; the views beside it follow
+ * a frame later, as the designer chose in ticket 22. Each test
  * repeats its measurement, prints the median, 95th percentile and worst, and
  * says whether the target is met. How each is measured is said at each test;
  * ticket 22's Comments has it in full.

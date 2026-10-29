@@ -66,9 +66,8 @@ const drawnIn = new WeakMap<Document, Map<string, number[]>>();
 
 /**
  * The widths the browser draws borders of `widths` px at in `doc`, top, right,
- * bottom and left: drawn on an element put in the page and taken out again at
- * once, before anything is painted; found once for each set of widths and
- * pixel density, so the page is not changed each time the panel reads a stroke.
+ * bottom and left; found once for each set of widths and pixel density, so
+ * the canvas is not changed each time the Design panel reads a stroke.
  */
 function drawnWidths(doc: Document, widths: number[]): number[] {
   const key = `${doc.defaultView?.devicePixelRatio} ${widths.join(" ")}`;
@@ -79,6 +78,7 @@ function drawnWidths(doc: Document, widths: number[]): number[] {
   return [...drawn];
 }
 
+/** Those widths, drawn on an element put in `doc` and taken out again at once, before anything is painted. */
 function probeWidths(doc: Document, widths: number[]): number[] {
   const probe = doc.createElement("div");
   const declarations = { position: "absolute", visibility: "hidden", "border-style": "solid", "border-width": widths.map((w) => `${w}px`).join(" ") };
