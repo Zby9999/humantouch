@@ -6,7 +6,7 @@
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, relayOut, restoreStyle } from "./canvas-style";
 import type { Change, Composed, Dissolved, StackSettings } from "./changeset";
-import type { Alignment } from "./edits";
+import type { Alignment } from "./property-table";
 import { MOVE_CSS, slotsOf } from "./moves";
 import { CHAIN_ATTR } from "./usage-chain";
 

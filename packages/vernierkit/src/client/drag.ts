@@ -3,7 +3,8 @@
  * layers around it make room. Nothing changes structure until the drop; while
  * the layer is dragged, layers are only shifted.
  */
-import { placesItself, type Destination, type Editor } from "./edits";
+import type { Destination, Editor } from "./edits";
+import { placesItself } from "./property-table";
 import { trackCount } from "./grid-tracks";
 import type { Layer } from "./layers";
 import { snap, type Mark } from "./snap";

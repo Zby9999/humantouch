@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
-import { createEditor, type Fill } from "../src/client/edits";
+import { createEditor } from "../src/client/edits";
+import type { Fill } from "../src/client/property-table";
 import { serializeCanvas } from "../src/client/freezer";
 import { revertSaved } from "../src/client/saved-round";
 import type { Layer } from "../src/client/layers";

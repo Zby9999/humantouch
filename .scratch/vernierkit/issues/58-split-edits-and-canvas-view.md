@@ -18,3 +18,31 @@
 
 - 视图线和属性面板线的代码审查都建议拆这两个文件，但要等两条线都合并，否则冲突太多。两条线已于 2026-10-29 合并进 main。
 - 视图线收尾时留下的后续卡。57 也会改 `edits.ts`，所以等 57 合并后再从 main 开始，不与它同时进行。
+
+## Comments
+
+**拆分方案（2026-10-29，动手前）**
+
+用 codebase-design 的词汇：每个新 module 只给调用方一个小 interface，seam 放在已有职责的分界处；依赖只朝一个方向走（下面的箭头指向被依赖的一方），没有新的环。纯重构：自动保存和改动单的 JSON 字段名、设计师看到的行为都不变。拆分前：typecheck 通过，单测 469 个，e2e 264 个。
+
+`edits.ts`（2366 行）拆成：
+
+1. `property-table.ts`（属性表）：每个属性怎样从元素读出、写成哪些 CSS、由哪些 CSS 设置。Interface：值的类型（`PropertyValues`、`Property`、`Size`、`Align`……与 `Definition`），`readValue`、`readAsShown`、`definitionOf`、`cssOf`、`isTextProperty`、`placesItself`、`stackOf`、`absolute`。实现里藏着整张表和尺寸、对齐、位置、圆角的读写规则。不知道 Editor、视图和改动单。依赖：paint、effects、typography、stroke-weight、grid-tracks、style-source、canvas-style。
+2. `layer-target.ts`（Agent 怎样在源码里找到图层）：`targetOf(layer, instances)`、`openingTag(el)`。依赖：layers、canvas-style、freezer 的标记。`typography.ts`、`check.ts` 改从这里拿 `openingTag`，去掉 typography → edits 的值依赖。
+3. `undo-steps.ts`（撤销步骤的合并）：`History`、`createHistory`、`Step`，以及 `createSteps(history, sync, layersOf)` 给出 `push`、`group`、`show`、`undo`、`redo`。实现里藏着"同一次调整合成一步"、"一串微移合成一步"、"每次重做先做 `first`"、批量时延后同步视图这些规则。依赖：layers（`framedText`）。这是一条真 seam：画布的 Editor 和每个画布外图层的 Editor 共用一个 History，各自一个 Steps。可以不用 DOM 单测，按 tdd 补测试。
+4. `breakpoint-edits.ts`（断点范围与拆分规则，ADR 0008）：`createWorkingView(views, project)` 给出设计师在哪个视图里工作（`at`、`current`、`beside`、`breakpointIn`、`breakpointAt`、`viewAt`、`shownIn`），以及纯函数 `rangeOfEdit(atBreakpoints, width, range, project)`：一处编辑落在哪个断点上、要先切掉哪条已有改动（38 的拆分规则）。依赖：breakpoints、views 的类型、changeset 的类型。`rangeOfEdit` 可以不用 DOM 单测。
+5. `structure-edits.ts`（结构性改动与画布外图层，ADR 0009）：移动、微移、Stack / 解散 / 取消编组、新建、复制、删除、改文字、生成说明、拖回、`originOf`、撤回、推广。Interface：`createStructureEdits(core)` 返回 `Editor` 中这些命令的一部分；`core` 是 `edits.ts` 交给它的内部 seam（layer tree、id 的分配、Steps、`editHere` 这类样式编辑原语）。依赖：上面 1–4，以及 layer-changes、moves、stacks、promote、changeset。
+
+`edits.ts` 剩下：`Editor` 的 interface（调用方照旧从这里拿 `createEditor`、`Editor`、`Destination`、`SetOptions`）、`createEditor` 把上面几块组合起来，以及样式编辑本身（`apply`、`edit`、`editHere`、`inherit`、`variables`、`set`、`can`、`read`、`measure`）。依赖方向：`edits.ts` → structure-edits → breakpoint-edits / undo-steps / layer-target / property-table；property-table 与 layer-target 不依赖任何编辑命令。
+
+`CanvasView.tsx`（1326 行）拆成：
+
+6. `camera.ts`（相机）：`Camera`、`Bounds`，`transformOf`、`currentCamera`、`scrolled`、`initialCamera`、`fitCamera`、`boundsOf`、`zoomAt`、`cameraIn`、`place`，以及缩放的上下限与边距。纯函数（`currentCamera` 读一次计算样式），不依赖 preact。可以单测。
+7. `canvas-drag.ts`（拖拽会话）：`DragSession`、`unshifted`、`setStyles`、`restoreStyles`、`boxFrom`、`DRAG_THRESHOLD`、`SNAP_PX`。藏着拖拽时给画布元素临时加样式、再原样还回去的规则。依赖：drag、layers、views 的类型。
+8. `CanvasOverlays.tsx`（画布上方的标记）：`Outline`、`Marks`（吸附与测距标记）、`Brief`、`SelectionToolbar`。依赖：camera、icons、layers、snap 的类型。
+9. `view-layout.ts`（视图布局，ADR 0008）：`Placed`、`Shown`、`keyOf`、`layoutViews(canvas, desktop, widths, beside)` 把桌面视图和其他视图并排放到舞台上；`offCanvasPlaced(offCanvas)` 放画布外图层。纯函数，依赖 views、off-canvas 的类型、ViewLabels 的 `viewName`。
+10. 键盘：`useCanvasKeys` 留在 `CanvasView.tsx` 还是拆出，看拆完前面几块后它和组件状态缠得多紧再定；拆的话放进 `canvas-keys.ts`，依赖 camera。
+
+`CanvasView.tsx` 剩下：组件本身的状态、指针事件、冻结与进出编辑模式的动画、播放。依赖方向：CanvasView → CanvasOverlays / canvas-drag / view-layout → camera。
+
+分几次小提交：每拆出一块一次，每次 typecheck 和相关单测（edits、off-canvas、promote、stacks 的浏览器测试，以及新加的单测）通过，必要时跑相关 e2e。

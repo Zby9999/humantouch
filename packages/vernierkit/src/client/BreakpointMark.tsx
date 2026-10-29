@@ -2,7 +2,8 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { propertyTitle } from "../design-values";
-import type { Editor, Property } from "./edits";
+import type { Editor } from "./edits";
+import type { Property } from "./property-table";
 import type { Layer } from "./layers";
 
 /** What the rows of the Design panel mark: the properties of the selected layers changed on their own at the breakpoint worked in. */

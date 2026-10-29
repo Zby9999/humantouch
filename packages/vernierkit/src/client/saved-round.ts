@@ -5,7 +5,7 @@
 import type { SavedRound } from "../service-protocol";
 import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack } from "./changeset";
 import { BRIEF_ATTR, changesOn, elementsOf, moveInlineEdits, restoreStyle } from "./canvas-style";
-import { cssOf, type Property } from "./edits";
+import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
 import { componentBrief, showComponent } from "./promote";

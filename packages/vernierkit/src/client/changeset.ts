@@ -5,7 +5,7 @@
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
-import type { Align, Padding } from "./edits";
+import type { Align, Padding } from "./property-table";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
 
