@@ -242,3 +242,16 @@ test("reset in a view, a change reaching past the view's range inherits in that 
   await page.keyboard.press("Meta+z");
   await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, RED]);
 });
+
+test("a view wider than the desktop view's range stands for its own range, `2xl:` at 1920px: edited there, the desktop view keeps its value", async ({ page }) => {
+  await enterEditMode(page);
+  const wide = await addView(page, 1920);
+  const label = (name: string) => page.getByRole("group", { name: `${name} view` });
+  // The desktop view, 1280px wide, is in `xl`; 1920px is in `2xl`, the range above it.
+  await expect(label("Custom")).toContainText("2xl:");
+
+  await pickCard(page, wide);
+  await expect(design(page).getByRole("region", { name: "Custom breakpoint" })).toContainText("1536px and wider");
+  await setField(page, "Fill color", "ff0000");
+  await expect.poll(() => fills(desktop(page), tablet(page), phone(page), wide)).toEqual([WHITE, WHITE, WHITE, RED]);
+});

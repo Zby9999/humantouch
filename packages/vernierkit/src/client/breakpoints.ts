@@ -2,18 +2,21 @@
  * Breakpoints (ADR 0008): the width range each view stands for. The desktop
  * view stands for none in particular: its edits apply at every width. The
  * project's own breakpoints (its Tailwind theme, or the media queries of its
- * stylesheets) cut the widths into ranges, as Framer's breakpoints do: the
- * desktop view's range and those above are the desktop view's, and a view in
- * them is the desktop view. Every other view stands for the range its width
- * is in, shared with any other view there, and those above with no view in
- * them, up to the next wider view's range; the narrowest view reaches down to
- * no width at all. So the ranges follow the views there are and the desktop
- * view's width, and no width between the views has the desktop view's edits
- * alone. With no breakpoints of the project's to go by, a view stands for the
- * widths from its own up to the next wider view's, the narrowest from none at
- * all. An edit made in it applies in that range only, as a media query does,
- * so every view, and the page played at any width, shows it where it belongs.
- * Edits recorded keep the range they were made at (ADR 0008).
+ * stylesheets) cut the widths into ranges, as Framer's breakpoints do: a
+ * view in the desktop view's range is the desktop view. Every other view
+ * stands for the range its width is in, shared with any other view there,
+ * and those above with no view in them, up to the next wider view's range.
+ * Below the desktop view's range, the narrowest view reaches down to no
+ * width at all and the widest up to the desktop view's range; above it, the
+ * widest view has no upper bound, and the ranges between the desktop view's
+ * and the first wider view's are the desktop view's. So the ranges follow
+ * the views there are and the desktop view's width, and no width between
+ * the narrower views has the desktop view's edits alone. With no breakpoints
+ * of the project's to go by, a view stands for the widths from its own up to
+ * the next wider view's, the narrowest from none at all. An edit made in it
+ * applies in that range only, as a media query does, so every view, and the
+ * page played at any width, shows it where it belongs. Edits recorded keep
+ * the range they were made at (ADR 0008).
  */
 
 /** A range of widths, px: from `min` up to, but not including, `max`; null: no bound on that side. */
@@ -46,23 +49,30 @@ export interface ProjectBreakpoints {
 /**
  * The breakpoint of a view `width` px wide, beside the desktop view and the
  * other views, all by width, and the project's own breakpoints. Null: the
- * desktop view's, every width; so is a view as wide as it or wider, or, with
- * the project's breakpoints, one in its range of them. Any other view takes
- * the range of the project's breakpoints its width is in, shared with any
- * other view there, and those above it with no view in them, up to the next
- * wider view's range or the desktop view's; the narrowest view reaches down
- * to no width at all.
+ * desktop view's, every width; so is a view as wide as it, or, with the
+ * project's breakpoints, one in its range of them. Any other view takes the
+ * range of the project's breakpoints its width is in, shared with any other
+ * view there, and those above it with no view in them, up to the next wider
+ * view's range: below the desktop view's range, the narrowest view reaches
+ * down to no width at all and the widest up to the desktop view's range;
+ * above it, the widest view has no upper bound, and those between the
+ * desktop view's range and the first wider view's are the desktop view's.
+ * With no breakpoints of the project's, a view stands for the widths from its
+ * own up to the next wider view's, the desktop view's among them; the
+ * narrowest from none at all, the widest up to every width.
  */
 export function breakpointOf(width: number, desktop: number, others: number[], project: ProjectBreakpoints | null = null): Breakpoint | null {
   if (width === desktop) return null;
   if (project?.list.length) {
     /** The width the range of the project's breakpoints that `w` is in starts at; 0 for the first. */
     const startOf = (w: number) => project.list.filter((point) => point.width <= w).at(-1)?.width ?? 0;
-    const top = startOf(desktop);
-    if (width >= desktop || startOf(width) === top) return null;
-    const starts = [...new Set([...others, width].filter((w) => w < desktop).map(startOf))].filter((start) => start !== top).sort((a, b) => a - b);
-    const i = starts.indexOf(startOf(width));
-    const range = { min: i === 0 ? null : starts[i], max: starts[i + 1] ?? top };
+    const [top, start] = [startOf(desktop), startOf(width)];
+    if (start === top) return null;
+    // The views on the same side of the desktop view's range as this one, by the range each is in.
+    const wider = start > top;
+    const starts = [...new Set([...others, width].map(startOf))].filter((other) => (wider ? other > top : other < top)).sort((a, b) => a - b);
+    const next = starts[starts.indexOf(start) + 1];
+    const range = wider ? { min: start, max: next ?? null } : { min: start === starts[0] ? null : start, max: next ?? top };
     return { ...range, ...writtenWith(range, project) };
   }
   const all = [...new Set([desktop, ...others, width])].sort((a, b) => a - b);

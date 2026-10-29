@@ -32,12 +32,33 @@ describe("the range a view stands for, with the project's own breakpoints", () =
     expect(breakpointOf(1100, 1440, views, TAILWIND)).toEqual({ min: 1024, max: 1280, project: { tailwind: "lg:max-xl:" } });
   });
 
-  test("views in the same range share it; a view in the desktop view's range, or as wide as it or wider, is the desktop view", () => {
-    const views = [390, 500, 1300, 1600];
+  test("views in the same range share it; a view in the desktop view's range is the desktop view", () => {
+    const views = [390, 500, 1300, 1500];
     expect(breakpointOf(390, 1440, views, TAILWIND)).toEqual({ min: null, max: 1280, project: { tailwind: "max-xl:" } });
     expect(breakpointOf(500, 1440, views, TAILWIND)).toEqual({ min: null, max: 1280, project: { tailwind: "max-xl:" } });
     expect(breakpointOf(1300, 1440, views, TAILWIND)).toBeNull();
-    expect(breakpointOf(1600, 1440, views, TAILWIND)).toBeNull();
+    expect(breakpointOf(1500, 1440, views, TAILWIND)).toBeNull();
+  });
+
+  test("a view wider than the desktop view's range stands for the range its width is in, and every one above it", () => {
+    expect(breakpointOf(1920, 1440, [390, 768, 1920], TAILWIND)).toEqual({ min: 1536, max: null, project: { tailwind: "2xl:" } });
+  });
+
+  test("the ranges between the desktop view's and the first wider view's are the desktop view's", () => {
+    expect(breakpointOf(1920, 1200, [390, 768, 1920], TAILWIND)).toEqual({ min: 1536, max: null, project: { tailwind: "2xl:" } });
+    expect(breakpointOf(768, 1200, [390, 768, 1920], TAILWIND)).toEqual({ min: 768, max: 1024, project: { tailwind: "md:max-lg:" } });
+  });
+
+  test("wider views each reach up to the next wider view's range; the widest has no upper bound", () => {
+    const views = [390, 768, 1300, 1920];
+    expect(breakpointOf(1300, 1200, views, TAILWIND)).toEqual({ min: 1280, max: 1536, project: { tailwind: "xl:max-2xl:" } });
+    expect(breakpointOf(1920, 1200, views, TAILWIND)).toEqual({ min: 1536, max: null, project: { tailwind: "2xl:" } });
+  });
+
+  test("wider views in the same range share it", () => {
+    const views = [390, 1300, 1400];
+    expect(breakpointOf(1300, 1200, views, TAILWIND)).toEqual({ min: 1280, max: null, project: { tailwind: "xl:" } });
+    expect(breakpointOf(1400, 1200, views, TAILWIND)).toEqual({ min: 1280, max: null, project: { tailwind: "xl:" } });
   });
 
   test("the narrowest view reaches down to no width at all, whichever range its width is in", () => {
