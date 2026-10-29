@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
  * are no verdict: the targets are not checked.
  */
 export const HEADLESS = process.env.VK_PERF_HEADLESS === "1";
+/** This run, named by when it started: the runner sets it, so its workers all see the same. */
+export const RUN = (process.env.VK_PERF_RUN ??= new Date().toISOString().replace(/[:.]/g, "-"));
 /** The example's dev server, on a port of its own, so it can run beside the e2e tests' servers. */
 const PORT = Number(process.env.VK_PERF_PORT ?? 5390);
 export const BIG_URL = `http://localhost:${PORT}/big.html`;
@@ -28,6 +30,8 @@ const react18Example = fileURLToPath(new URL("../../examples/vite-react18-tw3", 
 export default defineConfig({
   testDir: ".",
   testMatch: /\.perf\.ts$/,
+  // Apart from the e2e tests' own: each run clears its output folder.
+  outputDir: "../../test-results/perf",
   // One at a time: measurements taken side by side would slow each other down.
   workers: 1,
   fullyParallel: false,

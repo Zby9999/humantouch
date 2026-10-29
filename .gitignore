@@ -6,3 +6,4 @@ playwright-report/
 playground/
 .vitest/
 .vernier/
+e2e/perf/results/

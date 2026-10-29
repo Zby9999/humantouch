@@ -1,8 +1,8 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "../tests/fixtures";
-import { BIG_URL, HEADLESS } from "./playwright.config";
+import { BIG_URL, HEADLESS, RUN } from "./playwright.config";
 import { report, summarize, type Summary } from "./stats";
 
 /**
@@ -33,19 +33,21 @@ const DRAG_MS = 2500;
 /** How often the pointer moves while dragging: faster than frames come, as a mouse reports. */
 const POINTER_EVERY_MS = 8;
 
-/** The numbers of this run, kept for comparing runs: in `test-results/perf/`, which nothing else clears. */
-const RESULTS = fileURLToPath(new URL("../../test-results/perf/", import.meta.url));
+/**
+ * The numbers of this run, kept for comparing runs: out of `test-results/`,
+ * which Playwright clears as it starts. Not checked in. Each test adds its
+ * own as it ends, so a target not met leaves the others' numbers in.
+ */
+const RESULTS = fileURLToPath(new URL("./results/", import.meta.url));
+const RESULTS_FILE = `${RESULTS}${RUN}-${HEADLESS ? "headless" : "chrome"}.json`;
 const mode = HEADLESS ? "headless shell (reference only, not the acceptance numbers)" : "windowed Google Chrome";
-const results: Record<string, unknown> = { mode, at: new Date().toISOString() };
 
-test.describe.configure({ mode: "serial" });
-
-test.afterAll(() => {
+function keep(name: string, numbers: unknown) {
   mkdirSync(RESULTS, { recursive: true });
-  const file = `${RESULTS}${String(results.at).replace(/[:.]/g, "-")}-${HEADLESS ? "headless" : "chrome"}.json`;
-  writeFileSync(file, `${JSON.stringify(results, null, 2)}\n`);
-  console.log(`\nResults written to ${file}`);
-});
+  const kept = existsSync(RESULTS_FILE) ? JSON.parse(readFileSync(RESULTS_FILE, "utf8")) : { mode, run: RUN };
+  writeFileSync(RESULTS_FILE, `${JSON.stringify({ ...kept, [name]: numbers }, null, 2)}\n`);
+  console.log(`   Kept in ${RESULTS_FILE}`);
+}
 
 /** Checks a target in the windowed Chrome; in the headless shell, only reports it. */
 function verdict(met: boolean, what: string) {
@@ -305,12 +307,11 @@ async function dragCard(page: Page, n: number) {
   return record;
 }
 
-let elements = 0;
-
 test("entering edit mode, all three views up, takes at most 150ms", async ({ page }) => {
   const first: number[] = [];
   const again: number[] = [];
   const desktop: number[] = [];
+  let elements = 0;
   for (let run = 0; run <= ENTER_RUNS; run++) {
     elements = await openBigPage(page);
     const entry = await enterAndMeasure(page, TOGGLE_LABEL);
@@ -328,8 +329,8 @@ test("entering edit mode, all three views up, takes at most 150ms", async ({ pag
   const all = summarize([...first, ...again]);
   const firstSummary = summarize(first);
   const againSummary = summarize(again);
-  results.page = { url: BIG_URL, elements, views: VIEWS };
-  results.enter = { first: firstSummary, again: againSummary, all, desktopViewUp: summarize(desktop), samples: { first, again } };
+  keep("page", { url: BIG_URL, elements, views: VIEWS });
+  keep("enter", { first: firstSummary, again: againSummary, all, desktopViewUp: summarize(desktop), samples: { first, again } });
   print(
     report(
       `Entering edit mode, ${elements} elements, ${VIEWS.length} views — ${mode}`,
@@ -346,7 +347,7 @@ test("entering edit mode, all three views up, takes at most 150ms", async ({ pag
 });
 
 test("a value changed shows in every view in the next frame", async ({ page }) => {
-  await openBigPage(page);
+  const elements = await openBigPage(page);
   await enterEditMode(page);
   // Paint only: a card's corner radius.
   await selectCard(page, 6, { parent: true });
@@ -374,10 +375,10 @@ test("a value changed shows in every view in the next frame", async ({ page }) =
       { name: `${name}: key to frame drawn`, summary: latency },
     );
   }
-  results.value = summaries;
+  keep("value", summaries);
   print(
     report(
-      `Changing a value, ${elements || "about 5000"} elements, ${VIEWS.length} views — ${mode}`,
+      `Changing a value, ${elements} elements, ${VIEWS.length} views — ${mode}`,
       rows,
       kinds.map(([name, samples]) => `${name}: ${samples.filter((s) => s.firstFrame).length} of ${samples.length} steps shown in every view in the first frame`),
     ),
@@ -386,7 +387,7 @@ test("a value changed shows in every view in the next frame", async ({ page }) =
 });
 
 test("dragging a layer keeps 60fps", async ({ page }) => {
-  await openBigPage(page);
+  const elements = await openBigPage(page);
   await enterEditMode(page);
   await selectCard(page, 6, { parent: true });
   const intervals: number[] = [];
@@ -405,10 +406,10 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
   const dropped = intervals.filter((gap) => gap > FRAME_MS * 1.5).length;
   // 60fps kept: as many frames as that, give or take the odd one, and 19 in 20 frames on time.
   const met = fpsSummary.worst >= 58 && frameSummary.p95 <= FRAME_MS * 1.25;
-  results.drag = { fps: fpsSummary, frameIntervals: frameSummary, dropped, frames: intervals.length, longTasks: long };
+  keep("drag", { fps: fpsSummary, frameIntervals: frameSummary, dropped, frames: intervals.length, longTasks: long });
   print(
     report(
-      `Dragging a card, ${elements || "about 5000"} elements, ${VIEWS.length} views — ${mode}`,
+      `Dragging a card, ${elements} elements, ${VIEWS.length} views — ${mode}`,
       [
         { name: "frames per second, per drag", summary: fpsSummary, unit: (v) => v.toFixed(1), target: "every drag ≥ 58", met: fpsSummary.worst >= 58 },
         { name: "time between frames", summary: frameSummary, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: frameSummary.p95 <= FRAME_MS * 1.25 },
