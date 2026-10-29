@@ -285,6 +285,10 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
 
 /** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page there, once what it loads is in. */
 function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
+  // Sized first: what follows works out the copy's styles, which its width answers to (media queries), only once.
+  const { width } = layout;
+  iframe.style.width = `${width}px`;
+  iframe.style.height = `${layout.height}px`;
   for (const el of doc.querySelectorAll<HTMLElement>(`[${TOP_LAYER_ATTR}]`)) {
     try {
       if (el.getAttribute(TOP_LAYER_ATTR) === "modal") {
@@ -301,10 +305,6 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
       animation.cancel(); // Infinite: no end state, so it rests at its base style.
     }
   }
-
-  const { width } = layout;
-  iframe.style.width = `${width}px`;
-  iframe.style.height = `${layout.height}px`;
 
   return Promise.all([settle(doc), ...loading]).then(() => {
     const height = fitHeight(doc, iframe, layout.windowHeight);
