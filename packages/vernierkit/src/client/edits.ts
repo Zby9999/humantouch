@@ -342,8 +342,9 @@ export interface Editor {
    * on its usage chain, as one edit that can be undone: they become changes
    * to the component itself, which every usage of it shows, in every view.
    * Its other changes stay with its usage; edited again, it starts from its usage again.
+   * Returns the changes promoted, as they were, and those that stay with its usage.
    */
-  promote(layer: Layer): void;
+  promote(layer: Layer): { promoted: Change[]; stays: Change[] };
 }
 
 /** An Off-canvas Layer being put back onto the canvas: its element off the canvas, as it looks now, and it as kept. */
@@ -1512,6 +1513,7 @@ export function createEditor(
         showPromoted(id, loc, taken);
       };
       structural([id], [id], swap([...taken, ...before], after), swap(after, [...before, ...taken]));
+      return { promoted: taken, stays: changes.list().filter((change) => change.layer === id && change.scope === "usage") };
     },
     canStack(layers) {
       if (layers.length === 1 && isFrameOfLayers(layers[0])) return true;

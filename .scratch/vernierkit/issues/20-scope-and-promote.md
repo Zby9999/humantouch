@@ -30,11 +30,14 @@
 - **改动说明**：组件改动的 Scope 写"The component itself: Card. Change Card where it writes the layer, at Location (`…`)…"，并写出它是从哪一处使用推广来的；使用处在组件生成说明之外另写的生成说明，写明它取代了组件的生成说明。改动列表的组件改动后标"· Card itself"。
 - **Skill**：Scope 一节加了 **The component itself** 与 **Change it where it is written**；"Change exactly the scope given" 改为明确：这一处使用只改这一处，组件本身改组件；同一属性既有组件改动又有使用处改动时两者都要落地。
 - **核对（`done`）**：组件改动在真实页面上核对组件的所有使用处，同一属性同一断点有自己改动的使用处除外（那里显示的是使用处的值）。
-- 测试：`test/promote.browser.test.ts`（编辑命令接缝，12 个）、`test/cli.test.ts`（改动说明，2 个）、`e2e/tests/promote.spec.ts`（主接缝，3 个）。
+- **不推广、留在这一处使用的改动**：带 `within` 的样式改动（在断点上把流式布局里的图层改为自由定位，容器因此成为定位参照）、带 `wrap` 的样式改动（代码要给散文字包 `<span>`），以及结构改动、数据改动（`data`，以及改文字）。它们的作用范围仍是这一处使用，改动说明照旧这样写。图层只有这几类改动时，`canPromote` 为假，选中工具条里没有 Promote（没有别的按钮时整个工具条都不出现）。
+- **推广时的提示**：推广后如果这个图层还有留在这一处使用的改动，用 ticket 55 的 Toast 说一句：推广了几条、留下几条、每类留下的原因，多类时用分号合并成一句。例如 "Promoted 1 change to Card. 1 stays with this usage: free placement at Tablet depends on this usage's container."。各类原因：`free placement at <视图名> depends on this usage's container`（多个断点写 "Tablet and Phone"；视图名按当前显示这个断点的视图取，没有这样的视图时写范围，如 "768px to 1279px"）、`the <span> its text is wrapped in is this usage's`、`changes to structure are this usage's`、`changes to words and data are this usage's`。全部推广时不提示。`editor.promote` 返回推广的改动与留下的改动，文案由 `promote.ts` 的 `promotedNote` 组织，外壳（`Shell.tsx`）显示。
+- 测试：`test/promote.browser.test.ts`（编辑命令接缝，12 个）、`test/cli.test.ts`（改动说明，2 个）、`e2e/tests/promote.spec.ts`（主接缝，5 个：另加推广后留下平板断点自由定位时的提示与改动列表的作用范围、只有自由定位改动时没有 Promote；全部推广时没有提示在第一条里核对）。
 
 ### 已知限制
 
-- 在断点上把流式布局里的图层改为自由定位、且它的容器因此成为定位参照的那条样式改动（`within`），以及要求代码给散文字包 `<span>` 的那条（`wrap`），不推广：它们依赖这一处使用的容器与画布上的包裹。这类图层上的其他样式与生成说明照常推广。
+- 在断点上把流式布局里的图层改为自由定位、且它的容器因此成为定位参照的那条样式改动（`within`），以及要求代码给散文字包 `<span>` 的那条（`wrap`），不推广：它们依赖这一处使用的容器与画布上的包裹。这类图层上的其他样式与生成说明照常推广，推广时用提示告诉设计师留下了哪些、为什么。结构改动、数据改动同样留下、同样提示。提示约 3 秒后淡出，之后要知道哪些留下，只能看改动列表（组件改动标 "· Card itself"，留下的没有）。
+- 带 `wrap` 的样式改动记在已包上 `<span>` 的散文字上，而这种图层本身不能推广（`inComponent` 为假），所以实际上提示里不会出现 `wrap` 那一类；文案留着，以防以后放开。
 - 推广之后才复制的组件实例，复制时把当时的外观（包括组件改动）固化在副本上；之后撤销推广，副本仍显示组件改动的样子（改动单正确）。
 - 使用处在组件生成说明之外另写的生成说明，改前值记的是当时组件的生成说明；之后组件的生成说明被撤下，这条使用处改动的改动说明仍提到它。
 - 组件某断点上的值与使用处在所有宽度上的值同时存在时，画布上该断点显示组件的值（断点规则排在后面）；核对只跳过同一断点上有自己改动的使用处。

@@ -15,8 +15,10 @@ import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { BreakpointSection } from "./BreakpointSection";
 import { BriefSection } from "./BriefSection";
-import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
-import type { View } from "./views";
+import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
+import { promotedNote } from "./promote";
+import { viewName } from "./ViewLabels";
+import type { View, Views } from "./views";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -111,6 +113,13 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const [variables] = useState(loadVariables);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const catalogNow = useRef<Catalog | null>(null);
+  /** The canvas's views, once there is a canvas. */
+  const viewsNow = useRef<Views | null>(null);
+  /** What the view at `breakpoint` is called ("Tablet"); its range in words when no view shows it now. */
+  const viewAt = (breakpoint: Breakpoint) => {
+    const view = viewsNow.current?.list().slice(1).find((v) => contains(breakpoint, v.width));
+    return view ? viewName(view.width, false) : breakpointName(breakpoint);
+  };
   /** The layers off the canvas, once there is a canvas to show them beside. Their edits share the canvas's history. */
   const [offCanvas, setOffCanvas] = useState<OffCanvas | null>(null);
   const [history] = useState(createHistory);
@@ -476,6 +485,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         restoreFrom={restoreFrom?.canvas ?? null}
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
+          viewsNow.current = views;
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
           // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.
           // A value is named by the Variable it is, once the Variables are in.
@@ -563,8 +573,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         onSetBrief={writeBrief}
         onPromote={(layer) => {
           if (!editor?.canPromote(layer)) return;
-          editor.promote(layer);
+          const { promoted, stays } = editor.promote(layer);
           onEdit();
+          // What stays with the usage, and why, so the designer is not left wondering.
+          const note = promotedNote(promoted.length, layer.chain[0]?.component ?? "its component", stays, viewAt);
+          if (note) showToast(note);
         }}
         onBeginText={(layer) => {
           const own = editorOf(layer)!.ownElement(layer);
