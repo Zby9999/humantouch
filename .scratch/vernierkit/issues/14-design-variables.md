@@ -71,13 +71,24 @@ Agent 落地时发现：设计师输入的精确颜色很少等于 Tailwind v4 �
   - `react18-round.spec.ts`：输入的 #EEF4FF 在改动说明里写成 `brand-50`。
   - `claim.spec.ts`：8px 写成 `gap-2`。`properties.spec.ts` 的取色器测试改为先打开颜色选择器。
 
+**整线审查后的修正（2026-10-29）**
+
+整线 code-review 对照"所有适用的输入框都提供变量选择器"和 spec 的"否则写明没有对应变量，用精确值"，补了三处：
+
+- Grid 的行间距、列间距（ticket 18 后加的 `rowGap`、`columnGap`）归入间距组：`client/variables.ts` 的 `GROUPS` 与 `slotsOf` 加上它们，`GridSection.tsx` 两个字段旁有变量按钮（可换、可解除，也有 32 的按名称找与接近提示）。改动说明的类名前缀是 `gap-y`、`gap-x`。
+- 阴影颜色是颜色变量：`shadows` 与 `textShadows` 的每个阴影的颜色是一个部分（`shadow 1`、`shadow 2`…），Effects 里阴影行的颜色字段和填充一样，色块打开颜色选择器（有 Variables 页签），选用后显示变量名标签，可换可解除；文字图层的投影也有。精确相等时改动说明写 "the color of shadow 1 is the Variable `brand-500` … `shadow-brand-500`"（文字图层是 `text-shadow-…`），没有时写没有对应变量与 `shadow-[#000000]/25`。阴影整体恰好是一个阴影变量（选用或相等）时只记这个阴影变量，不再逐个记它的颜色，和 Figma 的效果样式一样。
+- 变量还没读回来时做的改动：`Shell.tsx` 在变量读回、换算后调用新的 `bindRecorded`，给本轮里已记下、还没有 `variables` 的样式改动按它们当时的值（`after`）做精确相等判断，补上变量名或"没有对应变量"，然后照常存一次、刷新改动列表。已经有变量判断的改动不动；已离开编辑模式或这一轮已 Discard 的不补。读取失败或项目没有变量时什么也不补，改动说明没有 **Variables** 行；Skill 的兜底仍成立（"Follow how the project already writes styles"：没有 Variables 行的就按项目的写法用类，找不到合适的类才用任意值）。
+- 顺带：`client/service.ts` 的 `loadVariables` 改用共用的 `serviceRequest`，不再自己拼请求头。非 2xx 的回答现在也会在控制台提示一次，仍返回空列表。
+- 测试：`edits.browser.test.ts` 加 Grid 行列间距、阴影颜色（含文字图层、整体是阴影变量时）、变量晚到后补判断；`cli.test.ts` 加 `gap-y`/`gap-x` 与阴影颜色的说法；e2e `variables.spec.ts` 加 Grid 两个间距的变量按钮、阴影颜色从颜色选择器选用与撤销、文字投影颜色按名称选用；`react18-round.spec.ts` 加"变量请求被拦住时改的填充，放行后存下的改动与改动说明写 `brand-50`"。
+
 **已知限制**
 
 - 只认设计师选用的变量显示变量名标签；页面源码里本来就用了变量（如 `p-gutter`）的值，面板显示数值，不显示标签。
 - 选用一个与图层现值恰好相同的变量不产生改动：源码写死的值想改成引用变量，这样做不到。
 - 同一个 CSS 变量在多处定义（如 `.dark` 主题）只取第一处；媒体查询、主题切换下的不同值不区分。
 - Tailwind 的字号类（`text-lead`）同时设置行高；改动说明按字号给类名，没有提醒行高会一起变。
-- 阴影颜色不提供颜色变量；文字图层的投影不提供阴影变量（`text-shadow` 画不了 spread / inset，v4 的 `--text-shadow-*` 也未读）。
+- 文字图层的投影不提供阴影变量（`text-shadow` 画不了 spread / inset，v4 的 `--text-shadow-*` 也未读），只有每个投影的颜色变量。
+- 阴影颜色的类（`shadow-brand-500`）在 Tailwind 里给这一层所有阴影上同一种颜色；几个阴影颜色不同时，Agent 要把变量写进阴影值里（v4 用 `var(--color-…)`，v3 没有现成的 CSS 变量）。Tailwind v3 没有 `text-shadow-*` 类。
 - 长度变量只认 px 和 rem（含 calc 等），% 和 vw 不认，em 不认。v4 的 `--container-*`、`--breakpoint-*` 等其他命名空间不读。
 - v3 的配置由 `loadConfig`（jiti）加载，有模块缓存，开发服务器运行中改了配置，可能要重启才会读到新值。没有 `loadConfig` 的旧版 v3 退回 `import()`，读不了 `.ts` 配置。
 - 每次进入编辑模式都要现读一次（遍历项目 CSS、加载 v3 配置），大项目上会多花一点时间；读取不在保存的队列里，不会挡住保存。

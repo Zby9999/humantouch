@@ -13,7 +13,7 @@ import { boxOf, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
 import { fontsOf } from "../src/client/typography";
 import { createViews } from "../src/client/views";
-import { bind, resolveVariables } from "../src/client/variables";
+import { bind, bindRecorded, resolveVariables, type Catalog } from "../src/client/variables";
 import type { Variable } from "../src/service-protocol";
 
 /** Usage chains as the freezer writes them onto the canvas. */
@@ -3572,6 +3572,10 @@ describe("Variables", () => {
     <article data-vk-loc="src/Card.tsx:3:5" style="height: 80px; width: 120px; background-color: rgb(255, 255, 255); border-radius: 12px"></article>
     <h3 data-vk-loc="src/Card.tsx:4:7" style="font-size: 16px; color: rgb(0, 0, 0)">Card</h3>
   </div>
+  <div id="grid" data-vk-loc="src/App.tsx:8:5" style="display: grid; grid-template-columns: 1fr 1fr; row-gap: 8px; column-gap: 8px">
+    <p data-vk-loc="src/App.tsx:9:7" style="height: 20px; margin: 0"></p>
+    <p data-vk-loc="src/App.tsx:10:7" style="height: 20px; margin: 0"></p>
+  </div>
 </body>`;
 
   function openWithVariables(variables = ALL) {
@@ -3614,6 +3618,11 @@ describe("Variables", () => {
     expect(change("fontSize")!.variables).toEqual({ "": LEAD });
     editor.set(layer("article"), "radius", [14, 14, 0, 0]);
     expect(change("radius")!.variables).toEqual({ "top-left": CARD, "top-right": CARD, "bottom-right": null, "bottom-left": null });
+    // A Grid's gaps are spacing too.
+    editor.set(layer("#grid"), "rowGap", 22);
+    expect(change("rowGap")!.variables).toEqual({ "": GUTTER });
+    editor.set(layer("#grid"), "columnGap", 23);
+    expect(change("columnGap")!.variables).toEqual({ "": null });
     // No Variable is offered for X, nor for opacity.
     editor.set(layer("article"), "opacity", 0.5);
     expect(change("opacity")!.variables).toBeUndefined();
@@ -3691,6 +3700,32 @@ describe("Variables", () => {
     expect(change("fill")!.variables).toEqual({ "stop 1": BRAND, "stop 2": null });
   });
 
+  test("a shadow's color is a color Variable, shadow by shadow, a text layer's too; shadows that are a shadow Variable are that alone", () => {
+    const { editor, layer, change } = openWithVariables();
+    const article = layer("article");
+    const drop = { type: "drop", x: 0, y: 4, blur: 4, spread: 0 } as const;
+    editor.set(article, "shadows", [{ ...drop, color: "#3D63F5", opacity: 1 }, { ...drop, color: "#3D63F5", opacity: 0.5 }]);
+    expect(change("shadows")!.variables).toEqual({ "": null, "shadow 1": BRAND, "shadow 2": null });
+
+    // Picked for the second, as the panel does: drawn there, the first kept.
+    editor.set(article, "shadows", [{ ...drop, color: "#3D63F5", opacity: 1 }, { ...drop, color: "#FF0000", opacity: 1 }], { variables: { "shadow 2": RED } });
+    expect(change("shadows")!.variables).toEqual({ "": null, "shadow 1": BRAND, "shadow 2": { ...RED, picked: true } });
+    expect(getComputedStyle(article.el).boxShadow).toContain("rgb(255, 0, 0)");
+
+    // The shadows of a shadow Variable are it, colors and all.
+    editor.set(article, "shadows", [
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#1B1D2A", opacity: 0.06 },
+      { type: "drop", x: 0, y: 4, blur: 12, spread: 0, color: "#1B1D2A", opacity: 0.08 },
+    ]);
+    expect(change("shadows")!.variables).toEqual({ "": RAISED });
+
+    // A text layer's shadows have colors only to be Variables.
+    const title = layer("h3");
+    expect(editor.can(title, "textShadows")).toBe(true);
+    editor.set(title, "textShadows", [{ ...drop, color: "#FF0000", opacity: 1 }]);
+    expect(change("textShadows")!.variables).toEqual({ "shadow 1": RED });
+  });
+
   test("a value close to a Variable of its group finds the closest: a length within 2px and 10% of it, a color a little apart as the eye sees it; the same value is not close", () => {
     const { catalog } = openWithVariables();
     const near = (group: Variable["group"], drawn: Parameters<typeof catalog.near>[1]) => catalog.near(group, drawn)?.variable.name ?? null;
@@ -3745,6 +3780,34 @@ describe("Variables", () => {
     // With none of the project's own close, the closest default: 19.5px is 1.5px from 4.5 (18px), and 2px from snug, past its 10%.
     expect(catalog.near("spacing", 19.5)?.variable.name).toBe("4.5");
     expect(resolveVariables([GUTTER, FOUR, FOUR_HALF], doc).near("spacing", 17.2)?.variable.name).toBe("4.5");
+  });
+
+  test("a value typed before the Variables are in is named by them once they are, as it was then; a change named already keeps what it has", () => {
+    const canvas = openCanvas(PAGE_OF_STACKS);
+    // As edit mode has it: the Variables come in a while after the canvas.
+    let catalog: Catalog | null = null;
+    const editor = createEditor(canvas.views, canvas.changes, null, { bind: (...args) => (catalog ? bind(catalog, ...args) : undefined) });
+    const tree = editor.tree();
+    const layer = (selector: string) => find(tree.root, (l) => l.el === canvas.doc.querySelector(selector) && !l.text)!;
+    const change = (property: string) => canvas.changes.list().find((c) => c.property === property);
+    editor.set(layer("#row"), "gap", 22);
+    editor.set(layer("#row"), "padding", [23, 16, 4, 8]);
+    editor.set(layer("article"), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+    editor.set(layer("article"), "opacity", 0.5);
+    expect(change("gap")).not.toHaveProperty("variables");
+
+    catalog = resolveVariables(ALL, canvas.doc);
+    expect(bindRecorded(catalog, canvas.changes)).toBe(true);
+    expect(change("gap")!.variables).toEqual({ "": GUTTER });
+    expect(change("padding")!.variables).toEqual({ top: null, right: FOUR, bottom: null, left: null });
+    expect(change("fill")!.variables).toEqual({ color: RED });
+    // No Variable is offered for opacity.
+    expect(change("opacity")).not.toHaveProperty("variables");
+
+    // Named once: again, nothing is.
+    editor.set(layer("#row"), "gap", 16, { variables: { "": FOUR } });
+    expect(bindRecorded(catalog, canvas.changes)).toBe(false);
+    expect(change("gap")!.variables).toEqual({ "": { ...FOUR, picked: true } });
   });
 
   test("without Variables, a change names none", () => {

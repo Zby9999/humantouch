@@ -1300,6 +1300,8 @@ describe("claim, Variables", () => {
       change(2, "fill", { type: "solid", color: "#FFFFFF", opacity: 1 }, { type: "solid", color: "#3D63F5", opacity: 1 }, { color: brand }),
       change(3, "textColor", { color: "#000000", opacity: 1 }, { color: "#FF0000", opacity: 1 }, { "": { ...danger, picked: true } }),
       change(4, "radius", 12, 4, { "": rounded }),
+      change(5, "rowGap", 8, 22, { "": gutter }),
+      change(6, "columnGap", 8, 23, { "": null }),
     );
 
     const output = (await cli("claim")).output;
@@ -1312,6 +1314,9 @@ describe("claim, Variables", () => {
     );
     expect(section(output, 3)).toContain("- **Variables:** the text color is the Variable `--danger`, a CSS variable: use `var(--danger)`.\n");
     expect(section(output, 4)).toContain("- **Variables:** the corner radius is the Variable `DEFAULT`, from the Tailwind theme: use its class, `rounded`.\n");
+    // A Grid's gaps, each its own way.
+    expect(section(output, 5)).toContain("- **Variables:** the row gap is the Variable `gutter`, from the Tailwind theme: use its class, `gap-y-gutter`.\n");
+    expect(section(output, 6)).toContain("- **Variables:** no Variable has the column gap's value: use the exact value (with Tailwind, an arbitrary value: `gap-x-[23px]`)");
   });
 
   test("say so when no Variable has the value: the exact value, never a class close to it; part by part", async () => {
@@ -1323,6 +1328,11 @@ describe("claim, Variables", () => {
         { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
         { color: "#123456", opacity: 1, position: 100, unit: "%" },
       ] }, { "stop 1": danger, "stop 2": null }),
+      change(5, "shadows", [], [
+        { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#3D63F5", opacity: 1 },
+        { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#000000", opacity: 0.25 },
+      ], { "": null, "shadow 1": brand, "shadow 2": null }),
+      change(6, "textShadows", [], [{ type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#FF0000", opacity: 1 }], { "shadow 1": danger }),
     );
 
     const output = (await cli("claim")).output;
@@ -1338,5 +1348,10 @@ describe("claim, Variables", () => {
     expect(section(output, 3)).toContain(
       "- **Variables:** stop 1 of the fill is the Variable `--danger`, a CSS variable: use `var(--danger)`. No Variable has stop 2 of the fill's value: use the exact value (with Tailwind, an arbitrary value: `to-[#123456]`), not a class or Variable whose value is close.\n",
     );
+    // A shadow's color, shadow by shadow, a text layer's too.
+    expect(section(output, 5)).toContain(
+      "The color of shadow 1 is the Variable `brand-500`, from the Tailwind theme: use its class, `shadow-brand-500` (in CSS, `var(--color-brand-500)`). No Variable has the color of shadow 2's value: use the exact value (with Tailwind, an arbitrary value: `shadow-[#000000]/25`), not a class or Variable whose value is close.\n",
+    );
+    expect(section(output, 6)).toContain("- **Variables:** the color of shadow 1 is the Variable `--danger`, a CSS variable: use `var(--danger)`.\n");
   });
 });

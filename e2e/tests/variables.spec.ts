@@ -144,6 +144,56 @@ test("corner radius, shadows, size and font size take Variables of their own gro
   await expect(design(page).getByRole("button", { name: "Line height variables" })).toHaveCount(0);
 });
 
+test("a Grid's row and column gaps take spacing Variables, each its own", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Grid");
+  const grid = canvas(page).locator("[data-testid=features]");
+
+  await design(page).getByRole("button", { name: "Row gap variables" }).click();
+  const list = page.getByRole("dialog", { name: "Row gap variables" });
+  await expect(list.getByRole("option").first()).toHaveText(/^gutter22px$/);
+  await list.getByRole("option", { name: "section" }).click();
+  await expect(grid).toHaveCSS("row-gap", "72px");
+  await expect(design(page).getByRole("button", { name: "Row gap variable", exact: true })).toHaveText("section");
+  // The column gap is still a value, and takes one of its own.
+  await expect(design(page).getByRole("textbox", { name: "Column gap" })).toHaveValue("22");
+  await design(page).getByRole("button", { name: "Column gap variables" }).click();
+  await page.getByRole("dialog", { name: "Column gap variables" }).getByRole("option", { name: "4", exact: true }).click();
+  await expect(grid).toHaveCSS("column-gap", "16px");
+  await expect(design(page).getByRole("button", { name: "Column gap variable", exact: true })).toHaveText("4");
+
+  await design(page).getByRole("button", { name: "Detach row gap variable" }).click();
+  await expect(design(page).getByRole("textbox", { name: "Row gap" })).toHaveValue("72");
+});
+
+test("a shadow's color takes a color Variable from the color picker, shown by name, a text layer's too", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+
+  await effects.getByRole("button", { name: "Shadow 1 color picker" }).click();
+  const picker = page.getByRole("dialog", { name: "Shadow 1 color" });
+  await picker.getByRole("tab", { name: "Variables" }).click();
+  await picker.getByRole("option", { name: "brand-500" }).click();
+  expect((await cardStyles(page, "boxShadow"))[0]).toMatch(/^rgb\(61, 99, 245\) /);
+  const chip = effects.getByRole("button", { name: "Shadow 1 color variable", exact: true });
+  await expect(chip).toHaveText("brand-500");
+  // Undone with the edit; the shadow keeps its other values.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(chip).toBeHidden();
+  expect((await cardStyles(page, "boxShadow"))[0]).not.toContain("rgb(61, 99, 245)");
+
+  // A text layer's shadow: its color picked by typing part of the name.
+  await selectRow(page, "Freeze");
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  const hex = effects.getByRole("textbox", { name: "Shadow 1 color", exact: true });
+  await hex.click();
+  await hex.pressSequentially("ink");
+  await hex.press("Enter");
+  await expect(effects.getByRole("button", { name: "Shadow 1 color variable", exact: true })).toHaveText("ink");
+  await expect(canvas(page).locator("h3").first()).toHaveCSS("text-shadow", /^rgb\(27, 29, 42\) /);
+});
+
 test("typing part of a name in a field lists its group's Variables that have it, under the field: arrows choose, Enter picks, Esc puts the value back", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");

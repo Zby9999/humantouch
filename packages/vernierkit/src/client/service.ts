@@ -4,7 +4,6 @@ import {
   BREAKPOINTS_PATH,
   CHECKS_PATH,
   OFF_CANVAS_PATH,
-  TOKEN_HEADER,
   UNLOCK_PATH,
   VARIABLES_PATH,
   type CheckReport,
@@ -35,8 +34,8 @@ export async function loadVariables(): Promise<Variable[]> {
   const config = serviceConfig();
   if (!config) return [];
   try {
-    const response = await fetch(`${config.url}${VARIABLES_PATH}`, { headers: { [TOKEN_HEADER]: config.token } });
-    return response.ok ? ((await response.json()) as Variable[]) : [];
+    const response = await serviceRequest(config)("GET", { path: VARIABLES_PATH });
+    return (await response.json()) as Variable[];
   } catch (error) {
     console.warn("Vernier Kit: could not load the project's Variables:", error);
     return [];

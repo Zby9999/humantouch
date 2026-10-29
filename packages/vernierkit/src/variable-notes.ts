@@ -14,6 +14,8 @@ const PREFIXES: Record<string, string> = {
   textColor: "text",
   stroke: "border",
   gap: "gap",
+  rowGap: "gap-y",
+  columnGap: "gap-x",
   width: "w",
   height: "h",
   minWidth: "min-w",
@@ -23,6 +25,8 @@ const PREFIXES: Record<string, string> = {
   radius: "rounded",
   fontSize: "text",
   shadows: "shadow",
+  // A shadow's color: Tailwind's shadow color classes.
+  textShadows: "text-shadow",
 };
 const SIDE_PREFIXES: Record<string, string> = { top: "pt", right: "pr", bottom: "pb", left: "pl" };
 const CORNER_PREFIXES: Record<string, string> = { "top-left": "rounded-tl", "top-right": "rounded-tr", "bottom-right": "rounded-br", "bottom-left": "rounded-bl" };
@@ -54,12 +58,13 @@ function unnamed(change: Change, slot: string): string {
   return `no Variable has ${partOf(change, slot)}'s value: use the exact value (with Tailwind, an arbitrary value${arbitrary}), not a class or Variable whose value is close.`;
 }
 
-/** The part of the value, in a sentence: "the gap", "the top padding", "the fill color", "stop 1 of the fill". */
+/** The part of the value, in a sentence: "the gap", "the top padding", "the fill color", "stop 1 of the fill", "the color of shadow 1". */
 function partOf({ property }: Change, slot: string): string {
   const name = propertyName(property);
   if (!slot) return `the ${name}`;
   if (slot === "color") return `the ${name} color`;
   if (slot.startsWith("stop ")) return `${slot} of the ${name}`;
+  if (slot.startsWith("shadow ")) return `the color of ${slot}`;
   return `the ${slot} ${name}`;
 }
 

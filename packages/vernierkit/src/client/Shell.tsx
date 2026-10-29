@@ -22,7 +22,7 @@ import type { View, Views } from "./views";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
-import { bind, resolveVariables, type Catalog } from "./variables";
+import { bind, bindRecorded, resolveVariables, type Catalog } from "./variables";
 import { CatalogProvider } from "./VariablePicker";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
@@ -183,14 +183,23 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   useEffect(() => {
     if (leaving) flush();
   }, [leaving]);
+  /** Edit mode is over: nothing is saved from here on. */
+  const left = useRef(false);
   useEffect(
     () => () => {
       flush();
       control.current = null;
+      left.current = true;
     },
     [],
   );
 
+  /** The round changed: saved soon, and its changes told. */
+  const changed = () => {
+    clearTimeout(pendingSave.current);
+    pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
+    if (round.current) onChanges(round.current.changeSet.list());
+  };
   const onEdit = () => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
@@ -199,9 +208,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       const found = layers.map(refind).filter((layer) => layer !== null);
       return found.length === layers.length && found.every((layer, i) => layer === layers[i]) ? layers : found;
     });
-    clearTimeout(pendingSave.current);
-    pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
-    if (round.current) onChanges(round.current.changeSet.list());
+    changed();
     edited(undefined);
     setAdjusting(true);
     clearTimeout(settle.current);
@@ -386,8 +393,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
   // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
-  const latest = useRef({ editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
-  latest.current = { editor, onEdit, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
+  const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
+  latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -497,6 +504,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             if (!list.length) return;
             catalogNow.current = resolveVariables(list, views.canvas.document);
             setCatalog(catalogNow.current);
+            // Edits made before the Variables were in are named by them now, as their values were, and saved so.
+            if (!left.current && round.current?.changeSet === changeSet && bindRecorded(catalogNow.current, changeSet)) latest.current.changed();
           });
           // Beside it, the layers off it, where they were left.
           const outside = createOffCanvas(workspace, restoreOffCanvas, history);

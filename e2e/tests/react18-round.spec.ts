@@ -135,6 +135,28 @@ test("a value typed close to a Variable, its hint left unused, is the exact valu
   );
 });
 
+test("a value typed before the project's Variables are in is named by them once they are", async ({ page }) => {
+  // The Variables held back till the edit is made and saved.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/variables", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(REACT18_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Fill color", "eef4ff");
+  await expect.poll(() => savedChanges()?.length).toBe(1);
+  expect(savedChanges()[0]).not.toHaveProperty("variables");
+
+  release();
+  await expect.poll(() => savedChanges()?.[0]?.variables?.color?.name).toBe("brand-50");
+  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  expect(fill).toContain("- **Variables:** the fill color is the Variable `brand-50`, from the Tailwind theme: use its class, `bg-brand-50`.\n");
+});
+
 test("a whole round: claim locks the editor, done checks the fill on the page once Card.tsx uses the project's color, finish ends the round", async ({ page }) => {
   await fillTheCards(page);
   await vernierkit("claim");

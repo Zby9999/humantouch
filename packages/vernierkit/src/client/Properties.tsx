@@ -92,16 +92,20 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   };
 
   const catalog = useCatalog();
-  /** The Variable every selected layer has picked for part `part` of `property`; null when none, or not the same. */
-  const boundTo = (property: Property, part: string) => {
-    const [first, ...rest] = layers.map((layer) => editor.variables(layer, property)?.[part]);
+  /**
+   * The Variable every selected layer has picked for part `part` of `property`; null when none, or not the same.
+   * `property` may be where each layer keeps it: a text layer's shadows are its text shadows.
+   */
+  const boundTo = (property: Property | ((layer: Layer) => Property), part: string) => {
+    const [first, ...rest] = layers.map((layer) => editor.variables(layer, typeof property === "function" ? property(layer) : property)?.[part]);
     const same = rest.every((other) => other?.picked && sameVariable(other, first));
     return first?.picked && same ? first : null;
   };
   /** Makes part `part` of `property` the Variable `entry` draws, on each selected layer, as one edit; null detaches it, keeping the value. */
-  const pick = (property: Property, part: string, entry: Resolved | null) => {
+  const pick = (propertyOf: Property | ((layer: Layer) => Property), part: string, entry: Resolved | null) => {
     editor.batch(() => {
       for (const layer of layers) {
+        const property = typeof propertyOf === "function" ? propertyOf(layer) : propertyOf;
         const current = editor.read(layer, property);
         const next = entry ? withPart(property, current, part, entry.drawn) : current;
         if (next !== null) editor.set(layer, property, next as PropertyValues[Property], { variables: { [part]: entry?.variable ?? null } });
@@ -114,6 +118,14 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
     const group = GROUPS[property];
     if (!catalog || !group) return undefined;
     return { group, selection: keyOf(layers), bound: boundTo(property, part), onPick: (entry) => pick(property, part, entry) };
+  };
+
+  /** The color of shadow `i` as a field that can be a color Variable, where each layer keeps its shadows; undefined when the project has none. */
+  const shadowColor = (i: number): Slot | undefined => {
+    if (!catalog) return undefined;
+    const part = `shadow ${i + 1}`;
+    const kept = (layer: Layer) => effectOf(layer, "shadows")!;
+    return { group: "color", selection: keyOf(layers), bound: boundTo(kept, part), onPick: (entry) => pick(kept, part, entry) };
   };
 
   /** Selected text layers: their shadows are text shadows, and they have no blur. */
@@ -235,7 +247,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           variable={variable}
         />
       )}
-      <GridSection editor={editor} layers={layers} onEdit={onEdit} />
+      <GridSection editor={editor} layers={layers} onEdit={onEdit} variable={variable} />
       {(opacity !== undefined || visible !== undefined) && (
         <AppearanceSection
           selection={keyOf(layers)}
@@ -289,6 +301,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           backgroundBlur={shownEffect("backgroundBlur")}
           withText={texts.length > 0}
           variable={texts.length ? undefined : variable("shadows")}
+          colorVariable={shadowColor}
           read={readEffect}
           update={updateEffect}
           updateEach={updateEffects}
@@ -308,7 +321,7 @@ function number(value: Shown<number>): number | null {
 }
 
 /** Part `part` of a property's value ("" for all of it) as a field that can be a Variable. */
-type SlotOf = (property: Property, part?: string) => Slot | undefined;
+export type SlotOf = (property: Property, part?: string) => Slot | undefined;
 
 const LIMIT_LABELS = { minWidth: "Min width", minHeight: "Min height", maxWidth: "Max width", maxHeight: "Max height" };
 
@@ -1231,7 +1244,7 @@ const EFFECT_TYPES: { type: EffectType; label: string }[] = [
  * spread, and no blur: with text selected, the shadows are drop shadows
  * without spread, and a blur only the other layers have shows as Mixed.
  */
-function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable, read, update, updateEach }: {
+function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable, colorVariable, read, update, updateEach }: {
   shadows: Shown<Shadow[]>;
   /** Undefined when not all selected layers offer it. */
   layerBlur: Shown<Blur> | undefined;
@@ -1240,6 +1253,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
   withText: boolean;
   /** The shadows as one Variable, when the project has them: picked, it stands for all of them. */
   variable: Slot | undefined;
+  /** The color of shadow `i` as a color Variable, when the project has them. */
+  colorVariable(i: number): Slot | undefined;
   /** A layer's effect; a blur on a layer that cannot have one is none. */
   read<P extends EffectProperty>(layer: Layer, property: P): PropertyValues[P];
   /** Changes an effect of each selected layer that can have it. */
@@ -1327,7 +1342,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
                 {lengthField("blur", "blur", "B", 0)}
                 {!withText && lengthField("spread", "spread", "S")}
               </div>
-              <ColorField name={name} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} />
+              <ColorField name={name} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
             </div>
           );
         })

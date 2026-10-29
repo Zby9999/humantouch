@@ -6,7 +6,7 @@
  * close one is only for the panel to hint at (`near`).
  */
 import type { Variable, VariableGroup } from "../service-protocol";
-import type { Bindings, Picked } from "./changeset";
+import type { Bindings, ChangeSet, Picked } from "./changeset";
 import { readShadows, type Shadow } from "./effects";
 import { colorReader, type Color, type Fill, type Stroke } from "./paint";
 import type { Radius, Size } from "./edits";
@@ -165,6 +165,8 @@ export interface Slot {
 /** The group each property's Variables are in, for those that can be Variables. */
 export const GROUPS: Partial<Record<string, VariableGroup>> = {
   gap: "spacing",
+  rowGap: "spacing",
+  columnGap: "spacing",
   padding: "spacing",
   width: "spacing",
   height: "spacing",
@@ -187,12 +189,15 @@ const colorOf = ({ color, opacity }: Color): Color => ({ color, opacity });
 /**
  * The parts of a property's value that can each be a Variable, by name: ""
  * for the whole value, else a side ("top"), a corner, "color", a gradient
- * stop ("stop 1"). None for a property no Variable is offered for.
+ * stop ("stop 1"), a shadow's color ("shadow 1"). None for a property no
+ * Variable is offered for.
  */
 export function slotsOf(property: string, value: unknown): Record<string, Slot> {
   const one = (group: VariableGroup, drawn: Drawn): Record<string, Slot> => ({ "": { group, drawn } });
   switch (property) {
     case "gap":
+    case "rowGap":
+    case "columnGap":
       return one("spacing", value as number);
     case "padding":
       return Object.fromEntries((value as number[]).map((p, i) => [SIDES[i], { group: "spacing", drawn: p }]));
@@ -219,10 +224,17 @@ export function slotsOf(property: string, value: unknown): Record<string, Slot> 
       return {};
     }
     case "shadows":
-      return (value as Shadow[]).length ? one("shadow", value as Shadow[]) : {};
+      return (value as Shadow[]).length ? { ...one("shadow", value as Shadow[]), ...shadowColors(value as Shadow[]) } : {};
+    case "textShadows":
+      return shadowColors(value as Shadow[]);
     default:
       return {};
   }
+}
+
+/** The color of each shadow, as a part of its own: "shadow 1", "shadow 2". */
+function shadowColors(shadows: Shadow[]): Record<string, Slot> {
+  return Object.fromEntries(shadows.map((s, i) => [`shadow ${i + 1}`, { group: "color", drawn: colorOf(s) }]));
 }
 
 /**
@@ -241,7 +253,27 @@ export function bind(catalog: Catalog, property: string, value: unknown, picked:
     if (still && equal(still.drawn, drawn)) bindings[slot] = { ...still.variable, picked: true };
     else bindings[slot] = catalog.match(group, drawn);
   }
+  // Shadows that are a shadow Variable are that Variable, their colors and all, as an effect style is in Figma.
+  if (property === "shadows" && bindings[""]) for (const slot of Object.keys(bindings)) if (slot) delete bindings[slot];
   return Object.keys(bindings).length ? bindings : undefined;
+}
+
+/**
+ * Names the Variables of the style changes recorded before the Variables were
+ * in, as `bind` names them as an edit is made: each part of the value the
+ * change has, by exact equality. A change that tells its Variables already
+ * keeps them. Whether any change was named.
+ */
+export function bindRecorded(catalog: Catalog, changes: ChangeSet): boolean {
+  let named = false;
+  for (const change of changes.list()) {
+    if (change.kind !== "style" || change.variables) continue;
+    const variables = bind(catalog, change.property, change.after, undefined, undefined);
+    if (!variables) continue;
+    change.variables = variables;
+    named = true;
+  }
+  return named;
 }
 
 /** The Variables the designer picked in a change's value, by part: to pick them again when it is undone to. */
@@ -253,7 +285,7 @@ export function pickedIn(bindings: Bindings | undefined): Picked | undefined {
 
 /**
  * The value with part `slot` made what a Variable draws: a side of the
- * padding, a corner, the color of a fill or a stop, the shadows as a whole.
+ * padding, a corner, the color of a fill, a stop or a shadow, the shadows as a whole.
  * Null when the value has no such part (a stroke that is none, say).
  */
 export function withPart(property: string, value: unknown, slot: string, drawn: Drawn): unknown {
@@ -273,6 +305,10 @@ export function withPart(property: string, value: unknown, slot: string, drawn: 
     }
     case "textColor":
       return colorOf(color);
+    case "shadows":
+    case "textShadows":
+      if (!slot) return drawn;
+      return (value as Shadow[]).map((s, i) => (`shadow ${i + 1}` === slot ? { ...s, ...colorOf(color) } : s));
     case "stroke":
       return value ? { ...(value as Stroke), ...colorOf(color) } : null;
     case "fill": {
