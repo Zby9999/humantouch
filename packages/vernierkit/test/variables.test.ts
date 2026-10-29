@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +60,20 @@ describe("a Tailwind v3 project", () => {
     expect(named(variables, "color", "current")).toBeUndefined();
     expect(named(variables, "color", "inherit")).toBeUndefined();
   });
+});
+
+test("a Tailwind v3 theme made of the project's CSS variables has their values", async () => {
+  mkdirSync(join(project, "node_modules"));
+  symlinkSync(join(EXAMPLES, "vite-react18-tw3/node_modules/tailwindcss"), join(project, "node_modules/tailwindcss"));
+  write(
+    "tailwind.config.cjs",
+    `module.exports = { content: [], theme: { extend: { colors: { primary: "hsl(var(--primary) / <alpha-value>)", ghost: "rgb(var(--nowhere))" } } } };`,
+  );
+  write("src/index.css", "@tailwind base;\n:root { --primary: 222 47% 11%; }\n");
+  const variables = await readVariables(project);
+
+  expect(named(variables, "color", "primary")).toEqual({ name: "primary", group: "color", value: "hsl(222 47% 11% / 1)", from: "tailwind", own: true });
+  expect(named(variables, "color", "ghost")).toBeUndefined();
 });
 
 describe("a Tailwind v4 project", () => {

@@ -47,8 +47,10 @@ function named(change: Change, slot: string, bound: Bound): string {
 
 function unnamed(change: Change, slot: string): string {
   const drawn = slotsOf(change.property, change.after)[slot]?.drawn;
-  const exact = typeof drawn === "number" ? `${drawn}px` : drawn && !Array.isArray(drawn) ? drawn.color : null;
-  const arbitrary = exact ? `: \`${prefixOf(change, slot)}-[${exact}]\`` : "";
+  let arbitrary = "";
+  if (typeof drawn === "number") arbitrary = `: \`${prefixOf(change, slot)}-[${drawn}px]\``;
+  // A see-through color: its opacity as Tailwind writes one.
+  else if (drawn && !Array.isArray(drawn)) arbitrary = `: \`${prefixOf(change, slot)}-[${drawn.color}]${drawn.opacity < 1 ? `/${Math.round(drawn.opacity * 100)}` : ""}\``;
   return `no Variable has ${partOf(change, slot)}'s value: use the exact value (with Tailwind, an arbitrary value${arbitrary}), not a class or Variable whose value is close.`;
 }
 

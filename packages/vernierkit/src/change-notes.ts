@@ -50,7 +50,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
     `**Design intent:** ${intent(change, list)}`,
-    ...(change.kind === "style" && variablesLine(change) ? [variablesLine(change)!] : []),
+    ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),

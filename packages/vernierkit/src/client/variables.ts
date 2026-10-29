@@ -67,6 +67,11 @@ export function resolveVariables(variables: Variable[], doc: Document): Catalog 
   };
 }
 
+/** Whether two are the same Variable: by name, from the same place. */
+export function sameVariable(a: Variable | null | undefined, b: Variable | null | undefined): boolean {
+  return !!a && !!b && a.name === b.name && a.from === b.from;
+}
+
 /** Whether two drawn values are the same: lengths to a hundredth of a px, colors and shadows exactly. */
 export function equal(a: Drawn, b: Drawn): boolean {
   if (typeof a === "number" || typeof b === "number") return typeof a === "number" && typeof b === "number" && Math.abs(a - b) < 0.005;
@@ -158,7 +163,7 @@ export function bind(catalog: Catalog, property: string, value: unknown, picked:
   for (const [slot, { group, drawn }] of Object.entries(slotsOf(property, value))) {
     if (!catalog.of(group).length) continue;
     const chosen = picked && slot in picked ? picked[slot] : previous?.[slot]?.picked ? previous[slot] : null;
-    const still = chosen && catalog.of(group).find((entry) => entry.variable.name === chosen.name && entry.variable.from === chosen.from);
+    const still = chosen && catalog.of(group).find((entry) => sameVariable(entry.variable, chosen));
     if (still && equal(still.drawn, drawn)) bindings[slot] = { ...still.variable, picked: true };
     else bindings[slot] = catalog.match(group, drawn);
   }

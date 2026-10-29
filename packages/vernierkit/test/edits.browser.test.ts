@@ -3293,6 +3293,16 @@ describe("Variables", () => {
     void cards;
   });
 
+  test("a Variable picked for the value the layer has already is no change, and no step to undo", () => {
+    const { editor, layer, changes } = openWithVariables();
+    editor.set(layer("#row"), "gap", 22);
+    editor.set(layer("article"), "radius", 12, { variables: { "": { ...CARD, value: "12px" } } });
+    expect(changes.list().map((c) => c.property)).toEqual(["gap"]);
+    // The one undo takes back the gap.
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+  });
+
   test("a part picked and then given another value is that value's Variable, if any", () => {
     const { editor, layer, change } = openWithVariables();
     editor.set(layer("article"), "fill", { type: "solid", color: "#3D63F5", opacity: 1 }, { variables: { color: BRAND } });

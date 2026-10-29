@@ -2,10 +2,10 @@
 import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Variable, VariableGroup } from "../service-protocol";
-import type { Shadow } from "./effects";
+import { writeShadows, type Shadow } from "./effects";
 import { Icon } from "./icons";
 import { cssColor, type Color } from "./paint";
-import type { Catalog, Drawn, Resolved } from "./variables";
+import { sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
 
 const CatalogContext = createContext<Catalog | null>(null);
 
@@ -96,8 +96,7 @@ function valueText(drawn: Drawn): string {
 function Preview({ drawn }: { drawn: Drawn }) {
   if (typeof drawn === "number") return null;
   if (Array.isArray(drawn)) {
-    const css = (drawn as Shadow[]).map((s) => `${s.type === "inner" ? "inset " : ""}${s.x}px ${s.y}px ${s.blur}px ${s.spread}px ${cssColor(s)}`).join(", ");
-    return <span class="vk-variable-preview is-shadow" style={{ boxShadow: css }} aria-hidden="true" />;
+    return <span class="vk-variable-preview is-shadow" style={{ boxShadow: writeShadows(drawn as Shadow[])["box-shadow"] }} aria-hidden="true" />;
   }
   return <span class="vk-variable-preview" style={{ "--vk-swatch": cssColor(drawn as Color) }} aria-hidden="true" />;
 }
@@ -144,7 +143,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
               .filter(({ variable }) => headingOf(variable) === heading)
               .map((entry) => {
                 const { variable, drawn } = entry;
-                const selected = bound?.name === variable.name && bound.from === variable.from;
+                const selected = sameVariable(bound, variable);
                 return (
                   <button
                     key={`${variable.from} ${variable.name}`}

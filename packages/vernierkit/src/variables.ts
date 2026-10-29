@@ -90,7 +90,7 @@ async function read(root: string): Promise<Variable[]> {
       variables.push({ name: spaced[1].exec(name)![1], group: spaced[0], value, from: "tailwind", css: `var(${name})`, own: isOwn });
     }
   } else if (tailwind?.major === 3) {
-    variables.push(...(await tailwindV3(root, tailwind.require)));
+    variables.push(...(await tailwindV3(root, tailwind.require, lookup)));
   }
 
   for (const [name, raw] of own.custom) {
@@ -201,7 +201,7 @@ const V3_CONFIGS = ["tailwind.config.js", "tailwind.config.cjs", "tailwind.confi
 type Theme = Record<string, unknown>;
 
 /** The theme of a Tailwind v3 config, resolved by the project's own Tailwind; its own values are those Tailwind's defaults do not have. */
-async function tailwindV3(root: string, require: NodeJS.Require): Promise<Variable[]> {
+async function tailwindV3(root: string, require: NodeJS.Require, lookup: Map<string, string>): Promise<Variable[]> {
   const file = V3_CONFIGS.map((name) => join(root, name)).find((path) => existsSync(path));
   if (!file) return [];
   const resolveConfig = require("tailwindcss/resolveConfig") as (config: object) => { theme: Theme };
@@ -221,8 +221,9 @@ async function tailwindV3(root: string, require: NodeJS.Require): Promise<Variab
     for (const [name, raw] of all) {
       const value = (Array.isArray(raw) ? raw[0] : raw) as unknown;
       if (typeof value !== "string") continue;
-      const css = value.replace(/<alpha-value>/g, "1");
-      if (!fits(group, css)) continue;
+      // A theme value made of the project's CSS variables (`hsl(var(--primary))`) has their values.
+      const css = substitute(value.replace(/<alpha-value>/g, "1"), lookup);
+      if (css === null || !fits(group, css)) continue;
       const fallback = tailwinds.get(name);
       variables.push({ name, group, value: css, from: "tailwind", own: JSON.stringify(fallback) !== JSON.stringify(raw) });
     }

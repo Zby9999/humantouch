@@ -522,6 +522,8 @@ export function createEditor(views: Views, changes: ChangeSet, bind?: Binder): E
     if (same(before, value) && !picked) return;
     const wasPicked = pickedIn(changeOf(layer.el.getAttribute(LAYER_ID_ATTR), property)?.variables);
     const id = apply(layer, property, value, picked);
+    // A Variable picked for the value the layer has already, with nothing to change: no step.
+    if (same(before, value) && !wasPicked && !changes.has(id, property)) return;
     const to = (v: PropertyValues[P], chosen: Picked | undefined) => () => {
       const target = layerById(id);
       if (target) apply(target, property, v, chosen);

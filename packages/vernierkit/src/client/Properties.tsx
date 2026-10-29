@@ -30,7 +30,7 @@ import { useToast } from "./Toast";
 import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
 import { weightName } from "../design-values";
 import { ColorPicker, useCatalog, VariableSlot, type Slot } from "./VariablePicker";
-import { GROUPS, withPart, type Resolved } from "./variables";
+import { GROUPS, sameVariable, withPart, type Resolved } from "./variables";
 
 interface Props {
   editor: Editor;
@@ -94,7 +94,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   /** The Variable every selected layer has picked for part `part` of `property`; null when none, or not the same. */
   const boundTo = (property: Property, part: string) => {
     const [first, ...rest] = layers.map((layer) => editor.variables(layer, property)?.[part]);
-    const same = rest.every((other) => other?.picked && other.name === first?.name && other.from === first.from);
+    const same = rest.every((other) => other?.picked && sameVariable(other, first));
     return first?.picked && same ? first : null;
   };
   /** Makes part `part` of `property` the Variable `entry` draws, on each selected layer, as one edit; null detaches it, keeping the value. */

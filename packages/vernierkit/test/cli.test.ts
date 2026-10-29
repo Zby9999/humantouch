@@ -1044,6 +1044,7 @@ describe("claim, Variables", () => {
     saveRound(
       change(1, "gap", 8, 23, { "": null }),
       change(2, "padding", [0, 0, 0, 0], [22, 23, 0, 0], { top: gutter, right: null, bottom: null, left: null }),
+      change(4, "stroke", null, { color: "#3D63F5", opacity: 0.5, weight: 1, style: "solid" }, { color: null }),
       change(3, "fill", null, { type: "linear", angle: 90, stops: [
         { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
         { color: "#123456", opacity: 1, position: 100, unit: "%" },
@@ -1058,6 +1059,8 @@ describe("claim, Variables", () => {
     expect(section(output, 2)).toContain(
       "- **Variables:** the top padding is the Variable `gutter`, from the Tailwind theme: use its class, `pt-gutter`. No Variable has the right padding's value: use the exact value (with Tailwind, an arbitrary value: `pr-[23px]`), not a class or Variable whose value is close. No Variable has the bottom padding's value: use the exact value (with Tailwind, an arbitrary value: `pb-[0px]`), not a class or Variable whose value is close. No Variable has the left padding's value: use the exact value (with Tailwind, an arbitrary value: `pl-[0px]`), not a class or Variable whose value is close.\n",
     );
+    // A see-through color, with its opacity.
+    expect(section(output, 4)).toContain("- **Variables:** no Variable has the stroke color's value: use the exact value (with Tailwind, an arbitrary value: `border-[#3D63F5]/50`)");
     expect(section(output, 3)).toContain(
       "- **Variables:** stop 1 of the fill is the Variable `--danger`, a CSS variable: use `var(--danger)`. No Variable has stop 2 of the fill's value: use the exact value (with Tailwind, an arbitrary value: `to-[#123456]`), not a class or Variable whose value is close.\n",
     );
