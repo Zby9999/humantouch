@@ -19,7 +19,10 @@ interface Props {
  * At the top of the Design panel, in a view other than the desktop view: the
  * breakpoint edits there apply at (ADR 0008), and the properties of the
  * selected layers changed there on their own, each of which can be set back
- * to inherit what the layer shows at every width.
+ * to inherit what the layer shows at every width. The rows of those
+ * properties are marked and reset too (`BreakpointMark`), from the same
+ * changes; the list also holds those whose row the panel does not show, as
+ * for several layers that do not all offer the property.
  */
 export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
   const breakpoint = editor.breakpoint();

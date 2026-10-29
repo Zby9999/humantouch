@@ -3,6 +3,7 @@ import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, Targ
 import { useRef, useState } from "preact/hooks";
 import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./edits";
 import { Icon, type IconName } from "./icons";
+import { BreakpointMark, BreakpointMarksProvider, breakpointMarks } from "./BreakpointMark";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -195,12 +196,14 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const fontSize = shown("fontSize");
   const textColor = shown("textColor");
   return (
-    <>
+    <BreakpointMarksProvider value={breakpointMarks(editor, layers, onEdit)}>
       {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
       {x !== undefined && y !== undefined && (
         <section class="vk-section" aria-labelledby="vk-position">
           <h3 id="vk-position" class="vk-section-title">Position</h3>
-          <div class="vk-grid-2">
+          <div class="vk-grid-2 vk-markable">
+            {/* Placed freely at the breakpoint (ADR 0008): its X and Y there are that placement. */}
+            <BreakpointMark properties={["x", "y", "absolute"]} />
             <NumberField label="X" glyph="X" value={number(x)} onChange={set("x")} />
             <NumberField label="Y" glyph="Y" value={number(y)} onChange={set("y")} />
           </div>
@@ -212,7 +215,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("width")} />}
           {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("height")} />}
           {offers("minWidth") && (
-            <div class="vk-grid-2">
+            <div class="vk-grid-2 vk-markable">
+              <BreakpointMark properties={["minWidth", "minHeight", "maxWidth", "maxHeight"]} />
               {/* Width on the left, height on the right; minimum above maximum. */}
               {(["minWidth", "minHeight", "maxWidth", "maxHeight"] as const).map((property) => {
                 const label = LIMIT_LABELS[property];
@@ -289,7 +293,10 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         // Text is filled with its color, as in Figma.
         <section class="vk-section" role="group" aria-label="Fill">
           <h3 class="vk-section-title">Fill</h3>
-          {textColor === MIXED ? <span class="vk-field vk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
+          <div class="vk-markable">
+            <BreakpointMark properties={["textColor"]} />
+            {textColor === MIXED ? <span class="vk-field vk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
+          </div>
         </section>
       )}
       {fill !== undefined && (
@@ -316,7 +323,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           updateEach={updateEffects}
         />
       )}
-    </>
+    </BreakpointMarksProvider>
   );
 }
 
@@ -358,7 +365,8 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
   const sizes = layers.map((layer) => Math.round(measure(layer)[axis] * 100) / 100);
   const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   return (
-    <div class="vk-row vk-size-row">
+    <div class="vk-row vk-size-row vk-markable">
+      <BreakpointMark properties={[axis]} />
       <VariableSlot label={label} slot={variable}>
         <NumberField
           label={label}
@@ -419,7 +427,8 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           </button>
         )}
       </div>
-      <div class="vk-row">
+      <div class="vk-row vk-markable">
+        <BreakpointMark properties={["direction", "gap"]} />
         <div class="vk-segmented-field" role="radiogroup" aria-label="Direction">
           {(["horizontal", "vertical"] as const).map((d) => (
             <button
@@ -439,7 +448,8 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           <NumberField label="Gap" icon="gap" value={number(gap)} min={0} onChange={set("gap")} />
         </VariableSlot>
       </div>
-      <div class="vk-row vk-align-row">
+      <div class="vk-row vk-align-row vk-markable">
+        <BreakpointMark properties={["align", "wrap"]} />
         <div class="vk-align" role="radiogroup" aria-label="Alignment">
           {ALIGNMENTS.map((y) =>
             ALIGNMENTS.map((x) => {
@@ -479,7 +489,8 @@ function PaddingFields({ padding, update, variable }: { padding: Shown<Padding>;
   const setSide = (i: number) => (value: number, continues?: boolean) =>
     update("padding", (current) => current.map((p, j) => (i === j ? value : p)) as Padding, continues);
   return (
-    <div class="vk-grid-2" role="group" aria-label="Padding">
+    <div class="vk-grid-2 vk-markable" role="group" aria-label="Padding">
+      <BreakpointMark properties={["padding"]} />
       {["Top", "Right", "Bottom", "Left"].map((name, i) => (
         <VariableSlot key={name} label={`Padding ${name.toLowerCase()}`} slot={variable("padding", name.toLowerCase())}>
           <NumberField label={`Padding ${name.toLowerCase()}`} glyph={name[0]} value={side(i)} min={0} onChange={setSide(i)} />
@@ -603,7 +614,8 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
   return (
     <section class="vk-section" aria-labelledby="vk-appearance">
       <h3 id="vk-appearance" class="vk-section-title">Appearance</h3>
-      <div class="vk-grid-2">
+      <div class="vk-grid-2 vk-markable">
+        <BreakpointMark properties={["opacity", "radius"]} />
         {opacity !== undefined && <PercentField label="Opacity" icon="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
         {radii && (
           <div class="vk-row">
@@ -641,8 +653,19 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
           ))}
         </div>
       )}
-      {visible !== undefined && <Check label="Visible" checked={visible} onChange={set("visible")} />}
-      {clip !== undefined && <Check label="Clip content" checked={clip} onChange={set("clip")} />}
+      {visible !== undefined && (
+        <div class="vk-markable">
+          {/* Hidden at the breakpoint: shown again where it inherits. */}
+          <BreakpointMark properties={["visible"]} />
+          <Check label="Visible" checked={visible} onChange={set("visible")} />
+        </div>
+      )}
+      {clip !== undefined && (
+        <div class="vk-markable">
+          <BreakpointMark properties={["clip"]} />
+          <Check label="Clip content" checked={clip} onChange={set("clip")} />
+        </div>
+      )}
     </section>
   );
 }
@@ -707,14 +730,18 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
   return (
     <section class="vk-section" role="group" aria-label="Text">
       <h3 class="vk-section-title">Text</h3>
-      <Choice
-        label="Font"
-        class="vk-font"
-        value={family === MIXED ? null : family}
-        options={names.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name, disabled: !fonts.some((font) => font.family === name) }))}
-        onChange={changeFont}
-      />
-      <div class="vk-grid-2">
+      <div class="vk-markable">
+        <BreakpointMark properties={["fontFamily"]} />
+        <Choice
+          label="Font"
+          class="vk-font"
+          value={family === MIXED ? null : family}
+          options={names.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name, disabled: !fonts.some((font) => font.family === name) }))}
+          onChange={changeFont}
+        />
+      </div>
+      <div class="vk-grid-2 vk-markable">
+        <BreakpointMark properties={["fontWeight", "fontSize", "lineHeight", "letterSpacing"]} />
         <Choice
           label="Font weight"
           value={weight === MIXED ? null : String(weight)}
@@ -728,8 +755,12 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
         <TextLengthField label="Line height" glyph="↕" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
         <TextLengthField label="Letter spacing" glyph="↔" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
       </div>
-      <Segmented label="Text alignment" value={align} options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))} onChange={set("textAlign")} />
-      <div class="vk-row">
+      <div class="vk-markable">
+        <BreakpointMark properties={["textAlign"]} />
+        <Segmented label="Text alignment" value={align} options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))} onChange={set("textAlign")} />
+      </div>
+      <div class="vk-row vk-markable">
+        <BreakpointMark properties={["textCase", "textDecoration"]} />
         <Segmented
           label="Case"
           value={textCase}
@@ -861,7 +892,8 @@ function FillSection({ fill, box, conic, onChange, update, variable }: {
 }) {
   return (
     <section class="vk-section" role="group" aria-label="Fill">
-      <div class="vk-section-header">
+      <div class="vk-section-header vk-markable">
+        <BreakpointMark properties={["fill"]} />
         <h3 class="vk-section-title">Fill</h3>
         {!fill ? (
           <button type="button" class="vk-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
@@ -1143,7 +1175,8 @@ function StrokeSection({ stroke, onChange, update, variable }: {
   const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
   return (
     <section class="vk-section" role="group" aria-label="Stroke">
-      <div class="vk-section-header">
+      <div class="vk-section-header vk-markable">
+        <BreakpointMark properties={["stroke"]} />
         <h3 class="vk-section-title">Stroke</h3>
         {!stroke && (
           <button type="button" class="vk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
@@ -1312,7 +1345,9 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
   );
   return (
     <section class="vk-section" role="group" aria-label="Effects">
-      <div class="vk-section-header">
+      <div class="vk-section-header vk-markable">
+        {/* The shadows, text's among them, and the blurs: a blur taken off at the breakpoint has no row of its own there. */}
+        <BreakpointMark properties={["shadows", "textShadows", "layerBlur", "backgroundBlur"]} />
         <h3 class="vk-section-title">Effects</h3>
         <div class="vk-row">
           {!variable?.bound && <VariableSlot label="Shadow" slot={variable}>{null}</VariableSlot>}

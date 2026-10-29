@@ -8,6 +8,7 @@ import { createClipboard } from "../src/client/clipboard";
 import { declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/edits";
+import { breakpointMarks } from "../src/client/BreakpointMark";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
@@ -4322,6 +4323,32 @@ describe("breakpoints", () => {
     expect(editor.changedHere(layer("board"), "fill")).toBe(true);
     editor.redo();
     expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+  });
+
+  test("a row of the Design panel is marked where the breakpoint worked in changed its properties on their own, for any selected layer; reset, they all inherit, and one undo marks it again", async () => {
+    const { editor, phone, desktop, layer, fills } = await open();
+    const selected = [layer("board"), layer("list")];
+    let edited = 0;
+    const marksIn = () => breakpointMarks(editor, selected, () => edited++);
+
+    editor.at(phone);
+    expect(marksIn().changed(["fill", "stroke"])).toEqual([]);
+    editor.set(layer("list"), "fill", RED);
+    editor.set(layer("board"), "radius", 4);
+    expect(marksIn().changed(["fill", "stroke"])).toEqual(["fill"]);
+    expect(marksIn().changed(["opacity", "radius"])).toEqual(["radius"]);
+    editor.at(desktop);
+    expect(marksIn().changed(["fill", "radius"])).toEqual([]);
+
+    editor.at(phone);
+    marksIn().reset(["fill", "radius"]);
+    expect(edited).toBe(1);
+    expect(fills("list")).toEqual([fills("list")[0], fills("list")[0]]);
+    expect(marksIn().changed(["fill", "radius"])).toEqual([]);
+
+    editor.undo();
+    expect(fills("list")[1]).toBe("rgb(255, 0, 0)");
+    expect(marksIn().changed(["fill", "radius"])).toEqual(["fill", "radius"]);
   });
 
   test("an edit at a breakpoint is undone and redone there, whichever view is worked in then; set back to where it started, it is no change", async () => {
