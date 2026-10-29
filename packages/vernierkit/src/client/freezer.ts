@@ -113,9 +113,10 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     const ends = animationEnds.get(from);
     if (ends) for (const [name, value] of ends) setImportant(to, name, value);
     if (to.hasAttribute("style")) resolveViewportUnits(to.style, frozen);
-    pinToViewport(from, to, viewport);
+    const style = getComputedStyle(from);
+    pinToViewport(from, to, style, viewport);
     // The document's own scroll is shown by the canvas view instead.
-    if ((from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
+    if (canScroll(from, style) && (from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
       to.setAttribute(SCROLL_ATTR, `${from.scrollLeft} ${from.scrollTop}`);
     }
     if (from.matches(":modal")) to.setAttribute(TOP_LAYER_ATTR, "modal");
@@ -306,14 +307,18 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
     }
   }
 
-  return Promise.all([settle(doc), ...loading]).then(() => {
+  const atRest = (): Canvas => {
     const height = fitHeight(doc, iframe, layout.windowHeight);
     for (const el of doc.querySelectorAll(`[${SCROLL_ATTR}]`)) {
       const [left, top] = el.getAttribute(SCROLL_ATTR)!.split(" ").map(Number);
       el.scrollTo(left, top);
     }
     return { document: doc, width, height, windowHeight: layout.windowHeight, scrollY: layout.scrollY };
-  });
+  };
+  const waiting = settle(doc);
+  // Nothing to wait for: at rest now, in this task, so the canvas can be shown in the next frame.
+  if (!waiting && !loading.length) return Promise.resolve(atRest());
+  return Promise.all([waiting, ...loading]).then(atRest);
 }
 
 /**
@@ -332,8 +337,8 @@ export function fitHeight(doc: Document, iframe: HTMLIFrameElement, floor: numbe
   return height;
 }
 
-/** Waits, briefly, for what the copy loads again: fonts and cross-origin stylesheets. */
-function settle(doc: Document): Promise<unknown> {
+/** Waits, briefly, for what the copy loads again: fonts and cross-origin stylesheets. Null when it loads none, or has them all in already. */
+function settle(doc: Document): Promise<unknown> | null {
   const sheets = [...doc.querySelectorAll<HTMLLinkElement>("link[rel~=stylesheet]")]
     .filter((link) => !link.sheet)
     .map(
@@ -344,6 +349,7 @@ function settle(doc: Document): Promise<unknown> {
         }),
     );
   void doc.documentElement.scrollHeight; // Lay out, so the fonts it needs start loading.
+  if (!sheets.length && doc.fonts.status === "loaded") return null;
   const timeout = new Promise((done) => setTimeout(done, SETTLE_TIMEOUT_MS));
   return Promise.race([Promise.all([...sheets, doc.fonts.ready]), timeout]);
 }
@@ -553,8 +559,7 @@ const PINNED_ACROSS = ["left", "right", "width", "margin-left", "margin-right"];
  * the page places them. What is pinned is marked, so it is not taken for the
  * page's own style, and so is how far a fixed element moved with the page's scroll.
  */
-function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
-  const style = getComputedStyle(from);
+function pinToViewport(from: HTMLElement, to: HTMLElement, style: CSSStyleDeclaration, viewport: Viewport) {
   const fixed = style.position === "fixed" && fixedToViewport(from);
   if (!fixed && !(style.position === "absolute" && absoluteToViewport(from))) return;
   const across = fixed && viewport.scrollX !== 0;
@@ -567,6 +572,19 @@ function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
   if (across) pin("left", "right", PINNED_ACROSS, viewport.scrollX);
   to.setAttribute(PINNED_ATTR, (across ? [...PINNED_DOWN, ...PINNED_ACROSS] : PINNED_DOWN).join(" "));
   if (fixed && (viewport.scrollX || viewport.scrollY)) to.setAttribute(PIN_OFFSET_ATTR, `${viewport.scrollX} ${viewport.scrollY}`);
+}
+
+/** Fields scroll what is typed in them, whatever their overflow. */
+const FIELDS = new Set(["input", "textarea", "select"]);
+
+/**
+ * Whether the element can be scrolled: a scroll container, or a field.
+ * Asked before its scroll is read, which on a large page is a check of the
+ * layout per element, about 2µs each.
+ */
+function canScroll(el: Element, style: CSSStyleDeclaration): boolean {
+  const scrolls = (overflow: string) => overflow !== "visible" && overflow !== "clip";
+  return scrolls(style.overflowX) || scrolls(style.overflowY) || FIELDS.has(el.localName);
 }
 
 /** False when a transformed (or similar) ancestor holds the fixed element instead of the viewport. */

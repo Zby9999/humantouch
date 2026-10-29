@@ -173,3 +173,33 @@ describe("the canvas shown at several widths", () => {
     expectAt(phone.document, 390);
   });
 });
+
+describe("freezing what the designer had scrolled", () => {
+  test("a box scrolled down, a text area, a field scrolled across and a list are shown scrolled as they were; nothing else is marked scrolled", async () => {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="box" style="height: 100px; overflow: auto"><div style="height: 1000px"></div></div>
+  <div id="hidden" style="height: 100px; overflow-x: hidden"><div style="height: 1000px; width: 2000px"></div></div>
+  <textarea id="area" rows="2">${"line\n".repeat(40)}</textarea>
+  <input id="field" style="width: 60px" value="${"wide ".repeat(40)}">
+  <select id="list" size="2">${"<option>o</option>".repeat(20)}</select>
+  <div id="plain"><div style="height: 50px"></div></div>
+</body>`);
+    doc.close();
+    const scroll = { box: [0, 300], hidden: [500, 0], area: [0, 120], field: [80, 0], list: [0, 60] } as const;
+    for (const [id, [left, top]] of Object.entries(scroll)) doc.getElementById(id)!.scrollTo(left, top);
+    const shown = Object.fromEntries(Object.keys(scroll).map((id) => [id, [doc.getElementById(id)!.scrollLeft, doc.getElementById(id)!.scrollTop]]));
+    expect(shown.box).toEqual([0, 300]);
+
+    const canvas = await freeze(live.contentWindow!, iframe());
+
+    for (const id of Object.keys(scroll)) {
+      const el = canvas.document.getElementById(id)!;
+      expect([el.scrollLeft, el.scrollTop], id).toEqual(shown[id]);
+    }
+    expect(canvas.document.querySelectorAll("[data-vk-scroll]")).toHaveLength(Object.keys(scroll).length);
+  });
+});
