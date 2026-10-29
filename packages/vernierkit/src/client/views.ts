@@ -4,9 +4,11 @@
  * from it. Each other view is a copy of it that follows every change to it,
  * node for node, so every view shows the same canvas, laid out at its own
  * width. A layer is the canvas's; each view finds it in what it shows. Each
- * view is as tall as what it shows there, as it grows and shrinks.
+ * view is as tall as what it shows there, as it grows and shrinks. While a
+ * value is stepped, the views beside the one worked in show its steps a frame
+ * late (`lagBeside`), so each frame draws one view's change rather than every view's.
  */
-import { isEditStyles, syncEditStyles } from "./canvas-style";
+import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 
@@ -55,8 +57,21 @@ export interface Views {
   add(iframe: HTMLIFrameElement, width: number): Promise<View>;
   /** Stops showing the canvas in `view`, which no longer follows it. The desktop view, the canvas itself, stays. */
   remove(view: View): void;
-  /** Shows every change made to the canvas so far in every view now, rather than before the next paint. */
-  sync(): void;
+  /**
+   * Shows every change made to the canvas so far in `view` now, rather than
+   * before the next paint; with no view, in every view, but for the steps of a
+   * value the views beside the one worked in are a frame late on (`lagBeside`).
+   */
+  sync(view?: View): void;
+  /**
+   * A value is stepped: till the next frame is drawn, changes to the edit
+   * styles alone show in the view worked in, as `worked` tells it then (null:
+   * the desktop view), before the next paint, as any change does, and in the
+   * other views once that frame is drawn, all at once, as they are then. Any
+   * other change to the canvas, or `sync` of the view, shows them in a view at
+   * once with it. The desktop view shows the canvas itself, and so every change at once.
+   */
+  lagBeside(worked: () => View | null): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
   /**
@@ -108,8 +123,15 @@ export function createViews(canvas: Canvas): Views {
   keepFitted(desktop, canvas.height);
   // Every change to the canvas is in every view before the next frame.
   new MutationObserver(refit).observe(canvas.document.documentElement, EVERYTHING);
-  const sync = () => {
-    for (const follower of followers.values()) follower.sync();
+  const sync = (view?: View) => {
+    if (view) followers.get(view)?.sync(true);
+    else for (const follower of followers.values()) follower.sync(false);
+  };
+  /** While a value is stepped, till the next frame is drawn: which view is worked in. Null: no view lags. */
+  let lagging: { lead: () => View | null } | null = null;
+  const catchUp = () => {
+    lagging = null;
+    for (const follower of followers.values()) follower.sync(true);
   };
 
   return {
@@ -120,7 +142,7 @@ export function createViews(canvas: Canvas): Views {
       if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
       const laidOut = copyCanvas(canvas, iframe, width);
       // What is typed in this view is in every other view at once, as it is on the canvas.
-      const follower = follow(canvas.document, doc, sync);
+      const follower = follow(canvas.document, doc, () => sync(), () => !!lagging && lagging.lead() !== view);
       const view = viewOf(doc, width, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
       followers.set(view, follower);
       views.push(view);
@@ -140,6 +162,14 @@ export function createViews(canvas: Canvas): Views {
       if (i >= 0) views.splice(i, 1);
     },
     sync,
+    lagBeside(worked) {
+      if (lagging) lagging.lead = worked;
+      // Once the next frame is drawn: what the page has queued for it, the view worked in, comes first.
+      else {
+        lagging = { lead: worked };
+        requestAnimationFrame(() => setTimeout(catchUp));
+      }
+    },
     onResize(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -209,8 +239,8 @@ function viewOf(document: Document, width: number, { inView, onCanvas, typeIn }:
 
 /** A copy of the canvas kept the same as it, node for node. */
 interface Follower extends Correspondence {
-  /** Takes in the changes to the canvas not taken in yet. */
-  sync(): void;
+  /** Takes in the changes to the canvas not taken in yet; those of the edit styles' values, while it lags, only with `all`. */
+  sync(all: boolean): void;
   /** Stops following the canvas. */
   stop(): void;
 }
@@ -222,8 +252,10 @@ interface Follower extends Correspondence {
  * text is typed in the copy, it goes the other way for the element typed in:
  * what is typed there is written to the canvas, and that element of the copy
  * takes in nothing from it; `typed` is called once what is typed is on it.
+ * While `lags`, changes to the edit styles' values alone are put off till a
+ * `sync` of all, or till any other change comes.
  */
-function follow(canvas: Document, copy: Document, typed: () => void): Follower {
+function follow(canvas: Document, copy: Document, typed: () => void, lags: () => boolean): Follower {
   /** Each canvas node's node in the copy, and back. */
   const inCopy = new WeakMap<Node, Node>();
   const onCanvas = new WeakMap<Node, Node>();
@@ -297,9 +329,22 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
     }
     for (const node of lists) update(node, way.to.get(node)!, false, way);
   };
-  const observer = new MutationObserver((records) => takeIn(records, down));
+  /** Changes to the edit styles' values put off while the copy lags. */
+  let behind: MutationRecord[] = [];
+  /** Takes in `records` from the canvas, and what was put off; while the copy lags, puts them off too if they change only the edit styles. */
+  const takeFrom = (records: MutationRecord[], all: boolean) => {
+    if (!all && records.every(changesEditStyles) && lags()) {
+      behind.push(...records);
+      return;
+    }
+    // Taken in as the canvas is now: in any order.
+    const put = behind;
+    behind = [];
+    takeIn([...put, ...records], down);
+  };
+  const observer = new MutationObserver((records) => takeFrom(records, false));
   observer.observe(canvas.documentElement, EVERYTHING);
-  const sync = () => takeIn(observer.takeRecords(), down);
+  const sync = (all = true) => takeFrom(observer.takeRecords(), all);
   const doneTyping = () => {
     if (!typing) return;
     const { canvas: el, observer: typedIn } = typing;

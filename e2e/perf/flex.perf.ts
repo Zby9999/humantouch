@@ -8,7 +8,8 @@ import { report, summarize, type Summary } from "./stats";
 /**
  * docs/goals.md, Flex: on a page of about 5000 elements, with the desktop,
  * tablet and phone views all showing it, edit mode is up within 150ms, a
- * value changed shows in the next frame, and a drag keeps 60fps. Each test
+ * value changed shows in the next frame in the view worked in (the views
+ * beside it a frame later), and a drag keeps 60fps. Each test
  * repeats its measurement, prints the median, 95th percentile and worst, and
  * says whether the target is met. How each is measured is said at each test;
  * ticket 22's Comments has it in full.
@@ -209,22 +210,27 @@ function design(page: Page) {
 }
 
 interface ValueSample {
-  /** In the first frame drawn after the key was pressed, every view showed the new value. */
+  /** In the first frame drawn after the key was pressed, the view worked in showed the new value. */
   firstFrame: boolean;
-  /** Frames drawn till every view showed it. */
+  /** Frames drawn till every view showed it: the views beside the one worked in follow a frame late. */
   frames: number;
   /** The main thread's time on it: handling the key, then drawing that frame. */
   work: number;
   /** From the key press to that frame drawn; with a screen, this includes waiting for its next refresh. */
   latency: number;
+  /** From the key press to the first frame drawn with every view showing it. */
+  everyView: number;
 }
 
 /**
- * A key that changes a value: the time from the key's arrival to the end of
- * its handling, plus the time the frame after it takes from its first
- * callback to being drawn, is the main thread's work for the change; it fits
- * in one frame when under 16.7ms. Whether every view shows the new value is
- * checked once each frame is drawn: in the first, it changed within a frame.
+ * A key that changes a value, in the view worked in, `views[0]`: the time
+ * from the key's arrival to the end of its handling, plus the time the frame
+ * after it takes from its first callback to being drawn, is the main thread's
+ * work for the change; it fits in one frame when under 16.7ms. Whether the
+ * view worked in shows the new value is checked once that frame is drawn: if
+ * so, it changed within a frame. The views beside it follow a frame late, as
+ * the designer chose (ticket 22): how long till every view shows it is kept
+ * as a reference.
  */
 function armValue({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
   const w = window as unknown as { vkValue: Promise<ValueSample> };
@@ -232,7 +238,8 @@ function armValue({ views, selector, property, expected }: { views: string[]; se
   w.vkValue = new Promise((resolve) => {
     const root = document.querySelector("vernier-kit")!.shadowRoot!;
     const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
-    const shown = () => docs.every((doc) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property) === expected);
+    const showsIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property) === expected;
+    const shown = () => docs.every(showsIn);
     let start = 0;
     let arrived = 0;
     let handled = 0;
@@ -241,20 +248,21 @@ function armValue({ views, selector, property, expected }: { views: string[]; se
       arrived = event.timeStamp;
       removeEventListener("keydown", onCapture, true);
       let frames = 0;
-      let first = { at: 0, drawn: 0 };
+      let first = { at: 0, drawn: 0, worked: false };
       const frame = () => {
         frames++;
         const at = performance.now();
         // Once the frame has been drawn, before what the page has queued meanwhile (see `armEnter`).
         scheduler.postTask(() => {
           const drawn = performance.now();
-          if (frames === 1) first = { at, drawn };
+          if (frames === 1) first = { at, drawn, worked: showsIn(docs[0]) };
           if (!shown() && frames < 60) return requestAnimationFrame(frame);
           resolve({
-            firstFrame: frames === 1 && shown(),
-            frames,
+            firstFrame: first.worked,
+            frames: shown() ? frames : Infinity,
             work: (handled || first.at) - start + (first.drawn - first.at),
             latency: first.drawn - arrived,
+            everyView: drawn - arrived,
           });
         }, { priority: "user-blocking" });
       };
@@ -282,6 +290,11 @@ async function stepValue(page: Page, field: string, selector: string, property: 
     await page.keyboard.press("ArrowUp");
     samples.push(await page.evaluate(() => (window as unknown as { vkValue: Promise<ValueSample> }).vkValue));
     await settle(page, 150);
+  }
+  // After the last step, every view shows the last value.
+  const last = await canvas(page).locator(selector).evaluate((el, property) => getComputedStyle(el).getPropertyValue(property), property);
+  for (const title of VIEWS) {
+    await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, last);
   }
   return samples;
 }
@@ -418,7 +431,7 @@ test("entering edit mode, the desktop view up, takes at most 150ms; once the pag
   verdict(all.median <= ENTER_TARGET_MS, `entering edit mode: median ${all.median.toFixed(1)}ms, target ${ENTER_TARGET_MS}ms`);
 });
 
-test("a value changed shows in every view in the next frame", async ({ page }) => {
+test("a value changed shows in the view worked in in the next frame, and in every view after", async ({ page }) => {
   const elements = await openBigPage(page);
   await enterEditMode(page);
   // Paint only: a card's corner radius.
@@ -433,19 +446,23 @@ test("a value changed shows in every view in the next frame", async ({ page }) =
     ["corner radius (paint)", radius],
     ["Stack gap (layout)", gap],
   ];
-  const summaries: Record<string, { work: Summary; latency: Summary; inFirstFrame: number; frames: number[] }> = {};
+  const summaries: Record<string, { work: Summary; latency: Summary; everyView: Summary; inFirstFrame: number; frames: number[] }> = {};
   let met = true;
   for (const [name, samples] of kinds) {
+    // Every step shown in every view in the end.
+    expect(samples.every((s) => s.frames < Infinity), `${name}: every step shows in every view`).toBe(true);
     const work = summarize(samples.map((s) => s.work));
     const latency = summarize(samples.map((s) => s.latency));
+    const everyView = summarize(samples.map((s) => s.everyView));
     const inFirstFrame = samples.filter((s) => s.firstFrame).length;
-    // Every step in the first frame, and 19 in 20 within it: the odd one may meet a garbage collection.
+    // Every step in the first frame in the view worked in, and 19 in 20 within it: the odd one may meet a garbage collection.
     const ok = inFirstFrame === samples.length && work.p95 <= FRAME_MS;
     met &&= ok;
-    summaries[name] = { work, latency, inFirstFrame, frames: samples.map((s) => s.frames) };
+    summaries[name] = { work, latency, everyView, inFirstFrame, frames: samples.map((s) => s.frames) };
     rows.push(
       { name: `${name}: work`, summary: work, target: `p95 ≤ ${FRAME_MS.toFixed(1)}ms, in the first frame`, met: ok },
       { name: `${name}: key to frame drawn`, summary: latency },
+      { name: `${name}: (key to every view)`, summary: everyView },
     );
   }
   keep("value", summaries);
@@ -453,10 +470,14 @@ test("a value changed shows in every view in the next frame", async ({ page }) =
     report(
       `Changing a value, ${elements} elements, ${VIEWS.length} views — ${mode}`,
       rows,
-      kinds.map(([name, samples]) => `${name}: ${samples.filter((s) => s.firstFrame).length} of ${samples.length} steps shown in every view in the first frame`),
+      kinds.map(
+        ([name, samples]) =>
+          `${name}: ${samples.filter((s) => s.firstFrame).length} of ${samples.length} steps shown in the desktop view, worked in, in the first frame; ` +
+          `every view showed each step ${Math.max(...samples.map((s) => s.frames))} frames after the key at most, and the last value after the last`,
+      ),
     ),
   );
-  verdict(met, "a value changed shows in every view in the next frame");
+  verdict(met, "a value changed shows in the view worked in in the next frame");
 });
 
 test("dragging a layer keeps 60fps", async ({ page }) => {

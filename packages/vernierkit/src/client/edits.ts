@@ -391,6 +391,8 @@ export function createEditor(
     },
     set(layer, property, value, { continues = false, variables } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
+      // A value changed: the views beside the one worked in show it a frame late.
+      views.lagBeside(working.beside);
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
       if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
         const place = { ...editor.read(layer, "absolute")!, [property]: value };
