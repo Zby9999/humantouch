@@ -171,11 +171,12 @@ export function asShown<T>(el: Element, look: () => T): T {
  * still do. Nothing of it is painted meanwhile.
  */
 export function asPage<T>(el: Element, look: () => T): T {
+  const key = el.getAttribute(STYLE_KEY_ATTR);
   const rules = readRules(el);
-  const sheet = rules && sheetOf(el.ownerDocument, el.getAttribute(STYLE_KEY_ATTR)!);
+  const sheet = key && rules && sheetOf(el.ownerDocument, key);
   if (!sheet) return look();
   const css = sheet.textContent;
-  sheet.textContent = cssOf(el.getAttribute(STYLE_KEY_ATTR)!, effective({ lifted: rules.lifted, copied: rules.copied, edits: { base: { style: {} }, at: [] } }));
+  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, edits: { base: { style: {} }, at: [] } }));
   try {
     return look();
   } finally {
