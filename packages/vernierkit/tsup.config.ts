@@ -57,8 +57,7 @@ export default defineConfig([
     // What the page loads is what the toggle is held to (docs/goals.md).
     minify: true,
     esbuildPlugins: [compactCss],
-    // Minified, the editor layer's code is still read as written in the browser's developer tools (its CSS compacted).
-    sourcemap: true,
+    // No source map: one would carry all of the source in the published package.
     platform: "browser",
     target: "es2022",
     external: ["react"],
