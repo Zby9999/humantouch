@@ -9,7 +9,7 @@ import { createClipboard } from "./clipboard";
 import { createEditor, createHistory, type Destination, type Editor } from "./edits";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
-import { isOnlyText, nodeOf, onlyTextOf, type Layer, type LayerTree } from "./layers";
+import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -589,8 +589,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           if (note) showToast(note);
         }}
         onBeginText={(layer) => {
-          // A Frame's only text is typed in the Frame's own element.
-          const own = isOnlyText(layer) ? layer : editorOf(layer)!.ownElement(layer);
+          const own = editorOf(layer)!.typedIn(layer);
           // Loose text got an element of its own: the layers are built anew (those off the canvas are read as they are).
           if (own !== layer) setTree(editor!.tree());
           select([own]);
@@ -601,7 +600,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           /** The layer typed in, as the layers are now: a Frame's only text is found by its Frame. */
           const found = () => {
             const now = editor.tree().layerOf(layer.el);
-            return now && isOnlyText(layer) ? (onlyTextOf(now) ?? now) : now;
+            return now && isOnlyText(layer) ? (framedText(now) ?? now) : now;
           };
           editor.setText(found() ?? layer, text);
           onEdit();

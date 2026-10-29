@@ -210,7 +210,7 @@ export function isOnlyText(layer: Layer): boolean {
 }
 
 /** The text of a Frame drawn around its text alone, as a button's words are, with or without an element of its own; null for any other layer, or once the text is gone. */
-export function onlyTextOf(layer: Layer): Layer | null {
+export function framedText(layer: Layer): Layer | null {
   return (layer.framesText && layer.children[0]) || null;
 }
 
@@ -220,7 +220,7 @@ export function onlyTextOf(layer: Layer): Layer | null {
  * before any element of their own was given them to edit.
  */
 export function textOnFrame(frame: Layer): Layer {
-  const text = onlyTextOf(frame);
+  const text = framedText(frame);
   if (text?.text) return text;
   const walker = frame.el.ownerDocument.createTreeWalker(frame.el, NodeFilter.SHOW_TEXT);
   const run: Text[] = [];
