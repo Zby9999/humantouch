@@ -120,15 +120,18 @@ test("a value typed close to a Variable, its hint left unused, is the exact valu
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
-  // #EDF4FF is a hair from brand-50, #EEF4FF: the field hints at it.
-  await setField(page, "Fill color", "edf4ff");
-  await expect(page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Use variable brand-50" })).toBeVisible();
+  // #EEF3FF is a hair from the project's brand-50, #EEF4FF, and as near Tailwind's own indigo-50, #EEF2FF:
+  // the field hints at the project's.
+  await setField(page, "Fill color", "eef3ff");
+  const design = page.getByRole("complementary", { name: "Design" });
+  await expect(design.getByRole("button", { name: "Use variable brand-50" })).toBeVisible();
+  await expect(design.getByRole("button", { name: "Use variable indigo-50" })).toHaveCount(0);
   await expect.poll(() => savedChanges()?.[0]?.variables).toEqual({ color: null });
-  expect(savedChanges()[0].after).toEqual({ type: "solid", color: "#EDF4FF", opacity: 1 });
+  expect(savedChanges()[0].after).toEqual({ type: "solid", color: "#EEF3FF", opacity: 1 });
 
   const [, fill] = (await vernierkit("claim")).split(/^## /m);
   expect(fill).toContain(
-    "- **Variables:** no Variable has the fill color's value: use the exact value (with Tailwind, an arbitrary value: `bg-[#EDF4FF]`), not a class or Variable whose value is close.\n",
+    "- **Variables:** no Variable has the fill color's value: use the exact value (with Tailwind, an arbitrary value: `bg-[#EEF3FF]`), not a class or Variable whose value is close.\n",
   );
 });
 

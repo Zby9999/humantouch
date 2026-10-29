@@ -3558,6 +3558,24 @@ describe("Variables", () => {
     expect(catalog.named("radius", "")).toEqual([]);
   });
 
+  test("of those close, the project's own closest before Tailwind's defaults, however close a default is; a default only when none of the project's own is close", () => {
+    const BRAND_50 = variable("brand-50", "color", "#eef4ff");
+    const INDIGO_50 = variable("indigo-50", "color", "#eef2ff", { own: false });
+    const SNUG = variable("snug", "spacing", "17.5px");
+    const FOUR_HALF = variable("4.5", "spacing", "18px", { own: false });
+    const { catalog, doc } = openWithVariables([GUTTER, SNUG, FOUR, FOUR_HALF, BRAND_50, INDIGO_50]);
+    // #EEF3FF is a hair nearer indigo-50 than brand-50 in OKLab: brand-50 is hinted at, listed after it or not.
+    expect(catalog.near("color", { color: "#EEF3FF", opacity: 1 })?.variable.name).toBe("brand-50");
+    expect(resolveVariables([INDIGO_50, BRAND_50], doc).near("color", { color: "#EEF3FF", opacity: 1 })?.variable.name).toBe("brand-50");
+    // 16.5px is 0.5px from 4 (16px), 1px from snug (17.5px): snug.
+    expect(catalog.near("spacing", 16.5)?.variable.name).toBe("snug");
+    // 15px is close to 4 alone: 4.
+    expect(catalog.near("spacing", 15)?.variable.name).toBe("4");
+    // With none of the project's own close, the closest default: 19.5px is 1.5px from 4.5 (18px), and 2px from snug, past its 10%.
+    expect(catalog.near("spacing", 19.5)?.variable.name).toBe("4.5");
+    expect(resolveVariables([GUTTER, FOUR, FOUR_HALF], doc).near("spacing", 17.2)?.variable.name).toBe("4.5");
+  });
+
   test("without Variables, a change names none", () => {
     const { editor, layer, change } = openWithVariables([]);
     editor.set(layer("#row"), "gap", 22);

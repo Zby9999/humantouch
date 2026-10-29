@@ -28,9 +28,10 @@ export interface Catalog {
   match(group: VariableGroup, drawn: Drawn): Variable | null;
   /**
    * The Variable of the group closest to `drawn`, when one is close (see
-   * `NEAR`) and none is exactly it; of two as close, the one listed first.
-   * Null otherwise. Only for the panel to hint
-   * at: the change notes go by `match` alone.
+   * `NEAR`) and none is exactly it: the closest of the project's own when one
+   * of them is close, however closer one of Tailwind's defaults is, else the
+   * closest default; of two as close, the one listed first. Null otherwise.
+   * Only for the panel to hint at: the change notes go by `match` alone.
    */
   near(group: VariableGroup, drawn: Drawn): Resolved | null;
   /** Those of a group whose name has `text` in it, in any case; none for no text. */
@@ -86,13 +87,18 @@ export function resolveVariables(variables: Variable[], doc: Document): Catalog 
     near: (group, drawn) => {
       const entries = of(group);
       if (entries.some((entry) => equal(entry.drawn, drawn))) return null;
-      let closest: Resolved | null = null;
-      let least = Infinity;
-      for (const entry of entries) {
-        const apart = distance(entry.drawn, drawn);
-        if (apart !== null && apart < least) [closest, least] = [entry, apart];
+      // The project's own first: Tailwind's defaults only when none of its own is close.
+      for (const own of [true, false]) {
+        let closest: Resolved | null = null;
+        let least = Infinity;
+        for (const entry of entries) {
+          if (entry.variable.own !== own) continue;
+          const apart = distance(entry.drawn, drawn);
+          if (apart !== null && apart < least) [closest, least] = [entry, apart];
+        }
+        if (closest) return closest;
       }
-      return closest;
+      return null;
     },
     named: (group, text) => {
       const part = text.trim().toLowerCase();
