@@ -2,7 +2,9 @@
  * A drag on the canvas under way: the layer dragged and the layers making
  * room for it are shifted on the canvas, so in every view, with inline
  * styles that are all restored when it ends, whatever happens then. Where layers were laid out before anything shifted is noted, so a
- * drop is found as if nothing had.
+ * drop is found as if nothing had. The layers making room slide aside in the
+ * view dragged in only; in the others they go straight to their place, so
+ * each frame of the drag has one view's slides to draw rather than every view's.
  */
 import type { Drop } from "./drag";
 import type { Layer } from "./layers";
@@ -45,7 +47,17 @@ export interface DragSession {
   release: () => void;
   /** Where the pointer was last, to drag again there as ⌘ is pressed or let go. */
   pointer?: Pointer;
+  /** Takes the slide off the view dragged in. */
+  unslide: () => void;
 }
+
+/**
+ * The custom property a layer making room takes its transition from: set in
+ * the view dragged in alone, by a sheet the views do not copy from one another
+ * (`adoptedStyleSheets`), so it slides there and goes straight to its place
+ * in every other view, though each has the same inline styles.
+ */
+const SLIDE_VAR = "--vk-slide";
 
 /**
  * Starts dragging the layer in a view: it stops taking the pointer, and where
@@ -56,7 +68,7 @@ export interface DragSession {
 export function startDragSession(layer: Layer, shown: Shown, views: Views): DragSession {
   const { view, offCanvasLayer } = shown;
   const start = view.boxOf(layer) ?? new DOMRect();
-  const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
+  const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {}, unslide: () => {} };
   if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
     session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
     session.whole = true;
@@ -68,6 +80,7 @@ export function startDragSession(layer: Layer, shown: Shown, views: Views): Drag
   }
   if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
   if (!offCanvasLayer) session.release = views.holdHeights();
+  session.unslide = slideIn((view.elementOf(layer.parent!.el) ?? layer.parent!.el).ownerDocument);
   return session;
 }
 
@@ -92,7 +105,7 @@ export function shift(session: DragSession, by: { x: number; y: number }, drop: 
   }
   for (const [el, { x, y }] of shifts) {
     const slide = el !== layer.el && !prefersReducedMotion();
-    setStyles(session, el, { translate: `${x}px ${y}px`, transition: slide ? `translate 150ms ${EASE_OUT}` : "none" });
+    setStyles(session, el, { translate: `${x}px ${y}px`, transition: slide ? `var(${SLIDE_VAR}, none)` : "none" });
   }
 }
 
@@ -104,12 +117,25 @@ export function moveWhole(session: DragSession, dx: number, dy: number): void {
 /** Ends the drag on the canvas: every style it changed is as it was, and each view is as tall as what it shows again. */
 export function restoreDragStyles(session: DragSession): void {
   session.release();
+  session.unslide();
   for (const [el, saved] of session.touched) {
     for (const [name, [value, priority]] of Object.entries(saved.original)) {
       if (value) (el as HTMLElement).style.setProperty(name, value, priority);
       else (el as HTMLElement).style.removeProperty(name);
     }
   }
+}
+
+/** Has the layers making room slide aside in `doc`, the view dragged in; returns what stops it. */
+function slideIn(doc: Document): () => void {
+  const Sheet = doc.defaultView?.CSSStyleSheet;
+  if (!Sheet) return () => {};
+  const sheet = new Sheet();
+  sheet.replaceSync(`:root{${SLIDE_VAR}:translate 150ms ${EASE_OUT}}`);
+  doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
+  return () => {
+    doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((s) => s !== sheet);
+  };
 }
 
 /** The box between two points. */
