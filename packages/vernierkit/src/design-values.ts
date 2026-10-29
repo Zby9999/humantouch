@@ -110,7 +110,7 @@ export function changeValues(change: Change): string {
     if (type === "text") return quoted(text ?? "");
     return `${width} × ${height}px${brief ? `, ${briefShown(brief)}` : ""}`;
   }
-  if (change.kind === "brief") return briefShown(change.after as string);
+  if (change.kind === "brief") return change.after ? briefShown(change.after as string) : "taken off";
   if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
   const name = (place: Place) => place.container.target.context.path.at(-1);
   if (change.kind === "delete") return `from ${name(change.before as Place)}`;

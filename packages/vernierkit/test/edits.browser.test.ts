@@ -2595,6 +2595,43 @@ describe("new text and Frames", () => {
     expect(editor.brief(layer("a"))).toBe("");
   });
 
+  test("a copy of a new Frame keeps its brief, in the copy's change too; written anew on the copy, taking it back brings back the one it was copied with", () => {
+    const { doc, editor, changes, layer } = open();
+    const frame = editor.create("frame", { parent: layer("list"), index: 3 }, { width: 200, height: 120 });
+    editor.setBrief(frame, "A pricing table with three plans");
+
+    const copy = editor.duplicate(editor.tree().layerOf(frame.el)!);
+
+    expect(copy.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    expect(editor.brief(copy)).toBe("A pricing table with three plans");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
+    expect(changes.list()[1].brief).toBe("A pricing table with three plans");
+
+    editor.setBrief(copy, "A pricing table with two plans");
+    const brief = changes.list()[2];
+    expect(brief).toMatchObject({ kind: "brief", before: "A pricing table with three plans", after: "A pricing table with two plans" });
+    expect(copy.el.getAttribute("data-vk-brief")).toBe("A pricing table with two plans");
+    // The Frame it copies keeps its own.
+    expect(frame.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    editor.undo();
+    expect(editor.brief(copy)).toBe("A pricing table with three plans");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
+    editor.redo();
+    editor.revert(changes.list()[2].id);
+    expect(copy.el.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+    expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
+
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, brief.id)!.canvas, "text/html");
+    expect(reverted.querySelector(`[data-vk-layer="${copy.el.getAttribute("data-vk-layer")}"]`)!.getAttribute("data-vk-brief")).toBe("A pricing table with three plans");
+
+    // Taken off the copy, it is a change still: the copy is not to be made by it.
+    editor.setBrief(copy, "");
+    expect(copy.el.hasAttribute("data-vk-brief")).toBe(false);
+    expect(changes.list()[2]).toMatchObject({ kind: "brief", before: "A pricing table with three plans", after: "" });
+  });
+
   test("where a new layer can go: a Stack or a Frame that holds layers, not text or a field", () => {
     const { editor, layer } = open(MOVES.replace("</body>", `<input id="field" ${at("40:5")}></body>`));
 
@@ -2694,7 +2731,7 @@ describe("a brief on any layer", () => {
     expect(new DOMParser().parseFromString(reverted.canvas, "text/html").querySelectorAll("[data-vk-brief]")).toHaveLength(0);
   });
 
-  test("on a layer made this round, it goes with the change that made it; a copy of a layer with a brief has none", () => {
+  test("on a layer made this round, it goes with the change that made it; a copy of a layer that is there, with a brief, has none", () => {
     const { doc, editor, changes, cards, layerOf } = openCanvas();
     const copy = editor.duplicate(layerOf(cards[3]));
     editor.setBrief(copy, "A card for the newest plan");

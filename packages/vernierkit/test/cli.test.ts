@@ -726,6 +726,25 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(notes).toContain("\n  - Text “Plans”: X 10px, Y 40px, 160px wide (change 2)\n  - Button (moved in): X 0px, Y 80px (change 4)\n");
   });
 
+  test("a copy of a new Frame is made by its brief too; a brief written anew on the copy takes the place of the one it was copied with", async () => {
+    const copyTarget = { ...frameTarget, made: "13" };
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "A pricing table with three plans" } }),
+      change(2, "duplicate", { property: "copy", target: frameTarget, before: place(4), after: place(5), brief: "A pricing table with three plans" }),
+      change(3, "duplicate", { property: "copy", before: place(1), after: place(2) }),
+      change(4, "brief", { layer: "13", property: "brief", target: copyTarget, before: "A pricing table with three plans", after: "A pricing table with two plans" }),
+      change(5, "brief", { layer: "14", property: "brief", target: { ...copyTarget, made: "14" }, before: "A pricing table with three plans", after: "" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 2)).toContain("- **Brief:** “A pricing table with three plans”, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.\n");
+    expect(section(output, 3)).not.toContain("Brief");
+    expect(section(output, 4)).toContain("- **Brief:** “A pricing table with two plans”, in place of the brief the copy was made with, “A pricing table with three plans”\n");
+    expect(section(output, 5)).toContain("- **Design intent:** Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.\n");
+    expect(section(output, 5)).toContain("- **Brief:** none: taken off, in place of the brief the copy was made with, “A pricing table with three plans”\n");
+  });
+
   test("new words, and in a loop, new words that come from data", async () => {
     saveRound(
       change(1, "text", { property: "text", before: "Get started", after: "Start now" }),

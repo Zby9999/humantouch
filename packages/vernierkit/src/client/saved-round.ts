@@ -32,7 +32,13 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     else if (change.kind === "putBack") removeMade(doc, change.layer, (change.after as PutBack).place.container.layer, rest);
     else if (change.kind === "delete") unhide(doc, change.layer, change.property, rest);
     else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
-    else if (change.kind === "brief") for (const el of elementsOf(doc, change.layer)) el.removeAttribute(BRIEF_ATTR);
+    else if (change.kind === "brief") {
+      // Back to none, or to the brief a copy was copied with.
+      for (const el of elementsOf(doc, change.layer)) {
+        if (change.before) el.setAttribute(BRIEF_ATTR, change.before as string);
+        else el.removeAttribute(BRIEF_ATTR);
+      }
+    }
     else {
       for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
       // Placed freely at a breakpoint no more: its container is no positioning reference there for it.

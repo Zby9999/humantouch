@@ -155,7 +155,8 @@ export interface Change {
    * `target` is; `before` is where that one is, `after` where the copy goes.
    * `putBack`: a layer off the canvas comes back onto it, new there; `after` is `PutBack`.
    * `brief`: the designer's words on what to achieve in the layer, which the
-   * Design panel cannot set; `before` is null, `after` is the brief. It holds
+   * Design panel cannot set; `before` is null, or, on a copy of a new Frame,
+   * the brief it was copied with; `after` is the brief, "" taken off. It holds
    * at every width (a new Frame's brief is in its `create` change instead).
    */
   kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack" | "brief";
@@ -188,6 +189,8 @@ export interface Change {
    * None: nothing of its own at any breakpoint.
    */
   copiedBreakpoints?: CopiedBreakpoint[];
+  /** A copy of a new Frame with a brief: the brief, which the copy is made by too. */
+  brief?: string;
   /**
    * A deletion that moved the layer off the canvas (ADR 0009): the id of the
    * layer it is there now, which keeps how it looked and its source, to be put back by.
@@ -237,7 +240,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "offCanvas" | "keeps" | "variables"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables"
     > & {
       kind?: Change["kind"];
     },

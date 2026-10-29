@@ -64,6 +64,22 @@ test("a brief written on a layer from the Design panel marks it on the canvas, i
   await expect(changeList(page).getByRole("listitem")).toHaveText([/Brief.*Card.*“Bounce back harder when pressed”/]);
 });
 
+test("a copy of a layer with a brief has none: the brief stays with the layer it was written on", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Button");
+  await writeBrief(page, "Press in a little");
+
+  await page.keyboard.press("ControlOrMeta+d");
+
+  const buttons = canvas(page).getByRole("button", { name: "Get started" });
+  await expect(buttons).toHaveCount(2);
+  await expect(buttons.nth(0)).toHaveAttribute("data-vk-brief", "Press in a little");
+  await expect(buttons.nth(1)).not.toHaveAttribute("data-vk-brief");
+  await expect(marks(page, "Desktop")).toHaveCount(1);
+  await expect(briefField(page)).toHaveCount(0);
+  await expect(briefSection(page).getByRole("button", { name: "Add brief" })).toBeVisible();
+});
+
 test("the brief is changed when left, taken off with Remove brief, and each is a step ⌘Z takes back; Esc leaves it as it was", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Button");

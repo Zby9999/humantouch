@@ -64,8 +64,10 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
         el.remove();
         continue;
       }
-      // Changes to the original are not the copy's: it starts as it looks. Its brief is not either: a brief is on the layer it was written for.
-      for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR, BRIEF_ATTR]) el.removeAttribute(attr);
+      // Changes to the original are not the copy's: it starts as it looks.
+      for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR]) el.removeAttribute(attr);
+      // Nor is a brief on a layer that is there, which is for that usage of it; a new Frame's says what to make of it, and a copy of it is made by it too.
+      if (el.getAttribute(NEW_ATTR) !== "frame") el.removeAttribute(BRIEF_ATTR);
       // It looks as the original does, at every width, with styles of its own.
       copyRules(original.ownerDocument, el);
       el.setAttribute(ORIGINAL_STYLE_ATTR, el.getAttribute("style") ?? "");

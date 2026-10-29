@@ -77,7 +77,8 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
-    ...(change.kind === "brief" ? [`**Brief:** ${quoted(change.after as string)}`] : []),
+    ...(change.kind === "brief" ? [briefLine(change)] : []),
+    ...(change.kind === "duplicate" && change.brief ? [`**Brief:** ${quoted(change.brief)}, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.`] : []),
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
@@ -133,6 +134,15 @@ function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
   );
 }
 
+/**
+ * A brief's words; on a copy of a new Frame, with the brief it was copied
+ * with, which they take the place of ("": taken off).
+ */
+function briefLine({ before, after }: Change): string {
+  const brief = after ? quoted(after as string) : "none: taken off";
+  return `**Brief:** ${brief}${before ? `, in place of the brief the copy was made with, ${quoted(before as string)}` : ""}`;
+}
+
 /** What the designer wants of the change, in design language. */
 function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
@@ -154,6 +164,7 @@ function intent(change: Change, list: Change[]): string {
     case "text":
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
     case "brief":
+      if (!change.after) return "Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.";
       return (
         "Achieve what the brief asks of this layer: something the Design panel cannot set. " +
         "Do it the way the project already writes such things, within the scope given, and say in your report what you did."

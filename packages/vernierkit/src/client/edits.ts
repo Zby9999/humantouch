@@ -20,6 +20,7 @@ import {
   LAYER_ID_ATTR,
   MADE_ATTR,
   MOVE_ATTR,
+  NEW_ATTR,
   REFERENCE_ATTR,
   restoreStyle,
   TEXT_ATTR,
@@ -1025,10 +1026,14 @@ export function createEditor(
       else el.removeAttribute(BRIEF_ATTR);
     }
   };
-  /** The brief `text` on the layer `id`, as recorded in `record`, a change of its own; "": none. */
+  /**
+   * The brief `text` on the layer `id`, as recorded in `record`, a change of
+   * its own; "": none. The brief the layer was copied with, if any, is the
+   * record's `before`: back to it, there is no change.
+   */
   const briefing = (id: string, record: StructureRecord, text: string) => () => {
-    if (text) changes.record(id, { ...record, after: text });
-    else drop(id, record.property);
+    if (text === ((record.before as string | null) ?? "")) drop(id, record.property);
+    else changes.record(id, { ...record, after: text });
     markBrief(id, text);
   };
   /** Deleting `els`, the layer `id`, as recorded in `record`. */
@@ -1112,7 +1117,7 @@ export function createEditor(
     if (change.kind === "brief") {
       // Found by its id: a layer deleted since keeps its brief to take off.
       const { id: _, layer: id, ...record } = change;
-      structural([id], [id], briefing(id, record, ""), briefing(id, record, change.after as string));
+      structural([id], [id], briefing(id, record, (change.before as string | null) ?? ""), briefing(id, record, change.after as string));
       return layerById(id);
     }
     const layer = layerById(change.layer);
@@ -1561,7 +1566,8 @@ export function createEditor(
       const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
       if (!id) return "";
       if (editor.isNewFrame(layer)) return (makerOf(id)!.after as Created).brief ?? "";
-      return (changes.find(id, BRIEF)?.after as string | undefined) ?? "";
+      // A copy of a new Frame has the brief it was copied with, until one is written on it.
+      return (changes.find(id, BRIEF)?.after as string | undefined) ?? layer.el.getAttribute(BRIEF_ATTR) ?? "";
     },
     isNewFrame(layer) {
       const maker = layer.text ? null : makerOf(layer.el.getAttribute(LAYER_ID_ATTR) ?? "");
@@ -1584,7 +1590,10 @@ export function createEditor(
       }
       const own = editor.ownElement(layer);
       const id = idOf(own, tree.acrossInstances(own));
-      const record: StructureRecord = { kind: "brief", target: targetOf(own, onPage(own).length), scope: "usage", property: BRIEF, before: null, after: brief, style: {}, sources: [] };
+      // Before: the brief a copy of a new Frame was copied with, which writing one on it takes the place of.
+      const written = changes.find(id, BRIEF);
+      const copiedWith = written ? written.before : before || null;
+      const record: StructureRecord = { kind: "brief", target: targetOf(own, onPage(own).length), scope: "usage", property: BRIEF, before: copiedWith, after: brief, style: {}, sources: [] };
       structural([id], [id], briefing(id, record, brief), briefing(id, record, before));
       return tree.layerOf(own.el)!;
     },
@@ -1719,6 +1728,8 @@ export function createEditor(
         sources: [],
         ...(loop && { data: true }),
         ...(copied.length > 0 && { copiedBreakpoints: copied }),
+        // A new Frame's copy is made by its brief too.
+        ...(layer.el.getAttribute(NEW_ATTR) === "frame" && layer.el.hasAttribute(BRIEF_ATTR) && { brief: layer.el.getAttribute(BRIEF_ATTR)! }),
       };
       const originals = (loop ? [layer] : instances).map((instance) => instance.el);
       const { make, takeOff } = madeLayer(id, record, () => {
