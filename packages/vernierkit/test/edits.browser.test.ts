@@ -5049,6 +5049,70 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     expect([back.kind, back.el.localName, style(phone.document.getElementById("close")!).fontSize]).toEqual(["text", "span", "15px"]);
   });
 
+  test("its words changed before it got an element of its own, taking that change back keeps the element and what is written on it: only the words it had come back, in it", () => {
+    const { doc, editor, changes } = openCanvas(BOXES_PAGE);
+    const button = doc.getElementById("more")!;
+    const box = () => find(editor.tree().root, (layer) => layer.el === button && !layer.text)!;
+
+    editor.setText(box().children[0], "Read on");
+    const text = editor.setBrief(box().children[0], "Make it bold");
+    editor.set(text, "fontSize", 20);
+    const span = button.querySelector("[data-vk-wrap]")!;
+    const id = span.getAttribute("data-vk-layer");
+
+    const words = changes.list().find((change) => change.kind === "text")!;
+    editor.revert(words.id);
+
+    expect(button.querySelector("[data-vk-wrap]")).toBe(span);
+    expect([button.childElementCount, span.textContent, span.querySelector("b")?.textContent, style(span).fontSize]).toEqual([1, "Read more", "more", "20px"]);
+    expect(changes.list().map((change) => [change.property, change.layer])).toEqual([
+      ["brief", id],
+      ["fontSize", id],
+    ]);
+    const now = editor.tree().layerOf(span)!;
+    expect([now.kind, now.name, now.parent!.el, editor.brief(now)]).toEqual(["text", "Read more", button, "Make it bold"]);
+
+    // Undone, the change to the words is made again, in the element the text has now.
+    editor.undo();
+    expect([button.querySelector("[data-vk-wrap]"), span.textContent, style(span).fontSize]).toEqual([span, "Read on", "20px"]);
+  });
+
+  test("undone back to before its words changed, the text keeps the element it got after: redone, its words, brief and text styles are in it again", () => {
+    const { doc, editor, changes } = openCanvas(BOXES_PAGE);
+    const button = doc.getElementById("close")!;
+    const box = () => find(editor.tree().root, (layer) => layer.el === button && !layer.text)!;
+
+    editor.setText(box().children[0], "Done");
+    const text = editor.setBrief(box().children[0], "Make it bold");
+    editor.set(text, "fontSize", 20);
+    const span = button.querySelector("[data-vk-wrap]")!;
+
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    expect([button.querySelector("[data-vk-wrap]"), button.childElementCount, span.textContent, style(span).fontSize]).toEqual([span, 1, "Close", "15px"]);
+    expect(editor.brief(editor.tree().layerOf(span)!)).toBe("");
+
+    editor.redo();
+    expect([button.querySelector("[data-vk-wrap]"), span.textContent]).toEqual([span, "Done"]);
+    editor.redo();
+    editor.redo();
+    const now = editor.tree().layerOf(span)!;
+    expect([now.kind, now.name, editor.brief(now), style(span).fontSize]).toEqual(["text", "Done", "Make it bold", "20px"]);
+    expect(changes.list().map((change) => [change.property, change.layer])).toEqual([
+      ["text", button.getAttribute("data-vk-layer")],
+      ["brief", span.getAttribute("data-vk-layer")],
+      ["fontSize", span.getAttribute("data-vk-layer")],
+    ]);
+
+    // Undone once more, the words it had come back in it as they were, with no element of its own put in it.
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    expect([button.querySelector("[data-vk-wrap]"), button.childElementCount, span.childElementCount, span.textContent]).toEqual([span, 1, 0, "Close"]);
+  });
+
   test("whether a layer of text draws a box is read from the page's own styles: a Frame with its background taken off is a Frame still, built anew, and takes a fill again", () => {
     const { doc, editor, layerOf } = openCanvas(`<!DOCTYPE html>
 <body style="margin: 0; font: 15px/22px serif">

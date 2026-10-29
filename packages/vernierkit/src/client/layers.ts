@@ -135,7 +135,7 @@ export function buildLayerTree(doc: Document): LayerTree {
     } else {
       const text = isText(el, view);
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
-      if (text || (wrapsItsText(el) && drawsBoxAsPage(el, style))) set({ framesText: true });
+      if (text || (wrappedTextOf(el) && drawsBoxAsPage(el, style))) set({ framesText: true });
       const children = text ? [textIn(el, view)] : drawnChildren(el, view);
       for (const child of children) {
         layer.children.push(Array.isArray(child) ? textLayer(child, layer) : make(child, layer));
@@ -445,12 +445,12 @@ function drawsBoxAsPage(el: Element, style: CSSStyleDeclaration): boolean {
   return asPage(el, () => drawsBox(el, style));
 }
 
-/** Whether all the element holds is its text given an element of its own to edit, shown or deleted. */
-function wrapsItsText(el: Element): boolean {
+/** The element all the element holds, if that is its text given an element of its own to edit, shown or deleted; null otherwise. */
+export function wrappedTextOf(el: Element): Element | null {
   const held = [...el.childNodes].filter((node) =>
     node.nodeType === Node.TEXT_NODE ? !!node.textContent!.trim() : node.nodeType === Node.ELEMENT_NODE && !NOT_DRAWN.has((node as Element).localName),
   );
-  return held.length === 1 && held[0].nodeType === Node.ELEMENT_NODE && (held[0] as Element).hasAttribute(WRAP_ATTR);
+  return held.length === 1 && held[0].nodeType === Node.ELEMENT_NODE && (held[0] as Element).hasAttribute(WRAP_ATTR) ? (held[0] as Element) : null;
 }
 
 /** All the text of an element with only text in it, its inline fragments' included, as one run. */
