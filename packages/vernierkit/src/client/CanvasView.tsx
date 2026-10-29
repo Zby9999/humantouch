@@ -3,9 +3,9 @@ import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefMark, briefedLayers } from "./BriefMark";
-import { Brief, Marks, Outline, SelectionToolbar } from "./CanvasOverlays";
-import { canvasKey } from "./canvas-keys";
-import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, putBackStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
+import { Brief, Marks, Outline, SelectionToolbar } from "./AboveCanvas";
+import { canvasKey, type Tool } from "./canvas-keys";
+import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
 import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
@@ -21,8 +21,7 @@ import { createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 
-/** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
-export type Tool = Created["type"] | null;
+export type { Tool } from "./canvas-keys";
 
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
@@ -664,7 +663,7 @@ export function CanvasView(props: Props) {
     if (!session) return;
     dragging.current = null;
     press.current = null;
-    putBackStyles(session);
+    restoreDragStyles(session);
     setDrag(null);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back } = session;

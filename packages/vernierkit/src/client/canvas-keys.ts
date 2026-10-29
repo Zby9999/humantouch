@@ -7,6 +7,9 @@
  */
 import type { Created } from "./changeset";
 
+/** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
+export type Tool = Created["type"] | null;
+
 /** What a key pressed or let go does on the canvas; the canvas keeps the key from anything else. */
 export type CanvasKey =
   /** Playing: scrolled down `by` px (up when negative); ±Infinity: to the end or to the top. */
@@ -15,7 +18,7 @@ export type CanvasKey =
   /** Space pressed or let go: dragging pans while it is held. */
   | { action: "pan"; held: boolean }
   /** A tool picked, or put down (null). */
-  | { action: "tool"; tool: Created["type"] | null }
+  | { action: "tool"; tool: Tool }
   | { action: "cancel drag" }
   | { action: "select parents" }
   | { action: "fit" };

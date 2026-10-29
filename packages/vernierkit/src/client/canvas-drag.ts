@@ -1,8 +1,7 @@
 /**
  * A drag on the canvas under way: the layer dragged and the layers making
  * room for it are shifted on the canvas, so in every view, with inline
- * styles that are all put back as they were when it ends, whatever happens
- * then. Where layers were laid out before anything shifted is noted, so a
+ * styles that are all restored when it ends, whatever happens then. Where layers were laid out before anything shifted is noted, so a
  * drop is found as if nothing had.
  */
 import type { Drop } from "./drag";
@@ -103,7 +102,7 @@ export function moveWhole(session: DragSession, dx: number, dy: number): void {
 }
 
 /** Ends the drag on the canvas: every style it changed is as it was, and each view is as tall as what it shows again. */
-export function putBackStyles(session: DragSession): void {
+export function restoreDragStyles(session: DragSession): void {
   session.release();
   for (const [el, saved] of session.touched) {
     for (const [name, [value, priority]] of Object.entries(saved.original)) {

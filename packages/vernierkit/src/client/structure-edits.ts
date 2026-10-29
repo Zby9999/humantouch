@@ -40,7 +40,7 @@ import {
   type PutBack,
   type StackSettings,
 } from "./changeset";
-import type { Destination, Editor } from "./edits";
+import type { Destination, Editor } from "./edit-commands";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { targetOf } from "./layer-target";
 import { framedText, holdsLayers, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";

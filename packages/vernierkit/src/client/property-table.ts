@@ -2,7 +2,8 @@
  * The property table: what the Design panel edits, by property, in design
  * language, and how each is read from an element as it is laid out, which CSS
  * shows it, and which CSS sets it in the page's styles. It knows nothing of
- * edits, views or the ChangeSet: the editor reads and writes through it.
+ * the editor or the views, and of the ChangeSet only which changes are to
+ * text: the editor reads and writes through it.
  */
 import { asShown, declaredByEdit } from "./canvas-style";
 import type { Change, Fragment } from "./changeset";
