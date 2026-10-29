@@ -105,7 +105,7 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
   const { winners, unreadable } = cascade(el, properties);
   const sources = new Map<string, StyleSource>();
   for (const property of properties) {
-    const winner = winners.get(property)!;
+    const winner = winners.get(property);
     const key = winner?.key ?? "none";
     const source = sources.get(key);
     if (source) source.properties.push(property);

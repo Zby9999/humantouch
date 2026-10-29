@@ -203,3 +203,34 @@ describe("freezing what the designer had scrolled", () => {
     expect(canvas.document.querySelectorAll("[data-vk-scroll]")).toHaveLength(Object.keys(scroll).length);
   });
 });
+
+describe("bringing the copy to rest", () => {
+  /** A page that uses a font of its own, still loading as it is frozen, or none. */
+  function pageWithFont(font: boolean): Window {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<style>${font ? `@font-face { font-family: Slow; src: url("/never-there-${Math.random()}.woff2") } p { font-family: Slow, sans-serif }` : ""}</style>
+<p>Words</p>`);
+    doc.close();
+    return live.contentWindow!;
+  }
+  /** Whether `promise` has settled once the microtasks queued so far have run: within the task that made it. */
+  async function settledAtOnce(promise: Promise<unknown>) {
+    let settled = false;
+    void promise.then(() => (settled = true));
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    return settled;
+  }
+
+  test("with nothing left to load, the copy is at rest in the task that froze it", async () => {
+    expect(await settledAtOnce(freeze(pageWithFont(false), iframe()))).toBe(true);
+  });
+
+  test("a font still loading is waited for", async () => {
+    const frozen = freeze(pageWithFont(true), iframe());
+    expect(await settledAtOnce(frozen)).toBe(false);
+    await frozen;
+  });
+});

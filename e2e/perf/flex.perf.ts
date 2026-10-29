@@ -86,16 +86,6 @@ async function openBigPage(page: Page) {
   return elements;
 }
 
-/**
- * Edit mode is up with the frame that first shows the desktop view, as the
- * page starts shrinking into its place on the canvas: the time is taken once
- * that frame has been drawn. The 240ms that takes is a transition, not a
- * wait, and is not counted; the views beside the desktop view are hidden
- * till it ends, and are made meanwhile. When it ends, every view shows the
- * canvas and the Layers panel lists it: checked in the first frame after it.
- * The time to the first frame drawn with every view and the Layers panel up
- * is taken too, for reference, as is the time the desktop view's frame begins.
- */
 /** `scheduler.postTask`, which Chrome has and TypeScript's DOM types do not yet. */
 interface WithScheduler {
   scheduler: { postTask(task: () => void, options: { priority: "user-blocking" | "user-visible" | "background" }): Promise<void> };
@@ -107,12 +97,23 @@ interface Entered {
   desktop: number;
   /** That frame has been drawn: edit mode is up. */
   desktopDrawn: number;
-  /** The first frame drawn with every view and the Layers panel up. */
-  up: number;
+  /** The first frame drawn with every view's copy laid out and the Layers panel up; the views beside the desktop view may still be hidden. */
+  allUp: number;
   /** In the first frame once the page has shrunk into the canvas, every view showed it and the Layers panel listed it. */
   allUpAtEnd: boolean;
 }
 
+/**
+ * Edit mode is up with the frame that first shows the desktop view, as the
+ * page starts shrinking into its place on the canvas: the time is taken once
+ * that frame has been drawn. The 240ms that takes is a transition, not a
+ * wait, and is not counted; the views beside the desktop view are hidden
+ * till it ends, and are made meanwhile. When it ends, every view shows the
+ * canvas and the Layers panel lists it: checked in the first frame after it.
+ * The time to the first frame drawn with every view's copy laid out and the
+ * Layers panel up is taken too, for reference (the views beside the desktop
+ * view still hidden), as is the time the desktop view's frame begins.
+ */
 function armEnter(views: string[]) {
   const w = window as unknown as { vkEnter: Promise<Entered> };
   w.vkEnter = new Promise((resolve) => {
@@ -142,7 +143,7 @@ function armEnter(views: string[]) {
       (event) => {
         const entered: Partial<Entered> = { click: event.timeStamp };
         const done = () => {
-          if (entered.desktopDrawn !== undefined && entered.up !== undefined && entered.allUpAtEnd !== undefined) resolve(entered as Entered);
+          if (entered.desktopDrawn !== undefined && entered.allUp !== undefined && entered.allUpAtEnd !== undefined) resolve(entered as Entered);
         };
         let wasTravelling = false;
         let upSeen = false;
@@ -159,7 +160,7 @@ function armEnter(views: string[]) {
           if (!upSeen && allUp(root)) {
             upSeen = true;
             drawn((at) => {
-              entered.up = at;
+              entered.allUp = at;
               done();
             });
           }
@@ -178,9 +179,9 @@ function armEnter(views: string[]) {
 async function enterAndMeasure(page: Page, label: string) {
   await page.evaluate(armEnter, VIEWS);
   await page.getByRole("button", { name: label }).click();
-  const { click, desktop, desktopDrawn, up, allUpAtEnd } = await page.evaluate(() => (window as unknown as { vkEnter: Promise<Entered> }).vkEnter);
+  const { click, desktop, desktopDrawn, allUp, allUpAtEnd } = await page.evaluate(() => (window as unknown as { vkEnter: Promise<Entered> }).vkEnter);
   expect(allUpAtEnd, "once the page has shrunk into the canvas, every view shows it and the Layers panel lists it").toBe(true);
-  return { up: desktopDrawn - click, desktopBegins: desktop - click, allUp: up - click };
+  return { desktopUp: desktopDrawn - click, desktopBegins: desktop - click, allUp: allUp - click };
 }
 
 async function enterEditMode(page: Page) {
@@ -380,8 +381,8 @@ test("entering edit mode, the desktop view up, takes at most 150ms; once the pag
     await settle(page, 600);
     const reentry = await enterAndMeasure(page, TOGGLE_LABEL);
     if (run === 0) continue; // Warming up: the dev server's first answers, the browser's first compiles.
-    first.push(entry.up);
-    again.push(reentry.up);
+    first.push(entry.desktopUp);
+    again.push(reentry.desktopUp);
     desktopBegins.push(entry.desktopBegins, reentry.desktopBegins);
     allUp.push(entry.allUp, reentry.allUp);
   }
@@ -405,11 +406,12 @@ test("entering edit mode, the desktop view up, takes at most 150ms; once the pag
         { name: "entering again", summary: againSummary },
         { name: "all entries", summary: all, target: `median ≤ ${ENTER_TARGET_MS}ms`, met: all.median <= ENTER_TARGET_MS },
         { name: "(desktop view's frame begins)", summary: summarize(desktopBegins) },
-        { name: "(every view and Layers up)", summary: summarize(allUp) },
+        { name: "(every view laid out, Layers up)", summary: summarize(allUp) },
       ],
       [
         "From the click to the first frame drawn with the desktop view up, as the page starts shrinking into the canvas.",
         "Once it is in place, every view showed the canvas and the Layers panel listed it, every time.",
+        "Every view laid out: the views beside the desktop view are made while the page shrinks, and show once it is in place.",
       ],
     ),
   );

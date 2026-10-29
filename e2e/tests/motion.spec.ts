@@ -92,7 +92,7 @@ test("entering edit mode shrinks the page from where it was in the window into t
   await expectSettled(page);
 });
 
-test("the views beside the canvas stay hidden while the page shrinks into it, and show it from the first frame it is in place", async ({ page }) => {
+test("the views beside the desktop view stay hidden while the page shrinks into the canvas, and show it from the first frame the page is in place", async ({ page }) => {
   const views = ["Canvas", "Tablet 768", "Phone 390"];
   const seen = page.evaluate(
     (views) =>

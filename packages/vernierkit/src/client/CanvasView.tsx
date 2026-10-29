@@ -239,7 +239,7 @@ export function CanvasView(props: Props) {
   const travellingNow = useRef(travelling);
   travellingNow.current = travelling;
   useLayoutEffect(() => {
-    if (!travelling) besideLater.flush();
+    if (!travelling) besideLater.runNow();
   }, [travelling]);
   useEffect(() => () => besideLater.cancel(), []);
   // The views beside the desktop view: each shows the canvas in its own iframe once there is a canvas, and stops when deleted.

@@ -7,11 +7,12 @@ export interface Later {
   /** Runs `job` once the jobs added before it have run, after the next frame. */
   add(job: () => void): void;
   /** Runs every job left now, in order. */
-  flush(): void;
+  runNow(): void;
   /** Drops every job left. */
   cancel(): void;
 }
 
+/** Work put off till the next frame is up, none of it yet. */
 export function createLater(): Later {
   const jobs: (() => void)[] = [];
   /** The frame, then the task, the next job waits for. */
@@ -25,9 +26,13 @@ export function createLater(): Later {
   };
   const next = () => {
     timer = undefined;
-    jobs.shift()?.();
-    if (jobs.length) timer = setTimeout(next);
-    else frame = 0;
+    try {
+      jobs.shift()?.();
+    } finally {
+      // A job that fails leaves the others to run, each in its task.
+      if (jobs.length) timer = setTimeout(next);
+      else frame = 0;
+    }
   };
   return {
     add(job) {
@@ -37,7 +42,7 @@ export function createLater(): Later {
         timer = setTimeout(next);
       });
     },
-    flush() {
+    runNow() {
       stop();
       while (jobs.length) jobs.shift()!();
     },

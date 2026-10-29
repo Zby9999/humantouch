@@ -81,18 +81,20 @@ function drawnWidths(doc: Document, widths: number[]): number[] {
 /**
  * Each side's width as written, in px, top, right, bottom and left: by an
  * edit on the canvas, or else by what sets it in the page's styles, read in
- * one pass over them; null for a side not `drawn`, or not written in px.
+ * one pass over them; null for a side not drawn, or not written in px.
  */
-function writtenWidths(el: Element, drawn: boolean[]): (number | null)[] {
-  const properties = SIDES.map((side) => `border-${side}-width`);
+function writtenWidths(el: Element, isDrawn: boolean[]): (number | null)[] {
   // An edit's declaration, on top of everything.
-  const edited = properties.map((property, i) => (drawn[i] ? editedWidth(el, property) : ""));
-  const unread = properties.filter((_, i) => drawn[i] && !edited[i]);
-  const declared = new Map(unread.length ? declarationsOf(el, unread).map((declaration, i) => [unread[i], declaration]) : []);
-  return properties.map((property, i) => {
-    if (!drawn[i]) return null;
-    if (edited[i]) return pxOf(edited[i]);
-    const declaration = declared.get(property);
+  const sides = SIDES.map((side, i) => {
+    const property = `border-${side}-width`;
+    return { property, drawn: isDrawn[i], edited: isDrawn[i] ? editedWidth(el, property) : "" };
+  });
+  const unread = sides.filter((side) => side.drawn && !side.edited).map((side) => side.property);
+  const declarations = unread.length ? declarationsOf(el, unread) : [];
+  return sides.map(({ property, drawn, edited }) => {
+    if (!drawn) return null;
+    if (edited) return pxOf(edited);
+    const declaration = declarations[unread.indexOf(property)];
     return declaration ? pxOf(declaration.slice(declaration.indexOf(":") + 1)) : null;
   });
 }

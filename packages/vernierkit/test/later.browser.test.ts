@@ -32,12 +32,12 @@ test("each job runs in a task of its own: what the one before left for the next 
   expect(ran).toEqual(["a", "a's next task", "b"]);
 });
 
-test("flush runs what is left at once; cancel drops it", async () => {
+test("runNow runs what is left at once; cancel drops it", async () => {
   const later = createLater();
   const ran: string[] = [];
   later.add(() => ran.push("a"));
   later.add(() => ran.push("b"));
-  later.flush();
+  later.runNow();
   expect(ran).toEqual(["a", "b"]);
   await frame();
   await frame();
@@ -55,10 +55,26 @@ test("a job added once the others have run waits for the next frame again", asyn
   const later = createLater();
   const ran: string[] = [];
   later.add(() => ran.push("a"));
-  later.flush();
+  later.runNow();
   later.add(() => ran.push("b"));
   expect(ran).toEqual(["a"]);
   await frame();
   for (let i = 0; i < 5 && ran.length < 2; i++) await task();
   expect(ran).toEqual(["a", "b"]);
+});
+
+test("a job that fails leaves the others to run", async () => {
+  const later = createLater();
+  const ran: string[] = [];
+  const onError = (event: ErrorEvent) => {
+    if (event.message.includes("job failed")) event.preventDefault();
+  };
+  addEventListener("error", onError);
+  later.add(() => {
+    throw new Error("job failed");
+  });
+  later.add(() => ran.push("b"));
+  for (let i = 0; i < 5 && !ran.length; i++) await frame();
+  removeEventListener("error", onError);
+  expect(ran).toEqual(["b"]);
 });

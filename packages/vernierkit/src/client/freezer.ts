@@ -317,7 +317,13 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
   };
   const waiting = settle(doc);
   // Nothing to wait for: at rest now, in this task, so the canvas can be shown in the next frame.
-  if (!waiting && !loading.length) return Promise.resolve(atRest());
+  if (!waiting && !loading.length) {
+    try {
+      return Promise.resolve(atRest());
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
   return Promise.all([waiting, ...loading]).then(atRest);
 }
 
