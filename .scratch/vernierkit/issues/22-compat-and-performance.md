@@ -6,7 +6,7 @@
 
 参考本功能的 spec.md（同目录上一级），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
-**Blocked by:** 15, 36, 50
+**Blocked by:** 15, 36, 50, 58
 
 **Status:** ready-for-agent
 
