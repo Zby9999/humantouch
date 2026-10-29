@@ -163,8 +163,13 @@ export interface Change {
   /** Id of the layer on the canvas (`data-vk-layer`). */
   layer: string;
   target: Target;
-  /** `usage`: this usage of the component only. */
-  scope: "usage";
+  /**
+   * `usage`: this usage of the component only. `component`: the component
+   * itself, every usage of it: the designer promoted the change from one
+   * usage. Its `layer` is then `componentLayer(target.loc)`, not a layer of the
+   * canvas: the change shows on every element the component writes there.
+   */
+  scope: "usage" | "component";
   /**
    * A style change made in a view other than the desktop view: it applies at
    * that view's breakpoint only, the width range it stands for (ADR 0008).

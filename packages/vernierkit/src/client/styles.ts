@@ -743,6 +743,31 @@ export const styles = /* css */ `
 }
 .vk-brief-button:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: 2px; }
 .vk-brief-text { width: 220px; min-height: 72px; background: var(--vk-panel); box-shadow: 0 0 0 1px var(--vk-border), 0 4px 12px rgb(0 0 0 / 0.12); }
+/*
+ * On the top right of the layer selected alone, above it and clear of its brief's mark: the selection toolbar,
+ * its buttons in one row, its right edge on the layer's. Its buttons look as the brief button does.
+ */
+.vk-selection-toolbar {
+  position: absolute;
+  display: flex;
+  gap: 4px;
+  transform: translate(-100%, calc(-100% - 12px));
+}
+.vk-selection-tool {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 4px;
+  border-radius: 6px;
+  background: var(--vk-instance);
+  color: #fff;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+.vk-selection-tool:focus-visible { outline: 2px solid var(--vk-instance); outline-offset: 2px; }
 /* On a layer with a brief, in every view: the brief button's mark, small, centered on its top right corner. */
 .vk-brief-mark {
   position: absolute;

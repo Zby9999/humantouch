@@ -113,6 +113,8 @@ interface Props {
   onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
   /** A new Frame's brief written, from the button beside it. */
   onSetBrief(layer: Layer, brief: string): void;
+  /** Promote, from the selection toolbar: the layer's changes made changes to its component. */
+  onPromote(layer: Layer): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
@@ -134,7 +136,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -851,6 +853,11 @@ export function CanvasView(props: Props) {
     briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !hideSelection && editor.isNewFrame(primary)
       ? { layer: primary, in: briefIn, brief: editor.brief(primary) }
       : null;
+  /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `briefIn`. */
+  const toolbar =
+    briefIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !hideSelection && !typingLayer
+      ? { layer: primary, in: briefIn, promote: editor.canPromote(primary) }
+      : null;
   /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
   const briefed = canvas && tree ? briefedLayers(canvas.document, tree) : [];
   /**
@@ -951,6 +958,16 @@ export function CanvasView(props: Props) {
           onSetBrief={onSetBrief}
         />
       )}
+      {toolbar && (
+        <SelectionToolbar
+          key={toolbar.layer.el.getAttribute("data-vk-layer") ?? undefined}
+          layer={toolbar.layer}
+          view={toolbar.in.view}
+          camera={cameraIn(camera, toolbar.in)}
+          promote={toolbar.promote}
+          onPromote={onPromote}
+        />
+      )}
       {!travelling &&
         !playing &&
         placed.map((p) => (
@@ -1037,6 +1054,46 @@ function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+interface SelectionToolbarProps {
+  layer: Layer;
+  /** The view it sits on the layer in. */
+  view: View;
+  camera: Camera;
+  /** The layer has changes for its usage it can promote to its component. */
+  promote: boolean;
+  onPromote(layer: Layer): void;
+}
+
+/**
+ * On the top right of the layer selected alone, always there: the buttons
+ * for that layer, in one row, so none covers another. Promote, while it has
+ * changes for its usage to promote to its component. The second version
+ * puts States first, into the component's Sandbox (ADR 0007); not shown yet.
+ * With no button to show, there is nothing.
+ */
+function SelectionToolbar({ layer, view, camera, promote, onPromote }: SelectionToolbarProps) {
+  const r = view.boxOf(layer);
+  if (!r || !promote) return null;
+  const component = layer.chain[0]?.component;
+  return (
+    <div
+      class="vk-selection-toolbar"
+      role="toolbar"
+      aria-label="Selection"
+      style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}
+      // A press here is not on the canvas.
+      onPointerDown={(event) => event.stopPropagation()}
+      onDblClick={(event) => event.stopPropagation()}
+    >
+      {/* States (second version, ADR 0007): first in the row, for a component. */}
+      <button type="button" class="vk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
+        <Icon name="promote" />
+        Promote
+      </button>
     </div>
   );
 }

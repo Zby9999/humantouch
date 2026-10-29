@@ -65,7 +65,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Kind:** ${kindTitle(change)}`,
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
-    `**Scope:** ${scope(target)}`,
+    `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
@@ -77,7 +77,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
-    ...(change.kind === "brief" ? [briefLine(change)] : []),
+    ...(change.kind === "brief" ? [briefLine(change, list)] : []),
     ...(change.kind === "duplicate" && change.brief ? [`**Brief:** ${quoted(change.brief)}, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.`] : []),
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
@@ -136,11 +136,15 @@ function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
 
 /**
  * A brief's words; on a copy of a new Frame, with the brief it was copied
- * with, which they take the place of ("": taken off).
+ * with, which they take the place of ("": taken off); on a usage of a
+ * component given a brief as a whole, with that one, which they take the place of there.
  */
-function briefLine({ before, after }: Change): string {
+function briefLine({ before, after, target, scope }: Change, list: Change[]): string {
   const brief = after ? quoted(after as string) : "none: taken off";
-  return `**Brief:** ${brief}${before ? `, in place of the brief the copy was made with, ${quoted(before as string)}` : ""}`;
+  if (!before) return `**Brief:** ${brief}`;
+  if (target.made || scope === "component") return `**Brief:** ${brief}, in place of the brief the copy was made with, ${quoted(before as string)}`;
+  const whole = list.find((change) => change.scope === "component" && change.kind === "brief" && change.target.loc === target.loc);
+  return `**Brief:** ${brief}, in place of the brief ${target.component} has as a whole${whole ? ` (change ${whole.id})` : ""}, ${quoted(before as string)}, at this usage.`;
 }
 
 /** What the designer wants of the change, in design language. */
@@ -488,6 +492,19 @@ function scope({ chain, instances, locked, context }: Target): string {
   text += ` Other usages of ${own.component} stay as they are.`;
   if (locked) text += " The layer is drawn by a dependency: change it from the usage, never inside the dependency.";
   return text;
+}
+
+/**
+ * A change promoted to the component itself: its name and where it writes
+ * the layer, to be changed there, for every usage; and the usage it was made on.
+ */
+function componentScope({ chain, loc }: Target): string {
+  const [own, ...outer] = chain;
+  const where = [own.usage ? `\`${own.usage}\`` : "an undetermined place", ...outer.map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`)];
+  return (
+    `The component itself: ${own.component}. Change ${own.component} where it writes the layer, at Location (\`${loc}\`), so every usage of ${own.component} shows it, ` +
+    `not only the usage the designer made it on (${where.join(", inside ")}). Changes listed for one usage only stay with that usage.`
+  );
 }
 
 /** What sets the value now, so the Agent knows which class or rule to change; per property when it differs. */

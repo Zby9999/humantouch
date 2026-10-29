@@ -15,7 +15,7 @@ import { isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property, type Stroke } from "./edits";
 import { signOf, usageKey } from "./layers";
 import { CHECK_FRAME_ATTR } from "./host";
-import { elementsOf, usageKeyOf } from "./page-elements";
+import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
 
@@ -147,7 +147,8 @@ function checkOn(doc: Document, change: Change): Promise<CheckResult> {
   const look = (reportActual: boolean): CheckResult => {
     if (change.kind === "delete") return lookDeleted(doc, change);
     if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
-    const els = elementsOf(doc, change.target);
+    // A change to a component itself shows in every usage of it.
+    const els = change.scope === "component" ? componentElementsOf(doc, change.target) : elementsOf(doc, change.target);
     if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
     const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
     const wrong = els.find((el) => !shows(el));

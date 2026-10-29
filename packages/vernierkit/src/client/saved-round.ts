@@ -8,6 +8,7 @@ import { BRIEF_ATTR, changesOn, elementsOf, moveInlineEdits, restoreStyle } from
 import { cssOf, type Property } from "./edits";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
+import { componentBrief, showComponent } from "./promote";
 import { decompose, undissolve } from "./stacks";
 
 /**
@@ -24,7 +25,9 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   for (const change of taken) {
     changes.remove(change.id);
     const rest = changes.list();
-    if (change.kind === "move") relocate(doc, change.layer, change.property, change.after as Place, change.before as Place, {}, rest);
+    // A change to a component itself: on every element it writes.
+    if (change.scope === "component") showComponent(doc, change.target.loc!, rest);
+    else if (change.kind === "move") relocate(doc, change.layer, change.property, change.after as Place, change.before as Place, {}, rest);
     else if (change.kind === "stack") decompose(doc, change.layer, change.after as Composed, rest);
     else if (change.kind === "unstack") undissolve(doc, change.layer, change.after as Dissolved, rest);
     else if (change.kind === "create") removeMade(doc, change.layer, (change.after as Created).place.container.layer, rest);
@@ -33,9 +36,10 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     else if (change.kind === "delete") unhide(doc, change.layer, change.property, rest);
     else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
     else if (change.kind === "brief") {
-      // Back to none, or to the brief a copy was copied with.
+      // Back to none, or to the brief a copy was copied with, or its component's.
       for (const el of elementsOf(doc, change.layer)) {
-        if (change.before) el.setAttribute(BRIEF_ATTR, change.before as string);
+        const brief = (change.before as string | null) || componentBrief(el, rest);
+        if (brief) el.setAttribute(BRIEF_ATTR, brief);
         else el.removeAttribute(BRIEF_ATTR);
       }
     }

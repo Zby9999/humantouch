@@ -836,6 +836,30 @@ describe("claim and done, a brief on a layer", () => {
   });
 });
 
+describe("claim, changes promoted to a component", () => {
+  const promoted = { ...redFill, layer: "component src/components/Card.tsx:3:5", scope: "component", target: { ...cards, instances: 4 } };
+
+  test("the scope is the component itself: its name and where it writes the layer, to change there for every usage", async () => {
+    saveRound(promoted);
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain(
+      "- **Scope:** The component itself: Card. Change Card where it writes the layer, at Location (`src/components/Card.tsx:3:5`), so every usage of Card shows it, " +
+        "not only the usage the designer made it on (`src/App.tsx:40:11`, inside App used at `src/main.tsx:8:5`). Changes listed for one usage only stay with that usage.\n",
+    );
+  });
+
+  test("a brief written on a usage in place of the component's brief says so", async () => {
+    const own = { ...redFill, id: 2, kind: "brief", property: "brief", before: "Lift on hover", after: "Lift higher", style: {} };
+    saveRound({ ...promoted, kind: "brief", property: "brief", before: null, after: "Lift on hover", style: {} }, own);
+
+    const notes = section((await cli("claim")).output, 2);
+
+    expect(notes).toContain("- **Brief:** “Lift higher”, in place of the brief Card has as a whole (change 1), “Lift on hover”, at this usage.\n");
+  });
+});
+
 describe("claim, layers off the canvas put back", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });

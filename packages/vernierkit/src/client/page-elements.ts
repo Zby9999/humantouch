@@ -21,6 +21,17 @@ export function elementsOf(doc: Document, target: Target): Element[] {
 }
 
 /**
+ * The elements a change to a component itself is made to, on the live page
+ * now: every element the component writes at the change's location, in every
+ * usage of it. Where its markers have moved, those of the usage it was promoted from.
+ */
+export function componentElementsOf(doc: Document, target: Target): Element[] {
+  if (!target.loc) return [];
+  const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([, key]) => key.startsWith(`${target.loc} `)).map(([el]) => el);
+  return els.length ? els : elementsOf(doc, target);
+}
+
+/**
  * A layer whose markers no longer match, found among the elements of the same
  * tag written in the same file, by the same components: the one whose
  * locations moved least. None when two are as near.

@@ -82,6 +82,8 @@ interface Rules {
   lifted: Record<string, string>;
   /** A copy's: how the layer it copies looked, edits included. It starts as it looks. */
   copied?: RuleBlocks;
+  /** What changes to the component itself declare, on an element it writes: under the edits of its usage, which win over them. */
+  promoted?: RuleBlocks;
   /** The edits'. */
   edits: RuleBlocks;
 }
@@ -89,6 +91,22 @@ interface Rules {
 /** Writes declarations onto a canvas element, over the page's: at every width, or only at `breakpoint`. Where the freezer pinned it, shifted as it was. */
 export function declare(el: Element, declarations: Record<string, string>, breakpoint: Breakpoint | null = null) {
   editRules(el, (edits) => put(el, edits, declarations, breakpoint));
+}
+
+/**
+ * Writes onto a canvas element the component writes what the changes to the
+ * component itself, `changes`, declare, in place of what they declared
+ * before: under the edits of the element's usage, which win over them.
+ */
+export function declarePromoted(el: Element, changes: Change[]) {
+  const rules = readRules(el);
+  if (!rules && !changes.length) return;
+  editRules(el, () => {}, (all) => {
+    const promoted: RuleBlocks = { base: { style: {} }, at: [] };
+    for (const change of changes) put(el, promoted, change.style, change.breakpoint ?? null);
+    if (changes.length) all.promoted = promoted;
+    else delete all.promoted;
+  });
 }
 
 /**
@@ -291,10 +309,10 @@ function applying(el: Element, blocks: RuleBlocks): AtBreakpoint[] {
   return [...blocks.at].sort((a, b) => widestFirst(a.breakpoint, b.breakpoint)).filter((at) => view.matchMedia(mediaOf(at.breakpoint)).matches);
 }
 
-/** What applies, all told: the lifted declarations, then what a copy took over, then the edits. */
+/** What applies, all told: the lifted declarations, then what a copy took over, then the component's changes, then the edits. */
 function effective(rules: Rules): RuleBlocks {
   const all: RuleBlocks = { base: { style: { ...rules.lifted } }, at: [] };
-  for (const blocks of [rules.copied, rules.edits]) {
+  for (const blocks of [rules.copied, rules.promoted, rules.edits]) {
     if (!blocks) continue;
     Object.assign(all.base.style, blocks.base.style);
     if (blocks.base.hidden !== undefined) all.base.hidden = blocks.base.hidden;
@@ -314,8 +332,11 @@ function readRules(el: Element): Rules | null {
   return sheet ? (JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules) : null;
 }
 
-/** Changes the element's edits, as `change` does; its rules are made on the first, with what of its style attribute is important taken in. */
-function editRules(el: Element, change: (edits: RuleBlocks) => void) {
+/**
+ * Changes the element's edits, as `change` does (or its rules as a whole, as
+ * `whole` does); its rules are made on the first, with what of its style attribute is important taken in.
+ */
+function editRules(el: Element, change: (edits: RuleBlocks) => void, whole?: (rules: Rules) => void) {
   let rules = readRules(el);
   if (!rules) {
     keepOriginal(el);
@@ -330,6 +351,7 @@ function editRules(el: Element, change: (edits: RuleBlocks) => void) {
     rules = { lifted, edits: { base: { style: {} }, at: [] } };
   }
   change(rules.edits);
+  whole?.(rules);
   writeRules(el, rules);
 }
 
@@ -338,8 +360,9 @@ function writeRules(el: Element, rules: Rules) {
   const doc = el.ownerDocument;
   rules.edits.at = rules.edits.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
   let key = el.getAttribute(STYLE_KEY_ATTR);
-  const empty = !Object.keys(rules.edits.base.style).length && rules.edits.base.hidden === undefined && !rules.edits.at.length;
-  if (empty && !rules.copied) {
+  const empty = (blocks: RuleBlocks) => !Object.keys(blocks.base.style).length && blocks.base.hidden === undefined && !blocks.at.length;
+  if (rules.promoted && empty(rules.promoted)) delete rules.promoted;
+  if (empty(rules.edits) && !rules.copied && !rules.promoted) {
     if (key) sheetOf(doc, key)?.remove();
     el.removeAttribute(STYLE_KEY_ATTR);
     // What was lifted off the style attribute goes back on it.

@@ -29,6 +29,7 @@ import {
 import {
   BRIEF,
   changeKey,
+  createChangeSet,
   madeBy,
   MOVE,
   movedOffBy,
@@ -56,6 +57,7 @@ import { equalColumns, trackCount } from "./grid-tracks";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
+import { componentBrief, componentElements, componentLayer, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -328,6 +330,20 @@ export interface Editor {
    * its look and its edits there, for the Agent to put it back by.
    */
   putBack(from: LayerToPutBack, to: Destination): Layer;
+  /**
+   * Whether the layer has changes for its usage alone that can be promoted
+   * to its component: it is in a component used inside another, and has
+   * changes to its styles or its brief not promoted yet.
+   */
+  canPromote(layer: Layer): boolean;
+  /**
+   * Promotes the layer's changes to its styles (at every width and at each
+   * breakpoint) and its brief to the component that writes it, the nearest
+   * on its usage chain, as one edit that can be undone: they become changes
+   * to the component itself, which every usage of it shows, in every view.
+   * Its other changes stay with its usage; edited again, it starts from its usage again.
+   */
+  promote(layer: Layer): void;
 }
 
 /** An Off-canvas Layer being put back onto the canvas: its element off the canvas, as it looks now, and it as kept. */
@@ -1021,8 +1037,11 @@ export function createEditor(
   };
   /** Marks every instance of the layer `id` with the brief `text`, the Layers panel and the canvas showing it; "": none. */
   const markBrief = (id: string, text: string) => {
+    // With no brief of its usage's own, the component's, if it has one, shows.
+    const own = !!changes.find(id, BRIEF);
     for (const el of elementsOf(doc, id)) {
-      if (text) el.setAttribute(BRIEF_ATTR, text);
+      const shown = text || (own ? "" : componentBrief(el, changes.list()));
+      if (shown) el.setAttribute(BRIEF_ATTR, shown);
       else el.removeAttribute(BRIEF_ATTR);
     }
   };
@@ -1104,8 +1123,34 @@ export function createEditor(
     push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off }, false);
   };
 
+  /**
+   * The changes of the layer `id` promoted to the component that writes it at
+   * `loc`, or back with its usage, shown as `changes` has them now: the
+   * usage's own edits on its elements, the component's on all it writes.
+   */
+  const showPromoted = (id: string, loc: string, taken: Change[]) => {
+    const others = changesOn(id, changes.list());
+    for (const el of elementsOf(doc, id)) {
+      for (const change of taken) if (change.kind === "style") restoreStyle(el, cssOf(change.property as Property), others, change.breakpoint ?? null);
+      if (others.some((change) => change.asStack && !change.breakpoint)) el.setAttribute(AS_STACK_ATTR, "");
+    }
+    showComponent(doc, loc, changes.list());
+  };
+
   /** Takes one change back out, as an edit that can be undone. Returns its layer as it is then. */
   const revertOne = (change: Change): Layer | null => {
+    if (change.scope === "component") {
+      // On every element the component writes.
+      const loc = change.target.loc!;
+      const to = (on: boolean) => () => {
+        if (on) changes.restore(structuredClone(change));
+        else changes.remove(change.id);
+        showComponent(doc, loc, changes.list());
+      };
+      structural([], [], to(false), to(true));
+      const [el] = componentElements(doc, loc);
+      return el ? tree.layerOf(el) : null;
+    }
     if (change.kind === "delete") {
       // Deleted, it is no layer: its elements are found by the change.
       const { id: _, layer: id, ...record } = change;
@@ -1448,6 +1493,26 @@ export function createEditor(
       });
       return layer && tree.layerOf(nodeOf(layer));
     },
+    canPromote(layer) {
+      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
+      return !!id && inComponent(layer) && promotable(changes.list(), id).length > 0;
+    },
+    promote(layer) {
+      if (!editor.canPromote(layer)) throw new Error(`Vernier Kit: ${layer.name} has no changes to promote to its component`);
+      const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
+      const loc = layer.loc!;
+      const component = componentLayer(loc);
+      const taken = structuredClone(promotable(changes.list(), id));
+      const before = structuredClone(changes.list().filter((change) => change.layer === component));
+      // The component's changes once promoted, worked out apart.
+      const after = promoteIn(createChangeSet(changes.save()), taken, loc, componentElements(doc, loc).length);
+      const swap = (out: Change[], back: Change[]) => () => {
+        for (const change of out) changes.remove(change.id);
+        for (const change of back) changes.restore(structuredClone(change));
+        showPromoted(id, loc, taken);
+      };
+      structural([id], [id], swap([...taken, ...before], after), swap(after, [...before, ...taken]));
+    },
     canStack(layers) {
       if (layers.length === 1 && isFrameOfLayers(layers[0])) return true;
       const parent = layers[0]?.parent;
@@ -1563,8 +1628,10 @@ export function createEditor(
       return tree.layerOf([...container.el.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
     },
     brief(layer) {
-      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
-      if (!id) return "";
+      if (layer.text) return "";
+      const id = layer.el.getAttribute(LAYER_ID_ATTR);
+      // Not changed this round: its component's brief, if one is promoted to it.
+      if (!id) return layer.el.getAttribute(BRIEF_ATTR) ?? "";
       if (editor.isNewFrame(layer)) return (makerOf(id)!.after as Created).brief ?? "";
       // A copy of a new Frame has the brief it was copied with, until one is written on it.
       return (changes.find(id, BRIEF)?.after as string | undefined) ?? layer.el.getAttribute(BRIEF_ATTR) ?? "";
