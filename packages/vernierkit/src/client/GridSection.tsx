@@ -20,8 +20,9 @@ type GridProperty = "columns" | "rowGap" | "columnGap";
 /**
  * A Grid the page has: how many columns it lays its layers out in, and the
  * space between its rows and between its columns, as the view worked in shows
- * them; each gap can be a spacing Variable. Columns are set as that many equal columns. With several Grids
- * selected, a value they do not share shows as Mixed, and a change goes to each.
+ * them; each gap can be a spacing Variable. Columns are set as that many equal
+ * columns. With several Grids selected, a value they do not share shows as
+ * Mixed, and a change goes to each.
  */
 export function GridSection({ editor, layers, onEdit, variable }: Props) {
   if (!layers.every((layer) => editor.can(layer, "columns"))) return null;

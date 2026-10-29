@@ -270,7 +270,7 @@ export function bindRecorded(catalog: Catalog, changes: ChangeSet): boolean {
     if (change.kind !== "style" || change.variables) continue;
     const variables = bind(catalog, change.property, change.after, undefined, undefined);
     if (!variables) continue;
-    change.variables = variables;
+    changes.restore({ ...change, variables });
     named = true;
   }
   return named;

@@ -93,19 +93,19 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
 
   const catalog = useCatalog();
   /**
-   * The Variable every selected layer has picked for part `part` of `property`; null when none, or not the same.
-   * `property` may be where each layer keeps it: a text layer's shadows are its text shadows.
+   * The Variable every selected layer has picked for part `part` of the property `propertyOf` names for it; null when none,
+   * or not the same. The property is where the layer keeps the value: a text layer's shadows are its text shadows.
    */
-  const boundTo = (property: Property | ((layer: Layer) => Property), part: string) => {
-    const [first, ...rest] = layers.map((layer) => editor.variables(layer, typeof property === "function" ? property(layer) : property)?.[part]);
+  const boundTo = (propertyOf: (layer: Layer) => Property, part: string) => {
+    const [first, ...rest] = layers.map((layer) => editor.variables(layer, propertyOf(layer))?.[part]);
     const same = rest.every((other) => other?.picked && sameVariable(other, first));
     return first?.picked && same ? first : null;
   };
-  /** Makes part `part` of `property` the Variable `entry` draws, on each selected layer, as one edit; null detaches it, keeping the value. */
-  const pick = (propertyOf: Property | ((layer: Layer) => Property), part: string, entry: Resolved | null) => {
+  /** Makes part `part` of the property `propertyOf` names for each selected layer the Variable `entry` draws, as one edit; null detaches it, keeping the value. */
+  const pick = (propertyOf: (layer: Layer) => Property, part: string, entry: Resolved | null) => {
     editor.batch(() => {
       for (const layer of layers) {
-        const property = typeof propertyOf === "function" ? propertyOf(layer) : propertyOf;
+        const property = propertyOf(layer);
         const current = editor.read(layer, property);
         const next = entry ? withPart(property, current, part, entry.drawn) : current;
         if (next !== null) editor.set(layer, property, next as PropertyValues[Property], { variables: { [part]: entry?.variable ?? null } });
@@ -117,7 +117,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const variable: SlotOf = (property, part = "") => {
     const group = GROUPS[property];
     if (!catalog || !group) return undefined;
-    return { group, selection: keyOf(layers), bound: boundTo(property, part), onPick: (entry) => pick(property, part, entry) };
+    const propertyOf = () => property;
+    return { group, selection: keyOf(layers), bound: boundTo(propertyOf, part), onPick: (entry) => pick(propertyOf, part, entry) };
   };
 
   /** The color of shadow `i` as a field that can be a color Variable, where each layer keeps its shadows; undefined when the project has none. */
