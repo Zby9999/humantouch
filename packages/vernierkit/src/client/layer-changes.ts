@@ -26,6 +26,7 @@ import {
 import { layerName } from "../design-values";
 import { breakpointKey } from "./breakpoints";
 import type { Change, CopiedBreakpoint, Created, Place } from "./changeset";
+import { wrappedTextOf } from "./layers";
 import { copyLook, matchLook } from "./look";
 import { holdAbsolute, releaseAbsolute, slotsOf } from "./moves";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
@@ -175,20 +176,26 @@ export function unhide(doc: Document, id: string, property: string, changes: Cha
   }
 }
 
-/** Gives the elements of the layer with id `id` whose words change under change `property` the words `text`; with null, the words and pieces they had. */
+/**
+ * Gives the elements of the layer with id `id` whose words change under change
+ * `property` the words `text`; with null, the words and pieces they had. A
+ * Frame's only text given a `<span>` of its own since keeps it, and what is
+ * written on it: the words go in it, and those it had are kept from in it.
+ */
 export function writeText(doc: Document, id: string, property: string, text: string | null) {
   for (const el of elementsOf(doc, id)) {
     if (el.getAttribute(TEXT_ATTR) !== property) continue;
+    const words = wrappedTextOf(el) ?? el;
     if (text === null) {
       const original = el.getAttribute(ORIGINAL_TEXT_ATTR);
-      if (original !== null) el.innerHTML = original;
+      if (original !== null) words.innerHTML = original;
       el.removeAttribute(ORIGINAL_TEXT_ATTR);
       continue;
     }
-    if (!el.hasAttribute(ORIGINAL_TEXT_ATTR)) el.setAttribute(ORIGINAL_TEXT_ATTR, el.innerHTML);
+    if (!el.hasAttribute(ORIGINAL_TEXT_ATTR)) el.setAttribute(ORIGINAL_TEXT_ATTR, words.innerHTML);
     // The white space around the words stays: loose text keeps its distance from what it runs on beside.
-    const [, before, , after] = /^(\s*)([\s\S]*?)(\s*)$/.exec(el.textContent!)!;
-    el.textContent = before + text + after;
+    const [, before, , after] = /^(\s*)([\s\S]*?)(\s*)$/.exec(words.textContent!)!;
+    words.textContent = before + text + after;
   }
 }
 

@@ -9,7 +9,7 @@ import { createClipboard } from "./clipboard";
 import { createEditor, createHistory, type Destination, type Editor } from "./edits";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
-import { nodeOf, type Layer, type LayerTree } from "./layers";
+import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -133,7 +133,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layers the layer is one of. */
   const treeOf = (layer: Layer | undefined): LayerTree | null => (layer && outsideOf(layer)?.editor.tree()) || tree;
   /** A layer off the canvas itself, rather than one in it. */
-  const isOutside = (layer: Layer) => outsideOf(layer)?.layer()?.el === layer.el;
+  const isOutside = (layer: Layer) => !layer.text && outsideOf(layer)?.layer()?.el === layer.el;
   /** The layer off the canvas itself, while it is there: what undoing or redoing a step to it leaves selected. */
   const itself = (outside: OffCanvasLayer) => () => [outside.layer()].filter((layer) => layer !== null);
   /** The layer as the layers are now: a move builds them anew. Null once it is gone. */
@@ -589,7 +589,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           if (note) showToast(note);
         }}
         onBeginText={(layer) => {
-          const own = editorOf(layer)!.ownElement(layer);
+          const own = editorOf(layer)!.typedIn(layer);
           // Loose text got an element of its own: the layers are built anew (those off the canvas are read as they are).
           if (own !== layer) setTree(editor!.tree());
           select([own]);
@@ -597,9 +597,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         }}
         onEditText={(layer, text) => {
           const editor = editorOf(layer)!;
-          editor.setText(editor.tree().layerOf(layer.el) ?? layer, text);
+          /** The layer typed in, as the layers are now: a Frame's only text is found by its Frame. */
+          const found = () => {
+            const now = editor.tree().layerOf(layer.el);
+            return now && isOnlyText(layer) ? (framedText(now) ?? now) : now;
+          };
+          editor.setText(found() ?? layer, text);
           onEdit();
-          const now = editor.tree().layerOf(layer.el);
+          const now = found();
           if (now) select([now]);
         }}
         onWorkIn={(view, name) => {

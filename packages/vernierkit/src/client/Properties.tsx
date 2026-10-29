@@ -184,6 +184,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const width = shown("width");
   const height = shown("height");
   const direction = shown("direction");
+  const padding = shown("padding");
   const opacity = shown("opacity");
   const visible = shown("visible");
   const radius = shown("radius");
@@ -240,13 +241,20 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           direction={direction}
           dissolve={layers.every((layer) => editor.canUnstack(layer)) ? onDissolve : null}
           gap={shown("gap")!}
-          padding={shown("padding")!}
+          padding={padding!}
           align={shown("align")!}
           wrap={shown("wrap")!}
           set={set}
           update={update}
           variable={variable}
         />
+      )}
+      {padding !== undefined && layers.some((layer) => layer.kind === "frame" && layer.framesText) && (
+        // A Frame around its text alone, as a button is: the room around the text.
+        <section class="vk-section" aria-labelledby="vk-padding">
+          <h3 id="vk-padding" class="vk-section-title">Padding</h3>
+          <PaddingFields padding={padding} update={update} variable={variable} />
+        </section>
       )}
       <GridSection editor={editor} layers={layers} onEdit={onEdit} variable={variable} />
       {(opacity !== undefined || visible !== undefined) && (
@@ -401,9 +409,6 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
   update: Update;
   variable: SlotOf;
 }) {
-  const side = (i: number) => (padding === MIXED ? null : padding[i]);
-  const setSide = (i: number) => (value: number, continues?: boolean) =>
-    update("padding", (current) => current.map((p, j) => (i === j ? value : p)) as Padding, continues);
   return (
     <section class="vk-section" aria-labelledby="vk-stack">
       <div class="vk-section-header">
@@ -463,14 +468,24 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           <Check label="Wrap" checked={wrap} onChange={set("wrap")} />
         </div>
       </div>
-      <div class="vk-grid-2" role="group" aria-label="Padding">
-        {["Top", "Right", "Bottom", "Left"].map((name, i) => (
-          <VariableSlot key={name} label={`Padding ${name.toLowerCase()}`} slot={variable("padding", name.toLowerCase())}>
-            <NumberField label={`Padding ${name.toLowerCase()}`} glyph={name[0]} value={side(i)} min={0} onChange={setSide(i)} />
-          </VariableSlot>
-        ))}
-      </div>
+      <PaddingFields padding={padding} update={update} variable={variable} />
     </section>
+  );
+}
+
+/** Padding on each side, top, right, bottom, left. */
+function PaddingFields({ padding, update, variable }: { padding: Shown<Padding>; update: Update; variable: SlotOf }) {
+  const side = (i: number) => (padding === MIXED ? null : padding[i]);
+  const setSide = (i: number) => (value: number, continues?: boolean) =>
+    update("padding", (current) => current.map((p, j) => (i === j ? value : p)) as Padding, continues);
+  return (
+    <div class="vk-grid-2" role="group" aria-label="Padding">
+      {["Top", "Right", "Bottom", "Left"].map((name, i) => (
+        <VariableSlot key={name} label={`Padding ${name.toLowerCase()}`} slot={variable("padding", name.toLowerCase())}>
+          <NumberField label={`Padding ${name.toLowerCase()}`} glyph={name[0]} value={side(i)} min={0} onChange={setSide(i)} />
+        </VariableSlot>
+      ))}
+    </div>
   );
 }
 

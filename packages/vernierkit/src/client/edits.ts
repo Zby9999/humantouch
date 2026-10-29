@@ -55,7 +55,7 @@ import { TYPOGRAPHY, type TypographyValues } from "./typography";
 import { pickedIn } from "./variables";
 import { equalColumns, trackCount } from "./grid-tracks";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
-import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
+import { boxOf, buildLayerTree, framedText, holdsLayers, isOnlyText, nodeOf, SIGN_WORDS, textOnFrame, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
@@ -286,6 +286,8 @@ export interface Editor {
   setBrief(layer: Layer, brief: string): Layer;
   /** The layer as text with an element of its own, to type in: loose text gets one first. */
   ownElement(layer: Layer): Layer;
+  /** The layer whose element the words of a text layer are typed in: a Frame's only text's are the Frame's, which it shares; other loose text gets an element of its own first. */
+  typedIn(layer: Layer): Layer;
   /**
    * Changes the words of a text layer, in every instance; one of the
    * instances a loop renders with words of its own changes alone, as data.
@@ -396,6 +398,8 @@ interface Step {
   key: string;
   /** One of a run of steps that may each change something else (nudges): one step with those before it, undone back through each. */
   run?: boolean;
+  /** Of `layers`, those whose only text it was made to: a Frame's only text, which has the Frame's id. */
+  texts?: string[];
   /** Done first each time the step is redone, whichever later steps of the same adjustment are made one with it: cutting back a change it made way for. */
   first?(): void;
   undo(): void;
@@ -406,8 +410,8 @@ interface Step {
 export interface Definition<V> {
   /** Layers the property applies to. */
   kinds: LayerKind[];
-  /** Further, whether the layer as it is now can take the property. */
-  applies?(el: Element): boolean;
+  /** Further, whether the layer as it is now can take the property: `el`, its element as shown. */
+  applies?(el: Element, layer: Layer): boolean;
   /** Further still, whether the layer can take this value. */
   accepts?(el: Element, value: V): boolean;
   read(el: Element, colors: ColorReader): V;
@@ -441,6 +445,16 @@ const UNLOCKED: LayerKind[] = EVERY_KIND.filter((kind) => kind !== "locked");
 const CONTAINERS: LayerKind[] = ["stack", "grid", "frame"];
 /** Layers drawn as a box, with a stroke, corners, shadows and blur of their own: all but text and locked ones. */
 const BOXES: LayerKind[] = [...CONTAINERS, "image", "still"];
+/**
+ * Whether the property is of text alone: one a Frame's only text has, written
+ * on the Frame's element, which its words inherit.
+ */
+function isTextProperty(property: Property): boolean {
+  const { kinds } = PROPERTIES[property];
+  return kinds.length > 0 && kinds.every((kind) => kind === "text");
+}
+/** A change to text styles or to words: on a Frame drawn around its text, its text's. */
+const ofText = (change: Change) => (change.kind === "style" ? isTextProperty(change.property as Property) : change.kind === "text");
 /** Width and height do not apply to inline boxes. */
 const sized = (el: Element) => !/^(inline|contents)$/.test(getComputedStyle(el).display);
 const absolute = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el).position);
@@ -526,7 +540,9 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     sets: ["row-gap", "column-gap"],
   },
   padding: {
-    kinds: ["stack"],
+    // And a Frame around its text alone, as a button is, its words given an element of their own to edit or not.
+    kinds: ["stack", "frame"],
+    applies: (_, layer) => layer.kind === "stack" || layer.framesText,
     read: (el) => SIDES.map((side) => px(getComputedStyle(el).getPropertyValue(`padding-${side}`))) as Padding,
     write: (padding) => ({ padding: padding.map((p) => `${p}px`).join(" ") }),
     writes: ["padding"],
@@ -628,6 +644,27 @@ export function createEditor(
   };
 
   const layerById = (id: string) => find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
+  /**
+   * Whether `change` is the layer's. Those recorded on its element are, but,
+   * on any layer but text, those to text styles and words: a Frame drawn
+   * around its text has those of its text there. Its text has them, before
+   * and after it is given an element of its own to edit, besides those
+   * recorded on that element.
+   */
+  const ofLayer = (layer: Layer, change: Change) => {
+    const text = ofText(change);
+    if (!layer.text && change.layer === layer.el.getAttribute(LAYER_ID_ATTR)) return layer.kind === "text" || !text;
+    const frame = layer.kind === "text" && layer.parent?.framesText ? layer.parent : null;
+    return !!frame && text && change.layer === frame.el.getAttribute(LAYER_ID_ATTR);
+  };
+  /** The layer's changes at a breakpoint that holds in the view worked in, to `property` or to any, in the order they were first made; none in the desktop view. */
+  const changesHereOf = (layer: Layer, property?: string) => {
+    const view = beside();
+    if (!view) return [];
+    return changes
+      .list()
+      .filter((change) => change.kind === "style" && change.breakpoint && contains(change.breakpoint, view.width) && (!property || change.property === property) && ofLayer(layer, change));
+  };
   /** The elements of every instance of the layer with id `id`, as the layers are now; none when it is gone. */
   const instancesOf = (id: string) => {
     const layer = layerById(id);
@@ -772,7 +809,8 @@ export function createEditor(
     const keeps = definition.keeps?.(el, colors);
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
-      target: targetOf(layer, instances.length),
+      // A text style written on a Frame drawn around its text is its text's.
+      target: targetOf(layer.framesText && isTextProperty(property) ? textOnFrame(layer) : layer, instances.length),
       scope: "usage",
       ...(breakpoint && { breakpoint }),
       property,
@@ -835,6 +873,7 @@ export function createEditor(
       {
         layers: steps.flatMap((step) => step.layers),
         back: steps.flatMap((step) => step.back ?? step.layers),
+        texts: steps.flatMap((step) => step.texts ?? []),
         key: run ? `run ${[...new Set(steps.flatMap((step) => step.layers))].sort().join(" ")}` : steps.map((step) => step.key).join(", "),
         ...(run && { run: true }),
         undo: () => [...steps].reverse().forEach((step) => step.undo()),
@@ -884,6 +923,10 @@ export function createEditor(
   };
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
+  /** A step to `property` of the layer `id` is made to its only text, if it is a Frame of text alone. */
+  const textsOf = (id: string, property: Property) => (isTextProperty(property) ? { texts: [id] } : {});
+  /** Those of `layers` whose text the step was made to, as that text. */
+  const textsIn = (step: Step, layers: Layer[]) => layers.map((layer) => (step.texts?.includes(layer.el.getAttribute(LAYER_ID_ATTR)!) && framedText(layer)) || layer);
 
   /**
    * An edit that can be undone, at every width or at `breakpoint`. `from`: the
@@ -916,6 +959,7 @@ export function createEditor(
     // A Variable picked for the value the layer has already, with nothing to change: no step.
     if (!cut && same(before, value) && !wasPicked && !changes.has(id, property, breakpoint)) return;
     const to = (v: PropertyValues[P], chosen: Picked | undefined) => () => {
+      // A Frame's text, given an element of its own since or not, has its text styles of then on the Frame's element.
       const target = layerById(id);
       if (target) apply(target, property, v, breakpoint, chosen);
     };
@@ -937,6 +981,7 @@ export function createEditor(
             }
           : redo,
         ...(cut && { first: cut.off }),
+        ...textsOf(id, property),
       },
       continues,
     );
@@ -1029,8 +1074,10 @@ export function createEditor(
         if (value !== null) span.setAttribute(attr, value);
       }
       span.setAttribute(WRAP_ATTR, String(run));
-      text.text![0].before(span);
-      span.append(...text.text!);
+      // A Frame's only text runs on in its inline fragments: they go in with it.
+      const nodes = [...new Set(text.text!.map((node) => childIn(text.el, node)))];
+      nodes[0].before(span);
+      span.append(...nodes);
       return span;
     });
     const id = String(++lastId);
@@ -1175,13 +1222,6 @@ export function createEditor(
   const isFrameOfLayers = (layer: Layer) =>
     layer.kind === "frame" && !!layer.parent && layer.children.length > 0 && layer.children.every((child) => placeable(child) && repeatsWith(child, layer));
 
-  /** The layer's id and the width of the view worked in, when it is not the desktop view and the layer has changes of its own. */
-  const workedHere = (layer: Layer) => {
-    const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
-    const view = beside();
-    return view && id ? { id, width: view.width } : null;
-  };
-
   /**
    * Takes a change made at a breakpoint back out, as an edit that can be
    * undone: the layer inherits what it shows at every width there again, as
@@ -1201,14 +1241,14 @@ export function createEditor(
       referenceAt(change.within, breakpoint!);
     };
     off();
-    push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off }, false);
+    push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off, ...textsOf(id, property as Property) }, false);
   };
 
   /** Takes what of a change made at a breakpoint is in `range` back out, as an edit that can be undone: outside `range`, it keeps its value. */
   const cutStep = (change: Change, range: Breakpoint) => {
     const { off, on } = cutting(change, range);
     off();
-    push({ layers: [change.layer], key: `${change.layer} ${change.property} inherit`, undo: on, redo: off }, false);
+    push({ layers: [change.layer], key: `${change.layer} ${change.property} inherit`, undo: on, redo: off, ...textsOf(change.layer, change.property as Property) }, false);
   };
 
   /**
@@ -1279,13 +1319,15 @@ export function createEditor(
       structural([id], [id], words(id, record, null), words(id, record, change.after as string));
       return layerById(id);
     }
+    // A text style on a Frame drawn around its text is its text's: what taking it back leaves selected.
+    const left = (ofText(change) && framedText(layer)) || layer;
     if (change.breakpoint) {
       inheritStep(change);
-      return layer;
+      return left;
     }
     // Whatever the layer offers now (a hidden one offers only Visible), a change of its own can always go.
     edit(layer, change.property as Property, change.before as PropertyValues[Property], false, change.breakpoint ?? null, change.after as PropertyValues[Property]);
-    return layer;
+    return left;
   };
 
   /**
@@ -1361,27 +1403,14 @@ export function createEditor(
     breakpoint: () => breakpointIn(current),
     breakpointAt,
     changedHere: (layer, property) => editor.changesHere(layer).includes(property),
-    changesHere(layer) {
-      const here = workedHere(layer);
-      if (!here) return [];
-      const holding = new Set(changesAt(here.id, here.width));
-      // In the order they were first changed, each once.
-      return [
-        ...new Set(
-          changesAtBreakpoints(here.id)
-            .filter((change) => holding.has(change))
-            .map((change) => change.property as Property),
-        ),
-      ];
-    },
+    // In the order they were first changed, each once.
+    changesHere: (layer) => [...new Set(changesHereOf(layer).map((change) => change.property as Property))],
     inherit(layer, property) {
-      const here = workedHere(layer);
-      if (!here) return;
-      // Two ranges of its own that both hold here, as recorded before the views changed: both go, one step.
+      // Two ranges of its own that both hold here, as recorded before the views changed, or recorded on two elements: all go, one step.
       // One reaching past the view's range goes in the range only, and keeps its value outside it.
       const range = breakpointIn(beside());
       editor.batch(() => {
-        for (const change of changesAt(here.id, here.width, property)) {
+        for (const change of changesHereOf(layer, property)) {
           if (within(change.breakpoint!, range)) inheritStep(change);
           else cutStep(change, range!);
         }
@@ -1523,10 +1552,11 @@ export function createEditor(
     },
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = PROPERTIES[property];
-      if (layer.text || !kinds.includes(layer.kind)) return false;
+      // Text with no element of its own has no styles, but a Frame's only text: the text styles of the Frame's element.
+      if ((layer.text && !(isOnlyText(layer) && isTextProperty(property))) || !kinds.includes(layer.kind)) return false;
       // A hidden layer offers what it does when shown, so the panel stays as it was.
       const el = shownIn(current, layer.el);
-      return asShown(el, () => (!applies || applies(el)) && (value === undefined || !accepts || accepts(el, value)));
+      return asShown(el, () => (!applies || applies(el, layer)) && (value === undefined || !accepts || accepts(el, value)));
     },
     read: (layer, property) => readAsShown(shownIn(current, layer.el), property, colors),
     measure(layer) {
@@ -1535,12 +1565,11 @@ export function createEditor(
       return asShown(el, () => el.getBoundingClientRect());
     },
     variables(layer, property) {
-      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
-      if (!id) return undefined;
-      // As the view worked in shows it: the layer's own value at a breakpoint that holds there, else that at every width.
-      const view = beside();
-      const [here] = view ? changesAt(id, view.width, property) : [];
-      return (here ?? changes.find(id, property, null))?.variables;
+      // As the view worked in shows it: the layer's own value at a breakpoint that holds there, the narrowest, else that at every width; on its own element before its Frame's.
+      const own = (change: Change) => !layer.text && change.layer === layer.el.getAttribute(LAYER_ID_ATTR);
+      const [here] = changesHereOf(layer, property).sort((a, b) => widestFirst(b.breakpoint!, a.breakpoint!) || Number(own(b)) - Number(own(a)));
+      const everywhere = changes.list().filter((change) => change.kind === "style" && change.property === property && !change.breakpoint && ofLayer(layer, change));
+      return (here ?? everywhere.find(own) ?? everywhere[0])?.variables;
     },
     set(layer, property, value, { continues = false, variables } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
@@ -1561,7 +1590,7 @@ export function createEditor(
       history.future.push(entry);
       entry.step.undo();
       entry.show();
-      return entry.found(entry.step.back ?? entry.step.layers);
+      return textsIn(entry.step, entry.found(entry.step.back ?? entry.step.layers));
     },
     redo() {
       const entry = history.future.pop();
@@ -1569,7 +1598,7 @@ export function createEditor(
       history.past.push(entry);
       entry.step.redo();
       entry.show();
-      return entry.found(entry.step.layers);
+      return textsIn(entry.step, entry.found(entry.step.layers));
     },
     along(make, unmake, layers) {
       make();
@@ -1587,15 +1616,16 @@ export function createEditor(
       return layer && tree.layerOf(nodeOf(layer));
     },
     canPromote(layer) {
-      const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
-      return !!id && inComponent(layer) && promotable(changes.list(), id).length > 0;
+      // A Frame's only text has its changes on the Frame's element.
+      const id = layer.el.getAttribute(LAYER_ID_ATTR);
+      return !!id && inComponent(layer) && promotable(changes.list(), id).some((change) => ofLayer(layer, change));
     },
     promote(layer) {
       if (!editor.canPromote(layer)) throw new Error(`Vernier Kit: ${layer.name} has no changes to promote to its component`);
       const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
       const loc = layer.loc!;
       const component = componentKey(loc);
-      const taken = structuredClone(promotable(changes.list(), id));
+      const taken = structuredClone(promotable(changes.list(), id).filter((change) => ofLayer(layer, change)));
       const before = structuredClone(changes.list().filter((change) => change.layer === component));
       // The component's changes once promoted, worked out apart.
       const after = promoteIn(createChangeSet(changes.save()), taken, loc, componentElements(doc, loc).length);
@@ -1605,7 +1635,7 @@ export function createEditor(
         showPromoted(id, loc, taken);
       };
       structural([id], [id], swap([...taken, ...before], after), swap(after, [...before, ...taken]));
-      return { promoted: taken, stays: changes.list().filter((change) => change.layer === id && change.scope === "usage") };
+      return { promoted: taken, stays: changes.list().filter((change) => change.layer === id && change.scope === "usage" && ofLayer(layer, change)) };
     },
     canStack(layers) {
       if (layers.length === 1 && isFrameOfLayers(layers[0])) return true;
@@ -1759,8 +1789,9 @@ export function createEditor(
       return tree.layerOf(own.el)!;
     },
     ownElement: (layer) => (layer.text ? wrap(layer) : layer),
+    typedIn: (layer) => (isOnlyText(layer) ? layer : editor.ownElement(layer)),
     setText(layer, text) {
-      const own = editor.ownElement(layer);
+      const own = editor.typedIn(layer);
       const instances = tree.acrossInstances(own);
       const id = idOf(own, instances);
       const maker = makerOf(id);
@@ -2269,19 +2300,25 @@ function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** The child of `el` that `node` is, or is in. */
+function childIn(el: Element, node: Node): ChildNode {
+  while (node.parentNode !== el) node = node.parentNode!;
+  return node as ChildNode;
+}
+
 function targetOf(layer: Layer, instances: number): Target {
   const { loc, chain, component } = layer;
   const path: string[] = [];
   for (let l: Layer | null = layer; l; l = l.parent) path.unshift(l.name);
   // Text given an element of its own is written in its container.
   const written = layer.el.hasAttribute(WRAP_ATTR) && layer.el.parentElement ? layer.el.parentElement : layer.el;
-  // Its words, to tell it apart once its markers move: text has them, containers do not count theirs.
-  const words = layer.kind === "text" ? (layer.text ? layer.name : wordsAsPage(layer.el)) : "";
+  // Its words, to tell it apart once its markers move: text has them, containers do not count theirs, but a Frame of text alone, as a button is.
+  const words = layer.kind === "text" ? (layer.text ? layer.name : wordsAsPage(layer.el)) : layer.framesText ? wordsAsPage(layer.el) : "";
   const page = layer.el.ownerDocument.documentElement.getAttribute(PAGE_ATTR);
   const context = { path, element: openingTag(written), ...(words && { text: words.slice(0, SIGN_WORDS) }), ...(page && { page }) };
-  // Text with no element of its own is found by which run of text of its container it is.
+  // Text with no element of its own is found by which run of text of its container it is; a Frame's only text, by the Frame's element.
   const wrapped = written !== layer.el ? Number(layer.el.getAttribute(WRAP_ATTR)) : null;
-  const run = layer.text ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : wrapped;
+  const run = layer.text && !isOnlyText(layer) ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : layer.text ? null : wrapped;
   // A layer made this round is not in the source yet: the change that made it says where it goes.
   return {
     loc,
@@ -2292,6 +2329,7 @@ function targetOf(layer: Layer, instances: number): Target {
     unlocated: !loc && !layer.made,
     ...(layer.made && { made: layer.made }),
     ...(run !== null && { run }),
+    ...(layer.text && isOnlyText(layer) && { onlyText: true as const }),
     context,
   };
 }

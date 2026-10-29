@@ -24,6 +24,8 @@ export interface Target {
   made?: string;
   /** Text with no element of its own: which run of text in the element at `loc` it is, from 0. */
   run?: number;
+  /** The only text of a Frame, as a button's words are: it has no element of its own, and its styles are written on the Frame's, at `loc`, which its words inherit. */
+  onlyText?: true;
   /** Where the layer is on the page, for the Agent to find it by when its source is not known. */
   context: {
     /** Layer names from the page down to the layer itself. */
