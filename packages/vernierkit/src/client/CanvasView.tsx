@@ -4,6 +4,7 @@ import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefMark, briefedLayers } from "./BriefMark";
 import { Brief, Marks, Outline, SelectionToolbar } from "./CanvasOverlays";
+import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, putBackStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
 import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
@@ -594,24 +595,7 @@ export function CanvasView(props: Props) {
    * shifted on the canvas, so in every view; no view grows or shrinks with it
    * until the drop.
    */
-  const startDrag = (layer: Layer, shown: Shown): DragSession => {
-    const { view, offCanvasLayer } = shown;
-    const start = view.boxOf(layer) ?? new DOMRect();
-    const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
-    // A layer off the canvas itself is moved about the workspace, whole, or back onto the canvas.
-    if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
-      session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
-      session.whole = true;
-      return session;
-    }
-    for (const child of layer.parent!.children) {
-      const r = !child.text && view.boxOf(child);
-      if (r) session.rects.set(child.el, r);
-    }
-    if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
-    if (!offCanvasLayer) session.release = views!.holdHeights();
-    return session;
-  };
+  const startDrag = (layer: Layer, shown: Shown): DragSession => startDragSession(layer, shown, views!);
 
   /**
    * The layer dragged to where the pointer is, from where it was pressed.
@@ -634,7 +618,7 @@ export function CanvasView(props: Props) {
       const drop = into && there && editor ? findDrop(editor, into.view, null, toView(event, into), there, rectOf, snapWithin) : null;
       // Snapped, it is shown where it snaps to.
       if (drop && there) [dx, dy] = [dx + drop.box.x - there.x, dy + drop.box.y - there.y];
-      setStyles(session, offCanvasLayer.document.defaultView!.frameElement!, { translate: `${dx}px ${dy}px` });
+      moveWhole(session, dx, dy);
       session.to = into ? null : { x: offCanvasLayer.x + dx, y: offCanvasLayer.y + dy };
       session.back = drop;
       // Nothing makes room for it: coming from outside, the layers would slide away from under the pointer as it enters.
@@ -643,27 +627,13 @@ export function CanvasView(props: Props) {
     }
     // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it.
     session.out = !offCanvasLayer && !viewAt(event) && !!editor?.canRemove(layer);
-    const rectOf = (l: Layer) => {
-      if (l.text) return shown.view.boxOf(l) ?? new DOMRect();
-      let r = session.rects.get(l.el);
-      if (!r) session.rects.set(l.el, (r = unshifted(session, l.el)));
-      return r;
-    };
+    const rectOf = (l: Layer) => laidOut(session, l);
     const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin));
     session.drop = drop;
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;
     session.box = at;
-    // Only shifted while dragging: the layer, and the layers making room for it.
-    const shifts = new Map(drop?.shifts);
-    if (!layer.text) shifts.set(layer.el, { x: dx + at.x - box.x, y: dy + at.y - box.y });
-    for (const [el, saved] of session.touched) {
-      if (!shifts.has(el) && saved.translate) setStyles(session, el, { translate: null, transition: null });
-    }
-    for (const [el, { x, y }] of shifts) {
-      const slide = el !== layer.el && !prefersReducedMotion();
-      setStyles(session, el, { translate: `${x}px ${y}px`, transition: slide ? `translate 150ms ${EASE_OUT}` : "none" });
-    }
+    shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop);
     setDrag({ layer, in: shown, box: at, drop, out: session.out });
   };
   /** The drag again where the pointer is, as a modifier key changes. */
@@ -731,14 +701,7 @@ export function CanvasView(props: Props) {
     if (!session) return;
     dragging.current = null;
     press.current = null;
-    // Each view is as tall as what it shows again before the next paint, the drop in it.
-    session.release();
-    for (const [el, saved] of session.touched) {
-      for (const [name, [value, priority]] of Object.entries(saved.original)) {
-        if (value) (el as HTMLElement).style.setProperty(name, value, priority);
-        else (el as HTMLElement).style.removeProperty(name);
-      }
-    }
+    putBackStyles(session);
     setDrag(null);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back } = session;
@@ -930,82 +893,6 @@ export function CanvasView(props: Props) {
 /** Whether a layer is one of the tree's, not of one built before it. */
 function inTree(tree: LayerTree, layer: Layer): boolean {
   return tree.layerOf(nodeOf(layer)) === layer;
-}
-
-/** Pointer travel (px) before a press on a layer counts as a drag. */
-const DRAG_THRESHOLD = 3;
-/** How near on screen (px) a layer dragged freely comes to lining up before it snaps there. */
-const SNAP_PX = 5;
-
-/** Where the pointer is, in the window. */
-type At = Pick<MouseEvent, "clientX" | "clientY">;
-/** That, and the keys that change a drag. */
-type Pointer = At & Pick<MouseEvent, "metaKey" | "ctrlKey">;
-
-/** A drag under way, and the canvas styles it has changed, to put back. */
-interface DragSession {
-  layer: Layer;
-  /** The view it is dragged in: where things are is read there, in its px. */
-  in: Shown;
-  /** Where the layer was when the drag began. */
-  start: DOMRect;
-  /** Where layers were laid out before anything shifted, by element. */
-  rects: Map<Element, DOMRect>;
-  touched: Map<Element, { original: Record<string, [string, string]>; translate: boolean }>;
-  drop: Drop | null;
-  /** Where the layer is dragged to, in the view's px; none before it moves. */
-  box?: DOMRect;
-  /** Let go now, the layer goes off the canvas (ADR 0009). */
-  out: boolean;
-  /** A layer off the canvas, dragged whole: where its top left would go on the stage; null over a view. */
-  to: { x: number; y: number } | null;
-  /** A layer off the canvas dragged whole, rather than a layer in a view or in it. */
-  whole?: true;
-  /** A layer off the canvas dragged over a view: where it would go back onto the canvas there; null where it cannot. */
-  back: Drop | null;
-  /** Lets the views grow and shrink again, which they do not while the drag shifts layers. */
-  release: () => void;
-  /** Where the pointer was last, to drag again there as ⌘ is pressed or let go. */
-  pointer?: Pointer;
-}
-
-/**
- * Where an element is laid out, as if nothing had shifted: the layers making
- * room (and what is in them) may be partway through sliding aside.
- */
-function unshifted(session: DragSession, el: Element): DOMRect {
-  const { view } = session.in;
-  const r = (view.elementOf(el) ?? el).getBoundingClientRect();
-  let [x, y] = [r.x, r.y];
-  for (let e: Element | null = el; e; e = e.parentElement) {
-    if (e === session.layer.el || !session.touched.get(e)?.translate) continue;
-    const [dx = 0, dy = 0] = getComputedStyle(view.elementOf(e) ?? e).translate.split(" ").map((v) => parseFloat(v) || 0);
-    x -= dx;
-    y -= dy;
-  }
-  return new DOMRect(x, y, r.width, r.height);
-}
-
-/** Sets (or, with null, takes off) inline styles on a canvas element for the drag, noting what they were. */
-function setStyles(session: DragSession, el: Element, styles: Record<string, string | null>) {
-  const style = (el as HTMLElement).style;
-  let saved = session.touched.get(el);
-  if (!saved) session.touched.set(el, (saved = { original: {}, translate: false }));
-  for (const name in styles) {
-    saved.original[name] ??= [style.getPropertyValue(name), style.getPropertyPriority(name)];
-    const value = styles[name];
-    if (value === null) {
-      const [original, priority] = saved.original[name];
-      if (original) style.setProperty(name, original, priority);
-      else style.removeProperty(name);
-    } else style.setProperty(name, value, "important");
-  }
-  if ("translate" in styles) saved.translate = styles.translate !== null;
-}
-
-/** The box between two points. */
-function boxFrom(a: { x: number; y: number }, b: { x: number; y: number }): DOMRect {
-  return new DOMRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
 /** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
