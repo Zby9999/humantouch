@@ -5,7 +5,7 @@ import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/bre
 import { createChangeSet, type Place } from "../src/client/changeset";
 import { checkChange, type PageAt } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
-import { declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
+import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
 import type { Fill, PropertyValues, Shadow, Stroke } from "../src/client/property-table";
@@ -1146,6 +1146,73 @@ describe("undo and redo", () => {
       { property: "fill", after: red },
       { property: "radius", after: 4 },
     ]);
+  });
+});
+
+describe("a value stepped again and again, as the arrow keys and scrubbing do", () => {
+  /** The canvas, shown as narrow as a phone too. */
+  const open = async () => {
+    const canvas = openCanvas();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    return { ...canvas, phone };
+  };
+  const radii = (doc: Document) => [...doc.querySelectorAll("article")].map((card) => style(card).borderRadius);
+
+  test("each step shows on every instance in every view, in the canvas saved, and in a view added after", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    for (const radius of [4, 5, 6]) {
+      editor.set(layerOf(cards[0]), "radius", radius);
+      views.sync();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill(`${radius}px`));
+      expect(radii(phone.document)).toEqual(radii(doc));
+    }
+    editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true });
+    editor.batch(() => editor.set(layerOf(cards[0]), "radius", 8), { continues: false });
+    views.sync();
+    expect(radii(phone.document)).toEqual(["8px", "8px", "8px", "12px"]);
+
+    const saved = showSaved(serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }));
+    expect(radii(saved)).toEqual(["8px", "8px", "8px", "12px"]);
+    const tabletFrame = document.createElement("iframe");
+    document.body.append(tabletFrame);
+    try {
+      const tablet = await views.add(tabletFrame, 600);
+      expect(radii(tablet.document)).toEqual(["8px", "8px", "8px", "12px"]);
+    } finally {
+      tabletFrame.remove();
+    }
+  });
+
+  test("read as the page has it between steps, the layer shows the latest step after, in every view", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "radius", 5);
+    expect(asPage(cards[0], () => style(cards[0]).borderRadius)).toBe("12px");
+    expect(style(cards[0]).borderRadius).toBe("5px");
+    editor.set(layerOf(cards[0]), "radius", 6);
+    views.sync();
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("6px"));
+    expect(radii(phone.document)).toEqual(radii(doc));
+  });
+
+  test("a step at a breakpoint after steps at every width, and back, shows where each belongs in every view; undone, the page's own again", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "radius", 5);
+    editor.at(phone);
+    editor.set(layerOf(cards[0]), "radius", 9);
+    editor.set(layerOf(cards[0]), "radius", 10);
+    editor.at(null);
+    editor.set(layerOf(cards[0]), "radius", 6);
+    views.sync();
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("6px"));
+    expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("10px"));
+    while (editor.undo().length);
+    views.sync();
+    expect(radii(doc)).toEqual(Array(4).fill("12px"));
+    expect(radii(phone.document)).toEqual(Array(4).fill("12px"));
   });
 });
 

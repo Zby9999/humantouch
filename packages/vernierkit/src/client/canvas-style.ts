@@ -8,6 +8,15 @@
  * media query for its range, after it. Each view, as wide as it is, and the
  * canvas played at any width, show what belongs there. Works on the canvas
  * being edited and on a saved one alike.
+ *
+ * A style element's rules, as JSON, are what it declares. Its text is written
+ * from them, except while a value is changed again and again (each step of a
+ * drag on a number, each arrow key): then its rules are changed in place,
+ * through the CSSOM, and its text is left behind. Chromium lays the whole
+ * document out and paints it again for any change to the text of a sheet with
+ * a CSS layer in it, which on a large page is more than a frame, in every
+ * view; for a change to a rule's declarations, only what it styles.
+ * `syncEditStyles` writes the text out again, for a copy that is shown or saved.
  */
 import { mediaOf, sameBreakpoint, widestFirst, type Breakpoint } from "./breakpoints";
 import type { Change, Composed, Dissolved } from "./changeset";
@@ -175,7 +184,8 @@ export function asPage<T>(el: Element, look: () => T): T {
   const rules = readRules(el);
   const sheet = key && rules && sheetOf(el.ownerDocument, key);
   if (!sheet) return look();
-  const css = sheet.textContent;
+  // Put back as the rules have it: the text may be behind them.
+  const css = cssOf(key, effective(rules));
   sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, edits: { base: { style: {} }, at: [] } }));
   try {
     return look();
@@ -404,7 +414,77 @@ function writeRules(el: Element, rules: Rules) {
   const json = JSON.stringify(rules);
   if (sheet.getAttribute(RULES_ATTR) === json) return;
   sheet.setAttribute(RULES_ATTR, json);
-  sheet.textContent = cssOf(key, effective(rules));
+  showRules(sheet as HTMLStyleElement, cssOf(key, effective(rules)));
+}
+
+/**
+ * Makes `root`, and every edit style element in it, declare what its rules
+ * have: in place where it can, else as text, which a copy that is not in a
+ * document yet always gets. For a copy of the canvas, or of any part of it,
+ * before it is shown or saved; and for a view, as its copy of an edit style
+ * element takes in new rules from the canvas.
+ */
+export function syncEditStyles(root: Element) {
+  const sheets = isEditStyles(root) ? [root] : root.querySelectorAll(`style[${RULES_ATTR}]`);
+  for (const sheet of sheets) {
+    const rules = JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules;
+    showRules(sheet as HTMLStyleElement, cssOf(sheet.getAttribute(RULES_FOR_ATTR)!, effective(rules)));
+  }
+}
+
+/** Whether `node` is an edit style element: what it declares is its rules, its text maybe behind them. */
+export function isEditStyles(node: Node): node is HTMLStyleElement {
+  return node.nodeType === Node.ELEMENT_NODE && (node as Element).localName === "style" && (node as Element).hasAttribute(RULES_ATTR);
+}
+
+/** Has the style element declare `css`: in place when its rules are the same rules with other declarations, else as its text. */
+function showRules(sheet: HTMLStyleElement, css: string) {
+  if (!restyleInPlace(sheet, css) && sheet.textContent !== css) sheet.textContent = css;
+}
+
+/**
+ * Changes the declarations of the sheet's rules to those of `css`, through
+ * the CSSOM, when `css` has the same rules, in the same at-rules, in the same
+ * order; returns false, changing nothing, when it does not, or when the sheet
+ * is not in a document shown in a window.
+ */
+function restyleInPlace(sheet: HTMLStyleElement, css: string): boolean {
+  const live = sheet.sheet;
+  const View = sheet.ownerDocument.defaultView?.CSSStyleSheet;
+  if (!live || !View) return false;
+  const wanted = new View();
+  wanted.replaceSync(css);
+  if (!sameRules(live.cssRules, wanted.cssRules)) return false;
+  copyDeclarations(live.cssRules, wanted.cssRules);
+  return true;
+}
+
+function sameRules(a: CSSRuleList, b: CSSRuleList): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const [x, y] = [a[i], b[i]];
+    if (x.constructor.name !== y.constructor.name) return false;
+    if ("selectorText" in x && x.selectorText !== (y as CSSStyleRule).selectorText) return false;
+    if ("conditionText" in x && x.conditionText !== (y as CSSConditionRule).conditionText) return false;
+    if ("name" in x && x.name !== (y as CSSLayerBlockRule).name) return false;
+    const [xs, ys] = ["cssRules" in x ? (x as CSSGroupingRule).cssRules : null, "cssRules" in y ? (y as CSSGroupingRule).cssRules : null];
+    if (!xs !== !ys || (xs && !sameRules(xs, ys!))) return false;
+  }
+  return true;
+}
+
+function copyDeclarations(to: CSSRuleList, from: CSSRuleList) {
+  for (let i = 0; i < to.length; i++) {
+    const [x, y] = [to[i], from[i]];
+    if ("cssRules" in x) copyDeclarations((x as CSSGroupingRule).cssRules, (y as CSSGroupingRule).cssRules);
+    if (!("style" in x)) continue;
+    const [style, wanted] = [(x as CSSStyleRule).style, (y as CSSStyleRule).style];
+    for (const name of [...style]) if (!wanted.getPropertyValue(name)) style.removeProperty(name);
+    for (const name of wanted) {
+      const [value, priority] = [wanted.getPropertyValue(name), wanted.getPropertyPriority(name)];
+      if (style.getPropertyValue(name) !== value || style.getPropertyPriority(name) !== priority) style.setProperty(name, value, priority);
+    }
+  }
 }
 
 /** The style element of the rules with key `key`. */

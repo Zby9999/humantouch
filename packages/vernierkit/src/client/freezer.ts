@@ -3,7 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { dropUnusedRules, moveInlineEdits, orderEditStyles } from "./canvas-style";
+import { dropUnusedRules, moveInlineEdits, orderEditStyles, syncEditStyles } from "./canvas-style";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
@@ -167,7 +167,7 @@ export function serializeCanvas(canvas: Canvas): string {
           to.remove();
           break;
         }
-        // The edits' styles are written from their rules: as they are.
+        // The edits' styles are written from their rules: as they are, by `syncEditStyles` below.
         if (from.hasAttribute(EDIT_STYLES_ATTR)) break;
         const rules = readRules((from as HTMLStyleElement).sheet);
         if (rules) to.textContent = serialize(rules, null);
@@ -193,6 +193,7 @@ export function serializeCanvas(canvas: Canvas): string {
     }
   }
   dropUnusedRules(copy);
+  syncEditStyles(copy);
   const layout: Layout = { width: canvas.width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY };
   copy.setAttribute(LAYOUT_ATTR, JSON.stringify(layout));
   return doctypeOf(doc) + copy.outerHTML;
@@ -251,6 +252,7 @@ export function editable(doc: Document) {
 export function serializeEditable(doc: Document): string {
   const copy = doc.documentElement.cloneNode(true) as HTMLElement;
   for (const el of copy.querySelectorAll(`style[${CANVAS_STYLES_ATTR}]`)) el.remove();
+  syncEditStyles(copy);
   return doctypeOf(doc) + copy.outerHTML;
 }
 
@@ -268,6 +270,8 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
   doc.write(doctypeOf(from));
   doc.close();
   const copy = doc.importNode(from.documentElement, true);
+  // The canvas's edit styles may have changed in place since their text was written.
+  syncEditStyles(copy);
   doc.replaceChild(copy, doc.documentElement);
   // What lives outside the markup: the pixels of stills, the options chosen.
   const froms = from.documentElement.getElementsByTagName("*");

@@ -6,6 +6,7 @@
  * width. A layer is the canvas's; each view finds it in what it shows. Each
  * view is as tall as what it shows there, as it grows and shrinks.
  */
+import { isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 
@@ -261,6 +262,11 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
       if (from !== typing?.copy) copyAttributes(from as Element, to as Element);
     } else if (hasData(from)) (to as CharacterData).data = (from as CharacterData).data;
     if (isTemplate(from)) return; // What it holds is its content, which the copy took whole.
+    if (way === down && isEditStyles(to)) {
+      // Its text may be behind its rules on the canvas, which change in place (`canvas-style.ts`).
+      syncEditStyles(to);
+      return;
+    }
     const wanted = [...from.childNodes].map((child) => {
       const known = way.to.get(child);
       if (!known) return copyOf(child, way);
@@ -284,7 +290,10 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
       if (!to) continue;
       if (record.type === "childList") lists.add(target);
       else if (record.type === "characterData") (to as CharacterData).data = (target as CharacterData).data;
-      else copyAttribute(target as Element, to as Element, record.attributeNamespace, record.attributeName!);
+      else {
+        copyAttribute(target as Element, to as Element, record.attributeNamespace, record.attributeName!);
+        if (way === down && isEditStyles(to)) syncEditStyles(to);
+      }
     }
     for (const node of lists) update(node, way.to.get(node)!, false, way);
   };
