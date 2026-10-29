@@ -106,7 +106,7 @@ test("in the phone view, the Grid's columns and gaps change at its breakpoint on
   await breakpoint.getByRole("button", { name: "Reset Columns to inherit" }).click();
   await expect.poll(() => grids(page)).toEqual(["3 16px 16px", "3 16px 16px", "1 8px 16px"]);
   await expect(field(page, "Columns")).toHaveValue("1");
-  await expect(await changeRows(page)).toHaveText([/Row gap.*Grid.*below 640px/]);
+  await expect(await changeRows(page)).toHaveText([/Row gap.*Grid.*below 768px/]);
 });
 
 test("a card dragged between the cells of the Grid takes that cell, in every view; the others make room while it moves, with a line where it goes", async ({ page }) => {

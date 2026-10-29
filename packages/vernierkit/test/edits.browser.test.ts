@@ -12,7 +12,7 @@ import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
 import { fontsOf } from "../src/client/typography";
-import { createViews } from "../src/client/views";
+import { createViews, type View } from "../src/client/views";
 import { bind, bindRecorded, resolveVariables, type Catalog } from "../src/client/variables";
 import type { Variable } from "../src/service-protocol";
 
@@ -73,15 +73,15 @@ function showSaved(html: string): Document {
   return doc;
 }
 
-function openCanvas(page = PAGE, project: ProjectBreakpoints | null = null) {
+function openCanvas(page = PAGE, project: ProjectBreakpoints | null = null, width = 800) {
   iframe = document.createElement("iframe");
-  iframe.style.width = "800px";
+  iframe.style.width = `${width}px`;
   document.body.append(iframe);
   const doc = iframe.contentDocument!;
   doc.open();
   doc.write(page);
   doc.close();
-  const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
+  const views = createViews({ document: doc, width, height: 600, windowHeight: 600, scrollY: 0 });
   const changes = createChangeSet();
   const editor = createEditor(views, changes, project);
   const tree = editor.tree();
@@ -3835,9 +3835,9 @@ describe("Variables", () => {
 describe("breakpoints", () => {
   const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
   const BLUE = { type: "solid", color: "#0000FF", opacity: 1 } as const;
-  /** The canvas, 800 px wide, shown in a phone view too: its breakpoint is every width below 800 px, unless the project has breakpoints of its own. */
-  const open = async (page = MOVES, project: ProjectBreakpoints | null = null) => {
-    const canvas = openCanvas(page, project);
+  /** The canvas, 800 px wide (or `width`), shown in a phone view too: its breakpoint is every width below 800 px, unless the project has breakpoints of its own. */
+  const open = async (page = MOVES, project: ProjectBreakpoints | null = null, width = 800) => {
+    const canvas = openCanvas(page, project, width);
     phoneFrame = document.createElement("iframe");
     document.body.append(phoneFrame);
     const phone = await canvas.views.add(phoneFrame, 390);
@@ -3907,8 +3907,10 @@ describe("breakpoints", () => {
     ],
   };
 
-  test("with breakpoints of the project's own, a view stands for the range of them its width is in, whatever other views there are; one in the desktop view's range is the desktop view", async () => {
-    const { editor, changes, phone, layer, addView } = await open(MOVES, TAILWIND);
+  test("with breakpoints of the project's own, a view stands for the range of them its width is in and those above with no view, up to the next view's; one in the desktop view's range is the desktop view", async () => {
+    const { editor, changes, views, phone, layer, addView } = await open(MOVES, TAILWIND);
+    // Alone beside the desktop view, the phone view reaches up to the desktop view's range, md and up.
+    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 768, project: { tailwind: "max-md:" } });
     const tablet = await addView(700);
     const wide = await addView(780);
 
@@ -3917,8 +3919,10 @@ describe("breakpoints", () => {
       { min: 640, max: 768, project: { tailwind: "sm:max-md:" } },
       null,
     ]);
-    await addView(500);
-    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 640, project: { tailwind: "max-sm:" } });
+    // One more in the phone view's range shares it.
+    const other = await addView(500);
+    expect([phone, other].map((view) => editor.breakpointAt(view.width))).toEqual(Array(2).fill({ min: null, max: 640, project: { tailwind: "max-sm:" } }));
+    views.remove(other);
 
     editor.at(tablet);
     editor.set(layer("board"), "fill", RED);
@@ -3930,6 +3934,109 @@ describe("breakpoints", () => {
     ]);
   });
 
+  /** Tailwind's own breakpoints, as a theme that keeps them has them. */
+  const TAILWIND_DEFAULT: ProjectBreakpoints = {
+    from: "tailwind",
+    list: [
+      { width: 640, name: "sm" },
+      { width: 768, name: "md" },
+      { width: 1024, name: "lg" },
+      { width: 1280, name: "xl" },
+      { width: 1536, name: "2xl" },
+    ],
+  };
+  /** A canvas 1440px wide with Tailwind's own breakpoints, shown in a phone view and a tablet view too. */
+  const openWide = async () => {
+    const canvas = await open(MOVES, TAILWIND_DEFAULT, 1440);
+    const tablet = await canvas.addView(768);
+    /** The board's fill in each of `views`. */
+    const fillsIn = (...views: View[]) => views.map((view) => style(view.document.getElementById("board")!).backgroundColor);
+    /** The fill's changes, as value and range. */
+    const fillChanges = () => canvas.changes.list().map((change) => [change.after, change.breakpoint]);
+    return { ...canvas, tablet, fillsIn, fillChanges };
+  };
+  const [MAX_MD, MD_MAX_XL] = [
+    { min: null, max: 768, project: { tailwind: "max-md:" } },
+    { min: 768, max: 1280, project: { tailwind: "md:max-xl:" } },
+  ];
+
+  test("with Tailwind's breakpoints, the phone view's changes show up to md and the tablet view's up to xl: 700px and 1100px wide get them, not the desktop view's alone", async () => {
+    const { editor, phone, tablet, layer, fillsIn, fillChanges, addView } = await openWide();
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(tablet);
+    editor.set(layer("board"), "fill", BLUE);
+    expect(fillChanges()).toEqual([
+      [RED, MAX_MD],
+      [BLUE, MD_MAX_XL],
+    ]);
+
+    const [at700, at1100] = [await addView(700), await addView(1100)];
+    expect(fillsIn(at700, at1100)).toEqual(["rgb(255, 0, 0)", "rgb(0, 0, 255)"]);
+    for (const view of [at700, at1100]) {
+      editor.at(view);
+      expect(editor.changesHere(layer("board"))).toEqual(["fill"]);
+    }
+  });
+
+  test("edited in a view added at 1100px, a tablet change reaching into it keeps its value outside the view's range, the view's range takes the new one; one undo puts it back whole", async () => {
+    const { editor, changes, tablet, layer, fillsIn, fillChanges, addView } = await openWide();
+    editor.at(tablet);
+    editor.set(layer("board"), "fill", RED);
+    const at1100 = await addView(1100);
+    expect(editor.breakpointAt(tablet.width)).toEqual({ min: 768, max: 1024, project: { tailwind: "md:max-lg:" } });
+
+    editor.at(at1100);
+    editor.set(layer("board"), "fill", { ...BLUE, opacity: 0.5 }, { continues: true });
+    editor.set(layer("board"), "fill", BLUE, { continues: true });
+    expect(fillChanges()).toEqual([
+      [RED, { min: 768, max: 1024, project: { tailwind: "md:max-lg:" } }],
+      [BLUE, { min: 1024, max: 1280, project: { tailwind: "lg:max-xl:" } }],
+    ]);
+    expect(fillsIn(tablet, at1100)).toEqual(["rgb(255, 0, 0)", "rgb(0, 0, 255)"]);
+    expect(changes.list().every((change) => change.before === null)).toBe(true);
+
+    editor.undo();
+    expect(fillChanges()).toEqual([[RED, MD_MAX_XL]]);
+    expect(fillsIn(tablet, at1100)).toEqual(["rgb(255, 0, 0)", "rgb(255, 0, 0)"]);
+    editor.redo();
+    expect(fillsIn(tablet, at1100)).toEqual(["rgb(255, 0, 0)", "rgb(0, 0, 255)"]);
+    editor.undo();
+
+    // Edited in the tablet view, whose range is narrower now: the part above it keeps the value it had.
+    editor.at(tablet);
+    editor.set(layer("board"), "fill", BLUE);
+    expect(fillChanges()).toEqual([
+      [RED, { min: 1024, max: 1280, project: { tailwind: "lg:max-xl:" } }],
+      [BLUE, { min: 768, max: 1024, project: { tailwind: "md:max-lg:" } }],
+    ]);
+    expect(fillsIn(tablet, at1100)).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+  });
+
+  test("set back to inherit in a view, a change reaching past the view's range is cleared in the range only, on either side; one undo puts it back whole", async () => {
+    const { editor, views, phone, tablet: first, layer, addView, fillsIn, fillChanges } = await openWide();
+    views.remove(first);
+    // The phone view alone beside the desktop view: it reaches up to xl.
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    expect(fillChanges()).toEqual([[RED, { min: null, max: 1280, project: { tailwind: "max-xl:" } }]]);
+    const [tablet, at1100] = [await addView(768), await addView(1100)];
+
+    editor.at(tablet);
+    expect(editor.changesHere(layer("board"))).toEqual(["fill"]);
+    editor.inherit(layer("board"), "fill");
+    expect(fillChanges()).toEqual([
+      [RED, MAX_MD],
+      [RED, { min: 1024, max: 1280, project: { tailwind: "lg:max-xl:" } }],
+    ]);
+    expect(fillsIn(phone, tablet, at1100)).toEqual(["rgb(255, 0, 0)", "rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+    expect(editor.changesHere(layer("board"))).toEqual([]);
+
+    editor.undo();
+    expect(fillChanges()).toEqual([[RED, { min: null, max: 1280, project: { tailwind: "max-xl:" } }]]);
+    expect(fillsIn(phone, tablet, at1100)).toEqual(Array(3).fill("rgb(255, 0, 0)"));
+  });
+
   test("with the project's media queries, a range is written with the query at each of its edges", async () => {
     const css: ProjectBreakpoints = {
       from: "css",
@@ -3939,7 +4046,7 @@ describe("breakpoints", () => {
       ],
     };
     const { editor, phone } = await open(MOVES, css);
-    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 600, project: { queries: ["(max-width: 599px)"] } });
+    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 750, project: { queries: ["(min-width: 750px)"] } });
     expect(editor.breakpointAt(700)).toEqual({ min: 600, max: 750, project: { queries: ["(max-width: 599px)", "(min-width: 750px)"] } });
   });
 
@@ -4037,27 +4144,50 @@ describe("breakpoints", () => {
     expect(readMediaBreakpoints(page)?.list.map((breakpoint) => breakpoint.width)).toEqual([640]);
   });
 
-  test("a change at a breakpoint recorded before the views changed is told, edited and reset in every view whose width is in its range, never doubled", async () => {
+  test("a change at a breakpoint recorded before the views changed is told in every view whose width is in its range; edited or reset in one whose range it reaches past, it keeps its value outside that range, never doubled", async () => {
     const { editor, changes, phone, layer, fills, addView } = await open();
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     // A view added between: the phone view now stands for the widths below 600px, the new one for 600px up to 800px.
     const between = await addView(600);
     expect(editor.breakpoint()).toEqual({ min: null, max: 600 });
+    const fillBetween = () => style(between.document.getElementById("board")!).backgroundColor;
 
     for (const view of [phone, between]) {
       editor.at(view);
       expect(editor.changesHere(layer("board"))).toEqual(["fill"]);
     }
     editor.set(layer("board"), "fill", BLUE);
-    expect(changes.list().map((change) => [change.after, change.breakpoint])).toEqual([[BLUE, { min: null, max: 800 }]]);
-    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(0, 0, 255)"]);
+    expect(changes.list().map((change) => [change.after, change.breakpoint])).toEqual([
+      [RED, { min: null, max: 600 }],
+      [BLUE, { min: 600, max: 800 }],
+    ]);
+    expect([...fills("board"), fillBetween()]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)", "rgb(0, 0, 255)"]);
 
     editor.inherit(layer("board"), "fill");
-    expect(changes.list()).toEqual([]);
-    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    expect(changes.list().map((change) => [change.after, change.breakpoint])).toEqual([[RED, { min: null, max: 600 }]]);
+    expect([...fills("board"), fillBetween()]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    editor.undo();
+    editor.undo();
+    expect(changes.list().map((change) => [change.after, change.breakpoint])).toEqual([[RED, { min: null, max: 800 }]]);
+    expect([...fills("board"), fillBetween()]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 0, 0)"]);
+  });
+
+  test("placed freely at a breakpoint and set back to inherit in a view whose range it reaches past, a layer is in its Frame's flow there only, and its Frame its positioning reference outside it", async () => {
+    const { editor, changes, phone, layer, doc, addView } = await open(NUDGES);
     editor.at(phone);
-    expect(editor.changesHere(layer("board"))).toEqual([]);
+    editor.nudge([layer("tag")], 0, 10);
+    const between = await addView(600);
+    const positions = (id: string) => [doc, phone.document, between.document].map((d) => style(d.getElementById(id)!).position);
+
+    editor.at(between);
+    editor.inherit(layer("tag"), "absolute");
+    expect(changes.list().map((change) => [change.property, change.breakpoint])).toEqual([["absolute", { min: null, max: 600 }]]);
+    expect(positions("tag")).toEqual(["static", "absolute", "static"]);
+    expect(positions("frame")).toEqual(["static", "relative", "static"]);
+    editor.undo();
+    expect(positions("tag")).toEqual(["static", "absolute", "absolute"]);
+    expect(positions("frame")).toEqual(["static", "relative", "relative"]);
   });
 
   test("with the project's breakpoints read, a change recorded at a range of them before says how the project writes it, and one in a view in the desktop view's range is told, edited and reset there", async () => {
@@ -4100,7 +4230,7 @@ describe("breakpoints", () => {
     expect(saved.list().map((change) => [change.property, change.after, change.breakpoint ?? "every width"])).toEqual([
       ["fill", BLUE, { min: 640, max: 800 }],
       ["radius", 4, { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
-      ["gap", 4, { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+      ["gap", 4, { min: null, max: 768, project: { tailwind: "max-md:" } }],
     ]);
     reopened.inherit(layer("board"), "fill");
     expect(reopened.changesHere(layer("board"))).toEqual([]);

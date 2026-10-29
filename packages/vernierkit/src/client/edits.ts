@@ -6,7 +6,7 @@
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import type { OffCanvasOrigin, SavedOffCanvasLayer } from "../service-protocol";
-import { breakpointOf, clearOf, contains, widestFirst, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
+import { breakpointOf, clearOf, contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import {
   AS_STACK_ATTR,
   asShown,
@@ -181,7 +181,8 @@ export interface Editor {
   /**
    * Takes the value of `property` the layer has of its own at the
    * breakpoints that hold in the view worked in off it, as an edit that can
-   * be undone: it inherits the value at every width there again.
+   * be undone: it inherits the value at every width there again. One
+   * reaching past the view's range is taken off in that range only, and keeps its value outside it.
    */
   inherit(layer: Layer, property: Property): void;
   /** Whether `property` can be edited on the layer; with `value`, whether the layer can take that value. */
@@ -399,6 +400,8 @@ interface Step {
   run?: boolean;
   /** Of `layers`, those whose only text it was made to: a Frame's only text, which has the Frame's id. */
   texts?: string[];
+  /** Done first each time the step is redone, whichever later steps of the same adjustment are made one with it: cutting back a change it made way for. */
+  first?(): void;
   undo(): void;
   redo(): void;
 }
@@ -662,6 +665,11 @@ export function createEditor(
       .list()
       .filter((change) => change.kind === "style" && change.breakpoint && contains(change.breakpoint, view.width) && (!property || change.property === property) && ofLayer(layer, change));
   };
+  /** The elements of every instance of the layer with id `id`, as the layers are now; none when it is gone. */
+  const instancesOf = (id: string) => {
+    const layer = layerById(id);
+    return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
+  };
 
   /** The view worked in; null: the desktop view. */
   let current: View | null = null;
@@ -697,24 +705,62 @@ export function createEditor(
       .filter((change) => contains(change.breakpoint, width))
       .sort((a, b) => widestFirst(b.breakpoint!, a.breakpoint!));
   /**
-   * Where an edit to `property` of the layer made in the view worked in goes.
-   * In the desktop view, every width. In another, the breakpoint the layer
-   * has the property changed at already, of its own, that holds there,
-   * whether the view's own or one recorded before the views changed; else the
-   * view's (every width for a view in the desktop view's range), as far as no
-   * other range the property has of its own reaches into it, so no two of them overlap.
+   * Cuts what of `change`, made at a breakpoint, is in `range` out of it:
+   * the change stays, with its value, at what is left of its range outside
+   * `range`, one range or two. `off` cuts it; `on` puts it back whole.
    */
-  const breakpointFor = (layer: Layer, property: Property): Breakpoint | null => {
+  const cutting = (change: Change, range: Breakpoint) => {
+    const { id: _, layer: id, ...record } = change;
+    const names = cssOf(change.property as Property);
+    const pieces = outside(change.breakpoint!, range).map((piece) => ({ ...piece, ...writtenWith(piece, project) }));
+    /** What is left, as first recorded: put back as it was each time it is redone. */
+    let left: Change[] | null = null;
+    const off = () => {
+      changes.remove(change.id);
+      if (left) for (const piece of left) changes.restore(structuredClone(piece));
+      else {
+        for (const piece of pieces) changes.record(id, { ...record, breakpoint: piece });
+        left = pieces.map((piece) => structuredClone(changes.find(id, change.property, piece)!));
+      }
+      const others = changesOn(id, changes.list());
+      for (const el of instancesOf(id)) restoreStyle(el, names, others, change.breakpoint!);
+      for (const breakpoint of [change.breakpoint!, ...pieces]) referenceAt(change.within, breakpoint);
+    };
+    const on = () => {
+      for (const piece of left ?? []) changes.remove(piece.id);
+      changes.restore(change);
+      const others = changesOn(id, changes.list());
+      for (const el of instancesOf(id)) for (const piece of pieces) restoreStyle(el, names, others, piece);
+      for (const breakpoint of [...pieces, change.breakpoint!]) referenceAt(change.within, breakpoint);
+    };
+    return { off, on };
+  };
+
+  /**
+   * An edit to `property` of the layer made in the view worked in. In the
+   * desktop view, at every width. In another, at the breakpoint the layer has
+   * the property changed at already, of its own, that holds there, whether
+   * the view's own or one recorded before the views changed, when it is
+   * within the view's range. One reaching past the view's range keeps its
+   * value outside it only, and the edit takes the view's range; so does an
+   * edit with no such change (every width for a view in the desktop view's
+   * range), as far as no other range the property has of its own reaches
+   * into it, so no two of them overlap.
+   */
+  const editHere = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, picked?: Picked) => {
     const view = beside();
     const id = layer.el.getAttribute(LAYER_ID_ATTR);
-    const breakpoint = breakpointIn(view);
-    if (!view || !id) return breakpoint;
+    const range = breakpointIn(view);
+    if (!view || !id) return edit(layer, property, value, continues, range, undefined, picked);
     const [own] = changesAt(id, view.width, property);
-    if (own) return own.breakpoint!;
-    if (!breakpoint) return null;
-    const taken = changesAtBreakpoints(id, property).map((change) => change.breakpoint!);
-    const clear = clearOf(breakpoint, view.width, taken);
-    return clear === breakpoint ? breakpoint : { ...clear, ...writtenWith(clear, project) };
+    if (own && within(own.breakpoint!, range)) return edit(layer, property, value, continues, own.breakpoint!, undefined, picked);
+    if (!range) return edit(layer, property, value, continues, null, undefined, picked);
+    const taken = changesAtBreakpoints(id, property)
+      .filter((change) => change !== own)
+      .map((change) => change.breakpoint!);
+    const clear = clearOf(range, view.width, taken);
+    const breakpoint = clear === range ? range : { ...clear, ...writtenWith(clear, project) };
+    edit(layer, property, value, continues, breakpoint, undefined, picked, own && cutting(own, range));
   };
   /** The element that shows a canvas element in `view`, as it is now; the canvas's own for the desktop view, or a view that shows none of it. */
   const shownIn = (view: View | null, el: Element): Element => {
@@ -863,7 +909,15 @@ export function createEditor(
         // Undone, the run leaves the layers as they were before it; redone, as they are after its last step.
         last.step.back ??= last.step.layers;
         last.step.layers = step.layers;
-      } else last.step.redo = step.redo;
+      } else {
+        const { first } = last.step;
+        last.step.redo = first
+          ? () => {
+              first();
+              step.redo();
+            }
+          : step.redo;
+      }
     } else history.past.push({ step, found, show });
     show();
   };
@@ -878,7 +932,8 @@ export function createEditor(
    * An edit that can be undone, at every width or at `breakpoint`. `from`: the
    * value it changes, when the canvas cannot tell (on a hidden layer, say).
    * `picked`: Variables chosen for the value, which make it an edit even when
-   * the value stays as it is (detached).
+   * the value stays as it is (detached). `cut`: a change at a breakpoint
+   * reaching into `breakpoint`, cut back first to make way for it.
    */
   const edit = <P extends Property>(
     layer: Layer,
@@ -888,20 +943,48 @@ export function createEditor(
     breakpoint: Breakpoint | null,
     from?: PropertyValues[P],
     picked?: Picked,
+    cut?: { off(): void; on(): void },
   ) => {
-    const before = from === undefined ? readAsShown(shownIn(viewAt(breakpoint), layer.el), property, colors) : from;
+    const read = () => readAsShown(shownIn(viewAt(breakpoint), layer.el), property, colors);
+    let before = from === undefined ? read() : from;
     if (same(before, value) && !picked) return;
+    if (cut) {
+      cut.off();
+      // What the range has once the change is cut back: what it inherits.
+      before = read();
+    }
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     const wasPicked = pickedIn((known ? changes.find(known, property, breakpoint) : null)?.variables);
     const id = apply(layer, property, value, breakpoint, picked);
     // A Variable picked for the value the layer has already, with nothing to change: no step.
-    if (same(before, value) && !wasPicked && !changes.has(id, property, breakpoint)) return;
+    if (!cut && same(before, value) && !wasPicked && !changes.has(id, property, breakpoint)) return;
     const to = (v: PropertyValues[P], chosen: Picked | undefined) => () => {
       // A Frame's text, given an element of its own since or not, has its text styles of then on the Frame's element.
       const target = layerById(id);
       if (target) apply(target, property, v, breakpoint, chosen);
     };
-    push({ layers: [id], key: changeKey(id, property, breakpoint), undo: to(before, wasPicked), redo: to(value, picked), ...textsOf(id, property) }, continues);
+    const [undo, redo] = [to(before, wasPicked), to(value, picked)];
+    push(
+      {
+        layers: [id],
+        key: changeKey(id, property, breakpoint),
+        undo: cut
+          ? () => {
+              undo();
+              cut.on();
+            }
+          : undo,
+        redo: cut
+          ? () => {
+              cut.off();
+              redo();
+            }
+          : redo,
+        ...(cut && { first: cut.off }),
+        ...textsOf(id, property),
+      },
+      continues,
+    );
   };
 
   /** A container as a place names it: a Grid's places are its cells. */
@@ -1146,23 +1229,26 @@ export function createEditor(
    */
   const inheritStep = (change: Change) => {
     const { layer: id, property, breakpoint } = change;
-    const instances = () => {
-      const layer = layerById(id);
-      return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
-    };
     const off = () => {
       changes.remove(change.id);
       const others = changesOn(id, changes.list());
-      for (const el of instances()) restoreStyle(el, cssOf(property as Property), others, breakpoint!);
+      for (const el of instancesOf(id)) restoreStyle(el, cssOf(property as Property), others, breakpoint!);
       referenceAt(change.within, breakpoint!);
     };
     const on = () => {
       changes.restore(change);
-      for (const el of instances()) declare(el, change.style, breakpoint!);
+      for (const el of instancesOf(id)) declare(el, change.style, breakpoint!);
       referenceAt(change.within, breakpoint!);
     };
     off();
     push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off, ...textsOf(id, property as Property) }, false);
+  };
+
+  /** Takes what of a change made at a breakpoint is in `range` back out, as an edit that can be undone: outside `range`, it keeps its value. */
+  const cutStep = (change: Change, range: Breakpoint) => {
+    const { off, on } = cutting(change, range);
+    off();
+    push({ layers: [change.layer], key: `${change.layer} ${change.property} inherit`, undo: on, redo: off, ...textsOf(change.layer, change.property as Property) }, false);
   };
 
   /**
@@ -1321,8 +1407,13 @@ export function createEditor(
     changesHere: (layer) => [...new Set(changesHereOf(layer).map((change) => change.property as Property))],
     inherit(layer, property) {
       // Two ranges of its own that both hold here, as recorded before the views changed, or recorded on two elements: all go, one step.
+      // One reaching past the view's range goes in the range only, and keeps its value outside it.
+      const range = breakpointIn(beside());
       editor.batch(() => {
-        for (const change of changesHereOf(layer, property)) inheritStep(change);
+        for (const change of changesHereOf(layer, property)) {
+          if (within(change.breakpoint!, range)) inheritStep(change);
+          else cutStep(change, range!);
+        }
       });
     },
     tree: () => tree,
@@ -1345,7 +1436,7 @@ export function createEditor(
         const [dx, dy] = pinOffsetOf(layer.el);
         const at = { x: round(to.x - dx), y: round(to.y - dy) };
         // At a breakpoint, a layer in its container's flow there is placed freely there only (ADR 0008).
-        if (breakpointIn(current) && !absolute(shownIn(current, layer.el))) edit(layer, "absolute", at, false, breakpointFor(layer, "absolute"));
+        if (breakpointIn(current) && !absolute(shownIn(current, layer.el))) editHere(layer, "absolute", at, false);
         else {
           // Placed freely already: only its position changes, as X and Y do; at a breakpoint, there.
           const placed = layer;
@@ -1485,10 +1576,10 @@ export function createEditor(
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
       if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
         const place = { ...editor.read(layer, "absolute")!, [property]: value };
-        edit(layer, "absolute", place, continues, breakpointFor(layer, "absolute"));
+        editHere(layer, "absolute", place, continues);
         return;
       }
-      edit(layer, property, value, continues, breakpointFor(layer, property), undefined, variables);
+      editHere(layer, property, value, continues, variables);
     },
     batch(edits, { continues = false } = {}) {
       group(edits, continues);
