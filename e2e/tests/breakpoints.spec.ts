@@ -65,9 +65,9 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
 
   await pick(page, phone(page), "article");
   const section = design(page).getByRole("region", { name: "Phone breakpoint" });
-  // Tailwind's own breakpoints, which the example keeps: the phone is below `sm`.
-  await expect(section).toContainText("below 640px");
-  await expect(section).toContainText("max-sm:");
+  // Tailwind's own breakpoints, which the example keeps: the phone reaches up to `md`, where the tablet's range starts.
+  await expect(section).toContainText("below 768px");
+  await expect(section).toContainText("max-md:");
   await expect(section.getByRole("listitem")).toHaveCount(0);
   await setField(page, "Fill color", "ff0000");
   await setField(page, "Corner radius", "4");
@@ -90,11 +90,12 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
   await expect(section.getByRole("listitem")).toHaveText(["Fill", "Corner radius"]);
 });
 
-test("each view stands for the range of the project's Tailwind breakpoints its width is in, and its label says which; adding a view changes no range", async ({ page }) => {
+test("each view stands for the range of the project's Tailwind breakpoints its width is in and those above it up to the next view's, and its label says which; a view added in the same range shares it", async ({ page }) => {
   await enterEditMode(page);
   const label = (name: string) => page.getByRole("group", { name: `${name} view` });
-  await expect(label("Tablet")).toContainText("md:max-lg:");
-  await expect(label("Phone")).toContainText("max-sm:");
+  // The desktop view, 1280px wide, is from `xl` up.
+  await expect(label("Tablet")).toContainText("md:max-xl:");
+  await expect(label("Phone")).toContainText("max-md:");
   await expect(label("Desktop")).not.toContainText(":");
 
   // A view of 500px is in the phone's range, `sm` being 640px: an edit in either shows in both.
@@ -103,12 +104,12 @@ test("each view stands for the range of the project's Tailwind breakpoints its w
   await page.getByRole("spinbutton", { name: "New view width" }).press("Enter");
   const custom = page.locator('iframe[title="Custom 500"]');
   await expect(custom.contentFrame().locator("h1")).toBeVisible();
-  await expect(label("Custom")).toContainText("max-sm:");
+  await expect(label("Custom")).toContainText("max-md:");
   // Every view in sight again (⇧1).
   await page.keyboard.press("Shift+Digit1");
 
   await pick(page, phone(page), "article");
-  await expect(design(page).getByRole("region", { name: "Phone breakpoint" })).toContainText("below 640px");
+  await expect(design(page).getByRole("region", { name: "Phone breakpoint" })).toContainText("below 768px");
   await setField(page, "Fill color", "ff0000");
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, RED]);
   await expect(custom.contentFrame().locator("article").first()).toHaveCSS("background-color", RED);
@@ -164,7 +165,80 @@ test("the change list says the breakpoint of each change made in a narrower view
 
   await page.locator("[data-vk-changes-opener]").click();
   const list = page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
-  await expect(list.nth(0)).toContainText("below 640px");
-  await expect(list.nth(1)).toContainText("768px to 1023px");
+  await expect(list.nth(0)).toContainText("below 768px");
+  await expect(list.nth(1)).toContainText("768px to 1279px");
   await expect(list.nth(2)).not.toContainText("px to");
+});
+
+test("played, the window 700px wide shows the phone view's changes and 1100px wide the tablet view's: no width between the views gets the desktop view's alone", async ({ page }) => {
+  await enterEditMode(page);
+  await pick(page, phone(page), "article");
+  await setField(page, "Fill color", "ff0000");
+  await pick(page, tablet(page), "article");
+  await setField(page, "Fill color", "2563eb");
+  await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, BLUE, RED]);
+
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  const card = desktop(page).contentFrame().locator("article").first();
+  await page.setViewportSize({ width: 700, height: 720 });
+  await expect(card).toHaveCSS("background-color", RED);
+  await page.setViewportSize({ width: 1100, height: 720 });
+  await expect(card).toHaveCSS("background-color", BLUE);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(card).toHaveCSS("background-color", WHITE);
+});
+
+/** Adds a view `width` px wide, and brings every view into sight. */
+async function addView(page: Page, width: number) {
+  await page.getByRole("button", { name: "Add view" }).click();
+  await page.getByRole("spinbutton", { name: "New view width" }).fill(String(width));
+  await page.getByRole("spinbutton", { name: "New view width" }).press("Enter");
+  const view = page.locator(`iframe[title="Custom ${width}"]`);
+  await expect(view.contentFrame().locator("h1")).toBeVisible();
+  await page.keyboard.press("Shift+Digit1");
+  return view;
+}
+
+/** Works in `view`, with the first card selected: picked there, at any zoom, then chosen in the layer tree. */
+async function pickCard(page: Page, view: Locator) {
+  await pick(page, view, "article");
+  await layers(page).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+}
+
+/** The computed fill of the first card in each of `views`. */
+const fills = (...views: Locator[]) => Promise.all(views.map((view) => view.contentFrame().locator("article").first().evaluate((el) => getComputedStyle(el).backgroundColor)));
+
+test("a view added at 1100px narrows the tablet's range; edited there, the tablet's change keeps its value in the tablet's range, and one undo puts it back whole", async ({ page }) => {
+  await enterEditMode(page);
+  await pick(page, tablet(page), "article");
+  await setField(page, "Fill color", "ff0000");
+  const custom = await addView(page, 1100);
+  const label = (name: string) => page.getByRole("group", { name: `${name} view` });
+  await expect(label("Tablet")).toContainText("md:max-lg:");
+  await expect(label("Custom")).toContainText("lg:max-xl:");
+  await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, RED]);
+
+  await pickCard(page, custom);
+  await expect(design(page).getByRole("region", { name: "Custom breakpoint" }).getByRole("listitem")).toHaveText(["Fill"]);
+  await setField(page, "Fill color", "2563eb");
+  await expect.poll(() => fills(desktop(page), tablet(page), custom, phone(page))).toEqual([WHITE, RED, BLUE, WHITE]);
+
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => fills(desktop(page), tablet(page), custom, phone(page))).toEqual([WHITE, RED, RED, WHITE]);
+});
+
+test("reset in a view, a change reaching past the view's range inherits in that range only", async ({ page }) => {
+  await enterEditMode(page);
+  await pick(page, tablet(page), "article");
+  await setField(page, "Fill color", "ff0000");
+  const custom = await addView(page, 1100);
+
+  await pickCard(page, custom);
+  const section = design(page).getByRole("region", { name: "Custom breakpoint" });
+  await section.getByRole("button", { name: "Reset Fill to inherit" }).click();
+  await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, WHITE]);
+  await expect(section.getByRole("listitem")).toHaveCount(0);
+
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, RED]);
 });

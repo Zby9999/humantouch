@@ -1,14 +1,19 @@
 /**
  * Breakpoints (ADR 0008): the width range each view stands for. The desktop
- * view stands for none in particular: its edits apply at every width. Every
- * other view stands for the range of the project's own breakpoints its width
- * is in (its Tailwind theme, or the media queries of its stylesheets), so
- * adding or deleting views changes no range; one in the desktop view's range
- * is the desktop view. With no breakpoints of the project's to go by, a view
- * stands for the widths from its own up to the next wider view's, the
- * narrowest from none at all. An edit made in it applies in that range only,
- * as a media query does, so every view, and the page played at any width,
- * shows it where it belongs.
+ * view stands for none in particular: its edits apply at every width. The
+ * project's own breakpoints (its Tailwind theme, or the media queries of its
+ * stylesheets) cut the widths into ranges, as Framer's breakpoints do: the
+ * desktop view's range and those above are the desktop view's, and a view in
+ * them is the desktop view. Every other view stands for the range its width
+ * is in, shared with any other view there, and those above with no view in
+ * them, up to the next wider view's range; the narrowest view reaches down to
+ * no width at all. So the ranges follow the views there are and the desktop
+ * view's width, and no width between the views has the desktop view's edits
+ * alone. With no breakpoints of the project's to go by, a view stands for the
+ * widths from its own up to the next wider view's, the narrowest from none at
+ * all. An edit made in it applies in that range only, as a media query does,
+ * so every view, and the page played at any width, shows it where it belongs.
+ * Edits recorded keep the range they were made at (ADR 0008).
  */
 
 /** A range of widths, px: from `min` up to, but not including, `max`; null: no bound on that side. */
@@ -41,24 +46,28 @@ export interface ProjectBreakpoints {
 /**
  * The breakpoint of a view `width` px wide, beside the desktop view and the
  * other views, all by width, and the project's own breakpoints. Null: the
- * desktop view's, every width; so is a view in its range, or as wide as it.
+ * desktop view's, every width; so is a view as wide as it or wider, or, with
+ * the project's breakpoints, one in its range of them. Any other view takes
+ * the range of the project's breakpoints its width is in, shared with any
+ * other view there, and those above it with no view in them, up to the next
+ * wider view's range or the desktop view's; the narrowest view reaches down
+ * to no width at all.
  */
 export function breakpointOf(width: number, desktop: number, others: number[], project: ProjectBreakpoints | null = null): Breakpoint | null {
   if (width === desktop) return null;
   if (project?.list.length) {
-    const range = projectRange(width, project);
-    return contains(range, desktop) ? null : range;
+    /** The width the range of the project's breakpoints that `w` is in starts at; 0 for the first. */
+    const startOf = (w: number) => project.list.filter((point) => point.width <= w).at(-1)?.width ?? 0;
+    const top = startOf(desktop);
+    if (width >= desktop || startOf(width) === top) return null;
+    const starts = [...new Set([...others, width].filter((w) => w < desktop).map(startOf))].filter((start) => start !== top).sort((a, b) => a - b);
+    const i = starts.indexOf(startOf(width));
+    const range = { min: i === 0 ? null : starts[i], max: starts[i + 1] ?? top };
+    return { ...range, ...writtenWith(range, project) };
   }
   const all = [...new Set([desktop, ...others, width])].sort((a, b) => a - b);
   const i = all.indexOf(width);
   return { min: i === 0 ? null : width, max: all[i + 1] ?? null };
-}
-
-/** The range of the project's breakpoints that `width` is in, with how the project writes it. */
-function projectRange(width: number, project: ProjectBreakpoints): Breakpoint {
-  const min = project.list.filter((point) => point.width <= width).at(-1)?.width ?? null;
-  const max = project.list.find((point) => point.width > width)?.width ?? null;
-  return { min, max, ...writtenWith({ min, max }, project) };
 }
 
 /**
@@ -100,6 +109,21 @@ export function clearOf(breakpoint: Breakpoint, width: number, taken: Breakpoint
   }
   if (min === breakpoint.min && max === breakpoint.max) return breakpoint;
   return { min, max };
+}
+
+/** Whether every width of `inner` is in `outer`; null is every width. */
+export function within(inner: Breakpoint | null, outer: Breakpoint | null): boolean {
+  if (!outer) return true;
+  const [min, max] = [inner?.min ?? null, inner?.max ?? null];
+  return (outer.min === null || (min !== null && min >= outer.min)) && (outer.max === null || (max !== null && max <= outer.max));
+}
+
+/** What is left of `range` with the widths of `cut` taken out: none, one range or two, the lower first. */
+export function outside(range: Breakpoint, cut: Breakpoint): Breakpoint[] {
+  const left: Breakpoint[] = [];
+  if (cut.min !== null && (range.min === null || range.min < cut.min)) left.push({ min: range.min, max: range.max === null ? cut.min : Math.min(range.max, cut.min) });
+  if (cut.max !== null && (range.max === null || range.max > cut.max)) left.push({ min: range.min === null ? cut.max : Math.max(range.min, cut.max), max: range.max });
+  return left.filter(({ min, max }) => min === null || max === null || min < max);
 }
 
 /** A width to see the range at, as a window that wide: its lower edge, or just under its upper one. */
