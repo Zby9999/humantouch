@@ -4,6 +4,7 @@ import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefMark, briefedLayers } from "./BriefMark";
 import { Brief, Marks, Outline, SelectionToolbar } from "./CanvasOverlays";
+import { canvasKey } from "./canvas-keys";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, putBackStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
 import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
@@ -346,73 +347,35 @@ export function CanvasView(props: Props) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { played, bounds, placed, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying } = latest.current;
-      // Playing, the keys scroll as on a page, and Esc stops.
-      if (playing) {
-        if (event.type !== "keydown" || !played || event.metaKey || event.ctrlKey || event.altKey) return;
-        const area = viewport.current!.getBoundingClientRect();
-        const page = area.height - 40;
-        const by: Record<string, number> = { ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page, Home: -Infinity, End: Infinity };
-        // Space on the button that stops playing presses it, as on any button.
-        const onButton = event.composedPath()[0] instanceof HTMLButtonElement;
-        const dy = event.code === "Space" ? (onButton ? undefined : event.shiftKey ? -page : page) : by[event.key];
-        if (event.key !== "Escape" && dy === undefined) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (event.key === "Escape") onStopPlaying();
-        else if (dy !== undefined) setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, played, area));
-        return;
+      if (playing && !played) return;
+      // Read once playing, as a page scrolls by it; not on each key typed elsewhere.
+      const playedIn = playing ? viewport.current!.getBoundingClientRect() : null;
+      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, selected: selected.length > 0 });
+      if (!playing) {
+        if (event.key === "Meta" || event.key === "Control") {
+          const deep = event.metaKey || event.ctrlKey;
+          setHover((h) => h && { ...h, deep });
+          // ⌘ turns snapping off while it is held, without the pointer moving.
+          const pointer = dragging.current?.pointer;
+          if (pointer) latest.current.redrag({ ...pointer, metaKey: event.metaKey, ctrlKey: event.ctrlKey });
+        }
+        if (event.key === "Alt") setMeasuring(event.altKey);
       }
-      if (event.key === "Meta" || event.key === "Control") {
-        const deep = event.metaKey || event.ctrlKey;
-        setHover((h) => h && { ...h, deep });
-        // ⌘ turns snapping off while it is held, without the pointer moving.
-        const pointer = dragging.current?.pointer;
-        if (pointer) latest.current.redrag({ ...pointer, metaKey: event.metaKey, ctrlKey: event.ctrlKey });
-      }
-      if (event.key === "Alt") setMeasuring(event.altKey);
-      const target = event.composedPath()[0];
-      // A field, or a dialog over the canvas (the change list), keeps its keys.
-      if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
-      if (event.code === "Space") {
-        // Swallow repeats and key-up too: a focused button would otherwise click on Space.
-        event.preventDefault();
-        event.stopPropagation();
-        setSpaceHeld(event.type === "keydown");
-        return;
-      }
-      if (event.type !== "keydown") return;
-      if (event.key === "Escape" && tool) {
-        event.preventDefault();
-        event.stopPropagation();
-        onTool(null);
-        return;
-      }
-      // T and F, as in Figma: draw new text, or a new Frame; V goes back to selecting.
-      const key = event.key.toLowerCase();
-      if ((key === "t" || key === "f" || key === "v") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        onTool(key === "t" ? "text" : key === "f" ? "frame" : null);
-        return;
-      }
-      if (event.key === "Escape" && dragging.current) {
-        event.preventDefault();
-        event.stopPropagation();
-        endDrag(false);
-        return;
-      }
-      if (event.key === "Escape" && selected.length) {
-        event.preventDefault();
-        event.stopPropagation();
-        onSelect(selectParents(selected));
-        return;
-      }
-      if (event.code === "Digit1" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        // The layers off the canvas too.
-        if (bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside]), viewport.current!.getBoundingClientRect()));
-      }
+      if (!key) return;
+      event.preventDefault();
+      // Playing, the keys are the canvas's alone.
+      if (playing) event.stopImmediatePropagation();
+      else event.stopPropagation();
+      if (key.action === "stop playing") onStopPlaying();
+      else if (key.action === "scroll") {
+        const dy = key.by;
+        setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, played!, playedIn!));
+      } else if (key.action === "pan") setSpaceHeld(key.held);
+      else if (key.action === "tool") onTool(key.tool);
+      else if (key.action === "cancel drag") endDrag(false);
+      else if (key.action === "select parents") onSelect(selectParents(selected));
+      // The layers off the canvas too.
+      else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside]), viewport.current!.getBoundingClientRect()));
     };
     const release = () => {
       setSpaceHeld(false);
@@ -893,9 +856,4 @@ export function CanvasView(props: Props) {
 /** Whether a layer is one of the tree's, not of one built before it. */
 function inTree(tree: LayerTree, layer: Layer): boolean {
   return tree.layerOf(nodeOf(layer)) === layer;
-}
-
-/** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
-export function isEditable(target: EventTarget | undefined): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || target.getAttribute("role") === "slider");
 }

@@ -2,7 +2,8 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
-import { CanvasView, isEditable, type Tool } from "./CanvasView";
+import { CanvasView, type Tool } from "./CanvasView";
+import { isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
