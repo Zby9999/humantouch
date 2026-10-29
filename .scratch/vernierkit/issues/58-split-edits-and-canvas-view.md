@@ -6,13 +6,13 @@
 
 **Blocked by:** 57
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 动手前在本 ticket 的 Comments 里写下拆分方案：用 codebase-design 的词汇，列出模块名、各自的接口和依赖方向
-- [ ] 分几次小提交完成，每次提交后 typecheck 和相关测试都通过
-- [ ] 模块与接口的命名遵守 GLOSSARY.md；自动保存和改动单的 JSON 字段名不变
-- [ ] 全量 typecheck、单测、e2e 都通过，测试数量不少于拆分前
-- [ ] 设计师可见的行为和改动单的内容都没有变化
+- [x] 动手前在本 ticket 的 Comments 里写下拆分方案：用 codebase-design 的词汇，列出模块名、各自的接口和依赖方向
+- [x] 分几次小提交完成，每次提交后 typecheck 和相关测试都通过
+- [x] 模块与接口的命名遵守 GLOSSARY.md；自动保存和改动单的 JSON 字段名不变
+- [x] 全量 typecheck、单测、e2e 都通过，测试数量不少于拆分前
+- [x] 设计师可见的行为和改动单的内容都没有变化
 
 ## 背景
 
@@ -46,3 +46,19 @@
 `CanvasView.tsx` 剩下：组件本身的状态、指针事件、冻结与进出编辑模式的动画、播放。依赖方向：CanvasView → CanvasOverlays / canvas-drag / view-layout → camera。
 
 分几次小提交：每拆出一块一次，每次 typecheck 和相关单测（edits、off-canvas、promote、stacks 的浏览器测试，以及新加的单测）通过，必要时跑相关 e2e。
+
+**实现记录（2026-10-29）**
+
+按上面的方案拆完，分 11 次代码提交（最后一次是审查后的修正），每次 typecheck 与单测通过，相关 e2e 分批跑过；最后全量 typecheck、单测 495 个（拆分前 469，新增 26 个）、e2e 264 个全部通过。自动保存和改动单的 JSON 字段名没有动，改动单的记录顺序与内容不变。
+
+和方案不同的地方：
+
+- `Editor` 的 interface（连同 `Destination`、`SetOptions`、`Binder`、`LayerToPutBack`）放进了 `edit-commands.ts`，`edits.ts` 照旧把它们导出给调用方。这样 `structure-edits.ts` 只依赖这个类型模块，不再回指 `edits.ts`，没有新的环（审查指出的类型环）。
+- `breakpoint-edits.ts` 的 `WorkingView` 最后是 `at`、`beside`、`breakpoint`、`breakpointAt`、`viewAt`、`shown`、`shownAt`、`inDesktop`（拖回时临时按桌面视图做结构改动，原来是手动保存再恢复 `current`）。
+- `ofText`（一条改动是不是改文字）和 `same` 放在了 `property-table.ts`：属性表因此知道改动单里哪些改动是改文字的，文件头已写明。
+- 键盘拆了出来，但不是 hook：`canvas-keys.ts` 的 `canvasKey(event, state)` 只回答"这个键在画布上做什么"，组件照它执行；`Tool` 类型也搬到这里。`isEditable` 跟着搬来，Shell 也从这里拿。
+- 画布上方的标记叫 `AboveCanvas.tsx`，没有用方案里的 `CanvasOverlays`（GLOSSARY 里 Overlay 是编辑层要避开的词）。拖拽结束时还原样式的函数叫 `restoreDragStyles`，避开"拖回 (Put back)"。
+
+行数：`edits.ts` 2366 → 422（样式编辑与组合），`CanvasView.tsx` 1326 → 858（组件状态、指针事件、进出编辑模式的动画、播放）。新模块：`property-table.ts` 566、`structure-edits.ts` 1091、`edit-commands.ts` 225、`undo-steps.ts` 170、`breakpoint-edits.ts` 109、`layer-target.ts` 49；`AboveCanvas.tsx` 194、`canvas-drag.ts` 152、`camera.ts` 108、`view-layout.ts` 75、`canvas-keys.ts` 67。
+
+留给以后：`structure-edits.ts` 仍有一千多行，移动与微移（`move`、`nudge`、`canDrop` 和它们的位置计算）可以再拆成一块，但它们和新建、复制、删除共用 `placeOf`、`wrap` 等，要再开一个内部 seam；`EditorCore` 有 16 个成员，比较宽。ticket 22 调性能时如果要动这里，可以顺带做。
