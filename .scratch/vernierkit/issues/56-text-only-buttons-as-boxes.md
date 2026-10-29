@@ -25,7 +25,7 @@
 
 **实现记录（2026-10-29）**
 
-- 图层模型（`layers.ts`）：只含文字的元素（`isText`）在“画出盒子”时（`drawsBox`：自身 `display` 不是 `inline`、`contents`，且有不透明背景或背景图、任一边框宽度 > 0、任一内边距 > 0、任一圆角 > 0 或 `box-shadow`；按显示时的样式判定，被改动隐藏的也一样）不再是文字图层，而按容器建：里面只有一个文字图层，即这个元素的全部文字（`textIn`：所有文字节点，行内片段里的也算，没有自己的元素，沿用混排裸文字的 `text` 字段）。容器照常按 `display` 分类：`inline-block`、`block` 的是 Frame（示例里 Dialog 的 Close 按钮），`inline-flex` 的是横向 Stack，名字照旧按用途取（Button、Link）。不画盒子的只含文字的元素整个仍是文字图层，行为不变。`layerOf(文字节点)` 改为向上找到所在的图层元素，并认 run 里任一节点，所以起始文字在 `<b>` 里时也能找回。为编辑而包上的 `<span data-vk-wrap>` 在 `isText` 里算作自己的图层，所以 Frame 的文字被包上之后仍是“Frame 里一个文字图层”。
+- 图层模型（`layers.ts`）：只含文字的元素（`isText`）在“画出盒子”时（`drawsBox`：自身 `display` 不是 `inline`、`contents`，且有不透明背景或背景图、任一边框宽度 > 0、任一圆角 > 0 或 `box-shadow`；只有内边距、没有这些时，只有 `<button>`、`<a>` 或 `role` 为 `button`、`link` 的才算，好让无底色的幽灵按钮也能改内边距和外观，只含文字的 `<td>`、`<th>`、`<li>`、`<p>`、`<span>` 等只有内边距时仍是一个文字图层；按显示时的样式判定，被改动隐藏的也一样）不再是文字图层，而按容器建：里面只有一个文字图层，即这个元素的全部文字（`textIn`：所有文字节点，行内片段里的也算，没有自己的元素，沿用混排裸文字的 `text` 字段）。容器照常按 `display` 分类：`inline-block`、`block` 的是 Frame（示例里 Dialog 的 Close 按钮），`inline-flex` 的是横向 Stack，名字照旧按用途取（Button、Link）。不画盒子的只含文字的元素整个仍是文字图层，行为不变。`layerOf(文字节点)` 改为向上找到所在的图层元素，并认 run 里任一节点，所以起始文字在 `<b>` 里时也能找回。为编辑而包上的 `<span data-vk-wrap>` 在 `isText` 里算作自己的图层，所以 Frame 的文字被包上之后仍是“Frame 里一个文字图层”。
 - 新的判断：`isOnlyText(layer)`（Frame 唯一的内容是这段没有自己元素的文字）、`onlyTextOf(frame)`、`aroundText(frame)`（Frame 里只有这段文字，或它被包上的 `<span>`）。
 - 编辑命令（`edits.ts`）：
   - `can`：Frame 唯一的文字只提供“只属于文字”的属性（`kinds` 只有 `text` 的：九项文字排版和 `textShadows`），读写都在 Frame 的元素上，文字靠继承变化，不包 `<span>`；它没有填充、描边、圆角、尺寸、位置、显隐、透明度。Frame 不提供文字属性（`kinds` 不含 frame）。`padding` 的 `kinds` 加上 frame，只对 `aroundText` 的 Frame 生效（`Definition.applies` 多了第二个参数 `layer`）。
@@ -40,9 +40,15 @@
 
 **已知限制**
 
-- 判定只看计算样式：只要有一点内边距就算画出盒子，所以只含文字的 `<td>`、`<th>`（浏览器默认 1px 内边距）、带内边距的 `<li>`、`<a class="block px-3">` 也都成为 Frame 里一个文字图层；`display: inline` 的元素即使有背景（行内高亮）仍整个是文字图层，背景改不了。
+- 判定看计算样式和标签：只有内边距的按钮、链接（含 `<a class="block px-3">` 这样的导航链接）也是 Frame 里一个文字图层；其他只含文字、只有内边距的图层（例如带内边距的 `<td>`、`<li>`）仍是文字图层，内边距在属性面板里改不了。`display: inline` 的元素即使有背景（行内高亮）仍整个是文字图层，背景改不了。
 - 只有文字、`inline-flex` 或 `grid` 的按钮是 Stack 或 Grid，不是 Frame（按 03 的分类）。只有文字的 Frame 不提供 “Make Stack”。
 - 给 Frame 唯一的文字写生成说明、删除、在 Frame 里拖动或挪出画布时，它会像混排的裸文字一样先包上 `<span>`（33 的做法），之后它是有自己元素的文字图层，再改文字样式就写在这个 `<span>` 上、改动带 `run`，`done` 输出没能核对。
 - Frame 和它的文字共用一个元素，改动按属性分给两者；之前把按钮当作文字图层时记下的改动（同一元素、同一图层 id）照样对上：文字排版、文字阴影和改文字归文字，透明度、显隐、生成说明等归 Frame。这些旧改动的改动说明里 Layer 一行照旧（路径到按钮的文字为止、没有 **The Frame's only text** 一行），仍指向同一个元素。
 - 改文字和推广的撤销、重做之后选中的是 Frame，不是文字（样式改动的撤销、重做选中文字）。
-- `drawsBox` 不算 `outline`；背景是否透明按计算出的颜色末尾的 alpha 是否为 0 判断。
+- `drawsBox` 不算 `outline`；背景是否透明按计算出的颜色的 alpha 是否为 0 判断（`rgba()` 的第四个值或 `/` 之后的值；`rgb()` 末尾的 0 是蓝色，不是 alpha）。
+
+**收窄“画出盒子”（2026-10-29）**
+
+- 只有内边距不再让任何只含文字的图层成为 Frame：只对 `<button>`、`<a>` 和 `role` 为 `button`、`link` 的算（`isButtonOrLink`），背景、边框、圆角、`box-shadow` 的判定不变。这样只含文字的 `<td>`、`<th>`（浏览器默认 1px 内边距）、带内边距的 `<li>` 等不再在图层树里多出一层 Frame。
+- 顺带修正背景透明的判断：以前把 `rgb(255, 255, 0)` 这类蓝色为 0 的颜色当作透明（正则只看末尾的 `, 0)`），现在只认 `rgba()` 的第四个值或 `/` 之后的 alpha。
+- 测试：`edits.browser.test.ts` 的 “text that draws a box is a Frame with a text layer in it” 新增一个：只有内边距的 `<th>`、`<td>`、`<li>` 是文字图层；只有内边距的幽灵 `<button>`、`display: block` 的 `<a>`、`role="button"` 的 `<span>` 是 Frame 里一个文字图层；有背景的 `<span>` 是 Frame 里一个文字图层。GLOSSARY 的“文字图层”条目补了一句：只含文字、但自己画出盒子的图层（例如按钮）是一个 Frame，里面一个文字图层。

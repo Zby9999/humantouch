@@ -122,7 +122,7 @@ export function buildLayerTree(doc: Document): LayerTree {
       set({ kind: "image", name: el.localName === "svg" ? "Vector" : el.getAttribute("alt") || "Image" });
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
-    } else if (isText(el, view) && !asShown(el, () => drawsBox(style))) {
+    } else if (isText(el, view) && !asShown(el, () => drawsBox(el, style))) {
       set({ kind: "text", name: textName(el.textContent!) });
     } else {
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
@@ -395,20 +395,28 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
 /**
  * Whether an element with only text in it draws a box of its own around it, as
  * a button does: laid out as a box, not inline, with a background, a border,
- * padding, rounded corners or a shadow.
+ * rounded corners or a shadow; or, a button or a link (by its tag or its role),
+ * with padding alone, as a ghost button has. Padding alone on anything else, a
+ * table cell's or a list item's, draws no box: it is a text layer still.
  */
-function drawsBox(style: CSSStyleDeclaration): boolean {
+function drawsBox(el: Element, style: CSSStyleDeclaration): boolean {
   if (/^(inline|contents)$/.test(style.display)) return false;
-  const background = style.backgroundImage !== "none" || !/^transparent$|[,/] ?0\)$/.test(style.backgroundColor);
+  // Transparent: an alpha of 0, the fourth of rgba()'s or after a slash; rgb()'s last is its blue, not its alpha.
+  const background = style.backgroundImage !== "none" || !/^transparent$|^rgba\([^)]*, ?0\)$|\/ ?0\)$/.test(style.backgroundColor);
   const sides = ["top", "right", "bottom", "left"];
   const corners = ["top-left", "top-right", "bottom-right", "bottom-left"];
   return (
     background ||
     sides.some((side) => parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0 && style.getPropertyValue(`border-${side}-style`) !== "none") ||
-    sides.some((side) => parseFloat(style.getPropertyValue(`padding-${side}`)) > 0) ||
     corners.some((corner) => parseFloat(style.getPropertyValue(`border-${corner}-radius`)) > 0) ||
-    style.boxShadow !== "none"
+    style.boxShadow !== "none" ||
+    (isButtonOrLink(el) && sides.some((side) => parseFloat(style.getPropertyValue(`padding-${side}`)) > 0))
   );
+}
+
+/** A `<button>` or an `<a>`, or what is one by its `role`. */
+function isButtonOrLink(el: Element): boolean {
+  return el.localName === "button" || el.localName === "a" || /^(button|link)$/.test(el.getAttribute("role")?.trim() ?? "");
 }
 
 /** All the text of an element with only text in it, its inline fragments' included, as one run. */

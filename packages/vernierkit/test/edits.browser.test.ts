@@ -4883,6 +4883,30 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     expect(at("icon").children.map((child) => child.kind)).toEqual(["text", "image"]);
   });
 
+  test("padding alone draws a box only around a button or a link: a table cell or a list item with only text and padding is a text layer still", () => {
+    const { doc, layerOf } = openCanvas(`<!DOCTYPE html>
+<body style="margin: 0; font: 15px/22px serif">
+  <main id="main" ${loc("3:3")}>
+    <table ${loc("4:5")}><tbody ${loc("4:12")}><tr ${loc("4:19")}><th id="head" ${loc("4:23")}>Name</th><td id="cell" ${loc("4:50")}>Ada</td></tr></tbody></table>
+    <ul ${loc("5:5")} style="margin: 0"><li id="item" ${loc("5:30")} style="padding: 4px 8px">An item</li></ul>
+    <button id="ghost" ${loc("6:5")} style="display: inline-block; margin: 0; padding: 6px 12px; border: 0; background: none; font: inherit">Ghost</button>
+    <a id="link" href="#" ${loc("7:5")} style="display: block; padding: 0 12px">A block link</a>
+    <span id="role" role="button" ${loc("8:5")} style="display: inline-block; padding: 4px">Role button</span>
+    <span id="filled" ${loc("9:5")} style="display: inline-block; background-color: rgb(255, 255, 0)">Filled</span>
+  </main>
+</body>`);
+    const at = (id: string) => layerOf(doc.getElementById(id)!);
+
+    // Padding alone, on what is not a button or a link: text, as before.
+    for (const id of ["head", "cell", "item"]) expect([id, at(id).kind, at(id).children]).toEqual([id, "text", []]);
+    // A ghost button, a link, or what is one by its role: a Frame of one text layer, its padding to change.
+    for (const id of ["ghost", "link", "role"]) {
+      expect([id, at(id).kind, at(id).children.map((child) => [child.kind, child.el === at(id).el])]).toEqual([id, "frame", [["text", true]]]);
+    }
+    // A background draws a box whatever the element.
+    expect([at("filled").kind, at("filled").children.map((child) => [child.kind, child.name])]).toEqual(["frame", [["text", "Filled"]]]);
+  });
+
   test("the Frame reads the page's own background, border, corners, padding and shadow, and offers no text styles", () => {
     const { doc, editor, changes, layerOf } = openCanvas(BOXES_PAGE);
     const close = layerOf(doc.getElementById("close")!);
