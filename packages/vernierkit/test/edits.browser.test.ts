@@ -4834,3 +4834,188 @@ describe("Grid", () => {
     });
   });
 });
+
+describe("text that draws a box is a Frame with a text layer in it", () => {
+  /** Buttons and links with only text in them, some drawing a box, and plain text beside them. */
+  const BOXES_PAGE = `<!DOCTYPE html>
+<body style="margin: 0; font: 15px/22px serif">
+  <main id="main" ${loc("3:3")}>
+    <button id="close" ${loc("4:5")} style="display: inline-block; margin: 0; padding: 6px 12px; border: 1px solid rgb(255, 0, 0); border-radius: 6px; background-color: rgb(0, 0, 0); box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.5); color: rgb(255, 255, 255); font: inherit">Close</button>
+    <a id="more" href="#" ${loc("5:5")} style="display: inline-block; padding: 4px">Read <b ${loc("5:30")}>more</b></a>
+    <a id="plain" href="#" ${loc("6:5")}>A plain link</a>
+    <span id="marked" ${loc("7:5")} style="background-color: rgb(255, 255, 0)">Marked inline</span>
+    <span id="bare" ${loc("8:5")} style="display: inline-block">Bare block</span>
+    <p id="para" ${loc("9:5")} style="margin: 0">A paragraph</p>
+    <button id="icon" ${loc("10:5")} style="display: inline-block; padding: 4px">Go <svg ${loc("10:30")} width="8" height="8"></svg></button>
+  </main>
+</body>`;
+
+  test("a layer with only text in it that draws a box is a Frame, named for what it is for, holding one text layer of all its words; text that draws none is a text layer as before", () => {
+    const { doc, editor, layerOf } = openCanvas(BOXES_PAGE);
+    const at = (id: string) => layerOf(doc.getElementById(id)!);
+    const close = at("close");
+
+    expect([close.kind, close.name]).toEqual(["frame", "Button"]);
+    expect(close.children.map((child) => [child.kind, child.name, child.el === close.el])).toEqual([["text", "Close", true]]);
+    // Its inline fragments are part of the one text layer.
+    expect([at("more").kind, at("more").name]).toEqual(["frame", "Link"]);
+    expect(at("more").children.map((child) => [child.kind, child.name])).toEqual([["text", "Read more"]]);
+    // Found again by the text it starts with, as the selection is.
+    expect(editor.tree().layerOf(at("more").children[0].text!.find((node) => node.textContent!.trim())!)).toBe(at("more").children[0]);
+    // Inline, or drawing no box: text, as before.
+    for (const id of ["plain", "marked", "bare", "para"]) expect([id, at(id).kind, at(id).children]).toEqual([id, "text", []]);
+    // Text beside another layer: loose text in a Frame, as before.
+    expect(at("icon").children.map((child) => child.kind)).toEqual(["text", "image"]);
+  });
+
+  test("the Frame reads the page's own background, border, corners, padding and shadow, and offers no text styles", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(BOXES_PAGE);
+    const close = layerOf(doc.getElementById("close")!);
+
+    expect(editor.read(close, "fill")).toEqual({ type: "solid", color: "#000000", opacity: 1 });
+    expect(editor.read(close, "stroke")).toEqual({ color: "#FF0000", opacity: 1, weight: 1, style: "solid" });
+    expect(editor.read(close, "radius")).toBe(6);
+    expect(editor.read(close, "padding")).toEqual([6, 12, 6, 12]);
+    expect(editor.read(close, "shadows")).toEqual([{ type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#000000", opacity: 0.5 }]);
+    expect((["fill", "stroke", "radius", "padding", "shadows", "opacity"] as const).map((property) => editor.can(close, property))).toEqual([true, true, true, true, true, true]);
+    expect((["textColor", "fontSize", "textShadows"] as const).map((property) => editor.can(close, property))).toEqual([false, false, false]);
+    // Told apart by its words, as a button is.
+    editor.set(close, "radius", 8);
+    expect(changes.list()[0].target.context).toEqual({ path: ["Page", "Frame", "Button"], element: '<button id="close">', text: "Close" });
+    // A Frame of other layers has no padding: a Stack's are what lay its layers out.
+    expect(editor.can(layerOf(doc.getElementById("icon")!), "padding")).toBe(false);
+  });
+
+  test("the text in it offers text styles only, written on the Frame's own element, which its words inherit: no <span> is put in, and the change is checked on the page", async () => {
+    const { doc, editor, changes, layerOf } = openCanvas(BOXES_PAGE);
+    const button = doc.getElementById("close")!;
+    const [text] = layerOf(button).children;
+
+    expect(editor.read(text, "textColor")).toEqual({ color: "#FFFFFF", opacity: 1 });
+    expect((["fontSize", "textColor", "textShadows"] as const).map((property) => editor.can(text, property))).toEqual([true, true, true]);
+    // The box is the Frame's: the text has none of its own to fill, size, place, hide or fade.
+    expect((["fill", "stroke", "radius", "shadows", "padding", "width", "x", "visible", "opacity"] as const).map((property) => editor.can(text, property))).toEqual(
+      Array(9).fill(false),
+    );
+
+    editor.set(text, "fontSize", 20);
+    editor.set(text, "textColor", { color: "#FFFF00", opacity: 1 });
+
+    expect([style(button).fontSize, style(button).color]).toEqual(["20px", "rgb(255, 255, 0)"]);
+    expect(button.childElementCount).toBe(0);
+    // Its text is the text layer still, the Frame's background its own.
+    const now = layerOf(button);
+    expect([now.kind, now.children[0].kind, editor.read(now, "fill")]).toEqual(["frame", "text", { type: "solid", color: "#000000", opacity: 1 }]);
+    const [size] = changes.list();
+    expect(size).toMatchObject({ layer: button.getAttribute("data-vk-layer"), property: "fontSize", after: 20, target: { loc: "src/App.tsx:4:5", context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">', text: "Close" } } });
+    expect([size.target.run, size.target.boxText]).toEqual([undefined, true]);
+
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    // The live page, as the Agent writes the text's styles on the button.
+    page.write(BOXES_PAGE.replace("font: inherit\">Close", "font: inherit; font-size: 20px; color: rgb(255, 255, 0)\">Close"));
+    page.close();
+    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[1])).toEqual({ outcome: "shown" });
+  });
+
+  test("undone and redone, a change to the text is the text's still, and the text is what is left selected", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(BOXES_PAGE);
+    const button = doc.getElementById("close")!;
+    const [text] = layerOf(button).children;
+
+    editor.set(text, "fontSize", 20);
+    editor.set(layerOf(button), "radius", 0);
+    editor.undo();
+    const [undone] = editor.undo();
+    expect([undone.kind, undone.name, undone.parent!.name]).toEqual(["text", "Close", "Button"]);
+    expect(style(button).fontSize).toBe("15px");
+
+    const [redone] = editor.redo();
+    expect([redone.kind, redone.name]).toEqual(["text", "Close"]);
+    expect(style(button).fontSize).toBe("20px");
+    expect(changes.list()[0].target.context.path.at(-1)).toBe("Close");
+    expect(changes.list()[0].target.run).toBeUndefined();
+    // The box's change leaves the box selected.
+    expect(editor.redo().map((layer) => layer.kind)).toEqual(["frame"]);
+  });
+
+  test("its words are changed in the Frame's own element, as the text's: no <span> is put in", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(BOXES_PAGE);
+    const button = doc.getElementById("close")!;
+
+    editor.setText(layerOf(button).children[0], "Done");
+
+    expect([button.textContent, button.childElementCount]).toEqual(["Done", 0]);
+    expect(changes.list()[0]).toMatchObject({ kind: "text", layer: button.getAttribute("data-vk-layer"), before: "Close", after: "Done", target: { context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">' } } });
+    expect(changes.list()[0].target.run).toBeUndefined();
+    const now = find(editor.tree().root, (layer) => layer.el === button && !layer.text)!;
+    expect([now.kind, now.children.map((child) => [child.kind, child.name])]).toEqual(["frame", [["text", "Done"]]]);
+    editor.undo();
+    expect(button.textContent).toBe("Close");
+  });
+
+  test("a brief on the text, or deleting it, gives it an element of its own, as loose text gets: the Frame keeps its own brief, and is left empty", () => {
+    const { doc, editor, changes } = openCanvas(BOXES_PAGE);
+    const button = doc.getElementById("more")!;
+    const box = () => find(editor.tree().root, (layer) => layer.el === button && !layer.text)!;
+
+    const text = editor.setBrief(box().children[0], "Make it bold");
+    expect([text.kind, text.name, text.el.localName, text.parent!.el]).toEqual(["text", "Read more", "span", button]);
+    expect([box().kind, editor.brief(box()), editor.brief(text)]).toEqual(["frame", "", "Make it bold"]);
+    // Still a box around its text: its padding is there to change.
+    expect(editor.can(box(), "padding")).toBe(true);
+    expect(changes.list()[0].target.run).toBe(0);
+
+    editor.remove(box().children[0]);
+    expect([box().kind, box().children, button.textContent]).toEqual(["frame", [], "Read more"]);
+    expect(style(button.firstElementChild!).display).toBe("none");
+  });
+
+  test("a round saved while the button was a text layer goes on: its text styles are the text's, its others the Frame's", () => {
+    const opened = openCanvas(BOXES_PAGE);
+    const button = opened.doc.getElementById("close")!;
+    opened.editor.set(opened.layerOf(button).children[0], "fontSize", 20);
+    opened.editor.set(opened.layerOf(button), "opacity", 0.5);
+    const saved = opened.changes.save();
+    // As recorded then: the button itself was the layer, named for its words.
+    for (const change of saved.changes) change.target.context.path = ["Page", "Frame", "Close"];
+    const canvas = serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
+
+    const again = openCanvas(canvas);
+    const changes = createChangeSet(saved);
+    const editor = createEditor(again.views, changes);
+    const box = again.layerOf(again.doc.getElementById("close")!);
+    const [text] = box.children;
+    expect([box.kind, editor.read(text, "fontSize"), editor.read(box, "opacity")]).toEqual(["frame", 20, 0.5]);
+
+    editor.set(text, "fontSize", 18);
+    expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual([["fontSize", 15, 18], ["opacity", 1, 0.5]]);
+    const [size] = changes.list();
+    const back = editor.revert(size.id)!;
+    expect([back.kind, back.name]).toEqual(["text", "Close"]);
+    expect([style(again.doc.getElementById("close")!).fontSize, style(again.doc.getElementById("close")!).opacity]).toEqual(["15px", "0.5"]);
+  });
+
+  test("in a narrower view, the text's changes are listed as changed there on the text, the Frame's on the Frame", async () => {
+    const { doc, editor, views, layerOf } = openCanvas(BOXES_PAGE);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const button = layerOf(doc.getElementById("close")!);
+
+    editor.at(phone);
+    editor.set(button.children[0], "fontSize", 20);
+    editor.set(layerOf(doc.getElementById("close")!), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+
+    const now = layerOf(doc.getElementById("close")!);
+    expect([style(phone.document.getElementById("close")!).fontSize, style(doc.getElementById("close")!).fontSize]).toEqual(["20px", "15px"]);
+    expect(editor.changesHere(now)).toEqual(["fill"]);
+    expect(editor.changesHere(now.children[0])).toEqual(["fontSize"]);
+    editor.inherit(now.children[0], "fontSize");
+    expect(style(phone.document.getElementById("close")!).fontSize).toBe("15px");
+    expect(editor.changesHere(now)).toEqual(["fill"]);
+  });
+});

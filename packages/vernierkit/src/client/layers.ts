@@ -122,10 +122,12 @@ export function buildLayerTree(doc: Document): LayerTree {
       set({ kind: "image", name: el.localName === "svg" ? "Vector" : el.getAttribute("alt") || "Image" });
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
-    } else if (isText(el, view)) {
+    } else if (isText(el, view) && !drawsBox(style)) {
       set({ kind: "text", name: textName(el.textContent!) });
     } else {
-      for (const child of drawnChildren(el, view)) {
+      // Text that draws a box, as a button does, is a container of one text layer: all its words, its inline fragments with them.
+      const children = isText(el, view) ? [textIn(el, view)] : drawnChildren(el, view);
+      for (const child of children) {
         layer.children.push(Array.isArray(child) ? makeText(child, layer) : make(child, layer));
       }
       const display = style.display;
@@ -189,14 +191,31 @@ export function buildLayerTree(doc: Document): LayerTree {
     },
     layerOf(node) {
       if (node.nodeType === Node.ELEMENT_NODE) return layers.get(node as Element) ?? null;
-      const parent = node.parentElement && layers.get(node.parentElement);
-      return parent?.children.find((child) => child.text?.[0] === node) ?? null;
+      // The text of a box may run on in its inline fragments: the layer is that of the element it is in.
+      let parent: Layer | undefined;
+      for (let e = node.parentElement; e && !parent; e = e.parentElement) parent = layers.get(e);
+      return parent?.children.find((child) => child.text?.includes(node as Text)) ?? null;
     },
     acrossInstances(layer) {
       const key = keys.get(layer);
       return (key && groups.get(key)) || [layer];
     },
   };
+}
+
+/**
+ * Text that is all its container draws inside it, as a button's words are: it
+ * has no element of its own, and its text styles are the container's, which
+ * its words inherit.
+ */
+export function isWholeText(layer: Layer): boolean {
+  return !!layer.text && layer.parent?.children.length === 1;
+}
+
+/** The text a box draws and nothing else, as a button does: the one layer in it; null for a layer that holds others, or none. */
+export function textOfBox(layer: Layer): Layer | null {
+  const [only] = layer.children;
+  return only && isWholeText(only) ? only : null;
 }
 
 /** Whether layers can go in the layer: a Stack, a Grid or a Frame that is not a field or another element that holds no others. */
@@ -367,6 +386,42 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
 }
 
 
+/**
+ * Whether an element with only text in it draws a box of its own around it, as
+ * a button does: laid out as a box, not inline, with a background, a border,
+ * padding, rounded corners or a shadow.
+ */
+function drawsBox(style: CSSStyleDeclaration): boolean {
+  if (/^(inline|contents)$/.test(style.display)) return false;
+  const background = style.backgroundImage !== "none" || !/^transparent$|[,/] ?0\)$/.test(style.backgroundColor);
+  const sides = ["top", "right", "bottom", "left"];
+  const corners = ["top-left", "top-right", "bottom-right", "bottom-left"];
+  return (
+    background ||
+    sides.some((side) => parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0 && style.getPropertyValue(`border-${side}-style`) !== "none") ||
+    sides.some((side) => parseFloat(style.getPropertyValue(`padding-${side}`)) > 0) ||
+    corners.some((corner) => parseFloat(style.getPropertyValue(`border-${corner}-radius`)) > 0) ||
+    style.boxShadow !== "none"
+  );
+}
+
+/** All the text of an element with only text in it, its inline fragments' included, as one run. */
+function textIn(el: Element, view: Window): Text[] {
+  const run: Text[] = [];
+  const visit = (node: Element) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) run.push(child as Text);
+      else if (child.nodeType === Node.ELEMENT_NODE) {
+        const e = child as Element;
+        if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR) || view.getComputedStyle(e).display === "none") continue;
+        visit(e);
+      }
+    }
+  };
+  visit(el);
+  return run;
+}
+
 /** Only text, with inline pieces (bold, links, …) counted as part of it. */
 function isText(el: Element, view: Window): boolean {
   let text = false;
@@ -378,6 +433,8 @@ function isText(el: Element, view: Window): boolean {
         const e = child as Element;
         if (e.localName === "br" || e.localName === "wbr") continue;
         if (NOT_DRAWN.has(e.localName) || e.hasAttribute(DELETED_ATTR)) continue;
+        // Text given an element of its own to edit, as the text of a box is, is a layer of its own.
+        if (e.hasAttribute(WRAP_ATTR)) return false;
         const display = view.getComputedStyle(e).display;
         if (display === "none") continue;
         if (display !== "inline" && display !== "contents") return false;

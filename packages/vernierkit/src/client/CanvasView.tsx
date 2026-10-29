@@ -10,7 +10,7 @@ import { freeze, restore, type Canvas } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
-import { nodeOf, role, type Layer, type LayerTree } from "./layers";
+import { isWholeText, nodeOf, role, textOfBox, type Layer, type LayerTree } from "./layers";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances, type Mark } from "./snap";
@@ -895,8 +895,9 @@ export function CanvasView(props: Props) {
         const over = viewAt(event);
         const hit = layerAt(event);
         const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
-        // On the text selected, a double click types in it, in the view clicked in.
-        if (layer && over && layer === primary && layer.kind === "text" && editor) beginTyping(layer, over.at.view);
+        // On the text selected, a double click types in it, in the view clicked in; on a box of text selected, as a button is, in its text.
+        const text = layer && (layer === primary ? (layer.kind === "text" ? layer : textOfBox(layer)) : layer.parent === primary && isWholeText(layer) ? layer : null);
+        if (text && over && editor) beginTyping(text, over.at.view);
         else if (layer) onSelect([layer]);
       }}
     >

@@ -9,7 +9,7 @@ import { createClipboard } from "./clipboard";
 import { createEditor, createHistory, type Destination, type Editor } from "./edits";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
-import { nodeOf, type Layer, type LayerTree } from "./layers";
+import { isWholeText, nodeOf, textOfBox, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -589,7 +589,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           if (note) showToast(note);
         }}
         onBeginText={(layer) => {
-          const own = editorOf(layer)!.ownElement(layer);
+          // The text a box draws and nothing else is typed in the box's own element.
+          const own = isWholeText(layer) ? layer : editorOf(layer)!.ownElement(layer);
           // Loose text got an element of its own: the layers are built anew (those off the canvas are read as they are).
           if (own !== layer) setTree(editor!.tree());
           select([own]);
@@ -597,9 +598,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         }}
         onEditText={(layer, text) => {
           const editor = editorOf(layer)!;
-          editor.setText(editor.tree().layerOf(layer.el) ?? layer, text);
+          /** The layer typed in, as the layers are now: the text of a box is found by the box. */
+          const found = () => {
+            const now = editor.tree().layerOf(layer.el);
+            return now && isWholeText(layer) ? (textOfBox(now) ?? now) : now;
+          };
+          editor.setText(found() ?? layer, text);
           onEdit();
-          const now = editor.tree().layerOf(layer.el);
+          const now = found();
           if (now) select([now]);
         }}
         onWorkIn={(view, name) => {

@@ -98,6 +98,31 @@ const RED: Fill = { type: "solid", color: "#FF0000", opacity: 1 };
 const background = (el: Element) => getComputedStyle(el).backgroundColor;
 
 describe("promote", () => {
+  test("a Button, a box of text, promotes its own changes, its text the text's: each from the layer they are of", () => {
+    const { editor, changes, buttons, layerOf } = openCanvas();
+    const button = layerOf(buttons[1]);
+    const [text] = button.children;
+    editor.set(text, "fontSize", 20);
+    editor.set(button, "fill", RED);
+
+    expect([editor.canPromote(text), editor.canPromote(button)]).toEqual([true, true]);
+    const { promoted, stays } = editor.promote(text);
+
+    expect(promoted.map((change) => change.property)).toEqual(["fontSize"]);
+    expect(stays).toEqual([]);
+    // Every Button the Button component writes, in the header too.
+    expect(buttons.map((el) => getComputedStyle(el).fontSize)).toEqual(Array(5).fill("20px"));
+    expect(buttons.map(background)).toEqual(["rgb(200, 200, 200)", "rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(200, 200, 200)"]);
+    expect(editor.canPromote(layerOf(buttons[1]).children[0])).toBe(false);
+
+    editor.promote(layerOf(buttons[1]));
+    expect(buttons.map(background)).toEqual(Array(5).fill("rgb(255, 0, 0)"));
+    expect(changes.list().map((change) => [change.property, change.scope])).toEqual([
+      ["fontSize", "component"],
+      ["fill", "component"],
+    ]);
+  });
+
   test("a fill changed on one usage of the Card shows on every usage of it once promoted, and the change is to the Card itself", () => {
     const { editor, changes, cards, layerOf } = openCanvas();
 
