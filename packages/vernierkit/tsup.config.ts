@@ -1,36 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { defineConfig, type Options } from "tsup";
+import { compactStyleTemplates } from "./compact-css";
 
 // The configs build side by side, so none of them cleans `dist/`: that would race the others' output. `pnpm build` cleans first.
 
-/**
- * The editor layer's CSS (its templates marked `css` in `styles.ts` and
- * `toggle-styles.ts`) without comments and spare whitespace: the toggle's counts
- * toward what the page loads. The `${…}` placeholders are left as written. It
- * takes the CSS to have no strings with comments, colons or commas in them.
- */
+/** The editor layer's CSS compacted as it builds (`compact-css.ts`): the toggle's counts toward what the page loads. */
 const compactCss: NonNullable<Options["esbuildPlugins"]>[number] = {
   name: "compact-css",
   setup(build) {
-    build.onLoad({ filter: /[\\/]src[\\/]client[\\/](toggle-)?styles\.ts$/ }, async ({ path }) => {
-      const source = await readFile(path, "utf8");
-      const compactText = (css: string) =>
-        css
-          .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/\s+/g, " ")
-          .replace(/ ?([{};,]) ?/g, "$1")
-          .replace(/: /g, ":")
-          .replace(/;}/g, "}");
-      const contents = source.replace(/\/\* css \*\/ `([^`]*)`/g, (_, css: string) => {
-        const compact = css
-          .split(/(\$\{[^}]*\})/)
-          .map((part, i) => (i % 2 ? part : compactText(part)))
-          .join("")
-          .trim();
-        return `\`${compact}\``;
-      });
-      return { contents, loader: "ts" };
-    });
+    build.onLoad({ filter: /[\\/]src[\\/]client[\\/](toggle-)?styles\.ts$/ }, async ({ path }) => ({
+      contents: compactStyleTemplates(await readFile(path, "utf8"), path),
+      loader: "ts",
+    }));
   },
 };
 

@@ -436,6 +436,8 @@ const EVERY_KIND: LayerKind[] = ["stack", "grid", "frame", "text", "image", "sti
 /** Locked layers are moved and resized as a whole, and nothing else. */
 const UNLOCKED: LayerKind[] = EVERY_KIND.filter((kind) => kind !== "locked");
 const CONTAINERS: LayerKind[] = ["stack", "grid", "frame"];
+/** Layers drawn as a box, with a stroke, corners, shadows and blur of their own: all but text and locked ones. */
+const BOXES: LayerKind[] = [...CONTAINERS, "image", "still"];
 /** Width and height do not apply to inline boxes. */
 const sized = (el: Element) => !/^(inline|contents)$/.test(getComputedStyle(el).display);
 const absolute = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el).position);
@@ -453,7 +455,7 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     setsOn: fillSets,
   },
   stroke: {
-    kinds: ["stack", "grid", "frame", "image", "still"],
+    kinds: BOXES,
     read: readWrittenStroke,
     write: writeStroke,
     reference: strokeReference,
@@ -461,14 +463,14 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     sets: STROKE_SETS,
   },
   radius: {
-    kinds: ["stack", "grid", "frame", "image", "still"],
+    kinds: BOXES,
     read: readRadius,
     write: (radius) => ({ "border-radius": typeof radius === "number" ? `${radius}px` : radius.map((r) => `${r}px`).join(" ") }),
     writes: ["border-radius"],
     sets: CORNERS.map((corner) => `border-${corner}-radius`),
   },
   shadows: {
-    kinds: ["stack", "grid", "frame", "image", "still"],
+    kinds: BOXES,
     read: readShadows,
     write: writeShadows,
     writes: ["box-shadow"],
@@ -482,8 +484,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     writes: ["text-shadow"],
     sets: ["text-shadow"],
   },
-  layerBlur: { kinds: ["stack", "grid", "frame", "image", "still"], ...blur("filter") },
-  backgroundBlur: { kinds: ["stack", "grid", "frame", "image", "still"], ...blur("backdrop-filter") },
+  layerBlur: { kinds: BOXES, ...blur("filter") },
+  backgroundBlur: { kinds: BOXES, ...blur("backdrop-filter") },
   x: position("left", "right", 0),
   y: position("top", "bottom", 1),
   absolute: {

@@ -41,7 +41,7 @@ function loadEditor(): Promise<Editor> {
  * is checked on the page.
  */
 export function LazyEditorLayer({ onStyles }: { onStyles(css: string): void }) {
-  const [store] = useState(connectRoundWatch);
+  const [roundWatch] = useState(connectRoundWatch);
   /** The saved round, once loaded, handed on so the editor layer does not load it again. */
   const [saved, setSaved] = useState<SavedRound | null | undefined>(undefined);
   const [wanted, setWanted] = useState<Wanted | null>(null);
@@ -67,7 +67,7 @@ export function LazyEditorLayer({ onStyles }: { onStyles(css: string): void }) {
   };
 
   useEffect(() => {
-    store?.load().then(
+    roundWatch?.load().then(
       (round) => {
         setSaved(round);
         if (round) want();
@@ -79,7 +79,7 @@ export function LazyEditorLayer({ onStyles }: { onStyles(css: string): void }) {
   // Until the editor layer is on its way: it watches the round itself from then on.
   useEffect(() => {
     if (wanted) return;
-    return store?.watch((status) => {
+    return roundWatch?.watch((status) => {
       if (status.status === "claimed") want();
     });
   }, [wanted === null]);
