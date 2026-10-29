@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { createChangeSet } from "../src/client/changeset";
+import { checkChange } from "../src/client/check";
 import { createEditor, type Fill } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { revertSaved } from "../src/client/saved-round";
@@ -47,7 +48,9 @@ const PAGE = `<!DOCTYPE html>
 let iframe: HTMLIFrameElement | undefined;
 let phoneFrame: HTMLIFrameElement | undefined;
 let savedFrame: HTMLIFrameElement | undefined;
+let live: HTMLIFrameElement | undefined;
 afterEach(() => {
+  live?.remove();
   iframe?.remove();
   phoneFrame?.remove();
   savedFrame?.remove();
@@ -292,5 +295,48 @@ describe("promote", () => {
     shown = [...showSaved(twice.canvas).querySelectorAll("article")];
     expect(shown.map((el) => el.getAttribute("data-vk-brief"))).toEqual([null, null, null, "Lift higher"]);
     expect(twice.changeSet.changes).toMatchObject([{ kind: "brief", scope: "usage" }]);
+  });
+
+  test("done checks a change to the Card on every usage of it, but one that has its own value of the property, which it shows in place of the Card's", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "fill", RED);
+    editor.promote(layerOf(cards[0]));
+    const blue: Fill = { type: "solid", color: "#0000FF", opacity: 1 };
+    editor.set(layerOf(cards[3]), "fill", blue);
+
+    // The live page, as the Agent writes both: red in the Card, blue at the usage at src/App.tsx:8:7. React tells each Card's usage.
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(PAGE);
+    page.close();
+    function App() {}
+    function Card() {}
+    const app = { type: App, memoizedProps: {}, _debugOwner: null };
+    const liveCards = [...page.querySelectorAll("article")];
+    liveCards.forEach((el, i) => {
+      const usage = i < 3 ? "src/App.tsx:6:9" : "src/App.tsx:8:7";
+      Object.assign(el, { __reactFiber$promote: { _debugOwner: { type: Card, memoizedProps: { "data-vk-usage": usage }, _debugOwner: app } } });
+      (el as HTMLElement).style.backgroundColor = i < 3 ? "rgb(255, 0, 0)" : "rgb(0, 0, 255)";
+    });
+
+    const [card, usage] = changes.list();
+    expect(await checkChange(page, card, undefined, changes.list())).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, usage, undefined, changes.list())).toEqual({ outcome: "shown" });
+  });
+
+  test("a brief a usage wrote in place of the Card's, promoted once the Card's is taken back out, is the Card's brief from none", () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.setBrief(layerOf(cards[0]), "Lift on hover");
+    editor.promote(layerOf(cards[0]));
+    editor.setBrief(layerOf(cards[3]), "Lift higher");
+    editor.revert(1);
+    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual([null, null, null, "Lift higher"]);
+
+    editor.promote(layerOf(cards[3]));
+
+    expect(changes.list()).toMatchObject([{ kind: "brief", scope: "component", before: null, after: "Lift higher" }]);
+    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual(Array(4).fill("Lift higher"));
   });
 });

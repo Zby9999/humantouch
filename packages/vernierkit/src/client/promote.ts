@@ -11,11 +11,10 @@
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { BRIEF_ATTR, declarePromoted, LAYER_ID_ATTR, WRAP_ATTR } from "./canvas-style";
 import { BRIEF, type Change, type ChangeSet } from "./changeset";
-import { originOf, type Layer } from "./layers";
-import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
+import { chainOf, originOf, type Layer } from "./layers";
 
-/** What a change to the component that writes the element at `loc` is recorded under, in place of a layer's id. */
-export function componentLayer(loc: string): string {
+/** What a change to the component itself, that writes the elements at `loc`, is recorded under, in place of a layer's id. */
+export function componentKey(loc: string): string {
   return `component ${loc}`;
 }
 
@@ -47,15 +46,16 @@ export function promotable(changes: Change[], id: string): Change[] {
  * component's changes as they are then. `instances`: how many elements the component writes there.
  */
 export function promoteIn(changes: ChangeSet, taken: Change[], loc: string, instances: number): Change[] {
-  const layer = componentLayer(loc);
+  const key = componentKey(loc);
   for (const change of taken) {
     changes.remove(change.id);
     const { id, layer: _, breakpoint, ...rest } = structuredClone(change);
     const target = { ...rest.target, instances };
-    if (changes.find(layer, change.property, breakpoint)) changes.record(layer, { ...rest, target, ...(breakpoint && { breakpoint }), scope: "component" });
-    else changes.restore({ ...structuredClone(change), layer, target, scope: "component" });
+    if (changes.find(key, change.property, breakpoint)) changes.record(key, { ...rest, target, ...(breakpoint && { breakpoint }), scope: "component" });
+    // A brief a usage wrote in place of another is the component's from none: the component had none of its own.
+    else changes.restore({ ...structuredClone(change), layer: key, target, scope: "component", ...(change.kind === "brief" && { before: null }) });
   }
-  return changes.list().filter((change) => change.layer === layer);
+  return changes.list().filter((change) => change.layer === key);
 }
 
 /** The canvas elements the component writes at `loc`, in every usage, in page order. */
@@ -72,8 +72,8 @@ export function componentBrief(el: Element, changes: Change[]): string {
 
 /** The brief of the component that writes the elements at `loc`, as changed itself this round; "" when none. */
 function briefAt(loc: string, changes: Change[]): string {
-  const layer = componentLayer(loc);
-  return (changes.find((change) => change.layer === layer && change.property === BRIEF)?.after as string | undefined) ?? "";
+  const key = componentKey(loc);
+  return (changes.find((change) => change.layer === key && change.property === BRIEF)?.after as string | undefined) ?? "";
 }
 
 /**
@@ -82,8 +82,8 @@ function briefAt(loc: string, changes: Change[]): string {
  * the edits of its usage; its brief on each whose usage has none of its own.
  */
 export function showComponent(doc: Document, loc: string, changes: Change[]) {
-  const layer = componentLayer(loc);
-  const styles = changes.filter((change) => change.layer === layer && change.kind === "style");
+  const key = componentKey(loc);
+  const styles = changes.filter((change) => change.layer === key && change.kind === "style");
   const brief = briefAt(loc, changes);
   for (const el of componentElements(doc, loc)) {
     declarePromoted(el, styles);
@@ -95,10 +95,3 @@ export function showComponent(doc: Document, loc: string, changes: Change[]) {
   }
 }
 
-function chainOf(el: Element): UsageLevel[] {
-  try {
-    return JSON.parse(el.getAttribute(CHAIN_ATTR) ?? "[]") as UsageLevel[];
-  } catch {
-    return [];
-  }
-}

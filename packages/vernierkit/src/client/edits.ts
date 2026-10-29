@@ -57,7 +57,7 @@ import { equalColumns, trackCount } from "./grid-tracks";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
-import { componentBrief, componentElements, componentLayer, inComponent, promotable, promoteIn, showComponent } from "./promote";
+import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, sourcesOf } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -1501,7 +1501,7 @@ export function createEditor(
       if (!editor.canPromote(layer)) throw new Error(`Vernier Kit: ${layer.name} has no changes to promote to its component`);
       const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
       const loc = layer.loc!;
-      const component = componentLayer(loc);
+      const component = componentKey(loc);
       const taken = structuredClone(promotable(changes.list(), id));
       const before = structuredClone(changes.list().filter((change) => change.layer === component));
       // The component's changes once promoted, worked out apart.
@@ -1657,7 +1657,7 @@ export function createEditor(
       }
       const own = editor.ownElement(layer);
       const id = idOf(own, tree.acrossInstances(own));
-      // Before: the brief a copy of a new Frame was copied with, which writing one on it takes the place of.
+      // Before: what the layer shows otherwise, which writing one on it takes the place of: the brief a copy of a new Frame was copied with, or its component's.
       const written = changes.find(id, BRIEF);
       const copiedWith = written ? written.before : before || null;
       const record: StructureRecord = { kind: "brief", target: targetOf(own, onPage(own).length), scope: "usage", property: BRIEF, before: copiedWith, after: brief, style: {}, sources: [] };

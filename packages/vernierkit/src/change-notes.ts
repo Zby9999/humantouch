@@ -141,8 +141,8 @@ function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
  */
 function briefLine({ before, after, target, scope }: Change, list: Change[]): string {
   const brief = after ? quoted(after as string) : "none: taken off";
-  if (!before) return `**Brief:** ${brief}`;
-  if (target.made || scope === "component") return `**Brief:** ${brief}, in place of the brief the copy was made with, ${quoted(before as string)}`;
+  if (!before || scope === "component") return `**Brief:** ${brief}`;
+  if (target.made) return `**Brief:** ${brief}, in place of the brief the copy was made with, ${quoted(before as string)}`;
   const whole = list.find((change) => change.scope === "component" && change.kind === "brief" && change.target.loc === target.loc);
   return `**Brief:** ${brief}, in place of the brief ${target.component} has as a whole${whole ? ` (change ${whole.id})` : ""}, ${quoted(before as string)}, at this usage.`;
 }

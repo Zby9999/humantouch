@@ -11,7 +11,7 @@
  */
 import { breakpointName, mediaOf, widthIn } from "./breakpoints";
 import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
-import { isReorder, type Change, type Place } from "./changeset";
+import { changeKey, isReorder, type Change, type Place } from "./changeset";
 import { openingTag, readValue, type Property, type Stroke } from "./edits";
 import { signOf, usageKey } from "./layers";
 import { CHECK_FRAME_ATTR } from "./host";
@@ -68,11 +68,14 @@ export type PageAt = (width: number) => Promise<{ doc: Document; close(): void }
 /**
  * Whether `doc`, the live page, shows the change. A change at a breakpoint
  * shows at its widths only (ADR 0008): with the window at none of them, it is
- * checked on the page shown at one of them, by `at`.
+ * checked on the page shown at one of them, by `at`. `round`: the changes of
+ * its round, where a usage with a change of its own to the property a change
+ * to its component makes shows that one instead.
  */
-export async function checkChange(doc: Document, change: Change, at?: PageAt): Promise<CheckResult> {
+export async function checkChange(doc: Document, change: Change, at?: PageAt, round: Change[] = []): Promise<CheckResult> {
   const { breakpoint } = change;
-  if (!breakpoint || doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches) return checkOn(doc, change);
+  const apart = ownValues(change, round);
+  if (!breakpoint || doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches) return checkOn(doc, change, apart);
   const width = widthIn(breakpoint);
   const cannot: CheckResult = { outcome: "unchecked", reason: `it applies ${breakpointName(breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
   // What cannot be checked on any page needs no other width.
@@ -81,7 +84,7 @@ export async function checkChange(doc: Document, change: Change, at?: PageAt): P
   const page = await at?.(width).catch(() => null);
   if (!page) return cannot;
   try {
-    return page.doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches ? await checkOn(page.doc, change) : cannot;
+    return page.doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches ? await checkOn(page.doc, change, apart) : cannot;
   } finally {
     page.close();
   }
@@ -135,8 +138,19 @@ export function pageAt(page: Window): PageAt {
     });
 }
 
-/** Whether `doc` shows the change, as wide as it is. */
-function checkOn(doc: Document, change: Change): Promise<CheckResult> {
+/**
+ * Of a change to a component itself, the usages that have a value of their own
+ * for the property at the same widths, which they show in its place: by usage key.
+ */
+function ownValues(change: Change, round: Change[]): string[] {
+  const { loc } = change.target;
+  if (change.scope !== "component" || !loc) return [];
+  const key = changeKey(loc, change.property, change.breakpoint);
+  return round.filter((other) => other.scope === "usage" && other.target.loc === loc && changeKey(loc, other.property, other.breakpoint) === key).map((other) => usageKey(loc, other.target.chain));
+}
+
+/** Whether `doc` shows the change, as wide as it is; a change to a component, but in the usages `apart`. */
+function checkOn(doc: Document, change: Change, apart: string[]): Promise<CheckResult> {
   const reason = uncheckable(change);
   if (reason) return Promise.resolve({ outcome: "unchecked", reason });
   const property = change.property as Property;
@@ -148,7 +162,7 @@ function checkOn(doc: Document, change: Change): Promise<CheckResult> {
     if (change.kind === "delete") return lookDeleted(doc, change);
     if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
     // A change to a component itself shows in every usage of it.
-    const els = change.scope === "component" ? componentElementsOf(doc, change.target) : elementsOf(doc, change.target);
+    const els = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
     if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
     const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
     const wrong = els.find((el) => !shows(el));

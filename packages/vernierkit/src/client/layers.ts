@@ -322,7 +322,8 @@ export function wordsAsPage(el: Element): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function chainOf(el: Element): UsageLevel[] {
+/** The usage chain the freezer wrote on a canvas element; none when it wrote none. */
+export function chainOf(el: Element): UsageLevel[] {
   const json = el.getAttribute(CHAIN_ATTR);
   if (!json) return [];
   try {

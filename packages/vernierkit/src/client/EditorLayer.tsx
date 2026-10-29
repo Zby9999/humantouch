@@ -101,7 +101,7 @@ export function EditorLayer() {
     if (!check || !store || round === undefined || checked.current === check.at) return;
     checked.current = check.at;
     const change = round?.changeSet.changes.find((c) => c.id === check.id);
-    const result = change ? checkChange(document, change, pageAt(window)) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
+    const result = change ? checkChange(document, change, pageAt(window), round!.changeSet.changes) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
     void result.then((result) => store.report({ ...check, ...result })).catch((error: unknown) => console.warn(error));
   }, [check?.at, round]);
 

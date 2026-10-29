@@ -23,11 +23,14 @@ export function elementsOf(doc: Document, target: Target): Element[] {
 /**
  * The elements a change to a component itself is made to, on the live page
  * now: every element the component writes at the change's location, in every
- * usage of it. Where its markers have moved, those of the usage it was promoted from.
+ * usage of it but those with the usage keys `apart`. Where its markers have
+ * moved, those of the usage it was promoted from.
  */
-export function componentElementsOf(doc: Document, target: Target): Element[] {
+export function componentElementsOf(doc: Document, target: Target, apart: string[] = []): Element[] {
   if (!target.loc) return [];
-  const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([, key]) => key.startsWith(`${target.loc} `)).map(([el]) => el);
+  const els = [...keysIn(doc.documentElement, new Set([target.loc]))]
+    .filter(([, key]) => key.startsWith(`${target.loc} `) && !apart.includes(key))
+    .map(([el]) => el);
   return els.length ? els : elementsOf(doc, target);
 }
 

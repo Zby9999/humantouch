@@ -16,7 +16,7 @@ export interface Target {
   /** Usage chain, innermost component first. */
   chain: UsageLevel[];
   component: string | null;
-  /** How many instances of the usage the change shows up in. */
+  /** How many instances of the usage the change shows up in; for a change to the component itself, how many elements it writes there on the canvas, in every usage. */
   instances: number;
   locked: boolean;
   unlocated: boolean;
@@ -166,7 +166,7 @@ export interface Change {
   /**
    * `usage`: this usage of the component only. `component`: the component
    * itself, every usage of it: the designer promoted the change from one
-   * usage. Its `layer` is then `componentLayer(target.loc)`, not a layer of the
+   * usage. Its `layer` is then `componentKey(target.loc)`, not a layer of the
    * canvas: the change shows on every element the component writes there.
    */
   scope: "usage" | "component";
