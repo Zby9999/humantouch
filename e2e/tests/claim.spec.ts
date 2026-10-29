@@ -150,3 +150,22 @@ test("with no changes, claim says so and leaves the round as it is", async () =>
   expect(await vernierkit("claim")).toMatch(/^No design changes to apply/);
   expect(readVernier("state.json")).toBeNull();
 });
+
+test("a change made in the phone view is noted with the widths it applies at, for the project's own breakpoints", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const phone = page.locator('iframe[title="Phone 390"]');
+  await expect(phone.contentFrame().locator("h1")).toBeVisible();
+  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await setField(page, "Fill color", "ff0000");
+  // The example keeps Tailwind's own breakpoints: the phone view is below `sm`, at 640px.
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 640, project: { tailwind: "max-sm:" } });
+
+  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(fill).toContain("- **Breakpoint:** below 640px only (`@media (width < 640px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `max-sm:`");
+  expect(fill).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000.\n");
+});

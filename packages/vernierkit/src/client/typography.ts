@@ -5,11 +5,12 @@
  * fragments (a bold run, a link) follow it by inheritance, but for a fragment
  * that has a value of its own, which it keeps.
  */
+import { declaredByEdit, rematch } from "./canvas-style";
 import type { Fragment } from "./changeset";
 import { openingTag, type Definition } from "./edits";
 import { wordsOf } from "./layer-changes";
 import { cssColor, type Color, type ColorReader } from "./paint";
-import { ORIGINAL_STYLE_ATTR, pinnedOf, sourcesOf } from "./style-source";
+import { sourcesOf } from "./style-source";
 
 export type TextAlign = "left" | "center" | "right" | "justify";
 /** As typed, UPPER, lower or Title, as Figma names the case. */
@@ -109,6 +110,7 @@ function withStyle<T>(el: Element, css: string, value: string, look: () => T): T
   } finally {
     if (was) style.setProperty(css, was, priority);
     else style.removeProperty(css);
+    rematch(el);
   }
 }
 
@@ -209,10 +211,8 @@ function lengthCss({ value, unit }: TextLength, el: Element, css: "line-height" 
  * nearest element above it that writes it, as it inherits from there. Null where it cannot be told (`var()`, `calc()`).
  */
 function writtenUnit(el: Element, css: string, edits: boolean): Unit | null {
-  const own = (el as HTMLElement).style;
-  if (edits && el.hasAttribute(ORIGINAL_STYLE_ATTR) && own.getPropertyPriority(css) === "important" && !pinnedOf(el).includes(css)) {
-    return unitOf(own.getPropertyValue(css));
-  }
+  const edited = edits ? declaredByEdit(el, css) : "";
+  if (edited) return unitOf(edited);
   const value = declaring(el, css)?.value;
   return value ? unitOf(value) : null;
 }

@@ -1,13 +1,18 @@
 /** The editor layer's side of the local service: where the round is kept between page loads, and how it stands. */
+import type { ProjectBreakpoints } from "./breakpoints";
 import {
+  BREAKPOINTS_PATH,
   CHECKS_PATH,
   EVENTS_PATH,
+  OFF_CANVAS_PATH,
   ROUND_PATH,
   SERVICE_GLOBAL,
   TOKEN_HEADER,
   UNLOCK_PATH,
   VARIABLES_PATH,
   type CheckReport,
+  type SavedOffCanvasLayer,
+  type OffCanvasSaveAnswer,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
@@ -28,6 +33,12 @@ export interface RoundStore {
   unlock(): Promise<void>;
   /** Answers the check `done` asked for. */
   report(check: CheckReport): Promise<void>;
+  /** The project's own breakpoints from its Tailwind theme; null when it has none to be read. */
+  breakpoints(): Promise<ProjectBreakpoints | null>;
+  /** The layers off the canvas, kept apart from any round (ADR 0009). */
+  loadOffCanvas(): Promise<SavedOffCanvasLayer[]>;
+  /** Keeps the layers off the canvas, all of them. Answers with the JSX that writes each, as kept. */
+  saveOffCanvas(layers: SavedOffCanvasLayer[]): Promise<OffCanvasSaveAnswer["snippets"]>;
 }
 
 function serviceConfig(): ServiceConfig | undefined {
@@ -60,6 +71,7 @@ export function connectRoundStore(): RoundStore | null {
   };
   // Saves go one after another, so the last one made is the one that stays.
   let saving: Promise<unknown> = Promise.resolve();
+  let savingOffCanvas: Promise<unknown> = Promise.resolve();
   return {
     async load() {
       const response = await request("GET");
@@ -96,6 +108,19 @@ export function connectRoundStore(): RoundStore | null {
     },
     async report(check) {
       await request("POST", { path: CHECKS_PATH, body: JSON.stringify(check) });
+    },
+    async breakpoints() {
+      const response = await request("GET", { path: BREAKPOINTS_PATH });
+      return response.status === 204 ? null : ((await response.json()) as ProjectBreakpoints);
+    },
+    async loadOffCanvas() {
+      const response = await request("GET", { path: OFF_CANVAS_PATH });
+      return response.status === 204 ? [] : ((await response.json()) as { layers: SavedOffCanvasLayer[] }).layers;
+    },
+    saveOffCanvas(layers) {
+      const next = savingOffCanvas.then(() => request("PUT", { path: OFF_CANVAS_PATH, body: JSON.stringify({ layers }) }));
+      savingOffCanvas = next.catch(() => {});
+      return next.then(async (response) => (response.status === 200 ? ((await response.json()) as OffCanvasSaveAnswer).snippets : {}));
     },
   };
 }

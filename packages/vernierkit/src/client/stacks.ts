@@ -4,7 +4,7 @@
  * layer ids and the change's values only, so the same works on the canvas
  * being edited and on a saved one.
  */
-import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, restoreStyle } from "./canvas-style";
+import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, relayOut, restoreStyle } from "./canvas-style";
 import type { Change, Composed, Dissolved, StackSettings } from "./changeset";
 import type { Alignment } from "./edits";
 import { MOVE_CSS, slotsOf } from "./moves";
@@ -141,12 +141,27 @@ export function marginsOf(el: Element): [number, number, number, number] {
   return (["top", "right", "bottom", "left"] as const).map((side) => parseFloat(style.getPropertyValue(`margin-${side}`)) || 0) as [number, number, number, number];
 }
 
-/** The box absolute layers are placed in: inside the element's border. */
+/**
+ * The box absolute layers are placed in, where the element is laid out now:
+ * inside its border and any scrollbar, as the browser gives it, in whole px.
+ */
 export function paddingBox(el: Element): Box {
   const r = el.getBoundingClientRect();
   const left = r.left + el.clientLeft;
   const top = r.top + el.clientTop;
   return { left, top, right: left + el.clientWidth, bottom: top + el.clientHeight };
+}
+
+/**
+ * The same box as `paddingBox`, inside the border, but to the fraction of a px
+ * and over `rect`, the element's border box as laid out at some other moment
+ * (before a drag shifted anything, say): what a dragged layer snaps to. It
+ * takes in any scrollbar; with none, and a border in whole px, the two agree.
+ */
+export function insideBorder(el: Element, rect: DOMRect): DOMRect {
+  const style = getComputedStyle(el);
+  const [top, right, bottom, left] = ["top", "right", "bottom", "left"].map((side) => parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0);
+  return new DOMRect(rect.left + left, rect.top + top, rect.width - left - right, rect.height - top - bottom);
 }
 
 /**
@@ -170,7 +185,7 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
       container.insertBefore(stack, slotsOf(container)[composed.place.slot] ?? null);
     }
     keepOriginal(stack);
-    declare(stack, style);
+    relayOut(stack, style);
     stack.append(...(members as Element[]));
     composed.layers.forEach((member, i) => {
       const style = memberStyle(member);
@@ -207,7 +222,7 @@ export function decompose(doc: Document, id: string, composed: Composed, changes
 export function dissolve(doc: Document, id: string, dissolved: Dissolved, style: Record<string, string>) {
   for (const stack of elementsOf(doc, id)) {
     keepOriginal(stack);
-    declare(stack, style);
+    relayOut(stack, style);
     for (const member of dissolved.layers) {
       const el = childOf(stack, member.layer);
       if (!el) continue;

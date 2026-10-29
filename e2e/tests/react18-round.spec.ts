@@ -15,7 +15,12 @@ const VERNIER = `${EXAMPLE}.vernier/`;
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
 
-test.beforeEach(() => clearVernier(VERNIER));
+test.beforeEach(async () => {
+  clearVernier(VERNIER);
+  // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
+  // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
+  await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
+});
 test.afterAll(() => clearVernier(VERNIER));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
@@ -146,4 +151,23 @@ test("a whole round: claim locks the editor, done checks the fill on the page on
   } finally {
     writeFileSync(CARD, original);
   }
+});
+
+test("a change made in the tablet view is at the range of the project's own Tailwind v3 screens the view is in, and noted with them", async ({ page }) => {
+  await page.goto(REACT18_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const tablet = page.locator('iframe[title="Tablet 768"]');
+  await expect(tablet.contentFrame().locator("h1")).toBeVisible();
+  // 768px is between the project's sm (560px) and md (820px).
+  await expect(page.getByRole("group", { name: "Tablet view" })).toContainText("sm:max-md:");
+  const box = (await tablet.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await expect(page.getByRole("region", { name: "Tablet breakpoint" })).toContainText("560px to 819px");
+  await setField(page, "Fill color", "eef4ff");
+  await expect.poll(() => savedChanges()?.[0]?.breakpoint).toEqual({ min: 560, max: 820, project: { tailwind: "sm:max-md:" } });
+
+  const notes = await vernierkit("claim");
+  expect(notes).toContain("- **Breakpoint:** 560px to 819px only (`@media (560px <= width < 820px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `sm:max-md:`");
 });

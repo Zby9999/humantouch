@@ -15,7 +15,7 @@ export interface Clipboard {
   /** Holds the layers and deletes them, to paste somewhere else. False when none of them can be cut. */
   cut(layers: Layer[]): boolean;
   /**
-   * Into the Stack or Frame selected (at the end of a Stack, where each was
+   * Into the Stack, Grid or Frame selected (at the end of a Stack or a Grid, where each was
    * in its own Frame), or right after the layer selected; with nothing
    * selected, a copy goes right after its original, a cut layer back where it
    * was. Returns the layers pasted. Once a cut is pasted, it pastes again as
@@ -42,13 +42,14 @@ export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
     if (!target) return null;
     const isHeld = held!.items.some((h) => h.el === target.el);
     if (!isHeld && editor.canHold(target)) {
-      return target.kind === "stack" ? { parent: target, index: target.children.length } : { parent: target, ...item.spot };
+      // A Stack or a Grid lays it out: last among its layers. A Frame takes it where it was in its own container.
+      return target.kind === "frame" ? { parent: target, ...item.spot } : { parent: target, index: target.children.length };
     }
     const parent = target.parent;
     if (!parent) return null;
     // Counted among the other layers, as a move counts them: the layer pasted, there already, left out.
     const others = parent.children.filter((child) => child.el !== item.el);
-    return parent.kind === "stack" ? { parent, index: others.indexOf(target) + 1 + n } : { parent, ...item.spot };
+    return parent.kind === "frame" ? { parent, ...item.spot } : { parent, index: others.indexOf(target) + 1 + n };
   };
 
   return {

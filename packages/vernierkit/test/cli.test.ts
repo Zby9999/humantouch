@@ -97,6 +97,7 @@ describe("claim", () => {
 - **Layer:** Card, \`<article class="rounded-xl border bg-white p-5">\` (Page › Stack › Grid › Card)
 - **Location:** \`src/components/Card.tsx:3:5\`
 - **Scope:** This usage only: Card used at \`src/App.tsx:40:11\`, inside App used at \`src/main.tsx:8:5\`. It renders 3 instances, which change together. Other usages of Card stay as they are.
+- **Breakpoint:** all breakpoints.
 - **Design intent:** Change the fill from #FFFFFF to #FF0000 at 50% opacity.
 - **Reference style:** \`background-color: rgb(255 0 0 / 0.5)\`
 - **Currently set by:** unknown
@@ -162,6 +163,90 @@ describe("claim", () => {
     expect(notes).toContain(
       "- **Scope:** **Usage not determined.** Pricing is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page at `/pricing?plan=team` (Layer, above), and leave the other usages of Pricing as they are.\n",
     );
+  });
+});
+
+describe("claim, breakpoints", () => {
+  test("a change made in a narrower view says the widths it applies at, to be written with the project's own breakpoints; any other, all breakpoints", async () => {
+    saveRound(redFill, { ...smallRadius, breakpoint: { min: null, max: 768 } }, { ...smallRadius, id: 3, breakpoint: { min: 768, max: 1280 } });
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Breakpoint:** all breakpoints.\n");
+    expect(section(output, 2)).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`), as the designer changed it in a narrower view.");
+    expect(section(output, 2)).toContain("the way the project already writes breakpoints");
+    expect(section(output, 3)).toContain("- **Breakpoint:** 768px to 1279px only (`@media (768px <= width < 1280px)`)");
+    expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
+  });
+
+  test("a layer in a Frame's flow placed freely in a narrower view is to be placed absolute at those widths only, at its size, its Frame the reference", async () => {
+    saveRound({
+      ...redFill,
+      property: "absolute",
+      before: null,
+      after: { x: 12, y: 40 },
+      breakpoint: { min: null, max: 768 },
+      style: { position: "absolute", left: "12px", top: "40px", right: "auto", bottom: "auto", width: "120px", height: "32px" },
+    });
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toMatch(/^1\. Absolute\n/);
+    expect(section(output, 1)).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`)");
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Take this layer out of its container's layout and place it absolute in it, at X 12px and Y 40px from its top left (CSS `left` and `top`), " +
+        "at the size it has there now (Fixed 120 × 32px, as the reference style shows). Make the container its positioning reference at these widths (`position: relative`) if it is not one already.\n",
+    );
+  });
+
+  test("a change at a range of the project's own breakpoints says how the project writes it: Tailwind's variants, or its media queries at the edges", async () => {
+    saveRound(
+      { ...redFill, breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } } },
+      { ...smallRadius, breakpoint: { min: 768, max: 1024, project: { tailwind: "md:max-lg:" } } },
+      { ...smallRadius, id: 3, breakpoint: { min: 600, max: 1000, project: { queries: ["(max-width: 599px)", "(min-width: 1000px)"] } } },
+    );
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Breakpoint:** below 640px only (`@media (width < 640px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `max-sm:`: make the change apply at these widths only that way, and leave the layer as it is at every other width.",
+    );
+    expect(section(output, 2)).toContain("The project writes these widths with Tailwind's `md:max-lg:`");
+    expect(section(output, 3)).toContain(
+      "The project writes these widths with its own media queries, whose edges these are: 600px, where `(max-width: 599px)` starts or stops holding, and 1000px, where `(min-width: 1000px)` starts or stops holding: make the change apply at these widths only that way",
+    );
+  });
+
+  test("a copy of a layer with values of its own at breakpoints lists them, for the copy to have them there too; a copy of one with none says nothing of it", async () => {
+    const PHONE = { min: null, max: 768 };
+    const place = (nth: number) => ({ container: { layer: "9", target: cards }, nth, slot: nth - 1, absolute: null });
+    const copy = { ...redFill, kind: "duplicate", property: "copy", before: place(1), after: place(2), style: {} };
+    saveRound(
+      { ...smallRadius, id: 1, breakpoint: PHONE },
+      {
+        ...copy,
+        id: 2,
+        layer: "2",
+        copiedBreakpoints: [
+          { change: 1, inside: null, breakpoint: { ...PHONE, project: { tailwind: "max-md:" } }, property: "radius", value: 4 },
+          { change: 8, inside: null, breakpoint: PHONE, property: "gap", value: 16, asStack: true },
+          { change: 7, inside: { name: "Title", element: '<h2 class="text-lg">' }, breakpoint: { min: 768, max: 1280 }, property: "visible", value: false },
+        ],
+      },
+      { ...copy, id: 3, layer: "3" },
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 2)).toContain("- **Breakpoint:** all breakpoints.\n");
+    expect(section(output, 2)).toContain(
+      "- **Copied breakpoints:** the layer has values of its own at narrower breakpoints, and the copy keeps them, as the layer had them when copied. " +
+        "Give the copy the same at those widths, the way the project already writes breakpoints, so it looks as the layer did in every view:\n" +
+        "  - below 768px (`@media (width < 768px)`, Tailwind's `max-md:`): corner radius 4px (change 1)\n" +
+        "  - below 768px (`@media (width < 768px)`): gap 16px, made a real Stack (a flex column) there\n" +
+        "  - 768px to 1279px (`@media (768px <= width < 1280px)`): in Title (`<h2 class=\"text-lg\">`), visibility hidden\n",
+    );
+    expect(section(output, 3)).not.toContain("Copied breakpoints");
   });
 });
 
@@ -398,6 +483,46 @@ describe("claim, text", () => {
     );
     expect(section(output, 2)).toContain("These have a font weight of their own, which they keep: “any” (`<strong>`, Regular (400)).\n");
     expect(section(output, 3)).not.toContain("Inline fragments");
+  });
+});
+
+describe("claim, Grids", () => {
+  const grid = { ...cards, loc: "src/App.tsx:38:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "Stack", "Grid"], element: '<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">' } };
+  const list = { ...grid, loc: "src/App.tsx:20:7", context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const style = (id: number, property: string, before: unknown, after: unknown, css: Record<string, string>) => ({ ...redFill, id, target: grid, property, before, after, style: css });
+  const place = (container: object, layer: string, nth: number, isGrid: boolean) => ({ container: { layer, target: container, ...(isGrid && { grid: true }) }, nth, slot: nth - 1, absolute: null });
+  const move = (id: number, before: object, after: object) => ({ ...redFill, id, kind: "move", property: "move", before, after, style: {}, sources: [] });
+
+  test("columns are as many equal columns; the row gap and the column gap each change apart from the other", async () => {
+    saveRound(
+      style(1, "columns", 3, 2, { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }),
+      style(2, "rowGap", 16, 24, { "row-gap": "24px" }),
+      style(3, "columnGap", 16, 8, { "column-gap": "8px" }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Columns\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the number of columns from 3 to 2.\n- **Equal columns:** each column takes an equal share of the Grid's width, as `grid-template-columns: repeat(2, minmax(0, 1fr))` does (Tailwind's `grid-cols-2`). Where its columns are sized some other way now, they become equal.\n",
+    );
+    expect(section(output, 2)).toMatch(/^2\. Row gap\n/);
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Change the row gap from 16px to 24px.\n- **Gap apart:** only the space between the Grid's rows changes, not the space between its columns. Where one value sets both now (Tailwind's `gap-*`, CSS `gap`), set them apart: `gap-y-*` and `gap-x-*` in Tailwind, `row-gap` and `column-gap` in CSS.\n",
+    );
+    expect(section(output, 3)).toContain("- **Design intent:** Change the column gap from 16px to 8px.\n- **Gap apart:** only the space between the Grid's columns changes, not the space between its rows.");
+  });
+
+  test("a layer reordered in a Grid takes another cell; one moved into a Grid, a cell of it", async () => {
+    saveRound(move(1, place(grid, "4", 1, true), place(grid, "4", 3, true)), move(2, place(list, "5", 2, false), place(grid, "4", 2, true)));
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Reorder\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Move it from the 1st to the 3rd cell of its container, Grid (`<div class=\"grid grid-cols-1 gap-4 sm:grid-cols-3\">`, at `src/App.tsx:38:7`): the Grid fills its cells in the order its layers are written, so it is 3rd among them; the layers between move a cell along.\n",
+    );
+    expect(section(output, 2)).toContain("into the layout of Grid (`<div class=\"grid grid-cols-1 gap-4 sm:grid-cols-3\">`, at `src/App.tsx:38:7`), as its 2nd layer: the Grid's 2nd cell.\n");
   });
 });
 
@@ -651,6 +776,74 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 3)).toContain("- **Reference style:** none: the copy is as the layer is\n");
     expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
     expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
+  });
+});
+
+describe("claim, layers off the canvas put back", () => {
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });
+  const title = { ...list, loc: "src/App.tsx:21:9", context: { path: ["Page", "App", "Stack", "Title"], element: '<h1 class="text-4xl font-bold">' } };
+  const snippet = { loc: "src/App.tsx:21:9", code: '<h1 className="text-4xl font-bold">\n  Vernier Kit\n</h1>' };
+  const look =
+    '<!DOCTYPE html><html><head><style data-vk-edit-styles="order">@layer vernierkit-edits;</style><style data-vk-look-styles="base">html,body{margin:0}</style>' +
+    '<style data-vk-look-styles="">@import url("http://localhost:5173/src/index.css") layer(page);@font-face{font-family:"Inter";src:url("data:font/woff2;base64,AAAA")}' +
+    '@font-face { font-family: "Space Grotesk"; src: url("http://localhost:5173/space-grotesk.woff2") format("woff2"); }[data-vk-look="0"]{font-size:36px;font-weight:700}</style></head>' +
+    '<body><h1 data-vk-loc="src/App.tsx:21:9" data-vk-class="text-4xl font-bold" data-vk-look="0">Vernier Kit</h1></body></html>';
+  const opacity = { ...redFill, id: 1, layer: "1", target: { ...title, context: { path: ["Title"], element: '<h1 class="text-4xl font-bold">' } }, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
+  const kept = (more: object = {}) => ({
+    id: "a1",
+    x: -400,
+    y: 0,
+    look,
+    origin: { target: title, place: place(1), written: "src/App.tsx:21:9", snippet, at: "2026-10-29T00:00:00.000Z" },
+    edits: { lastId: 1, changes: [opacity] },
+    ...more,
+  });
+  const putBack = (id: number, after: object) => ({ ...redFill, id, kind: "putBack", layer: String(10 + id), target: list, property: "put back", before: null, after, style: {}, sources: [] });
+
+  test("a layer put back is written back from its source as it was, where it goes, with its look and what was edited off the canvas", async () => {
+    saveRound(putBack(1, { place: place(3), layer: kept() }));
+
+    const output = section((await cli("claim")).output, 1);
+
+    expect(output).toMatch(/^1\. Put back\n/);
+    expect(output).toContain("- **Layer:** Title, `<h1 class=\"text-4xl font-bold\">`, moved off the canvas, put back in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`)\n");
+    expect(output).toContain(
+      "- **Design intent:** Put this layer back, moved off the canvas in an earlier round and deleted from the code then: write it as its source below has it, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 3rd layer. Keep the source as it is; adjust it only where the code around it has changed (its props, what it imports).\n",
+    );
+    expect(output).toContain("- **Source**, as written at `src/App.tsx:21:9` when it was moved off the canvas:\n\n  ```tsx\n  <h1 className=\"text-4xl font-bold\">\n    Vernier Kit\n  </h1>\n  ```\n");
+    expect(output).toContain("- **Look**, as it was off the canvas, every style it had written onto it");
+    expect(output).toContain('[data-vk-look="0"]{font-size:36px;font-weight:700}');
+    // Not the page's stylesheets and fonts, which it only loaded from.
+    expect(output).not.toMatch(/@import|@font-face|base64|vernierkit-edits;|margin:0/);
+    expect(output).toContain("- **Reference style:** none: it is to look as its look shows\n");
+    expect(output).toContain("- **Edited off the canvas:** give it these too, as the designer made them there:\n  - Opacity of Title (`<h1 class=\"text-4xl font-bold\">`): Change the opacity from 100% to 50%.\n");
+  });
+
+  test("moved off and put back in the same round, its code is there still: it is moved, not deleted and written again; a layer whose source was not kept is written from its look", async () => {
+    saveRound(
+      { ...redFill, id: 1, kind: "delete", layer: "9", target: title, property: "delete", before: place(1), after: null, style: { display: "none" }, offCanvas: "a1" },
+      putBack(2, { place: place(3, { x: 12, y: 8 }), layer: kept() }),
+      putBack(3, { place: place(2), layer: kept({ id: "b2", origin: { target: title, place: null, written: null, snippet: null, at: "2026-10-29T00:00:00.000Z" }, edits: { lastId: 0, changes: [] } }) }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Put back:** the layer was moved off the canvas and is put back in change 2. Do not delete its code: move it to where change 2 puts it.\n");
+    expect(section(output, 2)).toContain("moved off the canvas this round (change 1): its code is still where it was. Move that code here rather than deleting it and writing it again, absolute in Stack");
+    expect(section(output, 3)).toContain("- **Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.\n");
+    expect(section(output, 3)).not.toContain("Edited off the canvas");
+  });
+
+  test("a copy set aside off the canvas, put back, is written as a copy: the layer it copies stays", async () => {
+    saveRound(putBack(1, { place: place(2), layer: kept({ origin: { target: title, place: place(1), written: "src/App.tsx:21:9", snippet, copy: true, at: "2026-10-29T00:00:00.000Z" } }) }));
+
+    const output = section((await cli("claim")).output, 1);
+
+    expect(output).toContain(
+      "- **Design intent:** Put a copy of this layer here, set aside off the canvas as a copy: the layer it copies stays where it is. Write it as its source below has it, in the layout of Stack",
+    );
+    expect(output).not.toContain("deleted");
   });
 });
 

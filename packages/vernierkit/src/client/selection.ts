@@ -8,9 +8,11 @@ import type { Layer } from "./layers";
 /** A click on `hit`, the deepest layer under the pointer. */
 export function selectOnClick(hit: Layer, selected: Layer | null): Layer | null {
   const path = pathTo(hit);
-  // The parent of the selection, or the closest layer above it that also holds the hit.
-  let context = selected?.parent ?? path[0];
-  while (!path.includes(context)) context = context.parent!;
+  // The parent of the selection, or the closest layer above it that also holds the hit; none, with the selection
+  // in other layers than the hit (a layer off the canvas, and the canvas): from the outermost.
+  let context: Layer | null = selected?.parent ?? path[0];
+  while (context && !path.includes(context)) context = context.parent;
+  context ??= path[0];
   return selectable(path[path.indexOf(context) + 1] ?? context);
 }
 

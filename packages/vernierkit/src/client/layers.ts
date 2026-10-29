@@ -4,9 +4,8 @@
  * the source and which layers repeat across the instances of one usage.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { DELETED_ATTR, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
+import { DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
-import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
 export type LayerKind = "stack" | "grid" | "frame" | "text" | "image" | "still" | "locked";
@@ -200,9 +199,9 @@ export function buildLayerTree(doc: Document): LayerTree {
   };
 }
 
-/** Whether layers can go in the layer: a Stack or a Frame that is not a field or another element that holds no others. */
+/** Whether layers can go in the layer: a Stack, a Grid or a Frame that is not a field or another element that holds no others. */
 export function holdsLayers(layer: Layer): boolean {
-  return (layer.kind === "stack" || layer.kind === "frame") && !LEAVES.has(layer.el.localName);
+  return (layer.kind === "stack" || layer.kind === "grid" || layer.kind === "frame") && !LEAVES.has(layer.el.localName);
 }
 
 /**
@@ -366,11 +365,6 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
   return children;
 }
 
-/** Hidden by the designer, rather than by the page: still a layer, to be shown again. */
-function hiddenByEdit(el: Element): boolean {
-  const style = (el as HTMLElement).style;
-  return el.hasAttribute(ORIGINAL_STYLE_ATTR) && style.getPropertyValue("display") === "none" && style.getPropertyPriority("display") === "important";
-}
 
 /** Only text, with inline pieces (bold, links, …) counted as part of it. */
 function isText(el: Element, view: Window): boolean {

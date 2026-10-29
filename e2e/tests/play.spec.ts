@@ -2,6 +2,7 @@ import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
 
 const RED = "rgb(255, 0, 0)";
+const WHITE = "rgb(255, 255, 255)";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -32,6 +33,38 @@ async function fillTheCards(page: Page) {
 test.beforeEach(async ({ page }) => {
   await page.goto(DEV_URL);
   await expect(page.locator("h1")).toBeVisible();
+});
+
+test("played, the canvas is as wide as the window: a change made in the phone view shows once the window is as narrow, and at no other width", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const phone = page.locator('iframe[title="Phone 390"]');
+  await expect(phone.contentFrame().locator("h1")).toBeVisible();
+  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await design(page).getByRole("textbox", { name: "Fill color", exact: true }).fill("ff0000");
+  await design(page).getByRole("textbox", { name: "Fill color", exact: true }).press("Enter");
+  const card = canvas(page).locator("article").first();
+  await expect(card).toHaveCSS("background-color", WHITE);
+
+  await playButton(page).click();
+  const width = () => page.locator('iframe[title="Canvas"]').evaluate((iframe) => (iframe as HTMLIFrameElement).offsetWidth);
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect(card).toHaveCSS("background-color", WHITE);
+  // Below the example's `sm`, 640px: the phone's breakpoint.
+  await page.setViewportSize({ width: 500, height: 720 });
+  await expect(card).toHaveCSS("background-color", RED);
+  await expect.poll(width).toBe(500);
+  await page.setViewportSize({ width: 900, height: 720 });
+  await expect(card).toHaveCSS("background-color", WHITE);
+
+  // Back to editing, the desktop view is as wide as the page was frozen at again.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.keyboard.press("Escape");
+  await expect(design(page)).toBeVisible();
+  await expect(card).toHaveCSS("background-color", WHITE);
+  expect(await width()).toBe(1280);
 });
 
 test("play shows the canvas alone, at full size, with its changes; Esc goes back to editing as it was", async ({ page }) => {

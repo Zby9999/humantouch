@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS } from "../src/service-protocol";
-import { createChangeSet } from "../src/client/changeset";
-import { checkChange } from "../src/client/check";
+import { layerName } from "../src/design-values";
+import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
+import { createChangeSet, type Place } from "../src/client/changeset";
+import { checkChange, type PageAt } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
+import { declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
+import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/edits";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, type Layer } from "../src/client/layers";
@@ -46,14 +50,30 @@ let iframe: HTMLIFrameElement | undefined;
 let live: HTMLIFrameElement | undefined;
 /** A second view of the canvas, as narrow as a phone. */
 let phoneFrame: HTMLIFrameElement | undefined;
+/** A saved canvas, shown as it would be put back. */
+let savedFrame: HTMLIFrameElement | undefined;
 
 afterEach(() => {
   iframe?.remove();
   live?.remove();
   phoneFrame?.remove();
+  savedFrame?.remove();
 });
 
-function openCanvas(page = PAGE) {
+/** A saved canvas, shown 800 px wide, as it looks. */
+function showSaved(html: string): Document {
+  savedFrame?.remove();
+  savedFrame = document.createElement("iframe");
+  savedFrame.style.width = "800px";
+  document.body.append(savedFrame);
+  const doc = savedFrame.contentDocument!;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  return doc;
+}
+
+function openCanvas(page = PAGE, project: ProjectBreakpoints | null = null) {
   iframe = document.createElement("iframe");
   iframe.style.width = "800px";
   document.body.append(iframe);
@@ -61,9 +81,9 @@ function openCanvas(page = PAGE) {
   doc.open();
   doc.write(page);
   doc.close();
-  const views = createViews({ document: doc, width: 800, height: 600, scrollY: 0 });
+  const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
   const changes = createChangeSet();
-  const editor = createEditor(views, changes);
+  const editor = createEditor(views, changes, project);
   const tree = editor.tree();
   const cards = [...doc.querySelectorAll("article")];
   const layerOf = (el: Element) => find(tree.root, (layer) => layer.el === el && !layer.text)!;
@@ -724,7 +744,7 @@ describe("text", () => {
       const css = property === "lineHeight" ? "line-height" : "letter-spacing";
       // The reference style is what the canvas shows.
       const change = changes.list().find((c) => c.layer === text(id).el.getAttribute("data-vk-layer") && c.property === property)!;
-      expect(change.style).toEqual({ [css]: (doc.getElementById(id) as HTMLElement).style.getPropertyValue(css) });
+      expect(change.style).toEqual({ [css]: declaredByEdit(doc.getElementById(id)!, css) });
       return change.style[css];
     };
     expect(written("inherited", "lineHeight", percent(160))).toBe("1.6");
@@ -785,7 +805,8 @@ describe("text", () => {
     expect(fragment("code").letterSpacing).toBe("1px");
     expect(keeps("letterSpacing")).toBeUndefined();
     // The text is as it was, after looking at how its fragments follow it.
-    expect(p.style.getPropertyValue("font-weight")).toBe("300");
+    expect(declaredByEdit(p, "font-weight")).toBe("300");
+    expect(style(p).fontWeight).toBe("300");
   });
 
   test("the fonts offered are those the page has loaded, each with its loaded weights, and the first font of each stack the page uses that is there", async () => {
@@ -1128,7 +1149,7 @@ describe("undo and redo", () => {
 
 describe("taking a change back from a saved round, with no canvas open", () => {
   const save = ({ doc, changes }: ReturnType<typeof openCanvas>) => ({
-    canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }),
+    canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }),
     changeSet: changes.save(),
   });
   const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
@@ -1144,15 +1165,17 @@ describe("taking a change back from a saved round, with no canvas open", () => {
 
     const once = revertSaved(save(opened), radius.id)!;
     expect(once.changeSet.changes.map((change) => change.id)).toEqual([fill.id, 3]);
-    const saved = parse(once.canvas).querySelectorAll<HTMLElement>("article");
-    expect([...saved].slice(0, 3).map((card) => [card.style.borderRadius, card.style.backgroundColor])).toEqual(
+    const saved = showSaved(once.canvas).querySelectorAll<HTMLElement>("article");
+    expect([...saved].slice(0, 3).map((card) => [style(card).borderRadius, style(card).backgroundColor])).toEqual(
       Array(3).fill(["12px", "rgb(255, 0, 0)"]),
     );
-    expect(saved[3].style.borderRadius).toBe("2px");
+    expect(style(saved[3]).borderRadius).toBe("2px");
     expect(once.canvas).toMatch(/^<!DOCTYPE html>/);
 
     const twice = revertSaved(once, fill.id)!;
-    expect([...parse(twice.canvas).querySelectorAll("article")].slice(0, 3).map((card) => card.getAttribute("style"))).toEqual(before.slice(0, 3));
+    const back = [...parse(twice.canvas).querySelectorAll("article")].slice(0, 3);
+    expect(back.map((card) => card.getAttribute("style"))).toEqual(before.slice(0, 3));
+    expect(back.map((card) => card.hasAttribute("data-vk-style"))).toEqual([false, false, false]);
     expect(twice.changeSet.lastId).toBe(3);
   });
 
@@ -1807,7 +1830,7 @@ describe("moving layers", () => {
     const opened = open();
     opened.editor.move(opened.layer("c"), { parent: opened.layer("list"), index: 0 });
     opened.editor.move(opened.layer("b"), { parent: opened.layer("board"), x: 10, y: 10 });
-    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: opened.changes.save() };
 
     const reverted = revertSaved(revertSaved(saved, 2)!, 1);
 
@@ -1877,7 +1900,7 @@ describe("moves, taken back in any order", () => {
     editor.move(layer("a"), { parent: layer("list"), index: 2 });
     editor.move(layer("b"), { parent: layer("list"), index: 2 });
     expect(order("list")).toEqual(["c", "a", "b"]);
-    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
     expect(order("list")[0]).toBe("a");
@@ -1944,6 +1967,132 @@ const board = (layers: string) => `<!DOCTYPE html>
 /** An absolute layer in the board: `[left, top, width, height]`. */
 const placed = (id: string, [left, top, width, height]: number[]) =>
   `<div id="${id}" ${at(`2${id.charCodeAt(0) - 96}:7`)} style="position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px"></div>`;
+
+const NUDGES = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="list" ${at("5:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
+    <div id="a" ${at("6:7")} style="height: 20px">A</div>
+    <div id="b" ${at("7:7")} style="height: 20px">B</div>
+    <div id="c" ${at("8:7")} style="height: 20px">C</div>
+  </div>
+  <div id="board" ${at("10:5")} style="position: relative; width: 300px; height: 200px">
+    <div id="free" ${at("11:7")} style="position: absolute; left: 12px; top: 8px; width: 30px; height: 20px"></div>
+  </div>
+  <div id="frame" ${at("13:5")} style="width: 300px; height: 100px"><span id="tag" ${at("13:30")} style="display: inline-block; width: 40px; height: 20px; margin-left: 5px">Tag</span></div>
+</body>`;
+
+describe("nudging layers, as the arrow keys do", () => {
+  const open = () => {
+    const canvas = openCanvas(NUDGES);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = () => [...canvas.doc.getElementById("list")!.children].map((el) => el.id);
+    /** Where an element is in its container, in px. */
+    const place = (id: string, doc = canvas.doc) => {
+      const r = doc.getElementById(id)!.getBoundingClientRect();
+      const p = doc.getElementById(id)!.parentElement!.getBoundingClientRect();
+      return [r.left - p.left, r.top - p.top];
+    };
+    return { ...canvas, layer, order, place };
+  };
+
+  test("a layer placed freely moves by as much, its X and Y; a run of nudges is one step, undone at once", () => {
+    const { editor, changes, layer, place } = open();
+
+    editor.nudge([layer("free")], 1, 0);
+    editor.nudge([layer("free")], 10, 0, { continues: true });
+    editor.nudge([layer("free")], 0, -1, { continues: true });
+
+    expect(place("free")).toEqual([23, 7]);
+    expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual([
+      ["x", 12, 23],
+      ["y", 8, 7],
+    ]);
+    editor.undo();
+    expect(place("free")).toEqual([12, 8]);
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(place("free")).toEqual([23, 7]);
+  });
+
+  test("nudges apart are steps apart", () => {
+    const { editor, layer, place } = open();
+
+    editor.nudge([layer("free")], 1, 0);
+    editor.nudge([layer("free")], 1, 0);
+    editor.undo();
+
+    expect(place("free")).toEqual([13, 8]);
+  });
+
+  test("a nudge of other layers is a step of its own, though it comes right after; undone, the run leaves its layer selected", () => {
+    const { editor, layer, place, order } = open();
+
+    editor.nudge([layer("free")], 1, 0);
+    editor.nudge([layer("free")], 1, 0, { continues: true });
+    editor.nudge([layer("a")], 0, 1, { continues: true });
+    editor.undo();
+
+    expect(order()).toEqual(["a", "b", "c"]);
+    expect(place("free")).toEqual([14, 8]);
+    expect(editor.undo().map((l) => l.el.id)).toEqual(["free"]);
+    expect(place("free")).toEqual([12, 8]);
+  });
+
+  test("in a Stack, a layer swaps places with the next one along it that way; at the end, or across the Stack, it stays", () => {
+    const { editor, changes, layer, order } = open();
+
+    editor.nudge([layer("a")], 0, 1);
+    expect(order()).toEqual(["b", "a", "c"]);
+    editor.nudge([layer("a")], 0, 10, { continues: true });
+    expect(order()).toEqual(["b", "c", "a"]);
+    editor.nudge([layer("a")], 0, 1, { continues: true });
+    editor.nudge([layer("a")], 1, 0, { continues: true });
+    expect(order()).toEqual(["b", "c", "a"]);
+
+    // One move, from where it was to where it is; one step.
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ kind: "move", before: { nth: 1 }, after: { nth: 3 } });
+    editor.undo();
+    expect(order()).toEqual(["a", "b", "c"]);
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("several layers side by side in a Stack move together, until the first reaches the end", () => {
+    const { editor, layer, order } = open();
+
+    const moved = editor.nudge([layer("a"), layer("b")], 0, 1);
+    expect(order()).toEqual(["c", "a", "b"]);
+    expect(moved.map((l) => l.el.id)).toEqual(["a", "b"]);
+    editor.nudge(moved, 0, 1);
+    expect(order()).toEqual(["c", "a", "b"]);
+    editor.nudge(moved, 0, -1);
+    expect(order()).toEqual(["a", "b", "c"]);
+  });
+
+  test("in a Frame, a layer in its flow is placed freely where it is, nudged on from there", () => {
+    const { editor, changes, layer, place } = open();
+
+    const was = place("tag");
+    const [moved] = editor.nudge([layer("tag")], 0, 10);
+
+    expect(place("tag")).toEqual([was[0], was[1] + 10]);
+    expect(moved.absolute).toBe(true);
+    expect(changes.list()[0]).toMatchObject({ kind: "move", after: { absolute: { x: 0, y: 10 } } });
+    editor.nudge([moved], 1, 0, { continues: true });
+    expect(place("tag")).toEqual([was[0] + 1, was[1] + 10]);
+    expect(changes.list()).toHaveLength(1);
+    editor.undo();
+    expect(style(layer("tag").el).position).toBe("static");
+    expect(place("tag")).toEqual(was);
+  });
+
+  test("the page stays", () => {
+    const { editor, changes } = open();
+
+    expect(editor.nudge([editor.tree().root], 1, 0)).toEqual([editor.tree().root]);
+    expect(changes.list()).toEqual([]);
+  });
+});
 
 describe("making a Stack", () => {
   const open = (page = MOVES) => {
@@ -2173,7 +2322,7 @@ describe("making a Stack", () => {
     editor.set(stack, "gap", 4);
     const id = stack.el.getAttribute("data-vk-layer");
     expect(changes.list()[1]).toMatchObject({ property: "gap", target: { loc: null, made: id, unlocated: false, context: { path: ["Page", "App", "Stack"] } } });
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     expect(editor.revert(changes.list()[0].id)?.el.id).toBe("a");
     expect([...doc.getElementById("list")!.children].map((el) => el.id)).toEqual(["a", "b", "c"]);
@@ -2188,7 +2337,7 @@ describe("making a Stack", () => {
     const opened = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40])].join("") + placed("c", [0, 200, 10, 10])));
     opened.editor.stack([opened.layer("b"), opened.layer("a")]);
     opened.editor.set(opened.layer("c"), "opacity", 0.5);
-    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, scrollY: 0 }), changeSet: opened.changes.save() };
+    const saved = { canvas: serializeCanvas({ document: opened.doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: opened.changes.save() };
 
     const reverted = revertSaved(saved, saved.changeSet.changes[0].id)!;
 
@@ -2259,7 +2408,7 @@ describe("dissolving a Stack", () => {
     editor.redo();
     expect(style(doc.getElementById("a")!).position).toBe("absolute");
 
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     expect(revertSaved(saved, saved.changeSet.changes[0].id)).toBeNull();
   });
 
@@ -2431,7 +2580,7 @@ describe("new text and Frames", () => {
     expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
     expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-vk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
     expect(text.el.parentElement).toBe(frame.el);
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
     expect(doc.querySelectorAll("[data-vk-made]")).toHaveLength(0);
@@ -2516,7 +2665,7 @@ describe("editing text", () => {
     const { doc, editor, changes, layer } = open(`<!DOCTYPE html><p id="t" ${at("3:3")}>Some <b>bold</b> words</p><p id="u" ${at("4:3")}>Other</p>`);
     editor.setText(layer("t"), "Plain");
     editor.setText(layer("u"), "Changed");
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
     expect(doc.getElementById("t")!.innerHTML).toBe("Some <b>bold</b> words");
@@ -2740,9 +2889,9 @@ describe("deleting layers", () => {
       // The page still renders three.
       ["delete-2", true, 3],
     ]);
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
-    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
-    expect([...reverted.querySelectorAll("article")].map((card) => card.style.display)).toEqual(["none", "", "", ""]);
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = showSaved(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas);
+    expect([...reverted.querySelectorAll("article")].map((card) => style(card).display)).toEqual(["none", "block", "block", "block"]);
 
     editor.revert(changes.list()[1].id);
     expect(cards.map((card) => style(card).display)).toEqual(["block", "none", "block", "block"]);
@@ -2835,7 +2984,7 @@ describe("duplicating layers", () => {
     expect([style(copy).position, style(copy).left, style(copy).top, style(copy).width]).toEqual(["absolute", "12px", "8px", "200px"]);
     expect(changes.list()[1].after).toMatchObject({ absolute: { x: 12, y: 8 } });
 
-    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, scrollY: 0 }), changeSet: changes.save() };
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[1].id)!.canvas, "text/html");
     expect(reverted.getElementById("board")!.children).toHaveLength(0);
     expect(reverted.getElementById("board")!.style.position).toBe("");
@@ -3156,6 +3305,46 @@ describe("views", () => {
     expect(phone.document.getElementById("a")!.textContent).toBe("Typed");
   });
 
+  test("words typed into text in another view are written to the canvas and show in every view at once; the view typed in keeps its own nodes", async () => {
+    const { doc, views, phone, alike } = await open();
+    const tabletFrame = document.createElement("iframe");
+    document.body.append(tabletFrame);
+    try {
+      const tablet = await views.add(tabletFrame, 600);
+      const typing = phone.typeIn(doc.getElementById("a")!);
+      const el = typing.el;
+      expect(el).toBe(phone.document.getElementById("a"));
+      const words = el.firstChild as Text;
+
+      // As the browser types: into the text there, then a line break and more words after it.
+      el.setAttribute("contenteditable", "plaintext-only");
+      words.appendData("lpha");
+      el.append(phone.document.createElement("br"), phone.document.createTextNode("Beta"));
+      // In every view as soon as the view typed in has taken it, before anything renders on it.
+      await Promise.resolve();
+
+      for (const view of [doc, tablet.document]) expect(view.getElementById("a")!.innerHTML).toBe("Alpha<br>Beta");
+      // The view typed in is left as it is: the caret stays in the words it is in.
+      expect(el.firstChild).toBe(words);
+      expect(el.getAttribute("contenteditable")).toBe("plaintext-only");
+      expect(doc.getElementById("a")!.hasAttribute("contenteditable")).toBe(false);
+
+      words.data = "Al";
+      await new Promise(requestAnimationFrame);
+      expect(doc.getElementById("a")!.innerHTML).toBe("Al<br>Beta");
+
+      // Done typing, the view follows the canvas again.
+      el.removeAttribute("contenteditable");
+      typing.done();
+      doc.getElementById("a")!.textContent = "Typed";
+      await new Promise(requestAnimationFrame);
+      alike();
+      expect(tablet.document.documentElement.outerHTML).toBe(doc.documentElement.outerHTML);
+    } finally {
+      tabletFrame.remove();
+    }
+  });
+
   test("a view taken away stops following the canvas; the desktop view cannot be taken away", async () => {
     const { views, editor, phone, layer } = await open();
     const [desktop] = views.list();
@@ -3217,7 +3406,7 @@ describe("Variables", () => {
   function openWithVariables(variables = ALL) {
     const canvas = openCanvas(PAGE_OF_STACKS);
     const catalog = resolveVariables(variables, canvas.doc);
-    const editor = createEditor(canvas.views, canvas.changes, (property, value, picked, previous) => bind(catalog, property, value, picked, previous));
+    const editor = createEditor(canvas.views, canvas.changes, null, { bind: (property, value, picked, previous) => bind(catalog, property, value, picked, previous) });
     const tree = editor.tree();
     const layer = (selector: string) => find(tree.root, (l) => l.el === canvas.doc.querySelector(selector) && !l.text)!;
     const change = (property: string) => canvas.changes.list().find((c) => c.property === property);
@@ -3257,6 +3446,21 @@ describe("Variables", () => {
     // No Variable is offered for X, nor for opacity.
     editor.set(layer("article"), "opacity", 0.5);
     expect(change("opacity")!.variables).toBeUndefined();
+  });
+
+  test("a Variable picked in the phone view is the value at its breakpoint only, as the panel shows it in each view", async () => {
+    const { editor, layer, change, views } = openWithVariables();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const row = layer("#row");
+
+    editor.at(phone);
+    editor.set(row, "gap", 22, { variables: { "": GUTTER } });
+    expect(change("gap")).toMatchObject({ breakpoint: { min: null, max: 800 }, variables: { "": { ...GUTTER, picked: true } } });
+    expect(editor.variables(row, "gap")).toEqual({ "": { ...GUTTER, picked: true } });
+    editor.at(null);
+    expect(editor.variables(row, "gap")).toBeUndefined();
   });
 
   test("a Variable picked is recorded as picked, kept while that part keeps its value, and undone with the edit", () => {
@@ -3358,5 +3562,1023 @@ describe("Variables", () => {
     const { editor, layer, change } = openWithVariables([]);
     editor.set(layer("#row"), "gap", 22);
     expect(change("gap")).not.toHaveProperty("variables");
+  });
+});
+
+describe("breakpoints", () => {
+  const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  const BLUE = { type: "solid", color: "#0000FF", opacity: 1 } as const;
+  /** The canvas, 800 px wide, shown in a phone view too: its breakpoint is every width below 800 px, unless the project has breakpoints of its own. */
+  const open = async (page = MOVES, project: ProjectBreakpoints | null = null) => {
+    const canvas = openCanvas(page, project);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    const [desktop] = canvas.views.list();
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    /** How the element with id `id` is styled in each view: desktop, then phone. */
+    const shown = (id: string) => [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
+    const fills = (id: string) => shown(id).map((s) => s.backgroundColor);
+    /** Shows the canvas in one more view, `width` px wide. */
+    const addView = async (width: number) => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      extraFrames.push(frame);
+      return canvas.views.add(frame, width);
+    };
+    return { ...canvas, desktop, phone, layer, shown, fills, addView };
+  };
+  let extraFrames: HTMLIFrameElement[] = [];
+  afterEach(() => {
+    for (const frame of extraFrames) frame.remove();
+    extraFrames = [];
+  });
+
+  test("a fill, stroke, corner radius, shadows and text styles changed in the phone view change there only, are listed as changed there, and inherit again", async () => {
+    const { editor, changes, phone, layer, shown } = await open();
+    const [board, text] = [layer("board"), layer("a")];
+    const shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 } as const;
+
+    editor.at(phone);
+    editor.set(board, "fill", RED);
+    editor.set(board, "stroke", { color: "#0000FF", opacity: 1, weight: 1.5, style: "solid" });
+    editor.set(board, "radius", 8);
+    editor.set(board, "shadows", [shadow]);
+    editor.set(text, "fontSize", 20);
+    editor.set(text, "textColor", { color: "#FF0000", opacity: 1 });
+    editor.set(text, "textShadows", [shadow]);
+
+    expect(shown("board").map((s) => [s.backgroundColor, s.borderTopStyle, s.borderTopLeftRadius, s.boxShadow === "none"])).toEqual([
+      ["rgba(0, 0, 0, 0)", "none", "0px", true],
+      ["rgb(255, 0, 0)", "solid", "8px", false],
+    ]);
+    expect(shown("a").map((s) => [s.fontSize, s.color, s.textShadow === "none"])).toEqual([
+      ["16px", "rgb(0, 0, 0)", true],
+      ["20px", "rgb(255, 0, 0)", false],
+    ]);
+    // The weight as written, at the breakpoint too.
+    expect(editor.read(board, "stroke")!.weight).toBe(1.5);
+    expect(changes.list().map((change) => change.breakpoint)).toEqual(Array(7).fill({ min: null, max: 800 }));
+    expect(editor.changesHere(board)).toEqual(["fill", "stroke", "radius", "shadows"]);
+    expect(editor.changesHere(text)).toEqual(["fontSize", "textColor", "textShadows"]);
+
+    editor.inherit(board, "fill");
+    editor.inherit(text, "fontSize");
+    expect(shown("board").map((s) => s.backgroundColor)).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    expect(shown("a").map((s) => s.fontSize)).toEqual(["16px", "16px"]);
+    expect(editor.changesHere(board)).toEqual(["stroke", "radius", "shadows"]);
+    editor.at(null);
+    expect(editor.read(board, "radius")).toBe(0);
+  });
+
+  /** A Tailwind theme of the project's own, as the local service reads it. */
+  const TAILWIND: ProjectBreakpoints = {
+    from: "tailwind",
+    list: [
+      { width: 640, name: "sm" },
+      { width: 768, name: "md" },
+    ],
+  };
+
+  test("with breakpoints of the project's own, a view stands for the range of them its width is in, whatever other views there are; one in the desktop view's range is the desktop view", async () => {
+    const { editor, changes, phone, layer, addView } = await open(MOVES, TAILWIND);
+    const tablet = await addView(700);
+    const wide = await addView(780);
+
+    expect([phone, tablet, wide].map((view) => editor.breakpointAt(view.width))).toEqual([
+      { min: null, max: 640, project: { tailwind: "max-sm:" } },
+      { min: 640, max: 768, project: { tailwind: "sm:max-md:" } },
+      null,
+    ]);
+    await addView(500);
+    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 640, project: { tailwind: "max-sm:" } });
+
+    editor.at(tablet);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(wide);
+    editor.set(layer("board"), "radius", 8);
+    expect(changes.list().map((change) => [change.property, change.breakpoint ?? "every width"])).toEqual([
+      ["fill", { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+      ["radius", "every width"],
+    ]);
+  });
+
+  test("with the project's media queries, a range is written with the query at each of its edges", async () => {
+    const css: ProjectBreakpoints = {
+      from: "css",
+      list: [
+        { width: 600, name: "(max-width: 599px)" },
+        { width: 750, name: "(min-width: 750px)" },
+      ],
+    };
+    const { editor, phone } = await open(MOVES, css);
+    expect(editor.breakpointAt(phone.width)).toEqual({ min: null, max: 600, project: { queries: ["(max-width: 599px)"] } });
+    expect(editor.breakpointAt(700)).toEqual({ min: 600, max: 750, project: { queries: ["(max-width: 599px)", "(min-width: 750px)"] } });
+  });
+
+  test("a change at a breakpoint is checked on the page shown at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
+    // As the live page has it: source markers, and no usage chains, which only the canvas is given.
+    const live = MOVES.replace(/ data-vk-chain='[^']*'/g, "");
+    const { editor, changes, phone, layer } = await open(live);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    /** The live page, `width` px wide: with the fill applied below 800px, or not. */
+    const pageAt = (width: number, applied: boolean) => {
+      const frame = document.createElement("iframe");
+      frame.style.width = `${width}px`;
+      document.body.append(frame);
+      extraFrames.push(frame);
+      const page = frame.contentDocument!;
+      page.open();
+      page.write(live.replace("<body", `<style>${applied ? "@media (width < 800px) { #board { background-color: rgb(255, 0, 0) } }" : ""}</style>\n<body`));
+      page.close();
+      return page;
+    };
+    const widths: number[] = [];
+    let closed = 0;
+    const openAt = (applied: boolean) => async (width: number) => {
+      widths.push(width);
+      return { doc: pageAt(width, applied), close: () => void closed++ };
+    };
+    const check = async (applied: boolean, at: PageAt = openAt(applied)) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const result = checkChange(pageAt(1000, applied), change, at);
+        await vi.advanceTimersByTimeAsync(CHECK_SETTLE_MS);
+        return await result;
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+
+    expect(await check(true)).toEqual({ outcome: "shown" });
+    expect(await check(false)).toEqual({ outcome: "not shown", actual: null });
+    expect(widths).toEqual([799, 799]);
+    expect(closed).toBe(2);
+    expect(await check(true, async () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
+    // The window in the range already: checked on the page as it is.
+    widths.length = 0;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      expect(await checkChange(pageAt(700, true), change, openAt(true))).toEqual({ outcome: "shown" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(widths).toEqual([]);
+  });
+
+  test("the project's media queries are read from the page's stylesheets: each width one starts or stops holding at, named by the first there", () => {
+    const { doc } = openCanvas(`<!DOCTYPE html><style>
+      @media (max-width: 767px) { p { color: red } }
+      @media screen and (min-width: 48em) { p { color: blue } }
+      @layer page { @supports (display: grid) { @media (width >= 1024px) { p { color: green } } } }
+      @media (640px < width <= 900px) { p { margin: 0 } }
+      @media (prefers-color-scheme: dark), (min-height: 500px), print { p { color: white } }
+    </style><body><p>Hi</p></body>`);
+    expect(readMediaBreakpoints(doc)).toEqual({
+      from: "css",
+      list: [
+        { width: 641, name: "(640px < width <= 900px)" },
+        { width: 768, name: "(max-width: 767px)" },
+        { width: 901, name: "(640px < width <= 900px)" },
+        { width: 1024, name: "(width >= 1024px)" },
+      ],
+    });
+    expect(readMediaBreakpoints(openCanvas(MOVES).doc)).toBeNull();
+  });
+
+  test("the media queries of a dependency's stylesheets, or of the editor's own, are not the project's; a stylesheet whose source cannot be told counts", () => {
+    const { doc } = openCanvas(`<!DOCTYPE html>
+      <style data-vite-dev-id="/app/node_modules/.pnpm/lib@1.0.0/node_modules/lib/dist/lib.css">@media (min-width: 500px) { p { color: red } }</style>
+      <style data-vite-dev-id="/app/src/index.css">@media (min-width: 768px) { p { color: blue } }</style>
+      <style data-vk-canvas-styles>@media (min-width: 300px) { p { color: green } }</style>
+      <style>@media (max-width: 1023px) { p { margin: 0 } }</style>
+      <body><p>Hi</p></body>`);
+    expect(readMediaBreakpoints(doc)?.list.map((breakpoint) => breakpoint.width)).toEqual([768, 1024]);
+
+    // A stylesheet loaded from a dependency's file.
+    const rulesOf = (css: string) => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(css);
+      return sheet.cssRules;
+    };
+    const linked = (href: string, css: string) => ({ href, ownerNode: null, cssRules: rulesOf(css) });
+    const page = {
+      styleSheets: [linked("http://localhost:5173/node_modules/.vite/deps/lib.css", "@media (min-width: 500px) { p { color: red } }"), linked("http://localhost:5173/src/app.css", "@media (min-width: 640px) { p { color: red } }")],
+    } as unknown as Document;
+    expect(readMediaBreakpoints(page)?.list.map((breakpoint) => breakpoint.width)).toEqual([640]);
+  });
+
+  test("a change at a breakpoint recorded before the views changed is told, edited and reset in every view whose width is in its range, never doubled", async () => {
+    const { editor, changes, phone, layer, fills, addView } = await open();
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    // A view added between: the phone view now stands for the widths below 600px, the new one for 600px up to 800px.
+    const between = await addView(600);
+    expect(editor.breakpoint()).toEqual({ min: null, max: 600 });
+
+    for (const view of [phone, between]) {
+      editor.at(view);
+      expect(editor.changesHere(layer("board"))).toEqual(["fill"]);
+    }
+    editor.set(layer("board"), "fill", BLUE);
+    expect(changes.list().map((change) => [change.after, change.breakpoint])).toEqual([[BLUE, { min: null, max: 800 }]]);
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(0, 0, 255)"]);
+
+    editor.inherit(layer("board"), "fill");
+    expect(changes.list()).toEqual([]);
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    editor.at(phone);
+    expect(editor.changesHere(layer("board"))).toEqual([]);
+  });
+
+  test("with the project's breakpoints read, a change recorded at a range of them before says how the project writes it, and one in a view in the desktop view's range is told, edited and reset there", async () => {
+    const canvas = openCanvas(MOVES, TAILWIND);
+    const { views, editor, doc } = canvas;
+    // Recorded before the project's breakpoints were read, by the views' widths: as a saved round brings them back.
+    const layer = (id: string) => find(editor.tree().root, (l) => l.el === doc.getElementById(id) && !l.text)!;
+    const wide = await (async () => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      extraFrames.push(frame);
+      return views.add(frame, 780);
+    })();
+    const narrow = await (async () => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      extraFrames.push(frame);
+      return views.add(frame, 700);
+    })();
+    editor.at(narrow);
+    editor.set(layer("board"), "fill", RED);
+    editor.set(layer("board"), "radius", 4);
+    editor.set(layer("list"), "gap", 4);
+    // As a round saved before the project's breakpoints were read has them: with no word of the project's, the fill at 640px up to 800px, the views' widths then.
+    const round = structuredClone(canvas.changes.save());
+    const [old, oldRadius] = round.changes;
+    old.breakpoint = { min: 640, max: 800 };
+    oldRadius.breakpoint = { min: 640, max: 768 };
+    const saved = createChangeSet(round);
+    const [fill, radius] = saved.list();
+    const reopened = createEditor(views, saved, TAILWIND);
+    expect(radius.breakpoint).toEqual({ min: 640, max: 768, project: { tailwind: "sm:max-md:" } });
+    expect(fill.breakpoint).toEqual({ min: 640, max: 800 });
+
+    // 780px is in the desktop view's range, md and up: edits there are at every width, but the fill of 640px up to 800px holds there.
+    reopened.at(wide);
+    expect(reopened.breakpoint()).toBeNull();
+    expect(reopened.changesHere(layer("board"))).toEqual(["fill"]);
+    reopened.set(layer("board"), "fill", BLUE);
+    expect(saved.list().map((change) => [change.property, change.after, change.breakpoint ?? "every width"])).toEqual([
+      ["fill", BLUE, { min: 640, max: 800 }],
+      ["radius", 4, { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+      ["gap", 4, { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }],
+    ]);
+    reopened.inherit(layer("board"), "fill");
+    expect(reopened.changesHere(layer("board"))).toEqual([]);
+    reopened.set(layer("board"), "opacity", 0.5);
+    expect(saved.list().at(-1)!.breakpoint).toBeUndefined();
+    // In the view of its own range, the board's changes there, in the order they were made.
+    reopened.at(narrow);
+    expect(reopened.changesHere(layer("board"))).toEqual(["radius"]);
+  });
+
+  test("an edit at a breakpoint reaching into another range the property has of its own takes only the widths left, so no two overlap", async () => {
+    const { editor, changes, views, phone, layer, shown, addView } = await open();
+    const between = await addView(600);
+    editor.at(between);
+    editor.set(layer("board"), "fill", RED);
+    // The view taken away: the phone view stands for every width below 800px again, which reaches into the change's range.
+    views.remove(between);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", BLUE);
+
+    expect(changes.list().map((change) => change.breakpoint)).toEqual([
+      { min: 600, max: 800 },
+      { min: null, max: 600 },
+    ]);
+    expect(style(phone.document.getElementById("board")!).backgroundColor).toBe("rgb(0, 0, 255)");
+    expect(shown("board")[0].backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  test("an edit made in the phone view shows there only, and is recorded at its breakpoint", async () => {
+    const { editor, changes, phone, layer, fills } = await open();
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+    expect(changes.list()).toMatchObject([{ kind: "style", property: "fill", breakpoint: { min: null, max: 800 }, before: null, after: RED }]);
+  });
+
+  test("an edit made in the desktop view applies at every breakpoint, but where the breakpoint has changed the property on its own", async () => {
+    const { editor, phone, desktop, layer, fills } = await open();
+
+    editor.set(layer("list"), "fill", BLUE);
+    expect(fills("list")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(desktop);
+    editor.set(layer("board"), "fill", BLUE);
+
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+  });
+
+  test("worked in, a view reads values as it shows them, and tells which the breakpoint changed on its own", async () => {
+    const { editor, phone, desktop, layer } = await open(MOVES.replace("<body", "<style>@media (width < 500px) { #list { gap: 4px !important } }</style>\n<body"));
+
+    expect(editor.read(layer("list"), "gap")).toBe(10);
+    editor.at(phone);
+    expect(editor.breakpoint()).toEqual({ min: null, max: 800 });
+    expect(editor.read(layer("list"), "gap")).toBe(4);
+    expect(editor.changedHere(layer("list"), "gap")).toBe(false);
+
+    editor.set(layer("list"), "gap", 12);
+    expect(editor.read(layer("list"), "gap")).toBe(12);
+    expect(editor.changedHere(layer("list"), "gap")).toBe(true);
+    expect(editor.changedHere(layer("list"), "padding")).toBe(false);
+
+    editor.at(desktop);
+    expect(editor.breakpoint()).toBeNull();
+    expect(editor.read(layer("list"), "gap")).toBe(10);
+    expect(editor.changedHere(layer("list"), "gap")).toBe(false);
+  });
+
+  test("set back to inherit, a breakpoint shows the value at every width again, as it is now; undone, its own is back", async () => {
+    const { editor, changes, phone, desktop, layer, fills } = await open();
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(desktop);
+    editor.set(layer("board"), "fill", BLUE);
+    editor.at(phone);
+    editor.inherit(layer("board"), "fill");
+
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+    expect(editor.changedHere(layer("board"), "fill")).toBe(false);
+    expect(changes.list().map((change) => [change.property, change.breakpoint ?? "every width"])).toEqual([["fill", "every width"]]);
+
+    editor.undo();
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    expect(editor.changedHere(layer("board"), "fill")).toBe(true);
+    editor.redo();
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+  });
+
+  test("an edit at a breakpoint is undone and redone there, whichever view is worked in then; set back to where it started, it is no change", async () => {
+    const { editor, changes, phone, desktop, layer, fills } = await open();
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.at(desktop);
+    editor.undo();
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+
+    editor.at(phone);
+    editor.set(layer("board"), "fill", null);
+    expect(changes.list()).toEqual([]);
+    expect(fills("board")).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+  });
+
+  test("a layer hidden at a breakpoint is hidden there only, and stays a layer; hidden at every width, a breakpoint can show it again", async () => {
+    const { editor, changes, phone, desktop, layer, shown } = await open();
+    const displays = (id: string) => shown(id).map((s) => s.display);
+
+    editor.at(phone);
+    editor.set(layer("b"), "visible", false);
+    expect(displays("b")).toEqual(["block", "none"]);
+    expect(editor.read(layer("b"), "visible")).toBe(false);
+    expect(editor.read(layer("b"), "fill")).toBeNull();
+    expect(phone.boxOf(layer("b"))).toBeNull();
+    expect(editor.tree().root.children[0].children.map((l) => l.name)).toEqual(["A", "B", "C"]);
+    editor.at(desktop);
+    expect(editor.read(layer("b"), "visible")).toBe(true);
+
+    editor.set(layer("c"), "visible", false);
+    editor.at(phone);
+    expect(editor.read(layer("c"), "visible")).toBe(false);
+    editor.set(layer("c"), "visible", true);
+    expect(displays("c")).toEqual(["none", "block"]);
+    expect(changes.list().map((change) => [change.layer, change.after, change.breakpoint ?? "every width"])).toEqual([
+      [layer("b").el.getAttribute("data-vk-layer"), false, { min: null, max: 800 }],
+      [layer("c").el.getAttribute("data-vk-layer"), false, "every width"],
+      [layer("c").el.getAttribute("data-vk-layer"), true, { min: null, max: 800 }],
+    ]);
+    // Shown again at every width, it is shown at the breakpoint as well, which says so on its own still.
+    editor.at(desktop);
+    editor.set(layer("c"), "visible", true);
+    expect(displays("c")).toEqual(["block", "block"]);
+  });
+
+  test("changes to the structure made in the phone view apply in every view, at every width", async () => {
+    const { editor, changes, phone, layer, shown } = await open();
+    const order = (doc: Document) => [...doc.getElementById("list")!.children].map((el) => el.id);
+
+    editor.at(phone);
+    editor.move(layer("c"), { parent: layer("list"), index: 0 });
+    const copy = editor.duplicate(layer("d"));
+    editor.remove(layer("a"));
+    const stack = editor.stack([layer("b"), layer("c")]);
+
+    expect(order(phone.document)).toEqual(order(editor.tree().root.el.ownerDocument));
+    expect(shown("a").map((s) => s.display)).toEqual(["none", "none"]);
+    expect(phone.boxOf(copy)).not.toBeNull();
+    expect(phone.boxOf(stack)).not.toBeNull();
+    expect(changes.list().every((change) => !change.breakpoint)).toBe(true);
+  });
+
+  test("sizes, Stack settings and minimums change at a breakpoint as any property does", async () => {
+    const { editor, phone, layer, shown } = await open();
+
+    editor.at(phone);
+    editor.set(layer("list"), "gap", 24);
+    editor.set(layer("list"), "direction", "horizontal");
+    editor.set(layer("board"), "width", { type: "fixed", value: 120 });
+    editor.set(layer("board"), "minHeight", 300);
+
+    expect(shown("list").map((s) => [s.flexDirection, s.rowGap])).toEqual([
+      ["column", "10px"],
+      ["row", "24px"],
+    ]);
+    expect(shown("board").map((s) => [s.width, s.minHeight])).toEqual([
+      ["300px", "0px"],
+      ["120px", "300px"],
+    ]);
+    expect(editor.read(layer("board"), "width")).toEqual({ type: "fixed", value: 120 });
+    expect(editor.measure(layer("board")).width).toBe(120);
+  });
+
+  test("a layer placed freely is placed anew at a breakpoint when dragged there in its container, or when its X and Y change there", async () => {
+    const { editor, changes, phone, desktop, layer, doc } = await open();
+    editor.move(layer("d"), { parent: layer("board"), x: 10, y: 20 });
+    const place = (d: Document) => {
+      const r = d.getElementById("d")!.getBoundingClientRect();
+      const b = d.getElementById("board")!.getBoundingClientRect();
+      return [r.left - b.left, r.top - b.top];
+    };
+
+    editor.at(phone);
+    editor.move(layer("d"), { parent: layer("board"), x: 40, y: 50 });
+    expect([place(doc), place(phone.document)]).toEqual([
+      [10, 20],
+      [40, 50],
+    ]);
+    editor.set(layer("d"), "x", 5);
+    expect(place(phone.document)).toEqual([5, 50]);
+    expect(changes.list().map((change) => [change.kind, change.property, change.breakpoint ?? "every width"])).toEqual([
+      ["move", "move", "every width"],
+      ["style", "x", { min: null, max: 800 }],
+      ["style", "y", { min: null, max: 800 }],
+    ]);
+
+    // In the desktop view, dragged again, it is the move that changes.
+    editor.at(desktop);
+    editor.move(layer("d"), { parent: layer("board"), x: 30, y: 30 });
+    expect([place(doc), place(phone.document)]).toEqual([
+      [30, 30],
+      [5, 50],
+    ]);
+  });
+
+  test("nudged in the phone view, a layer placed freely is placed anew at its breakpoint; one in a Stack swaps places in every view", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    const place = (d: Document) => {
+      const r = d.getElementById("free")!.getBoundingClientRect();
+      const b = d.getElementById("board")!.getBoundingClientRect();
+      return [r.left - b.left, r.top - b.top];
+    };
+    const order = (d: Document) => [...d.getElementById("list")!.children].map((el) => el.id);
+
+    editor.at(phone);
+    editor.nudge([layer("free")], 10, 0);
+    editor.nudge([layer("a")], 0, 1);
+
+    expect([place(doc), place(phone.document)]).toEqual([
+      [12, 8],
+      [22, 8],
+    ]);
+    expect([order(doc), order(phone.document)]).toEqual([
+      ["b", "a", "c"],
+      ["b", "a", "c"],
+    ]);
+    expect(changes.list().map((change) => [change.property, change.breakpoint ?? "every width"])).toEqual([
+      ["x", { min: null, max: 800 }],
+      ["move", "every width"],
+    ]);
+  });
+
+  test("nudged in the phone view, a layer in a Frame's flow is placed freely at its breakpoint only, one change and one step; the desktop view keeps it in the flow", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    const place = (d: Document) => {
+      const r = d.getElementById("tag")!.getBoundingClientRect();
+      const f = d.getElementById("frame")!.getBoundingClientRect();
+      return [r.left - f.left, r.top - f.top];
+    };
+    const positions = () => [doc, phone.document].map((d) => style(d.getElementById("tag")!).position);
+    const was = [place(doc), place(phone.document)];
+
+    editor.at(phone);
+    const [moved] = editor.nudge([layer("tag")], 0, 10);
+    editor.nudge([moved], 1, 0, { continues: true });
+
+    expect(positions()).toEqual(["static", "absolute"]);
+    expect([place(doc), place(phone.document)]).toEqual([was[0], [was[1][0] + 1, was[1][1] + 10]]);
+    expect(changes.list().map((change) => [change.kind, change.property, change.before, change.after, change.breakpoint ?? "every width"])).toEqual([
+      ["style", "absolute", null, { x: 1, y: 10 }, { min: null, max: 800 }],
+    ]);
+    expect(editor.changesHere(layer("tag"))).toEqual(["absolute"]);
+
+    editor.undo();
+    expect(positions()).toEqual(["static", "static"]);
+    expect([place(doc), place(phone.document)]).toEqual(was);
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(positions()).toEqual(["static", "absolute"]);
+    expect(place(phone.document)).toEqual([was[1][0] + 1, was[1][1] + 10]);
+  });
+
+  test("dragged in its own Frame in the phone view, a layer in the flow is placed freely there only; its X there changes that placement; set back to inherit, it is in the flow again", async () => {
+    const { editor, changes, phone, desktop, layer, doc } = await open(NUDGES);
+    const tag = (d: Document) => style(d.getElementById("tag")!);
+    /** How the Frame is positioned: in the desktop view, then the phone view. */
+    const frame = () => [doc, phone.document].map((d) => style(d.getElementById("frame")!).position);
+
+    editor.at(phone);
+    editor.move(layer("tag"), { parent: layer("frame"), x: 50, y: 30 });
+    editor.move(layer("tag"), { parent: layer("frame"), x: 60, y: 40 });
+    editor.set(layer("tag"), "x", 5);
+
+    expect([tag(doc).position, tag(phone.document).position]).toEqual(["static", "absolute"]);
+    expect([tag(phone.document).left, tag(phone.document).top, tag(phone.document).width]).toEqual(["5px", "40px", "40px"]);
+    expect(changes.list().map((change) => [change.property, change.before, change.after, change.breakpoint ?? "every width"])).toEqual([
+      ["absolute", null, { x: 5, y: 40 }, { min: null, max: 800 }],
+    ]);
+    // Its Frame is its positioning reference, there only.
+    expect(frame()).toEqual(["static", "relative"]);
+    expect(editor.changesHere(layer("tag"))).toEqual(["absolute"]);
+
+    // In the desktop view, it is in the Frame's flow, as it was.
+    editor.at(desktop);
+    expect(editor.read(layer("tag"), "absolute")).toBeNull();
+    expect(editor.can(layer("tag"), "x")).toBe(false);
+
+    editor.at(phone);
+    editor.inherit(layer("tag"), "absolute");
+    expect([tag(doc).position, tag(phone.document).position]).toEqual(["static", "static"]);
+    expect(tag(phone.document).left).toBe("auto");
+    expect(frame()).toEqual(["static", "static"]);
+    expect(changes.list()).toEqual([]);
+    expect(editor.changesHere(layer("tag"))).toEqual([]);
+    editor.undo();
+    expect(tag(phone.document).position).toBe("absolute");
+    expect(frame()).toEqual(["static", "relative"]);
+  });
+
+  test("placed freely at a breakpoint, taken back from the change list or from a saved round, a layer is in its Frame's flow again, which is no positioning reference any more", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    editor.at(phone);
+    editor.nudge([layer("tag")], 0, 10);
+    const [change] = changes.list();
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+    expect(revertSaved(saved, change.id)).toBeNull();
+    const shown = showSaved(saved.canvas);
+    savedFrame!.style.width = "390px";
+    expect(style(shown.getElementById("tag")!).position).toBe("absolute");
+
+    editor.revert(change.id);
+    expect(style(phone.document.getElementById("tag")!).position).toBe("static");
+    expect([doc, phone.document].map((d) => style(d.getElementById("frame")!).position)).toEqual(["static", "static"]);
+    expect(changes.list()).toEqual([]);
+    editor.undo();
+    expect(style(phone.document.getElementById("tag")!).position).toBe("absolute");
+  });
+
+  test("placed freely at a breakpoint, then moved into another container, a layer is where it is dropped at every width: its placement at the breakpoint goes, one step", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+    const positions = (id: string) => [doc, phone.document].map((d) => style(d.getElementById(id)!).position);
+    editor.at(phone);
+    editor.nudge([layer("tag")], 0, 10);
+
+    editor.move(layer("tag"), { parent: layer("list"), index: 0 });
+    expect(positions("tag")).toEqual(["static", "static"]);
+    expect(positions("frame")).toEqual(["static", "static"]);
+    expect(changes.list().map((change) => [change.kind, change.property, change.breakpoint ?? "every width"])).toEqual([["move", "move", "every width"]]);
+
+    editor.undo();
+    expect(doc.getElementById("tag")!.parentElement!.id).toBe("frame");
+    expect(positions("tag")).toEqual(["static", "absolute"]);
+    expect(positions("frame")).toEqual(["static", "relative"]);
+  });
+
+  test("loose text in a Frame, nudged in the phone view, gets an element of its own and is placed freely there only; the change says to wrap it", async () => {
+    const page = NUDGES.replace(">Tag</span></div>", ">Tag</span>loose words</div>");
+    const { editor, changes, phone, doc } = await open(page);
+    const text = find(editor.tree().root, (l) => !!l.text && l.name.includes("loose"))!;
+
+    editor.at(phone);
+    const [placed] = editor.nudge([text], 0, 10);
+
+    expect(placed.el.localName).toBe("span");
+    expect([doc, phone.document].map((d) => style(d.getElementById("frame")!.lastElementChild!).position)).toEqual(["static", "absolute"]);
+    expect(changes.list().map((change) => [change.property, change.wrap, change.breakpoint ?? "every width"])).toEqual([["absolute", true, { min: null, max: 800 }]]);
+  });
+
+  test("moved into another container in the phone view, a layer is moved in every view, placed freely where it is dropped at every width", async () => {
+    const { editor, changes, phone, layer, doc } = await open(NUDGES);
+
+    editor.at(phone);
+    editor.move(layer("tag"), { parent: layer("board"), x: 20, y: 30 });
+
+    expect([doc, phone.document].map((d) => [d.getElementById("tag")!.parentElement!.id, style(d.getElementById("tag")!).position])).toEqual([
+      ["board", "absolute"],
+      ["board", "absolute"],
+    ]);
+    expect(changes.list().map((change) => [change.kind, (change.after as { absolute: unknown }).absolute, change.breakpoint ?? "every width"])).toEqual([
+      ["move", { x: 20, y: 30 }, "every width"],
+    ]);
+  });
+
+  test("taken back from the change list, or from a saved round with no canvas open, a change at a breakpoint goes there only", async () => {
+    const opened = await open();
+    const { editor, changes, phone, layer, fills, doc } = opened;
+    editor.set(layer("board"), "fill", BLUE);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    editor.set(layer("list"), "fill", RED);
+    const [, board, list] = changes.list();
+
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+    const reverted = revertSaved(saved, board.id)!;
+    expect(reverted.changeSet.changes.map((change) => change.id)).toEqual([1, list.id]);
+    const shownAt = (width: number) => {
+      const shown = showSaved(reverted.canvas);
+      savedFrame!.style.width = `${width}px`;
+      return ["board", "list"].map((id) => style(shown.getElementById(id)!).backgroundColor);
+    };
+    expect(shownAt(390)).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    expect(shownAt(800)).toEqual(["rgb(0, 0, 255)", "rgba(0, 0, 0, 0)"]);
+
+    editor.revert(board.id);
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
+    editor.undo();
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+  });
+
+  test("a copy looks as the layer does at every breakpoint, but the layer's changes there are not the copy's", async () => {
+    const { editor, changes, phone, layer, doc } = await open();
+
+    editor.at(phone);
+    editor.set(layer("row"), "fill", RED);
+    const copy = editor.duplicate(layer("row"));
+    editor.set(layer("row"), "fill", BLUE);
+
+    const copyIn = (d: Document) => style(d.body.children[2]).backgroundColor;
+    expect([copyIn(doc), copyIn(phone.document)]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
+    expect(editor.read(copy, "fill")).toEqual(RED);
+    expect(changes.list().filter((change) => change.layer === copy.el.getAttribute("data-vk-layer")).map((change) => change.kind)).toEqual(["duplicate"]);
+  });
+
+  test("a copy's change says what the layer, and each layer in it, has at breakpoints of its own when copied, as the copy keeps it", async () => {
+    const { editor, changes, phone, layer } = await open();
+    const PHONE = { min: null, max: 800 };
+
+    editor.at(phone);
+    editor.set(layer("row"), "fill", RED);
+    editor.set(layer("d"), "visible", false);
+    const [fill, hidden] = changes.list();
+    const copy = editor.duplicate(layer("row"));
+    // Changed again once copied: the copy keeps what the layer had then.
+    editor.set(layer("row"), "fill", BLUE);
+    const copyOfCopy = editor.duplicate(copy);
+
+    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-vk-layer"))!.copiedBreakpoints;
+    expect(copied(copy)).toEqual([
+      { change: fill.id, inside: null, breakpoint: PHONE, property: "fill", value: RED },
+      { change: hidden.id, inside: { name: hidden.target.context.path.at(-1), element: hidden.target.context.element }, breakpoint: PHONE, property: "visible", value: false },
+    ]);
+    expect(copied(copyOfCopy)).toEqual(copied(copy));
+  });
+
+  test("a copy of a copy says what a layer in it has at a breakpoint now, its own value over what it took over, and nothing of a layer deleted from it", async () => {
+    const { editor, changes, phone, layer } = await open();
+    const PHONE = { min: null, max: 800 };
+
+    editor.at(phone);
+    editor.set(layer("d"), "visible", false);
+    const copy = editor.duplicate(layer("row"));
+    const inCopy = () => find(editor.tree().root, (l) => l.el === copy.el.firstElementChild && !l.text)!;
+    editor.set(inCopy(), "visible", true);
+    const shown = changes.list().at(-1)!;
+    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-vk-layer"))!.copiedBreakpoints;
+
+    expect(copied(editor.duplicate(copy))).toEqual([{ change: shown.id, inside: { name: layerName(shown), element: shown.target.context.element }, breakpoint: PHONE, property: "visible", value: true }]);
+    editor.remove(inCopy());
+    expect(copied(editor.duplicate(copy))).toBeUndefined();
+  });
+
+  test("a copy of a layer with nothing of its own at any breakpoint says none", async () => {
+    const { editor, changes, layer } = await open();
+
+    editor.set(layer("row"), "fill", RED);
+    editor.duplicate(layer("row"));
+
+    expect(changes.list().find((change) => change.kind === "duplicate")!.copiedBreakpoints).toBeUndefined();
+  });
+
+  test("what the edits declare wins over what the page declares, important or in a CSS layer, at every width", async () => {
+    const page = MOVES.replace(
+      "<body",
+      "<style>@layer base, utilities; @layer utilities { #board { background-color: rgb(0 128 0) !important } } div#board.x { background-color: rgb(0 128 0) !important }</style>\n<body",
+    );
+    const { editor, phone, desktop, layer, fills } = await open(page);
+    layer("board").el.classList.add("x");
+
+    editor.set(layer("board"), "fill", BLUE);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)"]);
+    editor.at(desktop);
+    expect(editor.changedHere(layer("board"), "fill")).toBe(false);
+  });
+
+  test("a canvas saved with its edits in the style attribute, as before, is put back with them in its edit styles, and they come off as they did", () => {
+    const old = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="board" data-vk-layer="1" data-vk-original-style="width: 300px; height: 200px"
+    style="width: 300px; height: 200px; background-color: rgb(255 0 0 / 1) !important"></div>
+</body>`;
+    const { doc, views } = openCanvas(old);
+    const el = doc.getElementById("board")!;
+
+    // As putting a saved canvas back does.
+    moveInlineEdits(doc);
+    const changes = createChangeSet({
+      lastId: 1,
+      changes: [
+        {
+          id: 1,
+          kind: "style",
+          layer: "1",
+          target: { loc: null, chain: [], component: null, instances: 1, locked: false, unlocated: true, context: { path: ["Page", "Board"], element: "<div>" } },
+          scope: "usage",
+          property: "fill",
+          before: null,
+          after: { type: "solid", color: "#FF0000", opacity: 1 },
+          style: { "background-color": "rgb(255 0 0 / 1)" },
+          sources: [],
+        },
+      ],
+    });
+    const editor = createEditor(views, changes);
+    expect(el.getAttribute("style")).toBe("width: 300px; height: 200px");
+    expect(style(el).backgroundColor).toBe("rgb(255, 0, 0)");
+
+    editor.revert(1);
+    expect(style(el).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(el.getAttribute("style")).toBe("width: 300px; height: 200px");
+  });
+
+  test("a plain flow given a gap at a breakpoint is a real Stack there, though one at every width made it one first and is taken back", async () => {
+    const { editor, changes, phone, desktop, layer, shown } = await open(LAYOUT);
+    const flow = () => find(editor.tree().root, (l) => l.el.id === "flow")!;
+
+    editor.set(flow(), "gap", 16);
+    editor.at(phone);
+    editor.set(flow(), "gap", 30);
+    editor.at(desktop);
+    editor.revert(changes.list()[0].id);
+
+    expect(changes.list().map((change) => [change.after, change.asStack, change.breakpoint ?? "every width"])).toEqual([[30, true, { min: null, max: 800 }]]);
+    expect(shown("flow").map((s) => [s.display, s.rowGap])).toEqual([
+      ["block", "normal"],
+      ["flex", "30px"],
+    ]);
+  });
+});
+
+
+/** A Grid of four cards, as Tailwind writes one (`grid grid-cols-2 gap-4`), another of fixed columns, and a Stack. */
+const GRID = `<!DOCTYPE html>
+<body style="margin: 0">
+  <style>.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) } .gap-4 { gap: 16px }</style>
+  <div id="grid" ${at("5:5")} class="grid-cols-2 gap-4" style="display: grid; width: 400px">
+    <div id="a" ${at("6:7")} style="height: 40px">A</div>
+    <div id="b" ${at("7:7")} style="height: 40px">B</div>
+    <div id="c" ${at("8:7")} style="height: 40px">C</div>
+    <div id="d" ${at("9:7")} style="height: 40px">D</div>
+  </div>
+  <div id="fixed" ${at("11:5")} style="display: grid; grid-template-columns: 300px 100px; column-gap: 8px">
+    <div id="e" ${at("12:7")} style="height: 20px">E</div>
+  </div>
+  <div id="list" ${at("14:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
+    <div id="f" ${at("15:7")} style="height: 20px">F</div>
+  </div>
+</body>`;
+
+describe("Grid", () => {
+  const open = () => {
+    const canvas = openCanvas(GRID);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const order = () => [...canvas.doc.getElementById("grid")!.children].map((el) => el.id);
+    /** The columns the Grid is laid out in, by their widths. */
+    const columns = (id = "grid") => style(canvas.doc.getElementById(id)!).gridTemplateColumns;
+    return { ...canvas, layer, order, columns };
+  };
+
+  test("a Grid offers its columns, row gap and column gap, read as it is laid out; a Stack and the layers in a Grid do not", () => {
+    const { editor, layer } = open();
+
+    expect(["columns", "rowGap", "columnGap"].map((p) => editor.read(layer("grid"), p as "columns"))).toEqual([2, 16, 16]);
+    expect(["columns", "rowGap", "columnGap"].map((p) => editor.read(layer("fixed"), p as "columns"))).toEqual([2, 0, 8]);
+    expect(editor.can(layer("list"), "columns")).toBe(false);
+    expect(editor.can(layer("a"), "rowGap")).toBe(false);
+    expect(editor.can(layer("grid"), "gap")).toBe(false);
+  });
+
+  test("columns are set as equal columns, at least one, a whole number; the change records the count, and undo takes it back", () => {
+    const { editor, changes, layer, columns } = open();
+
+    editor.set(layer("grid"), "columns", 4);
+
+    // 400px wide, three gaps of 16px between them.
+    expect(columns()).toBe("88px 88px 88px 88px");
+    expect(changes.list()[0]).toMatchObject({
+      kind: "style",
+      property: "columns",
+      before: 2,
+      after: 4,
+      style: { "grid-template-columns": "repeat(4, minmax(0, 1fr))" },
+      sources: [{ kind: "rule", className: "grid-cols-2", declaration: "grid-template-columns: repeat(2, minmax(0px, 1fr))" }],
+    });
+    expect(editor.can(layer("grid"), "columns", 0)).toBe(false);
+    expect(editor.can(layer("grid"), "columns", 1.5)).toBe(false);
+    editor.undo();
+    expect(columns()).toBe("192px 192px");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("columns sized otherwise become as many equal columns", () => {
+    const { editor, layer, columns } = open();
+
+    editor.set(layer("fixed"), "columns", 3);
+
+    // 800px wide, two gaps of 8px between them.
+    expect(columns("fixed").split(" ").map((w) => Math.round(parseFloat(w)))).toEqual([261, 261, 261]);
+    expect(editor.read(layer("fixed"), "columns")).toBe(3);
+  });
+
+  test("row gap and column gap are set apart, over the gap the page sets both with", () => {
+    const { doc, editor, changes, layer } = open();
+    const grid = doc.getElementById("grid")!;
+
+    editor.set(layer("grid"), "rowGap", 24);
+    editor.set(layer("grid"), "columnGap", 8);
+
+    expect([style(grid).rowGap, style(grid).columnGap]).toEqual(["24px", "8px"]);
+    expect(changes.list().map((change) => [change.property, change.before, change.after, change.style])).toEqual([
+      ["rowGap", 16, 24, { "row-gap": "24px" }],
+      ["columnGap", 16, 8, { "column-gap": "8px" }],
+    ]);
+    expect(changes.list()[0].sources).toMatchObject([{ className: "gap-4", declaration: "gap: 16px" }]);
+  });
+
+  test("in a narrower view, columns and gaps change at its breakpoint only, as the view reads them, and can be set back to inherit", async () => {
+    const { doc, views, editor, changes, layer } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const counts = () => [doc, phone.document].map((d) => style(d.getElementById("grid")!).gridTemplateColumns.split(" ").length);
+
+    editor.at(phone);
+    editor.set(layer("grid"), "columns", 1);
+    editor.set(layer("grid"), "rowGap", 8);
+
+    expect(counts()).toEqual([2, 1]);
+    expect(editor.read(layer("grid"), "columns")).toBe(1);
+    expect(changes.list().map((change) => [change.property, change.breakpoint])).toEqual([
+      ["columns", { min: null, max: 800 }],
+      ["rowGap", { min: null, max: 800 }],
+    ]);
+    expect(editor.changesHere(layer("grid"))).toEqual(["columns", "rowGap"]);
+    editor.inherit(layer("grid"), "columns");
+    expect(counts()).toEqual([2, 2]);
+    expect(changes.list().map((change) => change.property)).toEqual(["rowGap"]);
+  });
+
+  test("a layer moved within its Grid takes another cell, the layers after it filling the cells in order: a Reorder in a Grid", () => {
+    const { editor, changes, layer, order } = open();
+
+    expect(editor.canDrop(layer("a"), layer("grid"))).toBe(true);
+    editor.move(layer("a"), { parent: layer("grid"), index: 3 });
+
+    expect(order()).toEqual(["b", "c", "d", "a"]);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "move",
+      before: { container: { grid: true, target: { loc: "src/App.tsx:5:5" } }, nth: 1, absolute: null },
+      after: { container: { grid: true }, nth: 4, absolute: null },
+    });
+    expect(layerName(changes.list()[0])).toBe("A");
+    editor.undo();
+    expect(order()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  test("a layer from elsewhere, or a new one, takes a cell of the Grid", () => {
+    const { editor, layer, order } = open();
+
+    expect(editor.canHold(layer("grid"))).toBe(true);
+    editor.move(layer("f"), { parent: layer("grid"), index: 1 });
+    expect(order()).toEqual(["a", "f", "b", "c", "d"]);
+    const text = editor.create("text", { parent: layer("grid"), index: 0 });
+    expect(text.absolute).toBe(false);
+    expect(order()[1]).toBe("a");
+  });
+
+  test("nudged, a layer in a Grid takes the cell before or after it with ← and →, the one above or below with ↑ and ↓, and stays at the ends; the run is one move", () => {
+    const { editor, changes, layer, order } = open();
+
+    let [a] = editor.nudge([layer("a")], 1, 0);
+    expect(order()).toEqual(["b", "a", "c", "d"]);
+    [a] = editor.nudge([a], 0, 1, { continues: true });
+    expect(order()).toEqual(["b", "c", "d", "a"]);
+    [a] = editor.nudge([a], 0, 10, { continues: true });
+    [a] = editor.nudge([a], 1, 0, { continues: true });
+    expect(order()).toEqual(["b", "c", "d", "a"]);
+    [a] = editor.nudge([a], -1, 0, { continues: true });
+    expect(order()).toEqual(["b", "c", "a", "d"]);
+
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ before: { nth: 1 }, after: { nth: 3 } });
+    editor.undo();
+    expect(order()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  /** The Grid with its layers placed otherwise than in the order they are written: `grid` on the Grid, `b` on its second layer. */
+  const placed = (grid: string, b: string) => GRID.replace('style="display: grid; width: 400px"', `style="display: grid; width: 400px; ${grid}"`).replace(`id="b" ${at("7:7")} style="height: 40px"`, `id="b" ${at("7:7")} style="height: 40px; ${b}"`);
+  const PLACINGS = [
+    ["a cell of its own", "", "grid-column: 2; grid-row: 2"],
+    ["an area", "", "grid-area: 1 / 2"],
+    ["another order", "", "order: 1"],
+    ["holes filled out of order", "grid-auto-flow: row dense", ""],
+  ];
+
+  test("a layer spanning two columns is still placed in order: the Grid's layers can be moved a cell along", () => {
+    const canvas = openCanvas(placed("", "grid-column: span 2"));
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+
+    canvas.editor.nudge([layer("a")], 1, 0);
+
+    expect([...canvas.doc.getElementById("grid")!.children].map((el) => el.id)).toEqual(["b", "a", "c", "d"]);
+  });
+
+  test.each(PLACINGS)("with a layer placed in %s, nudging a layer of the Grid moves none, and changes nothing", (_, grid, b) => {
+    const canvas = openCanvas(placed(grid, b));
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+
+    expect(canvas.editor.nudge([layer("a")], 1, 0)).toEqual([layer("a")]);
+    canvas.editor.nudge([layer("c")], 0, 1);
+
+    expect([...canvas.doc.getElementById("grid")!.children].map((el) => el.id)).toEqual(["a", "b", "c", "d"]);
+    expect(canvas.changes.list()).toEqual([]);
+  });
+
+  test("with a layer placed in a cell of its own, a layer dragged in the Grid goes nowhere; one dragged in from elsewhere goes last, no cell of its own named", () => {
+    const canvas = openCanvas(placed("", "grid-column: 2; grid-row: 2"));
+    const { editor, views, doc } = canvas;
+    const layer = (id: string) => find(editor.tree().root, (l) => l.el === doc.getElementById(id) && !l.text)!;
+    const [desktop] = views.list();
+    const rectOf = (l: Layer) => l.el.getBoundingClientRect();
+    const over = (id: string) => {
+      const r = doc.getElementById(id)!.getBoundingClientRect();
+      return { x: r.left + r.width / 4, y: r.top + r.height / 2 };
+    };
+
+    expect(findDrop(editor, desktop, layer("a"), over("d"), rectOf(layer("a")), rectOf)).toBeNull();
+    const drop = findDrop(editor, desktop, layer("f"), over("c"), rectOf(layer("f")), rectOf)!;
+    expect(drop).toMatchObject({ to: { parent: layer("grid"), index: 4 }, line: null });
+    // Drawn in it, a new layer goes last too.
+    expect(findPlace(editor, desktop, over("c"), new DOMRect(over("c").x, over("c").y, 10, 10))).toMatchObject({ parent: layer("grid"), index: 4 });
+
+    editor.move(layer("f"), drop.to);
+    expect([...doc.getElementById("grid")!.children].map((el) => el.id)).toEqual(["a", "b", "c", "d", "f"]);
+    // Not the Grid's 5th cell: where it is placed is the Grid's to say.
+    const after = canvas.changes.list()[0].after as Place;
+    expect([after.nth, after.container.grid]).toEqual([5, undefined]);
+  });
+
+  test("in a Grid that places its layers in the order they are written, a drag between them takes a cell, as before", () => {
+    const { editor, views, doc, layer } = open();
+    const [desktop] = views.list();
+    const rectOf = (l: Layer) => l.el.getBoundingClientRect();
+    const r = doc.getElementById("d")!.getBoundingClientRect();
+
+    expect(findDrop(editor, desktop, layer("a"), { x: r.left + r.width / 4, y: r.top + r.height / 2 }, rectOf(layer("a")), rectOf)).toMatchObject({
+      to: { parent: layer("grid"), index: 2 },
+    });
   });
 });

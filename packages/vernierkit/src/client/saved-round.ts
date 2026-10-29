@@ -3,8 +3,8 @@
  * reload. The saved canvas is parsed, changed and written back as it is.
  */
 import type { SavedRound } from "../service-protocol";
-import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place } from "./changeset";
-import { changesOn, elementsOf, restoreStyle } from "./canvas-style";
+import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack } from "./changeset";
+import { changesOn, elementsOf, moveInlineEdits, restoreStyle } from "./canvas-style";
 import { cssOf, type Property } from "./edits";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
@@ -20,6 +20,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   const taken = withDependents(changes.list(), id);
   if (!taken.length) return round;
   const doc = new DOMParser().parseFromString(round.canvas, "text/html");
+  moveInlineEdits(doc);
   for (const change of taken) {
     changes.remove(change.id);
     const rest = changes.list();
@@ -28,9 +29,14 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
     else if (change.kind === "unstack") undissolve(doc, change.layer, change.after as Dissolved, rest);
     else if (change.kind === "create") removeMade(doc, change.layer, (change.after as Created).place.container.layer, rest);
     else if (change.kind === "duplicate") removeMade(doc, change.layer, (change.after as Place).container.layer, rest);
+    else if (change.kind === "putBack") removeMade(doc, change.layer, (change.after as PutBack).place.container.layer, rest);
     else if (change.kind === "delete") unhide(doc, change.layer, change.property, rest);
     else if (change.kind === "text") writeText(doc, change.layer, change.property, null);
-    else for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest));
+    else {
+      for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
+      // Placed freely at a breakpoint no more: its container is no positioning reference there for it.
+      if (change.within) for (const el of elementsOf(doc, change.within)) restoreStyle(el, ["position"], changesOn(change.within, rest), change.breakpoint ?? null);
+    }
   }
   syncOrders(doc, changes);
   if (!changes.list().length) return null;

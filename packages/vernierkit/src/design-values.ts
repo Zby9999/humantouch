@@ -1,5 +1,5 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
-import type { Change, Composed, Created, Place, StackSettings } from "./client/changeset";
+import type { Change, Composed, Created, Place, PutBack, StackSettings } from "./client/changeset";
 import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/edits";
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
@@ -15,6 +15,7 @@ const PROPERTIES: Record<string, string> = {
   backgroundBlur: "Background blur",
   x: "X",
   y: "Y",
+  absolute: "Absolute",
   width: "Width",
   height: "Height",
   minWidth: "Min width",
@@ -26,6 +27,9 @@ const PROPERTIES: Record<string, string> = {
   padding: "Padding",
   align: "Alignment",
   wrap: "Wrap",
+  columns: "Columns",
+  rowGap: "Row gap",
+  columnGap: "Column gap",
   opacity: "Opacity",
   visible: "Visibility",
   clip: "Clip content",
@@ -40,7 +44,7 @@ const PROPERTIES: Record<string, string> = {
   textDecoration: "Decoration",
 };
 /** Where the title does not read well in a sentence. */
-const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", clip: "content clipping" };
+const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", absolute: "absolute placement", clip: "content clipping", columns: "number of columns" };
 
 /** A property's name as a title: "Fill", "Corner radius". */
 export function propertyTitle(property: string): string {
@@ -76,6 +80,8 @@ export function kindTitle(change: Change): string {
       return "Delete";
     case "duplicate":
       return "Duplicate";
+    case "putBack":
+      return "Put back";
   }
 }
 
@@ -105,6 +111,10 @@ export function changeValues(change: Change): string {
   if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
   const name = (place: Place) => place.container.target.context.path.at(-1);
   if (change.kind === "delete") return `from ${name(change.before as Place)}`;
+  if (change.kind === "putBack") {
+    const to = (change.after as PutBack).place;
+    return to.absolute ? `at X ${to.absolute.x}px, Y ${to.absolute.y}px in ${name(to)}` : `in ${name(to)}, ${ordinal(to.nth)}`;
+  }
   if (change.kind === "duplicate") {
     const to = change.after as Place;
     return to.absolute ? `copy at X ${to.absolute.x}px, Y ${to.absolute.y}px in ${name(to)}` : `copy in ${name(to)}, ${ordinal(to.nth)}`;
@@ -141,7 +151,9 @@ export function ordinal(n: number): string {
 }
 
 /** The name of the layer a change is made to, as the layer tree showed it. */
-export function layerName({ target }: Change): string {
+export function layerName({ kind, target, after }: Change): string {
+  // Put back, it is the layer that was off the canvas, not the container it goes into.
+  if (kind === "putBack") target = (after as PutBack).layer.origin.target;
   return target.context.path.at(-1) ?? "Layer";
 }
 
@@ -264,7 +276,15 @@ export function value(property: string, v: unknown): string {
     case "x":
     case "y":
     case "gap":
+    case "rowGap":
+    case "columnGap":
       return `${v as number}px`;
+    case "columns":
+      return String(v);
+    case "absolute": {
+      const place = v as { x: number; y: number } | null;
+      return place ? `X ${place.x}px, Y ${place.y}px` : "in the layout";
+    }
     case "width":
     case "height": {
       const size = v as Size;

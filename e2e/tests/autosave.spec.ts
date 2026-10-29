@@ -73,7 +73,8 @@ test("edits are saved into the project about half a second after the designer st
   // The saved canvas, edits included: the frozen page with red cards.
   const saved = readFileSync(CANVAS, "utf8");
   expect(saved).toContain("Vernier Kit</h1>");
-  expect(saved).toMatch(/background-color: rgb\(255, 0, 0\) !important/);
+  // In the canvas's edit styles, over the page's.
+  expect(saved).toMatch(/background-color:rgb\(255 0 0 \/ 1\)!important/);
 });
 
 /** Background of every card on the canvas, in page order. */

@@ -7,7 +7,10 @@ import {
   AS_STACK_ATTR,
   BRIEF_ATTR,
   changesOn,
+  copyRules,
   declare,
+  lookRules,
+  PUT_BACK_ATTR,
   DELETED_ATTR,
   elementsOf,
   keepOriginal,
@@ -20,7 +23,10 @@ import {
   restoreStyle,
   TEXT_ATTR,
 } from "./canvas-style";
-import type { Change, Created, Place } from "./changeset";
+import { layerName } from "../design-values";
+import { breakpointKey } from "./breakpoints";
+import type { Change, CopiedBreakpoint, Created, Place } from "./changeset";
+import { copyLook, matchLook } from "./look";
 import { holdAbsolute, releaseAbsolute, slotsOf } from "./moves";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -60,6 +66,8 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
       }
       // Changes to the original are not the copy's: it starts as it looks.
       for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR]) el.removeAttribute(attr);
+      // It looks as the original does, at every width, with styles of its own.
+      copyRules(original.ownerDocument, el);
       el.setAttribute(ORIGINAL_STYLE_ATTR, el.getAttribute("style") ?? "");
       el.setAttribute(MADE_ATTR, id);
     }
@@ -68,6 +76,77 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
     containers[i].insertBefore(copy, slotsOf(containers[i])[place.slot] ?? null);
   });
   if (place.absolute) holdAbsolute(containers);
+}
+
+/**
+ * Puts `source`, a layer off the canvas, back onto it (ADR 0009) as the layer
+ * with id `id`, new this round, at `place`, in each instance of its
+ * container, with `style`: looking as it does off the canvas, at every width.
+ */
+export function insertPutBack(doc: Document, id: string, source: Element, place: Place, style: Record<string, string>) {
+  const containers = elementsOf(doc, place.container.layer);
+  let pseudos: string | null = null;
+  for (const container of containers) {
+    const { copy, pairs } = copyLook(source, doc);
+    // Written in the JSX its container is written in, as it is put back there.
+    const chain = container.getAttribute(CHAIN_ATTR);
+    for (const [, el] of pairs) {
+      el.setAttribute(MADE_ATTR, id);
+      if (chain) el.setAttribute(CHAIN_ATTR, chain);
+      else el.removeAttribute(CHAIN_ATTR);
+    }
+    copy.setAttribute(LAYER_ID_ATTR, id);
+    container.insertBefore(copy, slotsOf(container)[place.slot] ?? null);
+    const css = matchLook(pairs, `[${MADE_ATTR}="${CSS.escape(id)}"]`, lookRules);
+    declare(copy, style);
+    pseudos ??= css;
+  }
+  // Its own, though a layer with its id was put back before and taken off since: the sheet goes once the canvas is saved without it.
+  let sheet = doc.head.querySelector(`style[${PUT_BACK_ATTR}="${CSS.escape(id)}"]`);
+  if (pseudos && !sheet) {
+    sheet = doc.createElement("style");
+    sheet.setAttribute(PUT_BACK_ATTR, id);
+    doc.head.append(sheet);
+  }
+  if (sheet) sheet.textContent = pseudos ?? "";
+  if (place.absolute) holdAbsolute(containers);
+}
+
+/**
+ * What the layer whose element is `original`, and each layer in it, has at
+ * breakpoints of its own, as a copy of it keeps it: its changes there in
+ * `changes`, and, where it is a copy itself, what that copy took over. A
+ * layer's own value wins over what it took over; a layer deleted is not in a copy.
+ */
+export function copiedBreakpointsOf(original: Element, changes: Change[]): CopiedBreakpoint[] {
+  // By the layer each is on, its property and breakpoint: what comes later, deeper in, wins.
+  const values = new Map<string, CopiedBreakpoint>();
+  const put = (value: CopiedBreakpoint) => values.set(JSON.stringify([value.inside, value.property, breakpointKey(value.breakpoint)]), value);
+  const gone = new Set<string>();
+  const seen = new Set<string>();
+  for (const el of [original, ...original.querySelectorAll(`[${LAYER_ID_ATTR}]`)]) {
+    const id = el.getAttribute(LAYER_ID_ATTR)!;
+    const named = (change: Change) => (el === original ? null : { name: layerName(change), element: change.target.context.element });
+    const deleted = el.closest(`[${DELETED_ATTR}]`);
+    if (deleted && original.contains(deleted)) {
+      // One of a loop's instances deleted alone leaves the others.
+      const deletion = changes.find((change) => change.kind === "delete" && change.layer === id && !change.data);
+      if (deletion) gone.add(JSON.stringify(named(deletion)));
+      continue;
+    }
+    // Each layer once, though the instances a loop renders in it are many.
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const change of changes) {
+      if (change.layer !== id) continue;
+      if (change.kind === "duplicate") for (const value of change.copiedBreakpoints ?? []) put({ ...value, inside: value.inside ?? named(change) });
+      else if (change.kind === "style" && change.breakpoint) {
+        const { id: from, breakpoint, property, after, asStack } = change;
+        put({ change: from, inside: named(change), breakpoint: { ...breakpoint }, property, value: structuredClone(after), ...(asStack && { asStack }) });
+      }
+    }
+  }
+  return [...values.values()].filter((value) => !gone.has(JSON.stringify(value.inside)));
 }
 
 /** Takes the layer with id `id`, made this round in the container with id `container`, off the canvas. `changes`: the ChangeSet once it is no longer in it. */

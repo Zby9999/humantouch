@@ -141,7 +141,8 @@ test("⌘⇧G ungroups: the Header's layers take its place in the hero's layout,
 
   await expect(layerTree(page).getByRole("treeitem", { name: "Header", exact: true })).toHaveCount(0);
   await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveCount(2);
-  expect(await canvas(page).locator(`${HERO} > :not([style*="display: none"])`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["h1", "span", "p", "button"]);
+  const shown = await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.filter((el) => getComputedStyle(el).display !== "none").map((el) => el.localName));
+  expect(shown).toEqual(["h1", "span", "p", "button"]);
   await page.getByRole("button", { name: /not applied yet/ }).click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Move/, /Move/, /Delete.*Header/]);
 });

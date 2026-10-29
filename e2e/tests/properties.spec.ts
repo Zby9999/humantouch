@@ -601,7 +601,7 @@ function titleShadows(page: Page) {
     .evaluateAll((titles) => titles.map((title) => getComputedStyle(title).textShadow));
 }
 
-/** Sets a style on the canvas's cards, or their titles, as if the page had it. */
+/** Sets a style on the canvas's cards, or their titles, as if the page had it: under any edit to it, which wins over the page's style. */
 function styleOnCanvas(page: Page, selector: "article" | "article h3", style: Record<string, string>) {
   return canvas(page)
     .locator(selector)
@@ -686,6 +686,10 @@ test("text and other layers selected together take drop shadows each its own way
   await expect(effects.getByRole("combobox", { name: "Shadow 1 type" }).getByRole("option")).toHaveText(["Drop shadow"]);
 
   // A card's spread is its own: the text shows the same shadow, and a change leaves the spread as it is.
+  // The shadows added are taken back first, and the page given them, so the page's own show.
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await titleShadows(page))[0]).toBe("none");
+  await styleOnCanvas(page, "article h3", { textShadow: "0 4px 4px rgb(0 0 0 / 0.25)" });
   await styleOnCanvas(page, "article", { boxShadow: "0 4px 4px 2px rgb(0 0 0 / 0.25)" });
   await selectBoth();
   await expect(field("Shadow 1 Y")).toHaveValue("4");
@@ -695,6 +699,9 @@ test("text and other layers selected together take drop shadows each its own way
   expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px");
 
   // An inner shadow, or a blur, that text cannot have shows as Mixed.
+  await field("Shadow 1 Y").blur();
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px");
   await styleOnCanvas(page, "article", { boxShadow: "inset 0 8px 4px rgb(0 0 0 / 0.25)", filter: "blur(2px)" });
   await selectBoth();
   await expect(effects.getByText("Mixed shadows")).toBeVisible();

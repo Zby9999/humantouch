@@ -5,6 +5,7 @@
  * weight as the style that sets it writes it, so the panel shows what the code
  * says on any screen, and `done` compares it so (ADR 0006).
  */
+import { declaredByEdit } from "./canvas-style";
 import { readStroke, strokeWith, type ColorReader, type Stroke } from "./paint";
 import { sourcesOf } from "./style-source";
 
@@ -79,11 +80,22 @@ function drawnWidths(doc: Document, widths: number[]): number[] {
 
 /** A side's width as written, in px: by an edit on the canvas, or else by what sets it in the page's styles; null when not in px. */
 function writtenWidth(el: Element, property: string): number | null {
-  const inline = (el as HTMLElement).style;
   // An edit's declaration, on top of everything.
-  if (inline.getPropertyPriority(property) === "important") return pxOf(inline.getPropertyValue(property));
+  const edited = editedWidth(el, property);
+  if (edited) return pxOf(edited);
   const [source] = sourcesOf(el, [property]);
   return source.declaration ? pxOf(source.declaration.slice(source.declaration.indexOf(":") + 1)) : null;
+}
+
+/** A side's width as an edit declares it: on its own, or as one of the four `border-width` sets; empty when no edit does. */
+function editedWidth(el: Element, property: string): string {
+  const own = declaredByEdit(el, property);
+  if (own) return own;
+  const all = declaredByEdit(el, "border-width");
+  if (!all) return "";
+  const style = el.ownerDocument.createElement("div").style;
+  style.setProperty("border-width", all);
+  return style.getPropertyValue(property);
 }
 
 function pxOf(css: string): number | null {

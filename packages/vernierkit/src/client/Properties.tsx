@@ -3,6 +3,7 @@ import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, Targ
 import { useRef, useState } from "preact/hooks";
 import type { Align, Alignment, ColorStop, Editor, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./edits";
 import { Icon, type IconName } from "./icons";
+import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
 import {
@@ -234,6 +235,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           variable={variable}
         />
       )}
+      <GridSection editor={editor} layers={layers} onEdit={onEdit} />
       {(opacity !== undefined || visible !== undefined) && (
         <AppearanceSection
           selection={keyOf(layers)}
@@ -1488,7 +1490,7 @@ interface NumberFieldProps {
 }
 
 /** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
-function NumberField({ label, icon, glyph, value, unit = "", min = -Infinity, onChange }: NumberFieldProps) {
+export function NumberField({ label, icon, glyph, value, unit = "", min = -Infinity, onChange }: NumberFieldProps) {
   return (
     <label class="vk-field" title={label}>
       <Scrub icon={icon} glyph={glyph} value={value} min={min} onChange={onChange} />

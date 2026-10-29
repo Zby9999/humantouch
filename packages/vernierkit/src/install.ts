@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addVitePlugin, insert, mountInEntry, mountInLayout, undo, wrapNextConfig, type Edit, type FileEdit } from "./source-edits";
-import { readChangeSet, readIfThere, readState, vernierFolder, writeAtomically } from "./vernier-folder";
+import { readChangeSet, readIfThere, readOffCanvas, readState, vernierFolder, writeAtomically } from "./vernier-folder";
 
 /** Runs a command in `cwd`; resolves with its exit code and what it printed. */
 export type Exec = (command: string, args: string[], options: { cwd: string }) => Promise<{ code: number; output: string }>;
@@ -378,11 +378,13 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
     await rm(join(root, folder), { recursive: true, force: true });
     await removeIfEmpty(root, dirname(folder));
   }
+  // The layers off the canvas go too (ADR 0009): they are only ever in `.vernier/`.
+  const offCanvas = (await readOffCanvas(folder)).length;
   await rm(folder.dir, { recursive: true, force: true });
 
   const done = [
     byHand.length ? "Took back out what `init` added, but for the lines below" : "Took the plugin, <Vernier />, the Skill and its lines in AGENTS.md and .gitignore back out",
-    "Deleted .vernier/",
+    offCanvas ? `Deleted .vernier/, with the ${offCanvas === 1 ? "layer" : `${offCanvas} layers`} the designer had moved off the canvas` : "Deleted .vernier/",
   ];
   if (record.dependency) {
     const uninstall = command(packageManagerOf(root, found?.pkg ?? {}), "uninstall", ["vernierkit"]);

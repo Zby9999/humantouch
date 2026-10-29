@@ -5,7 +5,24 @@
  * canvas and what sets the value now.
  */
 import { isAbsolute, relative } from "node:path";
-import { madeBy, placedAt, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
+import {
+  madeBy,
+  movedOffBy,
+  placedAt,
+  putBackOf,
+  type Change,
+  type Composed,
+  type CopiedBreakpoint,
+  type Created,
+  type Dissolved,
+  type Place,
+  type PutBack,
+  type StackSettings,
+  type Target,
+} from "./client/changeset";
+import { breakpointName, mediaOf, type Breakpoint } from "./client/breakpoints";
+import { equalColumns } from "./client/grid-tracks";
+import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
 import { variablesLine } from "./variable-notes";
@@ -49,14 +66,19 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
+    `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
+    ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack ? [AS_STACK] : []),
+    ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
-    ...(change.wrap ? [WRAP] : []),
+    ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
+    ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
+    ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
     ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
@@ -64,10 +86,57 @@ function section(change: Change, list: Change[], root: string, status: string | 
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
 
+/**
+ * The widths a change applies at (ADR 0008): all of them, or the range of the
+ * view it was made in, to be written with the project's own breakpoints:
+ * those it was recorded with, when its edges are the project's.
+ */
+function breakpoint(change: Change): string {
+  if (!change.breakpoint) return "all breakpoints.";
+  const written = writtenAs(change.breakpoint);
+  const how = written
+    ? `The project writes these widths with ${written}: make the change apply at these widths only that way`
+    : "Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries)";
+  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. ${how}, and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
+}
+
+/**
+ * How the project writes a range of its own breakpoints: "Tailwind's
+ * `md:max-lg:`", "its own media queries, at 768px (`(min-width: 768px)`)";
+ * null for a range whose edges are not the project's.
+ */
+function writtenAs({ min, max, project }: Breakpoint): string | null {
+  if (!project) return null;
+  if ("tailwind" in project) return `Tailwind's \`${project.tailwind}\``;
+  const edges = [min, max].filter((edge) => edge !== null);
+  if (edges.length !== project.queries.length) return null;
+  return `its own media queries, whose edges these are: ${project.queries.map((query, i) => `${edges[i]}px, where \`${query}\` starts or stops holding`).join(", and ")}`;
+}
+
+/**
+ * What a copy keeps of the layer it copies at breakpoints of their own, the
+ * layers in it included: each value, with the change that gave it, while that
+ * change is still in the round.
+ */
+function copiedBreakpoints(copied: CopiedBreakpoint[], list: Change[]): string {
+  const items = copied.map((copy) => {
+    const on = copy.inside ? `in ${copy.inside.name} (\`${copy.inside.element}\`), ` : "";
+    const stack = copy.asStack ? ", made a real Stack (a flex column) there" : "";
+    const from = list.some((change) => change.id === copy.change) ? ` (change ${copy.change})` : "";
+    const written = writtenAs(copy.breakpoint);
+    return `\n  - ${breakpointName(copy.breakpoint)} (\`@media ${mediaOf(copy.breakpoint)}\`${written ? `, ${written}` : ""}): ${on}${propertyName(copy.property)} ${value(copy.property, copy.value)}${stack}${from}`;
+  });
+  return (
+    "**Copied breakpoints:** the layer has values of its own at narrower breakpoints, and the copy keeps them, as the layer had them when copied. " +
+    `Give the copy the same at those widths, the way the project already writes breakpoints, so it looks as the layer did in every view:${items.join("")}`
+  );
+}
+
 /** What the designer wants of the change, in design language. */
 function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
+      if (change.property === "absolute" && change.after) return placedFreely(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":
       return moveIntent(change);
@@ -94,7 +163,62 @@ function intent(change: Change, list: Change[]): string {
       const to = change.after as Place;
       return `Copy this layer, with all in it, and ${to.absolute ? "place" : "put"} the copy ${placement(to)}.`;
     }
+    case "putBack": {
+      const { place, layer } = change.after as PutBack;
+      const deletion = movedOffBy(list, layer.id);
+      const how = layer.origin.snippet ? "write it as its source below has it" : "write it as its look below shows it";
+      if (layer.origin.copy) {
+        return (
+          `Put a copy of this layer here, set aside off the canvas as a copy: the layer it copies stays where it is. ` +
+          `${capitalized(how)}, ${placement(place)}, as a copy of its own.`
+        );
+      }
+      if (deletion) {
+        return (
+          `Put this layer back, moved off the canvas this round (change ${deletion.id}): its code is still where it was. ` +
+          `Move that code here rather than deleting it and writing it again, ${placement(place)}.`
+        );
+      }
+      return (
+        `Put this layer back, moved off the canvas in an earlier round and deleted from the code then: ${how}, ${placement(place)}. ` +
+        "Keep the source as it is; adjust it only where the code around it has changed (its props, what it imports)."
+      );
+    }
   }
+}
+
+/**
+ * A layer in its container's layout placed freely in a narrower view, at
+ * that breakpoint only (the `absolute` property): absolute where it was put,
+ * at the size it had in the layout there, which keeps it as large.
+ */
+function placedFreely({ after, style }: Change): string {
+  const { x, y } = after as { x: number; y: number };
+  const [width, height] = [style.width, style.height].map((size) => Math.round(parseFloat(size ?? "")));
+  const size = Number.isFinite(width) && Number.isFinite(height) ? ` (Fixed ${width} × ${height}px, as the reference style shows)` : "";
+  return (
+    `Take this layer out of its container's layout and place it absolute in it, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), ` +
+    `at the size it has there now${size}. Make the container its positioning reference at these widths (\`position: relative\`) if it is not one already.`
+  );
+}
+
+/**
+ * What a change to a Grid's columns or gaps asks besides its value: columns
+ * of equal shares, and the gap between rows and the one between columns set apart.
+ */
+function gridNotes({ property, after }: Change): string[] {
+  if (property === "columns") {
+    return [
+      `**Equal columns:** each column takes an equal share of the Grid's width, as \`grid-template-columns: ${equalColumns(after as number)}\` does (Tailwind's \`grid-cols-${after}\`). ` +
+        "Where its columns are sized some other way now, they become equal.",
+    ];
+  }
+  if (property !== "rowGap" && property !== "columnGap") return [];
+  const [these, those] = property === "rowGap" ? ["rows", "columns"] : ["columns", "rows"];
+  return [
+    `**Gap apart:** only the space between the Grid's ${these} changes, not the space between its ${those}. ` +
+      "Where one value sets both now (Tailwind's `gap-*`, CSS `gap`), set them apart: `gap-y-*` and `gap-x-*` in Tailwind, `row-gap` and `column-gap` in CSS.",
+  ];
 }
 
 /** The reference style of a change that declares none, by kind. */
@@ -107,19 +231,76 @@ const NO_STYLE: Record<Change["kind"], string> = {
   text: "none: only its words change",
   delete: "none: the layer goes",
   duplicate: "none: the copy is as the layer is",
+  putBack: "none: it is to look as its look shows",
 };
+
+/**
+ * Where a layer put back comes from (ADR 0009): its source as it was written
+ * when moved off the canvas, its look there, and what was edited there.
+ */
+function putBackFrom({ layer }: PutBack): string[] {
+  const { snippet } = layer.origin;
+  const source = snippet
+    ? `**Source**, as written at \`${snippet.loc}\` when it was moved off the canvas:\n\n${fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx")}`
+    : layer.origin.written
+      ? `**Source:** not kept: it could not be read at \`${layer.origin.written}\` when the layer was moved off the canvas. Write it from its look, below, as the project writes markup and styles.`
+      : "**Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.";
+  const look =
+    "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-vk-class`). " +
+    "Where its classes no longer give it this look, their rules gone with its code, give it the styles that do, as the project writes styles:\n\n" +
+    fenced(lookOf(layer.look), "html");
+  const edits = layer.edits.changes.map((edit) => `\n  - ${changeTitle(edit)} of ${layerName(edit)} (\`${edit.target.context.element}\`): ${intent(edit, layer.edits.changes)}`);
+  return [source, look, ...(edits.length ? [`**Edited off the canvas:** give it these too, as the designer made them there:${edits.join("")}`] : [])];
+}
+
+/** A deletion that moved a layer off the canvas this round, and put it back this round too: the code moves, rather than going. */
+function putBackIn(change: Change, list: Change[]): string[] {
+  const back = change.offCanvas && putBackOf(list, change.offCanvas);
+  return back ? [`**Put back:** the layer was moved off the canvas and is put back in change ${back.id}. Do not delete its code: move it to where change ${back.id} puts it.`] : [];
+}
+
+/**
+ * A frozen look as the notes give it: its markup and its own styles, not the
+ * page's stylesheets and fonts it loaded only to look as the page does.
+ */
+function lookOf(look: string): string {
+  return (
+    look
+      .replace(/^<!DOCTYPE[^>]*>/i, "")
+      // What lays the document out around it, and orders the editor's own styles.
+      .replace(new RegExp(`<style (${LOOK_STYLES_ATTR}="${LOOK_STYLES_BASE}"|${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}")>[^<]*</style>`, "g"), "")
+      .replace(/@import url\("(?:[^"\\]|\\.)*"\) layer\(page\);/g, "")
+      .replace(/@font-face\s*\{[^}]*\}/g, "")
+      .trim()
+  );
+}
+
+/** `code` as a fenced block, inside a list item. */
+function fenced(code: string, language: string): string {
+  return ["```" + language, ...code.split("\n"), "```"].map((line) => `  ${line}`).join("\n");
+}
 
 /** A layer a change makes, as its Layer line names it; null for a change to a layer that is there. */
 function newLayerIn(change: Change): string | null {
+  if (change.kind === "putBack") {
+    const { place, layer } = change.after as PutBack;
+    const { context } = layer.origin.target;
+    return `${context.path.at(-1)}, \`${context.element}\`, moved off the canvas, put back in ${container(place)}`;
+  }
   if (change.kind === "stack" && (change.after as Composed).place) return `a new Stack, in ${container((change.after as Composed).place!)}`;
   if (change.kind !== "create") return null;
   const { type, place } = change.after as Created;
   return `a new ${type === "text" ? "text layer" : "Frame"}, in ${container(place)}`;
 }
 
+/** In a Grid, the cell a place in its layout is: its cells are filled in the order of its layers. */
+function cell(place: Place): string {
+  return place.container.grid ? `: the Grid's ${ordinal(place.nth)} cell` : "";
+}
+
 /** Where a layer goes in a container: a place in its layout, or absolute in it. */
 function placement(place: Place): string {
-  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer`;
+  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer${cell(place)}`;
   const { x, y } = place.absolute;
   return `absolute in ${container(place)}, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), which is to be its positioning reference (\`position: relative\`)`;
 }
@@ -136,12 +317,13 @@ function sketch(change: Change, list: Change[]): string[] {
   }
   if (!created.brief) return [];
   // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
-  const latest = <T>(layer: string, property: string, then: T) => (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property)?.after as T) ?? then;
+  const latest = <T>(layer: string, property: string, then: T) =>
+    (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property && !c.breakpoint)?.after as T) ?? then;
   const items = list.flatMap((c) => {
     const place = placedAt(c);
     if (c.kind === "stack" || place?.container.layer !== change.layer) return [];
     const made = c.kind === "create" ? (c.after as Created) : null;
-    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : "a copy"})`;
+    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
     let where = `${ordinal(place.nth)} in its layout`;
     if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
     const fixed = (size: Size | undefined) => (size?.type === "fixed" ? size.value : null);
@@ -213,11 +395,17 @@ function newLayer(made: string, list: Change[]): string {
 function moveIntent(change: Change): string {
   const [before, after] = [change.before, change.after] as Place[];
   const kind = moveKind(change);
+  if (kind === "Reorder" && after.container.grid) {
+    return (
+      `Move it from the ${ordinal(before.nth)} to the ${ordinal(after.nth)} cell of its container, ${container(after)}: ` +
+      `the Grid fills its cells in the order its layers are written, so it is ${ordinal(after.nth)} among them; the layers between move a cell along.`
+    );
+  }
   if (kind === "Reorder") {
     return `Move it from ${ordinal(before.nth)} to ${ordinal(after.nth)} place among the layers of its container, ${container(after)}.`;
   }
   const from = before.absolute ? `out of where it is placed in ${container(before)}` : `out of the layout of ${container(before)}, where it is ${ordinal(before.nth)}`;
-  if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer.`;
+  if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer${cell(after)}.`;
   const { x, y } = after.absolute!;
   const into = after.container.layer === before.container.layer ? "in the same Frame" : `in ${container(after)}`;
   return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the Frame's top left (CSS \`left\` and \`top\`). Make the Frame its positioning reference (\`position: relative\`) if it is not one already.`;
@@ -253,6 +441,8 @@ function fragments({ property, keeps }: Change): string {
 }
 
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
+/** Loose text placed freely at a breakpoint: it needs an element to place. */
+const WRAP_TO_PLACE = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>`, at every width, and place that.";
 
 const AS_STACK =
   "**Make it a Stack:** the layer lays its children out as plain blocks, top to bottom, which the editor shows as a vertical Stack. Make it a real Stack, a flex column (as the reference style shows), so the change applies.";
