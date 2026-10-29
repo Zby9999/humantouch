@@ -61,12 +61,25 @@ function asWritten({ stroke, drawn, written }: Sides): Stroke | null {
   return strokeWith(stroke, drawn.map((weight, i) => written[i] ?? weight) as Stroke["weight"]);
 }
 
+/** The widths borders are drawn at, as found in each document, by the widths written and the screen's pixel density. */
+const drawnIn = new WeakMap<Document, Map<string, number[]>>();
+
 /**
  * The widths the browser draws borders of `widths` px at in `doc`, top, right,
  * bottom and left: drawn on an element put in the page and taken out again at
- * once, before anything is painted.
+ * once, before anything is painted; found once for each set of widths and
+ * pixel density, so the page is not changed each time the panel reads a stroke.
  */
 function drawnWidths(doc: Document, widths: number[]): number[] {
+  const key = `${doc.defaultView?.devicePixelRatio} ${widths.join(" ")}`;
+  let known = drawnIn.get(doc);
+  if (!known) drawnIn.set(doc, (known = new Map()));
+  let drawn = known.get(key);
+  if (!drawn) known.set(key, (drawn = probeWidths(doc, widths)));
+  return [...drawn];
+}
+
+function probeWidths(doc: Document, widths: number[]): number[] {
   const probe = doc.createElement("div");
   const declarations = { position: "absolute", visibility: "hidden", "border-style": "solid", "border-width": widths.map((w) => `${w}px`).join(" ") };
   // Important, so no rule of the page's reaches it.

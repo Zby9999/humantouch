@@ -467,6 +467,18 @@ describe("stroke", () => {
     expect(read("border-bottom: 2px dotted blue; border-top: 3px none red")).toEqual({ color: "#0000FF", opacity: 1, weight: [0, 0, 2, 0], style: "dashed" });
   });
 
+  test("read again, as the Design panel does on each step of a value, a stroke changes nothing on the canvas", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.cssText = "height: 40px; border: 1px solid red";
+    const stroke = editor.read(layerOf(box), "stroke");
+    const observer = new MutationObserver(() => {});
+    observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    expect(editor.read(layerOf(box), "stroke")).toEqual(stroke);
+    expect(observer.takeRecords()).toEqual([]);
+    observer.disconnect();
+  });
+
   test("the page's own weight reads as the style that sets it writes it, though a 1x screen draws it narrower; through var(), as drawn", () => {
     const { doc, editor, layerOf } = openCanvas();
     doc.head.insertAdjacentHTML(
