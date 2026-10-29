@@ -3,10 +3,11 @@ import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefMark, briefedLayers } from "./BriefMark";
+import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
-import { freeze, restore, type Canvas } from "./freezer";
+import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
@@ -17,19 +18,6 @@ import { distances, type Mark } from "./snap";
 import { createViews, type View, type Views } from "./views";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 
-/** Where the canvas sits in the viewport: its top-left corner and its scale. */
-interface Camera {
-  x: number;
-  y: number;
-  zoom: number;
-}
-
-const MIN_ZOOM = 0.02;
-const MAX_ZOOM = 32;
-/** Room kept around the canvas when it is fitted to the viewport. */
-const PADDING = 40;
-/** Room kept above the views, for the tools and the views' labels. */
-const TOP = 72;
 /** Between one view and the next, in canvas px. */
 const VIEW_GAP = 80;
 /** A view's label sits this far above it, on screen. */
@@ -59,22 +47,6 @@ function keyOf(placed: Placed): string {
 
 /** A view laid out, where it is on the stage. */
 type Shown = Placed & { view: View };
-
-/** The camera as it frames a view: what is at its top left is at the view's. */
-function cameraIn(camera: Camera, shown: Placed): Camera {
-  return { ...camera, x: camera.x + shown.x * camera.zoom, y: camera.y + shown.y * camera.zoom };
-}
-
-/** The size of all the views side by side, in canvas px; `x` and `y`, where it starts, when not at the desktop view's top left. */
-interface Bounds {
-  x?: number;
-  y?: number;
-  width: number;
-  height: number;
-}
-/** Wheel distance (px) per e-fold of zoom. Mouse wheel notches are clamped so one notch is a modest step. */
-const ZOOM_SPEED = 0.01;
-const MAX_ZOOM_STEP = 30;
 
 /** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
 export type Tool = Created["type"] | null;
@@ -539,8 +511,7 @@ export function CanvasView(props: Props) {
       }
       if (event.ctrlKey || event.metaKey) {
         const rect = el.getBoundingClientRect();
-        const step = Math.max(-MAX_ZOOM_STEP, Math.min(MAX_ZOOM_STEP, dy));
-        setCamera((v) => zoomAt(v, Math.exp(-step * ZOOM_SPEED), event.clientX - rect.left, event.clientY - rect.top));
+        setCamera((v) => wheelZoom(v, dy, event.clientX - rect.left, event.clientY - rect.top));
         return;
       }
       if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
@@ -1261,63 +1232,6 @@ function setStyles(session: DragSession, el: Element, styles: Record<string, str
 /** The box between two points. */
 function boxFrom(a: { x: number; y: number }, b: { x: number; y: number }): DOMRect {
   return new DOMRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y));
-}
-
-/** A box on the canvas, placed over it in the viewport. */
-function place(r: { x: number; y: number; width: number; height: number }, camera: Camera) {
-  return { left: `${camera.x + r.x * camera.zoom}px`, top: `${camera.y + r.y * camera.zoom}px`, width: `${r.width * camera.zoom}px`, height: `${r.height * camera.zoom}px` };
-}
-
-function transformOf({ x, y, zoom }: Camera): string {
-  return `translate(${x}px, ${y}px) scale(${zoom})`;
-}
-
-/** Where the stage is right now, partway through an animation included. */
-function currentCamera(stage: HTMLElement): Camera {
-  const m = new DOMMatrix(getComputedStyle(stage).transform);
-  return { x: m.e, y: m.f, zoom: m.a };
-}
-
-/** At 100%, kept within the view played: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
-function scrolled(camera: Camera, played: Bounds, area: DOMRect): Camera {
-  const within = (n: number, min: number) => Math.max(Math.min(0, min), Math.min(0, n));
-  const x = played.width <= area.width ? Math.round((area.width - played.width) / 2) : within(camera.x, area.width - played.width);
-  return { zoom: 1, x, y: within(camera.y, area.height - played.height) };
-}
-
-/** At most 100%, every view across, and the part of the page the designer was looking at on top. */
-function initialCamera(canvas: Canvas, bounds: Bounds, area: DOMRect): Camera {
-  const zoom = clamp(Math.min(1, (area.width - 2 * PADDING) / bounds.width));
-  return { ...centered(bounds, area, zoom), y: TOP - canvas.scrollY * zoom };
-}
-
-/** Every view in the viewport, as large as they fit. */
-function fitCamera(bounds: Bounds, area: DOMRect): Camera {
-  const zoom = clamp(Math.min((area.width - 2 * PADDING) / bounds.width, (area.height - TOP - PADDING) / bounds.height));
-  const { x } = centered(bounds, area, zoom);
-  return { zoom, x: x - (bounds.x ?? 0) * zoom, y: TOP + (area.height - TOP - PADDING - bounds.height * zoom) / 2 - (bounds.y ?? 0) * zoom };
-}
-
-function centered(bounds: Bounds, area: DOMRect, zoom: number): Camera {
-  return { zoom, x: (area.width - bounds.width * zoom) / 2, y: (area.height - bounds.height * zoom) / 2 };
-}
-
-/** All the views side by side, and any layers off the canvas: from the leftmost to the rightmost, the topmost to the lowest. */
-function boundsOf(placed: Placed[]): Bounds {
-  const x = Math.min(...placed.map((p) => p.x));
-  const y = Math.min(...placed.map((p) => p.y));
-  return { x, y, width: Math.max(...placed.map((p) => p.x + p.width)) - x, height: Math.max(...placed.map((p) => p.y + p.height)) - y };
-}
-
-/** Scales by `factor`, keeping the point (`px`, `py`) of the viewport fixed. */
-function zoomAt(camera: Camera, factor: number, px: number, py: number): Camera {
-  const zoom = clamp(camera.zoom * factor);
-  const k = zoom / camera.zoom;
-  return { zoom, x: px - (px - camera.x) * k, y: py - (py - camera.y) * k };
-}
-
-function clamp(zoom: number): number {
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
 /** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
