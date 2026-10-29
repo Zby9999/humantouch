@@ -13,17 +13,20 @@ export interface BreakpointMarks {
   reset(properties: Property[]): void;
 }
 
-const Marks = createContext<BreakpointMarks | null>(null);
-export const BreakpointMarksProvider = Marks.Provider;
+const BreakpointMarksContext = createContext<BreakpointMarks | null>(null);
+
+/** Gives the rows inside it the marks of the selected layers. Outside one, no row is marked. */
+export const BreakpointMarksProvider = BreakpointMarksContext.Provider;
 
 /**
  * The marks of the selected layers, as `editor` tells them in the view worked
  * in: none in the desktop view, which edits every width (ADR 0008).
  */
 export function breakpointMarks(editor: Editor, layers: Layer[], onEdit: () => void): BreakpointMarks {
-  const here = layers.map((layer) => editor.changesHere(layer));
+  /** Each selected layer's properties changed on their own here. */
+  const changedOf = layers.map((layer) => editor.changesHere(layer));
   return {
-    changed: (properties) => properties.filter((property) => here.some((changes) => changes.includes(property))),
+    changed: (properties) => properties.filter((property) => changedOf.some((changes) => changes.includes(property))),
     reset(properties) {
       editor.batch(() => {
         for (const layer of layers) for (const property of properties) if (editor.changedHere(layer, property)) editor.inherit(layer, property);
@@ -40,7 +43,7 @@ export function breakpointMarks(editor: Editor, layers: Layer[], onEdit: () => v
  * (`BreakpointSection`). The row is `vk-markable`, for the mark to sit beside it.
  */
 export function BreakpointMark({ properties }: { properties: Property[] }) {
-  const marks = useContext(Marks);
+  const marks = useContext(BreakpointMarksContext);
   const changed = marks?.changed(properties) ?? [];
   if (!changed.length) return null;
   const names = listed(changed.map(propertyTitle));
@@ -50,13 +53,12 @@ export function BreakpointMark({ properties }: { properties: Property[] }) {
       class="vk-row-mark"
       aria-label={`Reset ${names} to inherit`}
       title={`${names}: changed at this breakpoint. Click to reset to inherit from every width`}
-      data-vk-property={changed.join(" ")}
       onClick={() => marks!.reset(changed)}
     />
   );
 }
 
-/** "Fill", "Columns and Row gap", "X, Y and Absolute". */
+/** Names as a phrase: "Fill", "Columns and Row gap", "X, Y and Absolute". */
 function listed(names: string[]): string {
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }

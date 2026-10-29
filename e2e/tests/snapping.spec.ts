@@ -255,6 +255,8 @@ test("nudged in the phone view, a free layer moves there only, at the phone's br
 
   await expect.poll(() => placeIn(phone(page), "#mark")).toEqual({ x: 110, y: 120 });
   expect(await placeIn(desktop(page), "#mark")).toEqual({ x: 100, y: 120 });
+  // Its Position row is marked as changed at the phone's breakpoint.
+  await expect(design(page).getByRole("region", { name: "Position" }).getByRole("button", { name: /^Reset .*X.* to inherit$/ })).toBeVisible();
   await page.locator("[data-vk-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toContainText(["below 768px"]);
 });

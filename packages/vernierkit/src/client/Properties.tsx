@@ -215,18 +215,20 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
           {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("width")} />}
           {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("height")} />}
           {offers("minWidth") && (
-            <div class="vk-grid-2 vk-markable">
-              <BreakpointMark properties={["minWidth", "minHeight", "maxWidth", "maxHeight"]} />
-              {/* Width on the left, height on the right; minimum above maximum. */}
-              {(["minWidth", "minHeight", "maxWidth", "maxHeight"] as const).map((property) => {
-                const label = LIMIT_LABELS[property];
-                return (
-                  <VariableSlot key={property} label={label} slot={variable(property)}>
-                    <LimitField label={label} glyph={property.endsWith("Width") ? "W" : "H"} value={shown(property)!} onChange={set(property)} />
-                  </VariableSlot>
-                );
-              })}
-            </div>
+            // Width on the left, height on the right; minimum above maximum, each a row of its own.
+            LIMIT_ROWS.map((row) => (
+              <div key={row[0]} class="vk-grid-2 vk-markable">
+                <BreakpointMark properties={row} />
+                {row.map((property) => {
+                  const label = LIMIT_LABELS[property];
+                  return (
+                    <VariableSlot key={property} label={label} slot={variable(property)}>
+                      <LimitField label={label} glyph={property.endsWith("Width") ? "W" : "H"} value={shown(property)!} onChange={set(property)} />
+                    </VariableSlot>
+                  );
+                })}
+              </div>
+            ))
           )}
         </section>
       )}
@@ -340,6 +342,11 @@ function number(value: Shown<number>): number | null {
 export type SlotOf = (property: Property, part?: string) => Slot | undefined;
 
 const LIMIT_LABELS = { minWidth: "Min width", minHeight: "Min height", maxWidth: "Max width", maxHeight: "Max height" };
+/** The minimums and maximums, as the panel lays them out: a row each. */
+const LIMIT_ROWS: (keyof typeof LIMIT_LABELS)[][] = [
+  ["minWidth", "minHeight"],
+  ["maxWidth", "maxHeight"],
+];
 
 type Update = <P extends Property>(property: P, next: (current: PropertyValues[P], layer: Layer) => PropertyValues[P], continues?: boolean) => void;
 type Setter = <P extends Property>(property: P) => (value: PropertyValues[P], continues?: boolean) => void;
@@ -741,7 +748,7 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
         />
       </div>
       <div class="vk-grid-2 vk-markable">
-        <BreakpointMark properties={["fontWeight", "fontSize", "lineHeight", "letterSpacing"]} />
+        <BreakpointMark properties={["fontWeight", "fontSize"]} />
         <Choice
           label="Font weight"
           value={weight === MIXED ? null : String(weight)}
@@ -751,6 +758,9 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
         <VariableSlot label="Font size" slot={fontSize}>
           <NumberField label="Font size" glyph="Aa" value={number(size)} min={1} onChange={set("fontSize")} />
         </VariableSlot>
+      </div>
+      <div class="vk-grid-2 vk-markable">
+        <BreakpointMark properties={["lineHeight", "letterSpacing"]} />
         {/* Auto is about 1.2 times the font size: a drag from it starts there. */}
         <TextLengthField label="Line height" glyph="↕" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
         <TextLengthField label="Letter spacing" glyph="↔" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />

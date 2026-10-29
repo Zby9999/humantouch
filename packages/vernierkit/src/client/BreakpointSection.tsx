@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
 import { propertyTitle } from "../design-values";
 import { breakpointName, tailwindOf } from "./breakpoints";
+import { breakpointMarks } from "./BreakpointMark";
 import type { Editor, Property } from "./edits";
 import { Icon } from "./icons";
 import type { Layer } from "./layers";
@@ -31,12 +32,8 @@ export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
   // A view in the desktop view's range edits every width, as it does; only what a narrower range recorded before holds there is shown.
   if (!breakpoint && !changed.length) return null;
   const tailwind = tailwindOf(breakpoint);
-  const inherit = (property: Property) => {
-    editor.batch(() => {
-      for (const layer of layers) editor.inherit(layer, property);
-    });
-    onEdit();
-  };
+  // Reset as its row resets it.
+  const inherit = (property: Property) => breakpointMarks(editor, layers, onEdit).reset([property]);
   return (
     <section class="vk-section vk-breakpoint" aria-labelledby="vk-breakpoint">
       <div class="vk-section-header">
