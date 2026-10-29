@@ -9,6 +9,8 @@ import { boxOf, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
 import { fontsOf } from "../src/client/typography";
 import { createViews } from "../src/client/views";
+import { bind, resolveVariables } from "../src/client/variables";
+import type { Variable } from "../src/service-protocol";
 
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
@@ -3191,5 +3193,122 @@ describe("views", () => {
     const c = layer("c");
     expect(phone.boxOf(c)!.y).toBe(0);
     expect(phone.layerAt(editor.tree(), 1, 1)).toBe(c);
+  });
+});
+
+describe("Variables", () => {
+  const variable = (name: string, group: Variable["group"], value: string, extra: Partial<Variable> = {}): Variable => ({ name, group, value, from: "tailwind", own: true, ...extra });
+  const GUTTER = variable("gutter", "spacing", "1.375rem");
+  const FOUR = variable("4", "spacing", "1rem", { own: false });
+  const RED = variable("--danger", "color", "hsl(0 100% 50%)", { from: "css", css: "var(--danger)" });
+  const BRAND = variable("brand-500", "color", "#3d63f5");
+  const CARD = variable("card", "radius", "14px");
+  const RAISED = variable("card", "shadow", "0 1px 2px rgb(27 29 42 / 0.06), 0 4px 12px rgb(27 29 42 / 0.08)");
+  const LEAD = variable("lead", "fontSize", "1.1875rem");
+  const ALL = [GUTTER, FOUR, RED, BRAND, CARD, RAISED, LEAD, variable("nowhere", "color", "not-a-color")];
+  const PAGE_OF_STACKS = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="row" data-vk-loc="src/App.tsx:4:5" style="display: flex; gap: 10px; padding: 4px 8px">
+    <article data-vk-loc="src/Card.tsx:3:5" style="height: 80px; width: 120px; background-color: rgb(255, 255, 255); border-radius: 12px"></article>
+    <h3 data-vk-loc="src/Card.tsx:4:7" style="font-size: 16px; color: rgb(0, 0, 0)">Card</h3>
+  </div>
+</body>`;
+
+  function openWithVariables(variables = ALL) {
+    const canvas = openCanvas(PAGE_OF_STACKS);
+    const catalog = resolveVariables(variables, canvas.doc);
+    const editor = createEditor(canvas.views, canvas.changes, (property, value, picked, previous) => bind(catalog, property, value, picked, previous));
+    const tree = editor.tree();
+    const layer = (selector: string) => find(tree.root, (l) => l.el === canvas.doc.querySelector(selector) && !l.text)!;
+    const change = (property: string) => canvas.changes.list().find((c) => c.property === property);
+    return { ...canvas, catalog, editor, layer, change };
+  }
+
+  test("each is worked out on the canvas: lengths in px by the page's rem, colors in sRGB, shadows; one that is none of these is left out", () => {
+    const { catalog } = openWithVariables();
+    expect(catalog.of("spacing").map(({ variable, drawn }) => [variable.name, drawn])).toEqual([["gutter", 22], ["4", 16]]);
+    expect(catalog.of("color").map(({ drawn }) => drawn)).toEqual([{ color: "#FF0000", opacity: 1 }, { color: "#3D63F5", opacity: 1 }]);
+    expect(catalog.of("shadow")[0].drawn).toEqual([
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#1B1D2A", opacity: 0.06 },
+      { type: "drop", x: 0, y: 4, blur: 12, spread: 0, color: "#1B1D2A", opacity: 0.08 },
+    ]);
+    expect(catalog.of("fontSize")[0].drawn).toBe(19);
+  });
+
+  test("a value typed in names the Variable it is exactly, and only that: a color in another color space too; a value no Variable has says so", () => {
+    const { editor, layer, change } = openWithVariables();
+    editor.set(layer("#row"), "gap", 22);
+    expect(change("gap")!.variables).toEqual({ "": GUTTER });
+    editor.set(layer("#row"), "gap", 23);
+    expect(change("gap")!.variables).toEqual({ "": null });
+
+    editor.set(layer("article"), "fill", { type: "solid", color: "#FF0000", opacity: 1 });
+    expect(change("fill")!.variables).toEqual({ color: RED });
+    // Close is not the same.
+    editor.set(layer("article"), "fill", { type: "solid", color: "#FE0000", opacity: 1 });
+    expect(change("fill")!.variables).toEqual({ color: null });
+
+    editor.set(layer("#row"), "padding", [22, 16, 4, 8]);
+    expect(change("padding")!.variables).toEqual({ top: GUTTER, right: FOUR, bottom: null, left: null });
+    editor.set(layer("h3"), "fontSize", 19);
+    expect(change("fontSize")!.variables).toEqual({ "": LEAD });
+    editor.set(layer("article"), "radius", [14, 14, 0, 0]);
+    expect(change("radius")!.variables).toEqual({ "top-left": CARD, "top-right": CARD, "bottom-right": null, "bottom-left": null });
+    // No Variable is offered for X, nor for opacity.
+    editor.set(layer("article"), "opacity", 0.5);
+    expect(change("opacity")!.variables).toBeUndefined();
+  });
+
+  test("a Variable picked is recorded as picked, kept while that part keeps its value, and undone with the edit", () => {
+    const { editor, layer, change, cards } = openWithVariables();
+    const row = layer("#row");
+    editor.set(row, "padding", [22, 8, 4, 8], { variables: { top: GUTTER } });
+    expect(change("padding")!.variables!.top).toEqual({ ...GUTTER, picked: true });
+    // Another side changes: the top keeps its Variable.
+    editor.set(row, "padding", [22, 16, 4, 8]);
+    expect(change("padding")!.variables).toEqual({ top: { ...GUTTER, picked: true }, right: FOUR, bottom: null, left: null });
+
+    // Detached: the value stays, and is still the Variable it equals, but not as picked.
+    editor.set(row, "padding", [22, 16, 4, 8], { variables: { top: null } });
+    expect(change("padding")!.variables!.top).toEqual(GUTTER);
+    editor.undo();
+    expect(change("padding")!.variables!.top).toEqual({ ...GUTTER, picked: true });
+    editor.undo();
+    editor.undo();
+    expect(change("padding")).toBeUndefined();
+    editor.redo();
+    expect(change("padding")!.variables!.top).toEqual({ ...GUTTER, picked: true });
+
+    // Shadows picked as a whole are drawn on the canvas.
+    const article = layer("article");
+    const shadows = editor.read(article, "shadows");
+    expect(shadows).toEqual([]);
+    editor.set(article, "shadows", [
+      { type: "drop", x: 0, y: 1, blur: 2, spread: 0, color: "#1B1D2A", opacity: 0.06 },
+      { type: "drop", x: 0, y: 4, blur: 12, spread: 0, color: "#1B1D2A", opacity: 0.08 },
+    ], { variables: { "": RAISED } });
+    expect(change("shadows")!.variables).toEqual({ "": { ...RAISED, picked: true } });
+    expect(editor.variables(article, "shadows")).toEqual({ "": { ...RAISED, picked: true } });
+    expect(getComputedStyle(article.el).boxShadow).toContain("0px 4px 12px 0px");
+    void cards;
+  });
+
+  test("a part picked and then given another value is that value's Variable, if any", () => {
+    const { editor, layer, change } = openWithVariables();
+    editor.set(layer("article"), "fill", { type: "solid", color: "#3D63F5", opacity: 1 }, { variables: { color: BRAND } });
+    expect(change("fill")!.variables).toEqual({ color: { ...BRAND, picked: true } });
+    editor.set(layer("article"), "fill", { type: "solid", color: "#3D63F5", opacity: 0.5 });
+    expect(change("fill")!.variables).toEqual({ color: null });
+    editor.set(layer("article"), "fill", { type: "linear", angle: 90, stops: [
+      { color: "#3D63F5", opacity: 1, position: 0, unit: "%" },
+      { color: "#000000", opacity: 1, position: 100, unit: "%" },
+    ] });
+    expect(change("fill")!.variables).toEqual({ "stop 1": BRAND, "stop 2": null });
+  });
+
+  test("without Variables, a change names none", () => {
+    const { editor, layer, change } = openWithVariables([]);
+    editor.set(layer("#row"), "gap", 22);
+    expect(change("gap")).not.toHaveProperty("variables");
   });
 });

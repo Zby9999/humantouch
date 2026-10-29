@@ -1012,3 +1012,54 @@ describe("undoing the last round, in a git repository", () => {
     expect((await cli("last")).output).not.toContain("git ");
   });
 });
+
+describe("claim, Variables", () => {
+  const change = (id: number, property: string, before: unknown, after: unknown, variables: object) => ({ ...redFill, id, property, before, after, style: {}, variables });
+  const gutter = { name: "gutter", group: "spacing", value: "1.375rem", from: "tailwind", own: true };
+  const brand = { name: "brand-500", group: "color", value: "oklch(55% 0.2 265)", from: "tailwind", css: "var(--color-brand-500)", own: true };
+  const danger = { name: "--danger", group: "color", value: "#FF0000", from: "css", css: "var(--danger)", own: true };
+  const rounded = { name: "DEFAULT", group: "radius", value: "0.25rem", from: "tailwind", own: false };
+
+  test("name the Variable a value is, picked or typed, and how the code uses it: a Tailwind class, or var()", async () => {
+    saveRound(
+      change(1, "gap", 8, 22, { "": { ...gutter, picked: true } }),
+      change(2, "fill", { type: "solid", color: "#FFFFFF", opacity: 1 }, { type: "solid", color: "#3D63F5", opacity: 1 }, { color: brand }),
+      change(3, "textColor", { color: "#000000", opacity: 1 }, { color: "#FF0000", opacity: 1 }, { "": { ...danger, picked: true } }),
+      change(4, "radius", 12, 4, { "": rounded }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the gap from 8px to 22px.\n- **Variables:** the gap is the Variable `gutter`, from the Tailwind theme: use its class, `gap-gutter`.\n",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Variables:** the fill color is the Variable `brand-500`, from the Tailwind theme: use its class, `bg-brand-500` (in CSS, `var(--color-brand-500)`).\n",
+    );
+    expect(section(output, 3)).toContain("- **Variables:** the text color is the Variable `--danger`, a CSS variable: use `var(--danger)`.\n");
+    expect(section(output, 4)).toContain("- **Variables:** the corner radius is the Variable `DEFAULT`, from the Tailwind theme: use its class, `rounded`.\n");
+  });
+
+  test("say so when no Variable has the value: the exact value, never a class close to it; part by part", async () => {
+    saveRound(
+      change(1, "gap", 8, 23, { "": null }),
+      change(2, "padding", [0, 0, 0, 0], [22, 23, 0, 0], { top: gutter, right: null, bottom: null, left: null }),
+      change(3, "fill", null, { type: "linear", angle: 90, stops: [
+        { color: "#FF0000", opacity: 1, position: 0, unit: "%" },
+        { color: "#123456", opacity: 1, position: 100, unit: "%" },
+      ] }, { "stop 1": danger, "stop 2": null }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Variables:** no Variable has the gap's value: use the exact value (with Tailwind, an arbitrary value: `gap-[23px]`), not a class or Variable whose value is close.\n",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Variables:** the top padding is the Variable `gutter`, from the Tailwind theme: use its class, `pt-gutter`. No Variable has the right padding's value: use the exact value (with Tailwind, an arbitrary value: `pr-[23px]`), not a class or Variable whose value is close. No Variable has the bottom padding's value: use the exact value (with Tailwind, an arbitrary value: `pb-[0px]`), not a class or Variable whose value is close. No Variable has the left padding's value: use the exact value (with Tailwind, an arbitrary value: `pl-[0px]`), not a class or Variable whose value is close.\n",
+    );
+    expect(section(output, 3)).toContain(
+      "- **Variables:** stop 1 of the fill is the Variable `--danger`, a CSS variable: use `var(--danger)`. No Variable has stop 2 of the fill's value: use the exact value (with Tailwind, an arbitrary value: `to-[#123456]`), not a class or Variable whose value is close.\n",
+    );
+  });
+});

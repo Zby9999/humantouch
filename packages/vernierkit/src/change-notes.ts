@@ -1,13 +1,14 @@
 /**
  * The change notes: the ChangeSet as Markdown written for the Agent, one
  * section per change with its kind, where it is in the source, its scope, the
- * design intent, the style that showed it on the canvas and what sets the
- * value now.
+ * design intent and the Variables it is, the style that showed it on the
+ * canvas and what sets the value now.
  */
 import { isAbsolute, relative } from "node:path";
 import { madeBy, placedAt, type Change, type Composed, type Created, type Dissolved, type Place, type StackSettings, type Target } from "./client/changeset";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/edits";
+import { variablesLine } from "./variable-notes";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
@@ -49,6 +50,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${scope(target)}`,
     `**Design intent:** ${intent(change, list)}`,
+    ...(change.kind === "style" && variablesLine(change) ? [variablesLine(change)!] : []),
     ...(change.asStack ? [AS_STACK] : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [WRAP] : []),

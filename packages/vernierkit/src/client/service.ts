@@ -6,10 +6,12 @@ import {
   SERVICE_GLOBAL,
   TOKEN_HEADER,
   UNLOCK_PATH,
+  VARIABLES_PATH,
   type CheckReport,
   type RoundStatus,
   type SavedRound,
   type ServiceConfig,
+  type Variable,
 } from "../service-protocol";
 
 /** How long to wait before listening again, when the service went away (the dev server restarting, say). */
@@ -28,9 +30,26 @@ export interface RoundStore {
   report(check: CheckReport): Promise<void>;
 }
 
+function serviceConfig(): ServiceConfig | undefined {
+  return (window as unknown as Record<string, ServiceConfig | undefined>)[SERVICE_GLOBAL];
+}
+
+/** The project's Variables, as the local service reads them; none when there is no service, or it cannot say. */
+export async function loadVariables(): Promise<Variable[]> {
+  const config = serviceConfig();
+  if (!config) return [];
+  try {
+    const response = await fetch(`${config.url}${VARIABLES_PATH}`, { headers: { [TOKEN_HEADER]: config.token } });
+    return response.ok ? ((await response.json()) as Variable[]) : [];
+  } catch (error) {
+    console.warn("Vernier Kit: could not load the project's Variables:", error);
+    return [];
+  }
+}
+
 /** The store the dev server set up for this page, or null when it set up none. */
 export function connectRoundStore(): RoundStore | null {
-  const config = (window as unknown as Record<string, ServiceConfig | undefined>)[SERVICE_GLOBAL];
+  const config = serviceConfig();
   if (!config) return null;
   const request = async (method: string, { path = ROUND_PATH, body, signal }: { path?: string; body?: string; signal?: AbortSignal } = {}) => {
     const headers: Record<string, string> = { [TOKEN_HEADER]: config.token };

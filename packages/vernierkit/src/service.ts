@@ -2,7 +2,8 @@
  * The local service: runs in the dev server process and keeps the round in
  * `.vernier/`. It tells the editor layer how the round stands as the Agent
  * claims and applies it, has open pages check each change the Agent reports
- * done, and ends the round when the designer unlocks it. It
+ * done, ends the round when the designer unlocks it, and reads the project's
+ * Variables for the Design panel. It
  * listens on 127.0.0.1 only and answers only requests that carry the random
  * token made at start, so other sites open in the browser cannot reach the
  * project's files.
@@ -18,6 +19,7 @@ import {
   ROUND_PATH,
   TOKEN_HEADER,
   UNLOCK_PATH,
+  VARIABLES_PATH,
   type CheckReport,
   type RoundStatus,
   type SavedRound,
@@ -33,6 +35,7 @@ import {
   writeChecks,
   type Checks,
 } from "./vernier-folder";
+import { readVariables } from "./variables";
 
 /** A saved canvas carries the page's styles inline; this leaves plenty of room. */
 const MAX_BODY = 64 * 1024 * 1024;
@@ -135,7 +138,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH].includes(path) ? 405 : 404);
     }
   };
 
@@ -151,6 +154,11 @@ export async function startService({ root }: { root: string }): Promise<Service>
       console.error("Vernier Kit:", error);
       if (!res.headersSent) send(res, 500);
     };
+    // Reading the Variables touches no round: it waits for no save, nor holds one up. Read afresh each time edit mode asks.
+    if (req.method === "GET" && path === VARIABLES_PATH) {
+      readVariables(root).then((variables) => send(res, 200, JSON.stringify(variables)), fail);
+      return;
+    }
     readBody(req).then((body) => {
       queue = queue.then(() => handle(req, res, path, body).catch(fail));
     }, fail);

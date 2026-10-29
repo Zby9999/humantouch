@@ -30,7 +30,9 @@ import {
   type Composed,
   type Created,
   type Dissolved,
+  type Bindings,
   type Fragment,
+  type Picked,
   type Place,
   type StackSettings,
   type Target,
@@ -40,6 +42,7 @@ import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTex
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { TYPOGRAPHY, type TypographyValues } from "./typography";
+import { pickedIn } from "./variables";
 import { hide, insertCopies, insertNew, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
 import { boxOf, buildLayerTree, holdsLayers, nodeOf, SIGN_WORDS, wordsAsPage, type Layer, type LayerKind, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -120,7 +123,15 @@ export type Destination = { parent: Layer; index: number } | { parent: Layer; x:
 export interface SetOptions {
   /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
   continues?: boolean;
+  /** The Variables the designer chose for the value, by part (see `Bindings`); null for a part: detached from its Variable. */
+  variables?: Picked;
 }
+
+/**
+ * Which Variables a property's value is, by part, given those the designer
+ * picked now and those the change had before; undefined when no part can be one.
+ */
+export type Binder = (property: Property, value: unknown, picked: Picked | undefined, previous: Bindings | undefined) => Bindings | undefined;
 
 export interface Editor {
   /** Whether `property` can be edited on the layer; with `value`, whether the layer can take that value. */
@@ -131,6 +142,8 @@ export interface Editor {
   set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
   /** Makes the edits `edits` makes one step, undone and redone together: the same change to several layers. */
   batch(edits: () => void, options?: SetOptions): void;
+  /** Which Variables the layer's value of `property` is, as changed this round; undefined when unchanged or none. */
+  variables(layer: Layer, property: Property): Bindings | undefined;
   /** Where the layer is on the canvas, in canvas px; for a hidden layer, where it is when shown. */
   measure(layer: Layer): DOMRect;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
@@ -399,8 +412,8 @@ export function readValue<P extends Property>(el: Element, property: P): Propert
   return PROPERTIES[property].read(el, colorReader(el.ownerDocument));
 }
 
-/** Edits the canvas `views` show, every view alike, recording each change in `changes`. */
-export function createEditor(views: Views, changes: ChangeSet): Editor {
+/** Edits the canvas `views` show, every view alike, recording each change in `changes`, with the Variables `bind` says its value is. */
+export function createEditor(views: Views, changes: ChangeSet, bind?: Binder): Editor {
   const doc = views.canvas.document;
   let tree = buildLayerTree(doc);
   const colors = colorReader(doc);
@@ -425,13 +438,17 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
 
   const layerById = (id: string) => find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
 
-  /** The edit itself: on the canvas and in the ChangeSet. */
-  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P]) => {
+  /** The change to the layer `id` under `property`, if there is one. */
+  const changeOf = (id: string | null, property: string) => (id === null ? undefined : changes.list().find((change) => change.layer === id && change.property === property));
+
+  /** The edit itself: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
+  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], picked?: Picked) => {
     const definition: Definition<PropertyValues[P]> = PROPERTIES[property];
     const before = readAsShown(layer.el, property, colors);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
-    const started = definition.reference && known ? changes.list().find((change) => change.layer === known && change.property === property) : undefined;
+    const earlier = changeOf(known, property);
+    const started = definition.reference ? earlier : undefined;
     // A layer made this round has no style of the page's to change.
     const sources = layer.made || (known && changes.has(known, property)) ? [] : sourcesOf(definition.setOn?.(layer.el) ?? layer.el, definition.setsOn?.(layer.el) ?? definition.sets);
     const instances = tree.acrossInstances(layer);
@@ -450,6 +467,7 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
     }
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(layer.el, colors);
+    const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       target: targetOf(layer, instances.length),
       scope: "usage",
@@ -460,6 +478,7 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       sources,
       ...(asStack && { asStack: true }),
       ...(keeps?.length ? { keeps } : {}),
+      ...(variables && { variables }),
     });
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property)) {
@@ -493,16 +512,21 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
 
-  /** An edit that can be undone. `from`: the value it changes, when the canvas cannot tell (on a hidden layer, say). */
-  const edit = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, from?: PropertyValues[P]) => {
+  /**
+   * An edit that can be undone. `from`: the value it changes, when the canvas
+   * cannot tell (on a hidden layer, say). `picked`: Variables chosen for the
+   * value, which make it an edit even when the value stays as it is (detached).
+   */
+  const edit = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, from?: PropertyValues[P], picked?: Picked) => {
     const before = from === undefined ? readAsShown(layer.el, property, colors) : from;
-    if (same(before, value)) return;
-    const id = apply(layer, property, value);
-    const to = (v: PropertyValues[P]) => () => {
+    if (same(before, value) && !picked) return;
+    const wasPicked = pickedIn(changeOf(layer.el.getAttribute(LAYER_ID_ATTR), property)?.variables);
+    const id = apply(layer, property, value, picked);
+    const to = (v: PropertyValues[P], chosen: Picked | undefined) => () => {
       const target = layerById(id);
-      if (target) apply(target, property, v);
+      if (target) apply(target, property, v, chosen);
     };
-    push({ layers: [id], key: `${id} ${property}`, undo: to(before), redo: to(value) }, continues);
+    push({ layers: [id], key: `${id} ${property}`, undo: to(before, wasPicked), redo: to(value, picked) }, continues);
   };
 
   /**
@@ -824,10 +848,11 @@ export function createEditor(views: Views, changes: ChangeSet): Editor {
       return asShown(layer.el, () => (!applies || applies(layer.el)) && (value === undefined || !accepts || accepts(layer.el, value)));
     },
     read: (layer, property) => readAsShown(layer.el, property, colors),
+    variables: (layer, property) => (layer.text ? undefined : changeOf(layer.el.getAttribute(LAYER_ID_ATTR), property)?.variables),
     measure: (layer) => asShown(layer.el, () => boxOf(layer)),
-    set(layer, property, value, { continues = false } = {}) {
+    set(layer, property, value, { continues = false, variables } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
-      edit(layer, property, value, continues);
+      edit(layer, property, value, continues, undefined, variables);
     },
     batch(edits, { continues = false } = {}) {
       if (batching) return edits();

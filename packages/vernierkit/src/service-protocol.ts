@@ -19,6 +19,30 @@ export const UNLOCK_PATH = "/unlock";
 /** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */
 export const CHECKS_PATH = "/checks";
 
+/** `GET`: the project's Variables, as a `Variable[]`; none when it has none, or they cannot be read. */
+export const VARIABLES_PATH = "/variables";
+
+/** The groups the Design panel offers Variables in. */
+export type VariableGroup = "color" | "spacing" | "radius" | "fontSize" | "shadow";
+
+/**
+ * A Variable: a value the project defines once and reuses, from its Tailwind
+ * theme (v3 config or v4 `@theme`) or a CSS custom property of its own.
+ */
+export interface Variable {
+  /** As the designer sees it and the code names it: a Tailwind theme key (`brand-500`, `4`, `DEFAULT`), or a CSS variable (`--space-md`). */
+  name: string;
+  group: VariableGroup;
+  /** Its CSS value, with the Variables it is made of put in. */
+  value: string;
+  /** `tailwind`: used through Tailwind's classes (`bg-brand-500`). `css`: through `var()`. */
+  from: "tailwind" | "css";
+  /** How CSS refers to it, when it is a CSS variable too: `var(--color-brand-500)`, `calc(var(--spacing) * 4)`. */
+  css?: string;
+  /** Defined by the project; false: one of Tailwind's own defaults. */
+  own: boolean;
+}
+
 /** `done` asking the page to check change `id`; `at` tells one ask from the next. */
 export interface CheckAsk {
   id: number;

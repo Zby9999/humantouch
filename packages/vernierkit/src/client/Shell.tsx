@@ -14,6 +14,8 @@ import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
+import { loadVariables } from "./service";
+import { bind, resolveVariables, type Catalog } from "./variables";
 
 const LAYERS_KEY = "vernierkit:layers-panel";
 
@@ -88,6 +90,10 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
   const [restoreFrom] = useState(saved);
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  /** The project's Variables, asked for as edit mode opens; worked out on the canvas once there is one. */
+  const [variables] = useState(loadVariables);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const catalogNow = useRef<Catalog | null>(null);
   /** The selected layers, the one selected last at the end. */
   const [selected, setSelected] = useState<Layer[]>([]);
   /** Bumped on each edit: the panel reads its values from the canvas. */
@@ -308,7 +314,13 @@ export function Shell({ controls, saved, onSave, onChanges, control, leaving, an
           const changeSet = createChangeSet(restoreFrom?.changeSet);
           round.current = { canvas: views.canvas, changeSet };
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
-          const editor = createEditor(views, changeSet);
+          // A value is named by the Variable it is, once the Variables are in.
+          const editor = createEditor(views, changeSet, (...args) => (catalogNow.current ? bind(catalogNow.current, ...args) : undefined));
+          void variables.then((list) => {
+            if (!list.length) return;
+            catalogNow.current = resolveVariables(list, views.canvas.document);
+            setCatalog(catalogNow.current);
+          });
           setTree(editor.tree());
           setEditor(editor);
           control.current = {

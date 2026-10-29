@@ -3,6 +3,7 @@
  * language, for the Agent to apply. Adjusting one property of one layer again
  * and again stays a single change, from the first value to the latest.
  */
+import type { Variable } from "../service-protocol";
 import type { Align, Padding } from "./edits";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -102,6 +103,19 @@ export interface Fragment {
   value: unknown;
 }
 
+/** A Variable a part of a change's value is. `picked`: the designer chose it, rather than typed its value. */
+export type Bound = Variable & { picked?: true };
+
+/**
+ * Which Variable each part of a style change's value is, by part: "" the
+ * whole value, else a side ("top"), a corner ("top-left"), "color", a gradient
+ * stop ("stop 1"). Null: no Variable has that value.
+ */
+export type Bindings = Record<string, Bound | null>;
+
+/** The Variables the designer chose, by part of the value; null: detached from the one it had. */
+export type Picked = Record<string, Variable | null>;
+
 export interface Change {
   id: number;
   /**
@@ -140,6 +154,8 @@ export interface Change {
   reference?: true;
   /** A change to a text layer, made on it as a whole: its inline fragments with a value of their own, which they keep. The others follow the layer. */
   keeps?: Fragment[];
+  /** A style change whose value is, or could be, Variables: which part is which, exactly. */
+  variables?: Bindings;
   /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
@@ -165,7 +181,7 @@ export interface ChangeSet {
    */
   record(
     layerId: string,
-    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "keeps"> & {
+    change: Pick<Change, "target" | "scope" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "order" | "keeps" | "variables"> & {
       kind?: Change["kind"];
     },
   ): void;
@@ -204,6 +220,9 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
         // Which fragments keep their own value depends on the value now.
         if (change.keeps) earlier.keeps = change.keeps;
         else delete earlier.keeps;
+        // So do the Variables it is.
+        if (change.variables) earlier.variables = change.variables;
+        else delete earlier.variables;
       }
       else changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...change });
     },
