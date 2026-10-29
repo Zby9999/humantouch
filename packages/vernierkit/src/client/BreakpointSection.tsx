@@ -1,7 +1,9 @@
 /** @jsxImportSource preact */
 import { propertyTitle } from "../design-values";
 import { breakpointName, tailwindOf } from "./breakpoints";
-import type { Editor, Property } from "./edits";
+import { breakpointMarks } from "./BreakpointMark";
+import type { Editor } from "./edits";
+import type { Property } from "./property-table";
 import { Icon } from "./icons";
 import type { Layer } from "./layers";
 
@@ -19,7 +21,10 @@ interface Props {
  * At the top of the Design panel, in a view other than the desktop view: the
  * breakpoint edits there apply at (ADR 0008), and the properties of the
  * selected layers changed there on their own, each of which can be set back
- * to inherit what the layer shows at every width.
+ * to inherit what the layer shows at every width. The rows of those
+ * properties are marked and reset too (`BreakpointMark`), from the same
+ * changes; the list also holds those whose row the panel does not show, as
+ * for several layers that do not all offer the property.
  */
 export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
   const breakpoint = editor.breakpoint();
@@ -28,12 +33,8 @@ export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
   // A view in the desktop view's range edits every width, as it does; only what a narrower range recorded before holds there is shown.
   if (!breakpoint && !changed.length) return null;
   const tailwind = tailwindOf(breakpoint);
-  const inherit = (property: Property) => {
-    editor.batch(() => {
-      for (const layer of layers) editor.inherit(layer, property);
-    });
-    onEdit();
-  };
+  // Reset as its row resets it.
+  const inherit = (property: Property) => breakpointMarks(editor, layers, onEdit).reset([property]);
   return (
     <section class="vk-section vk-breakpoint" aria-labelledby="vk-breakpoint">
       <div class="vk-section-header">

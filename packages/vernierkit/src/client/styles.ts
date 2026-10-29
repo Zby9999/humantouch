@@ -334,8 +334,8 @@ export const styles = /* css */ `
 .vk-layer-info dd { margin: 0; overflow-wrap: anywhere; }
 .vk-layer-note { margin: 8px 0 0; color: var(--vk-text-muted); }
 /* The breakpoint the view worked in stands for, and the properties changed there on their own (ADR 0008). */
-.vk-breakpoint { --vk-breakpoint: #8a38f5; }
-@media (prefers-color-scheme: dark) { .vk-breakpoint { --vk-breakpoint: #b48aff; } }
+.vk-breakpoint, .vk-row-mark { --vk-breakpoint: #8a38f5; }
+@media (prefers-color-scheme: dark) { .vk-breakpoint, .vk-row-mark { --vk-breakpoint: #b48aff; } }
 .vk-breakpoint-range { color: var(--vk-breakpoint); font-variant-numeric: tabular-nums; }
 .vk-breakpoint-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-breakpoint .vk-layer-note { margin: 0; }
@@ -344,6 +344,24 @@ export const styles = /* css */ `
 .vk-breakpoint-mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--vk-breakpoint); }
 .vk-breakpoint-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vk-breakpoint); }
 .vk-change-breakpoint { color: #b48aff; }
+/* A row of the Design panel whose properties the breakpoint changed on its own: a bar in the section's left margin, all along the row; clicked, they inherit again. */
+.vk-markable { position: relative; }
+.vk-row-mark {
+  all: unset;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -14px;
+  width: 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.vk-row-mark::before { content: ""; width: 3px; height: calc(100% - 6px); min-height: 12px; border-radius: 2px; background: var(--vk-breakpoint); }
+.vk-row-mark:hover { background: var(--vk-field); }
+.vk-row-mark:hover::before { width: 4px; }
+.vk-row-mark:focus-visible { outline: 2px solid var(--vk-accent); outline-offset: -2px; }
 .vk-source { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .vk-unlocated { color: var(--vk-text-muted); font-style: italic; }
 

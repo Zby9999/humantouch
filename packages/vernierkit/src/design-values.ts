@@ -1,6 +1,6 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, PutBack, StackSettings } from "./client/changeset";
-import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/edits";
+import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/property-table";
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
 

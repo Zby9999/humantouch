@@ -24,7 +24,7 @@ import { breakpointName, mediaOf, type Breakpoint } from "./client/breakpoints";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
-import type { Size } from "./client/edits";
+import type { Size } from "./client/property-table";
 import { variablesLine } from "./variable-notes";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 

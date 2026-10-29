@@ -9,7 +9,7 @@
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { DELETED_ATTR } from "./canvas-style";
-import { readValue } from "./edits";
+import { readValue } from "./property-table";
 import { doctypeOf, editable, FROZEN, serializeEditable } from "./freezer";
 import { LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./style-marks";
 import { CHAIN_ATTR } from "./usage-chain";

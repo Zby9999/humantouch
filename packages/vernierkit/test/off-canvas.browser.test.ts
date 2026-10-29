@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { dropUnusedRules } from "../src/client/canvas-style";
 import { createChangeSet, type PutBack } from "../src/client/changeset";
-import { createEditor, createHistory } from "../src/client/edits";
+import { createEditor } from "../src/client/edits";
+import { createHistory } from "../src/client/undo-steps";
 import type { Destination } from "../src/client/edits";
 import type { Layer } from "../src/client/layers";
 import { freezeLook, serializeLook } from "../src/client/look";

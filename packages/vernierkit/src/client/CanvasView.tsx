@@ -3,81 +3,25 @@ import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefMark, briefedLayers } from "./BriefMark";
+import { Brief, Marks, Outline, SelectionToolbar } from "./AboveCanvas";
+import { canvasKey, type Tool } from "./canvas-keys";
+import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
+import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
-import { freeze, restore, type Canvas } from "./freezer";
+import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
-import { Icon } from "./icons";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
-import { framedText, nodeOf, role, type Layer, type LayerTree } from "./layers";
+import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
-import { distances, type Mark } from "./snap";
+import { distances } from "./snap";
 import { createViews, type View, type Views } from "./views";
+import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 
-/** Where the canvas sits in the viewport: its top-left corner and its scale. */
-interface Camera {
-  x: number;
-  y: number;
-  zoom: number;
-}
-
-const MIN_ZOOM = 0.02;
-const MAX_ZOOM = 32;
-/** Room kept around the canvas when it is fitted to the viewport. */
-const PADDING = 40;
-/** Room kept above the views, for the tools and the views' labels. */
-const TOP = 72;
-/** Between one view and the next, in canvas px. */
-const VIEW_GAP = 80;
-/** A view's label sits this far above it, on screen. */
-const LABEL_OFFSET = 26;
-
-/**
- * A view of the canvas, or a layer off it, where it is on the stage: `x` and
- * `y` from the desktop view's top left edge, in canvas px.
- */
-interface Placed {
-  /** Null until it is laid out. */
-  view: View | null;
-  name: string;
-  desktop: boolean;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  /** A layer off the canvas (ADR 0009), rather than a view of it. */
-  offCanvasLayer?: OffCanvasLayer;
-}
-
-/** What tells views apart: their width, but for the desktop view, which may be as wide as another. */
-function keyOf(placed: Placed): string {
-  return placed.offCanvasLayer ? `off ${placed.offCanvasLayer.id}` : placed.desktop ? "desktop" : String(placed.width);
-}
-
-/** A view laid out, where it is on the stage. */
-type Shown = Placed & { view: View };
-
-/** The camera as it frames a view: what is at its top left is at the view's. */
-function cameraIn(camera: Camera, shown: Placed): Camera {
-  return { ...camera, x: camera.x + shown.x * camera.zoom, y: camera.y + shown.y * camera.zoom };
-}
-
-/** The size of all the views side by side, in canvas px; `x` and `y`, where it starts, when not at the desktop view's top left. */
-interface Bounds {
-  x?: number;
-  y?: number;
-  width: number;
-  height: number;
-}
-/** Wheel distance (px) per e-fold of zoom. Mouse wheel notches are clamped so one notch is a modest step. */
-const ZOOM_SPEED = 0.01;
-const MAX_ZOOM_STEP = 30;
-
-/** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
-export type Tool = Created["type"] | null;
+export type { Tool } from "./canvas-keys";
 
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
@@ -184,25 +128,10 @@ export function CanvasView(props: Props) {
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
   /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first. */
-  const placed: Placed[] = [];
-  if (canvas) {
-    placed.push({ view: desktop, name: viewName(canvas.width, true), desktop: true, x: 0, y: 0, width: canvas.width, height: desktop!.height });
-    let x = canvas.width;
-    for (const width of widths) {
-      const view = beside.get(width) ?? null;
-      placed.push({ view, name: viewName(width, false), desktop: false, x: x + VIEW_GAP, y: 0, width, height: view?.height ?? 0 });
-      x += VIEW_GAP + width;
-    }
-  }
+  const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside) : [];
   const bounds: Bounds | null = canvas && boundsOf(placed);
   /** The layers off the canvas, where they are on the stage. */
-  const outside: Shown[] =
-    (canvas &&
-      offCanvas?.list().map((offCanvasLayer) => {
-        const { view, x, y, width, height } = offCanvasLayer;
-        return { view, name: "Off canvas", desktop: false, x, y, width, height, offCanvasLayer };
-      })) ||
-    [];
+  const outside: Shown[] = canvas ? placeOffCanvas(offCanvas) : [];
   /** The layers of a view, or of a layer off the canvas. */
   const treeIn = (shown: Placed): LayerTree | null => (shown.offCanvasLayer ? shown.offCanvasLayer.editor.tree() : tree);
   /** What edits there. */
@@ -266,7 +195,7 @@ export function CanvasView(props: Props) {
       const canvasViews = createViews(frozen);
       setViews(canvasViews);
       onCanvas(canvasViews, workspace.current!);
-      const start = initialCamera(frozen, { width: frozen.width + widths.reduce((sum, width) => sum + VIEW_GAP + width, 0), height: frozen.height }, viewport.current!.getBoundingClientRect());
+      const start = initialCamera(frozen, { width: viewsWidth(frozen.width, widths), height: frozen.height }, viewport.current!.getBoundingClientRect());
       setCamera(start);
       shell.style.opacity = "";
       if (animate && prefersReducedMotion()) {
@@ -417,73 +346,35 @@ export function CanvasView(props: Props) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { played, bounds, placed, selected, onSelect, endDrag, tool, onTool, playing, onStopPlaying } = latest.current;
-      // Playing, the keys scroll as on a page, and Esc stops.
-      if (playing) {
-        if (event.type !== "keydown" || !played || event.metaKey || event.ctrlKey || event.altKey) return;
-        const area = viewport.current!.getBoundingClientRect();
-        const page = area.height - 40;
-        const by: Record<string, number> = { ArrowDown: 40, ArrowUp: -40, PageDown: page, PageUp: -page, Home: -Infinity, End: Infinity };
-        // Space on the button that stops playing presses it, as on any button.
-        const onButton = event.composedPath()[0] instanceof HTMLButtonElement;
-        const dy = event.code === "Space" ? (onButton ? undefined : event.shiftKey ? -page : page) : by[event.key];
-        if (event.key !== "Escape" && dy === undefined) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (event.key === "Escape") onStopPlaying();
-        else if (dy !== undefined) setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, played, area));
-        return;
+      if (playing && !played) return;
+      // Read once playing, as a page scrolls by it; not on each key typed elsewhere.
+      const playedIn = playing ? viewport.current!.getBoundingClientRect() : null;
+      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, selected: selected.length > 0 });
+      if (!playing) {
+        if (event.key === "Meta" || event.key === "Control") {
+          const deep = event.metaKey || event.ctrlKey;
+          setHover((h) => h && { ...h, deep });
+          // ⌘ turns snapping off while it is held, without the pointer moving.
+          const pointer = dragging.current?.pointer;
+          if (pointer) latest.current.redrag({ ...pointer, metaKey: event.metaKey, ctrlKey: event.ctrlKey });
+        }
+        if (event.key === "Alt") setMeasuring(event.altKey);
       }
-      if (event.key === "Meta" || event.key === "Control") {
-        const deep = event.metaKey || event.ctrlKey;
-        setHover((h) => h && { ...h, deep });
-        // ⌘ turns snapping off while it is held, without the pointer moving.
-        const pointer = dragging.current?.pointer;
-        if (pointer) latest.current.redrag({ ...pointer, metaKey: event.metaKey, ctrlKey: event.ctrlKey });
-      }
-      if (event.key === "Alt") setMeasuring(event.altKey);
-      const target = event.composedPath()[0];
-      // A field, or a dialog over the canvas (the change list), keeps its keys.
-      if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
-      if (event.code === "Space") {
-        // Swallow repeats and key-up too: a focused button would otherwise click on Space.
-        event.preventDefault();
-        event.stopPropagation();
-        setSpaceHeld(event.type === "keydown");
-        return;
-      }
-      if (event.type !== "keydown") return;
-      if (event.key === "Escape" && tool) {
-        event.preventDefault();
-        event.stopPropagation();
-        onTool(null);
-        return;
-      }
-      // T and F, as in Figma: draw new text, or a new Frame; V goes back to selecting.
-      const key = event.key.toLowerCase();
-      if ((key === "t" || key === "f" || key === "v") && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        onTool(key === "t" ? "text" : key === "f" ? "frame" : null);
-        return;
-      }
-      if (event.key === "Escape" && dragging.current) {
-        event.preventDefault();
-        event.stopPropagation();
-        endDrag(false);
-        return;
-      }
-      if (event.key === "Escape" && selected.length) {
-        event.preventDefault();
-        event.stopPropagation();
-        onSelect(selectParents(selected));
-        return;
-      }
-      if (event.code === "Digit1" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        // The layers off the canvas too.
-        if (bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside]), viewport.current!.getBoundingClientRect()));
-      }
+      if (!key) return;
+      event.preventDefault();
+      // Playing, the keys are the canvas's alone.
+      if (playing) event.stopImmediatePropagation();
+      else event.stopPropagation();
+      if (key.action === "stop playing") onStopPlaying();
+      else if (key.action === "scroll") {
+        const dy = key.by;
+        setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, played!, playedIn!));
+      } else if (key.action === "pan") setSpaceHeld(key.held);
+      else if (key.action === "tool") onTool(key.tool);
+      else if (key.action === "cancel drag") endDrag(false);
+      else if (key.action === "select parents") onSelect(selectParents(selected));
+      // The layers off the canvas too.
+      else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside]), viewport.current!.getBoundingClientRect()));
     };
     const release = () => {
       setSpaceHeld(false);
@@ -539,8 +430,7 @@ export function CanvasView(props: Props) {
       }
       if (event.ctrlKey || event.metaKey) {
         const rect = el.getBoundingClientRect();
-        const step = Math.max(-MAX_ZOOM_STEP, Math.min(MAX_ZOOM_STEP, dy));
-        setCamera((v) => zoomAt(v, Math.exp(-step * ZOOM_SPEED), event.clientX - rect.left, event.clientY - rect.top));
+        setCamera((v) => wheelZoom(v, dy, event.clientX - rect.left, event.clientY - rect.top));
         return;
       }
       if (event.shiftKey && !dx) [dx, dy] = [dy, 0];
@@ -554,8 +444,7 @@ export function CanvasView(props: Props) {
   /** The view under the pointer, or the layer off the canvas (those first: they are drawn over the views), and where the pointer is in it, in its px. */
   const viewAt = (event: At, among: Placed[] = [...outside.slice().reverse(), ...placed]): { at: Shown; x: number; y: number } | null => {
     const { x, y } = toCanvas(event);
-    const at = among.find((p): p is Shown => p.view !== null && x >= p.x && x < p.x + p.width && y >= p.y && y < p.y + p.height);
-    return at ? { at, x: x - at.x, y: y - at.y } : null;
+    return shownAt(among, x, y);
   };
   /** The deepest layer under the pointer, in whichever view it is over. The views take no pointer input, so this asks what they show. */
   const layerAt = (event: At): Layer | null => pointedAt(event)?.layer ?? null;
@@ -668,24 +557,7 @@ export function CanvasView(props: Props) {
    * shifted on the canvas, so in every view; no view grows or shrinks with it
    * until the drop.
    */
-  const startDrag = (layer: Layer, shown: Shown): DragSession => {
-    const { view, offCanvasLayer } = shown;
-    const start = view.boxOf(layer) ?? new DOMRect();
-    const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
-    // A layer off the canvas itself is moved about the workspace, whole, or back onto the canvas.
-    if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
-      session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
-      session.whole = true;
-      return session;
-    }
-    for (const child of layer.parent!.children) {
-      const r = !child.text && view.boxOf(child);
-      if (r) session.rects.set(child.el, r);
-    }
-    if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
-    if (!offCanvasLayer) session.release = views!.holdHeights();
-    return session;
-  };
+  const startDrag = (layer: Layer, shown: Shown): DragSession => startDragSession(layer, shown, views!);
 
   /**
    * The layer dragged to where the pointer is, from where it was pressed.
@@ -708,7 +580,7 @@ export function CanvasView(props: Props) {
       const drop = into && there && editor ? findDrop(editor, into.view, null, toView(event, into), there, rectOf, snapWithin) : null;
       // Snapped, it is shown where it snaps to.
       if (drop && there) [dx, dy] = [dx + drop.box.x - there.x, dy + drop.box.y - there.y];
-      setStyles(session, offCanvasLayer.document.defaultView!.frameElement!, { translate: `${dx}px ${dy}px` });
+      moveWhole(session, dx, dy);
       session.to = into ? null : { x: offCanvasLayer.x + dx, y: offCanvasLayer.y + dy };
       session.back = drop;
       // Nothing makes room for it: coming from outside, the layers would slide away from under the pointer as it enters.
@@ -717,27 +589,13 @@ export function CanvasView(props: Props) {
     }
     // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it.
     session.out = !offCanvasLayer && !viewAt(event) && !!editor?.canRemove(layer);
-    const rectOf = (l: Layer) => {
-      if (l.text) return shown.view.boxOf(l) ?? new DOMRect();
-      let r = session.rects.get(l.el);
-      if (!r) session.rects.set(l.el, (r = unshifted(session, l.el)));
-      return r;
-    };
+    const rectOf = (l: Layer) => laidOut(session, l);
     const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin));
     session.drop = drop;
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;
     session.box = at;
-    // Only shifted while dragging: the layer, and the layers making room for it.
-    const shifts = new Map(drop?.shifts);
-    if (!layer.text) shifts.set(layer.el, { x: dx + at.x - box.x, y: dy + at.y - box.y });
-    for (const [el, saved] of session.touched) {
-      if (!shifts.has(el) && saved.translate) setStyles(session, el, { translate: null, transition: null });
-    }
-    for (const [el, { x, y }] of shifts) {
-      const slide = el !== layer.el && !prefersReducedMotion();
-      setStyles(session, el, { translate: `${x}px ${y}px`, transition: slide ? `translate 150ms ${EASE_OUT}` : "none" });
-    }
+    shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop);
     setDrag({ layer, in: shown, box: at, drop, out: session.out });
   };
   /** The drag again where the pointer is, as a modifier key changes. */
@@ -805,14 +663,7 @@ export function CanvasView(props: Props) {
     if (!session) return;
     dragging.current = null;
     press.current = null;
-    // Each view is as tall as what it shows again before the next paint, the drop in it.
-    session.release();
-    for (const [el, saved] of session.touched) {
-      for (const [name, [value, priority]] of Object.entries(saved.original)) {
-        if (value) (el as HTMLElement).style.setProperty(name, value, priority);
-        else (el as HTMLElement).style.removeProperty(name);
-      }
-    }
+    restoreDragStyles(session);
     setDrag(null);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back } = session;
@@ -1001,326 +852,7 @@ export function CanvasView(props: Props) {
   );
 }
 
-interface BriefProps {
-  layer: Layer;
-  brief: string;
-  /** The view it sits beside the layer in. */
-  view: View;
-  camera: Camera;
-  onSetBrief(layer: Layer, brief: string): void;
-}
-
-/**
- * Beside a new Frame selected: the button that opens its brief, what the
- * Agent is to make in it. Typed in freely, set once left or on Enter; Esc
- * leaves it as it was.
- */
-function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
-  const [open, setOpen] = useState(false);
-  const r = view.boxOf(layer);
-  const close = (text: string | null) => {
-    setOpen(false);
-    if (text !== null && text.trim() !== brief) onSetBrief(layer, text.trim());
-  };
-  if (!r) return null;
-  return (
-    <div
-      class="vk-brief"
-      style={{ left: `${camera.x + r.right * camera.zoom + 8}px`, top: `${camera.y + r.top * camera.zoom}px` }}
-      // A press here is not on the canvas.
-      onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
-    >
-      <button type="button" class="vk-brief-button" aria-expanded={open} title={brief || undefined} onClick={() => setOpen(!open)}>
-        <Icon name="brief" />
-        {brief ? "Brief" : "Add brief"}
-      </button>
-      {open && (
-        <textarea
-          class="vk-textarea vk-brief-text"
-          aria-label="Brief"
-          placeholder="What should the Agent make here?"
-          defaultValue={brief}
-          ref={(el) => el?.focus()}
-          onBlur={(event) => close(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              close(null);
-            } else if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.blur();
-            }
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-interface SelectionToolbarProps {
-  layer: Layer;
-  /** The view it sits on the layer in. */
-  view: View;
-  camera: Camera;
-  /** The layer has changes for its usage it can promote to its component. */
-  promote: boolean;
-  onPromote(layer: Layer): void;
-}
-
-/**
- * On the top right of the layer selected alone, always there: the buttons
- * for that layer, in one row, so none covers another. Promote, while it has
- * changes for its usage to promote to its component. The second version
- * puts States first, into the component's Sandbox (ADR 0007); not shown yet.
- * With no button to show, there is nothing.
- */
-function SelectionToolbar({ layer, view, camera, promote, onPromote }: SelectionToolbarProps) {
-  const r = view.boxOf(layer);
-  if (!r || !promote) return null;
-  const component = layer.chain[0]?.component;
-  return (
-    <div
-      class="vk-selection-toolbar"
-      role="toolbar"
-      aria-label="Selection"
-      style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}
-      // A press here is not on the canvas.
-      onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
-    >
-      {/* States (second version, ADR 0007): first in the row, for a component. */}
-      <button type="button" class="vk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
-        <Icon name="promote" />
-        Promote
-      </button>
-    </div>
-  );
-}
-
-interface MarksProps {
-  marks: Mark[];
-  /** What the view they are in is called. */
-  view: string;
-  camera: Camera;
-}
-
-/**
- * Marks over a view, as Figma draws its guides: red lines a dragged layer lines
- * up on, magenta spaces it is spaced as, red distances measured, each with
- * its length. Drawn above the canvas, so lines stay 1px and labels one size at any zoom.
- */
-function Marks({ marks, view, camera }: MarksProps) {
-  const at = (x: number, y: number) => ({ x: camera.x + x * camera.zoom, y: camera.y + y * camera.zoom });
-  return (
-    <div class="vk-marks" data-view={view} aria-hidden="true">
-      {marks.map((mark, i) => {
-        const a = at(mark.x1, mark.y1);
-        const b = at(mark.x2, mark.y2);
-        const across = mark.y1 === mark.y2;
-        const style = across
-          ? { left: `${a.x}px`, top: `${a.y}px`, width: `${b.x - a.x}px` }
-          : { left: `${a.x}px`, top: `${a.y}px`, height: `${b.y - a.y}px` };
-        const size = mark.type === "gap" || mark.type === "distance" ? mark.size : null;
-        return (
-          <div key={i} class="vk-mark" data-type={mark.type} data-across={across || undefined} style={style}>
-            {size !== null && <span class="vk-mark-label">{formatPx(size)}</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** A length as a mark labels it: whole px, or to two places. */
-function formatPx(n: number): string {
-  return String(Math.round(n * 100) / 100);
-}
-
-interface OutlineProps {
-  layer: Layer;
-  /** The view it outlines the layer in, and what that view is called. */
-  view: View;
-  name: string;
-  camera: Camera;
-  /** The layer under the pointer rather than the selected one. */
-  hover?: boolean;
-  /** The text being typed in: blue, whatever the layer is. */
-  typing?: boolean;
-  hidden?: boolean;
-}
-
-/**
- * The selection box, or the outline of the layer a click would select. Drawn
- * above the canvas, so its lines stay 1px at any zoom. Blue, purple for an
- * instance, gray for a locked layer.
- */
-function Outline({ layer, view, name, camera, hover, hidden, typing }: OutlineProps) {
-  const r = view.boxOf(layer);
-  if (!r) return null;
-  const kind = typing ? "typing" : role(layer);
-  return (
-    <div
-      class={hover ? "vk-hover" : "vk-selection"}
-      data-kind={kind}
-      data-view={name}
-      data-hidden={hidden || undefined}
-      aria-hidden="true"
-      style={{
-        left: `${camera.x + r.left * camera.zoom}px`,
-        top: `${camera.y + r.top * camera.zoom}px`,
-        width: `${r.width * camera.zoom}px`,
-        height: `${r.height * camera.zoom}px`,
-      }}
-    >
-      {kind === "locked" && !hover && (
-        <span class="vk-selection-lock">
-          <Icon name="lock" />
-        </span>
-      )}
-    </div>
-  );
-}
-
 /** Whether a layer is one of the tree's, not of one built before it. */
 function inTree(tree: LayerTree, layer: Layer): boolean {
   return tree.layerOf(nodeOf(layer)) === layer;
-}
-
-/** Pointer travel (px) before a press on a layer counts as a drag. */
-const DRAG_THRESHOLD = 3;
-/** How near on screen (px) a layer dragged freely comes to lining up before it snaps there. */
-const SNAP_PX = 5;
-
-/** Where the pointer is, in the window. */
-type At = Pick<MouseEvent, "clientX" | "clientY">;
-/** That, and the keys that change a drag. */
-type Pointer = At & Pick<MouseEvent, "metaKey" | "ctrlKey">;
-
-/** A drag under way, and the canvas styles it has changed, to put back. */
-interface DragSession {
-  layer: Layer;
-  /** The view it is dragged in: where things are is read there, in its px. */
-  in: Shown;
-  /** Where the layer was when the drag began. */
-  start: DOMRect;
-  /** Where layers were laid out before anything shifted, by element. */
-  rects: Map<Element, DOMRect>;
-  touched: Map<Element, { original: Record<string, [string, string]>; translate: boolean }>;
-  drop: Drop | null;
-  /** Where the layer is dragged to, in the view's px; none before it moves. */
-  box?: DOMRect;
-  /** Let go now, the layer goes off the canvas (ADR 0009). */
-  out: boolean;
-  /** A layer off the canvas, dragged whole: where its top left would go on the stage; null over a view. */
-  to: { x: number; y: number } | null;
-  /** A layer off the canvas dragged whole, rather than a layer in a view or in it. */
-  whole?: true;
-  /** A layer off the canvas dragged over a view: where it would go back onto the canvas there; null where it cannot. */
-  back: Drop | null;
-  /** Lets the views grow and shrink again, which they do not while the drag shifts layers. */
-  release: () => void;
-  /** Where the pointer was last, to drag again there as ⌘ is pressed or let go. */
-  pointer?: Pointer;
-}
-
-/**
- * Where an element is laid out, as if nothing had shifted: the layers making
- * room (and what is in them) may be partway through sliding aside.
- */
-function unshifted(session: DragSession, el: Element): DOMRect {
-  const { view } = session.in;
-  const r = (view.elementOf(el) ?? el).getBoundingClientRect();
-  let [x, y] = [r.x, r.y];
-  for (let e: Element | null = el; e; e = e.parentElement) {
-    if (e === session.layer.el || !session.touched.get(e)?.translate) continue;
-    const [dx = 0, dy = 0] = getComputedStyle(view.elementOf(e) ?? e).translate.split(" ").map((v) => parseFloat(v) || 0);
-    x -= dx;
-    y -= dy;
-  }
-  return new DOMRect(x, y, r.width, r.height);
-}
-
-/** Sets (or, with null, takes off) inline styles on a canvas element for the drag, noting what they were. */
-function setStyles(session: DragSession, el: Element, styles: Record<string, string | null>) {
-  const style = (el as HTMLElement).style;
-  let saved = session.touched.get(el);
-  if (!saved) session.touched.set(el, (saved = { original: {}, translate: false }));
-  for (const name in styles) {
-    saved.original[name] ??= [style.getPropertyValue(name), style.getPropertyPriority(name)];
-    const value = styles[name];
-    if (value === null) {
-      const [original, priority] = saved.original[name];
-      if (original) style.setProperty(name, original, priority);
-      else style.removeProperty(name);
-    } else style.setProperty(name, value, "important");
-  }
-  if ("translate" in styles) saved.translate = styles.translate !== null;
-}
-
-/** The box between two points. */
-function boxFrom(a: { x: number; y: number }, b: { x: number; y: number }): DOMRect {
-  return new DOMRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y));
-}
-
-/** A box on the canvas, placed over it in the viewport. */
-function place(r: { x: number; y: number; width: number; height: number }, camera: Camera) {
-  return { left: `${camera.x + r.x * camera.zoom}px`, top: `${camera.y + r.y * camera.zoom}px`, width: `${r.width * camera.zoom}px`, height: `${r.height * camera.zoom}px` };
-}
-
-function transformOf({ x, y, zoom }: Camera): string {
-  return `translate(${x}px, ${y}px) scale(${zoom})`;
-}
-
-/** Where the stage is right now, partway through an animation included. */
-function currentCamera(stage: HTMLElement): Camera {
-  const m = new DOMMatrix(getComputedStyle(stage).transform);
-  return { x: m.e, y: m.f, zoom: m.a };
-}
-
-/** At 100%, kept within the view played: in the middle when it is narrower than the viewport, its bottom no higher than the viewport's. */
-function scrolled(camera: Camera, played: Bounds, area: DOMRect): Camera {
-  const within = (n: number, min: number) => Math.max(Math.min(0, min), Math.min(0, n));
-  const x = played.width <= area.width ? Math.round((area.width - played.width) / 2) : within(camera.x, area.width - played.width);
-  return { zoom: 1, x, y: within(camera.y, area.height - played.height) };
-}
-
-/** At most 100%, every view across, and the part of the page the designer was looking at on top. */
-function initialCamera(canvas: Canvas, bounds: Bounds, area: DOMRect): Camera {
-  const zoom = clamp(Math.min(1, (area.width - 2 * PADDING) / bounds.width));
-  return { ...centered(bounds, area, zoom), y: TOP - canvas.scrollY * zoom };
-}
-
-/** Every view in the viewport, as large as they fit. */
-function fitCamera(bounds: Bounds, area: DOMRect): Camera {
-  const zoom = clamp(Math.min((area.width - 2 * PADDING) / bounds.width, (area.height - TOP - PADDING) / bounds.height));
-  const { x } = centered(bounds, area, zoom);
-  return { zoom, x: x - (bounds.x ?? 0) * zoom, y: TOP + (area.height - TOP - PADDING - bounds.height * zoom) / 2 - (bounds.y ?? 0) * zoom };
-}
-
-function centered(bounds: Bounds, area: DOMRect, zoom: number): Camera {
-  return { zoom, x: (area.width - bounds.width * zoom) / 2, y: (area.height - bounds.height * zoom) / 2 };
-}
-
-/** All the views side by side, and any layers off the canvas: from the leftmost to the rightmost, the topmost to the lowest. */
-function boundsOf(placed: Placed[]): Bounds {
-  const x = Math.min(...placed.map((p) => p.x));
-  const y = Math.min(...placed.map((p) => p.y));
-  return { x, y, width: Math.max(...placed.map((p) => p.x + p.width)) - x, height: Math.max(...placed.map((p) => p.y + p.height)) - y };
-}
-
-/** Scales by `factor`, keeping the point (`px`, `py`) of the viewport fixed. */
-function zoomAt(camera: Camera, factor: number, px: number, py: number): Camera {
-  const zoom = clamp(camera.zoom * factor);
-  const k = zoom / camera.zoom;
-  return { zoom, x: px - (px - camera.x) * k, y: py - (py - camera.y) * k };
-}
-
-function clamp(zoom: number): number {
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
-}
-
-/** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
-export function isEditable(target: EventTarget | undefined): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || target.getAttribute("role") === "slider");
 }

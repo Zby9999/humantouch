@@ -2,11 +2,13 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
-import { CanvasView, isEditable, type Tool } from "./CanvasView";
+import { CanvasView, type Tool } from "./CanvasView";
+import { isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
-import { createEditor, createHistory, type Destination, type Editor } from "./edits";
+import { createEditor, type Destination, type Editor } from "./edits";
+import { createHistory } from "./undo-steps";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";

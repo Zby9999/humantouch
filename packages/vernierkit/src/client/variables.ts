@@ -9,7 +9,7 @@ import type { Variable, VariableGroup } from "../service-protocol";
 import type { Bindings, ChangeSet, Picked } from "./changeset";
 import { readShadows, type Shadow } from "./effects";
 import { colorReader, type Color, type Fill, type Stroke } from "./paint";
-import type { Radius, Size } from "./edits";
+import type { Radius, Size } from "./property-table";
 
 /** What a Variable comes to on the canvas: px for a length, a color, or shadows. */
 export type Drawn = number | Color | Shadow[];

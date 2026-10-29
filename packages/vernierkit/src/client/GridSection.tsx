@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
 import type { Editor } from "./edits";
 import type { Layer } from "./layers";
+import { BreakpointMark } from "./BreakpointMark";
 import { NumberField, type SlotOf } from "./Properties";
 import { VariableSlot } from "./VariablePicker";
 
@@ -44,10 +45,12 @@ export function GridSection({ editor, layers, onEdit, variable }: Props) {
       <h3 id="vk-grid" class="vk-section-title">
         Grid
       </h3>
-      <div class="vk-grid-2">
+      <div class="vk-grid-2 vk-markable">
+        <BreakpointMark properties={["columns"]} />
         <NumberField label="Columns" icon="grid" value={shown("columns")} min={1} onChange={set("columns")} />
       </div>
-      <div class="vk-grid-2">
+      <div class="vk-grid-2 vk-markable">
+        <BreakpointMark properties={["rowGap", "columnGap"]} />
         <VariableSlot label="Row gap" slot={variable("rowGap")}>
           <NumberField label="Row gap" glyph="↕" value={shown("rowGap")} min={0} onChange={set("rowGap")} />
         </VariableSlot>
