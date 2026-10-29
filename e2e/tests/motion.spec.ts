@@ -92,6 +92,38 @@ test("entering edit mode shrinks the page from where it was in the window into t
   await expectSettled(page);
 });
 
+test("the views beside the canvas stay hidden while the page shrinks into it, and show it from the first frame it is in place", async ({ page }) => {
+  const views = ["Canvas", "Tablet 768", "Phone 390"];
+  const seen = page.evaluate(
+    (views) =>
+      new Promise<{ hiddenWhileTravelling: boolean; travelled: boolean; shownOnceInPlace: boolean }>((resolve) => {
+        addEventListener(
+          "click",
+          () => {
+            const root = () => document.querySelector("vernier-kit")!.shadowRoot!;
+            const frameOf = (title: string) => root().querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`);
+            const shows = (title: string) => !!frameOf(title)?.contentDocument?.querySelector("h1") && getComputedStyle(frameOf(title)!).visibility === "visible";
+            let travelled = false;
+            let hiddenWhileTravelling = true;
+            const frame = () => {
+              const travelling = !!root().querySelector(".vk-viewport.is-travelling");
+              if (travelling) {
+                travelled = true;
+                hiddenWhileTravelling &&= views.slice(1).every((title) => !frameOf(title) || getComputedStyle(frameOf(title)!).visibility === "hidden");
+              } else if (travelled) return resolve({ hiddenWhileTravelling, travelled, shownOnceInPlace: views.every(shows) });
+              requestAnimationFrame(frame);
+            };
+            requestAnimationFrame(frame);
+          },
+          { capture: true, once: true },
+        );
+      }),
+    views,
+  );
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  expect(await seen).toEqual({ hiddenWhileTravelling: true, travelled: true, shownOnceInPlace: true });
+});
+
 test("going back to preview grows the canvas back over the page before the editor goes away", async ({ page }) => {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expectSettled(page);

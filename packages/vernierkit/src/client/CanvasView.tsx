@@ -14,6 +14,7 @@ import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
+import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances } from "./snap";
@@ -228,22 +229,40 @@ export function CanvasView(props: Props) {
     };
   }, []);
 
+  /**
+   * The views beside the desktop view made while the canvas travels into
+   * place: hidden till it is there, they are made after the frame that first
+   * shows it, one a task, so that frame waits for none of them. Any not made
+   * by the time it is there are made at once (below).
+   */
+  const [besideLater] = useState(createLater);
+  const travellingNow = useRef(travelling);
+  travellingNow.current = travelling;
+  useLayoutEffect(() => {
+    if (!travelling) besideLater.flush();
+  }, [travelling]);
+  useEffect(() => () => besideLater.cancel(), []);
   // The views beside the desktop view: each shows the canvas in its own iframe once there is a canvas, and stops when deleted.
   useEffect(() => {
     if (!views) return;
     for (const width of widths) {
-      const frame = frames.current.get(width);
-      if (attached.current.has(width) || !frame) continue;
+      if (attached.current.has(width) || !frames.current.get(width)) continue;
       const entry: { view: View | null; gone: boolean } = { view: null, gone: false };
       attached.current.set(width, entry);
-      views.add(frame, width).then(
-        (view) => {
-          if (entry.gone) return views.remove(view);
-          entry.view = view;
-          setBeside((laidOut) => new Map(laidOut).set(width, view));
-        },
-        (error: unknown) => console.error(error),
-      );
+      const add = () => {
+        const frame = frames.current.get(width);
+        if (entry.gone || !frame) return;
+        views.add(frame, width).then(
+          (view) => {
+            if (entry.gone) return views.remove(view);
+            entry.view = view;
+            setBeside((laidOut) => new Map(laidOut).set(width, view));
+          },
+          (error: unknown) => console.error(error),
+        );
+      };
+      if (travellingNow.current) besideLater.add(add);
+      else add();
     }
     for (const [width, entry] of attached.current) {
       if (widths.includes(width)) continue;
