@@ -88,38 +88,53 @@ async function openBigPage(page: Page) {
  * lists it: checked at each frame from the click on, the time is taken once
  * the first frame that shows them all has been drawn. The 240ms the page
  * takes to shrink into its place on the canvas is a transition, not a wait,
- * and is not counted: it starts with that frame.
+ * and is not counted: it starts with the frame that first shows the desktop
+ * view, whose time is taken too, as that frame begins; the views beside it
+ * are hidden till the transition ends.
  */
+interface Entered {
+  click: number;
+  /** The first frame with the desktop view on screen begins: the page starts shrinking into the canvas. Its drawing is not counted. */
+  desktop: number;
+  /** The first frame drawn with every view and the Layers panel up. */
+  up: number;
+}
+
 function armEnter(views: string[]) {
-  const w = window as unknown as { vkEnter: Promise<{ click: number; up: number }> };
+  const w = window as unknown as { vkEnter: Promise<Entered> };
   w.vkEnter = new Promise((resolve) => {
     const shadow = () => document.querySelector("vernier-kit")?.shadowRoot ?? null;
     const shows = (root: ShadowRoot, title: string) => {
       const frame = root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`);
       return !!frame?.contentDocument?.querySelector("[data-testid=big-hero]");
     };
-    const up = () => {
-      const root = shadow();
+    const desktopUp = (root: ShadowRoot | null): root is ShadowRoot => {
       const stage = root?.querySelector<HTMLElement>(".vk-stage");
       const shell = root?.querySelector<HTMLElement>(".vk-viewport")?.parentElement;
-      return (
-        !!root &&
-        stage?.style.visibility === "visible" &&
-        shell?.style.opacity !== "0" &&
-        !!root.querySelector('[role="tree"] [role="treeitem"]') &&
-        views.every((title) => shows(root, title))
-      );
+      return !!root && stage?.style.visibility === "visible" && shell?.style.opacity !== "0" && shows(root, views[0]);
     };
+    const allUp = (root: ShadowRoot) => !!root.querySelector('[role="tree"] [role="treeitem"]') && views.every((title) => shows(root, title));
+    /**
+     * Calls `then` with the time once the frame under way has been drawn: a
+     * task posted in a frame's callbacks runs then, and at the highest
+     * priority, before what the page has queued meanwhile.
+     */
+    const drawn = (then: (at: number) => void) =>
+      (window as unknown as { scheduler: { postTask(task: () => void, options: { priority: string }): Promise<void> } }).scheduler.postTask(() => then(performance.now()), {
+        priority: "user-blocking",
+      });
     addEventListener(
       "click",
       (event) => {
         const click = event.timeStamp;
+        let desktop = 0;
         const frame = () => {
-          if (!up()) return requestAnimationFrame(frame);
-          // A message posted in a frame's callbacks is handled once the frame has been drawn.
-          const channel = new MessageChannel();
-          channel.port1.onmessage = () => resolve({ click, up: performance.now() });
-          channel.port2.postMessage(null);
+          const root = shadow();
+          if (!desktopUp(root)) return requestAnimationFrame(frame);
+          // When its frame begins: a task posted then may wait behind what the editor layer has queued, the views beside it.
+          desktop ||= performance.now();
+          if (!allUp(root)) return requestAnimationFrame(frame);
+          drawn((up) => resolve({ click, desktop, up }));
         };
         requestAnimationFrame(frame);
       },
@@ -131,10 +146,8 @@ function armEnter(views: string[]) {
 async function enterAndMeasure(page: Page, label: string) {
   await page.evaluate(armEnter, VIEWS);
   await page.getByRole("button", { name: label }).click();
-  const { click, up } = await page.evaluate(() => (window as unknown as { vkEnter: Promise<{ click: number; up: number }> }).vkEnter);
-  // The editor layer's own measure, which ends once the desktop view is drawn (ticket 02): for comparison.
-  const own = await page.evaluate(() => performance.getEntriesByName("vernierkit:enter-edit-mode", "measure").at(-1)?.duration ?? NaN);
-  return { total: up - click, own };
+  const { click, desktop, up } = await page.evaluate(() => (window as unknown as { vkEnter: Promise<Entered> }).vkEnter);
+  return { total: up - click, desktop: desktop - click };
 }
 
 async function enterEditMode(page: Page) {
@@ -181,6 +194,7 @@ interface ValueSample {
  */
 function armValue({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
   const w = window as unknown as { vkValue: Promise<ValueSample> };
+  const { scheduler } = window as unknown as { scheduler: { postTask(task: () => void, options: { priority: string }): Promise<void> } };
   w.vkValue = new Promise((resolve) => {
     const root = document.querySelector("vernier-kit")!.shadowRoot!;
     const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
@@ -197,8 +211,8 @@ function armValue({ views, selector, property, expected }: { views: string[]; se
       const frame = () => {
         frames++;
         const at = performance.now();
-        const channel = new MessageChannel();
-        channel.port1.onmessage = () => {
+        // Once the frame has been drawn, before what the page has queued meanwhile (see `armEnter`).
+        scheduler.postTask(() => {
           const drawn = performance.now();
           if (frames === 1) first = { at, drawn };
           if (!shown() && frames < 60) return requestAnimationFrame(frame);
@@ -208,8 +222,7 @@ function armValue({ views, selector, property, expected }: { views: string[]; se
             work: (handled || first.at) - start + (first.drawn - first.at),
             latency: first.drawn - arrived,
           });
-        };
-        channel.port2.postMessage(null);
+        }, { priority: "user-blocking" });
       };
       requestAnimationFrame(frame);
     };
@@ -297,7 +310,7 @@ let elements = 0;
 test("entering edit mode, all three views up, takes at most 150ms", async ({ page }) => {
   const first: number[] = [];
   const again: number[] = [];
-  const own: number[] = [];
+  const desktop: number[] = [];
   for (let run = 0; run <= ENTER_RUNS; run++) {
     elements = await openBigPage(page);
     const entry = await enterAndMeasure(page, TOGGLE_LABEL);
@@ -310,13 +323,13 @@ test("entering edit mode, all three views up, takes at most 150ms", async ({ pag
     if (run === 0) continue; // Warming up: the dev server's first answers, the browser's first compiles.
     first.push(entry.total);
     again.push(reentry.total);
-    own.push(entry.own, reentry.own);
+    desktop.push(entry.desktop, reentry.desktop);
   }
   const all = summarize([...first, ...again]);
   const firstSummary = summarize(first);
   const againSummary = summarize(again);
   results.page = { url: BIG_URL, elements, views: VIEWS };
-  results.enter = { first: firstSummary, again: againSummary, all, ownMeasureDesktopOnly: summarize(own), samples: { first, again } };
+  results.enter = { first: firstSummary, again: againSummary, all, desktopViewUp: summarize(desktop), samples: { first, again } };
   print(
     report(
       `Entering edit mode, ${elements} elements, ${VIEWS.length} views — ${mode}`,
@@ -324,7 +337,7 @@ test("entering edit mode, all three views up, takes at most 150ms", async ({ pag
         { name: "first entry after load", summary: firstSummary },
         { name: "entering again", summary: againSummary },
         { name: "all entries", summary: all, target: `median ≤ ${ENTER_TARGET_MS}ms`, met: all.median <= ENTER_TARGET_MS },
-        { name: "(editor's own measure, desktop only)", summary: summarize(own) },
+        { name: "(desktop view's first frame begins)", summary: summarize(desktop) },
       ],
       ["From the click to the first frame drawn with every view and the Layers panel up."],
     ),
