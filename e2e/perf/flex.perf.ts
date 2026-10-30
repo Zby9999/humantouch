@@ -297,23 +297,23 @@ function valueOnCanvas(page: Page, selector: string, property: string) {
 }
 
 /** Waits till every view shows `value` for `property` of what `selector` finds. */
-async function everyViewShows(page: Page, selector: string, property: string, value: string) {
-  for (const title of VIEWS) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, value);
+async function everyViewShows(page: Page, selector: string, property: string, value: string, views = VIEWS) {
+  for (const title of views) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, value);
 }
 
-/** Steps a value up with the arrow key, `VALUE_STEPS` times, measuring each. */
-async function stepValue(page: Page, field: string, selector: string, property: string) {
+/** Steps a value up with the arrow key, `VALUE_STEPS` times, measuring each, in `views`, the first worked in. */
+async function stepValue(page: Page, field: string, selector: string, property: string, views = VIEWS) {
   await design(page).getByRole("textbox", { name: field, exact: true }).focus();
   const samples: ValueSample[] = [];
   for (let i = 0; i < VALUE_STEPS; i++) {
     const expected = `${parseFloat(await valueOnCanvas(page, selector, property)) + 1}px`;
-    await page.evaluate(armValue, { views: VIEWS, selector, property, expected });
+    await page.evaluate(armValue, { views, selector, property, expected });
     await page.keyboard.press("ArrowUp");
     samples.push(await page.evaluate(() => (window as unknown as { vkValue: Promise<ValueSample> }).vkValue));
     await settle(page, 150);
   }
   // After the last step, every view shows the last value.
-  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property));
+  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property), views);
   return samples;
 }
 
@@ -621,6 +621,69 @@ test("a value changed shows in the view worked in in the next frame, its work wi
     ),
   );
   verdict(met, "a value changed shows in the view worked in in the next frame, its work within two frames");
+});
+
+/** Where the stage is, every view on it, and the viewport it shows in, in page px. */
+function stageAndViewport(page: Page) {
+  return host(page)
+    .locator(".vk-stage")
+    .evaluate((stage) => {
+      const [s, v] = [stage.getBoundingClientRect(), stage.parentElement!.getBoundingClientRect()];
+      return { inSight: s.left >= v.left && s.top >= v.top && s.right <= v.right && s.bottom <= v.bottom, stageHeight: s.height, viewportHeight: v.height };
+    });
+}
+
+/**
+ * Ticket 71: changes that are not the camera's, after which the views were
+ * drawn whole (ticket 22): the views beside the desktop view deleted, then
+ * the page's main column deleted, so the desktop view is short enough to show
+ * whole, then put back with ⌘Z. The camera never moves. The view is long
+ * again, mostly out of sight, but was drawn whole, and went on being drawn
+ * whole, till the camera next moved: about 100ms after such changes, it is
+ * drawn only as far as it shows again. Measured as the value changed above,
+ * the Stack gap of a card, in the desktop view, the only one left.
+ */
+test("after the views beside are deleted and the page's main column deleted and put back, a value changed shows in the next frame, its work within two frames", async ({ page }) => {
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  const views = [VIEWS[0]];
+  for (const name of ["Tablet", "Phone"]) await page.getByRole("button", { name: `Delete ${name} view` }).click();
+  await expect(host(page).locator("iframe.vk-canvas")).toHaveCount(1);
+  await settle(page, 500);
+  // From a card's body up to the main column: the body, the card, the cards' grid, their section, the column.
+  await selectCard(page, 6);
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Escape");
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await stageAndViewport(page)).inSight, { message: "with its main column deleted, the desktop view shows whole" }).toBe(true);
+  await settle(page, 500);
+  const short = await stageAndViewport(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(async () => (await stageAndViewport(page)).inSight, { message: "put back, it is mostly out of sight" }).toBe(false);
+  await settle(page, 500);
+  const long = await stageAndViewport(page);
+  await selectCard(page, 6);
+  const gap = await stepValue(page, "Gap", cardBody(6), "row-gap", views);
+
+  const name = "Stack gap (layout)";
+  const work = summarize(gap.map((s) => s.work));
+  const latency = summarize(gap.map((s) => s.latency));
+  const inFirstFrame = gap.filter((s) => s.firstFrame).length;
+  const met = inFirstFrame === gap.length && work.p95 <= VALUE_TARGET_MS;
+  keep("valueAfterChanges", { [name]: { work, latency, inFirstFrame }, stageHeights: { short: short.stageHeight, long: long.stageHeight, viewport: long.viewportHeight } });
+  print(
+    report(
+      `Changing a value after the views beside are deleted and the main column deleted and put back, ${elements} elements, ${views.length} view — ${mode}`,
+      [
+        { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met },
+        { name: `${name}: key to frame drawn`, summary: latency },
+      ],
+      [
+        `The desktop view ${short.stageHeight.toFixed(0)}px tall on screen without its main column, in a viewport ${long.viewportHeight.toFixed(0)}px tall; ${long.stageHeight.toFixed(0)}px once put back.`,
+        `${inFirstFrame} of ${gap.length} steps shown in the desktop view in the first frame.`,
+      ],
+    ),
+  );
+  verdict(met, "after changes that are not the camera's, a value changed shows in the next frame, its work within two frames");
 });
 
 test("an arrow key held down shows each step in the view worked in in the next frame, its work within two frames; every view catches up once it is let go", async ({ page }) => {

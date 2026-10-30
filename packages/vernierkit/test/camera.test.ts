@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { boundsOf, fitCamera, scrolled, wheelZoom } from "../src/client/camera";
+import { boundsOf, fitCamera, scrolled, showsWhole, wheelZoom } from "../src/client/camera";
 
 /** The viewport, as the camera reads it: only its size. */
 const viewport = (width: number, height: number) => ({ width, height }) as DOMRect;
@@ -36,6 +36,18 @@ describe("the camera over the canvas", () => {
     // 40 px around them across, and room for the labels above.
     expect(camera.zoom).toBeCloseTo(920 / 2510);
     expect(camera.x + -600 * camera.zoom).toBeCloseTo(40);
+  });
+
+  test("the views show whole only when every edge of them is within the viewport", () => {
+    // 1000 by 2000 canvas px from (-100, 0), at half size: 500 by 1000 on screen.
+    const views = { x: -100, y: 0, width: 1000, height: 2000 };
+    expect(showsWhole({ x: 50, y: 0, zoom: 0.5 }, views, viewport(500, 1000))).toBe(true);
+    expect(showsWhole({ x: 60, y: 10, zoom: 0.5 }, views, viewport(600, 1100))).toBe(true);
+    // A px out at the right, the bottom, the left, the top.
+    expect(showsWhole({ x: 51, y: 0, zoom: 0.5 }, views, viewport(500, 1000))).toBe(false);
+    expect(showsWhole({ x: 50, y: 1, zoom: 0.5 }, views, viewport(500, 1000))).toBe(false);
+    expect(showsWhole({ x: 49, y: 0, zoom: 0.5 }, views, viewport(600, 1000))).toBe(false);
+    expect(showsWhole({ x: 50, y: -1, zoom: 0.5 }, views, viewport(500, 1100))).toBe(false);
   });
 
   test("playing, a canvas narrower than the viewport is in the middle, and scrolling stops at its top and at its bottom", () => {

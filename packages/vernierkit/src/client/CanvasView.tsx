@@ -6,7 +6,7 @@ import { BriefMark, briefedLayers } from "./BriefMark";
 import { Brief, Marks, Outline, SelectionToolbar } from "./AboveCanvas";
 import { canvasKey, type Tool } from "./canvas-keys";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
@@ -161,16 +161,32 @@ export function CanvasView(props: Props) {
    * way, nor while the pointer is held down on something that edits as it
    * moves (`pointerHeld`, ADR 0012): a layer pressed or dragged, one drawn
    * with a tool, a value's icon or a gradient's stop. Once it is over.
+   *
+   * So too once the viewport or what is on the stage has changed size, the
+   * camera where it was, if all of the stage has been in sight since it was
+   * last drawn so (ticket 71): the window made taller, a view deleted or
+   * grown shorter till every view shows whole, and back again.
    */
+  /** How large the viewport is, as last observed: read as a value changes, without asking for the layout. */
+  const viewportSize = useRef({ width: 0, height: 0 });
   const [atRest] = useState(() =>
     onceAtRest(
       () => stage.current && drawOnlyWhatShows(stage.current),
       () => !!modeSwitch.current || wasLeaving.current || pointerHeld() || !!typing.current,
+      () => {
+        const { camera, placed, outside } = latest.current;
+        return placed.length > 0 && showsWhole(camera, boundsOf([...placed, ...outside]), viewportSize.current);
+      },
     ),
   );
   useEffect(() => {
     if (canvas) atRest.moved();
   }, [camera]);
+  /** Where on the stage its views and the layers off the canvas reach, in canvas px. */
+  const extent = canvas ? boundsOf([...placed, ...outside]) : null;
+  useEffect(() => {
+    if (extent) atRest.reframed();
+  }, [extent?.x, extent?.y, extent?.width, extent?.height]);
   useEffect(() => () => atRest.cancel(), []);
 
   /**
@@ -386,8 +402,8 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ played, playAt, bounds, placed, outside, selected, onSelect, endDrag: (_commit: boolean) => {}, redrag: (_pointer: Pointer) => {}, tool, onTool, playing, onStopPlaying });
-  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, tool, onTool, playing, onStopPlaying };
+  const latest = useRef({ camera, played, playAt, bounds, placed, outside, selected, onSelect, endDrag: (_commit: boolean) => {}, redrag: (_pointer: Pointer) => {}, tool, onTool, playing, onStopPlaying });
+  latest.current = { camera, played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -442,7 +458,10 @@ export function CanvasView(props: Props) {
   useEffect(() => {
     const el = viewport.current!;
     let left = el.getBoundingClientRect().left;
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver(([entry]) => {
+      // The window resized: the camera stays, but more or less of the stage shows.
+      viewportSize.current = { width: entry.contentRect.width, height: entry.contentRect.height };
+      atRest.reframed();
       if (playingRef.current) {
         // The window resized while playing: the canvas is as wide as it now.
         const area = el.getBoundingClientRect();
