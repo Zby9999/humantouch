@@ -33,6 +33,8 @@ const VALUE_TARGET_MS = FRAME_MS * 2;
 const ENTER_RUNS = 8;
 /** Values stepped per kind of change. */
 const VALUE_STEPS = 20;
+/** Runs of two steps of a value then ⌘Z and ⇧⌘Z, per kind of change. */
+const UNDO_RUNS = 20;
 /**
  * An arrow key held down, as macOS repeats it by default (the designer's Mac
  * leaves it so: `HIDInitialKeyRepeat` 500ms, `HIDKeyRepeat` 83.3ms, as `ioreg`
@@ -621,6 +623,191 @@ test("a value changed shows in the view worked in in the next frame, its work wi
     ),
   );
   verdict(met, "a value changed shows in the view worked in in the next frame, its work within two frames");
+});
+
+/**
+ * Before any of the page's own: a listener for every key pressed, first of all
+ * at the window, that tells `window.vkKeyFirst` of it. The editor layer takes
+ * ⌘Z and ⇧⌘Z at the window, as they come, so a listener added once it is up
+ * would hear them only once they are handled.
+ */
+function hearKeysFirst() {
+  addEventListener("keydown", (event) => (window as unknown as { vkKeyFirst?: (event: KeyboardEvent) => void }).vkKeyFirst?.(event), true);
+}
+
+interface UndoSample {
+  /** As the key came, the views beside showed something else than the view worked in: they waited for the steps to pause. */
+  behind: boolean;
+  /** In the first frame drawn after the key, the view worked in showed the value undone or redone to. */
+  firstFrame: boolean;
+  /** In that frame, every view did (ADR 0011). */
+  everyViewFirstFrame: boolean;
+  /** The main thread's time on it, as `ValueSample.work`: handling the key, then drawing that frame. */
+  work: number;
+  /** Of `work`, handling the key. */
+  handling: number;
+  /** Of `work`, that frame from its first callback to being drawn: every view's style, layout and paint. */
+  drawing: number;
+  /** From the key press to that frame drawn; with a screen, this includes waiting for its next refresh. */
+  latency: number;
+}
+
+/**
+ * ⌘Z or ⇧⌘Z, measured as `armValue` measures a key that changes a value, in
+ * every view at once: the views beside show it in the same frame as the view
+ * worked in, `views[0]` (ADR 0011). The editor layer handles the key first
+ * thing at the window, and stops it there: the time it arrived is taken by
+ * `hearKeysFirst`, before any of the page's listeners, and the time it was
+ * handled by a listener at the window added now, after the editor layer's.
+ * Waits for the frame under way to be drawn before listening.
+ */
+function armUndo({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
+  const w = window as unknown as { vkUndo: Promise<UndoSample>; vkKeyFirst?: (event: KeyboardEvent) => void };
+  const { scheduler } = window as unknown as WithScheduler;
+  const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
+  const valueIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property);
+  const isUndoKey = (event: KeyboardEvent) => event.key.toLowerCase() === "z" && (event.metaKey || event.ctrlKey);
+  return new Promise<void>((armed) =>
+    requestAnimationFrame(() =>
+      scheduler.postTask(
+        () => {
+          w.vkUndo = new Promise((resolve) => {
+            let start = 0;
+            let arrived = 0;
+            let behind = false;
+            w.vkKeyFirst = (event) => {
+              if (!isUndoKey(event)) return;
+              w.vkKeyFirst = undefined;
+              // Read before the time starts: the frame before has been drawn, so this lays nothing out.
+              const shown = docs.map(valueIn);
+              behind = shown.slice(1).some((value) => value !== shown[0]);
+              start = performance.now();
+              arrived = event.timeStamp;
+            };
+            // After the editor layer's, which stops the key from going further.
+            const onHandled = (event: KeyboardEvent) => {
+              if (!isUndoKey(event)) return;
+              const handled = performance.now();
+              removeEventListener("keydown", onHandled, true);
+              let frames = 0;
+              let first = { at: 0, drawn: 0, worked: false, everyView: false };
+              const frame = () => {
+                frames++;
+                const at = performance.now();
+                // Once the frame has been drawn, before what the page has queued meanwhile (see `armEnter`).
+                scheduler.postTask(
+                  () => {
+                    const drawn = performance.now();
+                    const shown = docs.map(valueIn).map((value) => value === expected);
+                    if (frames === 1) first = { at, drawn, worked: shown[0], everyView: shown.every(Boolean) };
+                    if (!shown.every(Boolean) && frames < 60) return requestAnimationFrame(frame);
+                    resolve({
+                      behind,
+                      firstFrame: first.worked,
+                      everyViewFirstFrame: first.everyView,
+                      work: handled - start + (first.drawn - first.at),
+                      handling: handled - start,
+                      drawing: first.drawn - first.at,
+                      latency: first.drawn - arrived,
+                    });
+                  },
+                  { priority: "user-blocking" },
+                );
+              };
+              requestAnimationFrame(frame);
+            };
+            addEventListener("keydown", onHandled, true);
+          });
+          armed();
+        },
+        { priority: "user-blocking" },
+      ),
+    ),
+  );
+}
+
+/**
+ * `UNDO_RUNS` times, a value stepped up twice with the arrow key, then right
+ * away ⌘Z, measured, and ⇧⌘Z, measured: undone back one step, redone. The
+ * views beside wait for the steps to pause as ⌘Z comes, and are caught up by
+ * it, so as ⇧⌘Z comes they wait for nothing; it shows in every view at once
+ * too. In `views`, the first worked in.
+ */
+async function undoSteps(page: Page, field: string, selector: string, property: string, views = VIEWS) {
+  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
+  const undo: UndoSample[] = [];
+  const redo: UndoSample[] = [];
+  for (let i = 0; i < UNDO_RUNS; i++) {
+    const from = parseFloat(await valueOnCanvas(page, selector, property));
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    // Each press of ↑ a step of its own: undone, one step back.
+    await page.evaluate(armUndo, { views, selector, property, expected: `${from + 1}px` });
+    await page.keyboard.press("ControlOrMeta+z");
+    undo.push(await page.evaluate(() => (window as unknown as { vkUndo: Promise<UndoSample> }).vkUndo));
+    await page.evaluate(armUndo, { views, selector, property, expected: `${from + 2}px` });
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    redo.push(await page.evaluate(() => (window as unknown as { vkUndo: Promise<UndoSample> }).vkUndo));
+    await settle(page, 150);
+  }
+  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property), views);
+  return { undo, redo };
+}
+
+/**
+ * Ticket 73: ⌘Z and ⇧⌘Z right after steps of a value, while the views beside
+ * wait for the steps to pause: every view shows what is undone or redone in
+ * the same frame (ADR 0011), so that frame draws all three. Measured as a
+ * value changed, the target the same.
+ */
+test("⌘Z and ⇧⌘Z right after steps of a value show in every view in the next frame, their work within two frames", async ({ page }) => {
+  await page.addInitScript(hearKeysFirst);
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await selectCard(page, 6, { parent: true });
+  const radius = await undoSteps(page, "Corner radius", card(6), "border-top-left-radius");
+  await selectCard(page, 6);
+  const gap = await undoSteps(page, "Gap", cardBody(6), "row-gap");
+
+  const rows = [];
+  const notes = [];
+  const summaries: Record<string, unknown> = {};
+  let met = true;
+  for (const [kind, both] of [
+    ["corner radius (paint)", radius],
+    ["Stack gap (layout)", gap],
+  ] as const) {
+    for (const [key, samples] of [
+      ["⌘Z", both.undo],
+      ["⇧⌘Z", both.redo],
+    ] as const) {
+      const name = `${kind}, ${key}`;
+      // The views beside waited for the steps to pause as each ⌘Z came: what this is to measure.
+      if (key === "⌘Z") expect(samples.filter((s) => s.behind), `${name}: the views beside wait as the key comes`).toHaveLength(samples.length);
+      const work = summarize(samples.map((s) => s.work));
+      const handling = summarize(samples.map((s) => s.handling));
+      const drawing = summarize(samples.map((s) => s.drawing));
+      const latency = summarize(samples.map((s) => s.latency));
+      const inFirstFrame = samples.filter((s) => s.everyViewFirstFrame).length;
+      const ok = inFirstFrame === samples.length && work.p95 <= VALUE_TARGET_MS;
+      met &&= ok;
+      summaries[name] = { work, handling, drawing, latency, everyViewInFirstFrame: inFirstFrame, behind: samples.filter((s) => s.behind).length, samples };
+      rows.push(
+        { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, every view in the first frame`, met: ok },
+        { name: `${name}: (handling the key)`, summary: handling },
+        { name: `${name}: (drawing the frame)`, summary: drawing },
+        { name: `${name}: key to frame drawn`, summary: latency },
+      );
+      notes.push(
+        `${name}: ${inFirstFrame} of ${samples.length} shown in every view in the first frame ` +
+          `(the desktop view: ${samples.filter((s) => s.firstFrame).length}); the views beside waiting as the key came: ${samples.filter((s) => s.behind).length}`,
+      );
+    }
+  }
+  keep("undo", summaries);
+  print(report(`⌘Z and ⇧⌘Z right after two steps of a value, ${UNDO_RUNS} each, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows, notes));
+  verdict(met, "⌘Z and ⇧⌘Z right after steps of a value show in every view in the next frame, their work within two frames");
 });
 
 /** Whether the views on the stage all show whole in the viewport, and how tall the stage and the viewport are, in page px. */
