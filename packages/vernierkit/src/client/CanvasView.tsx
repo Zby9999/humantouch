@@ -782,7 +782,12 @@ export function CanvasView(props: Props) {
           visibility: canvas ? "visible" : "hidden",
         }}
       >
-        <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
+        {/*
+          No view scrolls: each is as tall as what it shows, the camera moves over it, and its scrollbar is hidden
+          (`CANVAS_STYLES`). `scrolling="no"` tells the browser so: as a frame that could scroll, a view redrawn
+          had the whole editor around it redrawn too, a large page's frame slower by some 5ms (ticket 22).
+        */}
+        <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" scrolling="no" />
         {canvas &&
           placed
             .filter((p) => !p.desktop)
@@ -796,6 +801,7 @@ export function CanvasView(props: Props) {
                 class="vk-canvas is-beside"
                 title={`${p.name} ${p.width}`}
                 sandbox="allow-same-origin"
+                scrolling="no"
                 // Only the desktop view travels between the page and the canvas, and only it is played.
                 style={{ left: `${p.x}px`, visibility: playing || travelling ? "hidden" : undefined }}
               />
