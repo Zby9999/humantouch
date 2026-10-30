@@ -10,8 +10,10 @@ import { CHECK_FRAME_ATTR } from "./host";
 export interface PageCopy {
   width: number;
   doc: Document;
-  /** Takes in what changed on the page since the last time. */
-  sync(): void;
+  /** Takes in what changed on the page since the last time; whether anything did. */
+  sync(): boolean;
+  /** Has the copy work out its styles and layout now, as they are: so the next read of it costs little. */
+  layOut(): void;
   /** An element of the page, as the copy has it: once synced. */
   of(el: Element): Element | null;
   /** Its stylesheets have loaded: a `<link>` copied loads its sheet afresh (from the cache). */
@@ -56,19 +58,31 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
   let inCopy = new WeakMap<Node, Node>();
   const failed = new WeakSet<Element>();
 
+  /** Makes an element of the copy load nothing of its own but stylesheets and images, nor take focus. */
+  const quiet = (el: Element) => {
+    for (const name of LOADS[el.localName] ?? []) el.removeAttribute(name);
+    el.removeAttribute("autofocus");
+    if (el.localName === "video" || el.localName === "audio") el.setAttribute("preload", "none");
+    if (el.localName === "link") el.addEventListener("error", () => failed.add(el), { once: true });
+  };
   const copyOf = (node: Node): Node => {
     const template = node.nodeType === Node.ELEMENT_NODE && (node as Element).localName === "template";
     const made = doc.importNode(node, template);
     inCopy.set(node, made);
-    if (made.nodeType === Node.ELEMENT_NODE) {
-      const el = made as Element;
-      for (const name of LOADS[el.localName] ?? []) el.removeAttribute(name);
-      el.removeAttribute("autofocus");
-      if (el.localName === "video" || el.localName === "audio") el.setAttribute("preload", "none");
-      if (el.localName === "link") el.addEventListener("error", () => failed.add(el), { once: true });
-    }
+    if (made.nodeType === Node.ELEMENT_NODE) quiet(made as Element);
     if (!template) update(node, made);
     return made;
+  };
+  /** Pairs each node of the page with its node in `to`, a deep copy of `from`; a check's own iframe is taken out of it. */
+  const pair = (from: Node, to: Node) => {
+    inCopy.set(from, to);
+    let b = to.firstChild;
+    for (let a = from.firstChild; a; a = a.nextSibling) {
+      const next = b!.nextSibling;
+      if (a.nodeType === Node.ELEMENT_NODE && (a as Element).hasAttribute(CHECK_FRAME_ATTR)) b!.parentNode!.removeChild(b!);
+      else pair(a, b!);
+      b = next;
+    }
   };
   /** Makes `to` the same as `from`: its attributes or text, and its children, in order. */
   const update = (from: Node, to: Node) => {
@@ -92,9 +106,13 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
     });
     while (children.length > wanted.length) to.removeChild(to.lastChild!);
   };
+  /** The whole page at once, as the browser copies it, quieted before it is put in. */
   const copyAll = () => {
     inCopy = new WeakMap();
-    doc.replaceChild(copyOf(page.documentElement), doc.documentElement);
+    const root = doc.importNode(page.documentElement, true);
+    pair(page.documentElement, root);
+    for (const el of root.querySelectorAll(`${Object.keys(LOADS).join(", ")}, link, [autofocus]`)) quiet(el);
+    doc.replaceChild(root, doc.documentElement);
   };
 
   let held: MutationRecord[] = [];
@@ -116,7 +134,7 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
     if (stale) {
       stale = false;
       copyAll();
-      return;
+      return true;
     }
     const lists = new Set<Node>();
     for (const record of records) {
@@ -128,6 +146,7 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
       else copyAttribute(record.target as Element, to as Element, record.attributeNamespace, record.attributeName!);
     }
     for (const node of lists) update(node, inCopy.get(node)!);
+    return records.length > 0;
   };
   const sheets = () => [...doc.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]')];
   const ready = () => sheets().every((link) => link.sheet || failed.has(link) || link.disabled);
@@ -136,6 +155,7 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
     width,
     doc,
     sync,
+    layOut: () => void doc.documentElement.getBoundingClientRect(),
     of: (el) => (inCopy.get(el) as Element | undefined) ?? null,
     ready,
     loaded: () =>

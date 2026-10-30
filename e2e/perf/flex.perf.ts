@@ -1,5 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "../tests/fixtures";
 import { BIG_URL, HEADLESS, RUN } from "./playwright.config";
@@ -702,4 +704,168 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
     ),
   );
   verdict(met, "dragging keeps 60fps");
+});
+
+/**
+ * docs/goals.md, Robust: while the Agent applies a round, the page checks the
+ * changes not shown yet each time the code changes (ticket 64), and that must
+ * never make a long task on a page of about 5000 elements. Three changes to
+ * the 96 product cards (two to the card, one to its body's Stack, every check
+ * reading all 96 of them, at the page's width and at the tablet's and the
+ * phone's on copies of the page), then four hot updates to the cards' code:
+ * one that applies none of them, then one per change. Each stretch of
+ * checking is a `vernierkit:check` measure; a long task is the check's when
+ * it would not be one without the checking in it. For reference, the same
+ * hot updates with no round claimed: the page's own long tasks. The claim is
+ * measured too: the page looks at every change, and makes its copies.
+ */
+test.describe("a claimed round", () => {
+  test.use({ keepRoundInMemory: false });
+  const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
+  const PARTS = `${REACT18}src/big/parts.tsx`;
+  const VERNIER = `${REACT18}.vernier`;
+  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const original = readFileSync(PARTS, "utf8");
+  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
+  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.afterEach(async () => {
+    writeFileSync(PARTS, original);
+    rmSync(VERNIER, { recursive: true, force: true });
+    await expect.poll(served).toBe(true);
+  });
+
+  const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
+  /** Each hot update: the edit to the cards' code, and what the first card shows once it is in. */
+  const UPDATES = [
+    { name: "no change applied", from: "Made in small batches", to: "Made in small lots", shows: () => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots") },
+    { name: "corner radius applied", from: CARD, to: CARD.replace("rounded-card", "rounded-[20px]"), shows: () => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius === "20px" },
+    { name: "fill applied", from: "border-brand-100 bg-white shadow-card", to: "border-brand-100 bg-[#fafafa] shadow-card", shows: () => getComputedStyle(document.querySelector("[data-testid=product]")!).backgroundColor === "rgb(250, 250, 250)" },
+    { name: "gap applied", from: "flex flex-1 flex-col gap-2 p-gutter", to: "flex flex-1 flex-col gap-[10px] p-gutter", shows: () => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px" },
+  ];
+
+  interface Seen {
+    long: { start: number; duration: number }[];
+    checks: { start: number; duration: number }[];
+  }
+  function arm() {
+    const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+    const seen: Seen = { long: [], checks: [] };
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) (entry.entryType === "longtask" ? seen.long : seen.checks).push({ start: entry.startTime, duration: entry.duration });
+    });
+    observer.observe({ type: "longtask" });
+    observer.observe({ type: "measure" });
+    w.vkSeen = seen;
+    w.vkStop = () => observer.disconnect();
+  }
+
+  /** Makes each hot update in turn, waits till the page shows it and has settled; what was seen meanwhile, per update. */
+  async function hotUpdates(page: Page) {
+    const per: (Seen & { name: string })[] = [];
+    for (const { name, from, to, shows } of UPDATES) {
+      await page.evaluate(arm);
+      const text = readFileSync(PARTS, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(PARTS, text.replace(from, to));
+      await expect.poll(() => page.evaluate(shows), { timeout: 20_000 }).toBe(true);
+      await settle(page, 2000);
+      const seen = await page.evaluate(() => {
+        const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+        w.vkStop();
+        return { long: w.vkSeen.long, checks: w.vkSeen.checks.filter((entry) => entry.duration >= 0) };
+      });
+      per.push({ name, ...seen, checks: seen.checks });
+    }
+    return per;
+  }
+
+  /** Looks run back to back, one task each: a stretch of checking. */
+  function stretches(checks: Seen["checks"]) {
+    const sorted = [...checks].sort((a, b) => a.start - b.start);
+    const out: { start: number; end: number; checking: number }[] = [];
+    for (const { start, duration } of sorted) {
+      const last = out.at(-1);
+      if (last && start - last.end < 1) {
+        last.end = start + duration;
+        last.checking += duration;
+      } else out.push({ start, end: start + duration, checking: duration });
+    }
+    return out;
+  }
+
+  test("while a round is claimed, the page checks the changes on each hot update with no long task of its own", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectCard(page, 6, { parent: true });
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await selectCard(page, 6);
+    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    await gap.fill("10");
+    await gap.press("Enter");
+    await expect.poll(() => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
+    // The claim too: the page looks at every change once, and makes its copies at the views' widths.
+    await page.evaluate(arm);
+    await vernierkit("claim");
+    const ring = page.getByRole("progressbar", { name: "Applying design changes" });
+    await expect(ring).toHaveAttribute("aria-valuenow", "0");
+    await settle(page, 2000);
+    const atClaim = await page.evaluate(() => {
+      const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+      w.vkStop();
+      return w.vkSeen;
+    });
+
+    const claimed = [{ name: "claim", ...atClaim }, ...(await hotUpdates(page))];
+    await expect(ring).toHaveAttribute("aria-valuenow", "3");
+    await vernierkit("finish");
+    await expect(ring).toHaveCount(0);
+
+    // The same hot updates with no round claimed: the page's own long tasks.
+    writeFileSync(PARTS, original);
+    await expect.poll(served).toBe(true);
+    await openBigPage(page);
+    const unclaimed = await hotUpdates(page);
+
+    const rows = claimed.map(({ name, long, checks }, i) => {
+      const own = stretches(checks);
+      // A long task the check makes: one that would not be long without the checking in it.
+      const ofCheck = long.filter((task) => {
+        const checking = own.filter((s) => s.start >= task.start && s.end <= task.start + task.duration + 1).reduce((sum, s) => sum + s.checking, 0);
+        return checking > 0 && task.duration - checking < 50;
+      });
+      return {
+        name,
+        looks: checks.length,
+        stretches: own.length,
+        longestStretch: Math.max(0, ...own.map((s) => s.end - s.start)),
+        checking: own.reduce((sum, s) => sum + s.checking, 0),
+        longTasks: long.map((task) => task.duration),
+        longTasksOfCheck: ofCheck.map((task) => task.duration),
+        longTasksUnclaimed: i === 0 ? [] : unclaimed[i - 1].long.map((task) => task.duration),
+      };
+    });
+    const longest = Math.max(...rows.map((row) => row.longestStretch));
+    const ofCheck = rows.flatMap((row) => row.longTasksOfCheck);
+    const met = ofCheck.length === 0 && longest < 50;
+    keep("claimedChecks", { elements, rows });
+    print(
+      report(
+        `Checking a claimed round on hot updates, ${elements} elements, 3 changes to 96 cards, views 768 and 390 — ${mode}`,
+        [
+          { name: "longest stretch of checking", summary: summarize(rows.map((row) => row.longestStretch)), target: "< 50ms, no long task of its own", met },
+          { name: "checking per hot update", summary: summarize(rows.map((row) => row.checking)) },
+        ],
+        rows.map(
+          (row) =>
+            `${row.name}: ${row.looks} looks in ${row.stretches} stretches, the longest ${ms(row.longestStretch)}; long tasks ${row.longTasks.map((d) => d.toFixed(0)).join(", ") || "none"} (the check's: ${row.longTasksOfCheck.length}); with no round claimed: ${row.longTasksUnclaimed.map((d) => d.toFixed(0)).join(", ") || "none"}`,
+        ),
+      ),
+    );
+    verdict(met, `checking a claimed round: longest stretch ${longest.toFixed(1)}ms, ${ofCheck.length} long tasks of its own`);
+  });
 });

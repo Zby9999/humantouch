@@ -76,7 +76,7 @@ export type RoundStatus = { status: "editing" } | { status: "claimed"; done: num
 /** How long a page waits for the dev server to bring an edit in before it says a change does not show, when it cannot tell whether one is on its way. */
 export const CHECK_SETTLE_MS = 3000;
 
-/** The longest a page waits for an edit the dev server is bringing in, before it says a change does not show all the same. */
+/** The longest a page takes to answer `done`: waiting for an edit the dev server is bringing in, then for the change to show; then it says it does not show all the same. */
 export const CHECK_ARRIVE_MS = 20_000;
 
 /**

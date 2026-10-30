@@ -10,7 +10,7 @@ import { ordinal, propertyName, value } from "./design-values";
 import type { Change, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { dirname } from "node:path";
-import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
+import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
   appliedOf,
   archiveRound,
@@ -157,11 +157,10 @@ function notShown(change: Change, actual: unknown, width?: number): string {
 }
 
 /**
- * Longest wait for a page's answer: the page waits for the dev server to bring
- * the code in, then for it to show, may make itself another width first, and a
+ * Longest wait for a page's answer: the page's own longest, and some, as a
  * page in a background tab is slow.
  */
-const CHECK_WAIT_MS = CHECK_ARRIVE_MS + CHECK_SETTLE_MS + 6000;
+const CHECK_WAIT_MS = CHECK_ARRIVE_MS + 6000;
 const CHECK_POLL_MS = 50;
 
 /**

@@ -10,3 +10,6 @@ export const CHECK_FRAME_ATTR = "data-vk-check";
 
 /** Performance entries: a mark when the designer asks for edit mode, a measure once the canvas is on screen. */
 export const ENTER_MARK = "vernierkit:enter-edit-mode";
+
+/** Performance entries: a measure for each stretch of the page checking a claimed round (ticket 64), which must never make a long task. */
+export const CHECK_MEASURE = "vernierkit:check";
