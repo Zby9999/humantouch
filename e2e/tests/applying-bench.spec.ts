@@ -165,7 +165,11 @@ test("playbook: the Agent skips done, applies every change and finishes", async 
   }
   const atEnd = gaps.at(-1)!;
   await vernierkit("finish");
-  record("skips-done", { checkCoverage: checkCoverage(), progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps) });
+  const coverage = checkCoverage();
+  record("skips-done", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps) });
+  // Ticket 64: the page checks each change as the code changes, done or not, and the ring counts what it shows.
+  expect(coverage).toBe(1);
+  expect(atEnd).toBe(0);
 });
 
 test("playbook: the Agent applies every change first, then runs done for them all, then finish", async ({ page }) => {
@@ -178,7 +182,11 @@ test("playbook: the Agent applies every change first, then runs done for them al
   await expect(ring(page)).toHaveAttribute("aria-valuenow", String(IDS.length));
   const atEnd = await progressGap(page);
   await vernierkit("finish");
-  record("done-all-at-the-end", { checkCoverage: checkCoverage(), progressGapAtEnd: atEnd, progressGapMax: Math.max(beforeDone, atEnd) });
+  const coverage = checkCoverage();
+  record("done-all-at-the-end", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(beforeDone, atEnd) });
+  // Ticket 64: no worse than before (100%), and the ring is the page's.
+  expect(coverage).toBe(1);
+  expect(atEnd).toBe(0);
 });
 
 test("playbook: the Agent stops halfway, with no finish; the designer ends the round and edits again", async ({ page }) => {

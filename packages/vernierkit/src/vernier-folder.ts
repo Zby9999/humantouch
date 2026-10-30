@@ -6,12 +6,12 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { SavedChangeSet } from "./client/changeset";
-import type { CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
+import type { CheckAsk, CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 
 export const VERNIER_DIR = ".vernier";
 
@@ -40,11 +40,41 @@ export interface Checks {
 }
 
 /**
- * A round being edited has no state file; claiming it adds one. Besides the
- * status, it keeps what only the command line needs: when the round was
- * claimed, and the code as it was then.
+ * A round being edited has no state file; claiming it adds one: the changes
+ * the Agent reported done, the check `done` asks for last, and what only the
+ * command line needs: when the round was claimed, and the code as it was then.
  */
-export type RoundState = Extract<RoundStatus, { status: "claimed" }> & { claimedAt?: string; code?: CodeSnapshot | null };
+export interface RoundState {
+  status: "claimed";
+  done: number[];
+  check?: CheckAsk;
+  claimedAt?: string;
+  code?: CodeSnapshot | null;
+}
+
+/**
+ * The changes that count as applied (ADR 0013): those the page shows, done or
+ * not, and those the Agent reported done that it does not say it does not
+ * show (it cannot check them, or no page is open). Of `results`, only this
+ * round's count: an earlier round's may have been written back after it ended.
+ */
+export function appliedOf(state: RoundState, results: Checks["results"] = {}): number[] {
+  const own = (id: string | number) => {
+    const result = results[id];
+    return result && (!state.claimedAt || result.at >= state.claimedAt) ? result : undefined;
+  };
+  const shown = Object.keys(results).map(Number).filter((id) => own(id)?.outcome === "shown");
+  const done = state.done.filter((id) => own(id)?.outcome !== "not shown");
+  return [...new Set([...shown, ...done])].sort((a, b) => a - b);
+}
+
+/** How the round stands, as the editor layer is told. */
+export async function roundStatus(folder: VernierFolder): Promise<RoundStatus> {
+  const state = await readState(folder);
+  if (!state) return { status: "editing" };
+  const applied = appliedOf(state, (await readChecks(folder))?.results);
+  return { status: "claimed", done: state.done, applied, ...(state.check && { check: state.check }) };
+}
 
 export function vernierFolder(root: string): VernierFolder {
   const dir = join(root, VERNIER_DIR);
@@ -88,8 +118,10 @@ export async function writeState(folder: VernierFolder, state: RoundState) {
 export interface RoundResult {
   /** `finished` by the Agent, or `unlocked` by hand by the designer. */
   ended: "finished" | "unlocked";
-  /** The changes applied; the others were not. */
+  /** The changes the Agent reported done. */
   done: number[];
+  /** The changes applied, as the page shows them (`appliedOf`); the others were not. Missing in rounds archived before ticket 64: `done` then. */
+  applied?: number[];
   /** When, as an ISO date. */
   at: string;
   /** How the page answered the last check of each change. */
@@ -110,7 +142,8 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
   const code = state.code && after?.repository === state.code.repository ? { repository: after.repository, before: state.code.tree, after: after.tree } : null;
   // Only this round's checks: an earlier round's could have been written back after it ended.
   const results = Object.entries((await readChecks(folder))?.results ?? {}).filter(([, r]) => !state.claimedAt || r.at >= state.claimedAt);
-  const result: RoundResult = { ended, done: state.done, at: new Date().toISOString(), checks: Object.fromEntries(results), code };
+  const checks = Object.fromEntries(results);
+  const result: RoundResult = { ended, done: state.done, applied: appliedOf(state, checks), at: new Date().toISOString(), checks, code };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
   await writeFile(join(archive, "changeset.json"), changeSet);
@@ -176,6 +209,38 @@ export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
     return null; // Not a git repository, or no git.
   } finally {
     await rm(index, { force: true });
+  }
+}
+
+/**
+ * When the project's code was last edited, as ms since the epoch: the latest
+ * of the times the files git sees changed were written (`.vernier/` aside).
+ * Null outside a git repository, or with no file changed.
+ */
+export async function lastEdited(root: string): Promise<number | null> {
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root, maxBuffer: 64 * 1024 * 1024 });
+  try {
+    const { stdout: top } = await git(["rev-parse", "--show-toplevel"]);
+    const { stdout } = await git(["status", "--porcelain=v1", "-z", "-uall", "--", "."]);
+    const entries = stdout.split("\0");
+    const paths: string[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (entry.length < 4) continue;
+      // A rename or copy: the path it came from follows.
+      if (/^[RC]/.test(entry)) i++;
+      if (entry[0] === "D" || entry[1] === "D") continue;
+      paths.push(entry.slice(3));
+    }
+    const times = await Promise.all(
+      paths
+        .filter((path) => !/(^|\/)\.vernier\//.test(path))
+        .map((path) => stat(join(top.trim(), path)).then((info) => info.mtimeMs, () => stat(join(root, path)).then((info) => info.mtimeMs, () => 0))),
+    );
+    const latest = Math.max(0, ...times);
+    return latest ? Math.floor(latest) : null;
+  } catch {
+    return null; // Not a git repository, or no git.
   }
 }
 

@@ -104,7 +104,8 @@ test("claim locks the editor; done checks the change on the page once the CSS Mo
 
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");
-    expect(await vernierkit("finish")).toContain("Round finished: 1 of 2 changes applied. Not marked done: 2.");
+    // The heading was never applied: the page itself saw it not shown, done or not.
+    expect(await vernierkit("finish")).toContain("Round finished: 1 of 2 changes applied. The page does not show: 2.");
   } finally {
     writeFileSync(CARD_CSS, original);
   }

@@ -54,20 +54,43 @@ export interface Variable {
   own: boolean;
 }
 
-/** `done` asking the page to check change `id`; `at` tells one ask from the next. */
+/**
+ * `done` asking the page to check changes `ids`; `at` tells one ask from the
+ * next. `codeAt`: when the project's code was last edited, as far as the
+ * command line can tell (ms since the epoch), so the page waits for that edit
+ * to reach it before it says a change does not show; null when it cannot tell.
+ */
 export interface CheckAsk {
-  id: number;
+  ids: number[];
   at: string;
+  codeAt?: number | null;
 }
 
 /**
- * Edited by the designer, or claimed and being applied by the Agent, with the
- * ids of the changes done so far, and the check the last `done` asks for.
+ * Edited by the designer, or claimed and being applied by the Agent: with the
+ * ids of the changes the Agent reported done, those that count as applied (as
+ * the page shows them, ADR 0013), and the check the last `done` asks for.
  */
-export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; check?: CheckAsk };
+export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; applied: number[]; check?: CheckAsk };
 
-/** How long a page waits for the dev server to bring an edit in before it says a change does not show. */
+/** How long a page waits for the dev server to bring an edit in before it says a change does not show, when it cannot tell whether one is on its way. */
 export const CHECK_SETTLE_MS = 3000;
+
+/** The longest a page waits for an edit the dev server is bringing in, before it says a change does not show all the same. */
+export const CHECK_ARRIVE_MS = 20_000;
+
+/**
+ * Global the dev server's code updates are kept in on the page, when it can
+ * say (Vite): `at`, when the code the page has was last brought in (ms since
+ * the epoch, the dev server's clock); `updating`, updates under way. A
+ * `CODE_EVENT` on the window follows each change.
+ */
+export const CODE_GLOBAL = "__VERNIERKIT_CODE__";
+export const CODE_EVENT = "vernierkit:code";
+export interface CodeUpdates {
+  at: number;
+  updating: number;
+}
 
 /** Why a brief is never checked on the page: it asks for what no value of a property shows. */
 export const BRIEF_UNCHECKED = "a brief asks for what the Design panel cannot set, so the page has no value to check it by";
@@ -80,15 +103,15 @@ export interface CodeSnapshot {
   tree: string;
 }
 
-/** Whether the live page shows a change the Agent has done: its value there is the value the change sets. */
+/** Whether the live page shows a change: its value there is the value the change sets. */
 export type CheckResult =
   | { outcome: "shown" }
-  /** `actual`: the value the page shows instead, in design language. */
-  | { outcome: "not shown"; actual: unknown }
+  /** `actual`: the value the page shows instead, in design language. `width`: shown that wide, when not as wide as the page's window. */
+  | { outcome: "not shown"; actual: unknown; width?: number }
   | { outcome: "unchecked"; reason: string };
 
-/** A page's answer to a check. */
-export type CheckReport = CheckAsk & CheckResult;
+/** How a page checked change `id`: `at` the ask it answers, or when it checked as the code changed. */
+export type CheckReport = { id: number; at: string } & CheckResult;
 
 export interface ServiceConfig {
   /** `http://127.0.0.1:<port>` */

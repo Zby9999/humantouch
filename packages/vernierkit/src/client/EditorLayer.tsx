@@ -1,16 +1,17 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
+import type { CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
 import type { ProjectBreakpoints } from "./breakpoints";
 import { putBackBy, withDependents, type Change } from "./changeset";
-import { checkChange, pageAt } from "./check";
-import { ENTER_MARK } from "./host";
+import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
+import { watchPage, type PageChecks } from "./page-checks";
 import { revertSaved } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
 import { Toggle } from "./Toggle";
+import { readViewWidths } from "./ViewLabels";
 
 /** `leaving`: back in preview mode, while the canvas grows back over the page. */
 type Mode = "preview" | "edit" | "leaving";
@@ -42,8 +43,8 @@ function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): Sav
  * comes back to it, after a reload too. With none, edit mode freezes the page afresh.
  * The page always shows the code as it is: the changes are seen on the canvas,
  * played at full size (ADR 0010). Once the Agent claims the round, the editor
- * folds into the toggle, locked until the round ends, and each change it
- * applies is checked on the page. The toggle's badge opens the change list, where changes
+ * folds into the toggle, locked until the round ends, while the page checks
+ * the changes as the code changes, its ring filling as they show (ADR 0013). The toggle's badge opens the change list, where changes
  * are undone one by one, or all discarded, in either mode.
  *
  * It loads after the toggle (`LazyEditorLayer`): `enter` when edit mode was
@@ -93,19 +94,40 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   }, []);
 
   const changes = round?.changeSet.changes ?? [];
+  /** The changes this page has seen show, before the local service says so to every page. */
+  const [seen, setSeen] = useState<number[]>([]);
+  /** Applied, as the page shows them (ADR 0013). */
+  const applied = claimed ? changes.filter((change) => claimed.applied.includes(change.id) || seen.includes(change.id)) : [];
   /** Not applied yet. */
-  const pending = claimed ? changes.filter((change) => !claimed.done.includes(change.id)) : changes;
+  const pending = claimed ? changes.filter((change) => !applied.includes(change)) : changes;
 
-  // A done change is checked on the page as it is.
-  // A layout effect: an effect would wait for a frame, which a background tab may not draw for a while.
-  const checked = useRef<string | null>(null);
+  // While the round is claimed, the page checks it as the code changes, and answers what `done` asks.
+  // Layout effects: an effect would wait for a frame, which a background tab may not draw for a while.
+  const checks = useRef<PageChecks | null>(null);
+  const isClaimed = claimed !== null;
+  useLayoutEffect(() => {
+    if (!isClaimed || !store || !round) return;
+    const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
+    const watcher = watchPage({
+      window,
+      changes: round.changeSet.changes,
+      report,
+      onShown: (id) => setSeen((ids) => [...ids, id]),
+      viewWidths: readViewWidths,
+      copiesIn: () => document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement,
+    });
+    checks.current = watcher;
+    return () => {
+      watcher.stop();
+      checks.current = null;
+      setSeen([]);
+    };
+  }, [isClaimed, round]);
   const check = claimed?.check;
   useLayoutEffect(() => {
-    if (!check || !store || round === undefined || checked.current === check.at) return;
-    checked.current = check.at;
-    const change = round?.changeSet.changes.find((c) => c.id === check.id);
-    const result = change ? checkChange(document, change, pageAt(window), round!.changeSet.changes) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
-    void result.then((result) => store.report({ ...check, ...result })).catch((error: unknown) => console.warn(error));
+    if (!check || !store || round === undefined) return;
+    if (checks.current) checks.current.ask(check);
+    else for (const id of check.ids) store.report({ id, at: check.at, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
   }, [check?.at, round]);
 
   const lastStatus = useRef(status);
@@ -266,7 +288,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           changeCount={listed.length}
           changesOpen={listOpen && listed.length > 0}
           onShowChanges={() => setListOpen(!listOpen)}
-          applying={claimed && { done: claimed.done.length, total: changes.length }}
+          applying={claimed && { done: applied.length, total: changes.length }}
           onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
           onToggle={switchMode}
           // Edit mode has been asked for, and the canvas is not up yet: what it needs is still loading.

@@ -38,6 +38,7 @@ import {
   readIfThere,
   readOffCanvas,
   readState,
+  roundStatus,
   vernierFolder,
   writeAtomically,
   writeChecks,
@@ -59,11 +60,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
   const files = vernierFolder(root);
   const token = randomBytes(32).toString("hex");
 
-  /** What the editor layer is told: the state file's status, without what only the command line needs. */
-  const status = async (): Promise<RoundStatus> => {
-    const state = await readState(files);
-    return state ? { status: state.status, done: state.done, ...(state.check && { check: state.check }) } : { status: "editing" };
-  };
+  /** What the editor layer is told: how the round stands, without what only the command line needs. */
+  const status = (): Promise<RoundStatus> => roundStatus(files);
 
   /** Answers to `GET /events`, kept open: each gets a line when the status changes. */
   const listeners = new Set<ServerResponse>();
@@ -142,15 +140,21 @@ export async function startService({ root }: { root: string }): Promise<Service>
         });
         return;
       case `POST ${CHECKS_PATH}`: {
-        if ((await status()).status !== "claimed") return send(res, 409);
+        const state = await readState(files);
+        if (!state) return send(res, 409);
         const { id, ...result } = JSON.parse(body) as CheckReport;
         if (typeof id !== "number" || typeof result.at !== "string") return send(res, 400);
+        const asked = state.check?.at === result.at;
         await updateChecks((checks) => {
-          // Of two pages, the one that could check has the say.
           const earlier = checks.results[id];
+          // Of two pages, the one that could check has the say.
           if (earlier?.at === result.at && earlier.outcome !== "unchecked" && result.outcome === "unchecked") return;
+          // A page checks a change again only till it shows: what another says of it later, unasked, is behind.
+          if (earlier?.outcome === "shown" && result.outcome !== "shown" && !asked && (!state.claimedAt || earlier.at >= state.claimedAt)) return;
           checks.results[id] = result;
         });
+        // The progress may have changed with it.
+        broadcast();
         return send(res, 204);
       }
       case `GET ${BREAKPOINTS_PATH}`: {

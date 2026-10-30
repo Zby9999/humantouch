@@ -1,18 +1,21 @@
 /**
  * The command line, run by the Agent as the Skill tells it: `claim` takes the
- * round to apply and prints the change notes, `done <number>` reports each
- * change applied and has the page check it, `finish` ends the round, and
+ * round to apply and prints the change notes, `done <number> …` reports changes
+ * applied and gives how the page checked them, `finish` ends the round, and
  * `last` prints the round before, to undo it by. `init`, `doctor` and
  * `remove` install Vernier Kit, check it, and take it back out.
  */
-import { changes, describeChanges, TO_APPLY } from "./change-notes";
+import { changes as changesWord, describeChanges, TO_APPLY } from "./change-notes";
 import { ordinal, propertyName, value } from "./design-values";
 import type { Change, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
+import { dirname } from "node:path";
+import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, CHECK_SETTLE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
+  appliedOf,
   archiveRound,
   findProject,
+  lastEdited,
   readChangeSet,
   readChecks,
   readLastRound,
@@ -47,7 +50,7 @@ export async function run(args: string[], io: Io): Promise<number> {
     case "claim":
       return claim(folder, root, io);
     case "done":
-      return done(folder, rest[0], io);
+      return done(folder, rest, io);
     case "finish":
       return finish(folder, io);
     case "last":
@@ -75,56 +78,77 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
 
 const NOT_CLAIMED = "The round is not claimed: run `npx vernierkit claim` first.\n";
 
-async function done(folder: VernierFolder, arg: string | undefined, io: Io): Promise<number> {
+async function done(folder: VernierFolder, args: string[], io: Io): Promise<number> {
   const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
   if (!state || !changeSet) {
     io.error(NOT_CLAIMED);
     return 1;
   }
   const ids = changeSet.changes.map((change) => change.id);
-  const id = Number(arg);
-  if (!ids.includes(id)) {
-    const which = arg === undefined ? "Give the number of the change you applied: `npx vernierkit done <number>`." : `There is no change ${arg} in this round.`;
+  const wrong = args.find((arg) => !ids.includes(Number(arg)));
+  if (!args.length || wrong !== undefined) {
+    const which = !args.length ? "Give the numbers of the changes you applied: `npx vernierkit done <number> …`." : `There is no change ${wrong} in this round.`;
     io.error(`${which} Its changes are: ${ids.join(", ")}.\n`);
     return 1;
   }
-  const doneIds = state.done.includes(id) ? state.done : [...state.done, id];
-  const check = { id, at: new Date().toISOString() };
-  await writeState(folder, { ...state, done: doneIds, check });
-  io.write(`Change ${id} done: ${doneIds.length} of ${changes(ids.length)} applied.\n`);
-  const change = changeSet.changes.find((c) => c.id === id)!;
+  const reported = [...new Set(args.map(Number))];
+  const changes = reported.map((id) => changeSet.changes.find((c) => c.id === id)!);
+  const doneIds = [...new Set([...state.done, ...reported])];
   // A brief has no value to check on the page: what the Agent did is for its report.
-  if (change.kind === "brief") {
-    io.write(`Not checked on the page: ${BRIEF_UNCHECKED}. Say in your report how you achieved it: what you changed, and where.\n`);
-    return 0;
-  }
-  const result = await waitForCheck(folder, check);
-  switch (result.outcome) {
-    case "shown":
-      io.write("Checked on the page: it shows the change.\n");
-      break;
-    case "not shown":
-      io.write(`Checked on the page: it does not show the change. ${notShown(change, result.actual)}\n`);
-      break;
-    case "unchecked":
-      io.write(`Not checked on the page: ${result.reason}.\n`);
-  }
+  const asked = changes.filter((change) => change.kind !== "brief").map((change) => change.id);
+  const check: CheckAsk = { ids: asked, at: new Date().toISOString(), codeAt: await lastEdited(dirname(folder.dir)) };
+  const claimed = { ...state, done: doneIds, check };
+  await writeState(folder, claimed);
+  const results = asked.length ? await waitForChecks(folder, check, state.claimedAt) : new Map<number, CheckResult>();
+  const applied = appliedOf(claimed, (await readChecks(folder))?.results);
+  const lines = changes.map((change) => checkLine(change, results.get(change.id)));
+  const one = changes.length === 1;
+  io.write(`${one ? "Change" : "Changes"} ${list(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
+  io.write(one ? `${lines[0]}\n` : lines.map((line, i) => `Change ${reported[i]}: ${line[0].toLowerCase()}${line.slice(1)}\n`).join(""));
   return 0;
 }
 
-/** What the page shows instead of change `id`, what to look at, and to check again. */
-function notShown(change: Change, actual: unknown): string {
+/** `1`, `1 and 2`, `1, 2 and 3`. */
+function list(ids: number[]): string {
+  return ids.length < 2 ? `${ids[0]}` : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
+}
+
+/** What `done` says of a change, as the page checked it. */
+function checkLine(change: Change, result: CheckResult | undefined): string {
+  if (change.kind === "brief") return `Not checked on the page: ${BRIEF_UNCHECKED}. Say in your report how you achieved it: what you changed, and where.`;
+  switch (result?.outcome) {
+    case "shown":
+      return "Checked on the page: it shows the change.";
+    case "not shown":
+      return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
+    default:
+      return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}.`;
+  }
+}
+
+/** What the page shows instead of change `id`, `width` px wide when not as wide as its window, what to look at, and to check again. */
+function notShown(change: Change, actual: unknown, width?: number): string {
   const again = `run \`npx vernierkit done ${change.id}\` again`;
-  if (change.kind === "delete") return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
+  if (change.kind === "delete") {
+    if (width) return `At ${width}px wide, the layer is still on the page: take it out at every width, and ${again}.`;
+    return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
+  }
   if (change.kind === "move") {
     const { absolute, nth } = change.after as Place;
     if (!absolute) return `Its container's layers are in another order on the page: put it ${ordinal(nth)}, as the notes say, and ${again}.`;
+    const at = width ? `At ${width}px wide, the` : "The";
     if (actual === "no reference") {
-      return `The layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
+      return `${at} layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
     }
-    const at = actual as { x: number; y: number } | null;
-    const where = at ? `at X ${at.x}px and Y ${at.y}px` : "not placed absolute";
-    return `The layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+    const placed = actual as { x: number; y: number } | null;
+    const where = placed ? `at X ${placed.x}px and Y ${placed.y}px` : "not placed absolute";
+    return `${at} layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+  }
+  if (width) {
+    return (
+      `At ${width}px wide, the ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}. ` +
+      `The change applies at every width: see what sets the value at that width (a breakpoint variant such as \`sm:\`, a media query), fix it, and ${again}.`
+    );
   }
   return (
     `The ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}. ` +
@@ -132,27 +156,45 @@ function notShown(change: Change, actual: unknown): string {
   );
 }
 
-/** Longest wait for a page's answer: the page waits for the dev server itself, may load itself at a breakpoint's width first, and a page in a background tab is slow. */
-const CHECK_WAIT_MS = CHECK_SETTLE_MS + 6000;
+/**
+ * Longest wait for a page's answer: the page waits for the dev server to bring
+ * the code in, then for it to show, may make itself another width first, and a
+ * page in a background tab is slow.
+ */
+const CHECK_WAIT_MS = CHECK_ARRIVE_MS + CHECK_SETTLE_MS + 6000;
 const CHECK_POLL_MS = 50;
 
 /**
- * The open pages' answer to `check`, through the local service's
- * `checks.json`. With several pages, one that cannot check (it does not show
- * the layer) does not stand in for one that can and is still at it.
+ * The open pages' answers to `check`, through the local service's
+ * `checks.json`, by change id. A change the page shows already this round, as
+ * the code changed, is answered at once. With several pages, one that cannot
+ * check (it does not show the layer) does not stand in for one that can and is still at it.
  */
-async function waitForCheck(folder: VernierFolder, check: CheckAsk): Promise<CheckResult> {
+async function waitForChecks(folder: VernierFolder, check: CheckAsk, claimedAt: string | undefined): Promise<Map<number, CheckResult>> {
   const until = Date.now() + CHECK_WAIT_MS;
-  let unchecked: CheckResult | null = null;
+  const answers = new Map<number, CheckResult>();
+  const unchecked = new Map<number, CheckResult>();
   for (;;) {
     const checks = await readChecks(folder);
-    if (!checks?.pages || !isRunning(checks.service)) return { outcome: "unchecked", reason: "no page with Vernier Kit is open" };
-    const result = checks.results[check.id];
-    if (result?.at === check.at) {
-      if (result.outcome !== "unchecked" || checks.pages === 1) return result;
-      unchecked = result;
+    for (const id of check.ids) {
+      if (answers.has(id)) continue;
+      const result = checks?.results[id];
+      if (result?.outcome === "shown" && (!claimedAt || result.at >= claimedAt)) answers.set(id, result);
+      else if (result?.at === check.at) {
+        if (result.outcome !== "unchecked" || checks!.pages === 1) answers.set(id, result);
+        else unchecked.set(id, result);
+      }
     }
-    if (Date.now() > until) return unchecked ?? { outcome: "unchecked", reason: "the page did not answer in time" };
+    const left = check.ids.filter((id) => !answers.has(id));
+    if (!left.length) return answers;
+    if (!checks?.pages || !isRunning(checks.service)) {
+      for (const id of left) answers.set(id, { outcome: "unchecked", reason: "no page with Vernier Kit is open" });
+      return answers;
+    }
+    if (Date.now() > until) {
+      for (const id of left) answers.set(id, unchecked.get(id) ?? { outcome: "unchecked", reason: "the page did not answer in time" });
+      return answers;
+    }
     await new Promise((resolve) => setTimeout(resolve, CHECK_POLL_MS));
   }
 }
@@ -175,11 +217,12 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
     return 1;
   }
   const ids = changeSet.changes.map((change) => change.id);
-  const missing = ids.filter((id) => !result.done.includes(id));
-  const notShown = result.done.filter((id) => result.checks[id]?.outcome === "not shown");
-  let text = `Round finished: ${result.done.length} of ${changes(ids.length)} applied.`;
+  const applied = result.applied ?? result.done;
+  const notShown = ids.filter((id) => !applied.includes(id) && result.checks[id]?.outcome === "not shown");
+  const missing = ids.filter((id) => !applied.includes(id) && !notShown.includes(id));
+  let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}. Report why in your reply.`;
-  if (notShown.length) text += ` The page did not show: ${notShown.join(", ")}. Report them as not applied 1:1, with why.`;
+  if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}. Report them as not applied 1:1, with why.`;
   io.write(`${text}\n`);
   return 0;
 }
@@ -190,7 +233,8 @@ async function last(folder: VernierFolder, root: string, io: Io): Promise<number
     io.write("No earlier round of design changes to undo.\n");
     return 0;
   }
-  const { done, code } = round.result;
+  const { code } = round.result;
+  const applied = round.result.applied ?? round.result.done;
   const intro = (count: string) => {
     const text = `${count} from the round before, as the designer asked for them.`;
     if (!code) return `${text} To undo the round, take the applied ones back out of the source; those not applied never went in.`;
@@ -205,7 +249,7 @@ async function last(folder: VernierFolder, root: string, io: Io): Promise<number
     describeChanges(round.changeSet.changes, root, {
       heading: "Last round of design changes",
       intro,
-      status: (change) => (done.includes(change.id) ? "Applied" : "Not applied"),
+      status: (change) => (applied.includes(change.id) ? "Applied" : "Not applied"),
     }),
   );
   return 0;

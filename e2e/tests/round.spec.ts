@@ -9,6 +9,24 @@ test.use({ keepRoundInMemory: false });
 test.beforeEach(() => clearVernier(VERNIER));
 test.afterAll(() => clearVernier(VERNIER));
 
+const CARD = `${EXAMPLE}src/components/Card.tsx`;
+const originalCard = readFileSync(CARD, "utf8");
+test.afterEach(async () => {
+  if (readFileSync(CARD, "utf8") === originalCard) return;
+  writeFileSync(CARD, originalCard);
+  // The next test's page must open on the Card as it was.
+  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
+});
+
+/** As the Agent does: one of the changes `changeTheCards` makes, written into the Card. */
+const CARD_EDITS = { fill: ["bg-white", "bg-[#ff0000]"], radius: ["rounded-xl", "rounded-[2px]"] } as const;
+async function applyToCard(page: Page, which: keyof typeof CARD_EDITS) {
+  const [from, to] = CARD_EDITS[which];
+  writeFileSync(CARD, readFileSync(CARD, "utf8").replace(from, to));
+  const [property, value] = which === "fill" ? (["backgroundColor", "rgb(255, 0, 0)"] as const) : (["borderTopLeftRadius", "2px"] as const);
+  await expect.poll(() => page.locator("article").first().evaluate((card, name) => getComputedStyle(card)[name], property)).toBe(value);
+}
+
 const LOCKED_LABEL = /^Vernier Kit: applying design changes/;
 
 function canvas(page: Page) {
@@ -46,7 +64,7 @@ function results() {
     .map((round) => JSON.parse(readFileSync(`${history}${round}/result.json`, "utf8")));
 }
 
-test("claim folds the editor into a locked toggle; each done fills the ring and counts the badge down; finish unlocks it", async ({ page }) => {
+test("claim folds the editor into a locked toggle; as the page shows each change the ring fills and the badge counts down, done or not; finish unlocks it", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
 
@@ -61,28 +79,58 @@ test("claim folds the editor into a locked toggle; each done fills the ring and 
   await toggle.click({ force: true });
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
-  await vernierkit("done", "1");
+  // Done before the code has it: the page does not show it, and it does not count.
+  expect(await vernierkit("done", "1")).toContain("Change 1 done: 0 of 2 changes applied.");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
+
+  await applyToCard(page, "fill");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
   await expect(badge(page)).toHaveText("1");
-
-  await vernierkit("done", "2");
+  // No done for this one: the page shows it all the same.
+  await applyToCard(page, "radius");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "2");
   await expect(badge(page)).toHaveCount(0);
 
-  await vernierkit("finish");
+  expect(await vernierkit("finish")).toBe("Round finished: 2 of 2 changes applied.\n");
   await expect(progress(page)).toHaveCount(0);
-  // A new round: edit mode freezes the page afresh.
-  await enterEditMode(page);
-  await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  expect(results()).toMatchObject([{ ended: "finished", done: [1, 2] }]);
+  expect(results()).toMatchObject([{ ended: "finished", done: [1], applied: [1, 2], checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" } } }]);
+});
+
+test("done for several changes at once: each with how the page checked it, those the page shows already at once", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  await vernierkit("claim");
+  await applyToCard(page, "fill");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
+
+  const output = await vernierkit("done", "1", "2");
+
+  expect(output).toContain("Changes 1 and 2 done: 1 of 2 changes applied.\n");
+  expect(output).toContain("Change 1: checked on the page: it shows the change.\n");
+  expect(output).toContain("Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 2px.");
 });
 
 test("an edit not yet saved when the Agent claims stays out of the round", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  // Claimed well within the autosave delay of this edit.
+  // The edit's save is on its way when the Agent claims: held till then, however busy the machine is.
+  let claimed!: () => void;
+  const claim = new Promise<void>((resolve) => (claimed = resolve));
+  let saving!: () => void;
+  const saveSent = new Promise<void>((resolve) => (saving = resolve));
+  await page.route(
+    (url) => url.hostname === "127.0.0.1" && url.pathname === "/round",
+    async (route) => {
+      if (route.request().method() !== "PUT") return route.continue();
+      saving();
+      await claim;
+      await route.continue();
+    },
+  );
   await setField(page, "Corner radius", "6");
+  await saveSent;
   await vernierkit("claim");
+  claimed();
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
@@ -93,7 +141,7 @@ test("while the round is being applied, the change list only shows what is left 
   await page.goto(DEV_URL);
   await changeTheCards(page);
   await vernierkit("claim");
-  await vernierkit("done", "1");
+  await applyToCard(page, "fill");
   await expect(badge(page)).toHaveText("1");
 
   await badge(page).click();
@@ -104,11 +152,12 @@ test("while the round is being applied, the change list only shows what is left 
   await expect(list.getByRole("button")).toHaveCount(0);
 });
 
-test("a page loaded while the round is being applied shows it locked", async ({ page }) => {
+test("a page loaded while the round is being applied shows it locked, with what the page shows so far", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
   await vernierkit("claim");
-  await vernierkit("done", "2");
+  await applyToCard(page, "radius");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
   await page.reload();
 
@@ -116,11 +165,11 @@ test("a page loaded while the round is being applied shows it locked", async ({ 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 });
 
-test("pressing and holding the locked toggle unlocks it: done changes are archived, the others recorded, the canvas dropped", async ({ page }) => {
+test("pressing and holding the locked toggle unlocks it: changes the page shows are archived as applied, the others recorded, the canvas dropped", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
   await vernierkit("claim");
-  await vernierkit("done", "1");
+  await applyToCard(page, "fill");
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
@@ -133,10 +182,12 @@ test("pressing and holding the locked toggle unlocks it: done changes are archiv
   await expect(progress(page)).toHaveCount(0);
   // Letting go was not a click on the toggle.
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
-  expect(results()).toMatchObject([{ ended: "unlocked", done: [1] }]);
+  expect(results()).toMatchObject([{ ended: "unlocked", done: [], applied: [1] }]);
   expect(readVernier("changeset.json")).toBeNull();
   expect(readdirSync(VERNIER)).toEqual(["history"]);
-  expect(await vernierkit("last")).toContain("- **Status:** Not applied\n");
+  const last = await vernierkit("last");
+  expect(last.split(/^## /m)[1]).toContain("- **Status:** Applied\n");
+  expect(last.split(/^## /m)[2]).toContain("- **Status:** Not applied\n");
 });
 
 test("a short press on the locked toggle does nothing", async ({ page }) => {
@@ -174,7 +225,6 @@ test("the page shows the code all along: before the claim, while the round is ap
 test.describe("done checks the change on the page", () => {
   const APP = `${EXAMPLE}src/App.tsx`;
   const CSS = `${EXAMPLE}src/index.css`;
-  const CARD = `${EXAMPLE}src/components/Card.tsx`;
   const originals = { [APP]: readFileSync(APP, "utf8"), [CSS]: readFileSync(CSS, "utf8"), [CARD]: readFileSync(CARD, "utf8") };
   /**
    * The three files as the dev server serves them to the page, `?t=` stamps on
@@ -299,8 +349,28 @@ test.describe("done checks the change on the page", () => {
     editSource(CARD, "bg-white p-5", "bg-white p-5 max-md:bg-[#ff0000]");
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
-    // Only the page itself is left: the one loaded at the phone's width is gone.
+    // The copy of the page at the phone's width is kept while the round is claimed, and goes with it.
+    await vernierkit("finish");
+    await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toHaveCount(0);
     await expect(page.locator("iframe[data-vk-check]")).toHaveCount(0);
+  });
+
+  test("a change made in the desktop view is checked at every view's width too: the Grid's columns changed for `sm:` only do not show at the phone's", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true }).click();
+    await setField(page, "Columns", "2");
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    await vernierkit("claim");
+
+    // As both Agents did on the bench (ticket 63): the phone still has one column.
+    editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2.");
+    await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
+
+    editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
   });
 
   test("an edit that moves the layer's lines in its file: the check still finds it", async ({ page }) => {

@@ -15,7 +15,7 @@ From the project root, run:
 npx vernierkit claim
 ```
 
-It claims the round and prints the change notes: one section per change, numbered. The designer's editor locks while you work, and a ring on its toggle fills as you report changes done. If it says there are no design changes to apply, tell the designer and stop.
+It claims the round and prints the change notes: one section per change, numbered. The designer's editor locks while you work, and a ring on its toggle fills as the designer's page shows your changes. If it says there are no design changes to apply, tell the designer and stop.
 
 Running `claim` again prints the notes once more, with the changes done so far.
 
@@ -51,18 +51,18 @@ Every section has:
 - **Reference style**: the CSS that showed the change on the canvas. Use it to understand the intent, not as code to paste.
 - **Currently set by**: what sets the value now, as the browser resolves the page's styles: a class and its rule, a rule (with its CSS layer and file), the element's style attribute, or nothing (the browser default). A text style the layer inherits is set where it inherits it from (a rule on `body`, say): set it on the layer itself rather than change it there for all. Start from it: it tells you what to change.
 
-## 3. Apply them, one at a time
+## 3. Apply them
 
-For each change, in order:
+Go through the changes in order:
 
-1. Make the change in the source.
-2. Right away, run `npx vernierkit done <number>` with the change's number. Do this after every change, not all at the end: it is how the designer sees your progress, and how the change is checked on the page while you still have it in mind.
-3. Read what `done` says. It checks the change on the designer's open page:
+1. Make a change in the source, or a group of related ones.
+2. Then run `npx vernierkit done <number>` with their numbers (several at once: `npx vernierkit done 1 2 3`), and run it at least once before `finish`. The designer's page checks each change as the code changes; `done` gives you what it saw, while you still have the changes in mind.
+3. Read what `done` says of each change, as the designer's open page checked it:
    - **it shows the change**: go on to the next one.
-   - **it does not show the change**: something overrides your edit; the output says what the page shows instead. Look again at **Currently set by**, fix it, and run `done` with the same number again. Go on only once it shows, or once you know it cannot: then report it.
+   - **it does not show the change**: something overrides your edit; the output says what the page shows instead, and at which width when not at the page's own. Look again at **Currently set by** (or at what sets the value at that width), fix it, and run `done` with the same number again. Go on only once it shows, or once you know it cannot: then report it.
    - **Not checked**: no page could check it (none is open, the layer is not on it now, or it could not be shown at the change's breakpoint), or the change is not one the page can tell (a new layer, a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief). Go on; it is not an error. For a brief, `done` says so at once: say in the report how you achieved it.
 
-   A change at a breakpoint is checked at a width in its range: the page loads itself that wide, out of sight, when its window is not, so a change at `below 640px` is checked as a phone shows it. If it could not load in time, the change is **Not checked**.
+   A change at a breakpoint is checked at a width in its range, so a change at `below 640px` is checked as a phone shows it. A change at **All breakpoints** is checked at the page's width and at each of the designer's views (a phone's, a tablet's) too: where a breakpoint variant or a media query in the code gives another value at one of them (`grid-cols-1 sm:grid-cols-3` with only `sm:` changed), it does not show there. Other widths are checked on a copy of the page made that wide, out of sight, which shows what CSS does at that width.
 
    Of the changes to the structure, the page checks a **Reorder** by the order of the container's layers, an **Absolute** placement in the same container by where the layer is, and a **Delete** by the layer being gone.
 

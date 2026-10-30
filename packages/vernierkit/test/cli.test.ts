@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1040,14 +1040,25 @@ function openPage(answer: (id: number) => object | null, pages = 1) {
   write(results);
   const timer = setInterval(() => {
     const check = state()?.check;
-    const result = check && answer(check.id);
-    if (!result) return;
-    const next = { at: check.at, ...result };
-    if (JSON.stringify(results[check.id]) === JSON.stringify(next)) return;
-    results = { ...results, [check.id]: next };
-    write(results);
+    for (const id of check?.ids ?? []) {
+      const result = answer(id);
+      if (!result) continue;
+      const next = { at: check.at, ...result };
+      if (JSON.stringify(results[id]) === JSON.stringify(next)) continue;
+      results = { ...results, [id]: next };
+      write(results);
+    }
   }, 20);
   return () => clearInterval(timer);
+}
+
+/** As the open page writes what it saw as the code changed, with no `done` asking: `results` by change id, checked now. */
+function pageSaw(results: Record<number, object>) {
+  const at = new Date().toISOString();
+  writeFileSync(
+    join(project, ".vernier/checks.json"),
+    JSON.stringify({ pages: 1, service: process.pid, results: Object.fromEntries(Object.entries(results).map(([id, result]) => [id, { at, ...result }])) }),
+  );
 }
 
 describe("done, checked on the page", () => {
@@ -1075,8 +1086,9 @@ describe("done, checked on the page", () => {
     fixed = true;
     const again = await cli("done", "1");
 
+    // Done, but not shown: it does not count as applied.
     expect(first.output).toBe(
-      "Change 1 done: 1 of 2 changes applied.\n" +
+      "Change 1 done: 0 of 2 changes applied.\n" +
         "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity. " +
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 1` again.\n",
     );
@@ -1102,6 +1114,46 @@ describe("done, checked on the page", () => {
     closePage();
     closePage = openPage(() => ({ outcome: "not shown", actual: "no reference" }));
     expect((await cli("done", "3")).output).toContain("The layer is placed absolute, but not from its container: make the container its positioning reference (`position: relative`)");
+  });
+
+  test("several changes at once: each marked done, each with how the page checked it", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage((id) => (id === 2 ? { outcome: "not shown", actual: 12 } : { outcome: "shown" }));
+
+    const { code, output } = await cli("done", "1", "2");
+
+    expect(code).toBe(0);
+    expect(state()).toMatchObject({ done: [1, 2] });
+    expect(output).toBe(
+      "Changes 1 and 2 done: 1 of 2 changes applied.\n" +
+        "Change 1: checked on the page: it shows the change.\n" +
+        "Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 4px. " +
+        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 2` again.\n",
+    );
+  });
+
+  test("a change the page has shown already, as the code changed: done says so at once, without asking the page again", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    pageSaw({ 1: { outcome: "shown" } });
+
+    const started = Date.now();
+    const { output } = await cli("done", "1");
+
+    expect(output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  test("a change not shown at another width says at which, and what to look at", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "Checked on the page: it does not show the change. At 390px wide, the fill is #FFFFFF, not #FF0000 at 50% opacity. " +
+        "The change applies at every width: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
+    );
   });
 
   test("says why when the page could not check it", async () => {
@@ -1158,10 +1210,37 @@ describe("done, checked on the page", () => {
     const { output } = await cli("finish");
 
     expect(output).toBe(
-      "Round finished: 2 of 2 changes applied. The page did not show: 2. Report them as not applied 1:1, with why.\n",
+      "Round finished: 1 of 2 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n",
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
     expect(existsSync(join(project, ".vernier/checks.json"))).toBe(false);
+  });
+});
+
+describe("progress, as the page shows it", () => {
+  test("a change the page shows counts as applied, done or not; one marked done that it does not show does not; one it cannot check counts once done", async () => {
+    const brief = { ...redFill, id: 3, kind: "brief", property: "brief", before: null, after: "Lift on hover", style: {} };
+    saveRound(redFill, smallRadius, brief);
+    await cli("claim");
+    await cli("done", "2", "3");
+    pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
+
+    const { output } = await cli("finish");
+
+    expect(output).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n");
+    expect(history()[0].result).toMatchObject({ done: [2, 3], applied: [1, 3] });
+    expect(section((await cli("last")).output, 1)).toContain("- **Status:** Applied\n");
+    expect(section((await cli("last")).output, 2)).toContain("- **Status:** Not applied\n");
+  });
+
+  test("the state the editor layer is told says which changes count as applied", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    pageSaw({ 2: { outcome: "shown" } });
+    const { roundStatus } = await import("../src/vernier-folder");
+    const { vernierFolder } = await import("../src/vernier-folder");
+
+    expect(await roundStatus(vernierFolder(project))).toMatchObject({ status: "claimed", done: [], applied: [2] });
   });
 });
 
@@ -1180,7 +1259,7 @@ describe("finish", () => {
     expect(history()).toEqual([
       {
         changeSet: { lastId: 2, changes: [redFill, smallRadius] },
-        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {}, code: null },
+        result: { ended: "finished", done: [1, 2], applied: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {}, code: null },
       },
     ]);
   });
@@ -1297,6 +1376,19 @@ describe("undoing the last round, in a git repository", () => {
     expect(readFileSync(join(project, "Card.tsx"), "utf8")).toContain('className="bg-white"');
     expect(existsSync(join(project, "fill.css"))).toBe(false);
     expect([...readFileSync(join(project, "icon.png"))]).toEqual([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3]);
+  });
+
+  test("done tells the page when the code was last edited, so it waits for that edit to reach it", async () => {
+    git("init", "-q");
+    writeFileSync(join(project, "Card.tsx"), "export const Card = () => null;\n");
+    saveRound(redFill);
+    await cli("claim");
+    writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-red-500/50" />;\n');
+    const edited = Math.floor(statSync(join(project, "Card.tsx")).mtimeMs);
+
+    await cli("done", "1");
+
+    expect(state().check).toMatchObject({ ids: [1], codeAt: edited });
   });
 
   test("outside a git repository, last gives the notes only", async () => {

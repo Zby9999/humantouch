@@ -364,8 +364,8 @@ describe("promote", () => {
     });
 
     const [card, usage] = changes.list();
-    expect(await checkChange(page, card, undefined, changes.list())).toEqual({ outcome: "shown" });
-    expect(await checkChange(page, usage, undefined, changes.list())).toEqual({ outcome: "shown" });
+    expect(checkChange(page, card, changes.list())).toEqual({ outcome: "shown" });
+    expect(checkChange(page, usage, changes.list())).toEqual({ outcome: "shown" });
   });
 
   test("a brief a usage wrote in place of the Card's, promoted once the Card's is taken back out, is the Card's brief from none", () => {

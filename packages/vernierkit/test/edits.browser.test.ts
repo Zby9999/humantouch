@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { CHECK_SETTLE_MS } from "../src/service-protocol";
+import { CHECK_SETTLE_MS, type CheckReport } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Place } from "../src/client/changeset";
-import { checkChange, type PageAt } from "../src/client/check";
+import { checkAcross, checkChange, type PageWidth } from "../src/client/check";
+import { copyPage, type PageCopy } from "../src/client/page-copy";
+import { watchPage } from "../src/client/page-checks";
 import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
@@ -3500,18 +3502,21 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1.25, style: "solid" } });
   });
 
-  test("while the dev server brings the edit in, each change to the page is looked at once: still wrong, then right", async () => {
+  test("asked by done while the dev server brings the edit in, the page answers once it shows: still wrong, then right", async () => {
     const { page, editor, changes, board, write } = open();
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
     const [change] = changes.list();
     write("border: 1px solid #ff0000");
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
 
-    const result = checkChange(page, change);
+    checks.ask({ ids: [change.id], at: "ask-1" });
     write("border: 3px solid #ff0000");
     await new Promise((resolve) => setTimeout(resolve, 20));
     write("border: 1.5px solid #ff0000");
 
-    expect(await result).toEqual({ outcome: "shown" });
+    await expect.poll(() => reports.find((r) => r.at === "ask-1")).toMatchObject({ outcome: "shown" });
+    checks.stop();
   });
 
   test("written through a design variable, it is compared as the page draws it", async () => {
@@ -4304,56 +4309,77 @@ describe("breakpoints", () => {
     expect(editor.breakpointAt(700)).toEqual({ min: 600, max: 750, project: { queries: ["(max-width: 599px)", "(min-width: 750px)"] } });
   });
 
-  test("a change at a breakpoint is checked on the page shown at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
-    // As the live page has it: source markers, and no usage chains, which only the canvas is given.
-    const live = MOVES.replace(/ data-vk-chain='[^']*'/g, "");
-    const { editor, changes, phone, layer } = await open(live);
+  /** The live page, `width` px wide, with `css` in it: as the page has it, source markers and no usage chains, which only the canvas is given. */
+  const livePage = (width: number, css: string) => {
+    const frame = document.createElement("iframe");
+    frame.style.width = `${width}px`;
+    document.body.append(frame);
+    extraFrames.push(frame);
+    const page = frame.contentDocument!;
+    page.open();
+    page.write(MOVES.replace(/ data-vk-chain='[^']*'/g, "").replace("<body", `<style>${css}</style>\n<body`));
+    page.close();
+    return page;
+  };
+  /** Copies of `page` at the widths asked for, kept as `checkAcross` is to look at them. */
+  const copiesOf = (page: Document) => {
+    const widths: number[] = [];
+    const at = (width: number): PageWidth => {
+      widths.push(width);
+      const copy = copyPage(page, width, document.body);
+      copies.push(copy);
+      copy.sync();
+      return { width, doc: copy.doc, own: false, of: copy.of };
+    };
+    return { at, widths };
+  };
+  let copies: PageCopy[] = [];
+  afterEach(() => {
+    for (const copy of copies) copy.close();
+    copies = [];
+  });
+
+  test("a change at a breakpoint is checked on a copy of the page at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""));
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
-    /** The live page, `width` px wide: with the fill applied below 800px, or not. */
-    const pageAt = (width: number, applied: boolean) => {
-      const frame = document.createElement("iframe");
-      frame.style.width = `${width}px`;
-      document.body.append(frame);
-      extraFrames.push(frame);
-      const page = frame.contentDocument!;
-      page.open();
-      page.write(live.replace("<body", `<style>${applied ? "@media (width < 800px) { #board { background-color: rgb(255, 0, 0) } }" : ""}</style>\n<body`));
-      page.close();
-      return page;
-    };
-    const widths: number[] = [];
-    let closed = 0;
-    const openAt = (applied: boolean) => async (width: number) => {
-      widths.push(width);
-      return { doc: pageAt(width, applied), close: () => void closed++ };
-    };
-    const check = async (applied: boolean, at: PageAt = openAt(applied)) => {
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      try {
-        const result = checkChange(pageAt(1000, applied), change, at);
-        await vi.advanceTimersByTimeAsync(CHECK_SETTLE_MS);
-        return await result;
-      } finally {
-        vi.useRealTimers();
-      }
-    };
+    const applied = "@media (width < 800px) { #board { background-color: rgb(255, 0, 0) } }";
 
-    expect(await check(true)).toEqual({ outcome: "shown" });
-    expect(await check(false)).toEqual({ outcome: "not shown", actual: null });
-    expect(widths).toEqual([799, 799]);
-    expect(closed).toBe(2);
-    expect(await check(true, async () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
+    const wide = livePage(1000, applied);
+    const shown = copiesOf(wide);
+    expect(checkAcross(wide, change, changes.list(), [768, 390], shown.at)).toEqual({ outcome: "shown" });
+    expect(shown.widths).toEqual([799]);
+    const page = livePage(1000, "");
+    expect(checkAcross(page, change, changes.list(), [768, 390], copiesOf(page).at)).toEqual({ outcome: "not shown", actual: null });
+    expect(checkAcross(page, change, changes.list(), [768, 390], () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
     // The window in the range already: checked on the page as it is.
-    widths.length = 0;
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      expect(await checkChange(pageAt(700, true), change, openAt(true))).toEqual({ outcome: "shown" });
-    } finally {
-      vi.useRealTimers();
-    }
-    expect(widths).toEqual([]);
+    const narrowPage = livePage(700, applied);
+    const narrow = copiesOf(narrowPage);
+    expect(checkAcross(narrowPage, change, changes.list(), [768, 390], narrow.at)).toEqual({ outcome: "shown" });
+    expect(narrow.widths).toEqual([]);
+  });
+
+  test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value does not show it; one the round changed at a breakpoint of its own keeps its own", async () => {
+    const { editor, changes, desktop, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""));
+    editor.at(desktop);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    // The code writes red at every width but below 640px, where a rule of its own keeps it white.
+    const css = "#board { background-color: rgb(255, 0, 0) } @media (width < 640px) { #board { background-color: rgb(255, 255, 255) } }";
+    const page = livePage(1000, css);
+    const { at, widths } = copiesOf(page);
+
+    expect(checkAcross(page, change, changes.list(), [768, 390], at)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 });
+    expect(widths).toEqual([768, 390]);
+
+    // Changed in the phone view too, the board keeps that value below 800px: not looked at there.
+    editor.at(phone);
+    editor.set(layer("board"), "fill", { type: "solid", color: "#FFFFFF", opacity: 1 });
+    const desktopChange = changes.list().find((c) => !c.breakpoint)!;
+    const again = copiesOf(page);
+    expect(checkAcross(page, desktopChange, changes.list(), [768, 390], again.at)).toEqual({ outcome: "shown" });
+    expect(again.widths).toEqual([]);
   });
 
   test("the project's media queries are read from the page's stylesheets: each width one starts or stops holding at, named by the first there", () => {

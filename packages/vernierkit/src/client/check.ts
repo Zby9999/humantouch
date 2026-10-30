@@ -1,21 +1,21 @@
 /**
- * The check (ADR 0006): once the Agent reports a change done, whether the live
- * page shows it. The page never shows changes not yet applied (ADR 0010), so
- * what it shows is what the code does. The dev server may still be bringing the edit in: a value
- * that does not match yet is read again each time the page changes, until it
- * does or time is up. Changes to the page are watched rather than polled, as a
- * page in a background tab gets its timers slowed. What the browser draws
- * otherwise than written is drawn on the page to compare where the code that
- * writes it cannot be read: on an element put in and taken out at once, before
- * anything is painted.
+ * The check (ADR 0006, 0013): whether the live page shows a change. The page
+ * never shows changes not yet applied (ADR 0010), so what it shows is what the
+ * code does. A change at a breakpoint shows at its widths; one made in the
+ * desktop view, at every width, but where the round changes the same property
+ * of the layer at a breakpoint of its own (ADR 0008): it is looked at as wide
+ * as the page's window and as wide as each view, on a copy of the page that
+ * wide (`page-copy.ts`). Looking is done at once, with no waiting: when to
+ * look is `page-checks.ts`'s. What the browser draws otherwise than written
+ * is drawn on the page to compare where the code that writes it cannot be
+ * read: on an element put in and taken out at once, before anything is painted.
  */
-import { breakpointName, mediaOf, widthIn } from "./breakpoints";
-import { BRIEF_UNCHECKED, CHECK_SETTLE_MS, type CheckResult } from "../service-protocol";
+import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
+import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Place } from "./changeset";
 import { openingTag } from "./layer-target";
 import { readValue, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
-import { CHECK_FRAME_ATTR } from "./host";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
@@ -35,7 +35,7 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
 };
 
 /** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
-function uncheckable(change: Change): string | null {
+export function uncheckable(change: Change): string | null {
   if (change.kind === "brief") return BRIEF_UNCHECKED;
   if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
@@ -63,80 +63,87 @@ function checkable(change: Change): boolean {
   return after.absolute ? true : !before.absolute && !!change.order;
 }
 
-/** The page shown at another width, as a window that wide, to check it there; null when it cannot be. */
-export type PageAt = (width: number) => Promise<{ doc: Document; close(): void } | null>;
-
 /**
- * Whether `doc`, the live page, shows the change. A change at a breakpoint
- * shows at its widths only (ADR 0008): with the window at none of them, it is
- * checked on the page shown at one of them, by `at`. `round`: the changes of
- * its round, where a usage with a change of its own to the property a change
- * to its component makes shows that one instead.
+ * The page as a check reads it at one width: the page itself (`own`), or a
+ * copy of it that wide; `of`, an element of the page as shown there.
  */
-export async function checkChange(doc: Document, change: Change, at?: PageAt, round: Change[] = []): Promise<CheckResult> {
-  const { breakpoint } = change;
-  const apart = ownValues(change, round);
-  if (!breakpoint || doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches) return checkOn(doc, change, apart);
-  const width = widthIn(breakpoint);
-  const cannot: CheckResult = { outcome: "unchecked", reason: `it applies ${breakpointName(breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
-  // What cannot be checked on any page needs no other width.
-  const reason = uncheckable(change);
-  if (reason) return { outcome: "unchecked", reason };
-  const page = await at?.(width).catch(() => null);
-  if (!page) return cannot;
-  try {
-    return page.doc.defaultView?.matchMedia(mediaOf(breakpoint)).matches ? await checkOn(page.doc, change, apart) : cannot;
-  } finally {
-    page.close();
-  }
+export interface PageWidth {
+  width: number;
+  doc: Document;
+  own: boolean;
+  of(el: Element): Element | null;
 }
 
-/** How long the page may take to load at another width: what is left of the time `done` waits, once it has settled. */
-const LOAD_MS = 3000;
+/** The page itself, as wide as its window. */
+export function itself(doc: Document): PageWidth {
+  return { width: doc.defaultView?.innerWidth ?? 0, doc, own: true, of: (el) => el };
+}
 
 /**
- * The page `page` shows, loaded afresh in a hidden iframe `width` px wide,
- * as tall as its window: as it shows in a window that wide. The editor layer
- * is not mounted there. Null when it does not load in time.
+ * Where the change is to show (ADR 0008): the page itself, when its window is
+ * at a width the change applies at, and the other widths to look at it on a
+ * copy of the page. A change at a breakpoint: one width in its range, when
+ * the window is at none. One made in the desktop view: every view's width
+ * too, but those where the round changes the same property of the layer at a
+ * breakpoint of its own. A reorder is the same at every width.
  */
-export function pageAt(page: Window): PageAt {
-  return (width) =>
-    new Promise((resolve) => {
-      const frame = page.document.createElement("iframe");
-      frame.setAttribute(CHECK_FRAME_ATTR, "");
-      frame.setAttribute("aria-hidden", "true");
-      frame.tabIndex = -1;
-      Object.assign(frame.style, {
-        position: "fixed",
-        top: "0",
-        left: `${-width - 100}px`,
-        width: `${width}px`,
-        height: `${page.innerHeight}px`,
-        border: "0",
-        visibility: "hidden",
-        pointerEvents: "none",
-      });
-      const close = () => frame.remove();
-      const timer = setTimeout(() => {
-        close();
-        resolve(null);
-      }, LOAD_MS);
-      frame.addEventListener(
-        "load",
-        () => {
-          clearTimeout(timer);
-          const doc = frame.contentDocument;
-          if (doc) resolve({ doc, close });
-          else {
-            close();
-            resolve(null);
-          }
-        },
-        { once: true },
-      );
-      frame.src = page.location.href;
-      page.document.documentElement.append(frame);
-    });
+export function widthsOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): { own: boolean; others: number[] } {
+  const { breakpoint } = change;
+  if (breakpoint) return within(breakpoint, pageWidth) ? { own: true, others: [] } : { own: false, others: [widthIn(breakpoint)] };
+  if (change.kind === "move" && !(change.after as Place).absolute) return { own: true, others: [] };
+  const { loc, chain } = change.target;
+  const sameLayer = (other: Change) => other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain);
+  const ownRanges = loc ? round.filter((other) => other.breakpoint && other.property === change.property && sameLayer(other)).map((other) => other.breakpoint!) : [];
+  const covered = (width: number) => ownRanges.some((range) => within(range, width));
+  return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
+}
+
+function within({ min, max }: Breakpoint, width: number): boolean {
+  return (min === null || width >= min) && (max === null || width < max);
+}
+
+/**
+ * Whether the page shows the change, at every width it is to show at:
+ * looked at as wide as the page's window first, then at each other width on
+ * a copy of the page, by `at` (null when there is none to be had). `round`:
+ * the changes of its round, where a usage with a change of its own to the
+ * property a change to its component makes shows that one instead, and a
+ * breakpoint changed on its own keeps its value.
+ */
+export function checkAcross(doc: Document, change: Change, round: Change[], viewWidths: number[], at: (width: number) => PageWidth | null): CheckResult {
+  const reason = uncheckable(change);
+  if (reason) return { outcome: "unchecked", reason };
+  const page = itself(doc);
+  const { own, others } = widthsOf(change, round, page.width, viewWidths);
+  const apart = ownValues(change, round);
+  let checked = false;
+  if (own) {
+    const result = lookAt(doc, change, apart, page);
+    if (result.outcome !== "shown") return result;
+    checked = true;
+  }
+  for (const width of others) {
+    const copy = at(width);
+    if (!copy) {
+      const where = change.breakpoint ? `it applies ${breakpointName(change.breakpoint)} only, and` : "it applies at every width, but";
+      return { outcome: "unchecked", reason: `${where} the page could not be shown ${width}px wide to check it` };
+    }
+    if (change.breakpoint && !copy.doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
+      return { outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
+    }
+    const result = lookAt(doc, change, apart, copy);
+    // Not there at this width at all: nothing to show there.
+    if (result.outcome === "unchecked") continue;
+    if (result.outcome === "not shown") return result;
+    checked = true;
+  }
+  return checked ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" };
+}
+
+/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. */
+export function checkChange(doc: Document, change: Change, round: Change[] = []): CheckResult {
+  const reason = uncheckable(change);
+  return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, ownValues(change, round), itself(doc));
 }
 
 /**
@@ -150,43 +157,30 @@ function ownValues(change: Change, round: Change[]): string[] {
   return round.filter((other) => other.scope === "usage" && other.target.loc === loc && changeKey(loc, other.property, other.breakpoint) === key).map((other) => usageKey(loc, other.target.chain));
 }
 
-/** Whether `doc` shows the change, as wide as it is; a change to a component, but in the usages `apart`. */
-function checkOn(doc: Document, change: Change, apart: string[]): Promise<CheckResult> {
-  const reason = uncheckable(change);
-  if (reason) return Promise.resolve({ outcome: "unchecked", reason });
+/**
+ * Whether the page, as `at` shows it, shows the change: found on the page
+ * `doc`, read where `at` shows it. A change to a component, but in the usages `apart`.
+ */
+function lookAt(doc: Document, change: Change, apart: string[], at: PageWidth): CheckResult {
+  // A change at a breakpoint is looked at at a width in its range: which one does not matter.
+  const width = at.own || change.breakpoint ? undefined : at.width;
+  const result = look(doc, change, apart, at);
+  return result.outcome === "not shown" && width !== undefined ? { ...result, width } : result;
+}
+
+function look(doc: Document, change: Change, apart: string[], at: PageWidth): CheckResult {
+  if (change.kind === "delete") return lookDeleted(doc, change, at);
+  if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, at) : lookOrder(doc, change);
   const property = change.property as Property;
+  // A change to a component itself shows in every usage of it.
+  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
+  const els = found.map((el) => at.of(el)).filter((el): el is Element => !!el);
+  if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const comparison = AS_WRITTEN[property];
-  // Drawn once, before the page is watched: drawing it changes the page.
-  const drawn = comparison && change.kind === "style" ? comparison.draw(doc, change.after) : undefined;
-  /** `reportActual`: read what the page has instead, when it does not show the change. Looking may change the page, to draw a value. */
-  const look = (reportActual: boolean): CheckResult => {
-    if (change.kind === "delete") return lookDeleted(doc, change);
-    if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change) : lookOrder(doc, change);
-    // A change to a component itself shows in every usage of it.
-    const els = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
-    if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-    const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
-    const wrong = els.find((el) => !shows(el));
-    return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: reportActual ? readValue(wrong, property) : undefined };
-  };
-  const first = look(false);
-  if (first.outcome === "shown") return Promise.resolve(first);
-  return new Promise((resolve) => {
-    const settle = (result: CheckResult) => {
-      observer.disconnect();
-      clearTimeout(timer);
-      resolve(result);
-    };
-    // Styles and markup the dev server swaps in, a stylesheet's text included.
-    const observer = new MutationObserver(() => {
-      const result = look(false);
-      // What looking put in the page and took out again is not the dev server's: left unseen, it would be looked at again, and again.
-      observer.takeRecords();
-      if (result.outcome === "shown") settle(result);
-    });
-    observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    const timer = setTimeout(() => settle(look(true)), CHECK_SETTLE_MS);
-  });
+  const drawn = comparison && comparison.draw(at.doc, change.after);
+  const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
+  const wrong = els.find((el) => !shows(el));
+  return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: readValue(wrong, property) };
 }
 
 /**
@@ -195,14 +189,17 @@ function checkOn(doc: Document, change: Change, apart: string[]): Promise<CheckR
  * found by its markers counts as the layer only if it looks the same: its tag
  * and words, or, with no words, its opening tag; markers move as the Agent edits.
  */
-function lookDeleted(doc: Document, change: Change): CheckResult {
+function lookDeleted(doc: Document, change: Change, at: PageWidth): CheckResult {
   const { target } = change;
   if (!elementsOf(doc, (change.before as Place).container.target).length) return { outcome: "unchecked", reason: "its container is not on the page now" };
   const own = usageKey(target.loc!, target.chain);
   const tag = /^<([\w-]+)/.exec(target.context.element)?.[1];
   const same = (el: Element) =>
     target.context.text ? signOf(el) === `${tag} ${target.context.text}` : el.localName === tag && (usageKeyOf(el) === own || openingTag(el) === target.context.element);
-  const there = elementsOf(doc, target).filter((el) => getComputedStyle(el).display !== "none" && same(el));
+  const there = elementsOf(doc, target)
+    .filter(same)
+    .map((el) => at.of(el))
+    .filter((el) => el && getComputedStyle(el).display !== "none");
   return there.length ? { outcome: "not shown", actual: "there" } : { outcome: "shown" };
 }
 
@@ -232,8 +229,10 @@ function lookOrder(doc: Document, change: Change): CheckResult {
  * reference, at its X and Y, in every instance. `actual`: where it is
  * instead, null when it is not absolute, "no reference" when placed from elsewhere.
  */
-function lookPlaced(doc: Document, change: Change): CheckResult {
-  const els = elementsOf(doc, change.target);
+function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
+  const els = elementsOf(doc, change.target)
+    .map((el) => at.of(el))
+    .filter((el): el is Element => !!el);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const { x, y } = (change.after as Place).absolute!;
   for (const el of els) {
@@ -241,8 +240,8 @@ function lookPlaced(doc: Document, change: Change): CheckResult {
     if (!/^(absolute|fixed)$/.test(style.position)) return { outcome: "not shown", actual: null };
     // Placed from its container, or from somewhere else.
     if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
-    const at = { x: Math.round(parseFloat(style.left) * 100) / 100, y: Math.round(parseFloat(style.top) * 100) / 100 };
-    if (Math.abs(at.x - x) > 0.5 || Math.abs(at.y - y) > 0.5) return { outcome: "not shown", actual: at };
+    const placed = { x: Math.round(parseFloat(style.left) * 100) / 100, y: Math.round(parseFloat(style.top) * 100) / 100 };
+    if (Math.abs(placed.x - x) > 0.5 || Math.abs(placed.y - y) > 0.5) return { outcome: "not shown", actual: placed };
   }
   return { outcome: "shown" };
 }
