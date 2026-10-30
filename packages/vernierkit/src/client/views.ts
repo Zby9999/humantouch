@@ -74,16 +74,18 @@ export interface Views {
    */
   sync(view?: View): void;
   /**
-   * A value is changed in the view `worked` tells (null: the desktop view): the
-   * other views put off what changes only the edit styles, then show it, as it
-   * is then, all at once. A value set once, they show once the next frame is
-   * drawn; one `step` of a run of them, once the steps pause for
-   * `CATCH_UP_AFTER_MS`. The latest change says which: a value set once right
-   * after steps shows after the next frame, with no pause to wait for. A view
-   * shows it at once on any other change to the canvas, or on `sync` of it. The
-   * desktop view is the canvas itself: it always shows every change at once.
+   * `change` changes a value in the view `worked` tells (null: the desktop
+   * view): the other views put off all it does to the canvas, its first value
+   * on a layer giving it edit styles too, and what changes only the edit
+   * styles till then, then show it, as it is then, all at once. A value set
+   * once, they show once the next frame is drawn; one `step` of a run of them,
+   * once the steps pause for `CATCH_UP_AFTER_MS`. The latest change says which:
+   * a value set once right after steps shows after the next frame, with no
+   * pause to wait for. A view shows it at once on any other change to the
+   * canvas, or on `sync` of it. The desktop view is the canvas itself: it
+   * always shows every change at once.
    */
-  lagBeside(worked: () => View | null, step: boolean): void;
+  lagBeside(worked: () => View | null, step: boolean, change: () => void): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
   /**
@@ -145,9 +147,38 @@ export function createViews(canvas: Canvas): Views {
    * next frame, and what stops that wait. None: no view is behind.
    */
   let held: { worked: () => View | null; step: boolean; cancel: () => void } | null = null;
+  /** Set while a value is changed (`lagBeside`): whatever the canvas takes from it is the value's, held back with it. */
+  let changing = false;
   const catchUp = () => {
     held = null;
     for (const follower of followers.values()) follower.catchUp();
+  };
+
+  /** Holds back a value changed in the view `worked` tells: in the other views till the next frame is drawn or, for a `step`, till the steps pause. */
+  const holdBack = (worked: () => View | null, step: boolean) => {
+    // Set once again before the views beside catch up: they still do after the frame they wait for.
+    if (held && !held.step && !step) {
+      held.worked = worked;
+      return;
+    }
+    held?.cancel();
+    if (step) {
+      // Each step puts the catching up off again: it comes once the steps pause.
+      const timer = setTimeout(catchUp, CATCH_UP_AFTER_MS);
+      held = { worked, step, cancel: () => clearTimeout(timer) };
+    } else {
+      // Once the next frame, with the value in the view worked in, is drawn.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const frame = requestAnimationFrame(() => (timer = setTimeout(catchUp)));
+      held = {
+        worked,
+        step,
+        cancel: () => {
+          cancelAnimationFrame(frame);
+          clearTimeout(timer);
+        },
+      };
+    }
   };
 
   return {
@@ -158,7 +189,13 @@ export function createViews(canvas: Canvas): Views {
       if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
       const laidOut = copyCanvas(canvas, iframe, width);
       // What is typed in this view is in every other view at once, as it is on the canvas.
-      const follower = follow(canvas.document, doc, () => sync(), () => !!held && held.worked() !== view);
+      const follower = follow(
+        canvas.document,
+        doc,
+        () => sync(),
+        () => !!held && held.worked() !== view,
+        () => changing,
+      );
       const view = viewOf(doc, width, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
       followers.set(view, follower);
       views.push(view);
@@ -178,29 +215,17 @@ export function createViews(canvas: Canvas): Views {
       if (i >= 0) views.splice(i, 1);
     },
     sync,
-    lagBeside(worked, step) {
-      // Set once again before the views beside catch up: they still do after the frame they wait for.
-      if (held && !held.step && !step) {
-        held.worked = worked;
-        return;
-      }
-      held?.cancel();
-      if (step) {
-        // Each step puts the catching up off again: it comes once the steps pause.
-        const timer = setTimeout(catchUp, CATCH_UP_AFTER_MS);
-        held = { worked, step, cancel: () => clearTimeout(timer) };
-      } else {
-        // Once the next frame, with the value in the view worked in, is drawn.
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const frame = requestAnimationFrame(() => (timer = setTimeout(catchUp)));
-        held = {
-          worked,
-          step,
-          cancel: () => {
-            cancelAnimationFrame(frame);
-            clearTimeout(timer);
-          },
-        };
+    lagBeside(worked, step, change) {
+      // What came before is taken in as ever: only what `change` does is the value's.
+      for (const follower of followers.values()) follower.sync();
+      holdBack(worked, step);
+      changing = true;
+      try {
+        change();
+      } finally {
+        changing = false;
+        // What the change did that no view has taken yet: the views beside will take it with the value.
+        for (const follower of followers.values()) follower.putOff();
       }
     },
     onResize(listener) {
@@ -276,6 +301,8 @@ interface Follower extends Correspondence {
   sync(): void;
   /** Takes in every change to the canvas not taken in yet, those put off too. */
   catchUp(): void;
+  /** Puts off every change to the canvas not taken in yet, whatever it is, while it lags; else takes them in. */
+  putOff(): void;
   /** Stops following the canvas. */
   stop(): void;
 }
@@ -287,10 +314,10 @@ interface Follower extends Correspondence {
  * text is typed in the copy, it goes the other way for the element typed in:
  * what is typed there is written to the canvas, and that element of the copy
  * takes in nothing from it; `typed` is called once what is typed is on it.
- * While it `lags`, changes to the edit styles alone are put off till it
- * catches up, or till any other change comes.
+ * While it `lags`, changes to the edit styles alone, and whatever a value
+ * `changing` does, are put off till it catches up, or till any other change comes.
  */
-function follow(canvas: Document, copy: Document, typed: () => void, lags: () => boolean): Follower {
+function follow(canvas: Document, copy: Document, typed: () => void, lags: () => boolean, changing: () => boolean): Follower {
   /** Each canvas node's node in the copy, and back. */
   const inCopy = new WeakMap<Node, Node>();
   const onCanvas = new WeakMap<Node, Node>();
@@ -372,9 +399,9 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     behind = [];
     takeIn([...put, ...records], down);
   };
-  /** Takes in `records` from the canvas; while the copy lags, puts them off if they change only the edit styles. */
+  /** Takes in `records` from the canvas; while the copy lags, puts them off if they change only the edit styles, or come of a value `changing`. */
   const keepUpWith = (records: MutationRecord[]) => {
-    if (records.every(changesEditStyles) && lags()) behind.push(...records);
+    if ((changing() || records.every(changesEditStyles)) && lags()) behind.push(...records);
     else catchUpWith(records);
   };
   const observer = new MutationObserver(keepUpWith);
@@ -408,6 +435,11 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     },
     sync: () => keepUpWith(observer.takeRecords()),
     catchUp,
+    putOff: () => {
+      const records = observer.takeRecords();
+      if (lags()) behind.push(...records);
+      else catchUpWith(records);
+    },
     stop: () => {
       // What was typed last is kept on the canvas.
       if (typing) takeIn(typing.observer.takeRecords(), up);

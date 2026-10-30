@@ -1246,9 +1246,34 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
     }
   });
 
+  test("the first value of a layer, which gives its instances edit styles, waits in the views beside as any other: a step till the steps pause, a value set once till the next frame", async () => {
+    const { doc, editor, cards, layerOf, phone, tree } = await open();
+    const title = find(tree.root, (layer) => layer.el === cards[0].querySelector("h3") && !layer.text)!;
+    const sizes = (d: Document) => [...d.querySelectorAll("h3")].map((h) => style(h).fontSize);
+    const before = sizes(phone.document);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      editor.set(layerOf(cards[0]), "radius", 4, { step: true });
+      await Promise.resolve();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("4px"));
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("12px"));
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("12px"));
+      vi.advanceTimersByTime(1);
+      expect(radii(phone.document)).toEqual(radii(doc));
+    } finally {
+      vi.useRealTimers();
+    }
+    editor.set(title, "fontSize", 30);
+    await Promise.resolve();
+    expect(sizes(doc).slice(0, 3)).toEqual(Array(3).fill("30px"));
+    expect(sizes(phone.document)).toEqual(before);
+    await painted();
+    expect(sizes(phone.document)).toEqual(sizes(doc));
+  });
+
   test("set once in the desktop view, a value shows there at once, and in the views beside it once the next frame is drawn, with no pause to wait for", async () => {
     const { doc, editor, cards, layerOf, phone } = await open();
-    // The first change to the radius is a change to more than the value (the card's edit styles are made): every view shows it at once.
     editor.set(layerOf(cards[0]), "radius", 3);
     await painted();
     editor.set(layerOf(cards[0]), "radius", 4);
@@ -2191,11 +2216,14 @@ describe("nudging layers, as the arrow keys do", () => {
     phoneFrame = document.createElement("iframe");
     document.body.append(phoneFrame);
     const phone = await views.add(phoneFrame, 390);
-    // The first nudge makes the layer's edit styles, which every view shows at once.
-    editor.nudge([layer("free")], 1, 0);
-    await painted();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
+      // The first nudge makes the layer's edit styles: the views beside wait for the pause all the same.
+      editor.nudge([layer("free")], 1, 0);
+      await new Promise((done) => requestAnimationFrame(done));
+      expect(place("free", phone.document)).toEqual([12, 8]);
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      expect(place("free", phone.document)).toEqual([13, 8]);
       editor.nudge([layer("free")], 1, 0, { continues: true });
       expect(place("free")).toEqual([14, 8]);
       await new Promise((done) => requestAnimationFrame(done));
@@ -4040,8 +4068,11 @@ describe("breakpoints", () => {
     const phone = await canvas.views.add(phoneFrame, 390);
     const [desktop] = canvas.views.list();
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
-    /** How the element with id `id` is styled in each view: desktop, then phone. */
-    const shown = (id: string) => [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
+    /** How the element with id `id` is styled in each view, desktop then phone, as each shows the canvas now: the phone view caught up with a value just set (ADR 0011). */
+    const shown = (id: string) => {
+      canvas.views.sync(phone);
+      return [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
+    };
     const fills = (id: string) => shown(id).map((s) => s.backgroundColor);
     /** Shows the canvas in one more view, `width` px wide. */
     const addView = async (width: number) => {
