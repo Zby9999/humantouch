@@ -92,13 +92,20 @@ export interface Editor {
    * given, in its container, so the edges not dragged stay where they are.
    * At the breakpoint worked in, as `set` does. `continues`: one more step of
    * the resize under way, one step with those before it, though it sets more
-   * or less than they did. Each is a step of a run: the views beside the one
+   * or less than they did. A step that changes nothing (the layer already that
+   * size) makes none: the next that does is the resize's first, apart from any
+   * resize before it. Each is a step of a run: the views beside the one
    * worked in show it once the steps pause (ADR 0011).
    */
   resize(layer: Layer, to: ResizeTo, options?: Pick<SetOptions, "continues">): void;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
   undo(): Layer[];
-  /** Takes back the latest edit as if it was never made, as Esc cancels a resize under way: there is nothing to redo of it. */
+  /**
+   * Takes back what the adjustment under way (begun by the latest edit that
+   * did not continue one) has changed, as if it was never made, as Esc cancels
+   * a resize under way: there is nothing to redo of it. Nothing, when it has
+   * changed nothing: the edits before it stay.
+   */
   takeBack(): void;
   /** Makes again the latest edit undone. Returns the layers it was made to; none when there is nothing to redo. */
   redo(): Layer[];

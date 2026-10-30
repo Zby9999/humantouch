@@ -38,7 +38,7 @@ export interface ResizeSession {
   /** Where the pointer was pressed, in the window. */
   from: At;
   begun: Begun | null;
-  /** A step has been made: Esc takes the resize back. */
+  /** Its first step has gone to the editor, though it may have changed nothing: Esc takes back what the resize has changed. */
   stepped: boolean;
   /** What a step has set so far: each step sets it again, as the handle has it then, though back where it began. */
   set: Set<keyof ResizeTo>;

@@ -439,7 +439,7 @@ export function createEditor(
     },
     undo: steps.undo,
     redo: steps.redo,
-    takeBack: steps.drop,
+    takeBack: steps.takeBack,
     along(make, unmake, layers) {
       make();
       push({ layers: [], key: "along", undo: unmake, redo: make }, false, layers && (() => layers()));

@@ -19,10 +19,9 @@ export interface History {
   readonly future: Entry[];
 }
 
-/** A step in a history, the editor that made it, and that editor's own ways to find its layers and show it, undone or redone. */
+/** A step in a history, and the own ways of the editor that made it to find its layers and show it, undone or redone. */
 interface Entry {
   step: Step;
-  by: Steps;
   found(ids: string[]): Layer[];
   /** Shows it in every view now, though they wait for a value changed. */
   showNow(): void;
@@ -52,25 +51,38 @@ export interface Step {
   redo(): void;
 }
 
-/** One editor's steps, in the History it shares. */
+/** The runs of steps that may each change something else of the same layers: arrow keys nudging them, a handle resizing one. */
+export type Run = "nudge" | "resize";
+
+/**
+ * One editor's steps, in the History it shares.
+ *
+ * An adjustment (a drag on a number, a run of nudges, a handle dragged) is
+ * one step: its first edit does not continue (`continues` false), each later
+ * one does. Its steps are made one with what the adjustment itself has put
+ * into the History, and nothing else: an edit of it that changes nothing puts
+ * nothing there, and the next one that does is its first step, though the
+ * same edit of an adjustment before it is the latest step in the History.
+ */
 export interface Steps {
   /**
    * Records a step just made. `continues`: one more step of the adjustment
-   * under way, made one with the step before it when that is the same edit
-   * (the same key) by this editor: undone back to before the first, redone to
-   * after the last. A run (`run`) is undone back through each of its steps.
-   * In a group, the step is one of the group's. `found`: what undoing or
-   * redoing it leaves, as the layers are then; by default, those of its layer ids.
+   * under way, made one with the step it made before when that is the latest
+   * in the History and the same edit (the same key): undone back to before
+   * the first, redone to after the last. A run (`run`) is undone back through
+   * each of its steps. In a group, the step is one of the group's. `found`:
+   * what undoing or redoing it leaves, as the layers are then; by default,
+   * those of its layer ids.
    */
   push(step: Step, continues: boolean, found?: (ids: string[]) => Layer[]): void;
   /**
-   * Makes the steps `edits` makes one step, undone last first. `run`: the
-   * name of a run of such steps that may each change something else of the
-   * same layers (nudges, a resize), made one step with those before it of the
-   * same run, not with those of a run of another name right before it. A
-   * group in a group is one with it.
+   * Makes the steps `edits` makes one step, undone last first; none, when
+   * they make none. Not continuing (`continues` false), it begins an
+   * adjustment, though it makes no step. `run`: the run such steps are of,
+   * made one step with those before it of the same run, not with those of
+   * another run right before it. A group in a group is one with it.
    */
-  group(edits: () => void, continues: boolean, run?: string): void;
+  group(edits: () => void, continues: boolean, run?: Run): void;
   /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a group. */
   show(): void;
   /**
@@ -82,8 +94,12 @@ export interface Steps {
   undo(): Layer[];
   /** Makes again the latest step undone, shown in every view at once as `undo` is. Returns the layers it leaves. */
   redo(): Layer[];
-  /** Takes back the latest step as if it was never made, as Esc cancels an adjustment under way: undone as `undo` does, with nothing to redo. */
-  drop(): void;
+  /**
+   * Takes back what the adjustment under way has put into the History, as if
+   * it was never made, as Esc cancels it: undone as `undo` does, with nothing
+   * to redo. Nothing, when it has changed nothing.
+   */
+  takeBack(): void;
 }
 
 /**
@@ -94,6 +110,8 @@ export interface Steps {
 export function createSteps(history: History, views: Pick<Views, "sync" | "catchUp">, layersOf: (ids: string[]) => Layer[]): Steps {
   /** Steps of the group under way, if any. */
   let batching: Step[] | null = null;
+  /** What the adjustment under way has put into the History, once it has: its later steps are made one with this, and with nothing else. */
+  let adjusting: Entry | null = null;
   const show = () => {
     if (!batching) views.sync();
   };
@@ -105,8 +123,8 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
     }
     history.future.length = 0;
     const last = history.past.at(-1);
-    // One adjustment is one step: the same edit to the same layers, in this editor.
-    if (continues && last?.by === ownSteps && last.step.key === step.key) {
+    // One adjustment is one step: the same edit to the same layers, made one with what this adjustment put there.
+    if (continues && last && last === adjusting && last.step.key === step.key) {
       if (step.run) {
         const { undo, redo } = last.step;
         last.step.undo = () => {
@@ -129,11 +147,16 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
             }
           : step.redo;
       }
-    } else history.past.push({ step, by: ownSteps, found, showNow });
+    } else {
+      adjusting = { step, found, showNow };
+      history.past.push(adjusting);
+    }
     show();
   };
-  const group = (edits: () => void, continues: boolean, run?: string) => {
+  const group = (edits: () => void, continues: boolean, run?: Run) => {
     if (batching) return edits();
+    // A new adjustment, though it changes nothing yet: no later step of it is made one with an earlier one.
+    if (!continues) adjusting = null;
     const steps: Step[] = [];
     batching = steps;
     try {
@@ -160,6 +183,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
     group,
     show,
     undo() {
+      adjusting = null;
       const entry = history.past.pop();
       if (!entry) return [];
       history.future.push(entry);
@@ -168,6 +192,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
       return textsIn(entry.step, entry.found(entry.step.back ?? entry.step.layers));
     },
     redo() {
+      adjusting = null;
       const entry = history.future.pop();
       if (!entry) return [];
       history.past.push(entry);
@@ -175,9 +200,12 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
       entry.showNow();
       return textsIn(entry.step, entry.found(entry.step.layers));
     },
-    drop() {
-      const entry = history.past.pop();
-      if (!entry) return;
+    takeBack() {
+      const entry = adjusting;
+      adjusting = null;
+      // Nothing put there, or already undone: nothing of it to take back.
+      if (!entry || history.past.at(-1) !== entry) return;
+      history.past.pop();
       entry.step.undo();
       entry.showNow();
     },

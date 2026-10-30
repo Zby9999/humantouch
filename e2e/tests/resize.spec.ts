@@ -275,6 +275,79 @@ test("a resize is one undo; Esc while dragging puts it back as it was pressed, w
   expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
 });
 
+/**
+ * Presses the right edge's handle and moves it 4 px straight down: far enough
+ * to begin, its width as it was. Held, once the resize has made that step.
+ */
+async function pressRightEdgeWithoutResizing(page: Page) {
+  const edge = (await handle(page, "e").boundingBox())!;
+  const from = { x: edge.x + edge.width / 2, y: edge.y + edge.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 4, { steps: 4 });
+  await expect(sizeLabel(page)).toBeVisible();
+  return from;
+}
+
+test("Esc on a resize that has changed nothing takes nothing back: the fill changed before it stays, and can be undone and redone", async ({ page }) => {
+  // Fixed at 256 wide, as `w-64` is: a step that leaves it 256 wide changes nothing.
+  await addBoard(page, { box: [100, 60, 256, 40] });
+  await enterEditMode(page);
+  await pick(page, desktop(page), "#box");
+  await field(page, "Fill color").fill("FF0000");
+  await field(page, "Fill color").press("Enter");
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+  const red = "rgb(255, 0, 0)";
+  const fill = () => desktop(page).contentFrame().locator("#box").evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(await fill()).toBe(red);
+
+  await pressRightEdgeWithoutResizing(page);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+
+  expect(await fill()).toBe(red);
+  expect((await boxIn(desktop(page), "#box")).width).toBe(256);
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  expect(await fill()).toBe(red);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await fill()).toBe("rgb(204, 204, 204)");
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  expect(await fill()).toBe(red);
+});
+
+test("two resizes of the same layer in a row are an undo each, though the second begins without changing the size", async ({ page }) => {
+  await addBoard(page, { box: [100, 60, 80, 40] });
+  await enterEditMode(page);
+  await pick(page, desktop(page), "#box");
+  const zoom = await zoomOf(desktop(page));
+
+  await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
+  expect((await boxIn(desktop(page), "#box")).width).toBe(100);
+
+  // Pressed again, first straight down, its width as the first resize left it; then 30 wider.
+  const from = await pressRightEdgeWithoutResizing(page);
+  await page.mouse.move(from.x + 30 * zoom, from.y + 4, { steps: 6 });
+  await page.mouse.up();
+  expect((await boxIn(desktop(page), "#box")).width).toBe(130);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await boxIn(desktop(page), "#box")).width).toBe(100);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await boxIn(desktop(page), "#box")).width).toBe(80);
+
+  // And Esc on the second takes back the second only.
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await pressRightEdgeWithoutResizing(page);
+  await page.mouse.move(from.x + 30 * zoom, from.y + 4, { steps: 6 });
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(130);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect((await boxIn(desktop(page), "#box")).width).toBe(100);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await boxIn(desktop(page), "#box")).width).toBe(80);
+});
+
 test("while a handle is held, ⌘Z and Delete do nothing; let go, they work again", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();

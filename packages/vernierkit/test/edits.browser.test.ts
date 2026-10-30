@@ -2445,6 +2445,45 @@ describe("resizing a layer, as its handles do", () => {
     expect(box("free")).toEqual([12, 8, 40, 20]);
   });
 
+  test("taken back having changed nothing (pressed and moved, its Fixed size as it was), it takes nothing back: the edit before it stays, to undo and redo", () => {
+    const { editor, layer, box, recorded } = open();
+    editor.set(layer("free"), "x", 20);
+
+    editor.resize(layer("free"), { width: 30 });
+    editor.resize(layer("free"), { width: 30 }, { continues: true });
+    editor.takeBack();
+
+    expect(box("free")).toEqual([20, 8, 30, 20]);
+    expect(recorded()).toEqual([["style", "x", 12, 20]]);
+    expect(editor.redo()).toEqual([]);
+    editor.undo();
+    expect(box("free")).toEqual([12, 8, 30, 20]);
+    editor.redo();
+    expect(box("free")).toEqual([20, 8, 30, 20]);
+  });
+
+  test("a resize right after another of the same layer is a step of its own, though its first steps change nothing; taken back, it takes back its own only", () => {
+    const { editor, layer, box } = open();
+    const twice = () => {
+      editor.resize(layer("free"), { width: 40 });
+      // Begun where the first left it, as a handle pressed again in the snap it went to.
+      editor.resize(layer("free"), { width: 40 });
+      editor.resize(layer("free"), { width: 50 }, { continues: true });
+    };
+
+    twice();
+    editor.undo();
+    expect(box("free")).toEqual([12, 8, 40, 20]);
+    editor.undo();
+    expect(box("free")).toEqual([12, 8, 30, 20]);
+
+    twice();
+    editor.takeBack();
+    expect(box("free")).toEqual([12, 8, 40, 20]);
+    editor.undo();
+    expect(box("free")).toEqual([12, 8, 30, 20]);
+  });
+
   test("worked in the phone view, it is resized at its breakpoint only, and shows there at once", async () => {
     const { doc, views, editor, layer, changes } = open();
     phoneFrame = document.createElement("iframe");
