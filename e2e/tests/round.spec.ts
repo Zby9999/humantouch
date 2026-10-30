@@ -300,6 +300,50 @@ test.describe("done checks the change on the page", () => {
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
+  test("a layer placed freely, dragged by its top left corner: its X, Y, width and height are changes as the fields make them, each checked on the page once the code has it", async ({ page }) => {
+    // In the code, a layer placed freely in the hero.
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n        <div data-testid="pin" className="absolute top-[30px] left-[40px] h-[40px] w-[80px] bg-stone-300" />',
+    );
+    // Once the dev server has seen the file written.
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("pin")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const view = page.locator('iframe[title="Canvas"]');
+    const zoom = await view.evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+    const pin = (await canvas(page).getByTestId("pin").boundingBox())!;
+    await page.keyboard.down("Meta");
+    await page.mouse.click(pin.x + pin.width / 2, pin.y + pin.height / 2);
+    await page.keyboard.up("Meta");
+
+    // Its top left corner 10 px out each way: the edges across stay.
+    const corner = (await page.locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="nw"]').boundingBox())!;
+    await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(corner.x + corner.width / 2 - 10 * zoom, corner.y + corner.height / 2 - 10 * zoom, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string }[] = readVernier("changeset.json").changes;
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "style", property: "x", before: 40, after: 30 }),
+        expect.objectContaining({ kind: "style", property: "y", before: 30, after: 20 }),
+        expect.objectContaining({ kind: "style", property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 90 } }),
+        expect.objectContaining({ kind: "style", property: "height", before: { type: "fixed", value: 40 }, after: { type: "fixed", value: 50 } }),
+      ]),
+    );
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "4");
+
+    for (const { id } of changes) expect(await vernierkit("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    editSource(APP, "top-[30px] left-[40px] h-[40px] w-[80px]", "top-[20px] left-[30px] h-[50px] w-[90px]");
+    for (const { id } of changes) expect(await vernierkit("done", String(id))).toContain("Checked on the page: it shows the change.");
+  });
+
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
     await page.goto(DEV_URL);
     await page.getByRole("button", { name: TOGGLE_LABEL }).click();
