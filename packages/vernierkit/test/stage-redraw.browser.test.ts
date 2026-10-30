@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "vitest";
-import { drawOnlyWhatShows, transformOf } from "../src/client/camera";
+import { transformOf } from "../src/client/camera";
+import { drawOnlyWhatShows } from "../src/client/stage-redraw";
 
 /** Once the frame under way is drawn. */
 const frame = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
