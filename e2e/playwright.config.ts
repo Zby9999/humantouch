@@ -26,7 +26,7 @@ export const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
 export const EXIT_LABEL = "Vernier Kit: back to preview mode";
 
 /** Tests that work with the example project's real `.vernier/` folder: one at a time, across files too. */
-const PROJECT_FILES = /(autosave|claim|round)\.spec\.ts$/;
+const PROJECT_FILES = /(autosave|claim|round|applying-bench|bench-scenarios)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./tests",
