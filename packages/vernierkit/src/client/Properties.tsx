@@ -28,6 +28,7 @@ import {
   type Color,
   type RadialGradient,
 } from "./paint";
+import { holdPointer } from "./pointer-held";
 import { stepped } from "./stroke-weight";
 import { useToast } from "./Toast";
 import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
@@ -1103,6 +1104,8 @@ function GradientStops({ gradient, length, onChange, variable }: {
               event.preventDefault();
               event.currentTarget.focus();
               event.currentTarget.setPointerCapture(event.pointerId);
+              // Until it is let go, no key edits: an undo that changed the stops would leave this drag moving another one (ADR 0012).
+              holdPointer(event.pointerId);
               drag.current = { pointerId: event.pointerId, index, moved: false };
             }}
             onPointerMove={(event) => {
@@ -1628,6 +1631,8 @@ function Scrub({ icon, glyph, value, min, max = Infinity, onChange }: {
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     Promise.resolve(handle.requestPointerLock()).catch(() => {}); // Without the lock, the drag still works.
+    // Until it is let go, no key edits: the next move would set again a value undone (ADR 0012).
+    holdPointer(event.pointerId);
     drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false };
   };
 

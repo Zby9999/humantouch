@@ -203,6 +203,32 @@ test("taking the deletion back from the change list puts the layer back on the c
   await expect(offCanvas(page)).toHaveCount(0);
 });
 
+test("while a layer off the canvas is dragged, Delete, ⌘D and the arrows do nothing; let go, it is where it was let go, with no style of the drag left on it", async ({ page }) => {
+  await moveTitleOff(page);
+  const off = (await offCanvas(page).boundingBox())!;
+  const moved = offCanvas(page).contentFrame().locator("body > *").first();
+  const box = (await moved.boundingBox())!;
+  await page.mouse.move(box.x + 3, box.y + 3);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 3 - 80, box.y + 3 + 60, { steps: 10 });
+  for (const key of ["Delete", `${mod}+d`, "ArrowRight", `${mod}+x`]) {
+    await page.keyboard.press(key);
+    await expect(offCanvas(page), key).toHaveCount(1);
+    await expect(desktop(page).contentFrame().locator("h1"), key).toBeHidden();
+    await expect(badge(page), key).toHaveAccessibleName("1 change not applied yet");
+  }
+  await page.mouse.up();
+
+  await expect(offCanvas(page)).toHaveCount(1);
+  expect((await offCanvas(page).boundingBox())!.x).toBeLessThan(off.x - 40);
+  expect(await moved.evaluate((el) => (el as HTMLElement).style.cssText)).toBe("");
+  await page.keyboard.press(`${mod}+z`);
+  await expect(offCanvas(page)).toHaveCount(1);
+  await page.keyboard.press(`${mod}+z`);
+  await expect(offCanvas(page)).toHaveCount(0);
+  await expect(desktop(page).contentFrame().locator("h1")).toBeVisible();
+});
+
 /** Moves the title off the canvas, to the left of the views, as the designer drags it out of the desktop view. */
 async function moveTitleOff(page: Page) {
   await enterEditMode(page);

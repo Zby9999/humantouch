@@ -16,6 +16,7 @@ import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMoti
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
+import { holdPointer, pointerHeld } from "./pointer-held";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances } from "./snap";
 import { createViews, type View, type Views } from "./views";
@@ -63,8 +64,6 @@ interface Props {
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
   onEditText(layer: Layer, text: string): void;
-  /** A drag of a layer begins (true), or ends, let go or cancelled (false). */
-  onDragging(underWay: boolean): void;
   /** The view last pressed in, and what it is called: the one the designer works in (null: the desktop view). */
   onWorkIn(view: View | null, name: string): void;
   /** Playing: the canvas alone at 100%, scrolled like a page; nothing on it can be selected or edited. */
@@ -82,7 +81,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onDragging, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -113,13 +112,16 @@ export function CanvasView(props: Props) {
   const [measuring, setMeasuring] = useState(false);
   const pan = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [panning, setPanning] = useState(false);
-  /** A press on a layer, in the view pressed in, that a move of the pointer turns into a drag. */
-  const press = useRef<{ pointerId: number; layer: Layer; in: Shown; x: number; y: number } | null>(null);
+  /**
+   * A press on a layer, in the view pressed in, that a move of the pointer turns into a drag. Held from
+   * the moment it is pressed (`release`): until it is let go, or the drag cancelled, no key edits (ADR 0012).
+   */
+  const press = useRef<{ pointerId: number; layer: Layer; in: Shown; x: number; y: number; release(): void } | null>(null);
   const dragging = useRef<DragSession | null>(null);
   /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
   const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean } | null>(null);
-  /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. */
-  const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number } } | null>(null);
+  /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. Held until let go (ADR 0012). */
+  const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number }; release(): void } | null>(null);
   const [drawn, setDrawn] = useState<{ in: Shown; box: DOMRect } | null>(null);
   /** The text being typed in, and what was in it. */
   const typing = useRef<{ layer: Layer; html: string } | null>(null);
@@ -390,7 +392,7 @@ export function CanvasView(props: Props) {
       if (playing && !played) return;
       // Read once playing, as a page scrolls by it; not on each key typed elsewhere.
       const playedIn = playing ? viewport.current!.getBoundingClientRect() : null;
-      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, selected: selected.length > 0 });
+      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, held: pointerHeld(), selected: selected.length > 0 });
       if (!playing) {
         if (event.key === "Meta" || event.key === "Control") {
           const deep = event.metaKey || event.ctrlKey;
@@ -509,7 +511,7 @@ export function CanvasView(props: Props) {
       if (!over) return;
       event.currentTarget.setPointerCapture(event.pointerId);
       const start = { x: over.x, y: over.y };
-      drawing.current = { pointerId: event.pointerId, in: over.at, start };
+      drawing.current = { pointerId: event.pointerId, in: over.at, start, release: holdPointer(event.pointerId) };
       setDrawn({ in: over.at, box: new DOMRect(start.x, start.y, 0, 0) });
       return;
     }
@@ -524,7 +526,7 @@ export function CanvasView(props: Props) {
       // Pressed on a layer it can move: moving the pointer drags it.
       if (layer && over && !event.shiftKey && editorIn(over.at)?.canMove(layer)) {
         event.currentTarget.setPointerCapture(event.pointerId);
-        press.current = { pointerId: event.pointerId, layer, in: over.at, x: event.clientX, y: event.clientY };
+        press.current = { pointerId: event.pointerId, layer, in: over.at, x: event.clientX, y: event.clientY, release: holdPointer(event.pointerId) };
       }
       return;
     }
@@ -545,10 +547,7 @@ export function CanvasView(props: Props) {
     const pressed = press.current;
     if (pressed?.pointerId === event.pointerId) {
       if (!dragging.current && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < DRAG_THRESHOLD) return;
-      if (!dragging.current) {
-        dragging.current = startDrag(pressed.layer, pressed.in);
-        onDragging(true);
-      }
+      dragging.current ??= startDrag(pressed.layer, pressed.in);
       moveDrag(dragging.current, event, pressed);
       return;
     }
@@ -571,13 +570,15 @@ export function CanvasView(props: Props) {
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (drawing.current?.pointerId === event.pointerId) {
-      const { start, in: shown } = drawing.current;
+      const { start, in: shown, release } = drawing.current;
       drawing.current = null;
+      release();
       setDrawn(null);
       if (event.type === "pointerup" && tool && editor) draw(tool, shown, start, boxFrom(start, toView(event, shown)));
       return;
     }
     if (press.current?.pointerId === event.pointerId) {
+      press.current.release();
       press.current = null;
       endDrag(event.type === "pointerup", event.altKey);
       return;
@@ -683,6 +684,8 @@ export function CanvasView(props: Props) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" && !(event.key === "Enter" && !event.shiftKey)) return;
       event.preventDefault();
+      // Typed in a view's own document, the key never reaches the Shell: held down on a value's icon, say, Enter sets nothing (ADR 0012).
+      if (event.key === "Enter" && pointerHeld()) return;
       el.blur();
     };
     const onInput = () => typedOn(undefined);
@@ -711,7 +714,8 @@ export function CanvasView(props: Props) {
     const session = dragging.current;
     if (!session) return;
     dragging.current = null;
-    onDragging(false);
+    // The press is over with the drag: the keys edit again, though the pointer is still down after Esc.
+    press.current?.release();
     press.current = null;
     restoreDragStyles(session);
     setDrag(null);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { canvasKey, historyKey, type KeyState } from "../src/client/canvas-keys";
+import { canvasKey, heldKey, historyKey, type KeyState } from "../src/client/canvas-keys";
 
-const EDITING: KeyState = { playing: false, page: 0, tool: false, dragging: false, selected: false };
+const EDITING: KeyState = { playing: false, page: 0, tool: false, dragging: false, held: false, selected: false };
 const PLAYING: KeyState = { ...EDITING, playing: true, page: 760 };
 
 /** What the key does on the canvas, pressed (or let go) on `on`, or on nothing in particular. */
@@ -37,6 +37,20 @@ describe("the keys on the canvas", () => {
     expect(press({ key: "Escape" }, EDITING)).toBeNull();
   });
 
+  test("held down on a layer or drawing one, T, F and V pick no tool; Space, Esc and ⇧1 go on as ever", () => {
+    const HELD = { ...EDITING, held: true };
+    expect(press({ key: "t" }, HELD)).toBeNull();
+    expect(press({ key: "f" }, { ...HELD, tool: true })).toBeNull();
+    expect(press({ key: "v" }, { ...HELD, tool: true })).toBeNull();
+    expect(press({ code: "Space", key: " " }, HELD)).toEqual({ action: "pan", held: true });
+    expect(press({ code: "Space", key: " " }, HELD, { type: "keyup" })).toEqual({ action: "pan", held: false });
+    expect(press({ key: "Escape" }, { ...HELD, tool: true })).toEqual({ action: "tool", tool: null });
+    expect(press({ key: "Escape" }, { ...HELD, dragging: true, selected: true })).toEqual({ action: "cancel drag" });
+    // Pressed on a layer, not yet moved 3px: Esc selects the parents, as it did.
+    expect(press({ key: "Escape" }, { ...HELD, selected: true })).toEqual({ action: "select parents" });
+    expect(press({ code: "Digit1", key: "!", shiftKey: true }, HELD)).toEqual({ action: "fit" });
+  });
+
   test("⇧1 fits every view in", () => {
     expect(press({ code: "Digit1", key: "!", shiftKey: true }, EDITING)).toEqual({ action: "fit" });
     expect(press({ code: "Digit1", key: "1" }, EDITING)).toBeNull();
@@ -70,18 +84,18 @@ describe("the keys on the canvas", () => {
 
 describe("undo and redo by their keys", () => {
   /** What the key does to the history, pressed on `on`, or on nothing in particular. */
-  function historyPress(init: KeyboardEventInit, dragging: boolean, on?: Element) {
+  function historyPress(init: KeyboardEventInit, held: boolean, on?: Element) {
     const event = new KeyboardEvent("keydown", { bubbles: true, composed: true, ...init });
-    if (!on) return historyKey(event, { dragging });
+    if (!on) return historyKey(event, { held });
     let key: ReturnType<typeof historyKey> = null;
-    on.addEventListener("keydown", (e) => (key = historyKey(e as KeyboardEvent, { dragging })), { once: true });
+    on.addEventListener("keydown", (e) => (key = historyKey(e as KeyboardEvent, { held })), { once: true });
     document.body.append(on);
     on.dispatchEvent(event);
     on.remove();
     return key;
   }
 
-  test("while a layer is dragged on the canvas, ⌘Z, ⇧⌘Z and Ctrl+Y do nothing, and go no further", () => {
+  test("while the pointer is held down on a layer, a value's icon, a gradient's stop or a layer being drawn, ⌘Z, ⇧⌘Z and Ctrl+Y do nothing, and go no further", () => {
     expect(historyPress({ key: "z", metaKey: true }, true)).toBe("ignored");
     expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, true)).toBe("ignored");
     expect(historyPress({ key: "z", ctrlKey: true }, true)).toBe("ignored");
@@ -102,7 +116,7 @@ describe("undo and redo by their keys", () => {
     expect(historyPress({ key: "z" }, false)).toBeNull();
   });
 
-  test("a field keeps ⌘Z while something typed in it is not applied yet, dragging or not; a Design panel field otherwise, or a slider, passes it on", () => {
+  test("a field keeps ⌘Z while something typed in it is not applied yet, held down or not; a Design panel field otherwise, or a slider, passes it on", () => {
     const typing = Object.assign(document.createElement("input"), { className: "vk-input" });
     typing.setAttribute("data-vk-typing", "");
     expect(historyPress({ key: "z", metaKey: true }, false, typing)).toBeNull();
@@ -113,5 +127,72 @@ describe("undo and redo by their keys", () => {
     slider.setAttribute("role", "slider");
     expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, false, slider)).toBe("redo");
     expect(historyPress({ key: "z", metaKey: true }, true, slider)).toBe("ignored");
+  });
+});
+
+describe("the keys while the pointer is held down on a layer, a value's icon, a gradient's stop or a layer being drawn", () => {
+  /** What becomes of the key, pressed (or let go) on `on`, or on nothing in particular. */
+  function heldPress(init: KeyboardEventInit, { on, type = "keydown" }: { on?: Element; type?: string } = {}) {
+    const event = new KeyboardEvent(type, { bubbles: true, composed: true, ...init });
+    if (!on) return heldKey(event);
+    let key: ReturnType<typeof heldKey> | null = null;
+    on.addEventListener(type, (e) => (key = heldKey(e as KeyboardEvent)), { once: true });
+    document.body.append(on);
+    on.dispatchEvent(event);
+    on.remove();
+    return key;
+  }
+
+  test("the keys that edit do nothing: ⌘D, Delete, Backspace, ⌘X, ⌘V, ⇧A, ⌥⇧A, ⌘⇧G, the arrows, ⌘Z and ⇧⌘Z", () => {
+    for (const init of [
+      { key: "d", metaKey: true },
+      { key: "Delete" },
+      { key: "Backspace" },
+      { key: "x", metaKey: true },
+      { key: "v", ctrlKey: true },
+      { key: "A", shiftKey: true },
+      { key: "Å", code: "KeyA", shiftKey: true, altKey: true },
+      { key: "G", metaKey: true, shiftKey: true },
+      { key: "ArrowLeft" },
+      { key: "ArrowDown", shiftKey: true },
+      { key: "z", metaKey: true },
+      { key: "Z", metaKey: true, shiftKey: true },
+      { key: "y", ctrlKey: true },
+    ]) {
+      expect(heldPress(init), JSON.stringify(init)).toBe("ignored");
+    }
+  });
+
+  test("nor do the keys that would carry off or break the press: ⌘C, T, F and V, Enter on a button", () => {
+    expect(heldPress({ key: "c", metaKey: true })).toBe("ignored");
+    expect(heldPress({ key: "t" })).toBe("ignored");
+    expect(heldPress({ key: "f" })).toBe("ignored");
+    expect(heldPress({ key: "v" })).toBe("ignored");
+    expect(heldPress({ key: "Enter" }, { on: document.createElement("button") })).toBe("ignored");
+  });
+
+  test("Esc, Space, ⇧1 and the modifier keys themselves go on as ever, and so does a key let go", () => {
+    expect(heldPress({ key: "Escape" })).toBe("passes");
+    expect(heldPress({ code: "Space", key: " " })).toBe("passes");
+    expect(heldPress({ code: "Digit1", key: "!", shiftKey: true })).toBe("passes");
+    for (const key of ["Shift", "Meta", "Control", "Alt"]) expect(heldPress({ key }), key).toBe("passes");
+    expect(heldPress({ key: "Delete" }, { type: "keyup" })).toBe("passes");
+    // ⌘1 or 1 alone is not ⇧1.
+    expect(heldPress({ code: "Digit1", key: "1" })).toBe("ignored");
+  });
+
+  test("in a field that takes text, a key types as ever but the field does no more with it; Esc goes on; a stop's handle, a checkbox or a list takes nothing", () => {
+    const text = Object.assign(document.createElement("input"), { className: "vk-input" });
+    expect(heldPress({ key: "Enter" }, { on: text })).toBe("text");
+    expect(heldPress({ key: "ArrowUp" }, { on: text })).toBe("text");
+    expect(heldPress({ key: "5" }, { on: text })).toBe("text");
+    expect(heldPress({ key: "Escape" }, { on: text })).toBe("passes");
+    expect(heldPress({ key: "Enter", metaKey: true }, { on: document.createElement("textarea") })).toBe("text");
+    const slider = document.createElement("span");
+    slider.setAttribute("role", "slider");
+    expect(heldPress({ key: "Delete" }, { on: slider })).toBe("ignored");
+    expect(heldPress({ key: "ArrowRight" }, { on: slider })).toBe("ignored");
+    expect(heldPress({ code: "Space", key: " " }, { on: Object.assign(document.createElement("input"), { type: "checkbox" }) })).toBe("ignored");
+    expect(heldPress({ key: "ArrowDown" }, { on: document.createElement("select") })).toBe("ignored");
   });
 });

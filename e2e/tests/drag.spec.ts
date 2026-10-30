@@ -233,6 +233,99 @@ test("⌘Z while dragging, then Esc: the layer is back where it was, nothing lef
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
 
+/** The keys that edit, each of which does nothing while a layer is pressed on (ticket 62). */
+const EDIT_KEYS = [
+  "ControlOrMeta+d",
+  "Delete",
+  "Backspace",
+  "ControlOrMeta+x",
+  "ControlOrMeta+v",
+  "Shift+A",
+  "Alt+Shift+A",
+  "ControlOrMeta+Shift+g",
+  "ArrowDown",
+  "ControlOrMeta+z",
+  "ControlOrMeta+Shift+z",
+];
+
+/** Elements in the hero with a style left of a drag on them: not taking the pointer, over the others, or shifted. */
+function dragStyled(page: Page) {
+  return canvas(page).locator(`${HERO} [style*="pointer-events"], ${HERO} [style*="z-index"], ${HERO} [style*="translate"]`);
+}
+
+test("while dragging, none of the keys that edit does anything, nor T picks a tool; let go, the drop is the one change made, with nothing of the drag left on any layer", async ({ page }) => {
+  await enterEditMode(page);
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  await deleteTitle(page);
+  await selectButton(page);
+  // Something to paste.
+  await page.keyboard.press("ControlOrMeta+c");
+  const button = canvas(page).locator(`${HERO} > button`);
+  const paragraph = canvas(page).locator(`${HERO} > p`);
+  const rows = await layerTree(page).getByRole("treeitem").allTextContents();
+  await expect(dragStyled(page)).toHaveCount(0);
+
+  await drag(page, button, () => aboveParagraph(page), { drop: false });
+  await expect(paragraph).not.toHaveCSS("translate", "none");
+  for (const key of [...EDIT_KEYS, "t"]) {
+    await page.keyboard.press(key);
+    await expect(canvas(page).locator("h1"), key).toBeHidden();
+    expect(await childTags(page, HERO), key).toEqual(["header", "p", "button"]);
+    await expect(badge, key).toHaveAccessibleName("1 change not applied yet");
+    expect(await layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
+    // Still dragging, the paragraph still making room.
+    await expect(paragraph, key).not.toHaveCSS("translate", "none");
+    await expect(page.locator(".vk-drop-line"), key).toBeVisible();
+  }
+  await expect(page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.up();
+
+  expect(await childTags(page, HERO)).toEqual(["header", "button", "p"]);
+  await expect(dragStyled(page)).toHaveCount(0);
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect(canvas(page).locator("h1")).toBeHidden();
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+});
+
+test("pressed on a layer and not yet moved 3px, none of the keys that edit does anything either, and Esc still selects the parents; let go, all is as it was", async ({ page }) => {
+  await enterEditMode(page);
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  await deleteTitle(page);
+  await selectButton(page);
+  await page.keyboard.press("ControlOrMeta+c");
+  const rows = await layerTree(page).getByRole("treeitem").allTextContents();
+  const at = await boxOf(canvas(page).locator(`${HERO} > button`));
+
+  await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(at.x + at.width / 2 + 1, at.y + at.height / 2 + 1);
+  const unchanged = async (key: string) => {
+    await expect(canvas(page).locator("h1"), key).toBeHidden();
+    expect(await childTags(page, HERO), key).toEqual(["header", "p", "button"]);
+    await expect(badge, key).toHaveAccessibleName("1 change not applied yet");
+    expect(await layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
+  };
+  for (const key of EDIT_KEYS) {
+    await page.keyboard.press(key);
+    await unchanged(key);
+  }
+  await page.keyboard.press("Escape");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Button", exact: true })).toHaveAttribute("aria-selected", "false");
+  for (const key of ["ControlOrMeta+z", "Delete"]) {
+    await page.keyboard.press(key);
+    await unchanged(key);
+  }
+  await page.mouse.up();
+
+  await unchanged("let go");
+  await expect(dragStyled(page)).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await expect(badge).toHaveCount(0);
+});
+
 test("a reorder is listed as one; the page keeps the code's order", async ({ page }) => {
   await enterEditMode(page);
   await selectButton(page);

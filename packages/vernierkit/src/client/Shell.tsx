@@ -3,8 +3,9 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
 import { CanvasView, type Tool } from "./CanvasView";
-import { historyKey, isEditable } from "./canvas-keys";
+import { heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
+import { pointerHeld } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
 import { createEditor, type Destination, type Editor } from "./edits";
@@ -393,18 +394,23 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select(out.map((node) => editor.tree().layerOf(node)).filter((layer) => layer !== null));
   };
 
-  /** A layer is being dragged on the canvas: until it is let go or the drag cancelled, undo and redo by their keys do nothing (ticket 61). */
-  const dragging = useRef(false);
-
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`).
+  // While the pointer is held down on something that edits as it moves, no key edits (`heldKey`, ADR 0012):
+  // the other listeners on the window see that themselves; a field or a button does not get the key.
   const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
   latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
       if (playing || !editor) return;
-      const key = historyKey(event, { dragging: dragging.current });
-      if (!key) return;
+      const held = pointerHeld();
+      const key = historyKey(event, { held });
+      if (!key) {
+        const kept = held ? heldKey(event) : "passes";
+        if (kept === "ignored") event.preventDefault();
+        if (kept !== "passes") event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       if (key === "ignored") return;
@@ -429,7 +435,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const onKey = (event: KeyboardEvent) => {
       const { selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing } = latest.current;
       const target = event.composedPath()[0];
-      if (playing || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      if (playing || pointerHeld() || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
       const letter = event.key.toLowerCase();
       // Only what the editor holds is pasted, and only when it holds something: the system clipboard is left alone.
@@ -605,7 +611,6 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           const now = found();
           if (now) select([now]);
         }}
-        onDragging={(underWay) => (dragging.current = underWay)}
         onWorkIn={(view, name) => {
           editor?.at(view);
           setWorked(view && { view, name });

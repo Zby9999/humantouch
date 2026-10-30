@@ -287,6 +287,41 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
   await expect(badge).toHaveCount(0);
 });
 
+test("while dragging in the phone view, ⌘D and Delete do nothing in any view; let go, no view keeps a style of the drag, nor a copy of the layer", async ({ page }) => {
+  await enterEditMode(page);
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
+  const hero = '[data-testid="hero"]';
+  const views = [desktop(page), tablet(page), phone(page)];
+  const orders = () => Promise.all(views.map((view) => view.contentFrame().locator(hero).evaluate((el) => [...el.children].map((child) => child.localName))));
+  /** In each view, the elements of the hero with a style left of a drag: not taking the pointer, over the others, or shifted. */
+  const dragStyled = () =>
+    Promise.all(views.map((view) => view.contentFrame().locator(`${hero} [style*="pointer-events"], ${hero} [style*="z-index"], ${hero} [style*="translate"]`).count()));
+  expect(await dragStyled()).toEqual([0, 0, 0]);
+  const rows = await tree.getByRole("treeitem").allTextContents();
+
+  const button = phone(page).contentFrame().locator(`${hero} > button`);
+  const start = (await button.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  const p = (await phone(page).contentFrame().locator(`${hero} > p`).boundingBox())!;
+  await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
+  for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
+  for (const key of ["ControlOrMeta+d", "Delete"]) {
+    await page.keyboard.press(key);
+    expect(await orders(), key).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+    for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`), key).not.toHaveCSS("translate", "none");
+  }
+  await expect(badge).toHaveCount(0);
+  expect(await tree.getByRole("treeitem").allTextContents()).toEqual(rows);
+  await page.mouse.up();
+
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
+  expect(await dragStyled()).toEqual([0, 0, 0]);
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+});
+
 test("a view of another width can be added and the tablet view deleted; the views stay so after a reload; the desktop view stays", async ({ page }) => {
   await enterEditMode(page);
 
