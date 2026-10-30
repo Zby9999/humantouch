@@ -1,15 +1,13 @@
-# 23: Guide 与发布前的打包检查
+# 23: 发布前的打包检查
 
-**What to build:** 写好几行字的 Guide（运行 init、启动开发服务器、确认切换按钮出现、运行 doctor），并说明如何用 remove 卸载；确认包可以发布到 npm（不实际发布）。README 与 MIT 许可已拆到 59，暂时搁置，本 ticket 不写。
+**What to build:** 确认包可以发布到 npm（不实际发布）：包内容完整，不含示例项目与测试文件。Guide 原本也在本 ticket，但它要放在 README 上，所以与 README、MIT 许可一起移到了 59；下面 Comments 里的 Guide 草稿留给 59 用。
 
 参考本功能的 spec.md（同目录上一级），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
 **Blocked by:** 08, 09
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Guide 足够让一个 Agent 在 Vite 与 Next.js 项目上独立完成安装
-- [ ] Guide 说明如何用 remove 一条命令卸载
 - [x] 打包检查通过：包内容完整、不含示例项目与测试文件
 
 ## Comments
@@ -73,3 +71,8 @@ Guide 草稿（取代上面那份）：
 > 4. Run `npx vernierkit doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 >
 > To remove Vernier Kit, run `npx vernierkit remove` in the project's root folder. It takes out everything `init` added and deletes `.vernier/`, with any off-canvas layers, leaving `git diff` empty. If it prints "Finish by hand" (lines `init` added were changed since), make those edits too; then nothing of Vernier Kit is left in `git diff`. It refuses while I have design changes not applied yet, or while you are applying a round.
+
+**Guide 移到 59（2026-10-30）**
+
+- 用户决定：Guide 的两条验收项（让 Agent 在 Vite 与 Next.js 项目上独立完成安装、说明用 remove 卸载）移到 59，与 README、MIT 许可一起做；本 ticket 只剩打包检查，标 done。
+- 原因：GLOSSARY 说 Guide 放在项目官网或 README 上，README 在 59，而 59 又被 23 阻塞，两张互相卡住。
