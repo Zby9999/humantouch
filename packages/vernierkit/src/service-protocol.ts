@@ -109,7 +109,8 @@ export type CheckResult =
   | { outcome: "shown" }
   /** `actual`: the value the page shows instead, in design language. `width`: shown that wide, when not as wide as the page's window. */
   | { outcome: "not shown"; actual: unknown; width?: number }
-  | { outcome: "unchecked"; reason: string };
+  /** `anyPage`: no page could check it either (a brief, a layer new this round): not worth waiting for another. */
+  | { outcome: "unchecked"; reason: string; anyPage?: true };
 
 /** How a page checked change `id`: `at` the ask it answers, or when it checked as the code changed. */
 export type CheckReport = { id: number; at: string } & CheckResult;

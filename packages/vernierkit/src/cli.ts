@@ -181,7 +181,7 @@ async function waitForChecks(folder: VernierFolder, check: CheckAsk, claimedAt: 
       if (answers.has(id)) continue;
       const result = checks?.results[id];
       if (result?.at === check.at) {
-        if (result.outcome !== "unchecked" || checks!.pages === 1) answers.set(id, result);
+        if (result.outcome !== "unchecked" || result.anyPage || checks!.pages === 1) answers.set(id, result);
         else unchecked.set(id, result);
       } else if (!open && result?.outcome === "shown" && (!claimedAt || result.at >= claimedAt)) answers.set(id, result);
     }

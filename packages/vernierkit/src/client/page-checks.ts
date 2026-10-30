@@ -323,7 +323,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       for (const id of ask.ids) {
         const change = changes.find((c) => c.id === id);
         const reason = change ? uncheckable(change) : "the page does not have this round";
-        if (!change || reason) answer(id, { outcome: "unchecked", reason: reason! });
+        if (!change || reason) answer(id, { outcome: "unchecked", reason: reason!, ...(change && { anyPage: true as const }) });
         // Shown already: looked at again, at once, as a later edit may have undone it.
         else if (shown.has(id))
           whenReady(change, () => {

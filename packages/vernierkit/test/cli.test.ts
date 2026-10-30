@@ -1176,6 +1176,16 @@ describe("done, checked on the page", () => {
     expect((await cli("done", "1")).output).toContain("Checked on the page: it shows the change.");
   });
 
+  test("of two pages, does not wait for the other when the change is one no page can check", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "unchecked", reason: "the layer is new this round, so the page has no marker to find it by", anyPage: true }), 2);
+
+    const started = Date.now();
+    expect((await cli("done", "1")).output).toContain("Not checked on the page: the layer is new this round");
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   test("does not wait for pages of a local service that is no longer running", async () => {
     saveRound(redFill);
     await cli("claim");
