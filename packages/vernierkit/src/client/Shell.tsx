@@ -393,7 +393,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select(out.map((node) => editor.tree().layerOf(node)).filter((layer) => layer !== null));
   };
 
-  /** A layer is being dragged on the canvas: until it is let go or the drag cancelled, undo and redo wait (ticket 61). */
+  /** A layer is being dragged on the canvas: until it is let go or the drag cancelled, undo and redo by their keys do nothing (ticket 61). */
   const dragging = useRef(false);
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`).
@@ -407,7 +407,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       if (!key) return;
       event.preventDefault();
       event.stopPropagation();
-      if (key === "held") return;
+      if (key === "ignored") return;
       const redo = key === "redo";
       // One history for the canvas and the layers off it: whichever edit came last is undone.
       const steps = history.past.length;

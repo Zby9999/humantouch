@@ -4,7 +4,7 @@
  * cancels a drag or selects the parents, ⇧1 fits every view in. Playing, the
  * keys scroll the canvas as on a page, and Esc stops (ADR 0010). A field, or
  * a dialog over the canvas, keeps its keys. ⌘Z and ⇧⌘Z go through the edits
- * made, and wait while a layer is dragged (`historyKey`).
+ * made, and do nothing while a layer is dragged (`historyKey`).
  */
 import type { Created } from "./changeset";
 
@@ -62,8 +62,8 @@ export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging,
   return null;
 }
 
-/** What ⌘Z, ⇧⌘Z or Ctrl+Y does to the edits made: `held` while a layer is dragged on the canvas, when it does nothing. */
-export type HistoryKey = "undo" | "redo" | "held";
+/** What ⌘Z, ⇧⌘Z or Ctrl+Y does to the edits made: `ignored` while a layer is dragged on the canvas, when the key is taken and does nothing, then or later. */
+export type HistoryKey = "undo" | "redo" | "ignored";
 
 /**
  * What the key `event` does to the edits made, in the order they were made:
@@ -86,7 +86,7 @@ export function historyKey(event: KeyboardEvent, { dragging }: { dragging: boole
   const key = event.key.toLowerCase();
   const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
   if (key !== "z" && !redo) return null;
-  if (dragging) return "held";
+  if (dragging) return "ignored";
   return redo ? "redo" : "undo";
 }
 

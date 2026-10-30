@@ -82,12 +82,12 @@ describe("undo and redo by their keys", () => {
   }
 
   test("while a layer is dragged on the canvas, ⌘Z, ⇧⌘Z and Ctrl+Y do nothing, and go no further", () => {
-    expect(historyPress({ key: "z", metaKey: true }, true)).toBe("held");
-    expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, true)).toBe("held");
-    expect(historyPress({ key: "z", ctrlKey: true }, true)).toBe("held");
-    expect(historyPress({ key: "Z", ctrlKey: true, shiftKey: true }, true)).toBe("held");
-    expect(historyPress({ key: "y", ctrlKey: true }, true)).toBe("held");
-    // Other keys are not held back here.
+    expect(historyPress({ key: "z", metaKey: true }, true)).toBe("ignored");
+    expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, true)).toBe("ignored");
+    expect(historyPress({ key: "z", ctrlKey: true }, true)).toBe("ignored");
+    expect(historyPress({ key: "Z", ctrlKey: true, shiftKey: true }, true)).toBe("ignored");
+    expect(historyPress({ key: "y", ctrlKey: true }, true)).toBe("ignored");
+    // Other keys are not taken here.
     expect(historyPress({ key: "c", metaKey: true }, true)).toBeNull();
   });
 
@@ -112,6 +112,6 @@ describe("undo and redo by their keys", () => {
     const slider = document.createElement("div");
     slider.setAttribute("role", "slider");
     expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, false, slider)).toBe("redo");
-    expect(historyPress({ key: "z", metaKey: true }, true, slider)).toBe("held");
+    expect(historyPress({ key: "z", metaKey: true }, true, slider)).toBe("ignored");
   });
 });

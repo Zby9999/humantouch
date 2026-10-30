@@ -157,47 +157,58 @@ test("Esc while dragging puts everything back", async ({ page }) => {
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
 
+/** Just inside the top of the hero's paragraph: a layer let go there goes before it. */
+async function aboveParagraph(page: Page) {
+  const p = await boxOf(canvas(page).locator(`${HERO} > p`));
+  return { x: p.x + p.width / 2, y: p.y + 2 };
+}
+
+/** The title deleted, from the Layers panel: an edit to undo. */
+async function deleteTitle(page: Page) {
+  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await expect(canvas(page).locator("h1")).toBeHidden();
+}
+
 test("while dragging, ⌘Z and ⇧⌘Z do nothing: the changes, the canvas and the layers stay as they are; let go, one ⌘Z takes the drag back", async ({ page }) => {
   await enterEditMode(page);
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  // Something to undo, the title deleted, and something to redo, a move made and undone.
+  await deleteTitle(page);
   await selectButton(page);
   const button = canvas(page).locator(`${HERO} > button`);
   const paragraph = canvas(page).locator(`${HERO} > p`);
-  const aboveParagraph = async () => {
-    const p = await boxOf(paragraph);
-    return { x: p.x + p.width / 2, y: p.y + 2 };
-  };
-  // A move made and undone: there is something to redo.
-  await drag(page, button, aboveParagraph);
+  await drag(page, button, () => aboveParagraph(page));
   await page.keyboard.press("ControlOrMeta+z");
   expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
   const rows = await layerTree(page).getByRole("treeitem").allTextContents();
 
-  await drag(page, button, aboveParagraph, { drop: false });
+  await drag(page, button, () => aboveParagraph(page), { drop: false });
   await expect(paragraph).not.toHaveCSS("translate", "none");
-  await page.keyboard.press("ControlOrMeta+z");
-  await page.keyboard.press("ControlOrMeta+Shift+z");
-  // Neither the move undone nor the one before it redone.
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
-  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
-  expect(await layerTree(page).getByRole("treeitem").allTextContents()).toEqual(rows);
-  // Still dragging, the paragraph still making room.
-  await expect(paragraph).not.toHaveCSS("translate", "none");
-  await expect(page.locator(".vk-drop-line")).toBeVisible();
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z"]) {
+    await page.keyboard.press(key);
+    // Neither the deletion undone nor the move redone.
+    await expect(canvas(page).locator("h1")).toBeHidden();
+    expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+    await expect(badge).toHaveAccessibleName("1 change not applied yet");
+    expect(await layerTree(page).getByRole("treeitem").allTextContents()).toEqual(rows);
+    // Still dragging, the paragraph still making room.
+    await expect(paragraph).not.toHaveCSS("translate", "none");
+    await expect(page.locator(".vk-drop-line")).toBeVisible();
+  }
   await page.mouse.up();
 
   expect(await childTags(page, HERO)).toEqual(["header", "button", "p"]);
-  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveAccessibleName("1 change not applied yet");
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
   await page.keyboard.press("ControlOrMeta+z");
   expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
-  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
+  await expect(canvas(page).locator("h1")).toBeHidden();
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
 });
 
 test("⌘Z while dragging, then Esc: the layer is back where it was, nothing left of the room made; an edit before the drag still undoes after it", async ({ page }) => {
   await enterEditMode(page);
-  // An edit to undo: the title deleted.
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
-  await page.keyboard.press("Delete");
-  await expect(canvas(page).locator("h1")).toBeHidden();
+  await deleteTitle(page);
   await selectButton(page);
   const button = canvas(page).locator(`${HERO} > button`);
   const paragraph = canvas(page).locator(`${HERO} > p`);
@@ -205,10 +216,7 @@ test("⌘Z while dragging, then Esc: the layer is back where it was, nothing lef
   const styles = () => Promise.all([paragraph.evaluate((e) => e.getAttribute("style")), button.evaluate((e) => (e as HTMLElement).style.cssText)]);
   const before = await styles();
 
-  await drag(page, button, async () => {
-    const p = await boxOf(paragraph);
-    return { x: p.x + p.width / 2, y: p.y + 2 };
-  }, { drop: false });
+  await drag(page, button, () => aboveParagraph(page), { drop: false });
   await page.keyboard.press("ControlOrMeta+z");
   await expect(canvas(page).locator("h1")).toBeHidden();
   await page.keyboard.press("Escape");

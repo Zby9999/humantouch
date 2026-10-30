@@ -238,10 +238,15 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
   await enterEditMode(page);
   const tree = page.getByRole("tree", { name: "Layers" });
   const badge = page.getByRole("button", { name: /not applied yet/ });
-  // An edit to undo: the title deleted.
+  // Something to undo, the title deleted, and something to redo, the Beta badge deleted and that undone.
   await tree.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
   await page.keyboard.press("Delete");
+  await tree.getByRole("treeitem", { name: "Badge", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+  await page.keyboard.press("ControlOrMeta+z");
   await expect(badge).toHaveAccessibleName("1 change not applied yet");
+  const beta = (view: Locator) => view.contentFrame().getByTestId("acme-badge");
   await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
   const hero = '[data-testid="hero"]';
   const views = [desktop(page), tablet(page), phone(page)];
@@ -262,6 +267,7 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
     await page.keyboard.press(key);
     for (const view of views) {
       await expect(view.contentFrame().locator("h1")).toBeHidden();
+      await expect(beta(view)).toBeVisible();
       await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
     }
   }

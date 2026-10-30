@@ -711,10 +711,10 @@ export function CanvasView(props: Props) {
     const session = dragging.current;
     if (!session) return;
     dragging.current = null;
+    onDragging(false);
     press.current = null;
     restoreDragStyles(session);
     setDrag(null);
-    onDragging(false);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back } = session;
     if (shown.offCanvasLayer && session.whole) {

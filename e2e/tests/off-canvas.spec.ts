@@ -263,6 +263,13 @@ test("dragged back where it was in the same round, a layer off the canvas is in 
 
 test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc leaves it where it was, and let go elsewhere, one ⌘Z takes it back there", async ({ page }) => {
   await moveTitleOff(page);
+  // Something to redo: the Get started button deleted, and that undone.
+  const getStarted = desktop(page).contentFrame().getByRole("button", { name: "Get started" });
+  await select(page, "Button");
+  await page.keyboard.press("Delete");
+  await expect(getStarted).toBeHidden();
+  await page.keyboard.press(`${mod}+z`);
+  await expect(getStarted).toBeVisible();
   const was = await placeOff(page);
   const off = (await offCanvas(page).boundingBox())!;
   const moved = offCanvas(page).contentFrame().locator("body > *").first();
@@ -276,9 +283,10 @@ test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc 
   await grab();
   for (const key of [`${mod}+z`, `${mod}+Shift+z`]) {
     await page.keyboard.press(key);
-    // Still off the canvas: the move off it is not undone.
+    // Still off the canvas: the move off it is not undone, nor the deletion redone.
     await expect(offCanvas(page)).toHaveCount(1);
     await expect(desktop(page).contentFrame().locator("h1")).toBeHidden();
+    await expect(getStarted).toBeVisible();
     await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
   }
   await page.keyboard.press("Escape");
