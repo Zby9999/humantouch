@@ -204,7 +204,8 @@ export function asShown<T>(el: Element, look: () => T): T {
  * Runs `look` on an element as the page styles it: none of this round's edits
  * to it, nor its component's, apply meanwhile, those that hide it among them;
  * what the freezer wrote on it, and the look a layer was copied or made with,
- * still do. Nothing of it is painted meanwhile.
+ * still do. Nothing of it is painted meanwhile; the instances sharing its
+ * edit styles are as the page styles them meanwhile too.
  */
 export function asPage<T>(el: Element, look: () => T): T {
   const key = el.getAttribute(STYLE_KEY_ATTR);
