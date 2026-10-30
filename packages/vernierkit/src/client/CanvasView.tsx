@@ -153,6 +153,13 @@ export function CanvasView(props: Props) {
   /** What playing shows: the desktop view, as wide as it is played, as tall as it is now. */
   const played: Bounds | null = placed[0] ? { width: playWidth ?? placed[0].width, height: placed[0].height } : null;
 
+  /** Where on the stage its views and the layers off the canvas reach, in canvas px. */
+  const extent = canvas ? boundsOf([...placed, ...outside]) : null;
+  /** How large the viewport is, as last observed: read as a value changes, without asking for the layout. */
+  const viewportSize = useRef({ width: 0, height: 0 });
+  /** Where the camera has the stage, and how far the stage reaches, as last rendered. */
+  const framing = useRef({ camera, extent });
+  framing.current = { camera, extent };
   /**
    * Once the camera is at rest, however it moved, the views are drawn only
    * as far as they show again (`drawOnlyWhatShows`): zoomed out till every
@@ -167,25 +174,21 @@ export function CanvasView(props: Props) {
    * last drawn so (ticket 71): the window made taller, a view deleted or
    * grown shorter till every view shows whole, and back again.
    */
-  /** How large the viewport is, as last observed: read as a value changes, without asking for the layout. */
-  const viewportSize = useRef({ width: 0, height: 0 });
   const [atRest] = useState(() =>
     onceAtRest(
       () => stage.current && drawOnlyWhatShows(stage.current),
       () => !!modeSwitch.current || wasLeaving.current || pointerHeld() || !!typing.current,
       () => {
-        const { camera, placed, outside } = latest.current;
-        return placed.length > 0 && showsWhole(camera, boundsOf([...placed, ...outside]), viewportSize.current);
+        const { camera, extent } = framing.current;
+        return !!extent && showsWhole(camera, extent, viewportSize.current);
       },
     ),
   );
   useEffect(() => {
     if (canvas) atRest.moved();
   }, [camera]);
-  /** Where on the stage its views and the layers off the canvas reach, in canvas px. */
-  const extent = canvas ? boundsOf([...placed, ...outside]) : null;
   useEffect(() => {
-    if (extent) atRest.reframed();
+    if (extent) atRest.resized();
   }, [extent?.x, extent?.y, extent?.width, extent?.height]);
   useEffect(() => () => atRest.cancel(), []);
 
@@ -402,8 +405,8 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ camera, played, playAt, bounds, placed, outside, selected, onSelect, endDrag: (_commit: boolean) => {}, redrag: (_pointer: Pointer) => {}, tool, onTool, playing, onStopPlaying });
-  latest.current = { camera, played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, tool, onTool, playing, onStopPlaying };
+  const latest = useRef({ played, playAt, bounds, placed, outside, selected, onSelect, endDrag: (_commit: boolean) => {}, redrag: (_pointer: Pointer) => {}, tool, onTool, playing, onStopPlaying });
+  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -459,9 +462,7 @@ export function CanvasView(props: Props) {
     const el = viewport.current!;
     let left = el.getBoundingClientRect().left;
     const observer = new ResizeObserver(([entry]) => {
-      // The window resized: the camera stays, but more or less of the stage shows.
       viewportSize.current = { width: entry.contentRect.width, height: entry.contentRect.height };
-      atRest.reframed();
       if (playingRef.current) {
         // The window resized while playing: the canvas is as wide as it now.
         const area = el.getBoundingClientRect();
@@ -470,7 +471,8 @@ export function CanvasView(props: Props) {
         return;
       }
       const now = el.getBoundingClientRect().left;
-      if (now === left) return;
+      // The window resized, the camera where it was: more or less of the stage shows. Moved, the camera says so itself.
+      if (now === left) return atRest.resized();
       const moved = left - now;
       left = now;
       setCamera((v) => ({ ...v, x: v.x + moved }));

@@ -494,7 +494,7 @@ async function countRedraws(page: Page) {
 }
 
 /** Where each view's bottom and right edge are, and the viewport's, in page px; and the camera's transform. */
-function stageInViewport(page: Page) {
+function viewEdges(page: Page) {
   return viewportArea(page).evaluate((area) => {
     const box = area.getBoundingClientRect();
     const views = [...area.querySelectorAll<HTMLIFrameElement>(".vk-stage iframe.vk-canvas")].map((frame) => {
@@ -508,7 +508,7 @@ function stageInViewport(page: Page) {
 test("the window made shorter, then taller till every view shows whole, then shorter again: each time, the stage is drawn again only as far as it shows, the camera where it was", async ({ page }) => {
   await enterEditMode(page);
   const redrawn = await countRedraws(page);
-  const at = await stageInViewport(page);
+  const at = await viewEdges(page);
   const lowest = Math.max(...at.views.map((view) => view.bottom));
   expect(lowest, "every view shows whole at first").toBeLessThanOrEqual(at.bottom);
   const { width, height } = page.viewportSize()!;
@@ -516,7 +516,7 @@ test("the window made shorter, then taller till every view shows whole, then sho
 
   // Shorter: the views reach below the viewport. Drawn again, as it may have been drawn whole.
   await page.setViewportSize({ width, height: shorter });
-  await expect.poll(async () => (await stageInViewport(page)).bottom).toBeLessThan(lowest);
+  await expect.poll(async () => (await viewEdges(page)).bottom).toBeLessThan(lowest);
   await expect.poll(redrawn).toBe(1);
   // Taller, as it was: every view shows whole.
   await page.setViewportSize({ width, height });
@@ -524,7 +524,7 @@ test("the window made shorter, then taller till every view shows whole, then sho
   // Shorter again: drawn whole meanwhile, it is drawn again.
   await page.setViewportSize({ width, height: shorter });
   await expect.poll(redrawn).toBe(3);
-  expect((await stageInViewport(page)).transform).toBe(at.transform);
+  expect((await viewEdges(page)).transform).toBe(at.transform);
 
   // Drawn with views out of sight: a value changed, which makes the views taller, does not draw the stage again.
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
@@ -537,7 +537,7 @@ test("the window made shorter, then taller till every view shows whole, then sho
 test("a view deleted, the others then showing whole, and added back: each time, the stage is drawn again only as far as it shows; a window change with views out of sight does not", async ({ page }) => {
   await enterEditMode(page);
   const redrawn = await countRedraws(page);
-  const at = await stageInViewport(page);
+  const at = await viewEdges(page);
   expect(Math.max(...at.views.map((view) => view.bottom)), "every view shows whole at first").toBeLessThanOrEqual(at.bottom);
   const bottomOf = (title: string) => at.views.find((view) => view.title === title)!.bottom;
   const others = Math.max(bottomOf("Canvas"), bottomOf("Tablet 768"));
@@ -563,7 +563,7 @@ test("a view deleted, the others then showing whole, and added back: each time, 
   await newWidth.press("Enter");
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
   // The phone view out of sight again, once it is as tall as what it shows.
-  await expect.poll(async () => (await stageInViewport(page)).views.find((view) => view.title === "Phone 390")!.bottom).toBeGreaterThan((await stageInViewport(page)).bottom);
+  await expect.poll(async () => (await viewEdges(page)).views.find((view) => view.title === "Phone 390")!.bottom).toBeGreaterThan((await viewEdges(page)).bottom);
   await expect.poll(redrawn).toBeGreaterThanOrEqual(3);
   const settled = await redrawn();
   await page.waitForTimeout(400);

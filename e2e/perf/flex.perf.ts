@@ -623,8 +623,8 @@ test("a value changed shows in the view worked in in the next frame, its work wi
   verdict(met, "a value changed shows in the view worked in in the next frame, its work within two frames");
 });
 
-/** Where the stage is, every view on it, and the viewport it shows in, in page px. */
-function stageAndViewport(page: Page) {
+/** Whether the views on the stage all show whole in the viewport, and how tall the stage and the viewport are, in page px. */
+function stageInSight(page: Page) {
   return host(page)
     .locator(".vk-stage")
     .evaluate((stage) => {
@@ -637,13 +637,13 @@ function stageAndViewport(page: Page) {
  * Ticket 71: changes that are not the camera's, after which the views were
  * drawn whole (ticket 22): the views beside the desktop view deleted, then
  * the page's main column deleted, so the desktop view is short enough to show
- * whole, then put back with ⌘Z. The camera never moves. The view is long
+ * whole, then the delete undone with ⌘Z. The camera never moves. The view is long
  * again, mostly out of sight, but was drawn whole, and went on being drawn
  * whole, till the camera next moved: about 100ms after such changes, it is
  * drawn only as far as it shows again. Measured as the value changed above,
  * the Stack gap of a card, in the desktop view, the only one left.
  */
-test("after the views beside are deleted and the page's main column deleted and put back, a value changed shows in the next frame, its work within two frames", async ({ page }) => {
+test("after the views beside are deleted and the page's main column deleted and the delete undone, a value changed shows in the next frame, its work within two frames", async ({ page }) => {
   const elements = await openBigPage(page);
   await enterEditMode(page);
   const views = [VIEWS[0]];
@@ -654,13 +654,13 @@ test("after the views beside are deleted and the page's main column deleted and 
   await selectCard(page, 6);
   for (let i = 0; i < 4; i++) await page.keyboard.press("Escape");
   await page.keyboard.press("Delete");
-  await expect.poll(async () => (await stageAndViewport(page)).inSight, { message: "with its main column deleted, the desktop view shows whole" }).toBe(true);
+  await expect.poll(async () => (await stageInSight(page)).inSight, { message: "with its main column deleted, the desktop view shows whole" }).toBe(true);
   await settle(page, 500);
-  const short = await stageAndViewport(page);
+  const short = await stageInSight(page);
   await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(async () => (await stageAndViewport(page)).inSight, { message: "put back, it is mostly out of sight" }).toBe(false);
+  await expect.poll(async () => (await stageInSight(page)).inSight, { message: "the delete undone, it is mostly out of sight" }).toBe(false);
   await settle(page, 500);
-  const long = await stageAndViewport(page);
+  const long = await stageInSight(page);
   await selectCard(page, 6);
   const gap = await stepValue(page, "Gap", cardBody(6), "row-gap", views);
 
@@ -672,13 +672,13 @@ test("after the views beside are deleted and the page's main column deleted and 
   keep("valueAfterChanges", { [name]: { work, latency, inFirstFrame }, stageHeights: { short: short.stageHeight, long: long.stageHeight, viewport: long.viewportHeight } });
   print(
     report(
-      `Changing a value after the views beside are deleted and the main column deleted and put back, ${elements} elements, ${views.length} view — ${mode}`,
+      `Changing a value after the views beside are deleted and the main column deleted and the delete undone, ${elements} elements, ${views.length} view — ${mode}`,
       [
         { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met },
         { name: `${name}: key to frame drawn`, summary: latency },
       ],
       [
-        `The desktop view ${short.stageHeight.toFixed(0)}px tall on screen without its main column, in a viewport ${long.viewportHeight.toFixed(0)}px tall; ${long.stageHeight.toFixed(0)}px once put back.`,
+        `The desktop view ${short.stageHeight.toFixed(0)}px tall on screen without its main column, in a viewport ${long.viewportHeight.toFixed(0)}px tall; ${long.stageHeight.toFixed(0)}px once the delete is undone.`,
         `${inFirstFrame} of ${gap.length} steps shown in the desktop view in the first frame.`,
       ],
     ),

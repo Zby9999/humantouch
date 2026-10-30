@@ -75,7 +75,7 @@ describe("drawing only what shows once the camera is at rest", () => {
     const redraw = vi.fn();
     const atRest = onceAtRest(redraw, () => false, () => false);
     for (let i = 0; i < 5; i++) {
-      atRest.reframed();
+      atRest.resized();
       vi.advanceTimersByTime(2 * AT_REST_MS);
     }
     expect(redraw).not.toHaveBeenCalled();
@@ -86,20 +86,20 @@ describe("drawing only what shows once the camera is at rest", () => {
     let whole = true;
     const atRest = onceAtRest(redraw, () => false, () => whole);
     // A view deleted, the rest all in sight.
-    atRest.reframed();
+    atRest.resized();
     vi.advanceTimersByTime(AT_REST_MS);
     expect(redraw).toHaveBeenCalledOnce();
     // Drawn all in sight, it may be drawn whole still: the window made smaller, twice in a row, draws once more.
     whole = false;
-    atRest.reframed();
+    atRest.resized();
     vi.advanceTimersByTime(AT_REST_MS / 2);
-    atRest.reframed();
+    atRest.resized();
     vi.advanceTimersByTime(AT_REST_MS - 1);
     expect(redraw).toHaveBeenCalledOnce();
     vi.advanceTimersByTime(1);
     expect(redraw).toHaveBeenCalledTimes(2);
     // Drawn out of sight: a view growing taller no longer draws it.
-    atRest.reframed();
+    atRest.resized();
     vi.advanceTimersByTime(10 * AT_REST_MS);
     expect(redraw).toHaveBeenCalledTimes(2);
   });
@@ -112,7 +112,7 @@ describe("drawing only what shows once the camera is at rest", () => {
     vi.advanceTimersByTime(AT_REST_MS);
     expect(redraw).toHaveBeenCalledOnce();
     whole = false;
-    atRest.reframed();
+    atRest.resized();
     vi.advanceTimersByTime(AT_REST_MS);
     expect(redraw).toHaveBeenCalledTimes(2);
   });
@@ -122,7 +122,7 @@ describe("drawing only what shows once the camera is at rest", () => {
     let dragging = true;
     let whole = true;
     const atRest = onceAtRest(redraw, () => dragging, () => whole);
-    atRest.reframed();
+    atRest.resized();
     whole = false;
     vi.advanceTimersByTime(3 * AT_REST_MS);
     expect(redraw).not.toHaveBeenCalled();
