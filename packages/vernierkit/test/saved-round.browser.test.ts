@@ -273,6 +273,21 @@ describe("a round saved before the instances of a layer shared their edit styles
     expect(styles()).toEqual(fixture.styles);
     expect(JSON.stringify(changes.save())).toBe(JSON.stringify(fixture.changeSet));
     expect(JSON.stringify(offCanvas.save())).toBe(JSON.stringify(fixture.offCanvas));
+    // The Cards of the loop neither moved nor deleted alone, the one the page gives an opacity of its own aside, share one style element now.
+    const alike = [...doc.querySelectorAll('article[data-vk-layer="1"]:not([data-vk-move]):not([data-vk-deleted])')].slice(1);
+    expect(alike.length).toBeGreaterThan(0);
+    expect(new Set(alike.map((card) => card.getAttribute("data-vk-style"))).size).toBe(1);
+    expect(editSheets(doc)).toBeLessThan(fixture.sheets);
+
+    // A value stepped on the loop changes the style elements of its instances' groups alone: the one the page gives an opacity, the one moved alone and the others (the one deleted is no layer).
+    const changed = new Set<Node>();
+    const observer = new MutationObserver((records) => records.forEach((record) => changed.add(record.target)));
+    observer.observe(doc.documentElement, { subtree: true, attributes: true, childList: true, characterData: true });
+    editor.set(layerOf(loopOf(doc)), "radius", 29, { step: true });
+    await Promise.resolve();
+    observer.disconnect();
+    expect([...changed].every((node) => (node as Element).localName === "style")).toBe(true);
+    expect(changed.size).toBe(3);
 
     editor.set(layerOf(loopOf(doc)), "radius", 30);
     const radii = (el: Element) => getComputedStyle(el).borderTopLeftRadius;
@@ -280,8 +295,10 @@ describe("a round saved before the instances of a layer shared their edit styles
     expect([...doc.querySelectorAll('article[data-vk-layer="1"]:not([data-vk-deleted])')].map(radii)).toEqual(["30px", "30px", "30px"]);
     expect(changes.list().find((change) => change.property === "radius" && change.layer === "1" && !change.breakpoint)).toMatchObject({ before: 12, after: 30 });
     editor.undo();
+    editor.undo();
     expect(styles()).toEqual(fixture.styles);
     expect(JSON.stringify(changes.save())).toBe(JSON.stringify(fixture.changeSet));
+    editor.redo();
     editor.redo();
 
     const again = await reopen(fixture, serializeCanvas(canvas));

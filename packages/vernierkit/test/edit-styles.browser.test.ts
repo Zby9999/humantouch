@@ -101,4 +101,121 @@ describe("the instances of a layer share their edit styles", () => {
     const tablet = await views.add(iframe(600), 600);
     expect([...tablet.document.querySelectorAll("article")].map(radius)).toEqual(all);
   });
+
+  test("one instance moved alone, or deleted alone, has a style element of its own, as it looks otherwise; undone, it shares the others' again", async () => {
+    const { doc, editor, cards, layerOf } = await open();
+    const main = doc.querySelector("main")!;
+    editor.set(layerOf(cards[0]), "radius", 4);
+
+    editor.move(layerOf(cards[1]), { parent: layerOf(main), x: 10, y: 300 });
+    expect(keys(cards).size).toBe(2);
+    expect(keys(cards.filter((card) => card !== cards[1])).size).toBe(1);
+    expect(getComputedStyle(cards[1]).position).toBe("absolute");
+    expect(cards.map(radius)).toEqual(Array(6).fill("4px"));
+    // A value changed on the layer: on every instance, the one moved too.
+    editor.set(layerOf(cards[0]), "radius", 6);
+    expect(cards.map(radius)).toEqual(Array(6).fill("6px"));
+    expect(keys(cards).size).toBe(2);
+
+    editor.remove(layerOf(cards[2]));
+    expect(keys(cards).size).toBe(3);
+    expect(getComputedStyle(cards[2]).display).toBe("none");
+
+    editor.undo();
+    editor.undo();
+    expect(keys(cards).size).toBe(2);
+    editor.undo();
+    expect(keys(cards).size).toBe(1);
+    // Nothing is left of the move: neither of its style element nor its container's.
+    expect(sheets(doc)).toHaveLength(1);
+    expect(cards.map((card) => getComputedStyle(card).position)).toEqual(Array(6).fill("static"));
+    expect(cards.map(radius)).toEqual(Array(6).fill("4px"));
+  });
+
+  test("an instance the page styles otherwise, with an important declaration on its style attribute, has a style element of its own, and keeps what it has", async () => {
+    const { doc, editor, cards, layerOf } = await open(pageWith(true));
+
+    editor.set(layerOf(cards[0]), "fill", RED);
+
+    expect(keys(cards).size).toBe(2);
+    expect(keys(cards.slice(0, 5)).size).toBe(1);
+    expect(cards.map((card) => getComputedStyle(card).backgroundColor)).toEqual(Array(6).fill("rgb(255, 0, 0)"));
+    expect(cards.map((card) => getComputedStyle(card).opacity)).toEqual([...Array(5).fill("1"), "0.5"]);
+    editor.undo();
+    expect(sheets(doc)).toHaveLength(0);
+    expect(getComputedStyle(cards[5]).opacity).toBe("0.5");
+  });
+
+  test("instances the freezer pinned, shifted apart, each have a style element of their own, shifted as they are", async () => {
+    const doc = write(`<!DOCTYPE html><body>${[0, 0, 30].map((shift) => `<nav data-vk-layer="1" data-vk-pin-offset="0 ${shift}" style="position: absolute !important; top: ${shift}px !important"></nav>`).join("")}</body>`);
+    const navs = [...doc.querySelectorAll("nav")];
+
+    declare(navs, { top: "10px" });
+
+    expect(keys(navs).size).toBe(2);
+    expect(navs.map((nav) => getComputedStyle(nav).top)).toEqual(["10px", "10px", "40px"]);
+  });
+
+  test("changed at a breakpoint and at every width, by turns, and undone, a layer's instances share one style element, its media query as the breakpoint has it", async () => {
+    const { doc, editor, cards, layerOf, phone, inPhone } = await open();
+
+    editor.at(phone);
+    editor.set(layerOf(cards[0]), "radius", 20);
+    editor.at(null);
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.at(phone);
+    editor.set(layerOf(cards[0]), "radius", 24, { continues: true, step: true });
+
+    expect(sheets(doc)).toHaveLength(1);
+    expect(sheets(doc)[0].textContent).toMatch(/@media \(width < 800px\)/);
+    expect(cards.map(radius)).toEqual(Array(6).fill("4px"));
+    expect(cards.map((card) => radius(inPhone(card)))).toEqual(Array(6).fill("24px"));
+    editor.undo();
+    editor.undo();
+    expect(sheets(doc)).toHaveLength(1);
+    expect(cards.map(radius)).toEqual(Array(6).fill("12px"));
+    expect(cards.map((card) => radius(inPhone(card)))).toEqual(Array(6).fill("20px"));
+  });
+
+  test("one instance read as the page styles it reads the page's value; every instance still shows the edits after", async () => {
+    const { editor, cards, layerOf } = await open();
+    editor.set(layerOf(cards[0]), "radius", 4);
+
+    expect(asPage(cards[2], () => radius(cards[2]))).toBe("12px");
+
+    expect(cards.map(radius)).toEqual(Array(6).fill("4px"));
+  });
+
+  test("a layer made this round in each instance, edited, taken off and put back by undo and redo, looks as it did", async () => {
+    const { doc, editor, cards, layerOf } = await open();
+    const copy = editor.duplicate(layerOf(cards[0].querySelector("h3")!));
+    editor.set(copy, "textColor", { color: "#FF0000", opacity: 1 });
+    const copies = () => [...doc.querySelectorAll("h3 + h3")];
+    expect(keys(copies()).size).toBe(1);
+
+    editor.undo();
+    editor.undo();
+    expect(copies()).toHaveLength(0);
+    // Meanwhile, the instances of another layer are written anew: what was taken off keeps its style element.
+    declare(cards, { "outline-width": "1px" });
+    editor.redo();
+    editor.redo();
+
+    expect(copies().map((el) => getComputedStyle(el).color)).toEqual(Array(6).fill("rgb(255, 0, 0)"));
+    expect(keys(copies()).size).toBe(1);
+  });
+
+  test("a change taken back from a saved round, with no canvas open, leaves the instances sharing their style element as before", async () => {
+    const { doc, canvas, changes, editor, cards, layerOf } = await open();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.move(layerOf(cards[1]), { parent: layerOf(doc.querySelector("main")!), x: 10, y: 300 });
+    const saved = { canvas: serializeCanvas(canvas), changeSet: changes.save() };
+
+    const reverted = write(revertSaved(saved, changes.list().find((change) => change.kind === "move")!.id)!.canvas);
+
+    const left = [...reverted.querySelectorAll("article")];
+    expect(keys(left).size).toBe(1);
+    expect(left.map(radius)).toEqual(Array(6).fill("4px"));
+    expect(left.map((card) => getComputedStyle(card).position)).toEqual(Array(6).fill("static"));
+  });
 });

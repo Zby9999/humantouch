@@ -536,12 +536,14 @@ function writeRules(written: { el: Element; rules: Rules }[], pending?: string) 
     return { el, rules, json: shows ? JSON.stringify(rules) : null, key: el.getAttribute(STYLE_KEY_ATTR) };
   });
 
-  // A whole group, alike still: its style element, as it is.
+  // A whole group, alike still, of a layer with no other group to join: its style element, as it is.
   const [first] = all;
   if (first.json && first.key !== null && all.every(({ key, json }) => key === first.key && json === first.json)) {
     const sheet = sheetOf(doc, first.key);
     const these = new Set(all.map(({ el }) => el));
-    if (sheet && membersOf(doc, first.key).every((el) => these.has(el))) {
+    const layer = first.el.getAttribute(LAYER_ID_ATTR);
+    const alone = !layer || !doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(layer)}"][${STYLE_KEY_ATTR}]:not([${STYLE_KEY_ATTR}="${CSS.escape(first.key)}"])`);
+    if (sheet && alone && membersOf(doc, first.key).every((el) => these.has(el))) {
       showGroup(sheet as HTMLStyleElement, first.key, first.rules, first.json);
       return;
     }
