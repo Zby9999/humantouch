@@ -335,3 +335,27 @@ test("a locked layer stops at the minimum width its own styles give it", async (
   await badge(page).click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/^Width.*Fixed 50px$/]);
 });
+
+test("pressed with ⌘ held, a handle selects the deepest layer under it, as anywhere on the canvas", async ({ page }) => {
+  await addBoard(page, { box: [100, 60, 80, 40] });
+  await page.evaluate(() => {
+    const inner = Object.assign(document.createElement("div"), { id: "inner" });
+    inner.style.cssText = "position: absolute; inset: 0; background: #999";
+    document.getElementById("box")!.append(inner);
+  });
+  await enterEditMode(page);
+  // The box, the layer around what is under the pointer.
+  await pick(page, desktop(page), "#inner");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".vk-handle")).toHaveCount(24);
+  const edge = (await handle(page, "w").boundingBox())!;
+
+  // Just inside the box's left edge, on what fills it.
+  await page.keyboard.down(mod);
+  await page.mouse.click(edge.x + edge.width - 1, edge.y + edge.height / 2);
+  await page.keyboard.up(mod);
+
+  // What fills it selected now: its handles are on it, as large as the box.
+  await expect(design(page).getByRole("textbox", { name: "X", exact: true })).toHaveValue("0");
+  await expect(badge(page)).toHaveCount(0);
+});

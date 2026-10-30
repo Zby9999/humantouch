@@ -434,12 +434,13 @@ export function CanvasView(props: Props) {
     redrag: (_pointer: Pointer) => {},
     endResize: (_commit: boolean) => {},
     moveResize: (_session: ResizeSession, _pointer: ResizePointer) => {},
+    resizeNow: () => {},
     tool,
     onTool,
     playing,
     onStopPlaying,
   });
-  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, endResize, moveResize, tool, onTool, playing, onStopPlaying };
+  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, endResize, moveResize, resizeNow, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -458,9 +459,11 @@ export function CanvasView(props: Props) {
       if (!playing) {
         // ⌘ turns snapping off, ⇧ keeps the proportions and ⌥ resizes from the middle while each is held, without the pointer moving.
         const resized = resizing.current;
-        if (resized?.pointer && ["Meta", "Control", "Shift", "Alt"].includes(event.key)) {
+        if (resized && ["Meta", "Control", "Shift", "Alt"].includes(event.key)) {
+          // What the pointer did before the key, first.
+          latest.current.resizeNow();
           const { metaKey, ctrlKey, shiftKey, altKey } = event;
-          latest.current.moveResize(resized, { ...resized.pointer, metaKey, ctrlKey, shiftKey, altKey });
+          if (resized.pointer) latest.current.moveResize(resized, { ...resized.pointer, metaKey, ctrlKey, shiftKey, altKey });
         }
         if (event.key === "Meta" || event.key === "Control") {
           const deep = event.metaKey || event.ctrlKey;
@@ -612,7 +615,7 @@ export function CanvasView(props: Props) {
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
     if (resizing.current?.pointerId === event.pointerId) {
-      moveResize(resizing.current, event);
+      resizeOnNextFrame(resizing.current, event);
       return;
     }
     if (drawing.current?.pointerId === event.pointerId) {
@@ -645,7 +648,8 @@ export function CanvasView(props: Props) {
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (resizing.current?.pointerId === event.pointerId) {
-      // A pointer cancelled takes the resize back, as a drag cancelled puts the layer back.
+      // Let go, where it is let go; a pointer cancelled takes the resize back, as a drag cancelled puts the layer back.
+      if (event.type === "pointerup") resizeNow();
       endResize(event.type === "pointerup");
       return;
     }
@@ -737,10 +741,12 @@ export function CanvasView(props: Props) {
   /**
    * A handle of the layer selected pressed in a view: dragging it resizes the
    * layer there, at that view's breakpoint. Not while playing, drawing, or
-   * with Space held (the press pans), nor but with the main button.
+   * with Space held (the press pans), nor but with the main button; nor with
+   * ⌘ (Ctrl) held as it is pressed: that selects the deepest layer there, as
+   * anywhere on the canvas, though it is on the edge of the one selected.
    */
   const pressHandle = (layer: Layer, shown: Shown, handle: Handle, event: TargetedPointerEvent<HTMLDivElement>): boolean => {
-    if (playing || tool || spaceHeld || event.button !== 0 || !editor) return false;
+    if (playing || tool || spaceHeld || event.button !== 0 || event.metaKey || event.ctrlKey || !editor) return false;
     // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
     views?.sync(shown.view);
     setActive(shown.view);
@@ -771,11 +777,34 @@ export function CanvasView(props: Props) {
     catchingUp.current = setTimeout(() => caughtUp(undefined), 2 * CATCH_UP_AFTER_MS);
   }
 
+  /**
+   * The pointer moves, as a mouse reports it, more often than frames come: the
+   * layer is resized once a frame, as the pointer is when the frame begins,
+   * so no step is made that no frame shows.
+   */
+  const nextResize = useRef<{ frame: number; session: ResizeSession; pointer: ResizePointer } | null>(null);
+  function resizeOnNextFrame(session: ResizeSession, event: ResizePointer) {
+    const { clientX, clientY, metaKey, ctrlKey, shiftKey, altKey } = event;
+    const pointer = { clientX, clientY, metaKey, ctrlKey, shiftKey, altKey };
+    if (nextResize.current) nextResize.current.pointer = pointer;
+    else nextResize.current = { frame: requestAnimationFrame(() => latest.current.resizeNow()), session, pointer };
+  }
+  /** The resize waiting for the next frame made now, if one is. */
+  function resizeNow() {
+    const next = nextResize.current;
+    if (!next) return;
+    nextResize.current = null;
+    cancelAnimationFrame(next.frame);
+    if (resizing.current === next.session) moveResize(next.session, next.pointer);
+  }
+
   /** Ends the resize: let go, it stays as it is; cancelled with Esc, it is taken back. The keys edit again. */
   function endResize(commit: boolean) {
     const session = resizing.current;
     if (!session) return;
     resizing.current = null;
+    if (nextResize.current) cancelAnimationFrame(nextResize.current.frame);
+    nextResize.current = null;
     session.release();
     setResize(null);
     if (!commit && session.stepped) onCancelResize(session.layer);
