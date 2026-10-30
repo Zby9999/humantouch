@@ -61,7 +61,7 @@ interface Props {
   onLeft(): void;
 }
 
-/** How long after the last edit the selection box comes back. */
+/** How long after the last edit the selection box comes back: after the views beside have caught up (`CATCH_UP_AFTER_MS` in `views.ts`, ADR 0011). */
 const ADJUSTING_MS = 200;
 /** How long after the last edit the round is saved. */
 const AUTOSAVE_MS = 500;

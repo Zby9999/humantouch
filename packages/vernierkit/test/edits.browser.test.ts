@@ -1211,22 +1211,25 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
     const { doc, views, editor, cards, layerOf, phone } = await open();
     const tabletFrame = document.createElement("iframe");
     document.body.append(tabletFrame);
-    const paused = () => new Promise((done) => setTimeout(done, CATCH_UP_AFTER_MS + 50));
+    /** Two frames drawn: the views beside wait for the steps to pause, not for a frame. */
+    const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
     try {
       const tablet = await views.add(tabletFrame, 600);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       editor.set(layerOf(cards[0]), "radius", 4);
-      await paused();
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
       for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
       // As a key held down repeats: each step sooner after the last than the pause, frames drawn between them.
       for (const radius of [5, 6]) {
         editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true });
         expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill(`${radius}px`));
-        await painted();
-        await new Promise((done) => setTimeout(done, CATCH_UP_AFTER_MS / 2));
+        await drawn();
+        vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
         for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
       }
-      await paused();
+      vi.advanceTimersByTime(1);
       for (const view of [phone, tablet]) expect(radii(view.document)).toEqual(radii(doc));
+      vi.useRealTimers();
 
       editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true });
       views.sync(phone);
@@ -1238,6 +1241,7 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
       expect(radii(tablet.document).slice(0, 3)).toEqual(Array(3).fill("7px"));
       expect(tablet.document.querySelectorAll("hr")).toHaveLength(1);
     } finally {
+      vi.useRealTimers();
       tabletFrame.remove();
     }
   });
