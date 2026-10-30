@@ -211,7 +211,7 @@ test("while a layer off the canvas is dragged, Delete, ⌘D and the arrows do no
   await page.mouse.move(box.x + 3, box.y + 3);
   await page.mouse.down();
   await page.mouse.move(box.x + 3 - 80, box.y + 3 + 60, { steps: 10 });
-  for (const key of ["Delete", `${mod}+d`, "ArrowRight", `${mod}+x`]) {
+  for (const key of ["Delete", "Backspace", `${mod}+d`, "ArrowRight", `${mod}+x`, "Shift+A", `${mod}+Shift+g`]) {
     await page.keyboard.press(key);
     await expect(offCanvas(page), key).toHaveCount(1);
     await expect(desktop(page).contentFrame().locator("h1"), key).toBeHidden();

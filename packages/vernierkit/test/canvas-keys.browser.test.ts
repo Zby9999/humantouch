@@ -169,6 +169,19 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
     expect(heldPress({ key: "f" })).toBe("ignored");
     expect(heldPress({ key: "v" })).toBe("ignored");
     expect(heldPress({ key: "Enter" }, { on: document.createElement("button") })).toBe("ignored");
+    // Out of a field, Tab would apply what was typed in it.
+    expect(heldPress({ key: "Tab" }, { on: Object.assign(document.createElement("input"), { className: "vk-input" }) })).toBe("ignored");
+    expect(heldPress({ key: "Tab", shiftKey: true })).toBe("ignored");
+  });
+
+  test("the browser's own shortcuts, with ⌘ or Ctrl and a letter the editor does not take, go on as ever", () => {
+    expect(heldPress({ key: "r", metaKey: true })).toBe("passes");
+    expect(heldPress({ key: "f", metaKey: true })).toBe("passes");
+    expect(heldPress({ key: "l", ctrlKey: true })).toBe("passes");
+    expect(heldPress({ key: "=", metaKey: true })).toBe("passes");
+    // The editor's own, with ⌘ or not, do not.
+    expect(heldPress({ key: "c", ctrlKey: true })).toBe("ignored");
+    expect(heldPress({ key: "G", metaKey: true, shiftKey: true })).toBe("ignored");
   });
 
   test("Esc, Space, ⇧1 and the modifier keys themselves go on as ever, and so does a key let go", () => {

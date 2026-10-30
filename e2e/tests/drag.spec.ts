@@ -326,6 +326,36 @@ test("pressed on a layer and not yet moved 3px, none of the keys that edit does 
   await expect(badge).toHaveCount(0);
 });
 
+test("while dragging, the keys that move about the canvas go on: Space readies a pan, ⇧1 fits every view in; Esc still cancels the drag", async ({ page }) => {
+  await enterEditMode(page);
+  await selectButton(page);
+  const viewport = page.getByRole("region", { name: "Canvas viewport" });
+  const view = page.locator('iframe[title="Canvas"]');
+  // Zoomed in a little, so ⇧1 has something to change.
+  const fitted = (await boxOf(view)).width;
+  const area = await boxOf(viewport);
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up("Control");
+  await expect.poll(async () => (await boxOf(view)).width).toBeGreaterThan(fitted + 10);
+  await drag(page, canvas(page).locator(`${HERO} > button`), () => aboveParagraph(page), { drop: false });
+
+  await page.keyboard.down("Space");
+  await expect(viewport).toHaveClass(/is-pan-ready/);
+  await page.keyboard.up("Space");
+  await expect(viewport).not.toHaveClass(/is-pan-ready/);
+  await page.keyboard.press("Shift+Digit1");
+  await expect.poll(async () => Math.round((await boxOf(view)).width)).toBe(Math.round(fitted));
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".vk-drop-line")).toHaveCount(0);
+  await page.mouse.up();
+
+  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect(dragStyled(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
+});
+
 test("a reorder is listed as one; the page keeps the code's order", async ({ page }) => {
   await enterEditMode(page);
   await selectButton(page);

@@ -406,9 +406,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       const held = pointerHeld();
       const key = historyKey(event, { held });
       if (!key) {
-        const kept = held ? heldKey(event) : "passes";
-        if (kept === "ignored") event.preventDefault();
-        if (kept !== "passes") event.stopPropagation();
+        const whileHeld = held ? heldKey(event) : "passes";
+        if (whileHeld === "ignored") event.preventDefault();
+        if (whileHeld !== "passes") event.stopPropagation();
         return;
       }
       event.preventDefault();

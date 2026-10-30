@@ -287,7 +287,7 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
   await expect(badge).toHaveCount(0);
 });
 
-test("while dragging in the phone view, ⌘D and Delete do nothing in any view; let go, no view keeps a style of the drag, nor a copy of the layer", async ({ page }) => {
+test("while dragging in the phone view, ⌘D, Delete and the other keys that edit do nothing in any view; let go, no view keeps a style of the drag, nor a copy of the layer", async ({ page }) => {
   await enterEditMode(page);
   const tree = page.getByRole("tree", { name: "Layers" });
   const badge = page.getByRole("button", { name: /not applied yet/ });
@@ -308,7 +308,7 @@ test("while dragging in the phone view, ⌘D and Delete do nothing in any view; 
   const p = (await phone(page).contentFrame().locator(`${hero} > p`).boundingBox())!;
   await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
   for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
-  for (const key of ["ControlOrMeta+d", "Delete"]) {
+  for (const key of ["ControlOrMeta+d", "Delete", "Backspace", "ControlOrMeta+x", "Shift+A", "Alt+Shift+A", "ControlOrMeta+Shift+g", "ArrowDown"]) {
     await page.keyboard.press(key);
     expect(await orders(), key).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
     for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`), key).not.toHaveCSS("translate", "none");

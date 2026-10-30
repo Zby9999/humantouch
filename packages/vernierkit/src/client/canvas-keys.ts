@@ -53,7 +53,8 @@ export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging,
   }
   const target = event.composedPath()[0];
   if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return null;
-  // A tool picked would change what the press makes, or what follows it.
+  // Held down, only the keys that move about the canvas, and Esc, act here: not T, F or V, say,
+  // as a tool picked would change what the press makes, or what follows it.
   if (held && heldKey(event) !== "passes") return null;
   // Repeats and key-up too: a focused button would otherwise click on Space.
   if (event.code === "Space") return { action: "pan", held: event.type === "keydown" };
@@ -79,10 +80,9 @@ export type HistoryKey = "undo" | "redo" | "ignored";
  * let go, or a drag cancelled with Esc: the views put back what makes room as
  * it was when the drag began, over what an undo would change meanwhile, and a
  * value dragged would be set again as the pointer next moves (tickets 61, 62,
- * ADR 0012). A field
- * keeps its own while something typed in it is not applied yet; a field of
- * the Design panel otherwise, or a slider, passes it on. Null: not these keys,
- * and the key goes on.
+ * ADR 0012). A field keeps its own while something typed in it is not applied
+ * yet; a field of the Design panel otherwise, or a slider, passes it on. Null:
+ * not these keys, and the key goes on.
  */
 export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): HistoryKey | null {
   const target = event.composedPath()[0];
@@ -99,25 +99,32 @@ export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): H
   return redo ? "redo" : "undo";
 }
 
+/** What becomes of a key while the pointer is held down (`heldKey`). */
+export type HeldKey = "passes" | "text" | "ignored";
+
 /**
  * What becomes of a key while the pointer is held down on a layer on the
  * canvas, a value's icon, a gradient's stop or a layer being drawn
- * (`pointerHeld`, ADR 0012). `passes`: it goes on as ever: Esc, Space, ⇧1,
- * the modifier keys themselves (⌘ turning snapping off, ⌥ measuring or
- * copying where the layer is let go, ⇧ stepping by 10), and any key let go.
- * `text`: in a field that takes text, it types there as ever, but nothing acts
- * on it, the field neither (no value applied with Enter or stepped with the
- * arrows). `ignored`: nothing acts on it, nor the browser: every other key,
- * so none changes the canvas, the changes or the history, picks a tool,
- * copies a layer made room for or shifted, or presses a button, until the
- * pointer is let go.
+ * (`pointerHeld`, ADR 0012):
+ * - `passes`, it goes on as ever: Esc; Space, off a field (it pans); ⇧1, with
+ *   no other modifier; the modifier keys themselves (⌘ turning snapping off,
+ *   ⌥ measuring or copying where the layer is let go, ⇧ stepping by 10); the
+ *   browser's own shortcuts, with ⌘ (Ctrl) and a letter the editor does not
+ *   take (⌘R, ⌘F, ⌘L, ⌘+); and any key let go.
+ * - `text`, in a field that takes text: it types there as ever, but nothing
+ *   acts on it, the field neither (no value applied with Enter or stepped with
+ *   the arrows).
+ * - `ignored`: nothing acts on it, nor the browser. Every other key: none
+ *   changes the canvas, the changes or the history, picks a tool, copies a
+ *   layer as the drag has shifted it, presses a button, or moves the focus out
+ *   of a field (Tab), which would apply what was typed in it.
  */
-export type HeldKey = "passes" | "text" | "ignored";
-
 export function heldKey(event: KeyboardEvent): HeldKey {
   if (event.type !== "keydown" || event.key === "Escape" || MODIFIERS.has(event.key)) return "passes";
   const target = event.composedPath()[0];
+  if (event.key === "Tab") return "ignored";
   if (takesText(target)) return "text";
+  if ((event.metaKey || event.ctrlKey) && !EDITOR_COMMANDS.has(event.key.toLowerCase())) return "passes";
   const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
   // Space pans, but on a checkbox or a stop's handle it would press it.
   if ((event.code === "Space" && !isEditable(target)) || (event.code === "Digit1" && event.shiftKey && plain)) return "passes";
@@ -125,6 +132,9 @@ export function heldKey(event: KeyboardEvent): HeldKey {
 }
 
 const MODIFIERS = new Set(["Shift", "Meta", "Control", "Alt", "AltGraph", "CapsLock", "Fn"]);
+
+/** The letters the editor takes with ⌘ (Ctrl): copy, cut, paste, duplicate, ungroup, undo and redo (the Shell's keys). */
+const EDITOR_COMMANDS = new Set(["c", "x", "v", "d", "g", "z", "y"]);
 
 /** Whether the target takes text typed: a text field, a text area, or text typed in. */
 function takesText(target: EventTarget | undefined): boolean {

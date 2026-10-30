@@ -95,7 +95,7 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   await expect(badge(page)).toHaveCount(0);
 });
 
-test("while a number's icon is dragged, ⌘Z, ⇧⌘Z and the field's own arrows do nothing; let go, ⌘Z takes the drag back, then the edit before it", async ({ page }) => {
+test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows and Enter, and Tab do nothing; let go, ⌘Z takes the drag back, then the edit before it", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
   // Something to undo, the cards red, and something to redo, a corner radius set and undone.
@@ -112,9 +112,11 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z and the field's own arrows
   await page.mouse.down();
   for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
   await expect(radius).toHaveValue("15");
-  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "ArrowUp", "Enter"]) {
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "ArrowUp", "Enter", "Tab"]) {
     await page.keyboard.press(key);
     await expect(radius, key).toHaveValue("15");
+    // Tab would take the focus out of the field, applying what is typed in it.
+    await expect(radius, key).toBeFocused();
     expect(await cardStyles(page, "backgroundColor", "canvas"), key).toEqual([RED, RED, RED, WHITE]);
     expect(await cardStyles(page, "borderRadius", "canvas"), key).toEqual(["15px", "15px", "15px", "12px"]);
     await expect(badge(page), key).toHaveText("2");

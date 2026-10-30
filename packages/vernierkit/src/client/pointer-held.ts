@@ -14,15 +14,18 @@ const held = new Map<symbol, number>();
 /** A pointer let go or cancelled, wherever it is: the presses it held are over. */
 const lift = (event: PointerEvent) => {
   for (const [press, pointerId] of held) if (pointerId === event.pointerId) held.delete(press);
-  if (!held.size) listen(false);
+  if (!held.size) stopWatching();
 };
 
-function listen(on: boolean) {
-  // Before anything on the page takes it: what ends with the press sees it over.
-  for (const type of ["pointerup", "pointercancel"] as const) {
-    if (on) window.addEventListener(type, lift, true);
-    else window.removeEventListener(type, lift, true);
-  }
+/** Before anything on the page takes it: what ends with the press sees it over. */
+function watchLifts() {
+  window.addEventListener("pointerup", lift, true);
+  window.addEventListener("pointercancel", lift, true);
+}
+
+function stopWatching() {
+  window.removeEventListener("pointerup", lift, true);
+  window.removeEventListener("pointercancel", lift, true);
 }
 
 /**
@@ -32,10 +35,10 @@ function listen(on: boolean) {
  */
 export function holdPointer(pointerId: number): () => void {
   const press = Symbol("press");
-  if (!held.size) listen(true);
+  if (!held.size) watchLifts();
   held.set(press, pointerId);
   return () => {
-    if (held.delete(press) && !held.size) listen(false);
+    if (held.delete(press) && !held.size) stopWatching();
   };
 }
 

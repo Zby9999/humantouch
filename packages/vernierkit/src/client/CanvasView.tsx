@@ -578,8 +578,7 @@ export function CanvasView(props: Props) {
       return;
     }
     if (press.current?.pointerId === event.pointerId) {
-      press.current.release();
-      press.current = null;
+      endPress();
       endDrag(event.type === "pointerup", event.altKey);
       return;
     }
@@ -709,14 +708,19 @@ export function CanvasView(props: Props) {
     el.addEventListener("blur", end);
   };
 
+  /** The press on a layer is over: moving the pointer drags nothing, and the keys edit again. */
+  function endPress() {
+    press.current?.release();
+    press.current = null;
+  }
+
   /** Ends the drag: everything shifted goes back, and, let go where it can go, the layer moves there; with ⌥ held, a copy goes there. */
   function endDrag(commit: boolean, copy = false) {
     const session = dragging.current;
     if (!session) return;
     dragging.current = null;
     // The press is over with the drag: the keys edit again, though the pointer is still down after Esc.
-    press.current?.release();
-    press.current = null;
+    endPress();
     restoreDragStyles(session);
     setDrag(null);
     if (!commit) return;
