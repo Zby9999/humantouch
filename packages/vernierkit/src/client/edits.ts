@@ -348,10 +348,22 @@ export function createEditor(
     editor: () => editor,
   });
 
-  /** Set while a batch of steps of a run (`SetOptions.step`) is under way: each value set in it is one. */
+  /** Set while edits that are steps of a run (`SetOptions.step`) are under way: each value set then is one. */
   let stepping = false;
+  /** Makes what `edits` does, steps of a run when `step` (or when it already is). */
+  const steppedWhile = <T>(step: boolean, edits: () => T): T => {
+    const was = stepping;
+    stepping ||= step;
+    try {
+      return edits();
+    } finally {
+      stepping = was;
+    }
+  };
   const editor: Editor = {
     ...structure,
+    // The arrow keys nudge, held down or pressed again and again: each nudge is one step of a run.
+    nudge: (layers, dx, dy, options) => steppedWhile(true, () => structure.nudge(layers, dx, dy, options)),
     at: working.at,
     breakpoint: working.breakpoint,
     breakpointAt: working.breakpointAt,
@@ -404,13 +416,7 @@ export function createEditor(
       editHere(layer, property, value, continues, variables);
     },
     batch(edits, { continues = false, step = false } = {}) {
-      const was = stepping;
-      stepping ||= step;
-      try {
-        group(edits, continues);
-      } finally {
-        stepping = was;
-      }
+      steppedWhile(step, () => group(edits, continues));
     },
     undo: steps.undo,
     redo: steps.redo,

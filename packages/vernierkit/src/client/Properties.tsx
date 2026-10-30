@@ -75,7 +75,7 @@ function asStep(change: () => void) {
 }
 
 /** How a value is set now: `continues` the adjustment under way or not, and whether it is one step of a run (`asStep`). */
-export function setNow(continues: boolean): SetOptions {
+export function stepOptions(continues: boolean): SetOptions {
   return { continues, step: stepping };
 }
 
@@ -103,7 +103,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const update = <P extends Property>(property: P, next: (current: PropertyValues[P], layer: Layer) => PropertyValues[P], continues = false) => {
     editor.batch(() => {
       for (const layer of layers) editor.set(layer, property, next(editor.read(layer, property), layer));
-    }, setNow(continues));
+    }, stepOptions(continues));
     onEdit();
   };
   const set = <P extends Property>(property: P) => (value: PropertyValues[P], continues = false) => update(property, () => value, continues);
@@ -188,7 +188,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         const kept = effectOf(layer, property);
         if (kept) editor.set(layer, kept, next(editor.read(layer, kept), layer));
       }
-    }, setNow(continues));
+    }, stepOptions(continues));
     onEdit();
   };
   /** Changes several effects of each selected layer, where the layer keeps them, as one edit. */

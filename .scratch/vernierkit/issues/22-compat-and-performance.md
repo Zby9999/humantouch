@@ -522,7 +522,7 @@ Stack Gap 约 38ms：
    - 一步：和原来一样，每一步把追上推后，停手 `CATCH_UP_AFTER_MS`（100ms）后一次追上。
    - 单次：画完下一帧后的任务里追上（第三轮的写法，`requestAnimationFrame` 里 `setTimeout`）。还没追上时又来一次单次改值，照样在那一帧后追上。
    - 最新一次改值决定什么时候追上：单次紧跟在一步之后，取消停手的等待，下一帧后追上到最新值；一步紧跟在还没追上的单次之后，改为等停手。
-3. **属性面板的分类**（`Properties.tsx`）：连续的入口在交出值时包一层 `asStep`，`update`、`updateEffect` 和 `GridSection` 的 `set` 用 `setNow(continues)` 把它传给 `editor.batch`。没包的都是单次，以后新加的入口默认也是单次。
+3. **属性面板的分类**（`Properties.tsx`）：连续的入口在交出值时包一层 `asStep`，`update`、`updateEffect` 和 `GridSection` 的 `set` 用 `stepOptions(continues)` 把它传给 `editor.batch`。没包的都是单次，以后新加的入口默认也是单次。
 
 | 入口 | 种类 |
 |---|---|
@@ -536,7 +536,7 @@ Stack Gap 约 38ms：
 | 取色（系统取色器 `<input type="color">`，以及颜色选择弹层里的自定义颜色） | 单次 |
 | 选设计变量、解除绑定、在输入框里输入后从提示里选变量 | 单次 |
 | 添加或删除填充、描边、阴影、色标，点渐变条添加色标 | 单次 |
-| 断点标记的"恢复为继承"（`BreakpointMark`、`BreakpointSection`） | 单次 |
+| 断点标记的"恢复为继承"（`BreakpointMark`、`BreakpointSection`） | 不经过 `editor.set`，算"画布上有其他变化"，三个视图立即追上（和原来一样） |
 
    取色归为单次是按设计师的列表：系统取色器打开后拖动时，浏览器会连续发 `input`，每一次都按单次处理（旁边的视图每次晚一帧），和第三轮一样；撤销仍按原来的 `continues` 合成一步。
 
@@ -545,7 +545,7 @@ Stack Gap 约 38ms：
    - e2e（`views.spec.ts`，271 → 272）：在页面里逐帧看平板视图，回车提交和点开关后，从按键/点击算起不超过 3 帧平板视图显示新值；按 ↑ 和在图标上拖动时，从最后一次按键/移动算起至少 100ms 才显示。把 ↑ 改成不包 `asStep` 时这条会失败。`promote.spec.ts` 的一处注释改为"输入的值下一帧后显示"。
    - "≤ 3 帧"而不是"≤ 2 帧"：帧数从按键算起，第 1 帧画正在工作的视图，旁边的视图在这一帧后的任务里追上。headless 下 10 次回车里有 2 次浏览器在这个任务之前先画了下一帧，旁边的视图在第 3 帧才显示（约 36ms），其余在第 2 帧（约 18–33ms）。第三轮的"晚一帧"也是这样。ADR 0011 的 Consequences 写了这一点。
 
-设计师能看到的变化：输入数值回车、切换开关、选下拉项、取色、选设计变量后，旁边两个视图在一两帧后就变（原来约 100ms 后）；按住方向键、拖动数值图标、拖动色标时和原来一样，停手约 100ms 后跟上。改动单、保存的画布、编辑样式的数据结构都没变。
+设计师能看到的变化：输入数值回车、切换开关、选下拉项、取色、选设计变量后，旁边两个视图在一两帧后就变（原来约 100ms 后）；按住方向键（含在画布上微移图层）、拖动数值图标、拖动色标时和原来一样，停手约 100ms 后跟上。改动单、保存的画布、编辑样式的数据结构都没变。
 
 *headless 性能（非验收）*
 
@@ -564,6 +564,21 @@ Stack Gap 约 38ms：
 | 拖拽 每次平均 fps | 57.6 | 56.8、56.8 |
 
 第一次按住方向键 Gap 的 p95 56.1ms 略高于第四轮的范围，第二次 43.2ms，在范围内；这一项受第一下和第一次重复影响大（见第四轮的"读法"），按波动看。
+
+*按 code-review 修正（2026-10-30）*
+
+- Spec 审查指出：画布上用方向键微移自由摆放的图层（`editor.nudge` → `move` → `editor.set` X、Y）没有标成连续改值，按住方向键时旁边的视图变成每一步晚一帧（第三轮否决的做法），第四轮这里是停手后追上。现在每一次 `nudge` 都算连续改值（`edits.ts` 把 `structure.nudge` 包在 `steppedWhile(true, …)` 里，和 `batch` 共用），设计师看到的和第四轮一样。加了单测：在桌面视图微移自由摆放的图层，旁边的视图（手机视图）在停手 `CATCH_UP_AFTER_MS` 前不动、到时跟上（改之前这条失败）。单测 512 → 513。ADR 0011 写明微移算连续改值。
+- Spec 审查指出分类表里"恢复为继承"写成单次，实际不经过 `editor.set`，三个视图立即追上。表已改。
+- Spec 审查提醒 e2e 的上限是"≤ 3 帧"，比"再下一帧"宽一帧，原因见上，保留。
+- Standards 审查：
+  - `setNow` 读起来像"现在就设"，改名 `stepOptions`。
+  - ADR 0011 原写"连续的要用 `asStep` 交出值"，不够：调 `editor.batch` 的地方还要传 `stepOptions(continues)`，两处缺一处都按单次。已写进 ADR。现在只有 `update`、`updateEffect` 和 `GridSection` 的 `set` 传；`updateEach`、`updateEffects`、`pick` 只接单次的入口，没传。
+  - e2e 的 `watchTablet` 里内层函数和参数同名（`frame`）、`last` 名字不达意、类型断言写了两遍：改为 `iframe`、`look`、`startCounting`，类型抽成 `Watched`。
+- 审查提到但没改的：
+  - 属性面板和编辑器各有一个"做这件事期间算连续改值"的标志（`Properties.tsx` 的 `stepping`、`edits.ts` 的 `stepping`），中间用 `stepOptions` 显式传。输入组件拿不到编辑器，要去掉面板这一层，就得把每个 `onChange(value, continues)` 的签名都改成三种状态，牵涉属性面板几十处；现在的写法改动小，没包的入口自然按单次，符合"有歧义按单次"。
+  - `lagBeside(worked, step)` 用布尔值选两种等法，名字和 `SetOptions.step` 一致，没改成联合类型。
+  - GLOSSARY 没有收"连续改值 / 单次改值"。两词目前只在 ADR 0011 和本 ticket 里用，是否成为术语留给设计师。
+- 修正后：typecheck 通过，单测 513 条通过，e2e 272 条通过。其中第一次全量有 1 条失败：`views.spec.ts`"every view grows with what it shows and shrinks back"，撤销 6 次复制后手机视图没缩回去。这条不经过 `editor.set` 或 `nudge`。单独连跑 8 次都通过，再跑一次全量也通过，按偶发处理，没有查原因。性能测试只用面板里的 ↑，这次修正没改那条路径，没有重跑。
 
 *仍未达标 / 下一步*
 

@@ -110,7 +110,8 @@ export interface Editor {
    * in), the layers between moving a cell along, as dragging it there does,
    * in every view; it stays at the Grid's ends, and in a Grid that places its
    * layers itself (`placesItself`). `continues`: one more nudge of a run, undone
-   * with the nudges before it. Returns the layers where they are now.
+   * with the nudges before it. Each nudge is one step of a run (`step`), as the
+   * arrow keys make them. Returns the layers where they are now.
    */
   nudge(layers: Layer[], dx: number, dy: number, options?: SetOptions): Layer[];
   /**

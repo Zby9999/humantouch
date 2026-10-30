@@ -121,30 +121,33 @@ test("selecting in one view selects the same layer in every view; an edit shows 
  */
 async function watchTablet(page: Page, property: string, value: string, after: string) {
   await tablet(page).evaluate(
-    (frame: HTMLIFrameElement, [property, value, after]) => {
-      const card = frame.contentDocument!.querySelector("article")!;
-      (window as { tabletShows?: Promise<{ frames: number; ms: number }> }).tabletShows = new Promise((done) => {
+    (iframe: HTMLIFrameElement, [property, value, after]) => {
+      const card = iframe.contentDocument!.querySelector("article")!;
+      (window as Watched).tabletShows = new Promise((done) => {
         let at = 0;
         let frames = 0;
-        const last = () => {
+        const startCounting = () => {
           at = performance.now();
           frames = 0;
         };
-        addEventListener(after, last, true);
-        const frame = () => {
+        addEventListener(after, startCounting, true);
+        const look = () => {
           if (at) frames++;
           if (at && getComputedStyle(card).getPropertyValue(property) === value) {
-            removeEventListener(after, last, true);
+            removeEventListener(after, startCounting, true);
             done({ frames, ms: performance.now() - at });
-          } else requestAnimationFrame(frame);
+          } else requestAnimationFrame(look);
         };
-        requestAnimationFrame(frame);
+        requestAnimationFrame(look);
       });
     },
     [property, value, after],
   );
-  return () => page.evaluate(() => (window as { tabletShows?: Promise<{ frames: number; ms: number }> }).tabletShows!);
+  return () => page.evaluate(() => (window as Watched).tabletShows!);
 }
+
+/** What `watchTablet` keeps in the page. */
+type Watched = { tabletShows?: Promise<{ frames: number; ms: number }> };
 
 test("a value set once in the Design panel shows in the views beside the frame after; stepped with ↑ or dragged on its icon, once the steps pause", async ({ page }) => {
   await enterEditMode(page);

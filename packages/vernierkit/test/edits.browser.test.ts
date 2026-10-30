@@ -2186,6 +2186,28 @@ describe("nudging layers, as the arrow keys do", () => {
     expect(place("free")).toEqual([23, 7]);
   });
 
+  test("nudged in the desktop view, a layer placed freely moves in the views beside once the nudges pause, as the arrow keys step a value", async () => {
+    const { views, editor, layer, place } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    // The first nudge makes the layer's edit styles, which every view shows at once.
+    editor.nudge([layer("free")], 1, 0);
+    await painted();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      editor.nudge([layer("free")], 1, 0, { continues: true });
+      expect(place("free")).toEqual([14, 8]);
+      await new Promise((done) => requestAnimationFrame(done));
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      expect(place("free", phone.document)).toEqual([13, 8]);
+      vi.advanceTimersByTime(1);
+      expect(place("free", phone.document)).toEqual([14, 8]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("nudges apart are steps apart", () => {
     const { editor, layer, place } = open();
 
