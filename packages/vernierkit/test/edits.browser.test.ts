@@ -1216,12 +1216,12 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
     try {
       const tablet = await views.add(tabletFrame, 600);
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      editor.set(layerOf(cards[0]), "radius", 4);
+      editor.set(layerOf(cards[0]), "radius", 4, { step: true });
       vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
       for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
       // As a key held down repeats: each step sooner after the last than the pause, frames drawn between them.
       for (const radius of [5, 6]) {
-        editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true });
+        editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true, step: true });
         expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill(`${radius}px`));
         await drawn();
         vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
@@ -1231,7 +1231,7 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
       for (const view of [phone, tablet]) expect(radii(view.document)).toEqual(radii(doc));
       vi.useRealTimers();
 
-      editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true });
+      editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true, step: true });
       views.sync(phone);
       expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("7px"));
       expect(radii(tablet.document).slice(0, 3)).toEqual(Array(3).fill("6px"));
@@ -1243,6 +1243,38 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
     } finally {
       vi.useRealTimers();
       tabletFrame.remove();
+    }
+  });
+
+  test("set once in the desktop view, a value shows there at once, and in the views beside it once the next frame is drawn, with no pause to wait for", async () => {
+    const { doc, editor, cards, layerOf, phone } = await open();
+    // The first change to the radius is a change to more than the value (the card's edit styles are made): every view shows it at once.
+    editor.set(layerOf(cards[0]), "radius", 3);
+    await painted();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    await Promise.resolve();
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("4px"));
+    expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("3px"));
+    await painted();
+    expect(radii(phone.document)).toEqual(radii(doc));
+  });
+
+  test("set once right after steps, before they pause, a value shows in the views beside once the next frame is drawn, with no pause to wait for", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 3);
+    await painted();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      for (const radius of [4, 5]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: radius > 4, step: true });
+      editor.set(layerOf(cards[0]), "radius", 9);
+      await new Promise((done) => requestAnimationFrame(done));
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("3px"));
+      // The task after the frame: the steps are far from pausing.
+      vi.advanceTimersByTime(0);
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("9px"));
+      expect(radii(phone.document)).toEqual(radii(doc));
+    } finally {
+      vi.useRealTimers();
     }
   });
 

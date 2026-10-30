@@ -348,6 +348,8 @@ export function createEditor(
     editor: () => editor,
   });
 
+  /** Set while a batch of steps of a run (`SetOptions.step`) is under way: each value set in it is one. */
+  let stepping = false;
   const editor: Editor = {
     ...structure,
     at: working.at,
@@ -389,10 +391,10 @@ export function createEditor(
       const everywhere = changes.list().filter((change) => change.kind === "style" && change.property === property && !change.breakpoint && ofLayer(layer, change));
       return (here ?? everywhere.find(own) ?? everywhere[0])?.variables;
     },
-    set(layer, property, value, { continues = false, variables } = {}) {
+    set(layer, property, value, { continues = false, step = false, variables } = {}) {
       if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
-      // A value changed: the views beside the one worked in show it once the steps pause.
-      views.lagBeside(working.beside);
+      // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
+      views.lagBeside(working.beside, step || stepping);
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
       if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
         const place = { ...editor.read(layer, "absolute")!, [property]: value };
@@ -401,8 +403,14 @@ export function createEditor(
       }
       editHere(layer, property, value, continues, variables);
     },
-    batch(edits, { continues = false } = {}) {
-      group(edits, continues);
+    batch(edits, { continues = false, step = false } = {}) {
+      const was = stepping;
+      stepping ||= step;
+      try {
+        group(edits, continues);
+      } finally {
+        stepping = was;
+      }
     },
     undo: steps.undo,
     redo: steps.redo,

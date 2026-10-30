@@ -69,7 +69,7 @@ test("a Card changed on one usage offers Promote on the top right of its selecti
   await radius(page).fill("2");
   await radius(page).press("Enter");
   await expect(promote(page)).toBeVisible();
-  // The views beside show a value once the steps pause (ADR 0011).
+  // The views beside show a value typed in once the next frame is drawn (ADR 0011).
   await expect.poll(async () => (await cardRadii(page)).map((view) => view.join())).toEqual(Array(3).fill("2px,2px,2px,12px"));
 
   // On the top right of the selection box, above it.

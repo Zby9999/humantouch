@@ -112,6 +112,76 @@ test("selecting in one view selects the same layer in every view; an edit shows 
   }
 });
 
+/**
+ * Watches, from now on, for the first card in the tablet view to show `value`
+ * for the CSS property `property`: what it settles with, once it does, tells
+ * how many frames had been drawn since the last of the events `after` (the one
+ * that sets the value), and how long after it that was, ms. Watched in the page
+ * itself, frame by frame.
+ */
+async function watchTablet(page: Page, property: string, value: string, after: string) {
+  await tablet(page).evaluate(
+    (frame: HTMLIFrameElement, [property, value, after]) => {
+      const card = frame.contentDocument!.querySelector("article")!;
+      (window as { tabletShows?: Promise<{ frames: number; ms: number }> }).tabletShows = new Promise((done) => {
+        let at = 0;
+        let frames = 0;
+        const last = () => {
+          at = performance.now();
+          frames = 0;
+        };
+        addEventListener(after, last, true);
+        const frame = () => {
+          if (at) frames++;
+          if (at && getComputedStyle(card).getPropertyValue(property) === value) {
+            removeEventListener(after, last, true);
+            done({ frames, ms: performance.now() - at });
+          } else requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+    },
+    [property, value, after],
+  );
+  return () => page.evaluate(() => (window as { tabletShows?: Promise<{ frames: number; ms: number }> }).tabletShows!);
+}
+
+test("a value set once in the Design panel shows in the views beside the frame after; stepped with ↑ or dragged on its icon, once the steps pause", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const clip = design(page).getByRole("checkbox", { name: "Clip content" });
+  // The first change to each property makes the card's edit styles, which every view shows at once.
+  await radius.fill("3");
+  await radius.press("Enter");
+  await clip.check();
+  await expect(tablet(page).contentFrame().locator("article").first()).toHaveCSS("overflow", "hidden");
+
+  // Typed, applied on Enter: the views beside show it within the two frames after the one that draws it in the desktop view (ADR 0011), far sooner than the steps pause.
+  let shown = await watchTablet(page, "border-radius", "5px", "keydown");
+  await radius.fill("5");
+  await radius.press("Enter");
+  expect((await shown()).frames).toBeLessThanOrEqual(3);
+  // Toggled: the same.
+  shown = await watchTablet(page, "overflow", "visible", "click");
+  await clip.uncheck();
+  expect((await shown()).frames).toBeLessThanOrEqual(3);
+
+  // ↑: one step of a run of them, which the views beside show once the steps pause (ADR 0011).
+  shown = await watchTablet(page, "border-radius", "6px", "keydown");
+  await radius.press("ArrowUp");
+  expect((await shown()).ms).toBeGreaterThanOrEqual(100);
+  // Dragged on the icon: so is each px.
+  const { x, y } = (await page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub').boundingBox())!;
+  shown = await watchTablet(page, "border-radius", "9px", "pointermove");
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  await page.mouse.up();
+  expect((await shown()).ms).toBeGreaterThanOrEqual(100);
+  await expect(radius).toHaveValue("9");
+});
+
 test("a layer dragged in the phone view goes where it is let go there, and moves in every view", async ({ page }) => {
   // With motion not reduced, too.
   await page.emulateMedia({ reducedMotion: "no-preference" });

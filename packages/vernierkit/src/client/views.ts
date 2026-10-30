@@ -4,10 +4,11 @@
  * from it. Each other view is a copy of it that follows every change to it,
  * node for node, so every view shows the same canvas, laid out at its own
  * width. A layer is the canvas's; each view finds it in what it shows. Each
- * view is as tall as what it shows there, as it grows and shrinks. While a
- * value is stepped, the views beside the one worked in hold its steps back till
- * the steps pause (`lagBeside`): the frame after each step draws it in the view
- * worked in alone, and the others catch up with the latest at once (ADR 0011).
+ * view is as tall as what it shows there, as it grows and shrinks. As a value
+ * changes, the views beside the one worked in hold it back (`lagBeside`): the
+ * frame after draws it in the view worked in alone. A value set once, they show
+ * after that frame; the steps of a run of them, once the steps pause, the
+ * latest at once (ADR 0011).
  */
 import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
@@ -68,19 +69,21 @@ export interface Views {
   remove(view: View): void;
   /**
    * Shows every change made to the canvas so far in `view` now, rather than
-   * before the next paint. With no view, in every view, but for the steps of a
-   * value the views beside the one worked in hold back (`lagBeside`).
+   * before the next paint. With no view, in every view, but for a value the
+   * views beside the one worked in hold back (`lagBeside`).
    */
   sync(view?: View): void;
   /**
-   * A value is stepped in the view `worked` tells (null: the desktop view).
-   * Till the steps pause for `CATCH_UP_AFTER_MS`, the other views put off what
-   * changes only the edit styles; then they show it, as it is then, all at
-   * once. A view shows it at once on any other change to the canvas, or on
-   * `sync` of it. The desktop view is the canvas itself: it always shows every
-   * change at once.
+   * A value is changed in the view `worked` tells (null: the desktop view): the
+   * other views put off what changes only the edit styles, then show it, as it
+   * is then, all at once. A value set once, they show once the next frame is
+   * drawn; one `step` of a run of them, once the steps pause for
+   * `CATCH_UP_AFTER_MS`. The latest change says which: a value set once right
+   * after steps shows after the next frame, with no pause to wait for. A view
+   * shows it at once on any other change to the canvas, or on `sync` of it. The
+   * desktop view is the canvas itself: it always shows every change at once.
    */
-  lagBeside(worked: () => View | null): void;
+  lagBeside(worked: () => View | null, step: boolean): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
   /**
@@ -136,10 +139,14 @@ export function createViews(canvas: Canvas): Views {
     if (view) followers.get(view)?.catchUp();
     else for (const follower of followers.values()) follower.sync();
   };
-  /** While a value is stepped, till the steps pause: which view is worked in, and what catches up then. None: no view is behind. */
-  let stepped: { worked: () => View | null; timer: ReturnType<typeof setTimeout> } | null = null;
+  /**
+   * While a value changed is held back, till the views beside catch up: which
+   * view is worked in, whether they wait for the steps to pause or for the
+   * next frame, and what stops that wait. None: no view is behind.
+   */
+  let held: { worked: () => View | null; step: boolean; cancel: () => void } | null = null;
   const catchUp = () => {
-    stepped = null;
+    held = null;
     for (const follower of followers.values()) follower.catchUp();
   };
 
@@ -151,7 +158,7 @@ export function createViews(canvas: Canvas): Views {
       if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
       const laidOut = copyCanvas(canvas, iframe, width);
       // What is typed in this view is in every other view at once, as it is on the canvas.
-      const follower = follow(canvas.document, doc, () => sync(), () => !!stepped && stepped.worked() !== view);
+      const follower = follow(canvas.document, doc, () => sync(), () => !!held && held.worked() !== view);
       const view = viewOf(doc, width, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
       followers.set(view, follower);
       views.push(view);
@@ -171,10 +178,30 @@ export function createViews(canvas: Canvas): Views {
       if (i >= 0) views.splice(i, 1);
     },
     sync,
-    lagBeside(worked) {
-      // Each step puts the catching up off again: it comes once the steps pause.
-      if (stepped) clearTimeout(stepped.timer);
-      stepped = { worked, timer: setTimeout(catchUp, CATCH_UP_AFTER_MS) };
+    lagBeside(worked, step) {
+      // Set once again before the views beside catch up: they still do after the frame they wait for.
+      if (held && !held.step && !step) {
+        held.worked = worked;
+        return;
+      }
+      held?.cancel();
+      if (step) {
+        // Each step puts the catching up off again: it comes once the steps pause.
+        const timer = setTimeout(catchUp, CATCH_UP_AFTER_MS);
+        held = { worked, step, cancel: () => clearTimeout(timer) };
+      } else {
+        // Once the next frame, with the value in the view worked in, is drawn.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const frame = requestAnimationFrame(() => (timer = setTimeout(catchUp)));
+        held = {
+          worked,
+          step,
+          cancel: () => {
+            cancelAnimationFrame(frame);
+            clearTimeout(timer);
+          },
+        };
+      }
     },
     onResize(listener) {
       listeners.add(listener);

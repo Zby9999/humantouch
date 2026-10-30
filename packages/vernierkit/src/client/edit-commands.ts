@@ -16,6 +16,14 @@ export type Destination = { parent: Layer; index: number } | { parent: Layer; x:
 export interface SetOptions {
   /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
   continues?: boolean;
+  /**
+   * One step of a run of them (a key held or pressed again and again, a drag
+   * on a number or a gradient stop), rather than a value set once (typed,
+   * toggled, chosen, picked): the views beside the one worked in show it once
+   * the steps pause, not once the next frame is drawn (ADR 0011). In `batch`,
+   * for each value set in it.
+   */
+  step?: boolean;
   /** The Variables the designer chose for the value, by part (see `Bindings`); null for a part: detached from its Variable. */
   variables?: Picked;
 }

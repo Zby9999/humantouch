@@ -478,7 +478,7 @@ export function CanvasView(props: Props) {
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
-    // What is pressed on is read as the view pressed in shows it now: one beside a value just stepped catches up first (ADR 0011).
+    // What is pressed on is read as the view pressed in shows it now: one beside a value just changed catches up first (ADR 0011).
     const pressed = viewAt(event);
     if (pressed && !pressed.at.offCanvasLayer) views?.sync(pressed.at.view);
     if (event.button === 0 && !spaceHeld && tool && editor) {
