@@ -5,7 +5,7 @@
  * node for node, so every view shows the same canvas, laid out at its own
  * width. A layer is the canvas's; each view finds it in what it shows. Each
  * view is as tall as what it shows there, as it grows and shrinks. As a value
- * changes, the views beside the one worked in hold it back (`lagBeside`): the
+ * changes, the views beside the one worked in lag behind it (`lagBeside`): the
  * frame after draws it in the view worked in alone. A value set once, they show
  * after that frame; the steps of a run of them, once the steps pause, the
  * latest at once. So too the layers making room for a layer dragged
@@ -81,12 +81,12 @@ export interface Views {
    * Shows every change made to the canvas so far in `view` now, rather than
    * before the next paint, and the layers making room as the view dragged
    * in has them. With no view, in every view, but for a value the views
-   * beside the one worked in hold back (`lagBeside`), and the shifts.
+   * beside the one worked in lag behind (`lagBeside`), and the shifts.
    */
   sync(view?: View): void;
   /**
    * Shows every change made to the canvas so far in every view now, what a
-   * value the views beside hold back did too: they wait no more for it. For
+   * value the views beside lag behind did too: they wait no more for it. For
    * a change that is not the value's, as an undo or a redo is (ADR 0011). The
    * layers making room stay as each view shows them.
    */
@@ -231,7 +231,7 @@ export function createViews(canvas: Canvas): Views {
    * the next frame, and what stops that wait. None: no view is behind.
    */
   let lagging: { worked: () => View | null; step: boolean; cancel: () => void } | null = null;
-  /** Set while a value is changed (`lagBeside`): whatever the canvas takes from it is the value's, held back with it. */
+  /** Set while a value is changed (`lagBeside`): whatever the canvas takes from it is the value's, and lags with it. */
   let changing = false;
   const catchUp = () => {
     lagging?.cancel();
@@ -239,8 +239,8 @@ export function createViews(canvas: Canvas): Views {
     for (const follower of followers.values()) follower.catchUp();
   };
 
-  /** Holds back a value changed in the view `worked` tells: in the other views till the next frame is drawn or, for a `step`, till the steps pause. */
-  const holdBack = (worked: () => View | null, step: boolean) => {
+  /** Has the other views lag behind a value changed in the view `worked` tells: till the next frame is drawn or, for a `step`, till the steps pause. */
+  const startLagging = (worked: () => View | null, step: boolean) => {
     // Set once again before the views beside catch up: they still do after the frame they wait for.
     if (lagging && !lagging.step && !step) {
       lagging.worked = worked;
@@ -304,7 +304,7 @@ export function createViews(canvas: Canvas): Views {
     lagBeside(worked, step, change) {
       // What came before is taken in as ever: only what `change` does is the value's.
       for (const follower of followers.values()) follower.sync();
-      holdBack(worked, step);
+      startLagging(worked, step);
       const was = changing;
       changing = true;
       try {

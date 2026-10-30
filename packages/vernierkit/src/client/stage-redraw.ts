@@ -54,7 +54,8 @@ export interface OnceAtRest {
 /**
  * Calls `redraw` once the camera has stayed where it is for `AT_REST_MS`
  * after it last moved, however it moved: by the wheel, a pinch, a pan, ⇧1.
- * While `busy` (a drag, typing, a mode switch under way), it waits on,
+ * While `busy` (a mode switch or typing under way, or the pointer held down
+ * on something that edits as it moves, as `CanvasView` has it), it waits on,
  * `AT_REST_MS` at a time, and redraws once that is over: nothing under way
  * is broken into.
  */

@@ -19,11 +19,11 @@ export interface History {
   readonly future: Entry[];
 }
 
-/** A step in a history, with the editor's own ways to find its layers and show it, undone or redone. */
+/** A step in a history, the editor that made it, and that editor's own ways to find its layers and show it, undone or redone. */
 interface Entry {
   step: Step;
+  by: Steps;
   found(ids: string[]): Layer[];
-  show(): void;
   /** Shows it in every view now, though they wait for a value changed. */
   showNow(): void;
 }
@@ -102,7 +102,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
     history.future.length = 0;
     const last = history.past.at(-1);
     // One adjustment is one step: the same edit to the same layers, in this editor.
-    if (continues && last?.show === show && last.step.key === step.key) {
+    if (continues && last?.by === ownSteps && last.step.key === step.key) {
       if (step.run) {
         const { undo, redo } = last.step;
         last.step.undo = () => {
@@ -125,7 +125,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
             }
           : step.redo;
       }
-    } else history.past.push({ step, found, show, showNow });
+    } else history.past.push({ step, by: ownSteps, found, showNow });
     show();
   };
   const group = (edits: () => void, continues: boolean, run = false) => {
@@ -151,7 +151,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
       continues,
     );
   };
-  return {
+  const ownSteps: Steps = {
     push,
     group,
     show,
@@ -172,6 +172,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
       return textsIn(entry.step, entry.found(entry.step.layers));
     },
   };
+  return ownSteps;
 }
 
 /** Those of `layers` whose text the step was made to, as that text. */
