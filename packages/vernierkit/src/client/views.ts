@@ -176,10 +176,10 @@ export function createViews(canvas: Canvas): Views {
   /** Shows the layers shifted aside in `view` as `wanted` has them: whether anything changed there. */
   const shiftIn = (view: View, wanted: ReadonlyMap<Element, Shift>): boolean => {
     const { shown, styles } = aside!;
-    let has = shown.get(view);
-    if (!has) shown.set(view, (has = new Map()));
-    const changed = [...has.keys()].filter((el) => !wanted.has(el));
-    for (const [el, to] of wanted) if (has.get(el)?.x !== to.x || has.get(el)?.y !== to.y) changed.push(el);
+    let showing = shown.get(view);
+    if (!showing) shown.set(view, (showing = new Map()));
+    const changed = [...showing.keys()].filter((el) => !wanted.has(el));
+    for (const [el, to] of wanted) if (showing.get(el)?.x !== to.x || showing.get(el)?.y !== to.y) changed.push(el);
     if (!changed.length) return false;
     const write = () => {
       for (const el of changed) {
@@ -190,14 +190,14 @@ export function createViews(canvas: Canvas): Views {
         if (to) {
           at.style.setProperty("translate", `${to.x}px ${to.y}px`, "important");
           at.style.setProperty("transition", "none", "important");
-          has.set(el, to);
+          showing.set(el, to);
         } else {
           // Set first, then taken off: as `style` was changed, its attribute may not be there yet to take off.
           const style = styles.get(at)!;
           at.setAttribute("style", style ?? "");
           if (style === null) at.removeAttribute("style");
           styles.delete(at);
-          has.delete(el);
+          showing.delete(el);
         }
       }
     };
