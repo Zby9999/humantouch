@@ -445,10 +445,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       const target = event.composedPath()[0];
       if (playing || pointerHeld() || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
-      const editorsOwn = editorCommand(event);
+      const shortcut = editorCommand(event);
       // Only what the editor holds is pasted, and only when it holds something: the system clipboard is left alone.
-      if (editorsOwn === "copy" || editorsOwn === "cut" || editorsOwn === "paste") {
-        const done = editorsOwn === "paste" ? paste(selected) : selected.length > 0 && (editorsOwn === "cut" ? cut : copy)(selected);
+      if (shortcut === "copy" || shortcut === "cut" || shortcut === "paste") {
+        const done = shortcut === "paste" ? paste(selected) : selected.length > 0 && (shortcut === "cut" ? cut : copy)(selected);
         if (done) {
           event.preventDefault();
           event.stopPropagation();
@@ -461,8 +461,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       let act: (() => void) | null = null;
       if (a && event.shiftKey && !command) act = () => (event.altKey ? dissolve(selected) : makeStack(selected));
       else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
-      else if (editorsOwn === "duplicate") act = () => duplicate(selected);
-      else if (editorsOwn === "ungroup") act = () => ungroup(selected);
+      else if (shortcut === "duplicate") act = () => duplicate(selected);
+      else if (shortcut === "ungroup") act = () => ungroup(selected);
       else if (ARROWS[event.key] && !command && !event.altKey) {
         const [x, y] = ARROWS[event.key].map((n) => n * (event.shiftKey ? 10 : 1));
         act = () => nudge(selected, x, y);
