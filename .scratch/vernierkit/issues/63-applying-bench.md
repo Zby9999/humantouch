@@ -401,3 +401,56 @@ Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/L
 | 报告格式合规（比例） | | | 不变差 |
 | 没进度也没改源码的最长时间（秒） | | | （67 定阈值） |
 ```
+
+**Cursor 的浏览器插件改成 headless（2026-10-31）**
+
+从这次提交起，测量台里 Cursor 的两个浏览器插件都在 headless 浏览器里开页面，不会在设计师屏幕上开出窗口。只改了测量台给 Cursor 的运行条件。Vernier Kit 的代码、提示、模型、权限都没变。
+
+- 换掉的是设计师用户级的两个插件：
+  - Cursor 的 `playwright`（`npx -y @playwright/mcp@latest`，默认开有窗口的浏览器）；
+  - `chrome-devtools-mcp`（Claude 的插件，Cursor 也加载，`npx chrome-devtools-mcp@1.11.0`，默认也开有窗口的 Chrome）。
+- 怎么换：
+  - 每次运行前，测量台在这次运行自己的结果文件夹里写两个同名的本地插件：`<run folder>/cursor-plugins/playwright`、`<run folder>/cursor-plugins/chrome-devtools-mcp`。
+  - 每个插件只声明一个 MCP 服务器，服务器名、包和版本都和原插件一样，另外加了 `--headless --isolated`，并用 headless shell 的路径（`--executable-path` / `--executablePath`）。
+  - chrome-devtools 那条比原插件多一个 `-y`，让 npx 不提问。
+  - Cursor 的命令行在末尾加了两个 `--plugin-dir` 指向它们。Cursor 用同名的本地插件顶替已装的插件。
+  - Agent 的项目里还是只有 `.cursor/cli.json`。
+  - 用户级的 Cursor 配置、插件目录和 HOME 都没动。
+- headless shell 的路径：
+  - 从仓库 Playwright 的 `chromium.executablePath()` 推出同一修订号的 `chromium_headless_shell-<rev>`，这台机器上是 1248。也可以用 `VK_BENCH_HEADLESS_SHELL` 指定。
+  - 找不到时就不传路径。两个服务器仍是 headless 加临时 profile，退回用 Chrome：没有窗口，也不碰设计师的 Chrome profile。
+  - 每次运行的 `raw.json` 里有 `headlessShell` 一项，记下实际用的路径；退回 Chrome 时这一项是 null。
+- 新记录：每次运行的 `raw.json` 里还有 `headedBrowsers`。
+  - 测量台每秒看一次进程表，把 Agent 进程树里既不是 headless shell、也没带 `--headless` 的浏览器主进程记下来。只读进程表，不杀进程。
+  - 有记录时，测量台在终端报一行。
+  - 活不到一秒的浏览器可能漏掉，所以空列表只说明没看到。
+  - 冒烟里两个 MCP 起的浏览器都在 Agent 进程（cursor-agent）的子孙里，所以看得到。
+  - Claude Code 也记，它本来就不带 MCP。
+- 先试过但不行的办法：
+  - 环境变量 `PLAYWRIGHT_MCP_HEADLESS` 等：`@playwright/mcp` 自己认这些变量，但 agent-cli 起插件里的 MCP 时只传 HOME、LOGNAME、PATH、SHELL、TERM、USER，进不去。
+  - 项目里的 `.cursor/mcp.json` 同名服务器：
+    - 不加 `--approve-mcps` 时不加载（需要批准），起的仍是插件版；
+    - 加了 `--approve-mcps`，两份都起；
+    - 改用插件的标识名，起的还是插件版，而且那次运行退出码是 1。
+- 验证（9 次 Cursor 冒烟，都在临时目录的示例项目副本里，不计入任何数字）：
+  - 只回 OK 的一次，用的是测量台的 prepare 和命令行。每个名字只有一个 MCP 进程，参数里都带 headless：
+    ```
+    npm exec @playwright/mcp@latest --headless --isolated --executable-path /Users/bingyizhang/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell
+    npm exec chrome-devtools-mcp@1.11.0 --headless --isolated --executablePath /Users/bingyizhang/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell
+    ```
+  - 真的开浏览器的一次：让它用 playwright 的 `browser_navigate`、chrome-devtools 的 `new_page` 各打开一次 5623 上的临时页面，两次都读回了标题。起的两个浏览器主进程都是 headless shell，没有有窗口的 Chrome，`headedBrowsers` 为空：
+    ```
+    67844 (父进程 playwright-mcp) …/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell --disable-field-trial-config … --headless …
+    67846 (父进程 chrome-devtools-mcp) …/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell --allow-pre-commit-input … --headless=new …
+    ```
+  - 工具名不变：调用的是 `plugin-playwright-playwright-browser_navigate`、`plugin-chrome-devtools-mcp-chrome-devtools-new_page`，和基线 B 的 transcript 里一样。
+  - chrome-devtools 插件带的 7 个 Skill（a11y-debugging 等）也还在：让它列可用的 Skill 时都列出来了。
+    - 本地插件里不带 Skill，所以 Cursor 换掉的只是 MCP 服务器，原插件的 Skill 照常加载。
+    - 这是冒烟里看到的，测量台不检查。agent-cli 升级后要再看一次。
+  - 同样的「只回 OK」，加不加 `--plugin-dir`，送给模型的总输入都是 22781 token（加了的那次缓存命中少，未缓存 21629 + 缓存 1152；没加的 16253 + 6528）。工具和 Skill 的说明量没变。
+- 条件差异：
+  - 工具名和工具集不变，只是浏览器没有窗口。所以 64–68 仍和基线 B 比，记为条件差异。
+  - Cursor 的命令行多了两个 `--plugin-dir`，所以不能把新的运行加进基线 A、B 的结果文件夹（测量台会拒绝），要另起一轮。
+- 基线里 Cursor 可能开过有窗口浏览器的次数（数的是用 playwright 插件的调用，chrome-devtools 从没被调用过；用的都是默认的有窗口模式）：
+  - 基线 A：4 次运行，21 次调用（dissolve-place-frame #1、#2，fill-gap-brief #1、#3）；
+  - 基线 B：3 次运行，25 次调用（dissolve-place-frame #1、#2，fill-gap-brief #3）。上面基线 B 的发现里写的「4 次」应为 3 次。

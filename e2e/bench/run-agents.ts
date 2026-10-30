@@ -48,6 +48,10 @@ interface RawRun {
   timedOut: boolean;
   startedAt: number;
   endedAt: number;
+  /** Cursor's: the headless shell its browser plugins were given, or null (then Chrome, headless). */
+  headlessShell?: string | null;
+  /** Browsers that came up under the Agent with a window. */
+  headedBrowsers: string[];
   changes: { id: number; kind: string; checkable: boolean; variable?: string[]; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
   /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, and each edit to the project's source. */
   times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[] };
@@ -307,6 +311,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       checks: Object.fromEntries(Object.entries(checks).map(([id, check]) => [id, { outcome: (check as { outcome: string }).outcome }])),
     };
     writeFileSync(join(folder, "raw.json"), `${JSON.stringify(raw, null, 2)}\n`);
+    if (raw.headedBrowsers.length > 0) console.error(`Bench: ${agent} opened a browser with a window in ${folder}: see headedBrowsers in raw.json`);
   });
 }
 

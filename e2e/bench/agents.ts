@@ -5,11 +5,15 @@
  * default model, in an environment with nothing of the shell it was started
  * from (no gateway, no model override), as the designer's own login.
  */
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { promisify } from "node:util";
+import { chromium } from "@playwright/test";
 import type { AgentName } from "./metrics.ts";
+
+const execFileAsync = promisify(execFile);
 
 /** What the designer says to the Agent: the Skill's own trigger. */
 export const PROMPT = "落地我的设计改动";
@@ -55,6 +59,49 @@ function desktopClaudeCode(): string {
   throw new Error(`No Claude Code of the desktop app in ${DESKTOP_CLAUDE_CODE}: name one with VK_BENCH_CLAUDE`);
 }
 
+/**
+ * Playwright's headless shell, for the Agent's own browsers: the one
+ * VK_BENCH_HEADLESS_SHELL names, else the one installed beside the Chromium
+ * the repository's Playwright launches. Null when there is none.
+ */
+export function headlessShell(env: NodeJS.ProcessEnv = process.env, chromiumPath = chromium.executablePath()): string | null {
+  const named = env.VK_BENCH_HEADLESS_SHELL;
+  if (named) return existsSync(named) ? named : null;
+  // `<browsers>/chromium-<revision>/…` beside `<browsers>/chromium_headless_shell-<revision>/chrome-headless-shell-<platform>/chrome-headless-shell`.
+  const [, browsers, revision] = /^(.*)[/\\]chromium-(\d+)[/\\]/.exec(chromiumPath) ?? [];
+  const folder = join(browsers ?? "", `chromium_headless_shell-${revision}`);
+  if (!revision || !existsSync(folder)) return null;
+  const binary = process.platform === "win32" ? "chrome-headless-shell.exe" : "chrome-headless-shell";
+  const found = readdirSync(folder)
+    .filter((name) => name.startsWith("chrome-headless-shell-"))
+    .map((name) => join(folder, name, binary))
+    .find((path) => existsSync(path));
+  return found ?? null;
+}
+
+/**
+ * The designer's user-level Cursor plugins that open a browser, by their own
+ * names, each with the MCP server it declares (same name, same package), but
+ * headless, with a profile of its own, on `shell` when there is one (else on
+ * Chrome, still headless). Cursor loads them with `--plugin-dir` in place of
+ * the installed ones: the Agent keeps the same tools under the same names, and
+ * the plugins' Skills, and no browser window comes up on the designer's screen.
+ */
+export function browserPlugins(headlessShellPath: string | null): { name: BrowserPlugin; mcpServers: Record<string, { command: string; args: string[] }> }[] {
+  const path = (flag: string) => (headlessShellPath ? [flag, headlessShellPath] : []);
+  return [
+    { name: "playwright", mcpServers: { playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated", ...path("--executable-path")] } } },
+    { name: "chrome-devtools-mcp", mcpServers: { "chrome-devtools": { command: "npx", args: ["-y", "chrome-devtools-mcp@1.11.0", "--headless", "--isolated", ...path("--executablePath")] } } },
+  ];
+}
+
+/** The designer's browser plugins the bench gives Cursor headless copies of, by their names. */
+const BROWSER_PLUGINS = ["playwright", "chrome-devtools-mcp"] as const;
+type BrowserPlugin = (typeof BROWSER_PLUGINS)[number];
+
+/** Where a run's own copy of a browser plugin goes, in its folder: out of the project the Agent sees. */
+const pluginDir = (folder: string, name: string) => join(folder, "cursor-plugins", name);
+
 /** The shell commands an Agent may run: the command line, and reading the project. */
 const SHELL = ["npx vernierkit", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
 
@@ -67,8 +114,8 @@ export interface AgentSpec {
   model: string;
   /** The reasoning effort the arguments set, for the record. */
   effort: string;
-  /** Done in the project before the Agent starts. */
-  prepare?(dir: string): void;
+  /** Done before the Agent starts: in the project, `dir`, and in the run's own folder. What it returns goes in the run's record. */
+  prepare?(dir: string, folder: string): Pick<AgentRun, "headlessShell"> | void;
 }
 
 export const AGENTS: Record<AgentName, AgentSpec> = {
@@ -114,12 +161,32 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     // Pinned to the model the designer chose, as their Cursor settings have it; its explore subagent keeps its own.
     model: "Grok 4.7 256K High",
     effort: "reasoning_effort=high (in --model)",
-    args: () => ["-p", PROMPT, "--output-format", "stream-json", "--model", "grok-4.7[context=256k,reasoning_effort=high,fast=false]", "--trust", "--force", "--sandbox", "enabled"],
-    prepare(dir) {
+    // The browser plugins as the run's own, headless (browserPlugins).
+    args: (folder) => [
+      "-p",
+      PROMPT,
+      "--output-format",
+      "stream-json",
+      "--model",
+      "grok-4.7[context=256k,reasoning_effort=high,fast=false]",
+      "--trust",
+      "--force",
+      "--sandbox",
+      "enabled",
+      ...BROWSER_PLUGINS.flatMap((name) => ["--plugin-dir", pluginDir(folder, name)]),
+    ],
+    prepare(dir, folder) {
       mkdirSync(join(dir, ".cursor"), { recursive: true });
       const shell = [...new Set(SHELL.map((command) => command.split(" ")[0]))].map((command) => `Shell(${command})`);
       const denied = ["rm", "sudo", "curl", "wget", "ssh", "scp", "open", "osascript", "kill", "pkill"].map((command) => `Shell(${command})`);
       writeFileSync(join(dir, ".cursor/cli.json"), `${JSON.stringify({ permissions: { allow: [...shell, "Read(**)", "Write(**)"], deny: denied } }, null, 2)}\n`);
+      const headlessShellPath = headlessShell();
+      for (const { name, mcpServers } of browserPlugins(headlessShellPath)) {
+        mkdirSync(join(pluginDir(folder, name), ".cursor-plugin"), { recursive: true });
+        writeFileSync(join(pluginDir(folder, name), ".cursor-plugin/plugin.json"), `${JSON.stringify({ name, description: "The bench's headless copy", mcpServers: "./mcp.json" }, null, 2)}\n`);
+        writeFileSync(join(pluginDir(folder, name), "mcp.json"), `${JSON.stringify({ mcpServers }, null, 2)}\n`);
+      }
+      return { headlessShell: headlessShellPath };
     },
   },
 };
@@ -140,6 +207,45 @@ export interface AgentRun {
   timedOut: boolean;
   startedAt: number;
   endedAt: number;
+  /** The headless shell the Agent's browser plugins were given (Cursor), or null when none was found and they fell back on Chrome, headless. */
+  headlessShell?: string | null;
+  /** Each browser that came up under the Agent with a window, as the process table showed it once a second (one that lived less than a second can be missed): none, if the bench kept its promise. */
+  headedBrowsers: string[];
+}
+
+export interface ProcessRow {
+  pid: number;
+  ppid: number;
+  command: string;
+}
+
+/** A browser's own executable, as a command line starts (its helpers carry `--type=`). */
+const BROWSER = /(?:^|\/)(?:Google Chrome(?: for Testing| Canary| Beta| Dev)?|Chromium|chrome|chromium|Microsoft Edge|msedge|firefox)(?:\s|$)/;
+
+/** The command lines of the browsers under process `root` that run with a window: neither Playwright's headless shell nor started `--headless`. */
+export function headedBrowsers(processes: ProcessRow[], root: number): string[] {
+  const under = new Set([root]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const { pid, ppid } of processes) {
+      if (!under.has(pid) && under.has(ppid)) {
+        under.add(pid);
+        grew = true;
+      }
+    }
+  }
+  return processes
+    .filter(({ pid, command }) => under.has(pid) && BROWSER.test(command) && !/--type=|chrome-headless-shell/.test(command) && !/(?:^|\s)--?headless(?:=\S*)?(?:\s|$)/.test(command))
+    .map(({ command }) => command);
+}
+
+/** Every process on the machine, as `ps` lists it. */
+async function processTable(): Promise<ProcessRow[]> {
+  const { stdout } = await execFileAsync("ps", ["-axww", "-o", "pid=,ppid=,command="], { maxBuffer: 64 * 1024 * 1024 });
+  return stdout.split("\n").flatMap((line) => {
+    const [, pid, ppid, command] = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line) ?? [];
+    return pid ? [{ pid: Number(pid), ppid: Number(ppid), command }] : [];
+  });
 }
 
 /**
@@ -149,9 +255,15 @@ export interface AgentRun {
  */
 export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number): Promise<AgentRun> {
   const spec = AGENTS[agent];
-  spec.prepare?.(dir);
+  const prepared = spec.prepare?.(dir, folder);
   const startedAt = Date.now();
   const child = spawn(spec.binary(), spec.args(folder), { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  // Only looked at, never stopped: a window that came up is for the record.
+  const headed = new Set<string>();
+  let looking: Promise<void> = Promise.resolve();
+  const watch = setInterval(() => {
+    if (child.pid) looking = processTable().then((processes) => headedBrowsers(processes, child.pid!).forEach((command) => headed.add(command)), () => {});
+  }, 1000);
   child.stdout.pipe(createWriteStream(join(folder, "transcript.jsonl")));
   child.stderr.pipe(createWriteStream(join(folder, "agent.log")));
   const stopAll = () => {
@@ -168,8 +280,10 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
   }, timeoutMs);
   const exitCode = await new Promise<number | null>((resolve) => child.on("close", resolve));
   clearTimeout(timer);
+  clearInterval(watch);
+  await looking;
   stopAll();
-  return { exitCode, timedOut, startedAt, endedAt: Date.now() };
+  return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed] };
 }
 
 /** The effort the run's debug log says the session ran at, if it says. */
