@@ -170,6 +170,9 @@ export function insideBorder(el: Element, rect: DOMRect): DOMRect {
  * id. `style`: what lays them out.
  */
 export function compose(doc: Document, id: string, composed: Composed, style: Record<string, string>) {
+  const stacks: Element[] = [];
+  /** The elements of each layer joining it, in every instance. */
+  const joining = composed.layers.map((): Element[] => []);
   for (const container of elementsOf(doc, composed.place?.container.layer ?? id)) {
     const members = composed.layers.map(({ layer }) => childOf(container, layer));
     if (members.some((el) => !el)) continue;
@@ -185,15 +188,17 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
       container.insertBefore(stack, slotsOf(container)[composed.place.slot] ?? null);
     }
     keepOriginal(stack);
-    relayOut(stack, style);
+    stacks.push(stack);
     stack.append(...(members as Element[]));
-    composed.layers.forEach((member, i) => {
-      const style = memberStyle(member);
-      if (!Object.keys(style).length) return;
-      keepOriginal(members[i]!);
-      declare(members[i]!, style);
-    });
+    members.forEach((el, i) => joining[i].push(el!));
   }
+  relayOut(stacks, style);
+  composed.layers.forEach((member, i) => {
+    const style = memberStyle(member);
+    if (!Object.keys(style).length) return;
+    for (const el of joining[i]) keepOriginal(el);
+    declare(joining[i], style);
+  });
 }
 
 /**
@@ -202,6 +207,9 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
  * is a Frame again. `changes`: the ChangeSet once the Stack is no longer in it.
  */
 export function decompose(doc: Document, id: string, composed: Composed, changes: Change[]) {
+  const frames: Element[] = [];
+  /** The elements of each layer that was in it, in every instance. */
+  const back = new Map(composed.layers.map((member) => [member.layer, [] as Element[]]));
   for (const container of elementsOf(doc, composed.place?.container.layer ?? id)) {
     const stack = composed.place ? childOf(container, id) : container;
     if (!stack) continue;
@@ -210,37 +218,33 @@ export function decompose(doc: Document, id: string, composed: Composed, changes
     if (composed.place) stack.remove();
     // Each back at its place among the others, from the first: those before it are back by then.
     for (const { el, from } of [...members].sort((a, b) => a.from.slot - b.from.slot)) container.insertBefore(el!, slotsOf(container)[from.slot] ?? null);
-    for (const member of members) {
-      const joined = Object.keys(memberStyle(member));
-      if (joined.length) restoreStyle(member.el!, joined, changesOn(member.layer, changes));
-    }
-    if (!composed.place) restoreStyle(container, STACK_CSS, changesOn(id, changes));
+    for (const member of members) back.get(member.layer)!.push(member.el!);
+    if (!composed.place) frames.push(container);
   }
+  for (const member of composed.layers) {
+    const joined = Object.keys(memberStyle(member));
+    if (joined.length) restoreStyle(back.get(member.layer)!, joined, changesOn(member.layer, changes));
+  }
+  restoreStyle(frames, STACK_CSS, changesOn(id, changes));
 }
 
 /** Dissolves the Stack with id `id`, in each instance: it takes `style`, its layers are placed absolute as `dissolved` has them. */
 export function dissolve(doc: Document, id: string, dissolved: Dissolved, style: Record<string, string>) {
-  for (const stack of elementsOf(doc, id)) {
-    keepOriginal(stack);
-    relayOut(stack, style);
-    for (const member of dissolved.layers) {
-      const el = childOf(stack, member.layer);
-      if (!el) continue;
-      keepOriginal(el);
-      declare(el, member.style);
-    }
+  const stacks = elementsOf(doc, id);
+  for (const stack of stacks) keepOriginal(stack);
+  relayOut(stacks, style);
+  for (const member of dissolved.layers) {
+    const els = stacks.flatMap((stack) => childOf(stack, member.layer) ?? []);
+    for (const el of els) keepOriginal(el);
+    declare(els, member.style);
   }
 }
 
 /** Makes the Stack with id `id` a Stack again, its layers in its layout. `changes`: the ChangeSet once the dissolving is no longer in it. */
 export function undissolve(doc: Document, id: string, dissolved: Dissolved, changes: Change[]) {
-  for (const stack of elementsOf(doc, id)) {
-    restoreStyle(stack, DISSOLVED_CSS, changesOn(id, changes));
-    for (const member of dissolved.layers) {
-      const el = childOf(stack, member.layer);
-      if (el) restoreStyle(el, MOVE_CSS, changesOn(member.layer, changes));
-    }
-  }
+  const stacks = elementsOf(doc, id);
+  restoreStyle(stacks, DISSOLVED_CSS, changesOn(id, changes));
+  for (const member of dissolved.layers) restoreStyle(stacks.flatMap((stack) => childOf(stack, member.layer) ?? []), MOVE_CSS, changesOn(member.layer, changes));
 }
 
 /** The child of `parent` that is the layer with id `layer`. */

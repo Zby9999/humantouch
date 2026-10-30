@@ -2,7 +2,7 @@
 import { propertyTitle } from "../design-values";
 import { breakpointName, tailwindOf } from "./breakpoints";
 import { breakpointMarks } from "./BreakpointMark";
-import type { Editor } from "./edits";
+import type { Editor } from "./edit-commands";
 import type { Property } from "./property-table";
 import { Icon } from "./icons";
 import type { Layer } from "./layers";

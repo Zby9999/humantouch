@@ -4,10 +4,33 @@
  * from it. Each other view is a copy of it that follows every change to it,
  * node for node, so every view shows the same canvas, laid out at its own
  * width. A layer is the canvas's; each view finds it in what it shows. Each
- * view is as tall as what it shows there, as it grows and shrinks.
+ * view is as tall as what it shows there, as it grows and shrinks. As a value
+ * changes, the views beside the one worked in lag behind it (`lagBeside`): the
+ * frame after draws it in the view worked in alone. A value set once, they show
+ * after that frame; the steps of a run of them, once the steps pause, the
+ * latest at once. So too the layers making room for a layer dragged
+ * (`makeRoom`): in the view dragged in at once, in the others once the
+ * pointer pauses (ADR 0011).
  */
+import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
+import { createLater } from "./later";
+
+/**
+ * How long the steps of a value pause, ms, before the views beside the one
+ * worked in catch up with them: longer than macOS repeats a key held down by
+ * default (83ms), and half as long as the selection box stays hidden after a
+ * step (`ADJUSTING_MS` in `Shell.tsx`, made from it), so it comes back over
+ * views caught up (ADR 0011).
+ */
+export const CATCH_UP_AFTER_MS = 100;
+
+/** How far a layer making room for a drag is shifted, px. */
+export interface Shift {
+  x: number;
+  y: number;
+}
 
 export interface View {
   /** What the view shows: the canvas itself for the desktop view, a copy of it for any other. */
@@ -54,8 +77,48 @@ export interface Views {
   add(iframe: HTMLIFrameElement, width: number): Promise<View>;
   /** Stops showing the canvas in `view`, which no longer follows it. The desktop view, the canvas itself, stays. */
   remove(view: View): void;
-  /** Shows every change made to the canvas so far in every view now, rather than before the next paint. */
-  sync(): void;
+  /**
+   * Shows every change made to the canvas so far in `view` now, rather than
+   * before the next paint, and the layers making room as the view dragged
+   * in has them. With no view, in every view, but for a value the views
+   * beside the one worked in lag behind (`lagBeside`), and the shifts.
+   */
+  sync(view?: View): void;
+  /**
+   * Shows every change made to the canvas so far in every view now, what a
+   * value the views beside lag behind did too: they wait no more for it. For
+   * a change that is not the value's, as an undo or a redo is (ADR 0011). The
+   * layers making room stay as each view shows them.
+   */
+  catchUp(): void;
+  /**
+   * Runs `change`, which changes a value in the view `worked` tells (null:
+   * the desktop view): the other views put off all it does to the canvas
+   * (a layer's first value gives its instances edit styles too), and what
+   * changes only the edit styles till then, then show it, as it is then, all
+   * at once. A value set
+   * once, they show once the next frame is drawn; one `step` of a run of them,
+   * once the steps pause for `CATCH_UP_AFTER_MS`. The latest change says which:
+   * a value set once right after steps shows after the next frame, with no
+   * pause to wait for. A view shows it at once on any other change to the
+   * canvas, or on `sync` of it. The desktop view is the canvas itself: it
+   * always shows every change at once.
+   */
+  lagBeside(worked: () => View | null, step: boolean, change: () => void): void;
+  /**
+   * Shifts elements of the canvas straight to their place, as layers make
+   * room for one dragged in the view `worked`: each in `shifts` by so
+   * much, in that view's px; any shifted before and not in `shifts` goes back.
+   * The view dragged in shows it at once; the others, once the shifts pause
+   * for `CATCH_UP_AFTER_MS`, as each shift sets the pause going again, or on
+   * `sync` of them: then `caughtUp` is called (ADR 0011). It is no change to
+   * the canvas for the views to follow: each view shows the shifts as its
+   * own, till `stopMakingRoom`. A view not of this canvas (a layer off it) shows
+   * them alone.
+   */
+  makeRoom(worked: View, shifts: ReadonlyMap<Element, Shift>, caughtUp?: () => void): void;
+  /** Puts every element that `makeRoom` shifted back where it was, in every view, at once, its style as it was. */
+  stopMakingRoom(): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
   /**
@@ -63,7 +126,7 @@ export interface Views {
    * meanwhile, as a drag shifts layers: returns what lets go, and each view
    * is as tall as what it shows again before the next paint.
    */
-  holdHeights(): () => void;
+  pinHeights(): () => void;
 }
 
 /** The canvas, shown so far in the desktop view only. */
@@ -76,11 +139,11 @@ export function createViews(canvas: Canvas): Views {
 
   /** Each view made as tall as what it shows, once a frame, when anything may have changed it. */
   let frame = 0;
-  /** What holds every view as tall as it is: while any does, none is fitted. */
-  const holds = new Set<object>();
+  /** What pins every view as tall as it is: while any does, none is fitted. */
+  const pins = new Set<object>();
   const fit = () => {
     frame = 0;
-    if (holds.size) return;
+    if (pins.size) return;
     let changed = false;
     for (const fitting of fittings.values()) {
       const height = fitHeight(fitting.doc, fitting.iframe, canvas.windowHeight);
@@ -105,10 +168,102 @@ export function createViews(canvas: Canvas): Views {
     fittings.set(view, { doc, iframe, height, observer });
   };
   keepFitted(desktop, canvas.height);
-  // Every change to the canvas is in every view before the next frame.
+  // Anything changed on the canvas may change how tall a view is: each is fitted again before the next frame.
   new MutationObserver(refit).observe(canvas.document.documentElement, EVERYTHING);
-  const sync = () => {
-    for (const follower of followers.values()) follower.sync();
+  /**
+   * The layers making room for a drag: the view dragged in, where it has
+   * them, what each view shows of them so far, the style attribute each
+   * view's element had before, and the pause the views beside wait for.
+   */
+  let room: {
+    worked: View;
+    wanted: ReadonlyMap<Element, Shift>;
+    shown: Map<View, Map<Element, Shift>>;
+    styles: Map<Element, string | null>;
+    pause?: ReturnType<typeof setTimeout>;
+  } | null = null;
+  /** Shows the layers making room in `view` as `wanted` has them: whether anything changed there. */
+  const showRoomIn = (view: View, wanted: ReadonlyMap<Element, Shift>): boolean => {
+    const { shown, styles } = room!;
+    let showing = shown.get(view);
+    if (!showing) shown.set(view, (showing = new Map()));
+    const changed = [...showing.keys()].filter((el) => !wanted.has(el));
+    for (const [el, to] of wanted) if (showing.get(el)?.x !== to.x || showing.get(el)?.y !== to.y) changed.push(el);
+    if (!changed.length) return false;
+    const write = () => {
+      for (const el of changed) {
+        const to = wanted.get(el);
+        const at = view.elementOf(el) as HTMLElement | null;
+        if (!at) continue;
+        if (!styles.has(at)) styles.set(at, at.getAttribute("style"));
+        if (to) {
+          at.style.setProperty("translate", `${to.x}px ${to.y}px`, "important");
+          at.style.setProperty("transition", "none", "important");
+          showing.set(el, to);
+        } else {
+          // Set first, then taken off: as `style` was changed, its attribute may not be there yet to take off.
+          const style = styles.get(at)!;
+          at.setAttribute("style", style ?? "");
+          if (style === null) at.removeAttribute("style");
+          styles.delete(at);
+          showing.delete(el);
+        }
+      }
+    };
+    if (view.document !== canvas.document) write();
+    else {
+      // On the canvas, the desktop view's own: the views beside take in what came before, and nothing of this.
+      for (const follower of followers.values()) follower.sync();
+      write();
+      for (const follower of followers.values()) follower.pass();
+    }
+    return true;
+  };
+  const sync = (view?: View) => {
+    if (view) {
+      followers.get(view)?.catchUp();
+      if (room && view !== room.worked) showRoomIn(view, room.wanted);
+    } else for (const follower of followers.values()) follower.sync();
+  };
+  /**
+   * While the views beside lag behind a value changed, till they catch up:
+   * which view is worked in, whether they wait for the steps to pause or for
+   * the next frame, and what stops that wait. None: no view is behind.
+   */
+  let lagging: { worked: () => View | null; step: boolean; cancel: () => void } | null = null;
+  /** Set while a value is changed (`lagBeside`): whatever the canvas takes from it is the value's, and lags with it. */
+  let changing = false;
+  const catchUp = () => {
+    lagging?.cancel();
+    lagging = null;
+    for (const follower of followers.values()) follower.catchUp();
+  };
+
+  /** Has the other views lag behind a value changed in the view `worked` tells: till the next frame is drawn or, for a `step`, till the steps pause. */
+  const startLagging = (worked: () => View | null, step: boolean) => {
+    // Set once again before the views beside catch up: they still do after the frame they wait for.
+    if (lagging && !lagging.step && !step) {
+      lagging.worked = worked;
+      return;
+    }
+    lagging?.cancel();
+    if (step) {
+      // Each step puts the catching up off again: it comes once the steps pause.
+      const timer = setTimeout(catchUp, CATCH_UP_AFTER_MS);
+      lagging = { worked, step, cancel: () => clearTimeout(timer) };
+    } else {
+      // Once the next frame, with the value in the view worked in, is drawn.
+      const later = createLater();
+      later.add(catchUp);
+      lagging = { worked, step, cancel: later.cancel };
+    }
+  };
+
+  const stopMakingRoom = () => {
+    if (!room) return;
+    clearTimeout(room.pause);
+    for (const view of room.shown.keys()) showRoomIn(view, new Map());
+    room = null;
   };
 
   return {
@@ -119,7 +274,13 @@ export function createViews(canvas: Canvas): Views {
       if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
       const laidOut = copyCanvas(canvas, iframe, width);
       // What is typed in this view is in every other view at once, as it is on the canvas.
-      const follower = follow(canvas.document, doc, sync);
+      const follower = follow(
+        canvas.document,
+        doc,
+        () => sync(),
+        () => !!lagging && lagging.worked() !== view,
+        () => changing,
+      );
       const view = viewOf(doc, width, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
       followers.set(view, follower);
       views.push(view);
@@ -139,15 +300,44 @@ export function createViews(canvas: Canvas): Views {
       if (i >= 0) views.splice(i, 1);
     },
     sync,
+    catchUp,
+    lagBeside(worked, step, change) {
+      // What came before is taken in as ever: only what `change` does is the value's.
+      for (const follower of followers.values()) follower.sync();
+      startLagging(worked, step);
+      const was = changing;
+      changing = true;
+      try {
+        change();
+        // What the change did that no view has taken yet: the views beside take it with the value.
+        for (const follower of followers.values()) follower.sync();
+      } finally {
+        changing = was;
+      }
+    },
+    makeRoom(worked, shifts, caughtUp) {
+      if (room && room.worked !== worked) stopMakingRoom();
+      room ??= { worked, wanted: shifts, shown: new Map(), styles: new Map() };
+      const wanted = (room.wanted = new Map(shifts));
+      showRoomIn(worked, wanted);
+      clearTimeout(room.pause);
+      if (!views.includes(worked)) return;
+      room.pause = setTimeout(() => {
+        let changed = false;
+        for (const view of views) if (view !== worked && showRoomIn(view, wanted)) changed = true;
+        if (changed) caughtUp?.();
+      }, CATCH_UP_AFTER_MS);
+    },
+    stopMakingRoom,
     onResize(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    holdHeights() {
-      const hold = {};
-      holds.add(hold);
+    pinHeights() {
+      const pin = {};
+      pins.add(pin);
       return () => {
-        if (holds.delete(hold)) refit();
+        if (pins.delete(pin)) refit();
       };
     },
   };
@@ -208,8 +398,12 @@ function viewOf(document: Document, width: number, { inView, onCanvas, typeIn }:
 
 /** A copy of the canvas kept the same as it, node for node. */
 interface Follower extends Correspondence {
-  /** Takes in the changes to the canvas not taken in yet. */
+  /** Takes in the changes to the canvas not taken in yet, but those it puts off while it lags. */
   sync(): void;
+  /** Takes in every change to the canvas not taken in yet, those put off too. */
+  catchUp(): void;
+  /** Takes in none of the changes to the canvas not taken in yet: they are the canvas's alone. */
+  pass(): void;
   /** Stops following the canvas. */
   stop(): void;
 }
@@ -221,8 +415,10 @@ interface Follower extends Correspondence {
  * text is typed in the copy, it goes the other way for the element typed in:
  * what is typed there is written to the canvas, and that element of the copy
  * takes in nothing from it; `typed` is called once what is typed is on it.
+ * While it `lags`, changes to the edit styles alone, and whatever a value
+ * does while it is `valueChanging`, are put off till it catches up, or till any other change comes.
  */
-function follow(canvas: Document, copy: Document, typed: () => void): Follower {
+function follow(canvas: Document, copy: Document, typed: () => void, lags: () => boolean, valueChanging: () => boolean): Follower {
   /** Each canvas node's node in the copy, and back. */
   const inCopy = new WeakMap<Node, Node>();
   const onCanvas = new WeakMap<Node, Node>();
@@ -261,6 +457,11 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
       if (from !== typing?.copy) copyAttributes(from as Element, to as Element);
     } else if (hasData(from)) (to as CharacterData).data = (from as CharacterData).data;
     if (isTemplate(from)) return; // What it holds is its content, which the copy took whole.
+    if (way === down && isEditStyles(to)) {
+      // Its text may be behind its rules on the canvas, which change in place (`canvas-style.ts`).
+      syncEditStyles(to);
+      return;
+    }
     const wanted = [...from.childNodes].map((child) => {
       const known = way.to.get(child);
       if (!known) return copyOf(child, way);
@@ -284,20 +485,36 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
       if (!to) continue;
       if (record.type === "childList") lists.add(target);
       else if (record.type === "characterData") (to as CharacterData).data = (target as CharacterData).data;
-      else copyAttribute(target as Element, to as Element, record.attributeNamespace, record.attributeName!);
+      else {
+        copyAttribute(target as Element, to as Element, record.attributeNamespace, record.attributeName!);
+        if (way === down && isEditStyles(to)) syncEditStyles(to);
+      }
     }
     for (const node of lists) update(node, way.to.get(node)!, false, way);
   };
-  const observer = new MutationObserver((records) => takeIn(records, down));
+  /** Changes put off while the copy lags: to the edit styles alone, or made as a value changed. */
+  let behind: MutationRecord[] = [];
+  /** Takes in `records` from the canvas, and what was put off: as the canvas is now, so in any order. */
+  const catchUpWith = (records: MutationRecord[]) => {
+    const put = behind;
+    behind = [];
+    takeIn([...put, ...records], down);
+  };
+  /** Takes in `records` from the canvas; while the copy lags, puts them off if they change only the edit styles, or are made as a value changes. */
+  const keepUpWith = (records: MutationRecord[]) => {
+    if ((valueChanging() || records.every(changesEditStyles)) && lags()) behind.push(...records);
+    else catchUpWith(records);
+  };
+  const observer = new MutationObserver(keepUpWith);
   observer.observe(canvas.documentElement, EVERYTHING);
-  const sync = () => takeIn(observer.takeRecords(), down);
+  const catchUp = () => catchUpWith(observer.takeRecords());
   const doneTyping = () => {
     if (!typing) return;
     const { canvas: el, observer: typedIn } = typing;
     takeIn(typedIn.takeRecords(), up);
     typedIn.disconnect();
     // What the canvas wrote meanwhile, which the element typed in skips.
-    sync();
+    catchUp();
     typing = null;
     update(el, inCopy.get(el)!, true, down);
   };
@@ -306,7 +523,7 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
     onCanvas: (node) => onCanvas.get(node) ?? null,
     typeIn(el) {
       doneTyping();
-      sync();
+      catchUp();
       const at = inCopy.get(el) as Element | undefined;
       if (!at) throw new Error("Vernier Kit: the view shows no such element");
       const observer = new MutationObserver((records) => {
@@ -317,7 +534,9 @@ function follow(canvas: Document, copy: Document, typed: () => void): Follower {
       const session = (typing = { canvas: el, copy: at, observer });
       return { el: at as HTMLElement, done: () => typing === session && doneTyping() };
     },
-    sync,
+    sync: () => keepUpWith(observer.takeRecords()),
+    catchUp,
+    pass: () => void observer.takeRecords(),
     stop: () => {
       // What was typed last is kept on the canvas.
       if (typing) takeIn(typing.observer.takeRecords(), up);

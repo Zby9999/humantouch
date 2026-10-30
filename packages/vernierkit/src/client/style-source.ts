@@ -102,6 +102,34 @@ interface Candidate {
 
 /** For each of `properties` of `el`, what sets it now; properties set from one place are grouped. */
 export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
+  const { winners, unreadable } = cascade(el, properties);
+  const sources = new Map<string, StyleSource>();
+  for (const property of properties) {
+    const winner = winners.get(property);
+    const key = winner?.key ?? "none";
+    const source = sources.get(key);
+    if (source) source.properties.push(property);
+    else if (winner) sources.set(key, { properties: [property], ...winner.source });
+    else {
+      const kind = unreadable ? "unknown" : "none";
+      sources.set(key, { properties: [property], kind, selector: null, file: null, layer: null, important: false, className: null, declaration: null });
+    }
+  }
+  return [...sources.values()];
+}
+
+/**
+ * For each of `properties` of `el`, the declaration that sets it now, as
+ * written (`border-top-width: 1px`, or the shorthand it is set through); null
+ * when none does. Each its own, where `sourcesOf` reports one per place.
+ */
+export function declarationsOf(el: Element, properties: string[]): (string | null)[] {
+  const { winners } = cascade(el, properties);
+  return properties.map((property) => winners.get(property)?.source.declaration ?? null);
+}
+
+/** The declaration that wins the cascade for each of `properties` of `el` (null: none), and whether any stylesheet could not be read. */
+function cascade(el: Element, properties: string[]): { winners: Map<string, Candidate | null>; unreadable: boolean } {
   const doc = el.ownerDocument;
   const candidates = new Map<string, Candidate[]>(properties.map((p) => [p, []]));
   const layers = new LayerOrder();
@@ -218,19 +246,8 @@ export function sourcesOf(el: Element, properties: string[]): StyleSource[] {
     }
   }
 
-  const sources = new Map<string, StyleSource>();
-  for (const property of properties) {
-    const winner = candidates.get(property)!.reduce<Candidate | null>((best, c) => (!best || beats(c, best) ? c : best), null);
-    const key = winner?.key ?? "none";
-    const source = sources.get(key);
-    if (source) source.properties.push(property);
-    else if (winner) sources.set(key, { properties: [property], ...winner.source });
-    else {
-      const kind = unreadable ? "unknown" : "none";
-      sources.set(key, { properties: [property], kind, selector: null, file: null, layer: null, important: false, className: null, declaration: null });
-    }
-  }
-  return [...sources.values()];
+  const winners = new Map(properties.map((property) => [property, candidates.get(property)!.reduce<Candidate | null>((best, c) => (!best || beats(c, best) ? c : best), null)]));
+  return { winners, unreadable };
 }
 
 /** How far the freezer shifted a pinned element with the page's scroll: `[x, y]`, px. */

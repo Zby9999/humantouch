@@ -9,8 +9,10 @@
  * canvas does.
  */
 import type { SavedOffCanvasLayer, OffCanvasOrigin } from "../service-protocol";
+import { keepEditStylesApart } from "./canvas-style";
 import { createChangeSet, type ChangeSet } from "./changeset";
-import { createEditor, type Editor } from "./edits";
+import type { Editor } from "./edit-commands";
+import { createEditor } from "./edits";
 import type { History } from "./undo-steps";
 import { editable, fitHeight } from "./freezer";
 import type { Layer } from "./layers";
@@ -86,6 +88,8 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
     host.append(iframe);
     write(iframe);
     const doc = iframe.contentDocument!;
+    // Its look, edits and all, is written out, put back and read by the Agent as it always was.
+    keepEditStylesApart(doc);
     // As wide as the layer, whatever it comes to: the views follow only their height.
     const fitWidth = () => {
       const width = `${Math.ceil(doc.body.getBoundingClientRect().width)}px`;

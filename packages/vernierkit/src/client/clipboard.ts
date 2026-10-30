@@ -5,7 +5,7 @@
  */
 import { LAYER_ID_ATTR } from "./canvas-style";
 import type { ChangeSet } from "./changeset";
-import type { Destination, Editor } from "./edits";
+import type { Destination, Editor } from "./edit-commands";
 import type { Layer } from "./layers";
 import { spotIn } from "./stacks";
 

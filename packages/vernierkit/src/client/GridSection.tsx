@@ -1,8 +1,8 @@
 /** @jsxImportSource preact */
-import type { Editor } from "./edits";
+import type { Editor } from "./edit-commands";
 import type { Layer } from "./layers";
 import { BreakpointMark } from "./BreakpointMark";
-import { NumberField, type SlotOf } from "./Properties";
+import { NumberField, stepOptions, type SlotOf } from "./Properties";
 import { VariableSlot } from "./VariablePicker";
 
 interface Props {
@@ -37,7 +37,7 @@ export function GridSection({ editor, layers, onEdit, variable }: Props) {
     const next = property === "columns" ? Math.max(1, Math.round(value)) : Math.max(0, value);
     editor.batch(() => {
       for (const layer of layers) editor.set(layer, property, next);
-    }, { continues });
+    }, stepOptions(continues));
     onEdit();
   };
   return (

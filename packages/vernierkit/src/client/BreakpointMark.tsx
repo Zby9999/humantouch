@@ -2,7 +2,7 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { propertyTitle } from "../design-values";
-import type { Editor } from "./edits";
+import type { Editor } from "./edit-commands";
 import type { Property } from "./property-table";
 import type { Layer } from "./layers";
 

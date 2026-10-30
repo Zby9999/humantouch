@@ -39,11 +39,9 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
   });
 
   const others = changesOn(layer, changes).filter((change) => change.kind !== "move");
-  for (const el of moved) {
-    keepOriginal(el);
-    restoreStyle(el, MOVE_CSS, others);
-    declare(el, style);
-  }
+  for (const el of moved) keepOriginal(el);
+  restoreStyle(moved, MOVE_CSS, others);
+  declare(moved, style);
   if (to.absolute) holdAbsolute(new Set(moved.map((el) => el.parentElement!)));
   if (from.absolute) releaseAbsolute(doc, from.container.layer, changes);
 }
@@ -82,21 +80,19 @@ function layersIn(doc: Document, id: string): Element[] | null {
 
 /** Makes each container the positioning reference of what is placed absolute in it, where it is not one already. */
 export function holdAbsolute(containers: Iterable<Element>) {
-  for (const container of containers) {
-    if (getComputedStyle(container).position !== "static" && !container.hasAttribute(REFERENCE_ATTR)) continue;
+  const held = [...containers].filter((container) => getComputedStyle(container).position === "static" || container.hasAttribute(REFERENCE_ATTR));
+  for (const container of held) {
     keepOriginal(container);
     container.setAttribute(REFERENCE_ATTR, "");
-    declare(container, { position: "relative" });
   }
+  declare(held, { position: "relative" });
 }
 
 /** The container with id `id`, once no change in `changes` places a layer absolute in it, is no longer a positioning reference. */
 export function releaseAbsolute(doc: Document, id: string, changes: Change[]) {
   if (changes.some((change) => placedAt(change)?.absolute && placedAt(change)!.container.layer === id)) return;
   const own = changesOn(id, changes).filter((change) => change.kind !== "move");
-  for (const container of elementsOf(doc, id)) {
-    if (!container.hasAttribute(REFERENCE_ATTR)) continue;
-    container.removeAttribute(REFERENCE_ATTR);
-    restoreStyle(container, ["position"], own);
-  }
+  const held = elementsOf(doc, id).filter((container) => container.hasAttribute(REFERENCE_ATTR));
+  for (const container of held) container.removeAttribute(REFERENCE_ATTR);
+  restoreStyle(held, ["position"], own);
 }

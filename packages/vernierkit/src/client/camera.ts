@@ -1,7 +1,9 @@
 /**
  * The camera over the canvas: where the views sit in the viewport and at
  * what scale, as the designer pans and zooms, fits every view in (⇧1), or
- * plays the canvas at 100%, scrolled like a page (ADR 0010).
+ * plays the canvas at 100%, scrolled like a page (ADR 0010). Pure functions,
+ * but for reading where an animation has the stage (`currentCamera`): what
+ * redraws the stage once the camera is at rest is in `stage-redraw.ts`.
  */
 import type { Canvas } from "./freezer";
 

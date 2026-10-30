@@ -3,11 +3,13 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
 import { CanvasView, type Tool } from "./CanvasView";
-import { isEditable } from "./canvas-keys";
+import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
+import { pointerHeld } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
-import { createEditor, type Destination, type Editor } from "./edits";
+import type { Destination, Editor } from "./edit-commands";
+import { createEditor } from "./edits";
 import { createHistory } from "./undo-steps";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
@@ -20,7 +22,7 @@ import { BriefSection } from "./BriefSection";
 import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
-import type { View, Views } from "./views";
+import { CATCH_UP_AFTER_MS, type View, type Views } from "./views";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -61,8 +63,8 @@ interface Props {
   onLeft(): void;
 }
 
-/** How long after the last edit the selection box comes back. */
-const ADJUSTING_MS = 200;
+/** How long after the last edit the selection box comes back: twice as long as the views beside wait to catch up, so it comes back over views caught up (ADR 0011). */
+const ADJUSTING_MS = 2 * CATCH_UP_AFTER_MS;
 /** How long after the last edit the round is saved. */
 const AUTOSAVE_MS = 500;
 /** Nudges of the same layers this close together are a run: one step, undone at once. */
@@ -393,26 +395,34 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select(out.map((node) => editor.tree().layerOf(node)).filter((layer) => layer !== null));
   };
 
-  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
-  // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
+  // While the pointer is held down on something that edits as it moves, no key edits (`heldKey`, ADR 0012),
+  // wherever the focus is: no field or button gets the key, nor the browser when it is ignored. It is about
+  // the pointer alone, so it holds playing or not, with an editor or not (none holds the pointer then).
+  // Other listeners on the window still get it, as `stopPropagation` does not stop them: each checks `pointerHeld()`.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!pointerHeld()) return;
+      const whileHeld = heldKey(event);
+      if (whileHeld === "ignored") event.preventDefault();
+      if (whileHeld !== "passes") event.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`); held down, nothing.
   const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
   latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
-      if (playing) return;
-      const target = event.composedPath()[0];
-      // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
-      const field =
-        target instanceof HTMLElement &&
-        ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
-      if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return;
-      // By the letter typed, wherever the keyboard has it.
-      const key = event.key.toLowerCase();
-      const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
-      if (key !== "z" && !redo) return;
+      if (playing || !editor) return;
+      const key = historyKey(event, { held: pointerHeld() });
+      if (!key) return;
       event.preventDefault();
       event.stopPropagation();
+      if (key === "ignored") return;
+      const redo = key === "redo";
       // One history for the canvas and the layers off it: whichever edit came last is undone.
       const steps = history.past.length;
       // Nudged next, it is a run of its own: the one undone or redone stays a step apart.
@@ -433,12 +443,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const onKey = (event: KeyboardEvent) => {
       const { selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing } = latest.current;
       const target = event.composedPath()[0];
-      if (playing || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
+      if (playing || pointerHeld() || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
-      const letter = event.key.toLowerCase();
+      const shortcut = editorCommand(event);
       // Only what the editor holds is pasted, and only when it holds something: the system clipboard is left alone.
-      if (command && !event.shiftKey && !event.altKey && ["c", "x", "v"].includes(letter)) {
-        const done = letter === "v" ? paste(selected) : selected.length > 0 && (letter === "x" ? cut : copy)(selected);
+      if (shortcut === "copy" || shortcut === "cut" || shortcut === "paste") {
+        const done = shortcut === "paste" ? paste(selected) : selected.length > 0 && (shortcut === "cut" ? cut : copy)(selected);
         if (done) {
           event.preventDefault();
           event.stopPropagation();
@@ -447,12 +457,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       }
       if (!selected.length) return;
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
-      const a = letter === "a" || (event.altKey && event.code === "KeyA");
+      const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
       let act: (() => void) | null = null;
       if (a && event.shiftKey && !command) act = () => (event.altKey ? dissolve(selected) : makeStack(selected));
       else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
-      else if (letter === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
-      else if (letter === "g" && command && event.shiftKey && !event.altKey) act = () => ungroup(selected);
+      else if (shortcut === "duplicate") act = () => duplicate(selected);
+      else if (shortcut === "ungroup") act = () => ungroup(selected);
       else if (ARROWS[event.key] && !command && !event.altKey) {
         const [x, y] = ARROWS[event.key].map((n) => n * (event.shiftKey ? 10 : 1));
         act = () => nudge(selected, x, y);

@@ -3,7 +3,10 @@
  * pick the text and Frame tools and V puts them down, Esc puts a tool down,
  * cancels a drag or selects the parents, ⇧1 fits every view in. Playing, the
  * keys scroll the canvas as on a page, and Esc stops (ADR 0010). A field, or
- * a dialog over the canvas, keeps its keys.
+ * a dialog over the canvas, keeps its keys. ⌘Z and ⇧⌘Z go through the edits
+ * made (`historyKey`). While the pointer is held down on something that edits
+ * as it moves, only the keys that move about the canvas, and Esc, do
+ * anything (`heldKey`, ADR 0012).
  */
 import type { Created } from "./changeset";
 
@@ -31,12 +34,14 @@ export interface KeyState {
   /** A tool is picked. */
   tool: boolean;
   dragging: boolean;
+  /** The pointer is held down on a layer, or drawing one, or elsewhere on something that edits as it moves (`heldKey`). */
+  held: boolean;
   /** Layers are selected. */
   selected: boolean;
 }
 
 /** What the key `event` does on the canvas as it is now; null: nothing, and the key goes on. */
-export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging, selected }: KeyState): CanvasKey | null {
+export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging, held, selected }: KeyState): CanvasKey | null {
   if (playing) {
     if (event.type !== "keydown" || event.metaKey || event.ctrlKey || event.altKey) return null;
     if (event.key === "Escape") return { action: "stop playing" };
@@ -48,6 +53,9 @@ export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging,
   }
   const target = event.composedPath()[0];
   if (isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return null;
+  // Held down, only the keys that move about the canvas, and Esc, act here: not T, F or V, say,
+  // as a tool picked would change what the press makes, or what follows it.
+  if (held && heldKey(event) !== "passes") return null;
   // Repeats and key-up too: a focused button would otherwise click on Space.
   if (event.code === "Space") return { action: "pan", held: event.type === "keydown" };
   if (event.type !== "keydown") return null;
@@ -59,6 +67,98 @@ export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging,
   if (event.key === "Escape" && selected) return { action: "select parents" };
   if (event.code === "Digit1" && event.shiftKey && plain) return { action: "fit" };
   return null;
+}
+
+/** What ⌘Z, ⇧⌘Z or Ctrl+Y does to the edits made: `ignored` while the pointer is held down (`heldKey`), when the key is taken and does nothing, then or later. */
+export type HistoryKey = "undo" | "redo" | "ignored";
+
+/**
+ * What the key `event` does to the edits made, in the order they were made:
+ * ⌘Z undoes, ⇧⌘Z redoes (Ctrl on other systems, and Ctrl+Y there too). While
+ * the pointer is held down on a layer on the canvas, a value's icon, a
+ * gradient's stop or a layer being drawn, neither does anything until it is
+ * let go, or a drag cancelled with Esc: the views put back what makes room as
+ * it was when the drag began, over what an undo would change meanwhile, and a
+ * value dragged would be set again as the pointer next moves (tickets 61, 62,
+ * ADR 0012). A field keeps its own while something typed in it is not applied
+ * yet; a field of the Design panel otherwise, or a slider, passes it on. Null:
+ * not these keys, and the key goes on.
+ */
+export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): HistoryKey | null {
+  const target = event.composedPath()[0];
+  // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
+  const field =
+    target instanceof HTMLElement &&
+    ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
+  if (isEditable(target) && !field) return null;
+  const command = editorCommand(event);
+  if (command !== "undo" && command !== "redo") return null;
+  return held ? "ignored" : command;
+}
+
+/** What the editor does with ⌘ (Ctrl) and a letter: the Shell's keys. */
+export type EditorCommand = "copy" | "cut" | "paste" | "duplicate" | "ungroup" | "undo" | "redo";
+
+/**
+ * Which of the editor's commands the key `event` is: ⌘C, ⌘X, ⌘V and ⌘D copy,
+ * cut, paste and duplicate, ⌘⇧G ungroups, ⌘Z undoes, ⇧⌘Z redoes, and so does
+ * Ctrl+Y. ⌘ or Ctrl alike, on any system; never with ⌥. By the letter typed,
+ * wherever the keyboard has it. The same letter with other modifiers (⌘Y,
+ * ⌘G, ⌘⇧C, ⌘⇧V) is none of them: the browser's, if anything. Null: none.
+ */
+export function editorCommand(event: KeyboardEvent): EditorCommand | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === "z") return event.shiftKey ? "redo" : "undo";
+  if (key === "y") return event.metaKey || event.shiftKey ? null : "redo";
+  if (key === "g") return event.shiftKey ? "ungroup" : null;
+  return (!event.shiftKey && SHORTCUTS[key]) || null;
+}
+
+/** The editor's commands made with ⌘ and a letter alone, but undo, redo and ungroup. */
+const SHORTCUTS: Record<string, EditorCommand | undefined> = { c: "copy", x: "cut", v: "paste", d: "duplicate" };
+
+/** What becomes of a key while the pointer is held down (`heldKey`). */
+export type HeldKey = "passes" | "text" | "ignored";
+
+/**
+ * What becomes of a key while the pointer is held down on a layer on the
+ * canvas, a value's icon, a gradient's stop or a layer being drawn
+ * (`pointerHeld`, ADR 0012):
+ * - `passes`, it goes on as ever: Esc; Space, off a field (it pans); ⇧1, with
+ *   no other modifier; the modifier keys themselves (⌘ turning snapping off,
+ *   ⌥ measuring or copying where the layer is let go, ⇧ stepping by 10); the
+ *   browser's own shortcuts, with ⌘ (Ctrl) and keys that are none of the
+ *   editor's commands (`editorCommand`): ⌘R, ⌘F, ⌘L, ⌘+, and ⌘G, ⌘Y, ⌘⇧C,
+ *   ⌘⇧V, though the editor takes those letters with other modifiers; and any
+ *   key let go.
+ * - `text`, in a field that takes text: it types there as ever, but nothing
+ *   acts on it, the field neither (no value applied with Enter or stepped with
+ *   the arrows).
+ * - `ignored`: nothing acts on it, nor the browser. Every other key: none
+ *   changes the canvas, the changes or the history, picks a tool, copies a
+ *   layer as the drag has shifted it, presses a button, or moves the focus out
+ *   of a field (Tab), which would apply what was typed in it.
+ */
+export function heldKey(event: KeyboardEvent): HeldKey {
+  if (event.type !== "keydown" || event.key === "Escape" || MODIFIERS.has(event.key)) return "passes";
+  const target = event.composedPath()[0];
+  if (event.key === "Tab") return "ignored";
+  if (takesText(target)) return "text";
+  if ((event.metaKey || event.ctrlKey) && !editorCommand(event)) return "passes";
+  const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
+  // Space pans, but on a checkbox or a stop's handle it would press it.
+  if ((event.code === "Space" && !isEditable(target)) || (event.code === "Digit1" && event.shiftKey && plain)) return "passes";
+  return "ignored";
+}
+
+const MODIFIERS = new Set(["Shift", "Meta", "Control", "Alt", "AltGraph", "CapsLock", "Fn"]);
+
+/** Whether the target takes text typed: a text field, a text area, or text typed in. */
+function takesText(target: EventTarget | undefined): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.localName === "textarea") return true;
+  return target instanceof HTMLInputElement && !/^(checkbox|radio|range|color|button|submit|reset|file|image)$/.test(target.type);
 }
 
 /** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */

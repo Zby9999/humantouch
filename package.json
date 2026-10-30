@@ -6,7 +6,8 @@
     "build": "pnpm --filter vernierkit build",
     "typecheck": "pnpm -r typecheck && tsc --noEmit -p e2e",
     "test": "pnpm --filter vernierkit test",
-    "test:e2e": "pnpm build && playwright test -c e2e/playwright.config.ts"
+    "test:e2e": "pnpm build && playwright test -c e2e/playwright.config.ts",
+    "test:perf": "pnpm build && playwright test -c e2e/perf/playwright.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
