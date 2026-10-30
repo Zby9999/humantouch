@@ -2484,6 +2484,18 @@ describe("resizing a layer, as its handles do", () => {
     expect(box("free")).toEqual([12, 8, 30, 20]);
   });
 
+  test("a value set again by an adjustment whose first step changes nothing is a step of its own, not one with the same value set before it", () => {
+    const { editor, layer, box } = open();
+    editor.set(layer("free"), "x", 20);
+    editor.set(layer("free"), "x", 20);
+    editor.set(layer("free"), "x", 25, { continues: true });
+
+    editor.undo();
+    expect(box("free")[0]).toBe(20);
+    editor.undo();
+    expect(box("free")[0]).toBe(12);
+  });
+
   test("worked in the phone view, it is resized at its breakpoint only, and shows there at once", async () => {
     const { doc, views, editor, layer, changes } = open();
     phoneFrame = document.createElement("iframe");

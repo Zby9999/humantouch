@@ -568,9 +568,15 @@ function dragFrames(records: DragRecord[]) {
   const moves = summarize(records.map((record) => perSecond(record.moves, record)), { higherIsBetter: true });
   const long = records.flatMap((record) => record.long);
   const dropped = intervals.filter((gap) => gap > FRAME_MS * 1.5).length;
-  const met = fps.worst >= 58 && frames.p95 <= FRAME_MS * 1.25 && dropped < intervals.length / 20;
+  const [fpsMet, onTime, fewLate] = [fps.worst >= 58, frames.p95 <= FRAME_MS * 1.25, dropped < intervals.length / 20];
+  /** The rows of the report, `per` what: "drag", "resize". */
+  const rows = (per: string) => [
+    { name: `frames per second, per ${per}`, summary: fps, unit: (v: number) => v.toFixed(1), target: `every ${per} ≥ 58`, met: fpsMet },
+    { name: `pointer moves per second, per ${per}`, summary: moves, unit: (v: number) => v.toFixed(0) },
+    { name: "time between frames", summary: frames, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: onTime },
+  ];
   const note = `${dropped} of ${intervals.length} frames late (more than 1.5 frames apart; target fewer than 5%); ${long.length} long tasks${long.length ? `, the longest ${Math.max(...long).toFixed(0)}ms` : ""}.`;
-  return { fps, frames, moves, long, dropped, count: intervals.length, met, note };
+  return { fps, frames, moves, long, dropped, count: intervals.length, met: fpsMet && onTime && fewLate, rows, note };
 }
 
 test("entering edit mode, the desktop view up, takes at most 150ms; once the page is in place, all three views are up", async ({ page }) => {
@@ -996,19 +1002,9 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
     expect(record.withLine, "the drag shows where the card would go").toBeGreaterThan(0);
     records.push(record);
   }
-  const { fps, frames, moves, long, dropped, count, met, note } = dragFrames(records);
+  const { fps, frames, moves, long, dropped, count, met, rows, note } = dragFrames(records);
   keep("drag", { fps, frameIntervals: frames, dropped, frames: count, longTasks: long, pointerMovesPerSecond: moves });
-  print(
-    report(
-      `Dragging a card, ${elements} elements, ${VIEWS.length} views — ${mode}`,
-      [
-        { name: "frames per second, per drag", summary: fps, unit: (v) => v.toFixed(1), target: "every drag ≥ 58", met: fps.worst >= 58 },
-        { name: "pointer moves per second, per drag", summary: moves, unit: (v) => v.toFixed(0) },
-        { name: "time between frames", summary: frames, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: frames.p95 <= FRAME_MS * 1.25 },
-      ],
-      [note],
-    ),
-  );
+  print(report(`Dragging a card, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows("drag"), [note]));
   verdict(met, "dragging keeps 60fps");
 });
 
@@ -1027,18 +1023,8 @@ test("dragging a layer's handle keeps 60fps", async ({ page }) => {
     records.push(record);
   }
   // As a drag (ticket 22).
-  const { fps, frames, moves, long, dropped, count, met, note } = dragFrames(records);
+  const { fps, frames, moves, long, dropped, count, met, rows, note } = dragFrames(records);
   keep("resize", { fps, frameIntervals: frames, dropped, frames: count, longTasks: long, pointerMovesPerSecond: moves });
-  print(
-    report(
-      `Resizing a card by its corner, every instance with it, ${elements} elements, ${VIEWS.length} views — ${mode}`,
-      [
-        { name: "frames per second, per resize", summary: fps, unit: (v) => v.toFixed(1), target: "every resize ≥ 58", met: fps.worst >= 58 },
-        { name: "pointer moves per second, per resize", summary: moves, unit: (v) => v.toFixed(0) },
-        { name: "time between frames", summary: frames, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: frames.p95 <= FRAME_MS * 1.25 },
-      ],
-      [note],
-    ),
-  );
+  print(report(`Resizing a card by its corner, every instance with it, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows("resize"), [note]));
   verdict(met, "resizing by a handle keeps 60fps");
 });

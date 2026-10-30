@@ -41,7 +41,7 @@ export interface Step {
   back?: string[];
   /** Steps of one adjustment are one step: the same edit to the same layers, as this tells. */
   key: string;
-  /** One of a run of steps that may each change something else (nudges): one step with those before it, undone back through each. */
+  /** One of a run of steps that may each change something else (nudges, a resize; see `Run`): one step with those before it, undone back through each. */
   run?: boolean;
   /** Of `layers`, those whose only text it was made to: a Frame's only text, which has the Frame's id. */
   texts?: string[];
@@ -83,6 +83,14 @@ export interface Steps {
    * another run right before it. A group in a group is one with it.
    */
   group(edits: () => void, continues: boolean, run?: Run): void;
+  /**
+   * Begins a new adjustment, though its first edit may change nothing and so
+   * push no step: no later step of it is made one with what an earlier
+   * adjustment put into the History. An edit that does not continue begins
+   * one this way before it finds whether it changes anything. In a group,
+   * nothing: the group began it.
+   */
+  begin(): void;
   /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a group. */
   show(): void;
   /**
@@ -153,10 +161,12 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
     }
     show();
   };
+  const begin = () => {
+    if (!batching) adjusting = null;
+  };
   const group = (edits: () => void, continues: boolean, run?: Run) => {
     if (batching) return edits();
-    // A new adjustment, though it changes nothing yet: no later step of it is made one with an earlier one.
-    if (!continues) adjusting = null;
+    if (!continues) begin();
     const steps: Step[] = [];
     batching = steps;
     try {
@@ -181,6 +191,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
   const ownSteps: Steps = {
     push,
     group,
+    begin,
     show,
     undo() {
       adjusting = null;

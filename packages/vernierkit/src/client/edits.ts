@@ -258,6 +258,8 @@ export function createEditor(
     picked?: Picked,
     cut?: { off(): void; on(): void },
   ) => {
+    // A new adjustment, though this edit may change nothing.
+    if (!continues) steps.begin();
     const read = () => readAsShown(working.shownAt(breakpoint, layer.el), property, colors);
     let before = from === undefined ? read() : from;
     if (same(before, value) && !picked) return;

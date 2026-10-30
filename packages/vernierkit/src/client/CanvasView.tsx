@@ -436,14 +436,14 @@ export function CanvasView(props: Props) {
     onSelect,
     endDrag: (_commit: boolean) => {},
     endResize: (_commit: boolean) => {},
-    remodify: (_keys: Modifiers) => {},
+    modifiersChanged: (_keys: Modifiers) => {},
     resizeNow: () => {},
     tool,
     onTool,
     playing,
     onStopPlaying,
   });
-  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, remodify, resizeNow, tool, onTool, playing, onStopPlaying };
+  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, modifiersChanged, resizeNow, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -460,7 +460,7 @@ export function CanvasView(props: Props) {
         selected: selected.length > 0,
       });
       if (!playing) {
-        if (["Meta", "Control", "Shift", "Alt"].includes(event.key)) latest.current.remodify(event);
+        if (["Meta", "Control", "Shift", "Alt"].includes(event.key)) latest.current.modifiersChanged(event);
         if (event.key === "Meta" || event.key === "Control") {
           const deep = event.metaKey || event.ctrlKey;
           setHover((h) => h && { ...h, deep });
@@ -730,7 +730,7 @@ export function CanvasView(props: Props) {
    * are now. ⌘ (Ctrl) turns snapping off while it is held; resizing, ⇧ keeps
    * the proportions and ⌥ resizes from the middle.
    */
-  function remodify({ metaKey, ctrlKey, shiftKey, altKey }: Modifiers) {
+  function modifiersChanged({ metaKey, ctrlKey, shiftKey, altKey }: Modifiers) {
     const drag = dragging.current;
     const from = press.current;
     if (drag?.pointer && from) moveDrag(drag, { ...drag.pointer, metaKey, ctrlKey }, from);
