@@ -33,6 +33,8 @@ const VALUE_TARGET_MS = FRAME_MS * 2;
 const ENTER_RUNS = 8;
 /** Values stepped per kind of change. */
 const VALUE_STEPS = 20;
+/** Runs of two steps of a value then ⌘Z and ⇧⌘Z, per kind of change. */
+const UNDO_RUNS = 20;
 /**
  * An arrow key held down, as macOS repeats it by default (the designer's Mac
  * leaves it so: `HIDInitialKeyRepeat` 500ms, `HIDKeyRepeat` 83.3ms, as `ioreg`
@@ -297,23 +299,23 @@ function valueOnCanvas(page: Page, selector: string, property: string) {
 }
 
 /** Waits till every view shows `value` for `property` of what `selector` finds. */
-async function everyViewShows(page: Page, selector: string, property: string, value: string) {
-  for (const title of VIEWS) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, value);
+async function everyViewShows(page: Page, selector: string, property: string, value: string, views = VIEWS) {
+  for (const title of views) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, value);
 }
 
-/** Steps a value up with the arrow key, `VALUE_STEPS` times, measuring each. */
-async function stepValue(page: Page, field: string, selector: string, property: string) {
+/** Steps a value up with the arrow key, `VALUE_STEPS` times, measuring each, in `views`, the first worked in. */
+async function stepValue(page: Page, field: string, selector: string, property: string, views = VIEWS) {
   await design(page).getByRole("textbox", { name: field, exact: true }).focus();
   const samples: ValueSample[] = [];
   for (let i = 0; i < VALUE_STEPS; i++) {
     const expected = `${parseFloat(await valueOnCanvas(page, selector, property)) + 1}px`;
-    await page.evaluate(armValue, { views: VIEWS, selector, property, expected });
+    await page.evaluate(armValue, { views, selector, property, expected });
     await page.keyboard.press("ArrowUp");
     samples.push(await page.evaluate(() => (window as unknown as { vkValue: Promise<ValueSample> }).vkValue));
     await settle(page, 150);
   }
   // After the last step, every view shows the last value.
-  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property));
+  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property), views);
   return samples;
 }
 
@@ -452,13 +454,14 @@ async function holdValue(page: Page, field: string, selector: string, property: 
  */
 interface FrameRecord {
   times: number[];
+  /** Frames in which `shows` was on screen: where the layer would go, or the size of the layer resized. */
   withLine: number;
   long: number[];
   moves: number;
   stop(): void;
 }
 
-function armFrames() {
+function armFrames(shows: string) {
   const w = window as unknown as { vkFrames: FrameRecord };
   const root = document.querySelector("vernier-kit")!.shadowRoot!;
   const record: FrameRecord = { times: [], withLine: 0, long: [], moves: 0, stop() {} };
@@ -467,7 +470,7 @@ function armFrames() {
   let on = true;
   const loop = (time: number) => {
     record.times.push(time);
-    if (root.querySelector(".vk-drop-line")) record.withLine++;
+    if (root.querySelector(shows)) record.withLine++;
     if (on) requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -481,13 +484,15 @@ function armFrames() {
   w.vkFrames = record;
 }
 
-/** Drags card `n`, selected, back and forth over the cards beside it and the row below, for `DRAG_MS`; then lets it go back where it was. */
-async function dragCard(page: Page, n: number) {
-  const box = (await canvas(page).locator(card(n)).boundingBox())!;
-  const step = (await canvas(page).locator(card(n + 1)).boundingBox())!.x - box.x;
-  const from = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
+/**
+ * Presses the pointer at `from` and drags it for `DRAG_MS`, to where `path`
+ * has it each moment (`elapsed` ms in), recording the frames meanwhile, and
+ * those with `shows` on screen (`armFrames`); then Esc takes the drag back,
+ * so the next one starts from the same page.
+ */
+async function dragFor(page: Page, from: { x: number; y: number }, shows: string, path: (elapsed: number) => [number, number]) {
   await page.mouse.move(from.x, from.y);
-  await page.evaluate(armFrames);
+  await page.evaluate(armFrames, shows);
   await page.mouse.down();
   // Sent straight to the browser every few ms, each without waiting for the last to be taken: as a mouse reports,
   // whether or not the page keeps up. (Playwright's own moves each wait for the page, so a busy page would get fewer.)
@@ -501,9 +506,7 @@ async function dragCard(page: Page, n: number) {
         clearInterval(timer);
         return done();
       }
-      // Across two cards and back, and down a row and back, once every 1.25s.
-      const phase = (elapsed / 1250) * 2 * Math.PI;
-      const [x, y] = [from.x + Math.sin(phase) * step * 2, from.y + (1 - Math.cos(phase)) * box.height * 0.6];
+      const [x, y] = path(elapsed);
       sent.push(cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 }));
     }, POINTER_EVERY_MS);
   });
@@ -514,11 +517,66 @@ async function dragCard(page: Page, n: number) {
     record.stop();
     return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
   });
-  // Esc puts the card back as it was: the next drag starts from the same page.
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await settle(page);
   return record;
+}
+
+/** Drags card `n`, selected, back and forth over the cards beside it and the row below, for `DRAG_MS`; then Esc puts it back where it was. */
+async function dragCard(page: Page, n: number) {
+  const box = (await canvas(page).locator(card(n)).boundingBox())!;
+  const step = (await canvas(page).locator(card(n + 1)).boundingBox())!.x - box.x;
+  const from = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
+  return dragFor(page, from, ".vk-drop-line", (elapsed) => {
+    // Across two cards and back, and down a row and back, once every 1.25s.
+    const phase = (elapsed / 1250) * 2 * Math.PI;
+    return [from.x + Math.sin(phase) * step * 2, from.y + (1 - Math.cos(phase)) * box.height * 0.6];
+  });
+}
+
+/**
+ * Presses the bottom right handle of the card selected and drags it about for
+ * `DRAG_MS`, the card wider and taller and back, every instance of it with it
+ * (ticket 69); then Esc takes the resize back, so the next one starts from the
+ * same card. The pointer is sent as `dragCard` sends it.
+ */
+async function resizeCard(page: Page) {
+  const corner = (await host(page).locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="se"]').boundingBox())!;
+  const from = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 };
+  return dragFor(page, from, ".vk-size-label", (elapsed) => {
+    // Out and back once every 1.25s: up to 80 screen px wider and 60 taller, never back within the threshold of where it was pressed.
+    const phase = (elapsed / 1250) * 2 * Math.PI;
+    return [from.x + 10 + (1 - Math.cos(phase)) * 40, from.y + 10 + (1 - Math.cos(phase)) * 30];
+  });
+}
+
+type DragRecord = Awaited<ReturnType<typeof dragFor>>;
+
+/**
+ * The frames of several drags, against ticket 22's standard for a drag: 60fps
+ * kept, as many frames as that in every drag (58 or more, give or take the odd
+ * one), 19 in 20 frames on time (p95 within 1.25 frames) and fewer than 1 in
+ * 20 late (more than 1.5 frames apart). Also the pointer moves that reached
+ * the page, per second of each drag: Chrome hands the page at most one a frame.
+ */
+function dragFrames(records: DragRecord[]) {
+  const intervals = records.flatMap((record) => record.times.slice(1).map((time, j) => time - record.times[j]));
+  const perSecond = (n: number, record: DragRecord) => (n / (record.times.at(-1)! - record.times[0])) * 1000;
+  const fps = summarize(records.map((record) => perSecond(record.times.length - 1, record)), { higherIsBetter: true });
+  const frames = summarize(intervals);
+  const moves = summarize(records.map((record) => perSecond(record.moves, record)), { higherIsBetter: true });
+  const long = records.flatMap((record) => record.long);
+  const dropped = intervals.filter((gap) => gap > FRAME_MS * 1.5).length;
+  const [fpsMet, onTime, fewLate] = [fps.worst >= 58, frames.p95 <= FRAME_MS * 1.25, dropped < intervals.length / 20];
+  /** The rows of the report, `per` what: "drag", "resize". */
+  const rows = (per: string) => [
+    { name: `frames per second, per ${per}`, summary: fps, unit: (v: number) => v.toFixed(1), target: `every ${per} ≥ 58`, met: fpsMet },
+    { name: `pointer moves per second, per ${per}`, summary: moves, unit: (v: number) => v.toFixed(0) },
+    { name: "time between frames", summary: frames, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: onTime },
+  ];
+  const note = `${dropped} of ${intervals.length} frames late (more than 1.5 frames apart; target fewer than 5%); ${long.length} long tasks${long.length ? `, the longest ${Math.max(...long).toFixed(0)}ms` : ""}.`;
+  return { fps, frames, moves, long, dropped, count: intervals.length, met: fpsMet && onTime && fewLate, rows, note };
 }
 
 test("entering edit mode, the desktop view up, takes at most 150ms; once the page is in place, all three views are up", async ({ page }) => {
@@ -623,6 +681,275 @@ test("a value changed shows in the view worked in in the next frame, its work wi
   verdict(met, "a value changed shows in the view worked in in the next frame, its work within two frames");
 });
 
+/** What `hearKeysFirst` tells of each key pressed, if anything listens. */
+interface WithKeysFirst {
+  vkKeyFirst?: (event: KeyboardEvent) => void;
+}
+
+/**
+ * Before any of the page's own: a listener for every key pressed, first of all
+ * at the window, that tells `window.vkKeyFirst` of it. The editor layer takes
+ * ⌘Z and ⇧⌘Z at the window, as they come, so a listener added once it is up
+ * would hear them only once they are handled.
+ */
+function hearKeysFirst() {
+  addEventListener("keydown", (event) => (window as unknown as WithKeysFirst).vkKeyFirst?.(event), true);
+}
+
+interface UndoRedoSample {
+  /** As the key came, the views beside showed something else than the view worked in: they waited for the steps to pause. */
+  behind: boolean;
+  /** In the first frame drawn after the key, the view worked in showed the value undone or redone to. */
+  firstFrame: boolean;
+  /** In that frame, every view did (ADR 0011). */
+  everyViewFirstFrame: boolean;
+  /** The main thread's time on it, as `ValueSample.work`: handling the key, then drawing that frame. */
+  work: number;
+  /** Of `work`, handling the key. */
+  handling: number;
+  /** Of `work`, that frame from its first callback to being drawn: every view's style, layout and paint. */
+  drawing: number;
+  /** From the key press to that frame drawn; with a screen, this includes waiting for its next refresh. */
+  latency: number;
+}
+
+/**
+ * ⌘Z or ⇧⌘Z, measured as `armValue` measures a key that changes a value, in
+ * every view at once: the views beside show it in the same frame as the view
+ * worked in, `views[0]` (ADR 0011). The editor layer handles the key first
+ * thing at the window, and stops it there: the time it arrived is taken by
+ * `hearKeysFirst`, before any of the page's listeners, and the time it was
+ * handled by a listener at the window added now, after the editor layer's.
+ * Waits for the frame under way to be drawn before listening.
+ */
+function armUndoRedo({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
+  const w = window as unknown as WithKeysFirst & { vkUndoRedo: Promise<UndoRedoSample> };
+  const { scheduler } = window as unknown as WithScheduler;
+  const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
+  const valueIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property);
+  /** ⌘Z or ⇧⌘Z (Ctrl on other systems): the keys pressed here. */
+  const isUndoOrRedo = (event: KeyboardEvent) => event.key.toLowerCase() === "z" && (event.metaKey || event.ctrlKey);
+  return new Promise<void>((armed) =>
+    requestAnimationFrame(() =>
+      scheduler.postTask(
+        () => {
+          w.vkUndoRedo = new Promise((resolve) => {
+            let start = 0;
+            let arrived = 0;
+            let handled = 0;
+            let behind = false;
+            let frames = 0;
+            let first = { at: 0, drawn: 0, worked: false, everyView: false };
+            const frame = () => {
+              frames++;
+              const at = performance.now();
+              // Once the frame has been drawn, before what the page has queued meanwhile (see `armEnter`).
+              scheduler.postTask(
+                () => {
+                  const drawn = performance.now();
+                  const shown = docs.map(valueIn).map((value) => value === expected);
+                  if (frames === 1) first = { at, drawn, worked: shown[0], everyView: shown.every(Boolean) };
+                  if (!shown.every(Boolean) && frames < 60) return requestAnimationFrame(frame);
+                  const handling = (handled || first.at) - start;
+                  resolve({
+                    behind,
+                    firstFrame: first.worked,
+                    everyViewFirstFrame: first.everyView,
+                    work: handling + (first.drawn - first.at),
+                    handling,
+                    drawing: first.drawn - first.at,
+                    latency: first.drawn - arrived,
+                  });
+                },
+                { priority: "user-blocking" },
+              );
+            };
+            w.vkKeyFirst = (event) => {
+              if (!isUndoOrRedo(event)) return;
+              w.vkKeyFirst = undefined;
+              // Read before the time starts: the frame before has been drawn, so this lays nothing out.
+              const shown = docs.map(valueIn);
+              behind = shown.slice(1).some((value) => value !== shown[0]);
+              start = performance.now();
+              arrived = event.timeStamp;
+              // Asked for before the page handles the key, as `armValue` does: the first frame callback is this one.
+              requestAnimationFrame(frame);
+            };
+            // After the editor layer's, which stops the key from going further.
+            const onHandled = (event: KeyboardEvent) => {
+              if (!isUndoOrRedo(event)) return;
+              handled = performance.now();
+              removeEventListener("keydown", onHandled, true);
+            };
+            addEventListener("keydown", onHandled, true);
+          });
+          armed();
+        },
+        { priority: "user-blocking" },
+      ),
+    ),
+  );
+}
+
+/**
+ * `UNDO_RUNS` times, a value stepped up twice with the arrow key, then right
+ * away ⌘Z, measured, and ⇧⌘Z, measured: undone back one step, redone. The
+ * views beside wait for the steps to pause as ⌘Z comes, and are caught up by
+ * it, so as ⇧⌘Z comes they wait for nothing (any step between would leave
+ * nothing to redo); it shows in every view at once too.
+ */
+async function undoAndRedo(page: Page, field: string, selector: string, property: string) {
+  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
+  const undo: UndoRedoSample[] = [];
+  const redo: UndoRedoSample[] = [];
+  const measured = () => page.evaluate(() => (window as unknown as { vkUndoRedo: Promise<UndoRedoSample> }).vkUndoRedo);
+  for (let i = 0; i < UNDO_RUNS; i++) {
+    const from = parseFloat(await valueOnCanvas(page, selector, property));
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    // Each press of ↑ a step of its own: undone, one step back.
+    await page.evaluate(armUndoRedo, { views: VIEWS, selector, property, expected: `${from + 1}px` });
+    await page.keyboard.press("ControlOrMeta+z");
+    undo.push(await measured());
+    await page.evaluate(armUndoRedo, { views: VIEWS, selector, property, expected: `${from + 2}px` });
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    redo.push(await measured());
+    await settle(page, 150);
+  }
+  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property));
+  return { undo, redo };
+}
+
+/**
+ * Ticket 73: ⌘Z and ⇧⌘Z right after steps of a value, while the views beside
+ * wait for the steps to pause: every view shows what is undone or redone in
+ * the same frame (ADR 0011), so that frame draws all three. Measured as a
+ * value changed, the target the same.
+ */
+test("⌘Z and ⇧⌘Z right after steps of a value show in every view in the next frame, their work within two frames", async ({ page }) => {
+  await page.addInitScript(hearKeysFirst);
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await selectCard(page, 6, { parent: true });
+  const radius = await undoAndRedo(page, "Corner radius", card(6), "border-top-left-radius");
+  await selectCard(page, 6);
+  const gap = await undoAndRedo(page, "Gap", cardBody(6), "row-gap");
+
+  const rows = [];
+  const notes = [];
+  const summaries: Record<string, unknown> = {};
+  let met = true;
+  for (const [kind, keys] of [
+    ["corner radius (paint)", radius],
+    ["Stack gap (layout)", gap],
+  ] as const) {
+    for (const [key, samples] of [
+      ["⌘Z", keys.undo],
+      ["⇧⌘Z", keys.redo],
+    ] as const) {
+      const name = `${kind}, ${key}`;
+      const behind = samples.filter((s) => s.behind).length;
+      // The views beside waited for the steps to pause as each ⌘Z came: what this is to measure.
+      if (key === "⌘Z") expect(behind, `${name}: the views beside wait as each key comes`).toBe(samples.length);
+      const work = summarize(samples.map((s) => s.work));
+      const handling = summarize(samples.map((s) => s.handling));
+      const drawing = summarize(samples.map((s) => s.drawing));
+      const latency = summarize(samples.map((s) => s.latency));
+      const inFirstFrame = samples.filter((s) => s.everyViewFirstFrame).length;
+      const ok = inFirstFrame === samples.length && work.p95 <= VALUE_TARGET_MS;
+      met &&= ok;
+      summaries[name] = { work, handling, drawing, latency, everyViewInFirstFrame: inFirstFrame, behind, samples };
+      rows.push(
+        { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, every view in the first frame`, met: ok },
+        { name: `${name}: (handling the key)`, summary: handling },
+        { name: `${name}: (drawing the frame)`, summary: drawing },
+        { name: `${name}: key to frame drawn`, summary: latency },
+      );
+      notes.push(
+        `${name}: ${inFirstFrame} of ${samples.length} shown in every view in the first frame ` +
+          `(the desktop view: ${samples.filter((s) => s.firstFrame).length}); the views beside waiting as the key came: ${behind}`,
+      );
+    }
+  }
+  keep("undoRedo", summaries);
+  print(report(`⌘Z and ⇧⌘Z right after two steps of a value, ${UNDO_RUNS} each, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows, notes));
+  verdict(met, "⌘Z and ⇧⌘Z right after steps of a value show in every view in the next frame, their work within two frames");
+});
+
+/** Whether the views on the stage all show whole in the viewport, and how tall the stage and the viewport are, in page px. */
+function stageInSight(page: Page) {
+  return host(page)
+    .locator(".vk-stage")
+    .evaluate((stage) => {
+      const [s, v] = [stage.getBoundingClientRect(), stage.parentElement!.getBoundingClientRect()];
+      return { inSight: s.left >= v.left && s.top >= v.top && s.right <= v.right && s.bottom <= v.bottom, stageHeight: s.height, viewportHeight: v.height };
+    });
+}
+
+/**
+ * Ticket 71: changes that are not the camera's, after which the views were
+ * drawn whole (ticket 22): the views beside the desktop view deleted, then
+ * the page's main column deleted, so the desktop view is short enough to show
+ * whole, then the delete undone with ⌘Z. The camera never moves. The view is long
+ * again, mostly out of sight, but was drawn whole, and went on being drawn
+ * whole, till the camera next moved: about 100ms after such changes, it is
+ * drawn only as far as it shows again. Measured as the value changed above,
+ * the Stack gap of a card, in the desktop view, the only one left.
+ *
+ * With the Layers panel hidden: once the delete is undone, it lists every
+ * layer of the column, some 5200 rows, against some 160 before (the layers
+ * collapsed in it were deleted with it, and come back open), and drawing
+ * them adds about 20ms to each step, whatever the stage does. That is not
+ * what this measures; ticket 71's Comments has it.
+ */
+test.describe(() => {
+  test.use({ showLayers: false });
+
+  test("after the views beside are deleted and the page's main column deleted and the delete undone, a value changed shows in the next frame, its work within two frames", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    const views = [VIEWS[0]];
+    for (const name of ["Tablet", "Phone"]) await page.getByRole("button", { name: `Delete ${name} view` }).click();
+    await expect(host(page).locator("iframe.vk-canvas")).toHaveCount(1);
+    await settle(page, 500);
+    // From a card's body up to the main column: the body, the card, the cards' grid, their section, the column.
+    await selectCard(page, 6);
+    for (let i = 0; i < 4; i++) await page.keyboard.press("Escape");
+    await page.keyboard.press("Delete");
+    await expect.poll(async () => (await stageInSight(page)).inSight, { message: "with its main column deleted, the desktop view shows whole" }).toBe(true);
+    await settle(page, 500);
+    const short = await stageInSight(page);
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect.poll(async () => (await stageInSight(page)).inSight, { message: "the delete undone, it is mostly out of sight" }).toBe(false);
+    await settle(page, 500);
+    const long = await stageInSight(page);
+    await selectCard(page, 6);
+    const gap = await stepValue(page, "Gap", cardBody(6), "row-gap", views);
+
+    const name = "Stack gap (layout)";
+    const work = summarize(gap.map((s) => s.work));
+    const latency = summarize(gap.map((s) => s.latency));
+    const inFirstFrame = gap.filter((s) => s.firstFrame).length;
+    const met = inFirstFrame === gap.length && work.p95 <= VALUE_TARGET_MS;
+    keep("valueAfterChanges", { [name]: { work, latency, inFirstFrame }, stageHeights: { short: short.stageHeight, long: long.stageHeight, viewport: long.viewportHeight } });
+    print(
+      report(
+        `Changing a value after the views beside are deleted and the main column deleted and the delete undone, ${elements} elements, ${views.length} view — ${mode}`,
+        [
+          { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met },
+          { name: `${name}: key to frame drawn`, summary: latency },
+        ],
+        [
+          `The desktop view ${short.stageHeight.toFixed(0)}px tall on screen without its main column, in a viewport ${long.viewportHeight.toFixed(0)}px tall; ${long.stageHeight.toFixed(0)}px once the delete is undone.`,
+          `${inFirstFrame} of ${gap.length} steps shown in the desktop view in the first frame.`,
+        ],
+      ),
+    );
+    verdict(met, "after changes that are not the camera's, a value changed shows in the next frame, its work within two frames");
+  });
+});
+
 test("an arrow key held down shows each step in the view worked in in the next frame, its work within two frames; every view catches up once it is let go", async ({ page }) => {
   const elements = await openBigPage(page);
   await enterEditMode(page);
@@ -669,37 +996,35 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
   const elements = await openBigPage(page);
   await enterEditMode(page);
   await selectCard(page, 6, { parent: true });
-  const intervals: number[] = [];
-  const fps: number[] = [];
-  const long: number[] = [];
-  /** Pointer moves that reached the page, per second of each drag; Chrome hands the page at most one a frame. */
-  const moves: number[] = [];
+  const records: DragRecord[] = [];
   for (let i = 0; i < DRAGS; i++) {
     const record = await dragCard(page, 6);
     expect(record.withLine, "the drag shows where the card would go").toBeGreaterThan(0);
-    const gaps = record.times.slice(1).map((time, j) => time - record.times[j]);
-    intervals.push(...gaps);
-    fps.push(((record.times.length - 1) / (record.times.at(-1)! - record.times[0])) * 1000);
-    long.push(...record.long);
-    moves.push((record.moves / (record.times.at(-1)! - record.times[0])) * 1000);
+    records.push(record);
   }
-  const frameSummary = summarize(intervals);
-  const fpsSummary = summarize(fps, { higherIsBetter: true });
-  const dropped = intervals.filter((gap) => gap > FRAME_MS * 1.5).length;
-  // 60fps kept: as many frames as that, give or take the odd one, and 19 in 20 frames on time.
-  const met = fpsSummary.worst >= 58 && frameSummary.p95 <= FRAME_MS * 1.25;
-  const movesSummary = summarize(moves, { higherIsBetter: true });
-  keep("drag", { fps: fpsSummary, frameIntervals: frameSummary, dropped, frames: intervals.length, longTasks: long, pointerMovesPerSecond: movesSummary });
-  print(
-    report(
-      `Dragging a card, ${elements} elements, ${VIEWS.length} views — ${mode}`,
-      [
-        { name: "frames per second, per drag", summary: fpsSummary, unit: (v) => v.toFixed(1), target: "every drag ≥ 58", met: fpsSummary.worst >= 58 },
-        { name: "pointer moves per second, per drag", summary: movesSummary, unit: (v) => v.toFixed(0) },
-        { name: "time between frames", summary: frameSummary, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: frameSummary.p95 <= FRAME_MS * 1.25 },
-      ],
-      [`${dropped} of ${intervals.length} frames late (more than 1.5 frames apart); ${long.length} long tasks${long.length ? `, the longest ${Math.max(...long).toFixed(0)}ms` : ""}.`],
-    ),
-  );
+  const { fps, frames, moves, long, dropped, count, met, rows, note } = dragFrames(records);
+  keep("drag", { fps, frameIntervals: frames, dropped, frames: count, longTasks: long, pointerMovesPerSecond: moves });
+  print(report(`Dragging a card, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows("drag"), [note]));
   verdict(met, "dragging keeps 60fps");
+});
+
+test("dragging a layer's handle keeps 60fps", async ({ page }) => {
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await selectCard(page, 6, { parent: true });
+  const width = () => canvas(page).locator(card(6)).evaluate((el) => el.getBoundingClientRect().width);
+  const before = await width();
+  const records: DragRecord[] = [];
+  for (let i = 0; i < DRAGS; i++) {
+    const record = await resizeCard(page);
+    expect(record.withLine, "the resize shows the card's size").toBeGreaterThan(0);
+    // Esc took it back: the next resize starts from the same card.
+    expect(await width(), "Esc puts the card back as it was").toBe(before);
+    records.push(record);
+  }
+  // As a drag (ticket 22).
+  const { fps, frames, moves, long, dropped, count, met, rows, note } = dragFrames(records);
+  keep("resize", { fps, frameIntervals: frames, dropped, frames: count, longTasks: long, pointerMovesPerSecond: moves });
+  print(report(`Resizing a card by its corner, every instance with it, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows("resize"), [note]));
+  verdict(met, "resizing by a handle keeps 60fps");
 });

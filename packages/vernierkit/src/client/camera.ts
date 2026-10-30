@@ -85,6 +85,13 @@ function centered(bounds: Bounds, area: DOMRect, zoom: number): Camera {
   return { zoom, x: (area.width - bounds.width * zoom) / 2, y: (area.height - bounds.height * zoom) / 2 };
 }
 
+/** Every edge of `bounds` within the viewport, where the camera has them: all of them in sight. */
+export function showsWhole(camera: Camera, bounds: Bounds, area: Pick<DOMRect, "width" | "height">): boolean {
+  const left = camera.x + (bounds.x ?? 0) * camera.zoom;
+  const top = camera.y + (bounds.y ?? 0) * camera.zoom;
+  return left >= 0 && top >= 0 && left + bounds.width * camera.zoom <= area.width && top + bounds.height * camera.zoom <= area.height;
+}
+
 /** All the views side by side, and any layers off the canvas: from the leftmost to the rightmost, the topmost to the lowest. */
 export function boundsOf(placed: Box[]): Bounds {
   const x = Math.min(...placed.map((p) => p.x));

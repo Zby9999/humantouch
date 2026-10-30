@@ -3,10 +3,11 @@ import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefMark, briefedLayers } from "./BriefMark";
-import { Brief, Marks, Outline, SelectionToolbar } from "./AboveCanvas";
+import { Brief, handleCursor, Handles, Marks, Outline, SelectionToolbar, SizeLabel } from "./AboveCanvas";
 import { canvasKey, type Tool } from "./canvas-keys";
+import { marksNow, resizeStep, type ResizePointer, type ResizeSession, type ResizeStep } from "./canvas-resize";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
@@ -20,11 +21,15 @@ import { holdPointer, pointerHeld } from "./pointer-held";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances } from "./snap";
 import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
-import { createViews, type View, type Views } from "./views";
+import type { Handle } from "./resize";
+import { ADJUSTING_MS, createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 
 export type { Tool } from "./canvas-keys";
+
+/** The modifier keys held, as a key or the pointer reports them. */
+type Modifiers = Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey">;
 
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
@@ -50,6 +55,10 @@ interface Props {
   editor: Editor | null;
   /** A dragged layer let go where it can go. */
   onMove(layer: Layer, to: Destination): void;
+  /** A handle of the layer selected dragged: one step of the resize, `to` as `Editor.resize` has it; `continues`, after the first. */
+  onResize(layer: Layer, to: ResizeStep["to"], continues: boolean): void;
+  /** Esc, while a handle is dragged: the resize taken back, as if never made. */
+  onCancelResize(layer: Layer): void;
   /** A dragged layer let go with ⌥ held: a copy goes there. */
   onDuplicate(layer: Layer, to: Destination): void;
   tool: Tool;
@@ -82,7 +91,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -121,6 +130,17 @@ export function CanvasView(props: Props) {
   const dragging = useRef<DragSession | null>(null);
   /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
   const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean } | null>(null);
+  /**
+   * A handle of the layer selected pressed, and dragged: held from the moment it is pressed till it is let
+   * go, or the resize cancelled with Esc (ADR 0012). `resize` has what it shows: the view, the handle (its
+   * cursor, wherever the pointer goes), and the marks its edges snap to.
+   */
+  const resizing = useRef<ResizeSession | null>(null);
+  const [resize, setResize] = useState<{ layer: Layer; in: Shown; handle: Handle; showsSize: boolean; marks: ResizeStep["marks"] } | null>(null);
+  /** Drawn again once the views beside have caught up with a resize step: the selection there follows the layer (ADR 0011). */
+  const [, caughtUp] = useReducer((n: number) => n + 1, 0);
+  const catchingUp = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(catchingUp.current), []);
   /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. Held until let go (ADR 0012). */
   const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number }; release(): void } | null>(null);
   const [drawn, setDrawn] = useState<{ in: Shown; box: DOMRect } | null>(null);
@@ -153,24 +173,44 @@ export function CanvasView(props: Props) {
   /** What playing shows: the desktop view, as wide as it is played, as tall as it is now. */
   const played: Bounds | null = placed[0] ? { width: playWidth ?? placed[0].width, height: placed[0].height } : null;
 
+  /** Where on the stage its views and the layers off the canvas reach, in canvas px. */
+  const extent = canvas ? boundsOf([...placed, ...outside]) : null;
+  /** How large the viewport is, as last observed: read as a value changes, without asking for the layout. */
+  const viewportSize = useRef({ width: 0, height: 0 });
+  /** Where the camera has the stage, and how far the stage reaches, as last rendered. */
+  const framing = useRef({ camera, extent });
+  framing.current = { camera, extent };
   /**
    * Once the camera is at rest, however it moved, the views are drawn only
    * as far as they show again (`drawOnlyWhatShows`): zoomed out till every
    * view shows in full, they would otherwise go on being drawn whole after
    * zooming back in (ticket 22). Not while a mode switch or typing is under
    * way, nor while the pointer is held down on something that edits as it
-   * moves (`pointerHeld`, ADR 0012): a layer pressed or dragged, one drawn
-   * with a tool, a value's icon or a gradient's stop. Once it is over.
+   * moves (`pointerHeld`, ADR 0012): a layer pressed or dragged, a handle
+   * dragged to resize one, one drawn with a tool, a value's icon or a
+   * gradient's stop. Once it is over.
+   *
+   * So too once the viewport or what is on the stage has changed size, the
+   * camera where it was, if all of the stage has been in sight since it was
+   * last drawn so (ticket 71): the window made taller, a view deleted or
+   * grown shorter till every view shows whole, and back again.
    */
   const [atRest] = useState(() =>
     onceAtRest(
       () => stage.current && drawOnlyWhatShows(stage.current),
       () => !!modeSwitch.current || wasLeaving.current || pointerHeld() || !!typing.current,
+      () => {
+        const { camera, extent } = framing.current;
+        return !!extent && showsWhole(camera, extent, viewportSize.current);
+      },
     ),
   );
   useEffect(() => {
     if (canvas) atRest.moved();
   }, [camera]);
+  useEffect(() => {
+    if (extent) atRest.resized();
+  }, [extent?.x, extent?.y, extent?.width, extent?.height]);
   useEffect(() => () => atRest.cancel(), []);
 
   /**
@@ -386,8 +426,24 @@ export function CanvasView(props: Props) {
   }, [leaving]);
 
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
-  const latest = useRef({ played, playAt, bounds, placed, outside, selected, onSelect, endDrag: (_commit: boolean) => {}, redrag: (_pointer: Pointer) => {}, tool, onTool, playing, onStopPlaying });
-  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, redrag, tool, onTool, playing, onStopPlaying };
+  const latest = useRef({
+    played,
+    playAt,
+    bounds,
+    placed,
+    outside,
+    selected,
+    onSelect,
+    endDrag: (_commit: boolean) => {},
+    endResize: (_commit: boolean) => {},
+    modifiersChanged: (_keys: Modifiers) => {},
+    resizeNow: () => {},
+    tool,
+    onTool,
+    playing,
+    onStopPlaying,
+  });
+  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, modifiersChanged, resizeNow, tool, onTool, playing, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -395,14 +451,19 @@ export function CanvasView(props: Props) {
       if (playing && !played) return;
       // Read once playing, as a page scrolls by it; not on each key typed elsewhere.
       const playedIn = playing ? viewport.current!.getBoundingClientRect() : null;
-      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, held: pointerHeld(), selected: selected.length > 0 });
+      const key = canvasKey(event, {
+        playing,
+        page: playedIn ? playedIn.height - 40 : 0,
+        tool: !!tool,
+        dragging: !!dragging.current || !!resizing.current,
+        held: pointerHeld(),
+        selected: selected.length > 0,
+      });
       if (!playing) {
+        if (["Meta", "Control", "Shift", "Alt"].includes(event.key)) latest.current.modifiersChanged(event);
         if (event.key === "Meta" || event.key === "Control") {
           const deep = event.metaKey || event.ctrlKey;
           setHover((h) => h && { ...h, deep });
-          // ⌘ turns snapping off while it is held, without the pointer moving.
-          const pointer = dragging.current?.pointer;
-          if (pointer) latest.current.redrag({ ...pointer, metaKey: event.metaKey, ctrlKey: event.ctrlKey });
         }
         if (event.key === "Alt") setMeasuring(event.altKey);
       }
@@ -417,7 +478,10 @@ export function CanvasView(props: Props) {
         setCamera((v) => scrolled({ ...v, y: Number.isFinite(dy) ? v.y - dy : dy > 0 ? -Infinity : 0 }, played!, playedIn!));
       } else if (key.action === "pan") setSpaceHeld(key.held);
       else if (key.action === "tool") onTool(key.tool);
-      else if (key.action === "cancel drag") endDrag(false);
+      else if (key.action === "cancel drag") {
+        endDrag(false);
+        latest.current.endResize(false);
+      }
       else if (key.action === "select parents") onSelect(selectParents(selected));
       // The layers off the canvas too.
       else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside]), viewport.current!.getBoundingClientRect()));
@@ -442,7 +506,8 @@ export function CanvasView(props: Props) {
   useEffect(() => {
     const el = viewport.current!;
     let left = el.getBoundingClientRect().left;
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver(([entry]) => {
+      viewportSize.current = { width: entry.contentRect.width, height: entry.contentRect.height };
       if (playingRef.current) {
         // The window resized while playing: the canvas is as wide as it now.
         const area = el.getBoundingClientRect();
@@ -451,7 +516,8 @@ export function CanvasView(props: Props) {
         return;
       }
       const now = el.getBoundingClientRect().left;
-      if (now === left) return;
+      // The window resized, the camera where it was: more or less of the stage shows. Moved, the camera says so itself.
+      if (now === left) return atRest.resized();
       const moved = left - now;
       left = now;
       setCamera((v) => ({ ...v, x: v.x + moved }));
@@ -541,6 +607,10 @@ export function CanvasView(props: Props) {
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
+    if (resizing.current?.pointerId === event.pointerId) {
+      resizeOnNextFrame(resizing.current, event);
+      return;
+    }
     if (drawing.current?.pointerId === event.pointerId) {
       setDrawn({ in: drawing.current.in, box: boxFrom(drawing.current.start, toView(event, drawing.current.in)) });
       return;
@@ -570,6 +640,12 @@ export function CanvasView(props: Props) {
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (resizing.current?.pointerId === event.pointerId) {
+      // Let go, where it is let go; a pointer cancelled takes the resize back, as a drag cancelled puts the layer back.
+      if (event.type === "pointerup") resizeNow();
+      endResize(event.type === "pointerup");
+      return;
+    }
     if (drawing.current?.pointerId === event.pointerId) {
       const { start, in: shown, release } = drawing.current;
       drawing.current = null;
@@ -648,11 +724,94 @@ export function CanvasView(props: Props) {
     shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop, () => setDrag((d) => d && { ...d }));
     setDrag({ layer, in: shown, box: at, drop, out: session.out });
   };
-  /** The drag again where the pointer is, as a modifier key changes. */
-  function redrag(pointer: Pointer) {
-    const session = dragging.current;
+  /**
+   * A modifier key pressed or let go, the pointer still: the drag or the
+   * resize under way goes again where the pointer is, with the keys as they
+   * are now. ⌘ (Ctrl) turns snapping off while it is held; resizing, ⇧ keeps
+   * the proportions and ⌥ resizes from the middle.
+   */
+  function modifiersChanged({ metaKey, ctrlKey, shiftKey, altKey }: Modifiers) {
+    const drag = dragging.current;
     const from = press.current;
-    if (session && from) moveDrag(session, pointer, from);
+    if (drag?.pointer && from) moveDrag(drag, { ...drag.pointer, metaKey, ctrlKey }, from);
+    const resize = resizing.current;
+    if (resize) {
+      // What the pointer did before the key, first.
+      resizeNow();
+      if (resize.pointer) moveResize(resize, { ...resize.pointer, metaKey, ctrlKey, shiftKey, altKey });
+    }
+  }
+
+  /**
+   * A handle of the layer selected pressed in a view: dragging it resizes the
+   * layer there, at that view's breakpoint. Not while playing, drawing, or
+   * with Space held (the press pans), nor but with the main button; nor with
+   * ⌘ (Ctrl) held as it is pressed: that selects the deepest layer there, as
+   * anywhere on the canvas, though it is on the edge of the one selected.
+   */
+  const pressHandle = (layer: Layer, shown: Shown, handle: Handle, event: TargetedPointerEvent<HTMLDivElement>): boolean => {
+    if (playing || tool || spaceHeld || event.button !== 0 || event.metaKey || event.ctrlKey || !editor) return false;
+    // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
+    views?.sync(shown.view);
+    setActive(shown.view);
+    viewport.current!.setPointerCapture(event.pointerId);
+    const { pointerId, clientX, clientY } = event;
+    resizing.current = { pointerId, layer, in: shown, handle, from: { clientX, clientY }, begun: null, stepped: false, set: new Set(), release: holdPointer(pointerId) };
+    setResize({ layer, in: shown, handle, showsSize: false, marks: [] });
+    setHover(null);
+    return true;
+  };
+
+  /**
+   * The layer resized as the pointer is now: one step more of the resize, as
+   * the editor has it in the view pressed in, snapping as near on screen as
+   * `SNAP_PX`, at any zoom, unless ⌘ (Ctrl) is held.
+   */
+  function moveResize(session: ResizeSession, pointer: ResizePointer) {
+    const step = resizeStep(session, editor!, pointer, camera.zoom, SNAP_PX);
+    if (!step) return;
+    if (Object.keys(step.to).length) {
+      onResize(session.layer, step.to, session.stepped);
+      session.stepped = true;
+    }
+    // Drawn where its edges are now, as laid out: its container may place it otherwise than where it was dragged to.
+    setResize({ layer: session.layer, in: session.in, handle: session.handle, showsSize: true, marks: marksNow(session) });
+    // As the selection box comes back after a value set: the views beside have caught up by then.
+    clearTimeout(catchingUp.current);
+    catchingUp.current = setTimeout(() => caughtUp(undefined), ADJUSTING_MS);
+  }
+
+  /**
+   * The pointer moves, as a mouse reports it, more often than frames come: the
+   * layer is resized once a frame, as the pointer is when the frame begins,
+   * so no step is made that no frame shows.
+   */
+  const nextResize = useRef<{ frame: number; session: ResizeSession; pointer: ResizePointer } | null>(null);
+  function resizeOnNextFrame(session: ResizeSession, event: ResizePointer) {
+    const { clientX, clientY, metaKey, ctrlKey, shiftKey, altKey } = event;
+    const pointer = { clientX, clientY, metaKey, ctrlKey, shiftKey, altKey };
+    if (nextResize.current) nextResize.current.pointer = pointer;
+    else nextResize.current = { frame: requestAnimationFrame(() => latest.current.resizeNow()), session, pointer };
+  }
+  /** The resize waiting for the next frame made now, if one is. */
+  function resizeNow() {
+    const next = nextResize.current;
+    if (!next) return;
+    nextResize.current = null;
+    cancelAnimationFrame(next.frame);
+    if (resizing.current === next.session) moveResize(next.session, next.pointer);
+  }
+
+  /** Ends the resize: let go, it stays as it is; cancelled with Esc, it is taken back. The keys edit again. */
+  function endResize(commit: boolean) {
+    const session = resizing.current;
+    if (!session) return;
+    resizing.current = null;
+    if (nextResize.current) cancelAnimationFrame(nextResize.current.frame);
+    nextResize.current = null;
+    session.release();
+    setResize(null);
+    if (!commit && session.stepped) onCancelResize(session.layer);
   }
 
   /** Makes the layer drawn over `box`, where it goes; new text is typed in at once. A click rather than a drag makes one of the size it takes. */
@@ -745,7 +904,7 @@ export function CanvasView(props: Props) {
   // A move builds the layers anew: a layer pointed at before it is gone.
   const hoveredTree = hover && treeOf(hover.hit);
   const hovered =
-    hover && !spaceHeld && !panning && !drag && !hideSelection && hoveredTree && inTree(hoveredTree, hover.hit)
+    hover && !spaceHeld && !panning && !drag && !resize && !hideSelection && hoveredTree && inTree(hoveredTree, hover.hit)
       ? hover.deep
         ? selectDeepest(hover.hit)
         : selectOnClick(hover.hit, primary)
@@ -759,14 +918,23 @@ export function CanvasView(props: Props) {
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
   /** The new Frame selected alone, which has the button that writes its brief beside it, in `briefIn`. */
   const newFrame =
-    briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !hideSelection && editor.isNewFrame(primary)
+    briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !resize && !hideSelection && editor.isNewFrame(primary)
       ? { layer: primary, in: briefIn, brief: editor.brief(primary) }
       : null;
   /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `briefIn`. */
   const toolbar =
-    briefIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !hideSelection && !typingLayer
+    briefIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
       ? { layer: primary, in: briefIn, promote: editor.canPromote(primary) }
       : null;
+  /**
+   * The layer of the canvas selected alone that can be resized, with handles in every view: not the page,
+   * not text with no element of its own, nor a layer shown inline. While it is resized, the handles stay.
+   */
+  const withHandles =
+    resize?.layer ??
+    (editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && primary !== tree?.root && !travelling && !playing && !drag && !hideSelection && !typingLayer && !tool && (editor.can(primary, "width") || editor.can(primary, "height"))
+      ? primary
+      : null);
   /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
   const briefed = canvas && tree ? briefedLayers(canvas.document, tree) : [];
   /**
@@ -775,7 +943,7 @@ export function CanvasView(props: Props) {
    * at nothing else, to the container of the one selected last.
    */
   const measured = (() => {
-    if (!measuring || !hover || !primary || spaceHeld || panning || drag || hideSelection || travelling || playing) return null;
+    if (!measuring || !hover || !primary || spaceHeld || panning || drag || resize || hideSelection || travelling || playing) return null;
     const shown = hover.in;
     const to = hovered && !selected.includes(hovered) ? hovered : primary.parent;
     if (!to || !selected.every((layer) => shows(shown, layer)) || !shows(shown, to)) return null;
@@ -792,6 +960,7 @@ export function CanvasView(props: Props) {
     <div
       ref={viewport}
       class={`vk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
+      style={resize ? { cursor: handleCursor(resize.handle) } : undefined}
       role="region"
       aria-label="Canvas viewport"
       tabIndex={-1}
@@ -857,6 +1026,9 @@ export function CanvasView(props: Props) {
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
+              {withHandles && !shown.offCanvasLayer && (!spaceHeld || resize) && (
+                <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+              )}
               {briefed.map(
                 (layer, i) =>
                   shows(shown, layer) && !(shown === newFrame?.in && layer === newFrame.layer) && <BriefMark key={`brief ${i}`} layer={layer} view={view} name={name} camera={at} />,
@@ -901,6 +1073,8 @@ export function CanvasView(props: Props) {
       {bounds && !travelling && !playing && (
         <AddView left={camera.x + bounds.width * camera.zoom + 8} top={camera.y - LABEL_OFFSET} onAdd={(width) => setViewWidths(withWidth(widths, width))} />
       )}
+      {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, resize.in)} />}
+      {resize && resize.marks.length > 0 && <Marks marks={resize.marks} view={resize.in.name} camera={cameraIn(camera, resize.in)} />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={drag.in.view} name={drag.in.name} camera={cameraIn(camera, drag.in)} hover />}
       {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
       {drag?.drop && drag.drop.marks.length > 0 && <Marks marks={drag.drop.marks} view={drag.in.name} camera={cameraIn(camera, drag.in)} />}

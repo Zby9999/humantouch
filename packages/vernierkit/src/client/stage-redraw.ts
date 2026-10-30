@@ -1,9 +1,10 @@
 /**
  * The stage redrawn only as far as the camera shows it (ticket 22): the
  * browser is made to draw again only what shows of the stage, once the
- * camera is at rest or an animated camera move has ended. Unlike the camera
- * itself (`camera.ts`, pure), this touches the stage in the DOM and keeps a
- * timer.
+ * camera is at rest or an animated camera move has ended, and once the
+ * viewport or what is on the stage has changed size after the whole stage
+ * was in sight (ticket 71). Unlike the camera itself (`camera.ts`, pure),
+ * this touches the stage in the DOM and keeps a timer.
  */
 
 /**
@@ -41,10 +42,19 @@ export function drawOnlyWhatShows(stage: HTMLElement) {
  */
 export const AT_REST_MS = 100;
 
-/** The stage drawn only as far as it shows (`drawOnlyWhatShows`) once the camera is at rest. */
+/** The stage drawn only as far as it shows (`drawOnlyWhatShows`) once the camera is at rest, or once a change of size is over. */
 export interface OnceAtRest {
   /** The camera has moved: `redraw` once it has stayed where it is for `AT_REST_MS`. */
   moved(): void;
+  /**
+   * The viewport or what is on the stage has changed size, the camera
+   * staying where it is: the window resized, a view added, deleted, grown or
+   * shrunk, a layer off the canvas put somewhere else. If the whole stage has
+   * been in sight since it was last redrawn, it may still be drawn whole:
+   * `redraw` once at rest, as after the camera moved (ticket 71). Otherwise
+   * nothing: a change to a view as a value is changed does not redraw it.
+   */
+  resized(): void;
   /** An animated camera move has ended: `redraw` now, the moves before it with it, or, busy, as soon as it is not. */
   moveEnded(): void;
   /** The stage is gone: nothing more to redraw. */
@@ -58,22 +68,41 @@ export interface OnceAtRest {
  * on something that edits as it moves, as `CanvasView` has it), it waits on,
  * `AT_REST_MS` at a time, and redraws once that is over: nothing under way
  * is broken into.
+ *
+ * Changes that are not the camera's (`resized`) redraw only once the whole
+ * stage has been in sight (`wholeInSight`), as the camera or each change left
+ * it, since the stage was last redrawn: drawn whole then, it is drawn whole
+ * after them, whatever shows, till it is redrawn (ticket 71). A redraw with
+ * the whole stage still in sight leaves it so: the next change redraws again.
  */
-export function onceAtRest(redraw: () => void, busy: () => boolean): OnceAtRest {
+export function onceAtRest(redraw: () => void, busy: () => boolean, wholeInSight: () => boolean): OnceAtRest {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The whole stage has been in sight since it was last redrawn. */
+  let seenWhole = false;
+  const redrawNow = () => {
+    redraw();
+    seenWhole = wholeInSight();
+  };
   const wait = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (busy()) wait();
-      else redraw();
+      else redrawNow();
     }, AT_REST_MS);
   };
   return {
-    moved: wait,
+    moved() {
+      seenWhole ||= wholeInSight();
+      wait();
+    },
+    resized() {
+      seenWhole ||= wholeInSight();
+      if (seenWhole) wait();
+    },
     moveEnded() {
       clearTimeout(timer);
       if (busy()) wait();
-      else redraw();
+      else redrawNow();
     },
     cancel: () => clearTimeout(timer),
   };

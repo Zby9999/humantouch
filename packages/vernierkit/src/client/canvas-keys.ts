@@ -33,6 +33,7 @@ export interface KeyState {
   page: number;
   /** A tool is picked. */
   tool: boolean;
+  /** A layer is dragged, or a handle of the layer selected is: Esc cancels it. */
   dragging: boolean;
   /** The pointer is held down on a layer, or drawing one, or elsewhere on something that edits as it moves (`heldKey`). */
   held: boolean;
@@ -75,14 +76,15 @@ export type HistoryKey = "undo" | "redo" | "ignored";
 /**
  * What the key `event` does to the edits made, in the order they were made:
  * ⌘Z undoes, ⇧⌘Z redoes (Ctrl on other systems, and Ctrl+Y there too). While
- * the pointer is held down on a layer on the canvas, a value's icon, a
- * gradient's stop or a layer being drawn, neither does anything until it is
- * let go, or a drag cancelled with Esc: the views put back what makes room as
- * it was when the drag began, over what an undo would change meanwhile, and a
- * value dragged would be set again as the pointer next moves (tickets 61, 62,
- * ADR 0012). A field keeps its own while something typed in it is not applied
- * yet; a field of the Design panel otherwise, or a slider, passes it on. Null:
- * not these keys, and the key goes on.
+ * the pointer is held down on a layer on the canvas, a handle of the layer
+ * selected, a value's icon, a gradient's stop or a layer being drawn, neither
+ * does anything until it is let go, or a drag cancelled with Esc: the views
+ * put back what makes room as it was when the drag began, over what an undo
+ * would change meanwhile, and a value dragged would be set again as the
+ * pointer next moves (tickets 61, 62, ADR 0012). A field keeps its own while something typed in it is not applied
+ * yet; a field of the Design panel otherwise, or a slider, passes it on. The
+ * change list in preview mode takes the same keys by this same judgment
+ * (ticket 72). Null: not these keys, and the key goes on.
  */
 export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): HistoryKey | null {
   const target = event.composedPath()[0];
@@ -123,7 +125,8 @@ export type HeldKey = "passes" | "text" | "ignored";
 
 /**
  * What becomes of a key while the pointer is held down on a layer on the
- * canvas, a value's icon, a gradient's stop or a layer being drawn
+ * canvas, a handle of the layer selected, a value's icon, a gradient's stop
+ * or a layer being drawn
  * (`pointerHeld`, ADR 0012):
  * - `passes`, it goes on as ever: Esc; Space, off a field (it pans); ⇧1, with
  *   no other modifier; the modifier keys themselves (⌘ turning snapping off,

@@ -279,6 +279,51 @@ test("in preview mode, ⌘Z in the change list undoes what was undone there; wit
   await expect(badge(page)).toHaveText("2");
 });
 
+test("in the change list, the keys are the editor's: ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo, ⌘Y does neither and is left to the browser", async ({ page }) => {
+  await makeThreeChanges(page);
+  await backToPreviewMode(page);
+  await badge(page).click();
+  const list = changeList(page);
+  await list.getByRole("button", { name: "Undo the fill of Card" }).click();
+  await list.getByRole("button", { name: "Undo the fill of Button" }).click();
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+  // Whether the last key pressed was taken from the browser (its own action prevented): seen on the window, after the list.
+  await page.evaluate(() => {
+    window.addEventListener("keydown", (event) => ((window as unknown as { taken: boolean }).taken = event.defaultPrevented));
+  });
+  const takenFromBrowser = () => page.evaluate(() => (window as unknown as { taken: boolean }).taken);
+
+  // ⌘Y: nothing undone (the fill of Button stays out), nothing redone, and the browser has it.
+  await page.keyboard.press("Meta+y");
+  expect(await takenFromBrowser()).toBe(false);
+  await page.keyboard.press("Meta+Shift+y");
+  expect(await takenFromBrowser()).toBe(false);
+  await expect(badge(page)).toHaveText("1");
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+
+  await page.keyboard.press("Meta+z");
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  expect(await takenFromBrowser()).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect(badge(page)).toHaveText("3");
+  expect(await takenFromBrowser()).toBe(true);
+  // Ctrl+Y and ⇧⌘Z redo: the two undone from the list go again.
+  await page.keyboard.press("Control+y");
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  expect(await takenFromBrowser()).toBe(true);
+  await page.keyboard.press("Meta+Shift+z");
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+  await expect(badge(page)).toHaveText("1");
+  expect(await takenFromBrowser()).toBe(true);
+
+  // ⌘Y once more, with a step to redo and one to undo: still nothing.
+  await page.keyboard.press("Meta+z");
+  await page.keyboard.press("Meta+y");
+  expect(await takenFromBrowser()).toBe(false);
+  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(badge(page)).toHaveText("2");
+});
+
 test("the last change undone in preview mode can be brought back with ⌘Z, the list still open", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");

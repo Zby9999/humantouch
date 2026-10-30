@@ -1,7 +1,8 @@
 /**
  * Whether the pointer is held down on something that edits as it moves: a
- * layer pressed on the canvas (dragged, or not yet), a value's icon, a
- * gradient's stop, a layer drawn with a tool. Meanwhile no key changes the
+ * layer pressed on the canvas (dragged, or not yet), a handle of the layer
+ * selected (resizing it, or not yet), a value's icon, a gradient's stop, a
+ * layer drawn with a tool. Meanwhile no key changes the
  * canvas, the changes or the history (`heldKey`, ADR 0012), so nothing is
  * undone or edited from under the press, and nothing it shows for the while
  * is carried off. One for the whole page: the keys are read in the Shell,

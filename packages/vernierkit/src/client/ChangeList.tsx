@@ -3,15 +3,17 @@ import type { TargetedKeyboardEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { changeTitle, changeValues, layerName } from "../design-values";
 import { breakpointName } from "./breakpoints";
+import { historyKey } from "./canvas-keys";
 import type { Change } from "./changeset";
 import { Icon } from "./icons";
+import { pointerHeld } from "./pointer-held";
 
 interface Props {
   changes: Change[];
   /** The Agent is applying them: nothing can be undone or discarded meanwhile. */
   readOnly: boolean;
   onRevert(id: number): void;
-  /** ⌘Z / ⇧⌘Z in the list: undo or redo what was undone from it. Without them, the keys are left alone. */
+  /** ⌘Z / ⇧⌘Z (and Ctrl+Y) in the list, as on the canvas: undo or redo what was undone from it. Without them, the keys are left alone. */
   onUndo?(): void;
   onRedo?(): void;
   /** Called once the designer has confirmed. */
@@ -48,11 +50,12 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
   }, [confirming]);
 
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
-    const key = event.key.toLowerCase();
-    if ((event.metaKey || event.ctrlKey) && !event.altKey && (key === "z" || key === "y") && onUndo && onRedo) {
+    // The editor's keys, by the editor's judgment (`historyKey`): ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo; ⌘Y is the browser's.
+    const key = historyKey(event, { held: pointerHeld() });
+    if (key && onUndo && onRedo) {
       event.preventDefault();
-      if (key === "y" ? !event.metaKey : event.shiftKey) onRedo();
-      else onUndo();
+      if (key === "undo") onUndo();
+      else if (key === "redo") onRedo();
       return;
     }
     if (event.key !== "Escape") return;
