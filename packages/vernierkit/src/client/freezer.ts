@@ -3,7 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { dropUnusedRules, moveInlineEdits, orderEditStyles, syncEditStyles } from "./canvas-style";
+import { dropUnusedRules, orderEditStyles, syncEditStyles, unshareEditStyles, upgradeEditStyles } from "./canvas-style";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
@@ -218,8 +218,8 @@ export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas
   // Saved before the window's height was: no view shorter than the canvas was then.
   const layout: Layout = { ...saved, windowHeight: saved.windowHeight ?? saved.height };
   root.removeAttribute(LAYOUT_ATTR);
-  // Saved before the edits' styles were a stylesheet: they are moved into one.
-  moveInlineEdits(doc);
+  // Saved by an earlier Vernier Kit: as edits are kept now, looking as it did.
+  upgradeEditStyles(doc);
   const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
     const image = new Image();
     image.src = still.getAttribute(PIXELS_ATTR)!;
@@ -249,10 +249,15 @@ export function editable(doc: Document) {
   orderEditStyles(doc);
 }
 
-/** `doc`, made `editable`, as an HTML document: what `editable` added left out. */
+/**
+ * `doc`, made `editable`, as an HTML document: what `editable` added left out,
+ * and each element's edit styles its own, as they were kept before the
+ * instances of a layer shared them (ticket 60).
+ */
 export function serializeEditable(doc: Document): string {
   const copy = doc.documentElement.cloneNode(true) as HTMLElement;
   for (const el of copy.querySelectorAll(`style[${CANVAS_STYLES_ATTR}]`)) el.remove();
+  unshareEditStyles(copy);
   syncEditStyles(copy);
   return doctypeOf(doc) + copy.outerHTML;
 }

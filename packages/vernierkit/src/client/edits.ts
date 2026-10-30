@@ -113,14 +113,15 @@ export function createEditor(
         left = pieces.map((piece) => structuredClone(changes.find(id, change.property, piece)!));
       }
       const others = changesOn(id, changes.list());
-      for (const el of instancesOf(id)) restoreStyle(el, names, others, change.breakpoint!);
+      restoreStyle(instancesOf(id), names, others, change.breakpoint!);
       for (const breakpoint of [change.breakpoint!, ...pieces]) referenceAt(change.within, breakpoint);
     };
     const on = () => {
       for (const piece of left ?? []) changes.remove(piece.id);
       changes.restore(change);
       const others = changesOn(id, changes.list());
-      for (const el of instancesOf(id)) for (const piece of pieces) restoreStyle(el, names, others, piece);
+      const els = instancesOf(id);
+      for (const piece of pieces) restoreStyle(els, names, others, piece);
       for (const breakpoint of [...pieces, change.breakpoint!]) referenceAt(change.within, breakpoint);
     };
     return { off, on };
@@ -178,10 +179,10 @@ export function createEditor(
             ? idOf(layer.parent, tree.acrossInstances(layer.parent))
             : undefined
         : undefined;
-    for (const instance of instances) {
-      if (asStack && !breakpoint) instance.el.setAttribute(AS_STACK_ATTR, "");
-      declare(instance.el, declarations, breakpoint);
-    }
+    const els = instances.map((instance) => instance.el);
+    if (asStack && !breakpoint) for (const el of els) el.setAttribute(AS_STACK_ATTR, "");
+    // The instances share their edit styles from the first edit on, their id stamped on them after, as it always was.
+    declare(els, declarations, breakpoint, layer.el.getAttribute(LAYER_ID_ATTR) ?? String(lastId + 1));
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
     const variables = bind?.(property, value, picked, earlier?.variables);
@@ -205,7 +206,7 @@ export function createEditor(
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property, breakpoint)) {
       const others = changesOn(id, changes.list());
-      for (const instance of instances) restoreStyle(instance.el, cssOf(property), others, breakpoint);
+      restoreStyle(els, cssOf(property), others, breakpoint);
     }
     referenceAt(within, breakpoint);
     // A Stack now laid out the other way: the layers are built anew, so a drag into it reads the way it runs now.
@@ -222,12 +223,11 @@ export function createEditor(
     if (!within || !breakpoint) return;
     const others = changesOn(within, changes.list());
     const held = others.some((change) => change.within === within && same(change.breakpoint, breakpoint));
-    for (const el of elementsOf(doc, within)) {
-      if (held) {
-        keepOriginal(el);
-        declare(el, { position: "relative" }, breakpoint);
-      } else restoreStyle(el, ["position"], others, breakpoint);
-    }
+    const els = elementsOf(doc, within);
+    if (held) {
+      for (const el of els) keepOriginal(el);
+      declare(els, { position: "relative" }, breakpoint);
+    } else restoreStyle(els, ["position"], others, breakpoint);
   };
 
   /** The layers a step was made to, as they are now. */
@@ -307,12 +307,12 @@ export function createEditor(
     const off = () => {
       changes.remove(change.id);
       const others = changesOn(id, changes.list());
-      for (const el of instancesOf(id)) restoreStyle(el, cssOf(property as Property), others, breakpoint!);
+      restoreStyle(instancesOf(id), cssOf(property as Property), others, breakpoint!);
       referenceAt(change.within, breakpoint!);
     };
     const on = () => {
       changes.restore(change);
-      for (const el of instancesOf(id)) declare(el, change.style, breakpoint!);
+      declare(instancesOf(id), change.style, breakpoint!);
       referenceAt(change.within, breakpoint!);
     };
     off();
