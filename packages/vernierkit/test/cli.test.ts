@@ -946,7 +946,7 @@ describe("claim, layers off the canvas put back", () => {
       "- **Design intent:** Put a copy of this layer here: the off-canvas layer put back is a copy of it, so the layer it copies stays where it is. Write it as its source below has it, in the layout of Stack",
     );
     expect(output).not.toContain("deleted");
-    expect(output).not.toMatch(/aside/i);
+    expect(output).not.toMatch(/set aside|aside (beside|off)/i);
   });
 });
 

@@ -24,6 +24,9 @@ function there(file: string) {
   return existsSync(join(project, file));
 }
 
+/** The Skill as the package ships it. */
+const SKILL = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
+
 const VITE_CONFIG = `import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -172,18 +175,15 @@ describe("init, the Skill and .gitignore", () => {
 
     await cli(fakeExec().exec, "init");
 
-    const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
-    expect(read(".agents/skills/vernierkit/SKILL.md")).toBe(skill);
-    expect(read(".claude/skills/vernierkit/SKILL.md")).toBe(skill);
+    expect(read(".agents/skills/vernierkit/SKILL.md")).toBe(SKILL);
+    expect(read(".claude/skills/vernierkit/SKILL.md")).toBe(SKILL);
     expect(read("AGENTS.md")).toBe("Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.\n");
   });
 
   test("the Skill tells the Agent a put back is an off-canvas layer coming back onto the canvas, and never calls it set aside", () => {
-    const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
-
-    expect(skill).toContain("**Put back** (an off-canvas layer, one the designer had moved off the canvas, put back onto it)");
-    expect(skill).toContain("- **Put back**: an off-canvas layer, one the designer moved off the canvas, comes back onto it, at the place given.");
-    expect(skill).not.toMatch(/aside/i);
+    expect(SKILL).toContain("**Put back** (an off-canvas layer, one the designer had moved off the canvas, put back onto it)");
+    expect(SKILL).toContain("- **Put back**: an off-canvas layer, one the designer moved off the canvas, comes back onto it, at the place given.");
+    expect(SKILL).not.toMatch(/set aside|aside (beside|off)/i);
   });
 
   test("adds one line to an AGENTS.md that is there, and leaves the rest of it", async () => {

@@ -81,8 +81,9 @@ export type HistoryKey = "undo" | "redo" | "ignored";
  * it was when the drag began, over what an undo would change meanwhile, and a
  * value dragged would be set again as the pointer next moves (tickets 61, 62,
  * ADR 0012). A field keeps its own while something typed in it is not applied
- * yet; a field of the Design panel otherwise, or a slider, passes it on. Null:
- * not these keys, and the key goes on.
+ * yet; a field of the Design panel otherwise, or a slider, passes it on. The
+ * change list in preview mode takes the same keys by this same judgment
+ * (ticket 72). Null: not these keys, and the key goes on.
  */
 export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): HistoryKey | null {
   const target = event.composedPath()[0];

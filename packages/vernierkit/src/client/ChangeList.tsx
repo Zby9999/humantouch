@@ -51,11 +51,11 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
 
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
     // The editor's keys, by the editor's judgment (`historyKey`): ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo; ⌘Y is the browser's.
-    const key = onUndo && onRedo ? historyKey(event, { held: pointerHeld() }) : null;
-    if (key) {
+    const key = historyKey(event, { held: pointerHeld() });
+    if (key && onUndo && onRedo) {
       event.preventDefault();
-      if (key === "undo") onUndo!();
-      else if (key === "redo") onRedo!();
+      if (key === "undo") onUndo();
+      else if (key === "redo") onRedo();
       return;
     }
     if (event.key !== "Escape") return;
