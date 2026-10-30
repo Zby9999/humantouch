@@ -33,6 +33,8 @@ export interface Transcript {
   permissionDenials: number;
   /** Subagents the Agent started (Claude Code's Task, Cursor's explore), and the models other than its own they ran on. */
   subagents: { calls: number; models: string[] };
+  /** Times the API did not answer and was asked again (Claude Code says so; Cursor does not): a wait that is no Agent's doing. */
+  apiRetries: number;
 }
 
 type Event = Record<string, any>;
@@ -53,10 +55,11 @@ export function parseTranscript(agent: AgentName, text: string): Transcript {
 }
 
 function parseClaudeCode(all: Event[]): Transcript {
-  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] } };
+  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
   const byId = new Map<string, ToolCall>();
   for (const event of all) {
     if (event.type === "system" && event.subtype === "init") transcript.model = event.model ?? null;
+    if (event.type === "system" && event.subtype === "api_retry") transcript.apiRetries++;
     if (event.type === "result") {
       transcript.finalText = event.result ?? "";
       transcript.permissionDenials = event.permission_denials?.length ?? 0;
@@ -87,7 +90,7 @@ function parseClaudeCode(all: Event[]): Transcript {
  * run together, so the last words are its last assistant message.
  */
 function parseCursor(all: Event[]): Transcript {
-  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] } };
+  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
   const others = new Set<string>();
   for (const event of all) {
     if (event.type === "system" && event.subtype === "init") transcript.model = event.model ?? null;

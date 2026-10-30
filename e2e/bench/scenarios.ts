@@ -412,7 +412,8 @@ export const SCENARIOS: Scenario[] = [
       {
         kind: "delete",
         expect: "There is no Arrange card.",
-        checkable: true,
+        // A data change: the page cannot tell which of the loop's cards went.
+        checkable: false,
         shows: () => ![...document.querySelectorAll("article h3")].some((title) => title.textContent === "Arrange"),
       },
       {

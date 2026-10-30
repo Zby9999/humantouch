@@ -5,6 +5,7 @@
  * Playwright's headless shell only: nothing takes the designer's focus.
  *
  *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
+ *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
@@ -63,11 +64,12 @@ async function main(argv: string[]) {
   const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
   const scenarios = option("scenarios") ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : SCENARIOS;
   const runs = Number(option("runs") ?? 3);
+  const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
   const dry = argv.includes("--dry");
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
 
-  const out = join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
+  const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
   console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}. Raw results in ${out}`);
 
@@ -77,7 +79,15 @@ async function main(argv: string[]) {
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
     const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each(commandLine) };
-    writeFileSync(join(out, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
+    // Runs added to a round of runs compare with it only on the same Agent and command line.
+    const before = existsSync(join(out, "meta.json")) ? JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) : null;
+    for (const agent of agents) {
+      if (before?.commandLines?.[agent] && (before.commandLines[agent] !== meta.commandLines[agent] || before.versions[agent] !== versions[agent])) {
+        throw new Error(`${out} has ${agent} runs by another command line or version: start a round of runs of their own`);
+      }
+    }
+    const merged = before ? Object.fromEntries(Object.entries(meta).map(([key, value]) => [key, { ...before[key], ...value }])) : meta;
+    writeFileSync(join(out, "meta.json"), `${JSON.stringify(merged, null, 2)}\n`);
   }
 
   const { base, remove } = await prepareBase();
@@ -94,11 +104,12 @@ async function main(argv: string[]) {
     } else {
       let agentRuns = 0;
       let stop: string | null = null;
-      for (let run = 1; run <= runs && !stop; run++) {
+      for (let run = firstRun; run < firstRun + runs && !stop; run++) {
         for (const scenario of scenarios) {
           for (const agent of agents) {
             if (stop || agentRuns >= maxRuns) break;
             const folder = join(out, agent, scenario.id, `run-${run}`);
+            if (existsSync(join(folder, "raw.json"))) throw new Error(`${folder} has a run already`);
             mkdirSync(folder, { recursive: true });
             const started = Date.now();
             try {
@@ -301,7 +312,16 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
 
 /** A run's measures, from its folder: the numbers the bench compares. */
 export function measureFolder(folder: string) {
-  const raw: RawRun = JSON.parse(readFileSync(join(folder, "raw.json"), "utf8"));
+  const saved: RawRun = JSON.parse(readFileSync(join(folder, "raw.json"), "utf8"));
+  // What the page can check, and the Variables, as the scenario has them now: a rule fixed since is measured by.
+  const scenario = SCENARIOS.find((s) => s.id === saved.scenario);
+  const raw: RawRun = {
+    ...saved,
+    changes: saved.changes.map((change, i) => {
+      const now = scenario?.changes[i];
+      return now?.kind === change.kind ? { ...change, checkable: now.checkable, variable: now.variable } : change;
+    }),
+  };
   const transcript = parseTranscript(raw.agent, readFileSync(join(folder, "transcript.jsonl"), "utf8"));
   const stats = toolCallStats(transcript.toolCalls);
   const ids = raw.changes.map((change) => change.id);
@@ -340,6 +360,7 @@ export function measureFolder(folder: string) {
     charsRead: stats.charsRead,
     permissionDenials: transcript.permissionDenials,
     subagents: transcript.subagents,
+    apiRetries: transcript.apiRetries,
     effort: raw.effort ?? null,
     applyMs: round?.applyMs ?? null,
     applyMsPerChange: round?.applyMsPerChange ?? null,
@@ -380,14 +401,15 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["1:1 落地率（页面预期）", (m) => m.oneToOneByPage],
   ["1:1 落地率（done 核对）", (m) => m.oneToOneByChecks],
   ["虚假的 ✓（条）", (m) => m.falseChecks.length],
-  ["跑了 done", (m) => Number(m.ranDone)],
-  ["跑了 finish", (m) => Number(m.ranFinish)],
-  ["报告格式合规", (m) => Number(m.reportCompliant)],
+  ["跑了 done（比例）", (m) => Number(m.ranDone)],
+  ["跑了 finish（比例）", (m) => Number(m.ranFinish)],
+  ["报告格式合规（比例）", (m) => Number(m.reportCompliant)],
   ["设计变量使用率", (m) => m.variableUse],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
   ["被权限拦下的工具调用", (m) => m.permissionDenials],
   ["子 Agent 调用", (m) => m.subagents.calls],
+  ["API 重试", (m) => m.apiRetries],
 ];
 
 /** The numbers the table by scenario shows. */
@@ -407,8 +429,11 @@ function writeSummary(out: string) {
   const sum = (some: Measures[]) =>
     Object.fromEntries(
       METRICS.map(([name, of]) => {
-        const s = summarize(some.map(of));
-        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n }];
+        const values = some.map(of);
+        const s = summarize(values);
+        // A yes or no is summed up by how often it is yes.
+        const share = name.endsWith("（比例）") && s.n ? values.reduce((total: number, value) => total + (value ?? 0), 0) / s.n : null;
+        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share) }];
       }),
     );
   const agents = [...new Set(measures.map((m) => m.agent))];
@@ -429,7 +454,8 @@ function writeSummary(out: string) {
   });
   writeFileSync(join(out, "measures.json"), `${JSON.stringify(measures, null, 2)}\n`);
   writeFileSync(join(out, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
-  const cell = (s: { median: number | null; min: number | null; max: number | null }) => (s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`);
+  const cell = (s: { median: number | null; min: number | null; max: number | null; share: number | null }) =>
+    s.share !== null ? `${Math.round(s.share * 100)}%` : s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`;
   const md = summary
     .map((agent) =>
       [

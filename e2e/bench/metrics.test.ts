@@ -4,13 +4,14 @@ import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, use
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
-test("a Claude Code transcript gives its model, each tool call with what it printed, and the last words", () => {
+test("a Claude Code transcript gives its model, each tool call with what it printed, the last words, and how often the API had to be asked again", () => {
   const transcript = parseTranscript(
     "claude",
     lines(
       { type: "system", subtype: "init", model: "claude-test-1", claude_code_version: "9.9.9" },
       { type: "assistant", message: { content: [{ type: "text", text: "Claiming." }, { type: "tool_use", id: "a", name: "Bash", input: { command: "npx vernierkit claim" } }] } },
       { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "a", content: "# Design changes\n" }] } },
+      { type: "system", subtype: "api_retry", attempt: 1, no_response: { waited_ms: 181000 } },
       { type: "assistant", message: { content: [{ type: "tool_use", id: "b", name: "Read", input: { file_path: "/p/src/App.tsx" } }] } },
       { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b", content: [{ type: "text", text: "export function App" }] }] } },
       { type: "result", subtype: "success", result: "✓ Applied\n- 1. Fill", permission_denials: [{ tool_name: "Bash" }] },
@@ -26,6 +27,7 @@ test("a Claude Code transcript gives its model, each tool call with what it prin
     finalText: "✓ Applied\n- 1. Fill",
     permissionDenials: 1,
     subagents: { calls: 0, models: [] },
+    apiRetries: 1,
   });
 });
 
@@ -70,6 +72,7 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     finalText: "✓ Applied",
     permissionDenials: 0,
     subagents: { calls: 0, models: [] },
+    apiRetries: 0,
   });
 });
 
