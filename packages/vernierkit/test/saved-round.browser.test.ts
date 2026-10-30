@@ -337,7 +337,12 @@ describe("a round saved before the instances of a layer shared their edit styles
     const fixture = await readFixture();
     const { changes, offCanvas, styles } = await makeRound();
 
-    expect(JSON.stringify(changes.save(), null, 2)).toBe(JSON.stringify(fixture.changeSet, null, 2));
+    // Since ticket 64, a layer placed by its X and Y records besides the margins the canvas draws it past them by: all else as then.
+    const saved = changes.save();
+    const placed = saved.changes.filter((change) => change.margins);
+    expect(placed.map((change) => [change.kind, change.margins])).toEqual([["move", { x: 0, y: 0 }]]);
+    for (const change of placed) delete change.margins;
+    expect(JSON.stringify(saved, null, 2)).toBe(JSON.stringify(fixture.changeSet, null, 2));
     expect(JSON.stringify(offCanvas.save(), null, 2)).toBe(JSON.stringify(fixture.offCanvas, null, 2));
     expect(styles()).toEqual(fixture.styles);
   });

@@ -12,9 +12,9 @@
  */
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
-import { changeKey, isReorder, type Change, type Place } from "./changeset";
+import { changeKey, isReorder, type Change, type Margins, type Place } from "./changeset";
 import { openingTag } from "./layer-target";
-import { readValue, type Property, type Stroke } from "./property-table";
+import { absolute, PLACING, readValue, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import { colorReader } from "./paint";
@@ -176,6 +176,8 @@ function look(doc: Document, change: Change, apart: string[], at: PageWidth): Ch
   const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
   const els = found.map((el) => at.of(el)).filter((el): el is Element => !!el);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
+  const margins = marginsFor(change, at);
+  if (margins && change.after !== null && PLACING.includes(property)) return lookPosition(els, property, change.after as number | { x: number; y: number }, margins);
   const comparison = AS_WRITTEN[property];
   const drawn = comparison && comparison.draw(at.doc, change.after);
   const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
@@ -226,8 +228,9 @@ function lookOrder(doc: Document, change: Change): CheckResult {
 
 /**
  * A layer placed absolute is absolute, in its container as its positioning
- * reference, at its X and Y, in every instance. `actual`: where it is
- * instead, null when it is not absolute, "no reference" when placed from elsewhere.
+ * reference, where the canvas draws it, in every instance (`drawnThere`).
+ * `actual`: where it is instead, its `left` and `top` and its margins; null
+ * when it is not absolute, "no reference" when placed from elsewhere.
  */
 function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
   const els = elementsOf(doc, change.target)
@@ -235,15 +238,72 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
     .filter((el): el is Element => !!el);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const { x, y } = (change.after as Place).absolute!;
+  const margins = marginsFor(change, at);
   for (const el of els) {
     const style = getComputedStyle(el);
     if (!/^(absolute|fixed)$/.test(style.position)) return { outcome: "not shown", actual: null };
     // Placed from its container, or from somewhere else.
     if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
-    const placed = { x: Math.round(parseFloat(style.left) * 100) / 100, y: Math.round(parseFloat(style.top) * 100) / 100 };
-    if (Math.abs(placed.x - x) > 0.5 || Math.abs(placed.y - y) > 0.5) return { outcome: "not shown", actual: placed };
+    const placed = placedOn(el);
+    if (!drawnThere(placed, { x, y }, margins)) return { outcome: "not shown", actual: placed };
   }
   return { outcome: "shown" };
+}
+
+/**
+ * An `x`, `y` or `absolute` style change: shown where every instance is
+ * absolute and drawn where the canvas draws it (`drawnThere`). `actual`:
+ * along one axis, its `left` or `top` and its margin there; both, as a placement is.
+ */
+function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: Margins): CheckResult {
+  for (const el of els) {
+    if (!absolute(el)) return { outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) };
+    const placed = placedOn(el);
+    if (typeof after !== "number") {
+      if (!drawnThere(placed, after, margins)) return { outcome: "not shown", actual: placed };
+      continue;
+    }
+    const axis = property as "x" | "y";
+    if (!drawnThere(placed, { [axis]: after }, margins)) {
+      return { outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } };
+    }
+  }
+  return { outcome: "shown" };
+}
+
+/**
+ * The margins the canvas draws a placed layer past its X and Y by, at the
+ * width it is looked at: where they were measured on the canvas, as wide as
+ * the page's window (a breakpoint's change, in its range). At the other widths
+ * a change made in the desktop view is checked at, its margins may differ,
+ * by the page's own breakpoints, from what the canvas had in the desktop view:
+ * there its `left` and `top` alone are looked at (null). A change recorded
+ * before the canvas kept its margins has none: the same.
+ */
+function marginsFor(change: Change, at: PageWidth): Margins | null {
+  return change.margins && (at.own || change.breakpoint) ? change.margins : null;
+}
+
+/** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px. */
+function placedOn(el: Element): { x: number; y: number; margins: Margins } {
+  const style = getComputedStyle(el);
+  const px = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100;
+  return { x: px(style.left), y: px(style.top), margins: { x: px(style.marginLeft), y: px(style.marginTop) } };
+}
+
+/**
+ * Whether the page draws a layer placed at `placed` where the canvas draws
+ * one at `to`'s X and Y (either, or both): past them by the canvas's
+ * `margins`, its `left` and `top` and its own margins adding up to as much.
+ * With no margins to go by, at X and Y themselves.
+ */
+function drawnThere(placed: { x: number; y: number; margins: Margins }, to: { x?: number; y?: number }, margins: Margins | null): boolean {
+  return (["x", "y"] as const).every((side) => {
+    const value = to[side];
+    if (value === undefined) return true;
+    const [page, canvas] = margins ? [placed[side] + placed.margins[side], value + margins[side]] : [placed[side], value];
+    return Math.abs(page - canvas) <= 0.5;
+  });
 }
 
 /** Values are plain data in design language. */

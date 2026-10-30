@@ -48,7 +48,7 @@ import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
+import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -506,6 +506,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
     changes.record(id, { ...record, before: from, after: to, style });
     relocate(doc, id, record.property, from, to, style, changes.list());
+    // Placed absolute: drawn past its X and Y by the margins it has where it is now.
+    const moved = changes.find(id, record.property);
+    const el = elementsOf(doc, id)[0];
+    if (moved && to.absolute && el) changes.record(id, { ...moved, margins: marginsAt(el) });
     syncOrders(doc, changes);
     rebuild();
   };
@@ -1025,7 +1029,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           const x = round(r.left - frame.left - (parseFloat(margins.marginLeft) || 0));
           const y = round(r.top - frame.top - (parseFloat(margins.marginTop) || 0));
           const style = { ...absoluteAt({ x, y }), ...sizeOf(child.el) };
-          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style };
+          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAt(child.el) };
         }),
       };
       const own = getComputedStyle(layer.el);

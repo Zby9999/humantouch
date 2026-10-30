@@ -7,7 +7,7 @@
  */
 import { changes as changesWord, describeChanges, TO_APPLY } from "./change-notes";
 import { ordinal, propertyName, value } from "./design-values";
-import type { Change, Place } from "./client/changeset";
+import type { Change, Margins, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
@@ -140,9 +140,14 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     if (actual === "no reference") {
       return `${at} layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
     }
+    if (change.margins && !width && actual) return offByMargins(absolute, change.margins, actual as Placed, again);
     const placed = actual as { x: number; y: number } | null;
     const where = placed ? `at X ${placed.x}px and Y ${placed.y}px` : "not placed absolute";
     return `${at} layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+  }
+  if (change.margins && !width && actual !== null && typeof actual === "object") {
+    if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as Placed, again);
+    if (change.property === "x" || change.property === "y") return axisOffByMargins(change.property, change.after as number, change.margins, actual as { value: number; margin: number }, again);
   }
   if (width) {
     return (
@@ -154,6 +159,44 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     `The ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}. ` +
     `Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and ${again}.`
   );
+}
+
+/** Where the page places an absolute layer: its `left` and `top`, and its left and top margins (`check.ts`). */
+type Placed = { x: number; y: number; margins: Margins };
+
+/** Margins in words: `2px left and 6px top`, `24px top`, `none`. */
+function marginWords({ x, y }: Margins): string {
+  const sides = [x ? `${x}px left` : "", y ? `${y}px top` : ""].filter(Boolean);
+  return sides.length ? sides.join(" and ") : "none";
+}
+
+/**
+ * A layer placed absolute that the page draws elsewhere than the canvas: the
+ * canvas draws it past its X and Y (its `left` and `top`) by the margins it
+ * keeps, so a `left` and `top` that are right with its margins taken off are not.
+ */
+function offByMargins(to: { x: number; y: number }, margins: Margins, placed: Placed, again: string): string {
+  const drawn = `X ${placed.x + placed.margins.x}px and Y ${placed.y + placed.margins.y}px`;
+  const canvas = `X ${to.x + margins.x}px and Y ${to.y + margins.y}px`;
+  const text =
+    `The layer is drawn at ${drawn} in its container (\`left\` ${placed.x}px and \`top\` ${placed.y}px, margins ${marginWords(placed.margins)}), ` +
+    `where the canvas draws it at ${canvas} (its X and Y are its \`left\` and \`top\`, ${to.x}px and ${to.y}px, and it keeps its margins, ${marginWords(margins)}). `;
+  if (placed.x === to.x && placed.y === to.y) {
+    return `${text}Its \`left\` and \`top\` are right, but not its margins: keep the margins it has on the canvas (what sets them, such as \`mt-6\` or \`margin-top\`), or add them to \`left\` and \`top\`, and ${again}.`;
+  }
+  return `${text}Check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+}
+
+/** An absolute layer's X or Y the page draws elsewhere than the canvas, which draws it past its `left` or `top` by the margin it keeps. */
+function axisOffByMargins(axis: "x" | "y", to: number, margins: Margins, placed: { value: number; margin: number }, again: string): string {
+  const [css, side] = axis === "x" ? ["left", "left"] : ["top", "top"];
+  const text =
+    `The ${propertyName(axis)} is drawn at ${placed.value + placed.margin}px in its container (\`${css}\` ${placed.value}px, ${side} margin ${placed.margin}px), ` +
+    `where the canvas draws it at ${to + margins[axis]}px (its ${axis.toUpperCase()} is its \`${css}\`, ${to}px, and it keeps its ${margins[axis]}px ${side} margin). `;
+  if (placed.value === to) {
+    return `${text}Its \`${css}\` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as \`m${side[0]}-6\` or \`margin-${side}\`), or add it to \`${css}\`, and ${again}.`;
+  }
+  return `${text}Check its \`position\` and \`${css}\`, and that its container is its positioning reference, then ${again}.`;
 }
 
 /**

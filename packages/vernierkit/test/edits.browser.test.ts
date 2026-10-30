@@ -3580,14 +3580,14 @@ describe("a stroke is checked on the live page as the code writes it, else as th
 
 describe("changes to the structure are checked on the live page", () => {
   /** The canvas, edited; and the live page, as the page is. */
-  const open = () => {
-    const canvas = openCanvas(STRUCTURE);
+  const open = (html = STRUCTURE) => {
+    const canvas = openCanvas(html);
     live = document.createElement("iframe");
     live.style.width = "800px";
     document.body.append(live);
     const page = live.contentDocument!;
     page.open();
-    page.write(STRUCTURE);
+    page.write(html);
     page.close();
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
     return { ...canvas, page, layer };
@@ -3639,6 +3639,44 @@ describe("changes to the structure are checked on the live page", () => {
     }
     page.getElementById("board")!.style.position = "relative";
     expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+  });
+
+  /** The board's tag with margins, 2px on its left and 6px on its top. */
+  const MARGINED = STRUCTURE.replace(`id="tag" ${loc("14:7")} style="`, `id="tag" ${loc("14:7")} style="margin: 6px 0 0 2px; `);
+
+  test("a layer placed absolute is where the canvas draws it: past its X and Y by the margins it keeps there; one the code takes them off is not, and says so", () => {
+    const { page, editor, changes, layer } = open(MARGINED);
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    const [placed] = changes.list();
+    expect(placed.margins).toEqual({ x: 2, y: 6 });
+    page.getElementById("board")!.style.position = "relative";
+    const tag = page.getElementById("tag") as HTMLElement;
+
+    // As the Agent writes it: `left` and `top` as given, its margins kept.
+    Object.assign(tag.style, { position: "absolute", left: "40px", top: "30px" });
+    expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+    // Its margins taken off: drawn 2px and 6px off where the canvas draws it.
+    tag.style.margin = "0px";
+    expect(checkChange(page, placed)).toEqual({ outcome: "not shown", actual: { x: 40, y: 30, margins: { x: 0, y: 0 } } });
+    // Their room put into `left` and `top`: drawn where the canvas draws it.
+    Object.assign(tag.style, { left: "42px", top: "36px" });
+    expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+  });
+
+  test("the Y of an absolute layer is where the canvas draws it too: its `top`, past it by the top margin it keeps there", () => {
+    const html = MARGINED.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace("display: inline-block;", "position: absolute; left: 12px; top: 8px;");
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "y", 30);
+    const [y] = changes.list();
+    expect(y).toMatchObject({ property: "y", after: 30, margins: { x: 2, y: 6 } });
+    const tag = page.getElementById("tag") as HTMLElement;
+
+    tag.style.top = "30px";
+    expect(checkChange(page, y)).toEqual({ outcome: "shown" });
+    tag.style.margin = "0px";
+    expect(checkChange(page, y)).toEqual({ outcome: "not shown", actual: { value: 30, margin: 0 } });
+    tag.style.top = "36px";
+    expect(checkChange(page, y)).toEqual({ outcome: "shown" });
   });
 
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {

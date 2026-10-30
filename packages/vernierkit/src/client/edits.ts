@@ -16,7 +16,8 @@ import type { Binder, Editor } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { cssOf, definitionOf, isTextProperty, ofText, PLACING, readAsShown, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
 import { createHistory, createSteps, type History } from "./undo-steps";
@@ -203,6 +204,8 @@ export function createEditor(
       ...(keeps?.length ? { keeps } : {}),
       ...(variables && { variables }),
       ...(within && { within }),
+      // Placed by its X and Y: drawn past them by its margins, which it keeps.
+      ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el) }),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
     });

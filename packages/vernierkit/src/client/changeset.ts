@@ -82,8 +82,18 @@ export interface Dissolved {
   /** The Frame's size, in px. */
   width: number;
   height: number;
-  /** Its layers, each where it was: `x` and `y` in px from the Frame's top left, its size, and the CSS that places it so. */
-  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string> })[];
+  /**
+   * Its layers, each where it was: `x` and `y` in px from the Frame's top
+   * left, its size, the CSS that places it so, and its margins, which it
+   * keeps (`Change.margins`): it is drawn past `x` and `y` by them.
+   */
+  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins: Margins })[];
+}
+
+/** A layer's left and top margins, in px. */
+export interface Margins {
+  x: number;
+  y: number;
 }
 
 /** A layer the designer made (the `after` of a `create` change): new text or a new Frame, and where it goes. */
@@ -220,6 +230,13 @@ export interface Change {
    */
   within?: string;
   /**
+   * A layer placed by its X and Y (an `x`, `y` or `absolute` style change, or
+   * a move absolute): its left and top margins on the canvas, in the view
+   * the change is made in. Its X and Y are its `left` and `top`, and it keeps
+   * its margins: the canvas draws it past its X and Y by them, and so must the page.
+   */
+  margins?: Margins;
+  /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
    * JSX); what the check measures the live page by. `self`: which of them the
@@ -247,7 +264,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins"
     > & {
       kind?: Change["kind"];
     },
@@ -292,6 +309,9 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
         // So do the Variables it is.
         if (change.variables) earlier.variables = change.variables;
         else delete earlier.variables;
+        // And where the canvas draws it, by the margins it has where it is now.
+        if (change.margins) earlier.margins = change.margins;
+        else delete earlier.margins;
       } else {
         const { breakpoint, ...rest } = change;
         changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...(breakpoint && { breakpoint: { ...breakpoint } }), ...rest });

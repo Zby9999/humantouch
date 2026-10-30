@@ -1118,6 +1118,37 @@ describe("done, checked on the page", () => {
     expect((await cli("done", "3")).output).toContain("The layer is placed absolute, but not from its container: make the container its positioning reference (`position: relative`)");
   });
 
+  test("for a layer placed absolute, and its Y, the page drawing it off the canvas by its margins: says so, and what to keep", async () => {
+    const hero = { ...cards, loc: "src/App.tsx:19:7", instances: 1 };
+    const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: hero }, nth, slot: nth - 1, absolute });
+    saveRound(
+      { ...redFill, layer: "5", kind: "move", property: "move", before: place(2), after: place(2, { x: 0, y: 488 }), style: {}, margins: { x: 0, y: 24 } },
+      { ...redFill, id: 2, layer: "6", property: "y", before: 368, after: 488, style: { top: "488px" }, margins: { x: 0, y: 24 } },
+      { ...redFill, id: 3, layer: "7", kind: "move", property: "move", before: place(3), after: place(3, { x: 40, y: 12 }), style: {}, margins: { x: 2, y: 6 } },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({
+      outcome: "not shown",
+      actual: id === 1 ? { x: 0, y: 488, margins: { x: 0, y: 0 } } : id === 2 ? { value: 488, margin: 0 } : { x: 0, y: 0, margins: { x: 2, y: 6 } },
+    }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The layer is drawn at X 0px and Y 488px in its container (`left` 0px and `top` 488px, margins none), " +
+        "where the canvas draws it at X 0px and Y 512px (its X and Y are its `left` and `top`, 0px and 488px, and it keeps its margins, 24px top). " +
+        "Its `left` and `top` are right, but not its margins: keep the margins it has on the canvas (what sets them, such as `mt-6` or `margin-top`), or add them to `left` and `top`, and run `npx vernierkit done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. The Y position is drawn at 488px in its container (`top` 488px, top margin 0px), " +
+        "where the canvas draws it at 512px (its Y is its `top`, 488px, and it keeps its 24px top margin). " +
+        "Its `top` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mt-6` or `margin-top`), or add it to `top`, and run `npx vernierkit done 2` again.\n",
+    );
+    expect((await cli("done", "3")).output).toContain(
+      "The layer is drawn at X 2px and Y 6px in its container (`left` 0px and `top` 0px, margins 2px left and 6px top), " +
+        "where the canvas draws it at X 42px and Y 18px (its X and Y are its `left` and `top`, 40px and 12px, and it keeps its margins, 2px left and 6px top). " +
+        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 3` again.\n",
+    );
+  });
+
   test("several changes at once: each marked done, each with how the page checked it", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
