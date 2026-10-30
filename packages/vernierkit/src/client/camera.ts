@@ -55,7 +55,8 @@ export function transformOf({ x, y, zoom }: Camera): string {
 
 /**
  * Has the browser draw only what the camera shows of the stage again, once a
- * camera move animated on it has ended, with nothing on screen changed.
+ * camera move animated on it has ended or the camera stands still
+ * (`onceStill`), with nothing on screen changed.
  *
  * Chromium draws all of what is under an animated transform. Once it has
  * drawn all of the stage, under an animation or with all of it in sight, it
@@ -66,7 +67,8 @@ export function transformOf({ x, y, zoom }: Camera): string {
  * anything is drawn, makes the browser start that over: the views keep their
  * documents, what has focus keeps it, and the stage is drawn the same.
  * Zoomed out till every view shows in full, the stage is drawn whole again,
- * and stays so after zooming back in till the next animated camera move.
+ * and would stay so after zooming back in: that is why it is called again
+ * once the camera stands still, however it moved.
  */
 export function drawOnlyWhatShows(stage: HTMLElement) {
   // Only `display` is touched: the style written again in full would be read back with fewer digits, the camera a little off.
@@ -76,6 +78,44 @@ export function drawOnlyWhatShows(stage: HTMLElement) {
   stage.getBoundingClientRect();
   if (display) stage.style.setProperty("display", display, priority);
   else stage.style.removeProperty("display");
+}
+
+/** How long the camera stands still before the stage is drawn only as far as it shows again. */
+export const STILL_MS = 100;
+
+/** The stage drawn only as far as it shows (`drawOnlyWhatShows`), once the camera stands still. */
+export interface OnceStill {
+  /** The camera has moved: `draw` once it has stood still for `STILL_MS`. */
+  moved(): void;
+  /** `draw` now, as an animated camera move ends: the moves before it need nothing more. */
+  drawNow(): void;
+  /** The stage is gone: nothing more to draw. */
+  cancel(): void;
+}
+
+/**
+ * Calls `draw` once the camera has stood still for `STILL_MS` after it last
+ * moved, however it moved: by the wheel, a pinch, a pan, ⇧1. While `held`
+ * (a drag, typing, a mode switch under way), it waits on, `STILL_MS` at a
+ * time, and draws once that is over: nothing under way is broken into.
+ */
+export function onceStill(draw: () => void, held: () => boolean): OnceStill {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wait = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (held()) wait();
+      else draw();
+    }, STILL_MS);
+  };
+  return {
+    moved: wait,
+    drawNow() {
+      clearTimeout(timer);
+      draw();
+    },
+    cancel: () => clearTimeout(timer),
+  };
 }
 
 /** Where the stage is right now, partway through an animation included. */

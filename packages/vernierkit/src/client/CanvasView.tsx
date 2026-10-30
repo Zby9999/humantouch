@@ -6,7 +6,7 @@ import { BriefMark, briefedLayers } from "./BriefMark";
 import { Brief, Marks, Outline, SelectionToolbar } from "./AboveCanvas";
 import { canvasKey, type Tool } from "./canvas-keys";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, currentCamera, drawOnlyWhatShows, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, currentCamera, drawOnlyWhatShows, fitCamera, initialCamera, onceStill, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
@@ -168,13 +168,31 @@ export function CanvasView(props: Props) {
         if (modeSwitch.current !== animation) return;
         modeSwitch.current = null;
         // Back where the camera has it, the views are drawn only as far as they show (`drawOnlyWhatShows`).
-        if (el === stage.current && !wasLeaving.current) drawOnlyWhatShows(el);
+        if (el === stage.current && !wasLeaving.current) still.drawNow();
         setTravelling(false);
         done?.();
       },
       () => {}, // Cancelled: a newer switch took over.
     );
   };
+
+  /**
+   * Once the camera stands still, however it moved, the views are drawn only
+   * as far as they show again (`drawOnlyWhatShows`): zoomed out till every
+   * view shows in full, they would otherwise go on being drawn whole after
+   * zooming back in (ticket 22). Not while a mode switch, a drag, a layer being
+   * drawn or typing is under way: once it is over.
+   */
+  const [still] = useState(() =>
+    onceStill(
+      () => stage.current && drawOnlyWhatShows(stage.current),
+      () => !!modeSwitch.current || wasLeaving.current || !!dragging.current || !!drawing.current || !!typing.current,
+    ),
+  );
+  useEffect(() => {
+    if (canvas) still.moved();
+  }, [camera]);
+  useEffect(() => () => still.cancel(), []);
 
   /** The stage transform that puts the canvas exactly where the page is in the window. */
   const overPage = () => {
