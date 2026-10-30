@@ -14,7 +14,7 @@ import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
 import { fontsOf } from "../src/client/typography";
-import { createViews, type View } from "../src/client/views";
+import { CATCH_UP_AFTER_MS, createViews, type View } from "../src/client/views";
 import { bind, bindRecorded, resolveVariables, type Catalog } from "../src/client/variables";
 import type { Variable } from "../src/service-protocol";
 
@@ -1207,18 +1207,25 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
     }
   });
 
-  test("worked in the desktop view, each step shows there at once; the views beside it show the latest step once the next frame is drawn, or at once as one is read", async () => {
+  test("worked in the desktop view, each step shows there at once; the views beside it show the latest step once the steps pause, or at once as one is read", async () => {
     const { doc, views, editor, cards, layerOf, phone } = await open();
     const tabletFrame = document.createElement("iframe");
     document.body.append(tabletFrame);
+    const paused = () => new Promise((done) => setTimeout(done, CATCH_UP_AFTER_MS + 50));
     try {
       const tablet = await views.add(tabletFrame, 600);
       editor.set(layerOf(cards[0]), "radius", 4);
-      await painted();
-      for (const radius of [5, 6]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true });
-      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("6px"));
+      await paused();
       for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
-      await painted();
+      // As a key held down repeats: each step sooner after the last than the pause, frames drawn between them.
+      for (const radius of [5, 6]) {
+        editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true });
+        expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill(`${radius}px`));
+        await painted();
+        await new Promise((done) => setTimeout(done, CATCH_UP_AFTER_MS / 2));
+        for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
+      }
+      await paused();
       for (const view of [phone, tablet]) expect(radii(view.document)).toEqual(radii(doc));
 
       editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true });
@@ -3550,7 +3557,7 @@ describe("views", () => {
     document.body.append(phoneFrame);
     const phone = await canvas.views.add(phoneFrame, 390);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
-    /** Both views show the same canvas: read now, though the phone view would show a value's steps a frame late. */
+    /** Both views show the same canvas: read now, though the phone view would hold a value's steps back till they pause. */
     const alike = () => {
       canvas.views.sync(phone);
       expect(phone.document.documentElement.outerHTML).toBe(canvas.doc.documentElement.outerHTML);

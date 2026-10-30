@@ -5,12 +5,16 @@
  * node for node, so every view shows the same canvas, laid out at its own
  * width. A layer is the canvas's; each view finds it in what it shows. Each
  * view is as tall as what it shows there, as it grows and shrinks. While a
- * value is stepped, the views beside the one worked in show its steps a frame
- * late (`lagBeside`): the frame after a step draws it in the view worked in alone.
+ * value is stepped, the views beside the one worked in hold its steps back till
+ * the steps pause (`lagBeside`): the frame after each step draws it in the view
+ * worked in alone, and the others catch up with the latest at once (ADR 0011).
  */
 import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
+
+/** How long the steps of a value pause, ms, before the views beside the one worked in catch up with them. */
+export const CATCH_UP_AFTER_MS = 100;
 
 export interface View {
   /** What the view shows: the canvas itself for the desktop view, a copy of it for any other. */
@@ -60,15 +64,16 @@ export interface Views {
   /**
    * Shows every change made to the canvas so far in `view` now, rather than
    * before the next paint. With no view, in every view, but for the steps of a
-   * value the views beside the one worked in are a frame late on (`lagBeside`).
+   * value the views beside the one worked in hold back (`lagBeside`).
    */
   sync(view?: View): void;
   /**
    * A value is stepped in the view `worked` tells (null: the desktop view).
-   * Till the next frame is drawn, the other views put off what changes only
-   * the edit styles. Once it is drawn, they show it, as it is then. A view
-   * shows it at once on any other change to the canvas, or on `sync` of it.
-   * The desktop view is the canvas itself: it always shows every change at once.
+   * Till the steps pause for `CATCH_UP_AFTER_MS`, the other views put off what
+   * changes only the edit styles; then they show it, as it is then, all at
+   * once. A view shows it at once on any other change to the canvas, or on
+   * `sync` of it. The desktop view is the canvas itself: it always shows every
+   * change at once.
    */
   lagBeside(worked: () => View | null): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
@@ -126,8 +131,8 @@ export function createViews(canvas: Canvas): Views {
     if (view) followers.get(view)?.catchUp();
     else for (const follower of followers.values()) follower.sync();
   };
-  /** While a value is stepped, till the next frame is drawn: which view is worked in. None: no view is behind. */
-  let stepped: { worked: () => View | null } | null = null;
+  /** While a value is stepped, till the steps pause: which view is worked in, and what catches up then. None: no view is behind. */
+  let stepped: { worked: () => View | null; timer: ReturnType<typeof setTimeout> } | null = null;
   const catchUp = () => {
     stepped = null;
     for (const follower of followers.values()) follower.catchUp();
@@ -162,12 +167,9 @@ export function createViews(canvas: Canvas): Views {
     },
     sync,
     lagBeside(worked) {
-      if (stepped) stepped.worked = worked;
-      else {
-        stepped = { worked };
-        // Once the next frame, with the step in the view worked in, is drawn.
-        requestAnimationFrame(() => setTimeout(catchUp));
-      }
+      // Each step puts the catching up off again: it comes once the steps pause.
+      if (stepped) clearTimeout(stepped.timer);
+      stepped = { worked, timer: setTimeout(catchUp, CATCH_UP_AFTER_MS) };
     },
     onResize(listener) {
       listeners.add(listener);
