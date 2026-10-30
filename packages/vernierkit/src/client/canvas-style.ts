@@ -323,7 +323,7 @@ export function moveInlineEdits(doc: Document) {
  * smallest of theirs, and its style element: those of the others go. As a
  * canvas saved before they shared them (ticket 60) is brought up to now.
  */
-export function shareEditStyles(doc: Document) {
+function shareEditStyles(doc: Document) {
   const jsonOf = rulesReader(doc);
   /** The keys of the instances of each layer with the same rules, by layer and rules. */
   const alike = new Map<string, Set<string>>();
