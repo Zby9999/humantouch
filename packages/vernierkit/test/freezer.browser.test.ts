@@ -179,7 +179,7 @@ describe("the canvas shown at several widths", () => {
     let caughtUp = 0;
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      views.shiftAside(desktop, new Map([[making, { x: 0, y: 20 }]]), () => caughtUp++);
+      views.makeRoom(desktop, new Map([[making, { x: 0, y: 20 }]]), () => caughtUp++);
       expect(shifted(desktop)).toBe("0px 20px");
       expect(style(desktop.document, "tall").transitionDuration).toBe("0s");
       // Not before the next paint either: the canvas did not change for the views beside to follow.
@@ -187,7 +187,7 @@ describe("the canvas shown at several widths", () => {
       for (const view of [phone, tablet]) expect(shifted(view)).toBe("none");
       // The pointer moves on, the place changes: the pause starts again.
       vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
-      views.shiftAside(desktop, new Map([[making, { x: 0, y: 30 }]]), () => caughtUp++);
+      views.makeRoom(desktop, new Map([[making, { x: 0, y: 30 }]]), () => caughtUp++);
       expect(shifted(desktop)).toBe("0px 30px");
       vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
       for (const view of [phone, tablet]) expect(shifted(view)).toBe("none");
@@ -202,7 +202,7 @@ describe("the canvas shown at several widths", () => {
       vi.useRealTimers();
     }
     // Let go: back in every view at once, and nothing of it is left on the canvas.
-    views.shiftBack();
+    views.stopMakingRoom();
     for (const view of [desktop, phone, tablet]) expect(shifted(view)).toBe("none");
     expect(styles()).toEqual(before);
     await frame();
@@ -221,7 +221,7 @@ describe("the canvas shown at several widths", () => {
     const before = styles();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      views.shiftAside(phone, new Map([[making, { x: 10, y: 0 }]]));
+      views.makeRoom(phone, new Map([[making, { x: 10, y: 0 }]]));
       expect(shifted(phone)).toBe("10px");
       await frame();
       for (const view of [desktop, tablet]) expect(shifted(view)).toBe("none");
@@ -232,15 +232,15 @@ describe("the canvas shown at several widths", () => {
       vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
       expect(shifted(desktop)).toBe("10px");
       // Nothing makes room now, dragged off the canvas: back in the phone view at once, in the others after the pause.
-      views.shiftAside(phone, new Map());
+      views.makeRoom(phone, new Map());
       expect(shifted(phone)).toBe("none");
       await frame();
       for (const view of [desktop, tablet]) expect(shifted(view)).toBe("10px");
       vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
       for (const view of [desktop, tablet]) expect(shifted(view)).toBe("none");
       // Shifted again and let go before the pause: back everywhere, its own style as it was.
-      views.shiftAside(phone, new Map([[making, { x: 5, y: 5 }]]));
-      views.shiftBack();
+      views.makeRoom(phone, new Map([[making, { x: 5, y: 5 }]]));
+      views.stopMakingRoom();
       vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
     } finally {
       vi.useRealTimers();

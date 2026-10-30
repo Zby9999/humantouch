@@ -9,7 +9,7 @@
  * frame after draws it in the view worked in alone. A value set once, they show
  * after that frame; the steps of a run of them, once the steps pause, the
  * latest at once. So too the layers making room for a layer dragged
- * (`shiftAside`): in the view dragged in at once, in the others once the
+ * (`makeRoom`): in the view dragged in at once, in the others once the
  * pointer pauses (ADR 0011).
  */
 import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
@@ -24,7 +24,7 @@ import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
  */
 export const CATCH_UP_AFTER_MS = 100;
 
-/** How far a layer making room for a drag is shifted aside, px. */
+/** How far a layer making room for a drag is shifted, px. */
 export interface Shift {
   x: number;
   y: number;
@@ -77,7 +77,7 @@ export interface Views {
   remove(view: View): void;
   /**
    * Shows every change made to the canvas so far in `view` now, rather than
-   * before the next paint, and the layers shifted aside as the view dragged
+   * before the next paint, and the layers making room as the view dragged
    * in has them. With no view, in every view, but for a value the views
    * beside the one worked in hold back (`lagBeside`), and the shifts.
    */
@@ -97,19 +97,19 @@ export interface Views {
    */
   lagBeside(worked: () => View | null, step: boolean, change: () => void): void;
   /**
-   * Shifts elements of the canvas aside, straight to their place, as layers
-   * make room for one dragged in the view `worked`: each in `shifts` by so
+   * Shifts elements of the canvas straight to their place, as layers make
+   * room for one dragged in the view `worked`: each in `shifts` by so
    * much, in that view's px; any shifted before and not in `shifts` goes back.
    * The view dragged in shows it at once; the others, once the shifts pause
    * for `CATCH_UP_AFTER_MS`, as each shift sets the pause going again, or on
    * `sync` of them: then `caughtUp` is called (ADR 0011). It is no change to
    * the canvas for the views to follow: each view shows the shifts as its
-   * own, till `shiftBack`. A view not of this canvas (a layer off it) shows
+   * own, till `stopMakingRoom`. A view not of this canvas (a layer off it) shows
    * them alone.
    */
-  shiftAside(worked: View, shifts: ReadonlyMap<Element, Shift>, caughtUp?: () => void): void;
-  /** Puts every element `shiftAside` shifted back where it was, in every view, at once, its style as it was. */
-  shiftBack(): void;
+  makeRoom(worked: View, shifts: ReadonlyMap<Element, Shift>, caughtUp?: () => void): void;
+  /** Puts every element that `makeRoom` shifted back where it was, in every view, at once, its style as it was. */
+  stopMakingRoom(): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
   /**
@@ -162,20 +162,20 @@ export function createViews(canvas: Canvas): Views {
   // Anything changed on the canvas may change how tall a view is: each is fitted again before the next frame.
   new MutationObserver(refit).observe(canvas.document.documentElement, EVERYTHING);
   /**
-   * The layers shifted aside for a drag: the view dragged in, where it has
+   * The layers making room for a drag: the view dragged in, where it has
    * them, what each view shows of them so far, the style attribute each
    * view's element had before, and the pause the views beside wait for.
    */
-  let aside: {
+  let room: {
     worked: View;
     wanted: ReadonlyMap<Element, Shift>;
     shown: Map<View, Map<Element, Shift>>;
     styles: Map<Element, string | null>;
     pause?: ReturnType<typeof setTimeout>;
   } | null = null;
-  /** Shows the layers shifted aside in `view` as `wanted` has them: whether anything changed there. */
-  const shiftIn = (view: View, wanted: ReadonlyMap<Element, Shift>): boolean => {
-    const { shown, styles } = aside!;
+  /** Shows the layers making room in `view` as `wanted` has them: whether anything changed there. */
+  const showRoomIn = (view: View, wanted: ReadonlyMap<Element, Shift>): boolean => {
+    const { shown, styles } = room!;
     let showing = shown.get(view);
     if (!showing) shown.set(view, (showing = new Map()));
     const changed = [...showing.keys()].filter((el) => !wanted.has(el));
@@ -213,7 +213,7 @@ export function createViews(canvas: Canvas): Views {
   const sync = (view?: View) => {
     if (view) {
       followers.get(view)?.catchUp();
-      if (aside && view !== aside.worked) shiftIn(view, aside.wanted);
+      if (room && view !== room.worked) showRoomIn(view, room.wanted);
     } else for (const follower of followers.values()) follower.sync();
   };
   /**
@@ -254,6 +254,13 @@ export function createViews(canvas: Canvas): Views {
         },
       };
     }
+  };
+
+  const stopMakingRoom = () => {
+    if (!room) return;
+    clearTimeout(room.pause);
+    for (const view of room.shown.keys()) showRoomIn(view, new Map());
+    room = null;
   };
 
   return {
@@ -304,25 +311,20 @@ export function createViews(canvas: Canvas): Views {
         changing = was;
       }
     },
-    shiftAside(worked, shifts, caughtUp) {
-      if (aside && aside.worked !== worked) this.shiftBack();
-      aside ??= { worked, wanted: shifts, shown: new Map(), styles: new Map() };
-      const wanted = (aside.wanted = new Map(shifts));
-      shiftIn(worked, wanted);
-      clearTimeout(aside.pause);
+    makeRoom(worked, shifts, caughtUp) {
+      if (room && room.worked !== worked) stopMakingRoom();
+      room ??= { worked, wanted: shifts, shown: new Map(), styles: new Map() };
+      const wanted = (room.wanted = new Map(shifts));
+      showRoomIn(worked, wanted);
+      clearTimeout(room.pause);
       if (!views.includes(worked)) return;
-      aside.pause = setTimeout(() => {
+      room.pause = setTimeout(() => {
         let changed = false;
-        for (const view of views) if (view !== worked && shiftIn(view, wanted)) changed = true;
+        for (const view of views) if (view !== worked && showRoomIn(view, wanted)) changed = true;
         if (changed) caughtUp?.();
       }, CATCH_UP_AFTER_MS);
     },
-    shiftBack() {
-      if (!aside) return;
-      clearTimeout(aside.pause);
-      for (const view of aside.shown.keys()) shiftIn(view, new Map());
-      aside = null;
-    },
+    stopMakingRoom,
     onResize(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

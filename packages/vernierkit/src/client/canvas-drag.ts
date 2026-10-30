@@ -3,7 +3,7 @@
  * so in every view, with inline styles that are all restored when it ends,
  * whatever happens then. The layers making room for it go straight to their
  * place: in the view dragged in at once, in the views beside once the pointer
- * pauses (`Views.shiftAside`); sliding there, or going there in three views
+ * pauses (`Views.makeRoom`); sliding there, or going there in three views
  * at once, cost a large page's drag frames (ticket 22, ADR 0011). Where layers
  * were laid out before anything shifted is noted, so a drop is found as if
  * nothing had.
@@ -37,7 +37,7 @@ export interface DragSession {
   /** The views, which show the layers making room. */
   views: Views;
   /** The layers making room now, and how far, as the view dragged in shows them. */
-  aside: ReadonlyMap<Element, Shift>;
+  makingRoom: ReadonlyMap<Element, Shift>;
   drop: Drop | null;
   /** Where the layer is dragged to, in the view's px; none before it moves. */
   box?: DOMRect;
@@ -71,7 +71,7 @@ export function startDragSession(layer: Layer, shown: Shown, views: Views): Drag
     rects: new Map(),
     touched: new Map(),
     views,
-    aside: new Map(),
+    makingRoom: new Map(),
     drop: null,
     out: false,
     to: null,
@@ -109,8 +109,8 @@ export function laidOut(session: DragSession, layer: Layer): DOMRect {
 export function shift(session: DragSession, by: Shift, drop: Drop | null, caughtUp?: () => void): void {
   const { layer } = session;
   if (!layer.text) setStyles(session, layer.el, { translate: `${by.x}px ${by.y}px`, transition: "none" });
-  session.aside = new Map([...(drop?.shifts ?? [])].filter(([el]) => el !== layer.el));
-  session.views.shiftAside(session.in.view, session.aside, caughtUp);
+  session.makingRoom = new Map([...(drop?.shifts ?? [])].filter(([el]) => el !== layer.el));
+  session.views.makeRoom(session.in.view, session.makingRoom, caughtUp);
 }
 
 /** Shifts a layer off the canvas dragged whole `dx` and `dy` from where it is in the workspace. */
@@ -121,7 +121,7 @@ export function moveWhole(session: DragSession, dx: number, dy: number): void {
 /** Ends the drag on the canvas: every style it changed is as it was, and each view is as tall as what it shows again. */
 export function restoreDragStyles(session: DragSession): void {
   session.release();
-  session.views.shiftBack();
+  session.views.stopMakingRoom();
   for (const [el, original] of session.touched) {
     for (const [name, [value, priority]] of Object.entries(original)) {
       if (value) (el as HTMLElement).style.setProperty(name, value, priority);
@@ -137,14 +137,14 @@ export function boxFrom(a: { x: number; y: number }, b: { x: number; y: number }
 
 /**
  * Where an element is laid out, as if nothing had shifted: the layers making
- * room (and what is in them) may be shifted aside.
+ * room (and what is in them) may be shifted.
  */
 function unshifted(session: DragSession, el: Element): DOMRect {
   const { view } = session.in;
   const r = (view.elementOf(el) ?? el).getBoundingClientRect();
   let [x, y] = [r.x, r.y];
   for (let e: Element | null = el; e; e = e.parentElement) {
-    const by = e !== session.layer.el && session.aside.get(e);
+    const by = e !== session.layer.el && session.makingRoom.get(e);
     if (!by) continue;
     x -= by.x;
     y -= by.y;
