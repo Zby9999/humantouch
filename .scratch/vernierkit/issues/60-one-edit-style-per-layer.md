@@ -246,3 +246,8 @@
 
 - `shareEditStyles`（把旧存档里同一图层、规则相同的实例并成一份编辑样式）只在 `canvas-style.ts` 里由 `upgradeEditStyles` 调用，去掉了 export（934927f）。设计师看到的不变。
 - `canvas-style.ts` 头注释里关于 CSSOM 原地改的说法也改正了（ticket 22 第一轮引入的那段，记在 22 的同名一节）。
+
+**测试素材的路径（2026-10-30）**
+
+- `e2e/fixtures/round-before-60/` 的 `changeset.json`（样式来源的 `file`）和 `canvas.html`（`data-vite-dev-id`、字体的 `/@fs/` 地址）记着写它时那个 worktree 的绝对路径，换个目录跑，claim 的 "Currently set by" 会印出那条绝对路径，画布的字体也被 Vite 拒绝加载（h1 宽度不同）。现在素材里把仓库根目录写成 `{{checkout}}`，测试读写素材时换成当前 checkout 的路径。`packages/vernierkit/test/fixtures/round-before-60/` 里的 `file` 都是 null，仓库里别的测试素材也没有写死的路径。
+- 产品本身也有这个问题：改动单里样式来源的 `file` 和画布里的 `/@fs/` 地址都是保存时的绝对路径，项目目录挪过之后，打开旧的一轮，claim 输出的 "Currently set by" 会印出旧的绝对路径（指到已经不在的文件，`projectPath` 只把项目目录内的路径改成相对路径），画布里经 `/@fs/` 加载的字体也会加载失败。要不要修，等设计师决定。
