@@ -279,6 +279,27 @@ test.describe("done checks the change on the page", () => {
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
+  test("a size dragged on the canvas by a handle is a change of size, as the Width field makes it, and checked on the page once the code has it", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
+    const edge = (await page.locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="e"]').boundingBox())!;
+    await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(edge.x + edge.width / 2 + 12, edge.y + edge.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+    const [change] = readVernier("changeset.json").changes;
+    expect(change).toMatchObject({ kind: "style", property: "width", before: { type: "hug" }, after: { type: "fixed" } });
+    const width: number = change.after.value;
+    await vernierkit("claim");
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
+
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change.");
+    editSource(APP, "flex items-center gap-2 self-start px-4", `flex w-[${width}px] items-center gap-2 self-start px-4`);
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+  });
+
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
     await page.goto(DEV_URL);
     await page.getByRole("button", { name: TOGGLE_LABEL }).click();

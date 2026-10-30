@@ -16,6 +16,14 @@ import type { View } from "./views";
 /** Where a layer is moved to: a place among a Stack's layers, or absolute, at `left` and `top` in px, in a Frame. */
 export type Destination = { parent: Layer; index: number } | { parent: Layer; x: number; y: number };
 
+/** What a layer is resized to, as a handle has it (`Editor.resize`): Fixed sizes in px, border and padding in, and its X and Y placed freely; those not given stay as they are. */
+export interface ResizeTo {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+}
+
 export interface SetOptions {
   /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
   continues?: boolean;
@@ -76,8 +84,22 @@ export interface Editor {
   variables(layer: Layer, property: Property): Bindings | undefined;
   /** Where the layer is in the view worked in, in its px; for a hidden layer, where it is when shown. */
   measure(layer: Layer): DOMRect;
+  /**
+   * Resizes the layer, as a handle dragged on the canvas does: `width` and
+   * `height`, those given, become Fixed at that size (outer, border and
+   * padding in), whether they were Hug or Fill; nothing else changes. A
+   * layer placed freely in the view worked in goes to `x` and `y`, those
+   * given, in its container, so the edges not dragged stay where they are.
+   * At the breakpoint worked in, as `set` does. `continues`: one more step of
+   * the resize under way, one step with those before it, though it sets more
+   * or less than they did. Each is a step of a run: the views beside the one
+   * worked in show it once the steps pause (ADR 0011).
+   */
+  resize(layer: Layer, to: ResizeTo, options?: Pick<SetOptions, "continues">): void;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
   undo(): Layer[];
+  /** Takes back the latest edit as if it was never made, as Esc cancels a resize under way: there is nothing to redo of it. */
+  takeBack(): void;
   /** Makes again the latest edit undone. Returns the layers it was made to; none when there is nothing to redo. */
   redo(): Layer[];
   /** Takes change `id` back out of the ChangeSet, its layer back to where it started, as an edit that can be undone. */

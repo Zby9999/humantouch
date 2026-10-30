@@ -760,6 +760,31 @@ export const styles = /* css */ `
   color: #fff;
 }
 
+/*
+ * The handles of the layer selected alone, as Figma has them: white squares on the corners, the edges' unseen
+ * but for the cursor. The square is larger to press than it looks.
+ */
+.vk-handles { --vk-selection: var(--vk-accent); }
+.vk-handles[data-kind="instance"] { --vk-selection: var(--vk-instance); }
+.vk-handles[data-kind="locked"] { --vk-selection: var(--vk-locked); }
+.vk-handle { position: absolute; box-sizing: border-box; pointer-events: auto; touch-action: none; }
+.vk-handle[data-corner] { border: 1px solid var(--vk-selection); background: #fff; }
+.vk-handles:not([data-small]) .vk-handle[data-corner]::before { content: ""; position: absolute; inset: -3px; }
+/* Below the layer being resized: its size. */
+.vk-size-label {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--vk-accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Dragging: where the layer would go in a Stack, and loose text, which has no element to move, following the pointer. */
 .vk-drop-line {
   position: absolute;

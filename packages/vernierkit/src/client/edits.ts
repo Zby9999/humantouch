@@ -422,8 +422,24 @@ export function createEditor(
     batch(edits, { continues = false, step = false } = {}) {
       steppedWhile(step, () => group(edits, continues));
     },
+    resize(layer, { width, height, x, y }, { continues = false } = {}) {
+      steppedWhile(true, () =>
+        group(
+          () => {
+            if (width !== undefined) editor.set(layer, "width", { type: "fixed", value: width });
+            if (x !== undefined) editor.set(layer, "x", x);
+            if (height !== undefined) editor.set(layer, "height", { type: "fixed", value: height });
+            if (y !== undefined) editor.set(layer, "y", y);
+          },
+          continues,
+          // Each step may set more or less than the one before: a run, apart from any of nudges.
+          "resize",
+        ),
+      );
+    },
     undo: steps.undo,
     redo: steps.redo,
+    takeBack: steps.drop,
     along(make, unmake, layers) {
       make();
       push({ layers: [], key: "along", undo: unmake, redo: make }, false, layers && (() => layers()));

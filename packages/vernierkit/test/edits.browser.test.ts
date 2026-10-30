@@ -2342,6 +2342,128 @@ describe("nudging layers, as the arrow keys do", () => {
   });
 });
 
+const RESIZES = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="board" ${at("30:5")} style="position: relative; width: 300px; height: 200px">
+    <div id="free" ${at("31:7")} style="position: absolute; left: 12px; top: 8px; width: 30px; height: 20px"></div>
+  </div>
+  <div id="row" ${at("33:5")} style="display: flex; gap: 10px; width: 400px">
+    <div id="grows" ${at("34:7")} style="flex-grow: 1; height: 20px"></div>
+    <div id="hugs" ${at("35:7")} style="padding: 4px">Hugs</div>
+  </div>
+  <p id="words" ${at("37:5")} style="width: fit-content; margin: 0; font: 16px/20px sans-serif">Some words that wrap once narrower</p>
+</body>`;
+
+describe("resizing a layer, as its handles do", () => {
+  const open = () => {
+    const canvas = openCanvas(RESIZES);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const box = (id: string) => {
+      const r = canvas.doc.getElementById(id)!.getBoundingClientRect();
+      const p = canvas.doc.getElementById(id)!.parentElement!.getBoundingClientRect();
+      return [r.left - p.left, r.top - p.top, r.width, r.height];
+    };
+    const recorded = () => canvas.changes.list().map((change) => [change.kind, change.property, change.before, change.after]);
+    return { ...canvas, layer, box, recorded };
+  };
+
+  test("its width and height become Fixed at the sizes given; the steps of one resize are one step, though a later one sets more", () => {
+    const { editor, layer, box, recorded } = open();
+
+    editor.resize(layer("free"), { width: 40 });
+    editor.resize(layer("free"), { width: 50, height: 30 }, { continues: true });
+
+    expect(box("free")).toEqual([12, 8, 50, 30]);
+    expect(recorded()).toEqual([
+      ["style", "width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }],
+      ["style", "height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }],
+    ]);
+    editor.undo();
+    expect(box("free")).toEqual([12, 8, 30, 20]);
+    expect(recorded()).toEqual([]);
+    editor.redo();
+    expect(box("free")).toEqual([12, 8, 50, 30]);
+  });
+
+  test("placed freely, its X and Y move with the edges dragged, so those across stay", () => {
+    const { editor, layer, box, recorded } = open();
+
+    editor.resize(layer("free"), { width: 40, x: 2 });
+    editor.resize(layer("free"), { width: 42, x: 0, height: 25, y: 3 }, { continues: true });
+
+    expect(box("free")).toEqual([0, 3, 42, 25]);
+    expect(recorded().map(([, property]) => property)).toEqual(["width", "x", "height", "y"]);
+  });
+
+  test("Hug or Fill dragged becomes Fixed, in a Stack too: it no longer grows into the room left", () => {
+    const { editor, layer, box, recorded } = open();
+
+    editor.resize(layer("grows"), { width: 100 });
+    editor.resize(layer("hugs"), { width: 60 });
+
+    expect(box("grows")[2]).toBe(100);
+    expect(box("hugs")[2]).toBe(60);
+    expect(recorded()).toEqual([
+      ["style", "width", { type: "fill" }, { type: "fixed", value: 100 }],
+      ["style", "width", { type: "hug" }, { type: "fixed", value: 60 }],
+    ]);
+  });
+
+  test("text made narrower is Fixed in width; its height still hugs its words, which wrap", () => {
+    const { editor, layer, box, recorded } = open();
+    const [, , , tall] = box("words");
+
+    editor.resize(layer("words"), { width: 120 });
+
+    expect(box("words")[2]).toBe(120);
+    expect(box("words")[3]).toBeGreaterThan(tall);
+    expect(editor.read(layer("words"), "height")).toEqual({ type: "hug" });
+    expect(recorded()).toEqual([["style", "width", { type: "hug" }, { type: "fixed", value: 120 }]]);
+  });
+
+  test("taken back, as Esc cancels a resize: as it was, nothing recorded, and nothing to redo", () => {
+    const { editor, layer, box, recorded } = open();
+    editor.resize(layer("hugs"), { width: 80 });
+
+    editor.resize(layer("free"), { width: 40 });
+    editor.resize(layer("free"), { width: 60, height: 40 }, { continues: true });
+    editor.takeBack();
+
+    expect(box("free")).toEqual([12, 8, 30, 20]);
+    expect(recorded()).toEqual([["style", "width", { type: "hug" }, { type: "fixed", value: 80 }]]);
+    expect(editor.redo()).toEqual([]);
+    expect(box("free")).toEqual([12, 8, 30, 20]);
+  });
+
+  test("a nudge right after is a step of its own", () => {
+    const { editor, layer, box } = open();
+
+    editor.resize(layer("free"), { width: 40 });
+    editor.nudge([layer("free")], 1, 0, { continues: true });
+    editor.undo();
+
+    expect(box("free")).toEqual([12, 8, 40, 20]);
+  });
+
+  test("worked in the phone view, it is resized at its breakpoint only, and shows there at once", async () => {
+    const { doc, views, editor, layer, changes } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    editor.at(phone);
+
+    editor.resize(layer("free"), { width: 44, x: 4 });
+
+    // The phone's range, up to the desktop view's width, as the views are.
+    expect(changes.list().map((change) => [change.property, change.breakpoint?.max])).toEqual([
+      ["width", 800],
+      ["x", 800],
+    ]);
+    expect(phone.document.getElementById("free")!.getBoundingClientRect().width).toBe(44);
+    expect(doc.getElementById("free")!.getBoundingClientRect().width).toBe(30);
+  });
+});
+
 describe("making a Stack", () => {
   const open = (page = MOVES) => {
     const canvas = openCanvas(page);

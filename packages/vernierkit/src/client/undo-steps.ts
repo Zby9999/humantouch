@@ -64,11 +64,13 @@ export interface Steps {
    */
   push(step: Step, continues: boolean, found?: (ids: string[]) => Layer[]): void;
   /**
-   * Makes the steps `edits` makes one step, undone last first. `run`: one of
-   * a run of such steps (nudges) that may each change something else of the
-   * same layers, made one step with those before it. A group in a group is one with it.
+   * Makes the steps `edits` makes one step, undone last first. `run`: the
+   * name of a run of such steps that may each change something else of the
+   * same layers (nudges, a resize), made one step with those before it of the
+   * same run, not with those of a run of another name right before it. A
+   * group in a group is one with it.
    */
-  group(edits: () => void, continues: boolean, run?: boolean): void;
+  group(edits: () => void, continues: boolean, run?: string): void;
   /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a group. */
   show(): void;
   /**
@@ -80,6 +82,8 @@ export interface Steps {
   undo(): Layer[];
   /** Makes again the latest step undone, shown in every view at once as `undo` is. Returns the layers it leaves. */
   redo(): Layer[];
+  /** Takes back the latest step as if it was never made, as Esc cancels an adjustment under way: undone as `undo` does, with nothing to redo. */
+  drop(): void;
 }
 
 /**
@@ -128,7 +132,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
     } else history.past.push({ step, by: ownSteps, found, showNow });
     show();
   };
-  const group = (edits: () => void, continues: boolean, run = false) => {
+  const group = (edits: () => void, continues: boolean, run?: string) => {
     if (batching) return edits();
     const steps: Step[] = [];
     batching = steps;
@@ -143,7 +147,7 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
         layers: steps.flatMap((step) => step.layers),
         back: steps.flatMap((step) => step.back ?? step.layers),
         texts: steps.flatMap((step) => step.texts ?? []),
-        key: run ? `run ${[...new Set(steps.flatMap((step) => step.layers))].sort().join(" ")}` : steps.map((step) => step.key).join(", "),
+        key: run ? `${run} ${[...new Set(steps.flatMap((step) => step.layers))].sort().join(" ")}` : steps.map((step) => step.key).join(", "),
         ...(run && { run: true }),
         undo: () => [...steps].reverse().forEach((step) => step.undo()),
         redo: () => steps.forEach((step) => step.redo()),
@@ -170,6 +174,12 @@ export function createSteps(history: History, views: Pick<Views, "sync" | "catch
       entry.step.redo();
       entry.showNow();
       return textsIn(entry.step, entry.found(entry.step.layers));
+    },
+    drop() {
+      const entry = history.past.pop();
+      if (!entry) return;
+      entry.step.undo();
+      entry.showNow();
     },
   };
   return ownSteps;

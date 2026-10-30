@@ -204,7 +204,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
     if (round.current) onChanges(round.current.changeSet.list());
   };
-  const onEdit = () => {
+  /** An edit made: the panel and the Layers panel follow it; `adjust`, a value set, the selection box steps aside meanwhile. Resized by a handle, it stays. */
+  const onEdit = (adjust = true) => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
     if (next && next !== tree) setTree(next);
@@ -214,6 +215,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     });
     changed();
     edited(undefined);
+    if (!adjust) return;
     setAdjusting(true);
     clearTimeout(settle.current);
     settle.current = setTimeout(() => setAdjusting(false), ADJUSTING_MS);
@@ -577,6 +579,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           const moved = editorOf(layer)!.move(layer, to);
           onEdit();
           select([moved]);
+        }}
+        onResize={(layer, to, continues) => {
+          editorOf(layer)!.resize(layer, to, { continues });
+          onEdit(false);
+        }}
+        onCancelResize={(layer) => {
+          editorOf(layer)!.takeBack();
+          onEdit(false);
         }}
         tool={tool}
         onTool={setTool}

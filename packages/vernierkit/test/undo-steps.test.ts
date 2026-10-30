@@ -135,7 +135,7 @@ describe("a run of nudges", () => {
       steps.group(
         () => steps.push({ layers: [to], back: [from], key: "move", undo: () => state.log.push(`back to ${from}`), redo: () => state.log.push(`on to ${to}`) }, false),
         true,
-        true,
+        "nudge",
       );
     nudge("a", "a");
     nudge("a", "a");
