@@ -3,14 +3,15 @@ import { fileURLToPath } from "node:url";
 import { EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "../tests/fixtures";
 import { BIG_URL, HEADLESS, RUN } from "./playwright.config";
-import { report, summarize, type Summary } from "./stats";
+import { ms, report, summarize, type Summary } from "./stats";
 
 /**
  * docs/goals.md, Flex: on a page of about 5000 elements, with the desktop,
  * tablet and phone views all showing it, edit mode is up within 150ms, a
- * value changed shows in the next frame, and a drag keeps 60fps. The value
- * shows in the next frame in the view worked in; the views beside it follow
- * a frame later, as the designer chose in ticket 22. Each test
+ * value changed shows within two frames, and a drag keeps 60fps. The value
+ * shows in the next frame in the view worked in, the main thread's work for
+ * it within two frames; the views beside it catch up once the steps pause, as
+ * the designer chose in ticket 22 (ADR 0011). Each test
  * repeats its measurement, prints the median, 95th percentile and worst, and
  * says whether the target is met. How each is measured is said at each test;
  * ticket 22's Comments has it in full.
@@ -26,10 +27,21 @@ const PRODUCTS = 96;
 /** One frame at 60fps. */
 const FRAME_MS = 1000 / 60;
 const ENTER_TARGET_MS = 150;
+/** A value changed shows within two frames: the designer's target since 2026-10-30, one frame before (ticket 22). */
+const VALUE_TARGET_MS = FRAME_MS * 2;
 /** Runs of entering edit mode, each from a page loaded afresh, after one to warm up. */
 const ENTER_RUNS = 8;
 /** Values stepped per kind of change. */
 const VALUE_STEPS = 20;
+/**
+ * An arrow key held down, as macOS repeats it by default (the designer's Mac
+ * leaves it so: `HIDInitialKeyRepeat` 500ms, `HIDKeyRepeat` 83.3ms, as `ioreg`
+ * reports): the first step, the first repeat half a second later, then one
+ * every 83.3ms, 12 a second, sooner than the views beside pause for.
+ */
+const HELD_STEPS = 24;
+const REPEAT_DELAY_MS = 500;
+const REPEAT_EVERY_MS = 1000 / 12;
 /** Drags measured, and how long each lasts. */
 const DRAGS = 3;
 const DRAG_MS = 2500;
@@ -213,7 +225,7 @@ function design(page: Page) {
 interface ValueSample {
   /** In the first frame drawn after the key was pressed, the view worked in showed the new value. */
   firstFrame: boolean;
-  /** Frames drawn till every view showed it: the views beside the one worked in follow a frame late. */
+  /** Frames drawn till every view showed it: the views beside the one worked in catch up once the steps pause. */
   frames: number;
   /** The main thread's time on it: handling the key, then drawing that frame. */
   work: number;
@@ -227,11 +239,11 @@ interface ValueSample {
  * A key that changes a value, in the view worked in, `views[0]`: the time
  * from the key's arrival to the end of its handling, plus the time the frame
  * after it takes from its first callback to being drawn, is the main thread's
- * work for the change; it fits in one frame when under 16.7ms. Whether the
+ * work for the change; the target is two frames, 33.3ms. Whether the
  * view worked in shows the new value is checked once that frame is drawn: if
- * so, it changed within a frame. The views beside it follow a frame late, as
- * the designer chose (ticket 22): how long till every view shows it is kept
- * as a reference.
+ * so, it showed in the next frame. The views beside it catch up once the
+ * steps pause, as the designer chose (ticket 22, ADR 0011): how long till
+ * every view shows it is kept as a reference.
  */
 function armValue({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
   const w = window as unknown as { vkValue: Promise<ValueSample> };
@@ -298,6 +310,130 @@ async function stepValue(page: Page, field: string, selector: string, property: 
     await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, last);
   }
   return samples;
+}
+
+interface HeldStep {
+  /** In the first frame drawn after the key, the view worked in showed this step, or a later one. */
+  firstFrame: boolean;
+  /** The value the views beside showed in that frame, the lowest of them. */
+  beside: number;
+  /** The main thread's time on it, as `ValueSample.work`. */
+  work: number;
+  /** From the key's arrival to that frame drawn. */
+  latency: number;
+}
+
+interface Held {
+  steps: HeldStep[];
+  /** From the last key's arrival to the first frame drawn with every view showing the last value. */
+  caughtUp: number;
+}
+
+/**
+ * Each ArrowUp from now on, as `armValue` measures one: the time to handle
+ * it and draw the frame after it, whether the view worked in, `views[0]`,
+ * showed the step then, and what the views beside showed.
+ */
+function armHeld({ views, selector, property, from }: { views: string[]; selector: string; property: string; from: number }) {
+  const { scheduler } = window as unknown as WithScheduler;
+  const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
+  const valueIn = (doc: Document) => parseFloat(getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property));
+  const listening = new AbortController();
+  const record = { steps: [] as HeldStep[], last: 0, from, docs, valueIn, stop: () => listening.abort() };
+  let handling: { handled: number } | null = null;
+  addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "ArrowUp") return;
+      const start = performance.now();
+      const arrived = event.timeStamp;
+      record.last = arrived;
+      const step: HeldStep = { firstFrame: false, beside: NaN, work: NaN, latency: NaN };
+      const expected = from + record.steps.length + 1;
+      record.steps.push(step);
+      const timing = (handling = { handled: 0 });
+      requestAnimationFrame(() => {
+        const at = performance.now();
+        scheduler.postTask(
+          () => {
+            const drawn = performance.now();
+            step.firstFrame = valueIn(docs[0]) >= expected;
+            step.beside = Math.min(...docs.slice(1).map(valueIn));
+            step.work = (timing.handled || at) - start + (drawn - at);
+            step.latency = drawn - arrived;
+          },
+          { priority: "user-blocking" },
+        );
+      });
+    },
+    { capture: true, signal: listening.signal },
+  );
+  // Last at the window: once the editor layer has handled the key.
+  addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "ArrowUp" && handling) handling.handled ||= performance.now();
+    },
+    { signal: listening.signal },
+  );
+  (window as unknown as { vkHeld: typeof record }).vkHeld = record;
+}
+
+/**
+ * Holds the arrow key down on a value for `HELD_STEPS` steps, as macOS
+ * repeats it: each key sent straight to the browser at its time, without
+ * waiting for the page to take the last, as the keyboard does. Once it is let
+ * go, waits till every view shows the last value.
+ */
+async function holdValue(page: Page, field: string, selector: string, property: string): Promise<Held> {
+  const input = design(page).getByRole("textbox", { name: field, exact: true });
+  await input.focus();
+  const from = await canvas(page).locator(selector).evaluate((el, property) => parseFloat(getComputedStyle(el).getPropertyValue(property)), property);
+  await page.evaluate(armHeld, { views: VIEWS, selector, property, from });
+  const cdp = await page.context().newCDPSession(page);
+  const key = { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38, nativeVirtualKeyCode: 38 };
+  const sent: Promise<unknown>[] = [];
+  const started = performance.now();
+  for (let i = 0; i < HELD_STEPS; i++) {
+    const at = i === 0 ? 0 : REPEAT_DELAY_MS + (i - 1) * REPEAT_EVERY_MS;
+    const wait = started + at - performance.now();
+    if (wait > 0) await new Promise((done) => setTimeout(done, wait));
+    sent.push(cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", autoRepeat: i > 0, ...key }));
+  }
+  await new Promise((done) => setTimeout(done, REPEAT_EVERY_MS / 2));
+  sent.push(cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }));
+  await Promise.all(sent);
+  await cdp.detach();
+  // Every view catches up once the steps pause: timed to the first frame drawn showing the last value everywhere.
+  const held = await page.evaluate(
+    () =>
+      new Promise<Held>((resolve) => {
+        const { steps, last, from, docs, valueIn, stop } = (
+          window as unknown as { vkHeld: { steps: HeldStep[]; last: number; from: number; docs: Document[]; valueIn(doc: Document): number; stop(): void } }
+        ).vkHeld;
+        stop();
+        const { scheduler } = window as unknown as WithScheduler;
+        const end = from + steps.length;
+        const until = performance.now() + 2000;
+        const frame = () =>
+          scheduler.postTask(
+            () => {
+              const now = performance.now();
+              if (docs.every((doc) => valueIn(doc) === end)) resolve({ steps: [...steps], caughtUp: now - last });
+              else if (now > until) resolve({ steps: [...steps], caughtUp: Infinity });
+              else requestAnimationFrame(frame);
+            },
+            { priority: "user-blocking" },
+          );
+        requestAnimationFrame(frame);
+      }),
+  );
+  await settle(page);
+  // Every view shows the last value: the value field's too.
+  const last = `${from + HELD_STEPS}px`;
+  for (const title of VIEWS) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, last);
+  return held;
 }
 
 /**
@@ -432,7 +568,7 @@ test("entering edit mode, the desktop view up, takes at most 150ms; once the pag
   verdict(all.median <= ENTER_TARGET_MS, `entering edit mode: median ${all.median.toFixed(1)}ms, target ${ENTER_TARGET_MS}ms`);
 });
 
-test("a value changed shows in the view worked in in the next frame, and in every view after", async ({ page }) => {
+test("a value changed shows in the view worked in in the next frame, its work within two frames, and in every view after", async ({ page }) => {
   const elements = await openBigPage(page);
   await enterEditMode(page);
   // Paint only: a card's corner radius.
@@ -456,12 +592,12 @@ test("a value changed shows in the view worked in in the next frame, and in ever
     const latency = summarize(samples.map((s) => s.latency));
     const everyView = summarize(samples.map((s) => s.everyView));
     const inFirstFrame = samples.filter((s) => s.firstFrame).length;
-    // Every step in the first frame in the view worked in, and 19 in 20 within it: the odd one may meet a garbage collection.
-    const ok = inFirstFrame === samples.length && work.p95 <= FRAME_MS;
+    // Every step in the first frame in the view worked in, and the work for 19 in 20 within two frames: the odd one may meet a garbage collection.
+    const ok = inFirstFrame === samples.length && work.p95 <= VALUE_TARGET_MS;
     met &&= ok;
     summaries[name] = { work, latency, everyView, inFirstFrame, frames: samples.map((s) => s.frames) };
     rows.push(
-      { name: `${name}: work`, summary: work, target: `p95 ≤ ${FRAME_MS.toFixed(1)}ms, in the first frame`, met: ok },
+      { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met: ok },
       { name: `${name}: key to frame drawn`, summary: latency },
       { name: `${name}: (key to every view)`, summary: everyView },
     );
@@ -478,7 +614,49 @@ test("a value changed shows in the view worked in in the next frame, and in ever
       ),
     ),
   );
-  verdict(met, "a value changed shows in the view worked in in the next frame");
+  verdict(met, "a value changed shows in the view worked in in the next frame, its work within two frames");
+});
+
+test("an arrow key held down shows each step in the view worked in in the next frame, its work within two frames; every view catches up once it is let go", async ({ page }) => {
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await selectCard(page, 6, { parent: true });
+  const radius = await holdValue(page, "Corner radius", card(6), "border-top-left-radius");
+  await selectCard(page, 6);
+  const gap = await holdValue(page, "Gap", cardBody(6), "row-gap");
+
+  const rows = [];
+  const notes = [];
+  const summaries: Record<string, unknown> = {};
+  let met = true;
+  for (const [name, held] of [
+    ["corner radius (paint)", radius],
+    ["Stack gap (layout)", gap],
+  ] as const) {
+    expect(held.steps, `${name}: every key reached the page`).toHaveLength(HELD_STEPS);
+    expect(held.caughtUp, `${name}: once the key is let go, every view shows the last value`).toBeLessThan(Infinity);
+    const work = summarize(held.steps.map((s) => s.work));
+    const latency = summarize(held.steps.map((s) => s.latency));
+    const inFirstFrame = held.steps.filter((s) => s.firstFrame).length;
+    // While the key repeats, how often the views beside showed a newer step: none, they wait for the pause.
+    const repeats = held.steps.slice(1);
+    const besideMoved = repeats.slice(1).filter((s, i) => s.beside !== repeats[i].beside).length;
+    const ok = inFirstFrame === held.steps.length && work.p95 <= VALUE_TARGET_MS;
+    met &&= ok;
+    summaries[name] = { work, latency, inFirstFrame, caughtUp: held.caughtUp, besideMovedWhileRepeating: besideMoved, steps: held.steps };
+    rows.push(
+      { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met: ok },
+      { name: `${name}: key to frame drawn`, summary: latency },
+    );
+    notes.push(
+      `${name}: ${inFirstFrame} of ${held.steps.length} steps shown in the desktop view, worked in, in the first frame; ` +
+        `the views beside showed a newer step ${besideMoved} times while the key repeated; ` +
+        `every view showed the last value ${ms(held.caughtUp)} after the last key (reference)`,
+    );
+  }
+  keep("held", { delayMs: REPEAT_DELAY_MS, everyMs: REPEAT_EVERY_MS, ...summaries });
+  print(report(`Holding an arrow key, ${HELD_STEPS} steps every ${REPEAT_EVERY_MS.toFixed(1)}ms after ${REPEAT_DELAY_MS}ms, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows, notes));
+  verdict(met, "a value stepped by a held key shows each step in the view worked in in the next frame, its work within two frames");
 });
 
 test("dragging a layer keeps 60fps", async ({ page }) => {
