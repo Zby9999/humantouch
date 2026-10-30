@@ -53,6 +53,26 @@ export function transformOf({ x, y, zoom }: Camera): string {
   return `translate(${x}px, ${y}px) scale(${zoom})`;
 }
 
+/**
+ * Has the browser draw only what the camera shows of the stage again, once a
+ * camera move animated on it has ended, with nothing on screen changed.
+ *
+ * Chromium draws all of what is under an animated transform. Once it has, it
+ * goes on drawing all of it while that transform is set from script, as the
+ * camera's is: on a large page, each change to a view then had the whole of
+ * it drawn again, not just what shows, some 12ms a frame (ticket 22). Taking
+ * the stage out of the layout and putting it back in the same task, before
+ * anything is drawn, makes the browser start that over: the views keep their
+ * documents, what has focus keeps it, and the stage is drawn the same.
+ */
+export function drawOnlyWhatShows(stage: HTMLElement) {
+  const style = stage.getAttribute("style");
+  stage.style.display = "none";
+  stage.getBoundingClientRect();
+  if (style === null) stage.removeAttribute("style");
+  else stage.setAttribute("style", style);
+}
+
 /** Where the stage is right now, partway through an animation included. */
 export function currentCamera(stage: HTMLElement): Camera {
   const m = new DOMMatrix(getComputedStyle(stage).transform);

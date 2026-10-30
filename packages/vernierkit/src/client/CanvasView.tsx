@@ -6,7 +6,7 @@ import { BriefMark, briefedLayers } from "./BriefMark";
 import { Brief, Marks, Outline, SelectionToolbar } from "./AboveCanvas";
 import { canvasKey, type Tool } from "./canvas-keys";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, currentCamera, drawOnlyWhatShows, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edits";
@@ -167,6 +167,8 @@ export function CanvasView(props: Props) {
       () => {
         if (modeSwitch.current !== animation) return;
         modeSwitch.current = null;
+        // Back where the camera has it, the canvas is drawn only as far as it shows, as before the animation.
+        if (el === stage.current && !wasLeaving.current) drawOnlyWhatShows(el);
         setTravelling(false);
         done?.();
       },
