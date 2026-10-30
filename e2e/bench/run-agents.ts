@@ -16,6 +16,7 @@
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
@@ -23,6 +24,18 @@ import { agentVersion, AGENTS, commandLine, effortSeen, runAgent, type AgentRun 
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
+
+/** Whether something answers on `port` of this machine, as a dev server there would. */
+function answers(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ port, host: "localhost" });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+  });
+}
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/agents/", import.meta.url));
 /** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. */
@@ -97,11 +110,24 @@ async function main(argv: string[]) {
   const { base, remove } = await prepareBase();
   const browser = await chromium.launch();
   let port = 0;
+  /**
+   * The next port of the bench's that nothing answers on: a dev server left
+   * running there (by a run stopped by hand, say) would answer for the run's
+   * own, and the run would measure the wrong project.
+   */
+  const nextPort = async () => {
+    for (let tries = 0; tries < PORTS; tries++) {
+      const candidate = FIRST_PORT + (port++ % PORTS);
+      if (!(await answers(candidate))) return candidate;
+      console.log(`Port ${candidate} is in use already: skipped`);
+    }
+    throw new Error(`Every port from ${FIRST_PORT} to ${FIRST_PORT + PORTS - 1} is in use`);
+  };
   const failures: string[] = [];
   try {
     if (dry) {
       for (const scenario of scenarios) {
-        const problems = await setUp(browser, base, FIRST_PORT + (port++ % PORTS), scenario);
+        const problems = await setUp(browser, base, await nextPort(), scenario);
         console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
         failures.push(...problems);
       }
@@ -117,7 +143,7 @@ async function main(argv: string[]) {
             mkdirSync(folder, { recursive: true });
             const started = Date.now();
             try {
-              await runOnce({ browser, base, port: FIRST_PORT + (port++ % PORTS), scenario, agent, run, version: versions[agent]!, folder });
+              await runOnce({ browser, base, port: await nextPort(), scenario, agent, run, version: versions[agent]!, folder });
               agentRuns++;
               const measures = measureFolder(folder);
               console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${oneLine(measures)}`);
