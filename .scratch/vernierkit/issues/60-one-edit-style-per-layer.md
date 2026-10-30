@@ -251,3 +251,4 @@
 
 - `e2e/fixtures/round-before-60/` 的 `changeset.json`（样式来源的 `file`）和 `canvas.html`（`data-vite-dev-id`、字体的 `/@fs/` 地址）记着写它时那个 worktree 的绝对路径，换个目录跑，claim 的 "Currently set by" 会印出那条绝对路径，画布的字体也被 Vite 拒绝加载（h1 宽度不同）。现在素材里把仓库根目录写成 `{{checkout}}`，测试读写素材时换成当前 checkout 的路径。`packages/vernierkit/test/fixtures/round-before-60/` 里的 `file` 都是 null，仓库里别的测试素材也没有写死的路径。
 - 产品本身也有这个问题：改动单里样式来源的 `file` 和画布里的 `/@fs/` 地址都是保存时的绝对路径，项目目录挪过之后，打开旧的一轮，claim 输出的 "Currently set by" 会印出旧的绝对路径（指到已经不在的文件，`projectPath` 只把项目目录内的路径改成相对路径），画布里经 `/@fs/` 加载的字体也会加载失败。要不要修，等设计师决定。
+- 用户决定（2026-10-31）：先不修。改的时候很少让 Agent 挪项目文件夹。
