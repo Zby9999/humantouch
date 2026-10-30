@@ -17,14 +17,18 @@
  * layer yet is a group alone. What is written onto elements is worked out for
  * each of them, and grouped as it comes out.
  *
- * A style element's rules, as JSON, are what it declares. Its text is written
- * from them, except while a value is changed again and again (each step of a
- * drag on a number, each arrow key): then its rules are changed in place,
- * through the CSSOM, and its text is left behind. Chromium lays the whole
+ * A style element's rules, as JSON, are what it declares. Whenever they
+ * change into the same rules with other declarations, as a value changed
+ * does, each step of a drag on a number or an arrow key as much as a value
+ * typed, the declarations are changed in place, through the CSSOM, and its
+ * text is left behind (`showRules`). Only when the rules themselves change (a
+ * rule, a breakpoint added or taken away), or the sheet is in no document
+ * shown in a window, is its text written from them. Chromium lays the whole
  * document out and paints it again for any change to the text of a sheet with
  * a CSS layer in it, which on a large page is more than a frame, in every
  * view; for a change to a rule's declarations, only what it styles.
- * `syncEditStyles` writes the text out again, for a copy that is shown or saved.
+ * `syncEditStyles` has a copy declare the rules too: a view's copy in place
+ * the same way, a copy to be saved, in no window, as text.
  */
 import { mediaOf, sameBreakpoint, widestFirst, type Breakpoint } from "./breakpoints";
 import type { Change, Composed, Dissolved } from "./changeset";
