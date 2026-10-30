@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { boundsOf, fitCamera, onceStill, scrolled, STILL_MS, wheelZoom } from "../src/client/camera";
+import { boundsOf, fitCamera, onceAtRest, scrolled, AT_REST_MS, wheelZoom } from "../src/client/camera";
 
 /** The viewport, as the camera reads it: only its size. */
 const viewport = (width: number, height: number) => ({ width, height }) as DOMRect;
@@ -46,60 +46,73 @@ describe("the camera over the canvas", () => {
   });
 });
 
-describe("drawing only what shows once the camera stands still", () => {
+describe("drawing only what shows once the camera is at rest", () => {
   beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
   afterEach(() => vi.useRealTimers());
 
-  test("moved again and again, as by the wheel, it is drawn once, STILL_MS after the camera last moved", () => {
-    const draw = vi.fn();
-    const still = onceStill(draw, () => false);
+  test("moved again and again, as by the wheel, it is drawn once, AT_REST_MS after the camera last moved", () => {
+    const redraw = vi.fn();
+    const atRest = onceAtRest(redraw, () => false);
     for (let i = 0; i < 20; i++) {
-      still.moved();
+      atRest.moved();
       vi.advanceTimersByTime(16);
     }
-    expect(draw).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(STILL_MS - 16 - 1);
-    expect(draw).not.toHaveBeenCalled();
+    expect(redraw).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(AT_REST_MS - 16 - 1);
+    expect(redraw).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(draw).toHaveBeenCalledOnce();
-    vi.advanceTimersByTime(10 * STILL_MS);
-    expect(draw).toHaveBeenCalledOnce();
+    expect(redraw).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(10 * AT_REST_MS);
+    expect(redraw).toHaveBeenCalledOnce();
   });
 
-  test("held off while a drag, typing or a mode switch is under way, it is drawn once, within STILL_MS after that ends", () => {
-    const draw = vi.fn();
+  test("held off while a drag, typing or a mode switch is under way, it is drawn once, within AT_REST_MS after that ends", () => {
+    const redraw = vi.fn();
     let held = true;
-    const still = onceStill(draw, () => held);
-    still.moved();
-    vi.advanceTimersByTime(5 * STILL_MS);
-    expect(draw).not.toHaveBeenCalled();
+    const atRest = onceAtRest(redraw, () => held);
+    atRest.moved();
+    vi.advanceTimersByTime(5 * AT_REST_MS);
+    expect(redraw).not.toHaveBeenCalled();
     held = false;
-    vi.advanceTimersByTime(STILL_MS);
-    expect(draw).toHaveBeenCalledOnce();
-    vi.advanceTimersByTime(10 * STILL_MS);
-    expect(draw).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(AT_REST_MS);
+    expect(redraw).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(10 * AT_REST_MS);
+    expect(redraw).toHaveBeenCalledOnce();
   });
 
   test("an animated camera move ending draws it at once, and once only: the moves before it are done with", () => {
-    const draw = vi.fn();
+    const redraw = vi.fn();
     let animating = true;
-    const still = onceStill(draw, () => animating);
+    const atRest = onceAtRest(redraw, () => animating);
     // The camera is set where the animation ends as it starts.
-    still.moved();
-    vi.advanceTimersByTime(2 * STILL_MS);
+    atRest.moved();
+    vi.advanceTimersByTime(2 * AT_REST_MS);
     animating = false;
-    still.drawNow();
-    expect(draw).toHaveBeenCalledOnce();
-    vi.advanceTimersByTime(10 * STILL_MS);
-    expect(draw).toHaveBeenCalledOnce();
+    atRest.moveEnded();
+    expect(redraw).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(10 * AT_REST_MS);
+    expect(redraw).toHaveBeenCalledOnce();
   });
 
   test("once the stage is gone, nothing is drawn", () => {
-    const draw = vi.fn();
-    const still = onceStill(draw, () => false);
-    still.moved();
-    still.cancel();
-    vi.advanceTimersByTime(10 * STILL_MS);
-    expect(draw).not.toHaveBeenCalled();
+    const redraw = vi.fn();
+    const atRest = onceAtRest(redraw, () => false);
+    atRest.moved();
+    atRest.cancel();
+    vi.advanceTimersByTime(10 * AT_REST_MS);
+    expect(redraw).not.toHaveBeenCalled();
+  });
+
+  test("an animated camera move ending while a drag is under way waits for the drag, then draws once", () => {
+    const redraw = vi.fn();
+    let dragging = true;
+    const atRest = onceAtRest(redraw, () => dragging);
+    atRest.moveEnded();
+    expect(redraw).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(3 * AT_REST_MS);
+    expect(redraw).not.toHaveBeenCalled();
+    dragging = false;
+    vi.advanceTimersByTime(AT_REST_MS);
+    expect(redraw).toHaveBeenCalledOnce();
   });
 });

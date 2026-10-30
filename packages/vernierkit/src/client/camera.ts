@@ -55,8 +55,8 @@ export function transformOf({ x, y, zoom }: Camera): string {
 
 /**
  * Has the browser draw only what the camera shows of the stage again, once a
- * camera move animated on it has ended or the camera stands still
- * (`onceStill`), with nothing on screen changed.
+ * camera move animated on it has ended or the camera is at rest
+ * (`onceAtRest`), with nothing on screen changed.
  *
  * Chromium draws all of what is under an animated transform. Once it has
  * drawn all of the stage, under an animation or with all of it in sight, it
@@ -68,7 +68,7 @@ export function transformOf({ x, y, zoom }: Camera): string {
  * documents, what has focus keeps it, and the stage is drawn the same.
  * Zoomed out till every view shows in full, the stage is drawn whole again,
  * and would stay so after zooming back in: that is why it is called again
- * once the camera stands still, however it moved.
+ * once the camera is at rest, however it moved.
  */
 export function drawOnlyWhatShows(stage: HTMLElement) {
   // Only `display` is touched: the style written again in full would be read back with fewer digits, the camera a little off.
@@ -80,39 +80,46 @@ export function drawOnlyWhatShows(stage: HTMLElement) {
   else stage.style.removeProperty("display");
 }
 
-/** How long the camera stands still before the stage is drawn only as far as it shows again. */
-export const STILL_MS = 100;
+/**
+ * How long the camera has to stay where it is before the stage is drawn only
+ * as far as it shows again: longer than between the events of a wheel or a
+ * pinch, so a camera on the move is left to it, and short enough to be done
+ * before a value is changed after it.
+ */
+export const AT_REST_MS = 100;
 
-/** The stage drawn only as far as it shows (`drawOnlyWhatShows`), once the camera stands still. */
-export interface OnceStill {
-  /** The camera has moved: `draw` once it has stood still for `STILL_MS`. */
+/** The stage drawn only as far as it shows (`drawOnlyWhatShows`) once the camera is at rest. */
+export interface OnceAtRest {
+  /** The camera has moved: `redraw` once it has stayed where it is for `AT_REST_MS`. */
   moved(): void;
-  /** `draw` now, as an animated camera move ends: the moves before it need nothing more. */
-  drawNow(): void;
-  /** The stage is gone: nothing more to draw. */
+  /** An animated camera move has ended: `redraw` now, the moves before it with it, or, held, as soon as it is not. */
+  moveEnded(): void;
+  /** The stage is gone: nothing more to redraw. */
   cancel(): void;
 }
 
 /**
- * Calls `draw` once the camera has stood still for `STILL_MS` after it last
- * moved, however it moved: by the wheel, a pinch, a pan, ⇧1. While `held`
- * (a drag, typing, a mode switch under way), it waits on, `STILL_MS` at a
- * time, and draws once that is over: nothing under way is broken into.
+ * Calls `redraw` once the camera has stayed where it is for `AT_REST_MS`
+ * after it last moved, however it moved: by the wheel, a pinch, a pan, ⇧1.
+ * While `held` (a drag, typing, a mode switch under way), it waits on,
+ * `AT_REST_MS` at a time, and redraws once that is over: nothing under way
+ * is broken into.
  */
-export function onceStill(draw: () => void, held: () => boolean): OnceStill {
+export function onceAtRest(redraw: () => void, held: () => boolean): OnceAtRest {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const wait = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (held()) wait();
-      else draw();
-    }, STILL_MS);
+      else redraw();
+    }, AT_REST_MS);
   };
   return {
     moved: wait,
-    drawNow() {
+    moveEnded() {
       clearTimeout(timer);
-      draw();
+      if (held()) wait();
+      else redraw();
     },
     cancel: () => clearTimeout(timer),
   };

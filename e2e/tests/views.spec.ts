@@ -275,6 +275,40 @@ test("a dialog open when the page was frozen is open in every view, laid out at 
   }
 });
 
+test("the camera moved while typing in a view, and then at rest, the words go on where the caret was; once typing ends nothing shown changes", async ({ page }) => {
+  await enterEditMode(page);
+  const layers = page.getByRole("tree", { name: "Layers" });
+  await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
+  const title = phone(page).contentFrame().locator("h1");
+  const point = await pointOn(phone(page), "h1");
+  await page.mouse.dblclick(point.x, point.y);
+  await page.keyboard.type("Vernier ");
+  const caret = () =>
+    title.evaluate((el) => {
+      const doc = el.ownerDocument;
+      return doc.hasFocus() && doc.activeElement === el ? doc.getSelection()!.anchorOffset : null;
+    });
+  await expect.poll(caret).toBe("Vernier ".length);
+
+  // Panned and zoomed by the wheel, then left at rest well past the 100ms the stage waits for.
+  await page.mouse.wheel(0, 40);
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.wheel(0, -20);
+  await page.keyboard.up("ControlOrMeta");
+  await page.waitForTimeout(400);
+  expect(await caret()).toBe("Vernier ".length);
+  await page.keyboard.type("Edit");
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier Edit");
+
+  await page.keyboard.press("Escape");
+  const boxes = await selectionBoxes(page);
+  await page.waitForTimeout(400);
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier Edit");
+  await expect(layers.getByRole("treeitem", { selected: true })).toHaveText("Vernier Edit");
+  expect(await selectionBoxes(page)).toEqual(boxes);
+});
+
 test("a double click on text in the phone view types in it there, the caret in that view; the words show in every view as they are typed", async ({ page }) => {
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
