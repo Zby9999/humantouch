@@ -16,8 +16,15 @@ import { readUsageChain } from "./usage-chain";
 export function elementsOf(doc: Document, target: Target): Element[] {
   if (!target.loc) return [];
   const key = usageKey(target.loc, target.chain);
-  const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([, k]) => k === key).map(([el]) => el);
+  // Of another tag, it is not the layer, though at its place in the code: an element the Agent wrote where the layer was, say, around it.
+  const tag = tagOf(target);
+  const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([el, k]) => k === key && (!tag || el.localName === tag)).map(([el]) => el);
   return els.length ? els : movedElementsOf(doc, target);
+}
+
+/** The tag of the layer's element, as its opening tag gives it. */
+function tagOf(target: Target): string | undefined {
+  return /^<([\w-]+)/.exec(target.context?.element ?? "")?.[1];
 }
 
 /**
@@ -28,8 +35,9 @@ export function elementsOf(doc: Document, target: Target): Element[] {
  */
 export function componentElementsOf(doc: Document, target: Target, apart: string[] = []): Element[] {
   if (!target.loc) return [];
+  const tag = tagOf(target);
   const els = [...keysIn(doc.documentElement, new Set([target.loc]))]
-    .filter(([, key]) => key.startsWith(`${target.loc} `) && !apart.includes(key))
+    .filter(([el, key]) => key.startsWith(`${target.loc} `) && !apart.includes(key) && (!tag || el.localName === tag))
     .map(([el]) => el);
   return els.length ? els : elementsOf(doc, target);
 }
@@ -41,7 +49,7 @@ export function componentElementsOf(doc: Document, target: Target, apart: string
  */
 function movedElementsOf(doc: Document, target: Target): Element[] {
   const at = parseLoc(target.loc);
-  const tag = /^<([\w-]+)/.exec(target.context?.element ?? "")?.[1];
+  const tag = tagOf(target);
   if (!at || !tag) return [];
   const components = JSON.stringify(target.chain.map(({ component, thirdParty }) => [component, thirdParty]));
   const groups = new Map<string, { distance: number; els: Element[] }>();

@@ -3452,6 +3452,22 @@ describe("text styles are checked on the live page", () => {
   });
 });
 
+describe("a layer wrapped in a new element on its own line", () => {
+  test("the new element, which has the layer's old marker now, is not taken for the layer: the layer is found where its marker moved", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(STRUCTURE);
+    editor.set(layerOf(doc.getElementById("one")!), "fontSize", 20);
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    // As an Agent writes it: a <div> on line 11 now, the paragraph, at 20px, on the line below.
+    page.write(STRUCTURE.replace(`<p id="one" ${loc("11:7")} style="margin: 0">One</p>`, `<div ${loc("11:7")}><p id="one" ${loc("12:9")} style="margin: 0; font-size: 20px">One</p></div>`).replace(loc("12:7"), loc("13:7")));
+    page.close();
+
+    expect(checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+  });
+});
+
 describe("a stroke is checked on the live page as the code writes it, else as the browser draws it", () => {
   /** The canvas, edited; and the live page, as the page is, its board as the Agent writes its border in the code. */
   const open = () => {
