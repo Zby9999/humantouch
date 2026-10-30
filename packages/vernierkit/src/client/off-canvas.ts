@@ -11,7 +11,8 @@
 import type { SavedOffCanvasLayer, OffCanvasOrigin } from "../service-protocol";
 import { keepEditStylesApart } from "./canvas-style";
 import { createChangeSet, type ChangeSet } from "./changeset";
-import { createEditor, type Editor } from "./edits";
+import type { Editor } from "./edit-commands";
+import { createEditor } from "./edits";
 import type { History } from "./undo-steps";
 import { editable, fitHeight } from "./freezer";
 import type { Layer } from "./layers";

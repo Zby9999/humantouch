@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { commands } from "vitest/browser";
 import { createChangeSet, type PutBack, type SavedChangeSet } from "../src/client/changeset";
-import { createEditor, type Destination } from "../src/client/edits";
+import type { Destination } from "../src/client/edit-commands";
+import { createEditor } from "../src/client/edits";
 import { restore, serializeCanvas, type Canvas } from "../src/client/freezer";
 import type { Layer } from "../src/client/layers";
 import { createOffCanvas, type OffCanvasLayer } from "../src/client/off-canvas";

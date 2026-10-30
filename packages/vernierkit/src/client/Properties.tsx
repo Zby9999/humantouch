@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useRef, useState } from "preact/hooks";
-import type { Editor, SetOptions } from "./edits";
+import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
 import { Icon, type IconName } from "./icons";
 import { BreakpointMark, BreakpointMarksProvider, breakpointMarks } from "./BreakpointMark";

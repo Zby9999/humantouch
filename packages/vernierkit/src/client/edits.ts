@@ -1,8 +1,12 @@
 /**
- * Edit commands: changes in design language, made to the canvas at once and
- * recorded in the ChangeSet. An edit to a layer is an edit to its usage, so
- * it shows up in every instance of that usage, and in every view of the
- * canvas. Every edit can be undone.
+ * Makes the Editor (`createEditor`): puts the edit commands together over the
+ * canvas, and makes the style edits itself, a value set, read, inherited, at
+ * every width or at a breakpoint. The commands that change the structure are
+ * in `structure-edits.ts`; what the Editor is, as its callers see it, in
+ * `edit-commands.ts`. An edit is made to the canvas at once and recorded in
+ * the ChangeSet. An edit to a layer is an edit to its usage, so it shows up in
+ * every instance of that usage, and in every view of the canvas. Every edit
+ * can be undone.
  */
 import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
 import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
@@ -18,9 +22,6 @@ import { sourcesOf } from "./style-source";
 import { createHistory, createSteps, type History } from "./undo-steps";
 import { pickedIn } from "./variables";
 import type { Views } from "./views";
-
-export { LAYER_ID_ATTR };
-export type { Binder, Destination, Editor, LayerToPutBack, SetOptions } from "./edit-commands";
 
 export interface EditorOptions {
   /** The history its edits go into: one of its own when none is given. */

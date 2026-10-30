@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import type { Editor } from "./edits";
+import type { Editor } from "./edit-commands";
 import type { Layer } from "./layers";
 import { BreakpointMark } from "./BreakpointMark";
 import { NumberField, stepOptions, type SlotOf } from "./Properties";

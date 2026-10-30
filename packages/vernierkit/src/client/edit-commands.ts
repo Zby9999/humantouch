@@ -1,7 +1,10 @@
 /**
- * The Editor, as its callers see it: every edit command the designer edits
- * the canvas by, in design language, and what they take. `edits.ts` makes
- * one; the commands' modules build on it without reaching back into it.
+ * What the Editor is, as its callers see it: every edit command the designer
+ * edits the canvas by, in design language, and what they take. Types alone:
+ * `edits.ts` makes an Editor (`createEditor`), and `structure-edits.ts` makes
+ * some of its commands. Callers take these types from here, and only
+ * `createEditor` from `edits.ts`; the modules that make the commands build on
+ * them without reaching back into `edits.ts`.
  */
 import type { OffCanvasOrigin, SavedOffCanvasLayer } from "../service-protocol";
 import type { Breakpoint } from "./breakpoints";
