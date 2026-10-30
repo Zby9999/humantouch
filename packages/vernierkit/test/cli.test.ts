@@ -937,15 +937,16 @@ describe("claim, layers off the canvas put back", () => {
     expect(section(output, 3)).not.toContain("Edited off the canvas");
   });
 
-  test("a copy set aside off the canvas, put back, is written as a copy: the layer it copies stays", async () => {
+  test("an off-canvas layer moved off as a copy, put back, is written as a copy: the layer it copies stays", async () => {
     saveRound(putBack(1, { place: place(2), layer: kept({ origin: { target: title, place: place(1), written: "src/App.tsx:21:9", snippet, copy: true, at: "2026-10-29T00:00:00.000Z" } }) }));
 
     const output = section((await cli("claim")).output, 1);
 
     expect(output).toContain(
-      "- **Design intent:** Put a copy of this layer here, set aside off the canvas as a copy: the layer it copies stays where it is. Write it as its source below has it, in the layout of Stack",
+      "- **Design intent:** Put a copy of this layer here: the off-canvas layer put back is a copy of it, so the layer it copies stays where it is. Write it as its source below has it, in the layout of Stack",
     );
     expect(output).not.toContain("deleted");
+    expect(output).not.toMatch(/aside/i);
   });
 });
 

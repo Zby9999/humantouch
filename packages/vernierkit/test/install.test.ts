@@ -178,6 +178,14 @@ describe("init, the Skill and .gitignore", () => {
     expect(read("AGENTS.md")).toBe("Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.\n");
   });
 
+  test("the Skill tells the Agent a put back is an off-canvas layer coming back onto the canvas, and never calls it set aside", () => {
+    const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
+
+    expect(skill).toContain("**Put back** (an off-canvas layer, one the designer had moved off the canvas, put back onto it)");
+    expect(skill).toContain("- **Put back**: an off-canvas layer, one the designer moved off the canvas, comes back onto it, at the place given.");
+    expect(skill).not.toMatch(/aside/i);
+  });
+
   test("adds one line to an AGENTS.md that is there, and leaves the rest of it", async () => {
     viteProject();
     write("AGENTS.md", "# Project\n\nUse pnpm.");
