@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Locator, type Page } from "./fixtures";
@@ -186,8 +186,24 @@ test("a badge on the toggle counts the changes not yet applied", async ({ page }
  * A round saved before the instances of a layer shared their edit styles
  * (ticket 60): `e2e/fixtures/round-before-60/`, written once by the code of
  * then, with `VK_WRITE_FIXTURE` set, and kept since.
+ *
+ * A saved round names files by where they are on disk: the source a style
+ * comes from, and the fonts the canvas loads through Vite's `/@fs/`. The
+ * fixture writes this checkout's folder as `CHECKOUT_MARK`, and each test puts
+ * its own checkout's folder back in, so the fixture works in any checkout.
  */
 const BEFORE_60 = fileURLToPath(new URL("../fixtures/round-before-60/", import.meta.url));
+const CHECKOUT = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
+const CHECKOUT_MARK = "{{checkout}}";
+
+/** A file of the fixture, as this checkout would have saved it. */
+function readBefore60(file: string) {
+  return readFileSync(`${BEFORE_60}${file}`, "utf8").replaceAll(CHECKOUT_MARK, CHECKOUT);
+}
+
+function writeBefore60(file: string, text: string) {
+  writeFileSync(`${BEFORE_60}${file}`, text.replaceAll(CHECKOUT, CHECKOUT_MARK));
+}
 const VIEWS = ["Canvas", "Tablet 768", "Phone 390"];
 /** What is compared of each element, in each view. */
 const COMPARED = ["display", "position", "width", "height", "background-color", "border-top-left-radius", "padding-top", "color"];
@@ -245,23 +261,23 @@ test.describe("a round saved before the instances of a layer shared their edit s
     await page.waitForTimeout(1000);
 
     mkdirSync(BEFORE_60, { recursive: true });
-    copyFileSync(CANVAS, `${BEFORE_60}canvas.html`);
-    copyFileSync(CHANGESET, `${BEFORE_60}changeset.json`);
-    writeFileSync(`${BEFORE_60}styles.json`, `${JSON.stringify(await viewStyles(page))}\n`);
-    writeFileSync(`${BEFORE_60}claim.md`, await vernierkit("claim"));
+    writeBefore60("canvas.html", readFileSync(CANVAS, "utf8"));
+    writeBefore60("changeset.json", readFileSync(CHANGESET, "utf8"));
+    writeBefore60("styles.json", `${JSON.stringify(await viewStyles(page))}\n`);
+    writeBefore60("claim.md", await vernierkit("claim"));
   });
 });
 
 test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the change notes are as they were", async ({ page }) => {
   mkdirSync(VERNIER, { recursive: true });
-  for (const file of ["canvas.html", "changeset.json"]) copyFileSync(`${BEFORE_60}${file}`, `${VERNIER}${file}`);
-  const before = JSON.parse(readFileSync(`${BEFORE_60}styles.json`, "utf8"));
-  const changeSet = JSON.parse(readFileSync(`${BEFORE_60}changeset.json`, "utf8"));
+  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${VERNIER}${file}`, readBefore60(file));
+  const before = JSON.parse(readBefore60("styles.json"));
+  const changeSet = JSON.parse(readBefore60("changeset.json"));
 
   await page.goto(DEV_URL);
   await enterEveryView(page);
   await expect.poll(() => viewStyles(page)).toEqual(before);
-  expect(readFileSync(CHANGESET, "utf8")).toBe(readFileSync(`${BEFORE_60}changeset.json`, "utf8"));
+  expect(readFileSync(CHANGESET, "utf8")).toBe(readBefore60("changeset.json"));
 
   // The Cards of the loop, the one deleted alone left out.
   const radii = () =>
@@ -274,5 +290,5 @@ test("a round saved before the instances of a layer shared their edit styles ope
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => viewStyles(page)).toEqual(before);
   await expect.poll(() => JSON.parse(readFileSync(CHANGESET, "utf8"))).toEqual(changeSet);
-  expect(await vernierkit("claim")).toBe(readFileSync(`${BEFORE_60}claim.md`, "utf8"));
+  expect(await vernierkit("claim")).toBe(readBefore60("claim.md"));
 });
