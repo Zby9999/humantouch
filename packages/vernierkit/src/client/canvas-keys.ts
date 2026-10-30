@@ -90,14 +90,33 @@ export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): H
   const field =
     target instanceof HTMLElement &&
     ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
-  if (!(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return null;
-  // By the letter typed, wherever the keyboard has it.
-  const key = event.key.toLowerCase();
-  const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
-  if (key !== "z" && !redo) return null;
-  if (held) return "ignored";
-  return redo ? "redo" : "undo";
+  if (isEditable(target) && !field) return null;
+  const command = editorCommand(event);
+  if (command !== "undo" && command !== "redo") return null;
+  return held ? "ignored" : command;
 }
+
+/** What the editor does with ⌘ (Ctrl) and a letter: the Shell's keys. */
+export type EditorCommand = "copy" | "cut" | "paste" | "duplicate" | "ungroup" | "undo" | "redo";
+
+/**
+ * Which of the editor's commands the key `event` is: ⌘C, ⌘X, ⌘V and ⌘D copy,
+ * cut, paste and duplicate, ⌘⇧G ungroups, ⌘Z undoes, ⇧⌘Z redoes, and so does
+ * Ctrl+Y. ⌘ or Ctrl alike, on any system; never with ⌥. By the letter typed,
+ * wherever the keyboard has it. The same letter with other modifiers (⌘Y,
+ * ⌘G, ⌘⇧C, ⌘⇧V) is none of them: the browser's, if anything. Null: none.
+ */
+export function editorCommand(event: KeyboardEvent): EditorCommand | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === "z") return event.shiftKey ? "redo" : "undo";
+  if (key === "y") return event.metaKey || event.shiftKey ? null : "redo";
+  if (key === "g") return event.shiftKey ? "ungroup" : null;
+  return (!event.shiftKey && SHORTCUTS[key]) || null;
+}
+
+/** The editor's commands made with ⌘ and a letter alone, but undo, redo and ungroup. */
+const SHORTCUTS: Record<string, EditorCommand | undefined> = { c: "copy", x: "cut", v: "paste", d: "duplicate" };
 
 /** What becomes of a key while the pointer is held down (`heldKey`). */
 export type HeldKey = "passes" | "text" | "ignored";
@@ -109,8 +128,10 @@ export type HeldKey = "passes" | "text" | "ignored";
  * - `passes`, it goes on as ever: Esc; Space, off a field (it pans); ⇧1, with
  *   no other modifier; the modifier keys themselves (⌘ turning snapping off,
  *   ⌥ measuring or copying where the layer is let go, ⇧ stepping by 10); the
- *   browser's own shortcuts, with ⌘ (Ctrl) and a letter the editor does not
- *   take (⌘R, ⌘F, ⌘L, ⌘+); and any key let go.
+ *   browser's own shortcuts, with ⌘ (Ctrl) and keys that are none of the
+ *   editor's commands (`editorCommand`): ⌘R, ⌘F, ⌘L, ⌘+, and ⌘G, ⌘Y, ⌘⇧C,
+ *   ⌘⇧V, though the editor takes those letters with other modifiers; and any
+ *   key let go.
  * - `text`, in a field that takes text: it types there as ever, but nothing
  *   acts on it, the field neither (no value applied with Enter or stepped with
  *   the arrows).
@@ -124,7 +145,7 @@ export function heldKey(event: KeyboardEvent): HeldKey {
   const target = event.composedPath()[0];
   if (event.key === "Tab") return "ignored";
   if (takesText(target)) return "text";
-  if ((event.metaKey || event.ctrlKey) && !EDITOR_COMMANDS.has(event.key.toLowerCase())) return "passes";
+  if ((event.metaKey || event.ctrlKey) && !editorCommand(event)) return "passes";
   const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
   // Space pans, but on a checkbox or a stop's handle it would press it.
   if ((event.code === "Space" && !isEditable(target)) || (event.code === "Digit1" && event.shiftKey && plain)) return "passes";
@@ -132,9 +153,6 @@ export function heldKey(event: KeyboardEvent): HeldKey {
 }
 
 const MODIFIERS = new Set(["Shift", "Meta", "Control", "Alt", "AltGraph", "CapsLock", "Fn"]);
-
-/** The letters the editor takes with ⌘ (Ctrl): copy, cut, paste, duplicate, ungroup, undo and redo (the Shell's keys). */
-const EDITOR_COMMANDS = new Set(["c", "x", "v", "d", "g", "z", "y"]);
 
 /** Whether the target takes text typed: a text field, a text area, or text typed in. */
 function takesText(target: EventTarget | undefined): boolean {

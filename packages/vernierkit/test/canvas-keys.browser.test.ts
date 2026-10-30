@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { canvasKey, heldKey, historyKey, type KeyState } from "../src/client/canvas-keys";
+import { canvasKey, editorCommand, heldKey, historyKey, type KeyState } from "../src/client/canvas-keys";
 
 const EDITING: KeyState = { playing: false, page: 0, tool: false, dragging: false, held: false, selected: false };
 const PLAYING: KeyState = { ...EDITING, playing: true, page: 760 };
@@ -184,6 +184,23 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
     expect(heldPress({ key: "G", metaKey: true, shiftKey: true })).toBe("ignored");
   });
 
+  test("a letter the editor takes with ⌘, with modifiers it does not take it with, is the browser's and goes on: ⌘G, ⌘Y, ⌘⇧C, ⌘⇧V, ⌘⇧D, ⌥⌘C, ⌥⌘Z", () => {
+    for (const init of [
+      { key: "g", metaKey: true },
+      { key: "y", metaKey: true },
+      { key: "Y", metaKey: true, shiftKey: true },
+      { key: "Y", ctrlKey: true, shiftKey: true },
+      { key: "C", metaKey: true, shiftKey: true },
+      { key: "V", metaKey: true, shiftKey: true },
+      { key: "D", metaKey: true, shiftKey: true },
+      { key: "X", ctrlKey: true, shiftKey: true },
+      { key: "ç", code: "KeyC", metaKey: true, altKey: true },
+      { key: "Ω", code: "KeyZ", metaKey: true, altKey: true },
+    ]) {
+      expect(heldPress(init), JSON.stringify(init)).toBe("passes");
+    }
+  });
+
   test("Esc, Space, ⇧1 and the modifier keys themselves go on as ever, and so does a key let go", () => {
     expect(heldPress({ key: "Escape" })).toBe("passes");
     expect(heldPress({ code: "Space", key: " " })).toBe("passes");
@@ -207,5 +224,35 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
     expect(heldPress({ key: "ArrowRight" }, { on: slider })).toBe("ignored");
     expect(heldPress({ code: "Space", key: " " }, { on: Object.assign(document.createElement("input"), { type: "checkbox" }) })).toBe("ignored");
     expect(heldPress({ key: "ArrowDown" }, { on: document.createElement("select") })).toBe("ignored");
+  });
+});
+
+describe("the editor's commands with ⌘ (Ctrl on other systems; either, on any)", () => {
+  const command = (init: KeyboardEventInit) => editorCommand(new KeyboardEvent("keydown", init));
+
+  test("⌘C, ⌘X, ⌘V and ⌘D copy, cut, paste and duplicate; ⌘⇧G ungroups; ⌘Z undoes; ⇧⌘Z and Ctrl+Y redo", () => {
+    expect(command({ key: "c", metaKey: true })).toBe("copy");
+    expect(command({ key: "x", ctrlKey: true })).toBe("cut");
+    expect(command({ key: "v", metaKey: true })).toBe("paste");
+    expect(command({ key: "d", metaKey: true })).toBe("duplicate");
+    expect(command({ key: "G", metaKey: true, shiftKey: true })).toBe("ungroup");
+    expect(command({ key: "z", metaKey: true })).toBe("undo");
+    expect(command({ key: "Z", ctrlKey: true, shiftKey: true })).toBe("redo");
+    expect(command({ key: "y", ctrlKey: true })).toBe("redo");
+  });
+
+  test("the same letters with other modifiers, or none, are none of them: ⌘Y, ⌘G, ⌘⇧C, ⌥⌘Z, D alone", () => {
+    for (const init of [
+      { key: "y", metaKey: true },
+      { key: "Y", ctrlKey: true, shiftKey: true },
+      { key: "g", metaKey: true },
+      { key: "C", metaKey: true, shiftKey: true },
+      { key: "ç", code: "KeyC", metaKey: true, altKey: true },
+      { key: "Ω", code: "KeyZ", metaKey: true, altKey: true },
+      { key: "d" },
+      { key: "r", metaKey: true },
+    ]) {
+      expect(command(init), JSON.stringify(init)).toBeNull();
+    }
   });
 });

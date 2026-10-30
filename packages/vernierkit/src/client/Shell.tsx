@@ -3,7 +3,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
 import { CanvasView, type Tool } from "./CanvasView";
-import { heldKey, historyKey, isEditable } from "./canvas-keys";
+import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { pointerHeld } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
@@ -437,10 +437,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       const target = event.composedPath()[0];
       if (playing || pointerHeld() || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
-      const letter = event.key.toLowerCase();
+      const editorsOwn = editorCommand(event);
       // Only what the editor holds is pasted, and only when it holds something: the system clipboard is left alone.
-      if (command && !event.shiftKey && !event.altKey && ["c", "x", "v"].includes(letter)) {
-        const done = letter === "v" ? paste(selected) : selected.length > 0 && (letter === "x" ? cut : copy)(selected);
+      if (editorsOwn === "copy" || editorsOwn === "cut" || editorsOwn === "paste") {
+        const done = editorsOwn === "paste" ? paste(selected) : selected.length > 0 && (editorsOwn === "cut" ? cut : copy)(selected);
         if (done) {
           event.preventDefault();
           event.stopPropagation();
@@ -449,12 +449,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       }
       if (!selected.length) return;
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
-      const a = letter === "a" || (event.altKey && event.code === "KeyA");
+      const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
       let act: (() => void) | null = null;
       if (a && event.shiftKey && !command) act = () => (event.altKey ? dissolve(selected) : makeStack(selected));
       else if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) act = () => remove(selected);
-      else if (letter === "d" && command && !event.shiftKey && !event.altKey) act = () => duplicate(selected);
-      else if (letter === "g" && command && event.shiftKey && !event.altKey) act = () => ungroup(selected);
+      else if (editorsOwn === "duplicate") act = () => duplicate(selected);
+      else if (editorsOwn === "ungroup") act = () => ungroup(selected);
       else if (ARROWS[event.key] && !command && !event.altKey) {
         const [x, y] = ARROWS[event.key].map((n) => n * (event.shiftKey ? 10 : 1));
         act = () => nudge(selected, x, y);
