@@ -394,23 +394,30 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select(out.map((node) => editor.tree().layerOf(node)).filter((layer) => layer !== null));
   };
 
-  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`).
-  // While the pointer is held down on something that edits as it moves, no key edits (`heldKey`, ADR 0012):
-  // the other listeners on the window see that themselves; a field or a button does not get the key.
+  // While the pointer is held down on something that edits as it moves, no key edits (`heldKey`, ADR 0012),
+  // wherever the focus is: no field or button gets the key, nor the browser when it is ignored. It is about
+  // the pointer alone, so it holds playing or not, with an editor or not (none holds the pointer then).
+  // Other listeners on the window still get it, as `stopPropagation` does not stop them: each checks `pointerHeld()`.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!pointerHeld()) return;
+      const whileHeld = heldKey(event);
+      if (whileHeld === "ignored") event.preventDefault();
+      if (whileHeld !== "passes") event.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`); held down, nothing.
   const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
   latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
       if (playing || !editor) return;
-      const held = pointerHeld();
-      const key = historyKey(event, { held });
-      if (!key) {
-        const whileHeld = held ? heldKey(event) : "passes";
-        if (whileHeld === "ignored") event.preventDefault();
-        if (whileHeld !== "passes") event.stopPropagation();
-        return;
-      }
+      const key = historyKey(event, { held: pointerHeld() });
+      if (!key) return;
       event.preventDefault();
       event.stopPropagation();
       if (key === "ignored") return;
