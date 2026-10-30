@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
+import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
 import type { ProjectBreakpoints } from "./breakpoints";
 import { putBackBy, withDependents, type Change } from "./changeset";
@@ -112,7 +112,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       window,
       changes: round.changeSet.changes,
       report,
-      onShown: (id) => setSeen((ids) => [...ids, id]),
+      onShown: setSeen,
       viewWidths: readViewWidths,
       copiesIn: () => document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement,
     });
@@ -123,12 +123,14 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       setSeen([]);
     };
   }, [isClaimed, round]);
-  const check = claimed?.check;
-  useLayoutEffect(() => {
-    if (!check || !store || round === undefined) return;
-    if (checks.current) checks.current.ask(check);
-    else for (const id of check.ids) store.report({ id, at: check.at, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
-  }, [check?.at, round]);
+  // What `done` asks, and `finish` before it ends the round.
+  const answer = (ask: CheckAsk | undefined) => {
+    if (!ask || !store || round === undefined) return;
+    if (checks.current) checks.current.ask(ask);
+    else for (const id of ask.ids) store.report({ id, at: ask.at, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
+  };
+  useLayoutEffect(() => answer(claimed?.check), [claimed?.check?.at, round]);
+  useLayoutEffect(() => answer(claimed?.closing), [claimed?.closing?.at, round]);
 
   const lastStatus = useRef(status);
   useEffect(

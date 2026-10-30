@@ -144,7 +144,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
         if (!state) return send(res, 409);
         const { id, ...result } = JSON.parse(body) as CheckReport;
         if (typeof id !== "number" || typeof result.at !== "string") return send(res, 400);
-        const asked = state.check?.at === result.at;
+        const asked = state.check?.at === result.at || state.closing?.at === result.at;
         await updateChecks((checks) => {
           const earlier = checks.results[id];
           // Of two pages, the one that could check has the say.

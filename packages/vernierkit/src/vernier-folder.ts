@@ -48,6 +48,8 @@ export interface RoundState {
   status: "claimed";
   done: number[];
   check?: CheckAsk;
+  /** What `finish` asks the page before it ends the round: apart from `done`'s, which tells the Agent's progress. */
+  closing?: CheckAsk;
   claimedAt?: string;
   code?: CodeSnapshot | null;
 }
@@ -73,7 +75,7 @@ export async function roundStatus(folder: VernierFolder): Promise<RoundStatus> {
   const state = await readState(folder);
   if (!state) return { status: "editing" };
   const applied = appliedOf(state, (await readChecks(folder))?.results);
-  return { status: "claimed", done: state.done, applied, ...(state.check && { check: state.check }) };
+  return { status: "claimed", done: state.done, applied, ...(state.check && { check: state.check }), ...(state.closing && { closing: state.closing }) };
 }
 
 export function vernierFolder(root: string): VernierFolder {

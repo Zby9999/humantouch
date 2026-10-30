@@ -27,8 +27,8 @@ interface Options {
   changes: Change[];
   /** Says what the page saw of a change: as the code changed, or in answer to an ask. */
   report(report: CheckReport): void;
-  /** A change shows on the page now, at every width it is to. */
-  onShown(id: number): void;
+  /** The changes the page shows now, at every width each is to: each time they change. */
+  onShown(ids: number[]): void;
   /** The widths of the views beside the desktop view. */
   viewWidths(): number[];
   /** Where the copies of the page at other widths go: apart from the page, so they never copy themselves. */
@@ -90,11 +90,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   };
   /** The page `width` px wide, as a copy of it kept up to date; null while its stylesheets load. */
   const at = (width: number): PageWidth | null => {
-    let copy = copies.get(width);
-    if (!copy) {
-      copy = copyPage(doc, width, copiesIn());
-      copies.set(width, copy);
-    }
+    if (!copies.has(width)) prepare(width);
+    const copy = copies.get(width)!;
     if (copy.sync()) laidOut.delete(width);
     if (!copy.ready()) {
       void copy.loaded().then(() => look());
@@ -123,10 +120,15 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     return loading && result.outcome === "unchecked" ? { outcome: "unchecked", reason: "loading" } : result;
   };
   const saw = (change: Change, result: CheckResult) => {
-    if (result.outcome === "unchecked" && result.reason === "loading") return;
-    if (result.outcome === "shown" && !shown.has(change.id)) {
-      shown.add(change.id);
-      onShown(change.id);
+    if (stopped || (result.outcome === "unchecked" && result.reason === "loading")) return;
+    // Shown once, a change is looked at again only when `done` asks: a later edit may have undone it.
+    if ((result.outcome === "shown") !== shown.has(change.id)) {
+      if (result.outcome === "shown") shown.add(change.id);
+      else {
+        shown.delete(change.id);
+        watchCode();
+      }
+      onShown([...shown]);
     }
     const text = JSON.stringify(result);
     if (said.get(change.id) === text) return;
@@ -168,9 +170,21 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
         again = false;
         look();
       }
-      if (shown.size === checkable.length) observer.disconnect();
+      if (shown.size === checkable.length) {
+        observer.disconnect();
+        observing = false;
+      }
     };
     slice();
+  };
+
+  /** Readies the copies `change` is looked at on, a step to a task, then calls `then`. */
+  const whenReady = (change: Change, then: () => void) => {
+    const start = performance.now();
+    if (widthsOf(change, changes, win.innerWidth, viewWidths()).others.some((width) => prepare(width))) {
+      performance.measure(CHECK_MEASURE, { start, end: performance.now() });
+      later(() => whenReady(change, then), 0);
+    } else then();
   };
 
   // When to look: as the dev server brings code in, and the page changes with it.
@@ -197,7 +211,13 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     look();
   };
   win.addEventListener(CODE_EVENT, onCode);
-  if (checkable.length) observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  let observing = false;
+  const watchCode = () => {
+    if (observing || !checkable.length) return;
+    observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    observing = true;
+  };
+  watchCode();
   later(look, 0);
 
   /**
@@ -228,38 +248,52 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
 
   /**
    * Looks at `change` till it shows, or `ms` have passed since the dev server
-   * last brought code in (or since now): each time the page changes.
+   * last brought code in (or since now): as the page changes, at most once a
+   * turn, its copies readied first.
    */
   const showsWithin = (change: Change, ms: number, deadline: number): Promise<CheckResult> =>
     new Promise((resolve) => {
-      const first = check(change);
-      if (first.outcome === "shown" || stopped) return resolve(first);
       const since = performance.now();
-      let last: CheckResult = first;
+      let last: CheckResult | null = null;
+      let looking = false;
+      let ended = false;
+      const lookAgain = (then?: () => void) => {
+        if (looking || ended) return;
+        looking = true;
+        later(
+          () =>
+            whenReady(change, () => {
+              looking = false;
+              last = check(change);
+              if (last.outcome === "shown" || then) end();
+            }),
+          0,
+        );
+      };
       const watch = new MutationObserver(() => {
-        last = check(change);
-        // What looking put in the page and took out again is not the code's.
         watch.takeRecords();
-        if (last.outcome === "shown") end();
+        lookAgain();
       });
       watch.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-      let timer: ReturnType<typeof setTimeout>;
       const wait = () => {
         const updates = code();
         const now = performance.now();
         const until = Math.min(deadline, Math.max(since, codeCameAt) + ms);
-        if (!stopped && now < deadline && (updates?.updating || now < until)) timer = setTimeout(wait, Math.max(50, Math.min(until - now, 250)));
+        if (!stopped && now < deadline && (updates?.updating || now < until)) later(wait, Math.max(50, Math.min(until - now, 250)));
         else {
-          last = check(change);
-          end();
+          looking = false;
+          lookAgain(end);
         }
       };
-      timer = setTimeout(wait, ms);
+      lookAgain();
+      later(wait, ms);
       function end() {
+        if (ended) return;
+        ended = true;
         watch.disconnect();
-        clearTimeout(timer);
-        resolve(last);
+        resolve(last ?? { outcome: "unchecked", reason: "the page did not answer in time" });
       }
+      if (stopped) end();
     });
 
   const asked = new Set<string>();
@@ -270,37 +304,36 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       const answer = (id: number, result: CheckResult) => {
         if (!stopped) report({ id, at: ask.at, ...result });
       };
-      const waitFor: Change[] = [];
-      for (const id of ask.ids) {
-        const change = changes.find((c) => c.id === id);
-        if (!change) answer(id, { outcome: "unchecked", reason: "the page does not have this round" });
-        else if (shown.has(id)) answer(id, { outcome: "shown" });
-        else {
-          const reason = uncheckable(change);
-          if (reason) answer(id, { outcome: "unchecked", reason });
-          else waitFor.push(change);
-        }
-      }
-      if (!waitFor.length) return;
       // With no word from the dev server, a change may take a while to show: as long as it ever did.
       const settle = code() ? SHOW_MS : CHECK_SETTLE_MS;
       // The page's whole answer, the code reaching it and the change showing, within one wait.
       const deadline = performance.now() + CHECK_ARRIVE_MS;
-      void arrived(ask.codeAt, deadline).then(() =>
-        Promise.all(
-          waitFor.map(async (change) => {
-            let result: CheckResult = await showsWithin(change, settle, deadline);
-            // A copy still loading: once it has.
-            if (result.outcome === "unchecked" && result.reason === "loading") {
-              await Promise.all([...copies.values()].map((copy) => copy.loaded()));
-              result = check(change);
-              if (result.outcome === "unchecked" && result.reason === "loading") result = { outcome: "unchecked", reason: "the page could not be shown at every width the change applies at, to check it" };
-            }
+      const waitFor = (change: Change) =>
+        arrived(ask.codeAt, deadline).then(async () => {
+          let result = await showsWithin(change, settle, deadline);
+          // A copy still loading: once it has.
+          if (result.outcome === "unchecked" && result.reason === "loading") {
+            await Promise.all([...copies.values()].map((copy) => copy.loaded()));
+            result = check(change);
+            if (result.outcome === "unchecked" && result.reason === "loading") result = { outcome: "unchecked", reason: "the page could not be shown at every width the change applies at, to check it" };
+          }
+          saw(change, result);
+          answer(change.id, result);
+        });
+      for (const id of ask.ids) {
+        const change = changes.find((c) => c.id === id);
+        const reason = change ? uncheckable(change) : "the page does not have this round";
+        if (!change || reason) answer(id, { outcome: "unchecked", reason: reason! });
+        // Shown already: looked at again, at once, as a later edit may have undone it.
+        else if (shown.has(id))
+          whenReady(change, () => {
+            const result = check(change);
+            if (result.outcome === "shown") return answer(id, result);
             saw(change, result);
-            answer(change.id, result);
-          }),
-        ),
-      );
+            void waitFor(change);
+          });
+        else void waitFor(change);
+      }
     },
     stop() {
       stopped = true;

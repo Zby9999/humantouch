@@ -1039,25 +1039,27 @@ function openPage(answer: (id: number) => object | null, pages = 1) {
   let results: Record<string, object> = {};
   write(results);
   const timer = setInterval(() => {
-    const check = state()?.check;
-    for (const id of check?.ids ?? []) {
-      const result = answer(id);
-      if (!result) continue;
-      const next = { at: check.at, ...result };
-      if (JSON.stringify(results[id]) === JSON.stringify(next)) continue;
-      results = { ...results, [id]: next };
-      write(results);
+    // What `done` asks, and `finish` before it ends the round.
+    for (const check of [state()?.check, state()?.closing]) {
+      for (const id of check?.ids ?? []) {
+        const result = answer(id);
+        if (!result) continue;
+        const next = { at: check.at, ...result };
+        if (JSON.stringify(results[id]) === JSON.stringify(next)) continue;
+        results = { ...results, [id]: next };
+        write(results);
+      }
     }
   }, 20);
   return () => clearInterval(timer);
 }
 
 /** As the open page writes what it saw as the code changed, with no `done` asking: `results` by change id, checked now. */
-function pageSaw(results: Record<number, object>) {
+function pageSaw(results: Record<number, object>, pages = 1) {
   const at = new Date().toISOString();
   writeFileSync(
     join(project, ".vernier/checks.json"),
-    JSON.stringify({ pages: 1, service: process.pid, results: Object.fromEntries(Object.entries(results).map(([id, result]) => [id, { at, ...result }])) }),
+    JSON.stringify({ pages, service: process.pid, results: Object.fromEntries(Object.entries(results).map(([id, result]) => [id, { at, ...result }])) }),
   );
 }
 
@@ -1133,10 +1135,10 @@ describe("done, checked on the page", () => {
     );
   });
 
-  test("a change the page has shown already, as the code changed: done says so at once, without asking the page again", async () => {
+  test("with no page open now, a change a page showed this round, as the code changed, is shown", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
-    pageSaw({ 1: { outcome: "shown" } });
+    pageSaw({ 1: { outcome: "shown" } }, 0);
 
     const started = Date.now();
     const { output } = await cli("done", "1");
@@ -1218,12 +1220,16 @@ describe("done, checked on the page", () => {
 });
 
 describe("progress, as the page shows it", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+
   test("a change the page shows counts as applied, done or not; one marked done that it does not show does not; one it cannot check counts once done", async () => {
     const brief = { ...redFill, id: 3, kind: "brief", property: "brief", before: null, after: "Lift on hover", style: {} };
     saveRound(redFill, smallRadius, brief);
     await cli("claim");
     await cli("done", "2", "3");
-    pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
+    // The page that saw them is closed now: what it saw stands.
+    pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } }, 0);
 
     const { output } = await cli("finish");
 
@@ -1233,14 +1239,18 @@ describe("progress, as the page shows it", () => {
     expect(section((await cli("last")).output, 2)).toContain("- **Status:** Not applied\n");
   });
 
-  test("the state the editor layer is told says which changes count as applied", async () => {
+  test("finish has the open page look at every change it can once more, and its answer is the round's result: a change undone by a later edit is not applied", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
-    pageSaw({ 2: { outcome: "shown" } });
-    const { roundStatus } = await import("../src/vernier-folder");
-    const { vernierFolder } = await import("../src/vernier-folder");
+    pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "shown" } });
+    let closing = false;
+    closePage = openPage((id) => (state()?.closing ? ((closing = true), id === 1 ? { outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } } : { outcome: "shown" }) : null));
 
-    expect(await roundStatus(vernierFolder(project))).toMatchObject({ status: "claimed", done: [], applied: [2] });
+    const { output } = await cli("finish");
+
+    expect(closing).toBe(true);
+    expect(output).toBe("Round finished: 1 of 2 changes applied. The page does not show: 1. Report them as not applied 1:1, with why.\n");
+    expect(history()[0].result).toMatchObject({ applied: [2] });
   });
 });
 

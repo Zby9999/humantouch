@@ -717,7 +717,9 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
  * checking is a `vernierkit:check` measure; a long task is the check's when
  * it would not be one without the checking in it. For reference, the same
  * hot updates with no round claimed: the page's own long tasks. The claim is
- * measured too: the page looks at every change, and makes its copies.
+ * measured too: the page looks at every change, and makes its copies; and
+ * with the first hot update, `done` for all three, which the page answers as
+ * the code comes in.
  */
 test.describe("a claimed round", () => {
   test.use({ keepRoundInMemory: false });
@@ -738,7 +740,7 @@ test.describe("a claimed round", () => {
   const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
   /** Each hot update: the edit to the cards' code, and what the first card shows once it is in. */
   const UPDATES = [
-    { name: "no change applied", from: "Made in small batches", to: "Made in small lots", shows: () => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots") },
+    { name: "no change applied, done asked for all three", from: "Made in small batches", to: "Made in small lots", shows: () => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots") },
     { name: "corner radius applied", from: CARD, to: CARD.replace("rounded-card", "rounded-[20px]"), shows: () => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius === "20px" },
     { name: "fill applied", from: "border-brand-100 bg-white shadow-card", to: "border-brand-100 bg-[#fafafa] shadow-card", shows: () => getComputedStyle(document.querySelector("[data-testid=product]")!).backgroundColor === "rgb(250, 250, 250)" },
     { name: "gap applied", from: "flex flex-1 flex-col gap-2 p-gutter", to: "flex flex-1 flex-col gap-[10px] p-gutter", shows: () => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px" },
@@ -760,15 +762,21 @@ test.describe("a claimed round", () => {
     w.vkStop = () => observer.disconnect();
   }
 
-  /** Makes each hot update in turn, waits till the page shows it and has settled; what was seen meanwhile, per update. */
-  async function hotUpdates(page: Page) {
+  /**
+   * Makes each hot update in turn, waits till the page shows it and has
+   * settled; what was seen meanwhile, per update. `asking`: with the first,
+   * the Agent runs `done` for every change, which the page answers as the code comes in.
+   */
+  async function hotUpdates(page: Page, asking?: () => Promise<unknown>) {
     const per: (Seen & { name: string })[] = [];
-    for (const { name, from, to, shows } of UPDATES) {
+    for (const [i, { name, from, to, shows }] of UPDATES.entries()) {
       await page.evaluate(arm);
       const text = readFileSync(PARTS, "utf8");
       expect(text).toContain(from);
       writeFileSync(PARTS, text.replace(from, to));
+      const asked = i === 0 ? asking?.() : undefined;
       await expect.poll(() => page.evaluate(shows), { timeout: 20_000 }).toBe(true);
+      await asked;
       await settle(page, 2000);
       const seen = await page.evaluate(() => {
         const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
@@ -820,7 +828,10 @@ test.describe("a claimed round", () => {
       return w.vkSeen;
     });
 
-    const claimed = [{ name: "claim", ...atClaim }, ...(await hotUpdates(page))];
+    let answered = "";
+    const claimed = [{ name: "claim", ...atClaim }, ...(await hotUpdates(page, async () => (answered = await vernierkit("done", "1", "2", "3"))))];
+    // None applied by that first update: done waited for it, and says so for each.
+    expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
     await expect(ring).toHaveAttribute("aria-valuenow", "3");
     await vernierkit("finish");
     await expect(ring).toHaveCount(0);

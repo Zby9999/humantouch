@@ -165,8 +165,9 @@ const CHECK_POLL_MS = 50;
 
 /**
  * The open pages' answers to `check`, through the local service's
- * `checks.json`, by change id. A change the page shows already this round, as
- * the code changed, is answered at once. With several pages, one that cannot
+ * `checks.json`, by change id. A page answers at once for a change it shows
+ * already (it looks again, as a later edit may have undone it); with no page
+ * to ask, what one saw this round stands. With several pages, one that cannot
  * check (it does not show the layer) does not stand in for one that can and is still at it.
  */
 async function waitForChecks(folder: VernierFolder, check: CheckAsk, claimedAt: string | undefined): Promise<Map<number, CheckResult>> {
@@ -175,18 +176,18 @@ async function waitForChecks(folder: VernierFolder, check: CheckAsk, claimedAt: 
   const unchecked = new Map<number, CheckResult>();
   for (;;) {
     const checks = await readChecks(folder);
+    const open = !!checks?.pages && isRunning(checks.service);
     for (const id of check.ids) {
       if (answers.has(id)) continue;
       const result = checks?.results[id];
-      if (result?.outcome === "shown" && (!claimedAt || result.at >= claimedAt)) answers.set(id, result);
-      else if (result?.at === check.at) {
+      if (result?.at === check.at) {
         if (result.outcome !== "unchecked" || checks!.pages === 1) answers.set(id, result);
         else unchecked.set(id, result);
-      }
+      } else if (!open && result?.outcome === "shown" && (!claimedAt || result.at >= claimedAt)) answers.set(id, result);
     }
     const left = check.ids.filter((id) => !answers.has(id));
     if (!left.length) return answers;
-    if (!checks?.pages || !isRunning(checks.service)) {
+    if (!open) {
       for (const id of left) answers.set(id, { outcome: "unchecked", reason: "no page with Vernier Kit is open" });
       return answers;
     }
@@ -209,7 +210,14 @@ function isRunning(pid: number | undefined): boolean {
 }
 
 async function finish(folder: VernierFolder, io: Io): Promise<number> {
-  const changeSet = await readChangeSet(folder);
+  const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
+  // The round's result is the page's (ADR 0013): it looks at every change it can once more, once the last edit has reached it.
+  if (state && changeSet) {
+    const ids = changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id);
+    const closing: CheckAsk = { ids, at: new Date().toISOString(), codeAt: await lastEdited(dirname(folder.dir)) };
+    await writeState(folder, { ...state, closing });
+    if (ids.length) await waitForChecks(folder, closing, state.claimedAt);
+  }
   const result = changeSet && (await archiveRound(folder, "finished"));
   if (!result) {
     io.error(NOT_CLAIMED);
