@@ -397,6 +397,42 @@ test("the camera moved while typing in a view, and then at rest, the words go on
   expect(await selectionBoxes(page)).toEqual(boxes);
 });
 
+test("the camera moved while a number's icon or a layer is pressed: the stage is drawn again only once the mouse is let go", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  // The stage in place, its animation into edit mode over, and drawn again at its end.
+  await expect.poll(() => page.locator(".vk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
+  // And at rest well past the 100ms it waits for, whatever moved the camera as the views were laid out.
+  await page.waitForTimeout(400);
+  // Each time the stage is drawn only as far as it shows (`drawOnlyWhatShows`), it is taken out of the layout for a moment.
+  await page.locator(".vk-stage").evaluate((stage) => {
+    const w = window as unknown as { redrawn: number };
+    w.redrawn = 0;
+    new MutationObserver((records) => {
+      for (const record of records) if (record.oldValue?.includes("display: none")) w.redrawn++;
+    }).observe(stage, { attributes: true, attributeFilter: ["style"], attributeOldValue: true });
+  });
+  const redrawn = () => page.evaluate(() => (window as unknown as { redrawn: number }).redrawn);
+  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const onIcon = async () => {
+    const box = (await icon.boundingBox())!;
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+
+  for (const pressAt of [onIcon, () => pointOn(desktop(page), "article")]) {
+    const before = await redrawn();
+    const at = await pressAt();
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    // Pressed, not moved, the camera moved by ⇧1 (which goes on while pressed): well past the 100ms the stage waits for, it is not drawn again meanwhile.
+    await page.keyboard.press("Shift+Digit1");
+    await page.waitForTimeout(400);
+    expect(await redrawn()).toBe(before);
+    await page.mouse.up();
+    await expect.poll(redrawn).toBe(before + 1);
+  }
+});
+
 test("a double click on text in the phone view types in it there, the caret in that view; the words show in every view as they are typed", async ({ page }) => {
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();

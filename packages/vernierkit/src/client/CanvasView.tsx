@@ -157,13 +157,15 @@ export function CanvasView(props: Props) {
    * Once the camera is at rest, however it moved, the views are drawn only
    * as far as they show again (`drawOnlyWhatShows`): zoomed out till every
    * view shows in full, they would otherwise go on being drawn whole after
-   * zooming back in (ticket 22). Not while a mode switch, a drag, a layer being
-   * drawn with a tool or typing is under way: once it is over.
+   * zooming back in (ticket 22). Not while a mode switch or typing is under
+   * way, nor while the pointer is held down on something that edits as it
+   * moves (`pointerHeld`, ADR 0012): a layer pressed or dragged, one drawn
+   * with a tool, a value's icon or a gradient's stop. Once it is over.
    */
   const [atRest] = useState(() =>
     onceAtRest(
       () => stage.current && drawOnlyWhatShows(stage.current),
-      () => !!modeSwitch.current || wasLeaving.current || !!dragging.current || !!drawing.current || !!typing.current,
+      () => !!modeSwitch.current || wasLeaving.current || pointerHeld() || !!typing.current,
     ),
   );
   useEffect(() => {
