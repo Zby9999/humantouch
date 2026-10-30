@@ -9,8 +9,8 @@
 import { DRAG_THRESHOLD, type At } from "./canvas-drag";
 import type { Editor, ResizeTo } from "./edit-commands";
 import type { Layer } from "./layers";
-import { readValue } from "./property-table";
-import { hundredths, marksOf, resizeBox, type Handle, type Limits } from "./resize";
+import { readValue, round } from "./property-table";
+import { marksOf, resizeBox, type Handle, type Limits } from "./resize";
 import type { Box, Mark } from "./snap";
 import { insideBorder } from "./stacks";
 import type { Shown } from "./view-layout";
@@ -84,8 +84,8 @@ export function resizeStep(session: ResizeSession, editor: Editor, pointer: Resi
     width: box.width,
     height: box.height,
     // Placed freely, it moves as far as its top left does: the edges not dragged stay.
-    x: begun.place ? hundredths(begun.place.x + box.x - begun.box.x) : NaN,
-    y: begun.place ? hundredths(begun.place.y + box.y - begun.box.y) : NaN,
+    x: begun.place ? round(begun.place.x + box.x - begun.box.x) : NaN,
+    y: begun.place ? round(begun.place.y + box.y - begun.box.y) : NaN,
   };
   if (resized.width) session.set.add("width");
   if (resized.height) session.set.add("height");

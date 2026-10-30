@@ -4,6 +4,7 @@
  * width and height, an edge's one of them; ⇧ keeps its proportions, ⌥
  * resizes it from its middle. It stops at its minimum and maximum sizes.
  */
+import { round } from "./property-table";
 import { anchors, EPSILON, lines, type Axis, type Box, type Mark } from "./snap";
 
 /** A handle on the selection box: a corner or the middle of an edge, by the compass. */
@@ -143,11 +144,8 @@ function linesOn(box: Box, axis: Axis, side: -1 | 1, fromCenter: boolean, target
 
 /** A size as set: whole px, or, where it snapped, to the hundredth. */
 function rounded(size: number, exact: boolean): number {
-  return exact ? hundredths(size) : Math.round(size);
+  return exact ? round(size) : Math.round(size);
 }
-
-/** To the hundredth of a px, as a size or place that snapped is set. */
-export const hundredths = (n: number) => Math.round(n * 100) / 100;
 
 /** `size` within a minimum and a maximum, and never below none: past the edge across, it does not turn over. */
 function within(size: number, min: number, max: number): number {

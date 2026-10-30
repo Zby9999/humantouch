@@ -33,6 +33,7 @@ export interface KeyState {
   page: number;
   /** A tool is picked. */
   tool: boolean;
+  /** A layer is dragged, or a handle of the layer selected is: Esc cancels it. */
   dragging: boolean;
   /** The pointer is held down on a layer, or drawing one, or elsewhere on something that edits as it moves (`heldKey`). */
   held: boolean;
