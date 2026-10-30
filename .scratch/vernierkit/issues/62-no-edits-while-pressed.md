@@ -99,3 +99,25 @@
 - 按着靠主窗口收到 `pointerup` / `pointercancel` 结束。四种操作都捕获了指针（`setPointerCapture`），松开总会到主窗口；没有加 `lostpointercapture`，因为拖数值时锁定指针（`requestPointerLock`）可能触发它，提前结束按着。万一某次松开没有到主窗口，下一次在主窗口松开指针时会一并结束。
 - 加新的带 ⌘ 的编辑层快捷键时，要加进 `EDITOR_COMMANDS`，否则按着时它不会被拦下默认动作，元素上的处理也照常收到；窗口上新加的键盘监听要自己检查 `pointerHeld()`（ADR 0012）。
 - 拖切换按钮（停靠的角落）不在范围里：它不改画布和历史，按着时快捷键照常。
+
+**最后 review 修正（2026-10-30）**
+
+*改了什么*
+
+1. **按着时只拦编辑层真正绑定的组合**（820e0db、0f84066）。原来 `heldKey` 按 `EDITOR_COMMANDS` 只比对字母、不看修饰键，⌘G（查找下一个）、Mac 上的 ⌘Y（历史记录）、⌘⇧C（检查元素）、⌘⇧V（粘贴为纯文本）这些浏览器快捷键按着时也被拦了，不符合"浏览器自己的快捷键照常"。现在 `canvas-keys.ts` 有一个 `editorCommand(event)`，按字母和修饰键整个组合回答这个键是不是编辑层的命令：⌘C、⌘X、⌘V、⌘D、⌘⇧G、⌘Z、⇧⌘Z、Ctrl+Y，⌘ 和 Ctrl 在任何系统上都一样，带 ⌥ 的都不是。`heldKey`、`historyKey` 和 Shell 里执行 ⌘C / ⌘X / ⌘V / ⌘D / ⌘⇧G 的监听都用它，所以"按着时拦哪些"和"编辑层实际执行哪些"是同一个判断，以后加新的 ⌘ 快捷键只改一处。`EDITOR_COMMANDS` 删掉了，上面"风险和没做的"里"要加进 `EDITOR_COMMANDS`"改为加进 `editorCommand`。
+   - 核对 ADR 0012 的名单：原来写的 ⌘Y 不是编辑层的键（Mac 上的重做是 ⇧⌘Z），以代码实际绑定为准改成 ⌘Z、⇧⌘Z、Ctrl+Y，并写明按整个组合比对。
+   - 实际绑定不分平台：Mac 上 Ctrl+Y 也是重做、Ctrl+C 也是复制（改动前就是这样）。按"Ctrl+Y 只在非 Mac 上用"去改会改变设计师按键的结果，所以没有加平台判断，只在 ADR 里写清楚。
+2. **Shell 里按着时拦键的闸门单独一个监听**（3114253）。原来挂在 ⌘Z 的窗口监听里，那个监听在播放中或还没有 editor 时（`!editor`）直接返回，闸门也一起跳过。现在是 Shell 里第一个窗口级键盘监听，只做一件事：按着时按 `heldKey` 拦（`ignored` 调 `preventDefault` 和 `stopPropagation`，`text` 只 `stopPropagation`），不看 editor、不看播放。
+   - `!editor` 时这样是对的：规则只关于指针（ADR 0012），和有没有 editor 无关。实际上没有 editor 时（画布还没冻结出来）没有图层可按、Design 面板没有数值图标，`pointerHeld()` 不会为真，所以行为和改动前一样；放在独立监听里只是不再依赖这一点。播放中 `onPointerDown` 直接返回，也不会按着。
+   - 窗口捕获阶段的几个监听注册顺序不影响结果：同一目标上 `stopPropagation` 本来就挡不住其他窗口监听，它们各自检查 `pointerHeld()`；也没有监听读 `defaultPrevented`。
+3. **T 画文字图层的 e2e**（9bbb772）：`create.spec.ts` 新加一条，和 F 那条对称。先删标题（可撤销），删 Get started 再撤销（可重做）；按 T 在段落下面拖、不松手，依次按 ⌘Z、⇧⌘Z、Delete、Enter、F、V，每次检查标题仍删掉、按钮还在、hero 的结构不变、改动 1 条、工具仍是 Text；松手后输入 Hello there 回车，改动 2 条。⌘Z 先撤回输入的字（变回占位的 Text，打字本身是单独一步，这是原有行为），再 ⌘Z 撤回新建的文字，再 ⌘Z 撤回删标题。临时让 `pointerHeld()` 恒为 false 跑过，这条失败，改回后通过。
+4. Shell 里 `editorCommand` 的结果叫 `shortcut`，和"按了 ⌘ 或 Ctrl"的 `command` 分开（按 review 修正）。
+
+*测试*
+
+- `canvas-keys.browser.test.ts` 15 → 18 条：按着时 ⌘G、⌘Y、⌘⇧Y、Ctrl+⇧Y、⌘⇧C、⌘⇧V、⌘⇧D、Ctrl+⇧X、⌥⌘C、⌥⌘Z 都放行；`editorCommand` 的各个命令；同样的字母配上别的修饰键都不是命令。先写测试、确认失败再改。
+- e2e：上面 T 那条。原有拖拽、拖数值、拖色标、画 Frame 的 e2e 全部通过。
+
+*没改、记下的*
+
+- 预览模式的改动列表（`ChangeList.tsx`）自己绑了撤销：那里 ⌘Y 是撤销、Ctrl+⇧Y 是重做，和编辑层不一样。它是编辑模式之外的弹层，一按外面就关，按着画布时不会开着，所以没有并进 `editorCommand`；要统一需要设计师决定。
