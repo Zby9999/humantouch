@@ -25,6 +25,7 @@ test("a Claude Code transcript gives its model, each tool call with what it prin
     ],
     finalText: "✓ Applied\n- 1. Fill",
     permissionDenials: 1,
+    subagents: { calls: 0, models: [] },
   });
 });
 
@@ -68,6 +69,7 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     ],
     finalText: "✓ Applied",
     permissionDenials: 0,
+    subagents: { calls: 0, models: [] },
   });
 });
 
@@ -211,4 +213,27 @@ test("a Variable only carried along in a line the Agent rewrote for another chan
   const diff = ['-  <h1 className="text-stone-900">Title</h1>', "+  <div>", '+    <h1 className="text-stone-900">Title</h1>', '+  <p className="text-[#1c1917]">'].join("\n");
 
   assert.equal(usesVariable(diff, ["text-stone-900"]), false);
+});
+
+test("subagents are counted apart: Claude Code's Task or Agent calls and the other models its result names; Cursor's task calls and the models its events name besides the main one", () => {
+  const claude = parseTranscript(
+    "claude",
+    lines(
+      { type: "system", subtype: "init", model: "main-model" },
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "a", name: "Task", input: { prompt: "look" } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "a", content: "found" }] } },
+      { type: "result", result: "", modelUsage: { "main-model": {}, "small-model": {} } },
+    ),
+  );
+  assert.deepEqual(claude.subagents, { calls: 1, models: ["small-model"] });
+
+  const cursor = parseTranscript(
+    "cursor",
+    lines(
+      { type: "system", subtype: "init", model: "Grok Test" },
+      { type: "tool_call", subtype: "completed", tool_call: { taskToolCall: { args: { description: "explore" }, result: { success: { model: "Composer 2.5" } } } } },
+      { type: "assistant", model: "Composer 2.5", message: { content: [{ type: "text", text: "sub" }] } },
+    ),
+  );
+  assert.deepEqual(cursor.subagents, { calls: 1, models: ["Composer 2.5"] });
 });

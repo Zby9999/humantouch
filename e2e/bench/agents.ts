@@ -6,7 +6,7 @@
  * from (no gateway, no model override), as the designer's own login.
  */
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import type { AgentName } from "./metrics.ts";
@@ -61,8 +61,12 @@ const SHELL = ["npx vernierkit", "git diff", "git status", "git log", "git show"
 export interface AgentSpec {
   /** Where the Agent's binary is; an environment variable names another. */
   binary(): string;
-  /** The arguments, after the binary: the same for every run. */
-  args: string[];
+  /** The arguments, after the binary: the same for every run but where the run's own files go, in `folder`. */
+  args(folder: string): string[];
+  /** The model every run is to be on, as the transcript names it: a run on another stops the bench. */
+  model: string;
+  /** The reasoning effort the arguments set, for the record. */
+  effort: string;
   /** Done in the project before the Agent starts. */
   prepare?(dir: string): void;
 }
@@ -71,12 +75,22 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
   claude: {
     // The Claude Code the designer's desktop app ships, not one installed by npm.
     binary: () => process.env.VK_BENCH_CLAUDE ?? desktopClaudeCode(),
-    args: [
+    model: "claude-sonnet-5-5",
+    effort: "high (--effort high)",
+    args: (folder) => [
       "-p",
       PROMPT,
       "--output-format",
       "stream-json",
       "--verbose",
+      // Pinned: neither the account's default model nor the designer's effortLevel setting.
+      "--model",
+      "claude-sonnet-5-5",
+      "--effort",
+      "high",
+      // The effort the session ran at is in its debug log only.
+      "--debug-file",
+      join(folder, "claude-debug.log"),
       // The project's settings only: none of the designer's plugins, hooks or MCP servers.
       "--setting-sources",
       "project,local",
@@ -97,7 +111,10 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     binary: () => process.env.VK_BENCH_CURSOR ?? (existsSync(CURSOR_APP_AGENT) ? CURSOR_APP_AGENT : onPath("cursor-agent")),
     // Run headless, Cursor turns every shell command away unless forced, its allowlist or not: forced, in its
     // sandbox (writes in the project only), with the commands below denied besides.
-    args: ["-p", PROMPT, "--output-format", "stream-json", "--trust", "--force", "--sandbox", "enabled"],
+    // Pinned to the model the designer chose, as their Cursor settings have it; its explore subagent keeps its own.
+    model: "Grok 4.7 256K High",
+    effort: "reasoning_effort=high (in --model)",
+    args: () => ["-p", PROMPT, "--output-format", "stream-json", "--model", "grok-4.7[context=256k,reasoning_effort=high,fast=false]", "--trust", "--force", "--sandbox", "enabled"],
     prepare(dir) {
       mkdirSync(join(dir, ".cursor"), { recursive: true });
       const shell = [...new Set(SHELL.map((command) => command.split(" ")[0]))].map((command) => `Shell(${command})`);
@@ -110,7 +127,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
 /** The command line as a person would type it, for the record. */
 export function commandLine(agent: AgentName): string {
   const { binary, args } = AGENTS[agent];
-  return [binary(), ...args].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
+  return [binary(), ...args("<run folder>")].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
 export async function agentVersion(agent: AgentName): Promise<string> {
@@ -125,22 +142,44 @@ export interface AgentRun {
   endedAt: number;
 }
 
-/** Runs the Agent in `dir`, its transcript to `transcript` and what else it prints to `log`; stopped after `timeoutMs`. */
-export async function runAgent(agent: AgentName, dir: string, transcript: string, log: string, timeoutMs: number): Promise<AgentRun> {
+/**
+ * Runs the Agent in `dir`, its transcript to `transcript` and what else it
+ * prints to `log`, its own files in `folder`; stopped after `timeoutMs`. What
+ * it leaves running once it exits (Cursor's worker server) goes with it.
+ */
+export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number): Promise<AgentRun> {
   const spec = AGENTS[agent];
   spec.prepare?.(dir);
   const startedAt = Date.now();
-  const child = spawn(spec.binary(), spec.args, { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
-  child.stdout.pipe(createWriteStream(transcript));
-  child.stderr.pipe(createWriteStream(log));
+  const child = spawn(spec.binary(), spec.args(folder), { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  child.stdout.pipe(createWriteStream(join(folder, "transcript.jsonl")));
+  child.stderr.pipe(createWriteStream(join(folder, "agent.log")));
+  const stopAll = () => {
+    try {
+      if (child.pid) process.kill(-child.pid, "SIGTERM");
+    } catch {
+      // All gone already.
+    }
+  };
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    if (child.pid) process.kill(-child.pid, "SIGTERM");
+    stopAll();
   }, timeoutMs);
   const exitCode = await new Promise<number | null>((resolve) => child.on("close", resolve));
   clearTimeout(timer);
+  stopAll();
   return { exitCode, timedOut, startedAt, endedAt: Date.now() };
+}
+
+/** The effort the run's debug log says the session ran at, if it says. */
+export function effortSeen(folder: string): string | null {
+  try {
+    const log = readFileSync(join(folder, "claude-debug.log"), "utf8");
+    return /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(log)?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** What a short command prints. */

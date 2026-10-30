@@ -4,19 +4,21 @@
  * unattended, and the run is measured from what it left behind. Pages open in
  * Playwright's headless shell only: nothing takes the designer's focus.
  *
- *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3]
+ *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
- * Runs go one after another, never side by side, so their times compare. Raw
+ * Runs go one after another, never side by side, so their times compare,
+ * run 1 of every scenario first; `--max-runs` stops after that many Agent
+ * runs, and a run on another model than the Agent's pinned one stops them all. Raw
  * results go to `bench-results/agents/<when>/`, which git ignores.
  */
-import { chromium, type Browser, type Page } from "@playwright/test";
+import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, runAgent, type AgentRun } from "./agents.ts";
+import { agentVersion, AGENTS, commandLine, effortSeen, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
@@ -39,6 +41,8 @@ interface RawRun {
   date: string;
   version: string;
   commandLine: string;
+  /** The effort the command line sets, and, for Claude Code, the one its debug log shows the session ran at. */
+  effort: { set: string; seen: string | null };
   exitCode: number | null;
   timedOut: boolean;
   startedAt: number;
@@ -59,18 +63,21 @@ async function main(argv: string[]) {
   const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
   const scenarios = option("scenarios") ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : SCENARIOS;
   const runs = Number(option("runs") ?? 3);
+  const maxRuns = Number(option("max-runs") ?? Infinity);
   const dry = argv.includes("--dry");
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
 
   const out = join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
-  const plan = dry ? scenarios.length : agents.length * scenarios.length * runs;
+  const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
   console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}. Raw results in ${out}`);
 
   const versions: Partial<Record<AgentName, string>> = {};
   if (!dry) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
-    writeFileSync(join(out, "meta.json"), `${JSON.stringify({ versions, commandLines: Object.fromEntries(agents.map((agent) => [agent, commandLine(agent)])) }, null, 2)}\n`);
+    const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
+    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each(commandLine) };
+    writeFileSync(join(out, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
   }
 
   const { base, remove } = await prepareBase();
@@ -85,24 +92,38 @@ async function main(argv: string[]) {
         failures.push(...problems);
       }
     } else {
-      for (let run = 1; run <= runs; run++) {
+      let agentRuns = 0;
+      let stop: string | null = null;
+      for (let run = 1; run <= runs && !stop; run++) {
         for (const scenario of scenarios) {
           for (const agent of agents) {
+            if (stop || agentRuns >= maxRuns) break;
             const folder = join(out, agent, scenario.id, `run-${run}`);
             mkdirSync(folder, { recursive: true });
             const started = Date.now();
             try {
               await runOnce({ browser, base, port: FIRST_PORT + (port++ % PORTS), scenario, agent, run, version: versions[agent]!, folder });
+              agentRuns++;
               const measures = measureFolder(folder);
               console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${oneLine(measures)}`);
+              if (measures.model !== AGENTS[agent].model) stop = `${agent} ran on ${measures.model}, not ${AGENTS[agent].model}: stopped`;
             } catch (error) {
+              // The Agent ran, and counts against the limit, once it has a transcript.
+              if (existsSync(join(folder, "transcript.jsonl"))) agentRuns++;
               failures.push(`${agent} ${scenario.id} #${run}: ${(error as Error).message}`);
               console.log(`✗ ${agent} ${scenario.id} #${run}: ${(error as Error).message}`);
               writeFileSync(join(folder, "error.txt"), `${(error as Error).stack}\n`);
+              // The browser gone (the bench stopped from outside, say): no run after this can set its scenario up.
+              if (!browser.isConnected()) stop = "the browser closed: stopped";
             }
           }
         }
       }
+      if (stop) {
+        failures.push(stop);
+        console.log(`✗ ${stop}`);
+      }
+      console.log(`${agentRuns} Agent runs.`);
       writeSummary(out);
     }
   } finally {
@@ -125,10 +146,12 @@ async function withScenario<T>(
   work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page> }) => Promise<T>,
 ): Promise<T> {
   const project = await cloneBase(base);
-  const server = await startDevServer(project.dir, port);
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
+  let server: Awaited<ReturnType<typeof startDevServer>> | null = null;
+  let context: BrowserContext | null = null;
   let observers: Awaited<ReturnType<typeof openObservers>> | null = null;
   try {
+    server = await startDevServer(project.dir, port);
+    context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
     await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
     const page = await context.newPage();
     await page.goto(server.url);
@@ -137,9 +160,9 @@ async function withScenario<T>(
     await scenario.design({ page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
     return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages });
   } finally {
-    await observers?.close();
-    await context.close();
-    server.stop();
+    await observers?.close().catch(() => {});
+    await context?.close().catch(() => {});
+    server?.stop();
     project.remove();
   }
 }
@@ -233,7 +256,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
     const pageTimer = setInterval(lookAtThePage, SHOWN_POLL_MS);
     let agentRun: AgentRun;
     try {
-      agentRun = await runAgent(agent, project.dir, join(folder, "transcript.jsonl"), join(folder, "agent.log"), AGENT_TIMEOUT_MS);
+      agentRun = await runAgent(agent, project.dir, folder, AGENT_TIMEOUT_MS);
     } finally {
       clearInterval(fileTimer);
       clearInterval(pageTimer);
@@ -259,6 +282,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       date: new Date(agentRun.startedAt).toISOString(),
       version,
       commandLine: commandLine(agent),
+      effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
       ...agentRun,
       changes: scenario.changes.map((change, i) => ({
         id: saved[i].id,
@@ -315,6 +339,8 @@ export function measureFolder(folder: string) {
     repoWideSearches: stats.repoWideSearches,
     charsRead: stats.charsRead,
     permissionDenials: transcript.permissionDenials,
+    subagents: transcript.subagents,
+    effort: raw.effort ?? null,
     applyMs: round?.applyMs ?? null,
     applyMsPerChange: round?.applyMsPerChange ?? null,
     checked: round?.checked ?? null,
@@ -361,6 +387,7 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
   ["被权限拦下的工具调用", (m) => m.permissionDenials],
+  ["子 Agent 调用", (m) => m.subagents.calls],
 ];
 
 /** The numbers the table by scenario shows. */
@@ -391,6 +418,8 @@ function writeSummary(out: string) {
       agent,
       versions: [...new Set(mine.map((m) => m.version))],
       models: [...new Set(mine.map((m) => m.model))],
+      subagentModels: [...new Set(mine.flatMap((m) => m.subagents.models))],
+      efforts: [...new Set(mine.map((m) => (m.effort ? `${m.effort.set}${m.effort.seen ? `, seen ${m.effort.seen}` : ""}` : "?")))],
       runs: mine.length,
       dates: [...new Set(mine.map((m) => m.date.slice(0, 10)))],
       overall: sum(mine),
@@ -404,7 +433,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，${agent.runs} 次，${agent.dates.join(", ")}`,
+        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
         "| 指标 | 中位数（范围） | 次数 |",
         "|---|---|---|",

@@ -31,6 +31,8 @@ export interface Transcript {
   finalText: string;
   /** Tool calls the bench's permissions turned away. */
   permissionDenials: number;
+  /** Subagents the Agent started (Claude Code's Task, Cursor's explore), and the models other than its own they ran on. */
+  subagents: { calls: number; models: string[] };
 }
 
 type Event = Record<string, any>;
@@ -51,13 +53,14 @@ export function parseTranscript(agent: AgentName, text: string): Transcript {
 }
 
 function parseClaudeCode(all: Event[]): Transcript {
-  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0 };
+  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] } };
   const byId = new Map<string, ToolCall>();
   for (const event of all) {
     if (event.type === "system" && event.subtype === "init") transcript.model = event.model ?? null;
     if (event.type === "result") {
       transcript.finalText = event.result ?? "";
       transcript.permissionDenials = event.permission_denials?.length ?? 0;
+      transcript.subagents.models = Object.keys(event.modelUsage ?? {}).filter((model) => model !== transcript.model);
     }
     for (const part of event.message?.content ?? []) {
       if (event.type === "assistant" && part.type === "tool_use") {
@@ -74,6 +77,7 @@ function parseClaudeCode(all: Event[]): Transcript {
       if (event.type === "user" && part.type === "text" && last?.skill !== undefined) last.output += part.text;
     }
   }
+  transcript.subagents.calls = transcript.toolCalls.filter((call) => call.name === "Task" || call.name === "Agent").length;
   return transcript;
 }
 
@@ -83,9 +87,11 @@ function parseClaudeCode(all: Event[]): Transcript {
  * run together, so the last words are its last assistant message.
  */
 function parseCursor(all: Event[]): Transcript {
-  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0 };
+  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] } };
+  const others = new Set<string>();
   for (const event of all) {
     if (event.type === "system" && event.subtype === "init") transcript.model = event.model ?? null;
+    else for (const model of modelsIn(event)) if (model !== transcript.model) others.add(model);
     if (event.type === "assistant") {
       const text = textOf(event.message?.content);
       if (text.trim()) transcript.finalText = text;
@@ -95,6 +101,7 @@ function parseCursor(all: Event[]): Transcript {
     if (!key) continue;
     const { args = {}, result = {} } = call as Event;
     const name = key.replace(/ToolCall$/, "");
+    if (/task|subagent|agent/i.test(name)) transcript.subagents.calls++;
     if (result.rejected || result.permissionDenied) transcript.permissionDenials++;
     const success = result.success;
     const text = success && [success.stdout, success.stderr, success.content].filter((part) => typeof part === "string").join("");
@@ -102,7 +109,15 @@ function parseCursor(all: Event[]): Transcript {
     if (success && !text && typeof success.fileSize === "number" && name === "read") transcript.toolCalls.push({ name, ...where(args), output: "", size: success.fileSize });
     else transcript.toolCalls.push({ name, ...where(args), output: text || JSON.stringify(success ?? result) });
   }
+  transcript.subagents.models = [...others];
   return transcript;
+}
+
+/** Every `model` named anywhere in an event. */
+function modelsIn(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(modelsIn);
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, inner]) => (key === "model" && typeof inner === "string" ? [inner] : modelsIn(inner)));
 }
 
 /** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on. */
