@@ -291,29 +291,34 @@ function armValue({ views, selector, property, expected }: { views: string[]; se
   });
 }
 
+/** The computed `property` of what `selector` finds on the canvas, in the desktop view. */
+function valueOnCanvas(page: Page, selector: string, property: string) {
+  return canvas(page).locator(selector).evaluate((el, property) => getComputedStyle(el).getPropertyValue(property), property);
+}
+
+/** Waits till every view shows `value` for `property` of what `selector` finds. */
+async function everyViewShows(page: Page, selector: string, property: string, value: string) {
+  for (const title of VIEWS) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, value);
+}
+
 /** Steps a value up with the arrow key, `VALUE_STEPS` times, measuring each. */
 async function stepValue(page: Page, field: string, selector: string, property: string) {
-  const input = design(page).getByRole("textbox", { name: field, exact: true });
-  await input.focus();
+  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
   const samples: ValueSample[] = [];
   for (let i = 0; i < VALUE_STEPS; i++) {
-    const before = await canvas(page).locator(selector).evaluate((el, property) => getComputedStyle(el).getPropertyValue(property), property);
-    const expected = `${parseFloat(before) + 1}px`;
+    const expected = `${parseFloat(await valueOnCanvas(page, selector, property)) + 1}px`;
     await page.evaluate(armValue, { views: VIEWS, selector, property, expected });
     await page.keyboard.press("ArrowUp");
     samples.push(await page.evaluate(() => (window as unknown as { vkValue: Promise<ValueSample> }).vkValue));
     await settle(page, 150);
   }
   // After the last step, every view shows the last value.
-  const last = await canvas(page).locator(selector).evaluate((el, property) => getComputedStyle(el).getPropertyValue(property), property);
-  for (const title of VIEWS) {
-    await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, last);
-  }
+  await everyViewShows(page, selector, property, await valueOnCanvas(page, selector, property));
   return samples;
 }
 
 interface HeldStep {
-  /** In the first frame drawn after the key, the view worked in showed this step, or a later one. */
+  /** In the first frame drawn after the key, the view worked in showed this step, or a later one (none came in the same frame at 83ms apart). */
   firstFrame: boolean;
   /** The value the views beside showed in that frame, the lowest of them. */
   beside: number;
@@ -329,42 +334,52 @@ interface Held {
   caughtUp: number;
 }
 
+/** What `armHeld` keeps in the page while the key is held, and once it is let go, the views catching up. */
+interface HeldRecord {
+  steps: HeldStep[];
+  done: Promise<Held>;
+}
+
 /**
  * Each ArrowUp from now on, as `armValue` measures one: the time to handle
  * it and draw the frame after it, whether the view worked in, `views[0]`,
- * showed the step then, and what the views beside showed.
+ * showed the step then, and what the views beside showed. Once the key is
+ * let go, each frame drawn is looked at till every view shows the last step:
+ * that frame's time, from the last key's arrival, is how long they took to
+ * catch up.
  */
 function armHeld({ views, selector, property, from }: { views: string[]; selector: string; property: string; from: number }) {
   const { scheduler } = window as unknown as WithScheduler;
   const root = document.querySelector("vernier-kit")!.shadowRoot!;
   const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
   const valueIn = (doc: Document) => parseFloat(getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property));
+  /** Once a frame has been drawn, before what the page has queued meanwhile (see `armEnter`). */
+  const afterFrame = (then: (at: number, drawn: number) => void) =>
+    requestAnimationFrame(() => {
+      const at = performance.now();
+      scheduler.postTask(() => then(at, performance.now()), { priority: "user-blocking" });
+    });
   const listening = new AbortController();
-  const record = { steps: [] as HeldStep[], last: 0, from, docs, valueIn, stop: () => listening.abort() };
+  const steps: HeldStep[] = [];
+  let last = 0;
   let handling: { handled: number } | null = null;
+  let letGo: (held: Held) => void;
+  const record: HeldRecord = { steps, done: new Promise((resolve) => (letGo = resolve)) };
   addEventListener(
     "keydown",
     (event) => {
       if (event.key !== "ArrowUp") return;
       const start = performance.now();
-      const arrived = event.timeStamp;
-      record.last = arrived;
+      const arrived = (last = event.timeStamp);
       const step: HeldStep = { firstFrame: false, beside: NaN, work: NaN, latency: NaN };
-      const expected = from + record.steps.length + 1;
-      record.steps.push(step);
+      const expected = from + steps.length + 1;
+      steps.push(step);
       const timing = (handling = { handled: 0 });
-      requestAnimationFrame(() => {
-        const at = performance.now();
-        scheduler.postTask(
-          () => {
-            const drawn = performance.now();
-            step.firstFrame = valueIn(docs[0]) >= expected;
-            step.beside = Math.min(...docs.slice(1).map(valueIn));
-            step.work = (timing.handled || at) - start + (drawn - at);
-            step.latency = drawn - arrived;
-          },
-          { priority: "user-blocking" },
-        );
+      afterFrame((at, drawn) => {
+        step.firstFrame = valueIn(docs[0]) >= expected;
+        step.beside = Math.min(...docs.slice(1).map(valueIn));
+        step.work = (timing.handled || at) - start + (drawn - at);
+        step.latency = drawn - arrived;
       });
     },
     { capture: true, signal: listening.signal },
@@ -377,7 +392,24 @@ function armHeld({ views, selector, property, from }: { views: string[]; selecto
     },
     { signal: listening.signal },
   );
-  (window as unknown as { vkHeld: typeof record }).vkHeld = record;
+  addEventListener(
+    "keyup",
+    (event) => {
+      if (event.key !== "ArrowUp") return;
+      listening.abort();
+      const end = from + steps.length;
+      const until = performance.now() + 2000;
+      const look = () =>
+        afterFrame((_, drawn) => {
+          if (docs.every((doc) => valueIn(doc) === end)) letGo({ steps, caughtUp: drawn - last });
+          else if (drawn > until) letGo({ steps, caughtUp: Infinity });
+          else look();
+        });
+      look();
+    },
+    { capture: true, signal: listening.signal },
+  );
+  (window as unknown as { vkHeld: HeldRecord }).vkHeld = record;
 }
 
 /**
@@ -387,9 +419,8 @@ function armHeld({ views, selector, property, from }: { views: string[]; selecto
  * go, waits till every view shows the last value.
  */
 async function holdValue(page: Page, field: string, selector: string, property: string): Promise<Held> {
-  const input = design(page).getByRole("textbox", { name: field, exact: true });
-  await input.focus();
-  const from = await canvas(page).locator(selector).evaluate((el, property) => parseFloat(getComputedStyle(el).getPropertyValue(property)), property);
+  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
+  const from = parseFloat(await valueOnCanvas(page, selector, property));
   await page.evaluate(armHeld, { views: VIEWS, selector, property, from });
   const cdp = await page.context().newCDPSession(page);
   const key = { key: "ArrowUp", code: "ArrowUp", windowsVirtualKeyCode: 38, nativeVirtualKeyCode: 38 };
@@ -405,34 +436,9 @@ async function holdValue(page: Page, field: string, selector: string, property: 
   sent.push(cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }));
   await Promise.all(sent);
   await cdp.detach();
-  // Every view catches up once the steps pause: timed to the first frame drawn showing the last value everywhere.
-  const held = await page.evaluate(
-    () =>
-      new Promise<Held>((resolve) => {
-        const { steps, last, from, docs, valueIn, stop } = (
-          window as unknown as { vkHeld: { steps: HeldStep[]; last: number; from: number; docs: Document[]; valueIn(doc: Document): number; stop(): void } }
-        ).vkHeld;
-        stop();
-        const { scheduler } = window as unknown as WithScheduler;
-        const end = from + steps.length;
-        const until = performance.now() + 2000;
-        const frame = () =>
-          scheduler.postTask(
-            () => {
-              const now = performance.now();
-              if (docs.every((doc) => valueIn(doc) === end)) resolve({ steps: [...steps], caughtUp: now - last });
-              else if (now > until) resolve({ steps: [...steps], caughtUp: Infinity });
-              else requestAnimationFrame(frame);
-            },
-            { priority: "user-blocking" },
-          );
-        requestAnimationFrame(frame);
-      }),
-  );
+  const held = await page.evaluate(() => (window as unknown as { vkHeld: HeldRecord }).vkHeld.done);
   await settle(page);
-  // Every view shows the last value: the value field's too.
-  const last = `${from + HELD_STEPS}px`;
-  for (const title of VIEWS) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator(selector)).toHaveCSS(property, last);
+  await everyViewShows(page, selector, property, `${from + HELD_STEPS}px`);
   return held;
 }
 
