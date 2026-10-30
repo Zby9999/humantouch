@@ -234,6 +234,53 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   }
 });
 
+test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view; let go, one ⌘Z takes the drag back, and the one before it the edit made before", async ({ page }) => {
+  await enterEditMode(page);
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  // An edit to undo: the title deleted.
+  await tree.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+  await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
+  const hero = '[data-testid="hero"]';
+  const views = [desktop(page), tablet(page), phone(page)];
+  const orders = () => Promise.all(views.map((view) => view.contentFrame().locator(hero).evaluate((el) => [...el.children].map((child) => child.localName))));
+  const paragraphStyles = () => Promise.all(views.map((view) => view.contentFrame().locator(`${hero} > p`).evaluate((el) => el.getAttribute("style"))));
+  const before = await paragraphStyles();
+  const rows = await tree.getByRole("treeitem").allTextContents();
+
+  const button = phone(page).contentFrame().locator(`${hero} > button`);
+  const start = (await button.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  const p = (await phone(page).contentFrame().locator(`${hero} > p`).boundingBox())!;
+  await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
+  // Once the pointer pauses, every view has the paragraph make room.
+  for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z"]) {
+    await page.keyboard.press(key);
+    for (const view of views) {
+      await expect(view.contentFrame().locator("h1")).toBeHidden();
+      await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
+    }
+  }
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+  expect(await tree.getByRole("treeitem").allTextContents()).toEqual(rows);
+  await page.mouse.up();
+
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
+  expect(await paragraphStyles()).toEqual(before);
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+  for (const view of views) await expect(view.contentFrame().locator("h1")).toBeHidden();
+  await page.keyboard.press("ControlOrMeta+z");
+  for (const view of views) await expect(view.contentFrame().locator("h1")).toBeVisible();
+  await expect(badge).toHaveCount(0);
+});
+
 test("a view of another width can be added and the tablet view deleted; the views stay so after a reload; the desktop view stays", async ({ page }) => {
   await enterEditMode(page);
 

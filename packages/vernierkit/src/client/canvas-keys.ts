@@ -3,7 +3,8 @@
  * pick the text and Frame tools and V puts them down, Esc puts a tool down,
  * cancels a drag or selects the parents, ⇧1 fits every view in. Playing, the
  * keys scroll the canvas as on a page, and Esc stops (ADR 0010). A field, or
- * a dialog over the canvas, keeps its keys.
+ * a dialog over the canvas, keeps its keys. ⌘Z and ⇧⌘Z go through the edits
+ * made, and wait while a layer is dragged (`historyKey`).
  */
 import type { Created } from "./changeset";
 
@@ -59,6 +60,34 @@ export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging,
   if (event.key === "Escape" && selected) return { action: "select parents" };
   if (event.code === "Digit1" && event.shiftKey && plain) return { action: "fit" };
   return null;
+}
+
+/** What ⌘Z, ⇧⌘Z or Ctrl+Y does to the edits made: `held` while a layer is dragged on the canvas, when it does nothing. */
+export type HistoryKey = "undo" | "redo" | "held";
+
+/**
+ * What the key `event` does to the edits made, in the order they were made:
+ * ⌘Z undoes, ⇧⌘Z redoes (Ctrl on other systems, and Ctrl+Y there too). While
+ * a layer is dragged on the canvas, neither does anything until it is let go
+ * or the drag cancelled: the views put back what makes room as it was when the
+ * drag began, over what an undo would change meanwhile (ticket 61). A field
+ * keeps its own while something typed in it is not applied yet; a field of
+ * the Design panel otherwise, or a slider, passes it on. Null: not these keys,
+ * and the key goes on.
+ */
+export function historyKey(event: KeyboardEvent, { dragging }: { dragging: boolean }): HistoryKey | null {
+  const target = event.composedPath()[0];
+  // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
+  const field =
+    target instanceof HTMLElement &&
+    ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return null;
+  // By the letter typed, wherever the keyboard has it.
+  const key = event.key.toLowerCase();
+  const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
+  if (key !== "z" && !redo) return null;
+  if (dragging) return "held";
+  return redo ? "redo" : "undo";
 }
 
 /** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */

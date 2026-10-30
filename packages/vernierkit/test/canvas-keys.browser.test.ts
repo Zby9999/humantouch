@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { canvasKey, type KeyState } from "../src/client/canvas-keys";
+import { canvasKey, historyKey, type KeyState } from "../src/client/canvas-keys";
 
 const EDITING: KeyState = { playing: false, page: 0, tool: false, dragging: false, selected: false };
 const PLAYING: KeyState = { ...EDITING, playing: true, page: 760 };
@@ -65,5 +65,53 @@ describe("the keys on the canvas", () => {
     expect(press({ code: "Space", key: " " }, PLAYING, { on: document.createElement("button") })).toBeNull();
     expect(press({ key: "t" }, PLAYING)).toBeNull();
     expect(press({ key: "ArrowDown", metaKey: true }, PLAYING)).toBeNull();
+  });
+});
+
+describe("undo and redo by their keys", () => {
+  /** What the key does to the history, pressed on `on`, or on nothing in particular. */
+  function historyPress(init: KeyboardEventInit, dragging: boolean, on?: Element) {
+    const event = new KeyboardEvent("keydown", { bubbles: true, composed: true, ...init });
+    if (!on) return historyKey(event, { dragging });
+    let key: ReturnType<typeof historyKey> = null;
+    on.addEventListener("keydown", (e) => (key = historyKey(e as KeyboardEvent, { dragging })), { once: true });
+    document.body.append(on);
+    on.dispatchEvent(event);
+    on.remove();
+    return key;
+  }
+
+  test("while a layer is dragged on the canvas, ⌘Z, ⇧⌘Z and Ctrl+Y do nothing, and go no further", () => {
+    expect(historyPress({ key: "z", metaKey: true }, true)).toBe("held");
+    expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, true)).toBe("held");
+    expect(historyPress({ key: "z", ctrlKey: true }, true)).toBe("held");
+    expect(historyPress({ key: "Z", ctrlKey: true, shiftKey: true }, true)).toBe("held");
+    expect(historyPress({ key: "y", ctrlKey: true }, true)).toBe("held");
+    // Other keys are not held back here.
+    expect(historyPress({ key: "c", metaKey: true }, true)).toBeNull();
+  });
+
+  test("otherwise ⌘Z undoes and ⇧⌘Z redoes, Ctrl on other systems, with Ctrl+Y redoing there too", () => {
+    expect(historyPress({ key: "z", metaKey: true }, false)).toBe("undo");
+    expect(historyPress({ key: "z", ctrlKey: true }, false)).toBe("undo");
+    expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, false)).toBe("redo");
+    expect(historyPress({ key: "Z", ctrlKey: true, shiftKey: true }, false)).toBe("redo");
+    expect(historyPress({ key: "y", ctrlKey: true }, false)).toBe("redo");
+    expect(historyPress({ key: "y", metaKey: true }, false)).toBeNull();
+    expect(historyPress({ key: "z", metaKey: true, altKey: true }, false)).toBeNull();
+    expect(historyPress({ key: "z" }, false)).toBeNull();
+  });
+
+  test("a field keeps ⌘Z while something typed in it is not applied yet, dragging or not; a Design panel field otherwise, or a slider, passes it on", () => {
+    const typing = Object.assign(document.createElement("input"), { className: "vk-input" });
+    typing.setAttribute("data-vk-typing", "");
+    expect(historyPress({ key: "z", metaKey: true }, false, typing)).toBeNull();
+    expect(historyPress({ key: "z", metaKey: true }, true, typing)).toBeNull();
+    expect(historyPress({ key: "z", metaKey: true }, false, document.createElement("textarea"))).toBeNull();
+    expect(historyPress({ key: "z", metaKey: true }, false, Object.assign(document.createElement("input"), { className: "vk-input" }))).toBe("undo");
+    const slider = document.createElement("div");
+    slider.setAttribute("role", "slider");
+    expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, false, slider)).toBe("redo");
+    expect(historyPress({ key: "z", metaKey: true }, true, slider)).toBe("held");
   });
 });

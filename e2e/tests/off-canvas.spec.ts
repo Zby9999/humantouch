@@ -261,6 +261,44 @@ test("dragged back where it was in the same round, a layer off the canvas is in 
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 });
 
+test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc leaves it where it was, and let go elsewhere, one ⌘Z takes it back there", async ({ page }) => {
+  await moveTitleOff(page);
+  const was = await placeOff(page);
+  const off = (await offCanvas(page).boundingBox())!;
+  const moved = offCanvas(page).contentFrame().locator("body > *").first();
+  const grab = async () => {
+    const box = (await moved.boundingBox())!;
+    await page.mouse.move(box.x + 3, box.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 3 - 80, box.y + 3 + 60, { steps: 10 });
+  };
+
+  await grab();
+  for (const key of [`${mod}+z`, `${mod}+Shift+z`]) {
+    await page.keyboard.press(key);
+    // Still off the canvas: the move off it is not undone.
+    await expect(offCanvas(page)).toHaveCount(1);
+    await expect(desktop(page).contentFrame().locator("h1")).toBeHidden();
+    await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+  }
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(await placeOff(page)).toEqual(was);
+  expect(await moved.evaluate((el) => (el as HTMLElement).style.cssText)).toBe("");
+
+  await grab();
+  await page.keyboard.press(`${mod}+z`);
+  await page.mouse.up();
+  expect((await offCanvas(page).boundingBox())!.x).toBeLessThan(off.x - 40);
+  await page.keyboard.press(`${mod}+z`);
+  // Back where it was, still off the canvas; once more, back on it.
+  expect(await placeOff(page)).toEqual(was);
+  await expect(offCanvas(page)).toHaveCount(1);
+  await page.keyboard.press(`${mod}+z`);
+  await expect(offCanvas(page)).toHaveCount(0);
+  await expect(desktop(page).contentFrame().locator("h1")).toBeVisible();
+});
+
 test("dragged back elsewhere in the same round, into a Stack of the phone view, it takes a place there, in every view, as one move", async ({ page }) => {
   await moveTitleOff(page);
   await zoomOut(page);

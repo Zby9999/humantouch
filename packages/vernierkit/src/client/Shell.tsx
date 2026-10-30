@@ -3,7 +3,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
 import { CanvasView, type Tool } from "./CanvasView";
-import { isEditable } from "./canvas-keys";
+import { historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
 import { createClipboard } from "./clipboard";
@@ -393,26 +393,22 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select(out.map((node) => editor.tree().layerOf(node)).filter((layer) => layer !== null));
   };
 
-  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made. A field keeps its own
-  // while something typed in it is not applied yet; a field of the Design panel otherwise passes it on.
+  /** A layer is being dragged on the canvas: until it is let go or the drag cancelled, undo and redo wait (ticket 61). */
+  const dragging = useRef(false);
+
+  // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`).
   const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
   latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
-      if (playing) return;
-      const target = event.composedPath()[0];
-      // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
-      const field =
-        target instanceof HTMLElement &&
-        ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
-      if (!editor || !(event.metaKey || event.ctrlKey) || event.altKey || (isEditable(target) && !field)) return;
-      // By the letter typed, wherever the keyboard has it.
-      const key = event.key.toLowerCase();
-      const redo = key === "y" ? !event.metaKey && !event.shiftKey : key === "z" && event.shiftKey;
-      if (key !== "z" && !redo) return;
+      if (playing || !editor) return;
+      const key = historyKey(event, { dragging: dragging.current });
+      if (!key) return;
       event.preventDefault();
       event.stopPropagation();
+      if (key === "held") return;
+      const redo = key === "redo";
       // One history for the canvas and the layers off it: whichever edit came last is undone.
       const steps = history.past.length;
       // Nudged next, it is a run of its own: the one undone or redone stays a step apart.
@@ -609,6 +605,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           const now = found();
           if (now) select([now]);
         }}
+        onDragging={(underWay) => (dragging.current = underWay)}
         onWorkIn={(view, name) => {
           editor?.at(view);
           setWorked(view && { view, name });

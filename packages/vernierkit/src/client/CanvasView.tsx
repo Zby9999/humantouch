@@ -63,6 +63,8 @@ interface Props {
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
   onEditText(layer: Layer, text: string): void;
+  /** A drag of a layer begins (true), or ends, let go or cancelled (false). */
+  onDragging(underWay: boolean): void;
   /** The view last pressed in, and what it is called: the one the designer works in (null: the desktop view). */
   onWorkIn(view: View | null, name: string): void;
   /** Playing: the canvas alone at 100%, scrolled like a page; nothing on it can be selected or edited. */
@@ -80,7 +82,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onDragging, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -543,7 +545,10 @@ export function CanvasView(props: Props) {
     const pressed = press.current;
     if (pressed?.pointerId === event.pointerId) {
       if (!dragging.current && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < DRAG_THRESHOLD) return;
-      dragging.current ??= startDrag(pressed.layer, pressed.in);
+      if (!dragging.current) {
+        dragging.current = startDrag(pressed.layer, pressed.in);
+        onDragging(true);
+      }
       moveDrag(dragging.current, event, pressed);
       return;
     }
@@ -709,6 +714,7 @@ export function CanvasView(props: Props) {
     press.current = null;
     restoreDragStyles(session);
     setDrag(null);
+    onDragging(false);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back } = session;
     if (shown.offCanvasLayer && session.whole) {
