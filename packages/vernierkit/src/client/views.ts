@@ -74,10 +74,11 @@ export interface Views {
    */
   sync(view?: View): void;
   /**
-   * `change` changes a value in the view `worked` tells (null: the desktop
-   * view): the other views put off all it does to the canvas, its first value
-   * on a layer giving it edit styles too, and what changes only the edit
-   * styles till then, then show it, as it is then, all at once. A value set
+   * Runs `change`, which changes a value in the view `worked` tells (null:
+   * the desktop view): the other views put off all it does to the canvas
+   * (a layer's first value gives its instances edit styles too), and what
+   * changes only the edit styles till then, then show it, as it is then, all
+   * at once. A value set
    * once, they show once the next frame is drawn; one `step` of a run of them,
    * once the steps pause for `CATCH_UP_AFTER_MS`. The latest change says which:
    * a value set once right after steps shows after the next frame, with no
@@ -219,13 +220,14 @@ export function createViews(canvas: Canvas): Views {
       // What came before is taken in as ever: only what `change` does is the value's.
       for (const follower of followers.values()) follower.sync();
       holdBack(worked, step);
+      const was = changing;
       changing = true;
       try {
         change();
+        // What the change did that no view has taken yet: the views beside take it with the value.
+        for (const follower of followers.values()) follower.sync();
       } finally {
-        changing = false;
-        // What the change did that no view has taken yet: the views beside will take it with the value.
-        for (const follower of followers.values()) follower.putOff();
+        changing = was;
       }
     },
     onResize(listener) {
@@ -301,8 +303,6 @@ interface Follower extends Correspondence {
   sync(): void;
   /** Takes in every change to the canvas not taken in yet, those put off too. */
   catchUp(): void;
-  /** Puts off every change to the canvas not taken in yet, whatever it is, while it lags; else takes them in. */
-  putOff(): void;
   /** Stops following the canvas. */
   stop(): void;
 }
@@ -315,9 +315,9 @@ interface Follower extends Correspondence {
  * what is typed there is written to the canvas, and that element of the copy
  * takes in nothing from it; `typed` is called once what is typed is on it.
  * While it `lags`, changes to the edit styles alone, and whatever a value
- * `changing` does, are put off till it catches up, or till any other change comes.
+ * does while it is `valueChanging`, are put off till it catches up, or till any other change comes.
  */
-function follow(canvas: Document, copy: Document, typed: () => void, lags: () => boolean, changing: () => boolean): Follower {
+function follow(canvas: Document, copy: Document, typed: () => void, lags: () => boolean, valueChanging: () => boolean): Follower {
   /** Each canvas node's node in the copy, and back. */
   const inCopy = new WeakMap<Node, Node>();
   const onCanvas = new WeakMap<Node, Node>();
@@ -391,7 +391,7 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     }
     for (const node of lists) update(node, way.to.get(node)!, false, way);
   };
-  /** Changes to the edit styles alone, put off while the copy lags. */
+  /** Changes put off while the copy lags: to the edit styles alone, or made as a value changed. */
   let behind: MutationRecord[] = [];
   /** Takes in `records` from the canvas, and what was put off: as the canvas is now, so in any order. */
   const catchUpWith = (records: MutationRecord[]) => {
@@ -399,9 +399,9 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     behind = [];
     takeIn([...put, ...records], down);
   };
-  /** Takes in `records` from the canvas; while the copy lags, puts them off if they change only the edit styles, or come of a value `changing`. */
+  /** Takes in `records` from the canvas; while the copy lags, puts them off if they change only the edit styles, or are made as a value changes. */
   const keepUpWith = (records: MutationRecord[]) => {
-    if ((changing() || records.every(changesEditStyles)) && lags()) behind.push(...records);
+    if ((valueChanging() || records.every(changesEditStyles)) && lags()) behind.push(...records);
     else catchUpWith(records);
   };
   const observer = new MutationObserver(keepUpWith);
@@ -435,11 +435,6 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     },
     sync: () => keepUpWith(observer.takeRecords()),
     catchUp,
-    putOff: () => {
-      const records = observer.takeRecords();
-      if (lags()) behind.push(...records);
-      else catchUpWith(records);
-    },
     stop: () => {
       // What was typed last is kept on the canvas.
       if (typing) takeIn(typing.observer.takeRecords(), up);

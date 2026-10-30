@@ -281,11 +281,11 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
     if (froms[i].localName === "canvas") drawInto(copies[i] as HTMLCanvasElement, froms[i] as HTMLCanvasElement);
     else if (froms[i].localName === "option") (copies[i] as HTMLOptionElement).selected = (froms[i] as HTMLOptionElement).selected;
   }
-  return layOut(doc, iframe, { width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY });
+  return layOut(doc, iframe, { width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY }, [], true);
 }
 
-/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page there, once what it loads is in. */
-function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
+/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page there, once what it loads is in; `fitMeanwhile`, as tall as what it shows so far till then. */
+function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = [], fitMeanwhile = false): Promise<Canvas> {
   // Sized first: what follows works out the copy's styles, which its width answers to (media queries), only once.
   const { width } = layout;
   iframe.style.width = `${width}px`;
@@ -324,8 +324,8 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
       return Promise.reject(error);
     }
   }
-  // Meanwhile as tall as what it shows so far, so it is not shown cut off while its fonts come in.
-  fitHeight(doc, iframe, layout.windowHeight);
+  // A copy at another width than the canvas: meanwhile as tall as what it shows so far, not cut off while what it loads comes in.
+  if (fitMeanwhile) fitHeight(doc, iframe, layout.windowHeight);
   return Promise.all([waiting, ...loading]).then(atRest);
 }
 
