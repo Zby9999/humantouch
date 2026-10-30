@@ -185,6 +185,49 @@ test("a value set once in the Design panel shows in the views beside the frame a
   await expect(radius).toHaveValue("9");
 });
 
+test("⌘Z and ⇧⌘Z right after steps of a value, while the views beside wait for them to pause, show in every view in the same frame (ADR 0011)", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const cards = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("article").first());
+  await radius.fill("3");
+  await radius.press("Enter");
+  for (const card of cards) await expect(card).toHaveCSS("border-radius", "3px");
+  // In the frame after each ⌘Z or ⇧⌘Z: the first card's corner radius in each view.
+  await page.evaluate(() => {
+    const w = window as unknown as { framesAfter: string[][] };
+    w.framesAfter = [];
+    const frames = [...document.querySelectorAll("vernier-kit")].flatMap((host) => [...(host.shadowRoot ?? host).querySelectorAll("iframe")]);
+    addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key.toLowerCase() !== "z" || !(event.metaKey || event.ctrlKey)) return;
+        requestAnimationFrame(() => {
+          const shown = frames.filter((frame) => /Canvas|Tablet|Phone/.test(frame.title));
+          w.framesAfter.push(shown.map((frame) => getComputedStyle(frame.contentDocument!.querySelector("article")!).borderRadius));
+        });
+      },
+      true,
+    );
+  });
+  const framesAfter = () => page.evaluate(() => (window as unknown as { framesAfter: string[][] }).framesAfter);
+
+  // Stepped with ↑ from 3 to 6: the views beside catch up with 4 as the steps pause, then wait again, at 4.
+  await radius.press("ArrowUp");
+  for (const card of cards) await expect(card).toHaveCSS("border-radius", "4px");
+  await radius.press("ArrowUp");
+  await radius.press("ArrowUp");
+  // Each press of ↑ is a step of its own: undone, 5, redone, 6, in every view at once.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(framesAfter).toEqual([["5px", "5px", "5px"]]);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(framesAfter).toEqual([
+    ["5px", "5px", "5px"],
+    ["6px", "6px", "6px"],
+  ]);
+  await expect(radius).toHaveValue("6");
+});
+
 test("a layer dragged in the phone view goes where it is let go there, and moves in every view; the layers making room go there at once, in the views beside once the pointer pauses", async ({ page }) => {
   // With motion not reduced, too.
   await page.emulateMedia({ reducedMotion: "no-preference" });

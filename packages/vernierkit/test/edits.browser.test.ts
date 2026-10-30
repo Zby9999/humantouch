@@ -1303,6 +1303,32 @@ describe("a value stepped again and again, as the arrow keys and scrubbing do", 
     }
   });
 
+  test("undone or redone while the views beside wait for steps to pause, it shows in every view at once, as any other change (ADR 0011)", async () => {
+    const { doc, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 3);
+    await painted();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // Steps of one adjustment, 3 to 7: the views beside caught up with 5, then wait again.
+      for (const radius of [4, 5]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: radius > 4, step: true });
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      for (const radius of [6, 7]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true, step: true });
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("5px"));
+
+      editor.undo();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("3px"));
+      expect(radii(phone.document)).toEqual(radii(doc));
+      editor.redo();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("7px"));
+      expect(radii(phone.document)).toEqual(radii(doc));
+      // Nothing is left waiting to catch up.
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      expect(radii(phone.document)).toEqual(radii(doc));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("worked in the phone view, each step shows there at once, at its breakpoint, as in the canvas itself", async () => {
     const { doc, editor, cards, layerOf, phone } = await open();
     editor.at(phone);

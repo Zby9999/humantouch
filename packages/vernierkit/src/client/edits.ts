@@ -235,7 +235,7 @@ export function createEditor(
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
   /** This editor's steps, in the history it shares. */
-  const steps = createSteps(history, () => views.sync(), layersOf);
+  const steps = createSteps(history, views, layersOf);
   const { push, group } = steps;
   /** A step to `property` of the layer `id` is made to its only text, if it is a Frame of text alone. */
   const textsOf = (id: string, property: Property) => (isTextProperty(property) ? { texts: [id] } : {});

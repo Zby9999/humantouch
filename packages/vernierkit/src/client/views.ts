@@ -83,6 +83,13 @@ export interface Views {
    */
   sync(view?: View): void;
   /**
+   * Shows every change made to the canvas so far in every view now, what a
+   * value the views beside hold back did too: they wait no more for it. For
+   * a change that is not the value's, as an undo or a redo is (ADR 0011). The
+   * layers making room stay as each view shows them.
+   */
+  catchUp(): void;
+  /**
    * Runs `change`, which changes a value in the view `worked` tells (null:
    * the desktop view): the other views put off all it does to the canvas
    * (a layer's first value gives its instances edit styles too), and what
@@ -225,6 +232,7 @@ export function createViews(canvas: Canvas): Views {
   /** Set while a value is changed (`lagBeside`): whatever the canvas takes from it is the value's, held back with it. */
   let changing = false;
   const catchUp = () => {
+    held?.cancel();
     held = null;
     for (const follower of followers.values()) follower.catchUp();
   };
@@ -297,6 +305,7 @@ export function createViews(canvas: Canvas): Views {
       if (i >= 0) views.splice(i, 1);
     },
     sync,
+    catchUp,
     lagBeside(worked, step, change) {
       // What came before is taken in as ever: only what `change` does is the value's.
       for (const follower of followers.values()) follower.sync();

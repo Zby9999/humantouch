@@ -2,11 +2,15 @@ import { describe, expect, test } from "vitest";
 import type { Layer } from "../src/client/layers";
 import { createHistory, createSteps, type History, type Step } from "../src/client/undo-steps";
 
-/** An editor's steps over a value it edits, showing the canvas as `syncs` counts, its layers found by name. */
+/**
+ * An editor's steps over a value it edits, showing the canvas as `syncs`
+ * counts, and in every view at once as `catchUps` counts, its layers found by name.
+ */
 function editorOver(history: History) {
-  const state = { value: 0, syncs: 0, log: [] as string[] };
+  const state = { value: 0, syncs: 0, catchUps: 0, log: [] as string[] };
   const layersOf = (ids: string[]) => ids.map((id) => ({ el: { getAttribute: () => id }, name: id }) as unknown as Layer);
-  const steps = createSteps(history, () => state.syncs++, layersOf);
+  const views = { sync: () => void state.syncs++, catchUp: () => void state.catchUps++ };
+  const steps = createSteps(history, views, layersOf);
   /** Sets the value as an edit to `layer`, recorded as a step. */
   const set = (layer: string, to: number, continues = false, extra: Partial<Step> = {}) => {
     const from = state.value;
@@ -76,11 +80,26 @@ describe("editors side by side share their history", () => {
     canvas.steps.undo();
     expect(offCanvas.state.value).toBe(0);
     expect(canvas.state.value).toBe(10);
-    // Each step shows its own editor's canvas again.
-    const before = canvas.state.syncs;
+    // Each step shows in its own editor's views again.
+    const before = canvas.state.catchUps;
     offCanvas.steps.undo();
     expect(canvas.state.value).toBe(0);
-    expect(canvas.state.syncs).toBe(before + 1);
+    expect(canvas.state.catchUps).toBe(before + 1);
+  });
+});
+
+describe("undone and redone", () => {
+  test("an edit shows as the views follow the canvas; undone or redone, in every view at once, though they wait for a value changed (ADR 0011)", () => {
+    const { state, steps, set } = editorOver(createHistory());
+    set("1", 10);
+    expect([state.syncs, state.catchUps]).toEqual([1, 0]);
+    steps.undo();
+    expect([state.syncs, state.catchUps]).toEqual([1, 1]);
+    steps.redo();
+    expect([state.syncs, state.catchUps]).toEqual([1, 2]);
+    // Nothing to undo or redo: nothing to show.
+    steps.redo();
+    expect(state.catchUps).toBe(2);
   });
 });
 
