@@ -333,6 +333,74 @@ test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc 
   await expect(desktop(page).contentFrame().locator("h1")).toBeVisible();
 });
 
+test("while a layer inside a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc leaves it where it was, and let go elsewhere in it, one ⌘Z takes it back there", async ({ page }) => {
+  await enterEditMode(page);
+  await pan(page, 400);
+  const view = (await desktop(page).boundingBox())!;
+  // The header off the canvas, the title and the Beta badge in it, by the gap between them.
+  await select(page, "Vernier Kit");
+  await page.keyboard.press("Escape");
+  const title = (await desktop(page).contentFrame().locator("header > h1").boundingBox())!;
+  const gap = { x: title.x + title.width + 4, y: title.y + title.height / 2 };
+  await page.mouse.move(gap.x, gap.y);
+  await page.mouse.down();
+  await page.mouse.move(view.x - 300, view.y + 100, { steps: 10 });
+  await page.mouse.up();
+  await expect(offCanvas(page)).toHaveCount(1);
+  const header = offCanvas(page).contentFrame().locator("header");
+  await expect(header.locator("h1")).toBeVisible();
+  // Something to redo: the Get started button deleted, and that undone.
+  const getStarted = desktop(page).contentFrame().getByRole("button", { name: "Get started" });
+  await select(page, "Button");
+  await page.keyboard.press("Delete");
+  await expect(getStarted).toBeHidden();
+  await page.keyboard.press(`${mod}+z`);
+  await expect(getStarted).toBeVisible();
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+
+  const order = () => header.locator("> *").evaluateAll((els) => els.map((el) => el.textContent));
+  const beta = header.getByText("Beta");
+  const styleOfBeta = () => beta.evaluate((el) => (el as HTMLElement).style.cssText);
+  const before = await styleOfBeta();
+  // Selected first, the deepest layer under the pointer, so a press on it then drags it rather than the header.
+  await beta.click({ modifiers: [mod] });
+  const grab = async () => {
+    const from = (await beta.boundingBox())!;
+    const to = (await header.locator("h1").boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + 4, to.y + to.height / 2, { steps: 10 });
+  };
+
+  await grab();
+  for (const key of [`${mod}+z`, `${mod}+Shift+z`]) {
+    await page.keyboard.press(key);
+    // Still off the canvas as it was: the move off it is not undone, nor the deletion redone.
+    await expect(offCanvas(page), key).toHaveCount(1);
+    expect(await order(), key).toEqual(["Vernier Kit", "Beta"]);
+    await expect(desktop(page).contentFrame().locator("header"), key).toBeHidden();
+    await expect(getStarted, key).toBeVisible();
+    await expect(badge(page), key).toHaveAccessibleName("1 change not applied yet");
+  }
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(await order()).toEqual(["Vernier Kit", "Beta"]);
+  // No style of the drag left on it.
+  expect(await styleOfBeta()).toBe(before);
+
+  await grab();
+  await page.keyboard.press(`${mod}+z`);
+  await page.mouse.up();
+  await expect.poll(order).toEqual(["Beta", "Vernier Kit"]);
+  await page.keyboard.press(`${mod}+z`);
+  // Back where it was in the layer off the canvas; once more, the header is back on the canvas.
+  await expect.poll(order).toEqual(["Vernier Kit", "Beta"]);
+  await expect(offCanvas(page)).toHaveCount(1);
+  await page.keyboard.press(`${mod}+z`);
+  await expect(offCanvas(page)).toHaveCount(0);
+  await expect(desktop(page).contentFrame().locator("header > h1")).toBeVisible();
+});
+
 test("dragged back elsewhere in the same round, into a Stack of the phone view, it takes a place there, in every view, as one move", async ({ page }) => {
   await moveTitleOff(page);
   await zoomOut(page);
