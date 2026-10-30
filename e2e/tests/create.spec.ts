@@ -199,6 +199,55 @@ test("while a Frame is drawn with F, ⌘Z, ⇧⌘Z, Delete and the tool keys do 
   await expect(made).toHaveCount(0);
 });
 
+test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys do nothing; let go, it is made and typed in, and ⌘Z takes back its words, it, then the edit before it", async ({ page }) => {
+  await enterEditMode(page);
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  const textTool = page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Text" });
+  // Something to undo, the title deleted, and something to redo, the button deleted and that undone.
+  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await layerTree(page).getByRole("treeitem", { name: "Get started", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+  const title = canvas(page).locator("h1");
+  const button = canvas(page).locator(`${HERO} > button`);
+  await expect(title).toBeHidden();
+  await expect(button).toBeVisible();
+  const paragraph = await boxOf(canvas(page).locator(`${HERO} > p`));
+  const kinds = () => canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName));
+  const before = await kinds();
+
+  await page.keyboard.press("t");
+  await page.mouse.move(paragraph.x + 20, paragraph.y + paragraph.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(paragraph.x + 200, paragraph.y + paragraph.height + 10, { steps: 6 });
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "Delete", "Enter", "f", "v"]) {
+    await page.keyboard.press(key);
+    await expect(title, key).toBeHidden();
+    await expect(button, key).toBeVisible();
+    expect(await kinds(), key).toEqual(before);
+    await expect(badge, key).toHaveAccessibleName("1 change not applied yet");
+    await expect(textTool, key).toHaveAttribute("aria-pressed", "true");
+  }
+  await page.mouse.up();
+  await page.keyboard.type("Hello there");
+  await page.keyboard.press("Enter");
+  const made = canvas(page).locator(`${HERO} > p`).nth(1);
+  await expect(made).toHaveText("Hello there");
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+
+  // The words typed are an edit of their own, undone first; then the new text, then the title deleted before it.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(made).toHaveText("Text");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(made).toHaveCount(0);
+  await expect(title).toBeHidden();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(title).toBeVisible();
+  await expect(button).toBeVisible();
+});
+
 test("a double click on the selected text types in it; the words change as an edit", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
