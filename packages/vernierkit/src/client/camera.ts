@@ -57,20 +57,25 @@ export function transformOf({ x, y, zoom }: Camera): string {
  * Has the browser draw only what the camera shows of the stage again, once a
  * camera move animated on it has ended, with nothing on screen changed.
  *
- * Chromium draws all of what is under an animated transform. Once it has, it
- * goes on drawing all of it while that transform is set from script, as the
+ * Chromium draws all of what is under an animated transform. Once it has
+ * drawn all of the stage, under an animation or with all of it in sight, it
+ * goes on drawing all of it while the transform is set from script, as the
  * camera's is: on a large page, each change to a view then had the whole of
  * it drawn again, not just what shows, some 12ms a frame (ticket 22). Taking
  * the stage out of the layout and putting it back in the same task, before
  * anything is drawn, makes the browser start that over: the views keep their
  * documents, what has focus keeps it, and the stage is drawn the same.
+ * Zoomed out till every view shows in full, the stage is drawn whole again,
+ * and stays so after zooming back in till the next animated camera move.
  */
 export function drawOnlyWhatShows(stage: HTMLElement) {
-  const style = stage.getAttribute("style");
-  stage.style.display = "none";
+  // Only `display` is touched: the style written again in full would be read back with fewer digits, the camera a little off.
+  const display = stage.style.getPropertyValue("display");
+  const priority = stage.style.getPropertyPriority("display");
+  stage.style.setProperty("display", "none");
   stage.getBoundingClientRect();
-  if (style === null) stage.removeAttribute("style");
-  else stage.setAttribute("style", style);
+  if (display) stage.style.setProperty("display", display, priority);
+  else stage.style.removeProperty("display");
 }
 
 /** Where the stage is right now, partway through an animation included. */

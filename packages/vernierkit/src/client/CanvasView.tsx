@@ -167,7 +167,7 @@ export function CanvasView(props: Props) {
       () => {
         if (modeSwitch.current !== animation) return;
         modeSwitch.current = null;
-        // Back where the camera has it, the canvas is drawn only as far as it shows, as before the animation.
+        // Back where the camera has it, the views are drawn only as far as they show (`drawOnlyWhatShows`).
         if (el === stage.current && !wasLeaving.current) drawOnlyWhatShows(el);
         setTravelling(false);
         done?.();
