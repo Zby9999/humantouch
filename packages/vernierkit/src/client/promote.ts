@@ -87,8 +87,9 @@ export function showComponent(doc: Document, loc: string, changes: Change[]) {
   const key = componentKey(loc);
   const styles = changes.filter((change) => change.layer === key && change.kind === "style");
   const brief = briefAt(loc, changes);
-  for (const el of componentElements(doc, loc)) {
-    declarePromoted(el, styles);
+  const els = componentElements(doc, loc);
+  declarePromoted(els, styles);
+  for (const el of els) {
     const id = el.getAttribute(LAYER_ID_ATTR);
     const own = id ? changes.find((change) => change.layer === id && change.property === BRIEF) : undefined;
     const text = own ? (own.after as string) : brief;

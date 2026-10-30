@@ -35,6 +35,7 @@ import { CHAIN_ATTR } from "./usage-chain";
 /** Puts the new layer with id `id` where `created` says, in each instance of its container, with `style`. */
 export function insertNew(doc: Document, id: string, created: Created, style: Record<string, string>) {
   const containers = elementsOf(doc, created.place.container.layer);
+  const made: Element[] = [];
   for (const container of containers) {
     const el = doc.createElement(created.type === "text" ? "p" : "div");
     el.setAttribute(LAYER_ID_ATTR, id);
@@ -46,9 +47,10 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
     if (created.text !== undefined) el.textContent = created.text;
     if (created.brief) el.setAttribute(BRIEF_ATTR, created.brief);
     keepOriginal(el);
-    declare(el, style);
     container.insertBefore(el, slotsOf(container)[created.place.slot] ?? null);
+    made.push(el);
   }
+  declare(made, style);
   if (created.place.absolute) holdAbsolute(containers);
 }
 
@@ -163,17 +165,15 @@ export function hide(els: Element[], property: string, style: Record<string, str
   for (const el of els) {
     el.setAttribute(DELETED_ATTR, property);
     keepOriginal(el);
-    declare(el, style);
   }
+  declare(els, style);
 }
 
 /** Brings back the elements of the layer with id `id` deleted under change `property`. `changes`: the ChangeSet once that change is no longer in it. */
 export function unhide(doc: Document, id: string, property: string, changes: Change[]) {
-  for (const el of elementsOf(doc, id)) {
-    if (el.getAttribute(DELETED_ATTR) !== property) continue;
-    el.removeAttribute(DELETED_ATTR);
-    restoreStyle(el, ["display"], changesOn(id, changes));
-  }
+  const shown = elementsOf(doc, id).filter((el) => el.getAttribute(DELETED_ATTR) === property);
+  for (const el of shown) el.removeAttribute(DELETED_ATTR);
+  restoreStyle(shown, ["display"], changesOn(id, changes));
 }
 
 /**
