@@ -7,3 +7,4 @@ playground/
 .vitest/
 .vernier/
 bench-results/
+e2e/perf/results/

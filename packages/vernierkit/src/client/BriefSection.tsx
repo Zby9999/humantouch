@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Editor } from "./edits";
+import type { Editor } from "./edit-commands";
 import { Icon } from "./icons";
 import { nodeOf, type Layer } from "./layers";
 

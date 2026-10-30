@@ -139,6 +139,43 @@ test("a fill made a linear gradient: its angle and its stops, dragged, added, mo
   await expect(fill.getByRole("button", { name: "Remove stop 1" })).toBeDisabled();
 });
 
+test("while a gradient's stop is dragged, ⌘Z, ⇧⌘Z, Delete and the arrows do nothing: no stop comes or goes, and the one dragged is the one that moves; let go, ⌘Z takes the drag back", async ({ page }) => {
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("group", { name: "Fill" });
+  const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
+  await fill.getByRole("combobox", { name: "Fill type" }).selectOption("Linear");
+  const color = fill.getByRole("textbox", { name: "Stop 1 color", exact: true });
+  await color.fill("ff0000");
+  await color.press("Enter");
+  // Something to redo that adds a stop: one added and that undone.
+  await fill.getByRole("button", { name: "Add stop" }).click();
+  await expect(fill.getByRole("slider")).toHaveCount(3);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(fill.getByRole("slider")).toHaveCount(2);
+  const at = (n: number) => `linear-gradient(rgb(255, 0, 0) ${n}%, rgba(255, 255, 255, 0) 100%)`;
+  expect(await gradient()).toBe(at(0));
+
+  const bar = (await fill.getByRole("group", { name: "Gradient stops" }).boundingBox())!;
+  const handle = (await fill.getByRole("slider", { name: "Stop 1 position" }).boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bar.x + bar.width * 0.1, bar.y + bar.height / 2, { steps: 4 });
+  expect(await gradient()).toBe(at(10));
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "Delete", "ArrowRight"]) {
+    await page.keyboard.press(key);
+    await expect(fill.getByRole("slider"), key).toHaveCount(2);
+    expect(await gradient(), key).toBe(at(10));
+  }
+  await page.mouse.move(bar.x + bar.width * 0.2, bar.y + bar.height / 2, { steps: 4 });
+  await page.mouse.up();
+  expect(await gradient()).toBe(at(20));
+
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await gradient()).toBe(at(0));
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await gradient()).toBe("linear-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
+});
+
 test("a radial gradient keeps the stops, and a color again takes the first of them", async ({ page }) => {
   await selectRow(page, "Card");
   const type = design(page).getByRole("group", { name: "Fill" }).getByRole("combobox", { name: "Fill type" });

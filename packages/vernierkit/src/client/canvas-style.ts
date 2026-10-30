@@ -1,13 +1,34 @@
 /**
  * Edits on canvas elements, and taking them back off. What edits declare goes
- * into the canvas's edit styles: a style element per element edited, in the
- * canvas's head, its rules in a CSS layer of the editor's that comes before
- * every layer of the page's, all important, so they win over whatever the page
- * declares, as the style attribute did. What applies at every width is the
- * element's base rule; what applies at a breakpoint only (ADR 0008) is in a
- * media query for its range, after it. Each view, as wide as it is, and the
- * canvas played at any width, show what belongs there. Works on the canvas
- * being edited and on a saved one alike.
+ * into the canvas's edit styles: a style element per group of elements edited
+ * alike, in the canvas's head, its rules in a CSS layer of the editor's that
+ * comes before every layer of the page's, all important, so they win over
+ * whatever the page declares, as the style attribute did. What applies at
+ * every width is the group's base rule; what applies at a breakpoint only
+ * (ADR 0008) is in a media query for its range, after it. Each view, as wide
+ * as it is, and the canvas played at any width, show what belongs there.
+ * Works on the canvas being edited and on a saved one alike.
+ *
+ * The elements of a group are instances of one layer, with the same rules:
+ * an edit to a layer is written once for all its instances, which share a key
+ * (ticket 60). An instance whose rules come to differ, as one moved or deleted
+ * alone, or one the page or the freezer styles otherwise, has a group of its
+ * own, and joins the others again once they are alike again. An element of no
+ * layer yet is a group alone. What is written onto elements is worked out for
+ * each of them, and grouped as it comes out.
+ *
+ * A style element's rules, as JSON, are what it declares. Whenever they
+ * change into the same rules with other declarations, as a value changed
+ * does, each step of a drag on a number or an arrow key as much as a value
+ * typed, the declarations are changed in place, through the CSSOM, and its
+ * text is left behind (`showRules`). Only when the rules themselves change (a
+ * rule, a breakpoint added or taken away), or the sheet is in no document
+ * shown in a window, is its text written from them. Chromium lays the whole
+ * document out and paints it again for any change to the text of a sheet with
+ * a CSS layer in it, which on a large page is more than a frame, in every
+ * view; for a change to a rule's declarations, only what it styles.
+ * `syncEditStyles` has a copy declare the rules too: a view's copy in place
+ * the same way, a copy to be saved, in no window, as text.
  */
 import { mediaOf, sameBreakpoint, widestFirst, type Breakpoint } from "./breakpoints";
 import type { Change, Composed, Dissolved } from "./changeset";
@@ -51,11 +72,11 @@ export function keepOriginal(el: Element) {
   if (!el.hasAttribute(ORIGINAL_STYLE_ATTR)) el.setAttribute(ORIGINAL_STYLE_ATTR, el.getAttribute("style") ?? "");
 }
 
-/** On a canvas element edits have given styles: the key its rules go by in the edit styles. */
+/** On a canvas element edits have given styles: the key its rules go by in the edit styles, which instances of its layer with the same rules share. */
 export const STYLE_KEY_ATTR = "data-vk-style";
-/** On a style element of an element's rules: the element's key. */
+/** On a style element of a group's rules: the group's key. */
 const RULES_FOR_ATTR = "data-vk-rules-for";
-/** On a style element of an element's rules: the rules, as JSON, which its CSS is written from. */
+/** On a style element of a group's rules: the rules, as JSON, which its CSS is written from. */
 const RULES_ATTR = "data-vk-rules";
 /** On an element read as if shown: its edits that hide it do not apply meanwhile. */
 const SHOWN_ATTR = "data-vk-shown";
@@ -88,25 +109,36 @@ interface Rules {
   edits: RuleBlocks;
 }
 
-/** Writes declarations onto a canvas element, over the page's: at every width, or only at `breakpoint`. Where the freezer pinned it, shifted as it was. */
-export function declare(el: Element, declarations: Record<string, string>, breakpoint: Breakpoint | null = null) {
-  editRules(el, (edits) => put(el, edits, declarations, breakpoint));
+/** Canvas elements an edit is written onto: one, or several, as the instances of a layer. */
+export type Elements = Element | Iterable<Element>;
+
+/**
+ * Writes declarations onto canvas elements, over the page's: at every width,
+ * or only at `breakpoint`. Where the freezer pinned one, shifted as it was.
+ * `layer`: the id of the layer they are the instances of, when it is stamped
+ * on them only after, as on a layer's first edit: they share their edit
+ * styles from then on.
+ */
+export function declare(els: Elements, declarations: Record<string, string>, breakpoint: Breakpoint | null = null, layer?: string) {
+  editRules(els, (el, rules) => put(el, rules.edits, declarations, breakpoint), { pendingLayer: layer });
 }
 
 /**
- * Writes onto a canvas element the component writes what the changes to the
+ * Writes onto canvas elements the component writes what the changes to the
  * component itself, `changes`, declare, in place of what they declared
- * before: under the edits of the element's usage, which win over them.
+ * before: under the edits of each element's usage, which win over them.
  */
-export function declarePromoted(el: Element, changes: Change[]) {
-  const rules = readRules(el);
-  if (!rules && !changes.length) return;
-  editRules(el, () => {}, (all) => {
-    const promoted: RuleBlocks = { base: { style: {} }, at: [] };
-    for (const change of changes) put(el, promoted, change.style, change.breakpoint ?? null);
-    if (changes.length) all.promoted = promoted;
-    else delete all.promoted;
-  });
+export function declarePromoted(els: Elements, changes: Change[]) {
+  editRules(
+    els,
+    (el, rules) => {
+      const promoted: RuleBlocks = { base: { style: {} }, at: [] };
+      for (const change of changes) put(el, promoted, change.style, change.breakpoint ?? null);
+      if (changes.length) rules.promoted = promoted;
+      else delete rules.promoted;
+    },
+    { ruledOnly: !changes.length },
+  );
 }
 
 /**
@@ -114,29 +146,37 @@ export function declarePromoted(el: Element, changes: Change[]) {
  * `declarations` at every width, and no breakpoint keeps a display of its own
  * (an edit there made it a real Stack) against it.
  */
-export function relayOut(el: Element, declarations: Record<string, string>) {
-  editRules(el, (edits) => {
+export function relayOut(els: Elements, declarations: Record<string, string>) {
+  editRules(els, (el, { edits }) => {
     put(el, edits, declarations, null);
     for (const at of edits.at) delete at.style.display;
   });
 }
 
 /**
- * Takes the declarations of the CSS properties `names` off an element, at
- * every width or at `breakpoint`, and keeps the element's other changes,
+ * Takes the declarations of the CSS properties `names` off canvas elements, at
+ * every width or at `breakpoint`, and keeps each element's other changes,
  * `others`, on: they may declare some of the same CSS properties. With no
  * other change left, nothing of the edits is left on it.
  * A Frame something was moved into stays its positioning reference.
  */
-export function restoreStyle(el: Element, names: string[], others: Change[], breakpoint: Breakpoint | null = null) {
+export function restoreStyle(els: Elements, names: string[], others: Change[], breakpoint: Breakpoint | null = null) {
   // A move or a deletion of one of a loop's instances alone is not on the others: those elements are marked with it.
-  others = others.filter((change) => {
-    const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
-    return !change.data || !mark || el.getAttribute(mark) === change.property;
-  });
-  if (readRules(el)) {
-    editRules(el, (edits) => {
-      if (!others.length) {
+  const list = elementsIn(els);
+  const othersOn = new Map(
+    list.map((el) => [
+      el,
+      others.filter((change) => {
+        const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
+        return !change.data || !mark || el.getAttribute(mark) === change.property;
+      }),
+    ]),
+  );
+  editRules(
+    list,
+    (el, { edits }) => {
+      const own = othersOn.get(el)!;
+      if (!own.length) {
         edits.base = { style: {} };
         edits.at = [];
         return;
@@ -146,11 +186,15 @@ export function restoreStyle(el: Element, names: string[], others: Change[], bre
         for (const name of names) delete block.style[name];
         if (names.includes("display")) delete block.hidden;
       }
-      for (const change of others) put(el, edits, change.style, change.breakpoint ?? null);
-    });
-  }
-  if (!others.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
-  if (el.hasAttribute(REFERENCE_ATTR)) declare(el, { position: "relative" });
+      for (const change of own) put(el, edits, change.style, change.breakpoint ?? null);
+    },
+    { ruledOnly: true },
+  );
+  for (const el of list) if (!othersOn.get(el)!.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
+  declare(
+    list.filter((el) => el.hasAttribute(REFERENCE_ATTR)),
+    { position: "relative" },
+  );
 }
 
 /** Runs `look` on an element as if shown: what the edits hide is read and measured as it is laid out when shown. Nothing of it is painted meanwhile. */
@@ -168,14 +212,16 @@ export function asShown<T>(el: Element, look: () => T): T {
  * Runs `look` on an element as the page styles it: none of this round's edits
  * to it, nor its component's, apply meanwhile, those that hide it among them;
  * what the freezer wrote on it, and the look a layer was copied or made with,
- * still do. Nothing of it is painted meanwhile.
+ * still do. Nothing of it is painted meanwhile; the instances sharing its
+ * edit styles are as the page styles them meanwhile too.
  */
 export function asPage<T>(el: Element, look: () => T): T {
   const key = el.getAttribute(STYLE_KEY_ATTR);
   const rules = readRules(el);
   const sheet = key && rules && sheetOf(el.ownerDocument, key);
   if (!sheet) return look();
-  const css = sheet.textContent;
+  // Put back as the rules have it: the text may be behind them.
+  const css = cssOf(key, effective(rules));
   sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, edits: { base: { style: {} }, at: [] } }));
   try {
     return look();
@@ -225,7 +271,7 @@ export function copyRules(doc: Document, copy: Element) {
   const rules = key && sheetOf(doc, key) ? (JSON.parse(sheetOf(doc, key)!.getAttribute(RULES_ATTR)!) as Rules) : null;
   copy.removeAttribute(STYLE_KEY_ATTR);
   if (!rules) return;
-  writeRules(copy, { lifted: { ...rules.lifted }, copied: effective({ ...rules, lifted: {} }), edits: { base: { style: {} }, at: [] } });
+  writeRules([{ el: copy, rules: { lifted: { ...rules.lifted }, copied: effective({ ...rules, lifted: {} }), edits: { base: { style: {} }, at: [] } } }]);
 }
 
 /**
@@ -235,7 +281,19 @@ export function copyRules(doc: Document, copy: Element) {
 export function lookRules(el: Element, style: Record<string, string>) {
   keepOriginal(el);
   el.removeAttribute(STYLE_KEY_ATTR);
-  writeRules(el, { lifted: {}, copied: { base: { style }, at: [] }, edits: { base: { style: {} }, at: [] } });
+  writeRules([{ el, rules: { lifted: {}, copied: { base: { style }, at: [] }, edits: { base: { style: {} }, at: [] } } }]);
+}
+
+/**
+ * Brings a canvas saved by an earlier Vernier Kit up to how edits are kept
+ * now: those in the style attribute move into the edit styles
+ * (`moveInlineEdits`), and the instances of a layer with the same rules, each
+ * with a style element of its own then, share one (`shareEditStyles`). It
+ * looks as it did. Nothing changes on a canvas saved as edits are kept now.
+ */
+export function upgradeEditStyles(doc: Document) {
+  moveInlineEdits(doc);
+  shareEditStyles(doc);
 }
 
 /**
@@ -260,8 +318,48 @@ export function moveInlineEdits(doc: Document) {
     if (original) el.setAttribute("style", original);
     else el.removeAttribute("style");
     // Written as they were: shifted already where the freezer pinned it.
-    editRules(el, (rules) => putAsIs(rules.base, edits));
+    editRules(el, (_, rules) => putAsIs(rules.edits.base, edits));
   }
+}
+
+/**
+ * The instances of each layer whose rules are the same share one key, the
+ * smallest of theirs, and its style element: those of the others go. As a
+ * canvas saved before they shared them (ticket 60) is brought up to now.
+ */
+function shareEditStyles(doc: Document) {
+  const jsonOf = rulesReader(doc);
+  /** The keys of the instances of each layer with the same rules, by layer and rules. */
+  const alike = new Map<string, Set<string>>();
+  for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}][${STYLE_KEY_ATTR}]`)) {
+    const key = el.getAttribute(STYLE_KEY_ATTR)!;
+    const json = jsonOf(key);
+    if (!json) continue;
+    const id = groupOf(el.getAttribute(LAYER_ID_ATTR)!, json);
+    if (!alike.has(id)) alike.set(id, new Set());
+    alike.get(id)!.add(key);
+  }
+  for (const keys of alike.values()) {
+    if (keys.size < 2) continue;
+    const [kept, ...others] = [...keys].sort((a, b) => Number(a) - Number(b) || a.localeCompare(b));
+    for (const key of others) {
+      for (const el of membersOf(doc, key)) el.setAttribute(STYLE_KEY_ATTR, kept);
+      sheetOf(doc, key)?.remove();
+    }
+  }
+}
+
+/** Documents whose elements each keep edit styles of their own. */
+const apart = new WeakSet<Document>();
+
+/**
+ * Has each element of `doc`, the document of a layer off the canvas, keep
+ * edit styles of its own, as before the instances of a layer shared them
+ * (ticket 60): its look is written out, put back, and read by the Agent, as
+ * it always was. It is small: sharing would gain nothing there.
+ */
+export function keepEditStylesApart(doc: Document) {
+  apart.add(doc);
 }
 
 /** Puts the CSS layer of the edit styles first in the canvas's head, before any of the page's: where the layer order is settled. */
@@ -345,66 +443,255 @@ function effective(rules: Rules): RuleBlocks {
   return all;
 }
 
-/** The element's rules; null when it has none. */
+/** The element's rules, those of its group; null when it has none. */
 function readRules(el: Element): Rules | null {
   const key = el.getAttribute(STYLE_KEY_ATTR);
   const sheet = key && sheetOf(el.ownerDocument, key);
   return sheet ? (JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules) : null;
 }
 
-/**
- * Changes the element's edits, as `change` does (or its rules as a whole, as
- * `whole` does); its rules are made on the first, with what of its style attribute is important taken in.
- */
-function editRules(el: Element, change: (edits: RuleBlocks) => void, whole?: (rules: Rules) => void) {
-  let rules = readRules(el);
-  if (!rules) {
-    keepOriginal(el);
-    const style = (el as HTMLElement).style;
-    const lifted: Record<string, string> = {};
-    for (const name of [...style]) {
-      if (style.getPropertyPriority(name) !== "important") continue;
-      lifted[name] = style.getPropertyValue(name);
-      style.removeProperty(name);
-    }
-    if (el.getAttribute("style") === "") el.removeAttribute("style");
-    rules = { lifted, edits: { base: { style: {} }, at: [] } };
-  }
-  change(rules.edits);
-  whole?.(rules);
-  writeRules(el, rules);
+/** The rules of each key in `doc`, as JSON, each read once; null for a key with none. */
+function rulesReader(doc: Document): (key: string) => string | null {
+  const read = new Map<string, string | null>();
+  return (key) => {
+    if (!read.has(key)) read.set(key, sheetOf(doc, key)?.getAttribute(RULES_ATTR) ?? null);
+    return read.get(key)!;
+  };
 }
 
-/** Writes the element's rules into its style element; with no edits and nothing copied, the element is left as the page has it. */
-function writeRules(el: Element, rules: Rules) {
-  const doc = el.ownerDocument;
-  rules.edits.at = rules.edits.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
-  let key = el.getAttribute(STYLE_KEY_ATTR);
-  const empty = (blocks: RuleBlocks) => !Object.keys(blocks.base.style).length && blocks.base.hidden === undefined && !blocks.at.length;
-  if (rules.promoted && empty(rules.promoted)) delete rules.promoted;
-  if (empty(rules.edits) && !rules.copied && !rules.promoted) {
-    if (key) sheetOf(doc, key)?.remove();
-    el.removeAttribute(STYLE_KEY_ATTR);
-    // What was lifted off the style attribute goes back on it.
-    for (const name in rules.lifted) (el as HTMLElement).style.setProperty(name, rules.lifted[name], "important");
+/** The elements of `els`, each once. */
+function elementsIn(els: Elements): Element[] {
+  return "nodeType" in (els as object) ? [els as Element] : [...new Set(els as Iterable<Element>)];
+}
+
+/** An element, with the rules to write for it. */
+interface Written {
+  el: Element;
+  rules: Rules;
+}
+
+/** The instances of the layer with id `layer` whose rules, as JSON, are `json`: they share a style element. */
+const groupOf = (layer: string, json: string) => `${layer}\n${json}`;
+
+/**
+ * Changes the rules of each of `els` as `change` does, given the element and
+ * its rules as they are, for it alone; an element's rules are made on the
+ * first, with what of its style attribute is important taken in, unless
+ * `ruledOnly`: then those with none are left as they are. `pendingLayer`: the
+ * layer of those with no layer id yet, stamped on them after.
+ */
+function editRules(els: Elements, change: (el: Element, rules: Rules) => void, options: { ruledOnly?: boolean; pendingLayer?: string } = {}) {
+  const list = elementsIn(els);
+  if (!list.length) return;
+  const docs = new Set(list.map((el) => el.ownerDocument));
+  if (docs.size > 1) {
+    for (const doc of docs) editRules(list.filter((el) => el.ownerDocument === doc), change, options);
     return;
   }
-  if (!key || !sheetOf(doc, key)) {
-    key ??= String(nextKey(doc));
-    el.setAttribute(STYLE_KEY_ATTR, key);
+  const jsonOf = rulesReader(list[0].ownerDocument);
+  const written: Written[] = [];
+  for (const el of list) {
+    const key = el.getAttribute(STYLE_KEY_ATTR);
+    const json = key === null ? null : jsonOf(key);
+    if (!json && options.ruledOnly) continue;
+    const rules = json ? (JSON.parse(json) as Rules) : liftedRules(el);
+    change(el, rules);
+    written.push({ el, rules });
   }
-  let sheet = sheetOf(doc, key);
-  if (!sheet) {
-    sheet = doc.createElement("style");
-    sheet.setAttribute(EDIT_STYLES_ATTR, "");
-    sheet.setAttribute(RULES_FOR_ATTR, key);
-    (doc.head ?? doc.documentElement).append(sheet);
-    orderEditStyles(doc);
+  writeRules(written, options.pendingLayer);
+}
+
+/** The rules of an element edited for the first time: none, but what of its style attribute is important, taken off it. */
+function liftedRules(el: Element): Rules {
+  keepOriginal(el);
+  const style = (el as HTMLElement).style;
+  const lifted: Record<string, string> = {};
+  for (const name of [...style]) {
+    if (style.getPropertyPriority(name) !== "important") continue;
+    lifted[name] = style.getPropertyValue(name);
+    style.removeProperty(name);
   }
-  const json = JSON.stringify(rules);
+  if (el.getAttribute("style") === "") el.removeAttribute("style");
+  return { lifted, edits: { base: { style: {} }, at: [] } };
+}
+
+/**
+ * Writes each element's rules into the style element of its group: with no
+ * edits and nothing copied, the element is left as the page has it. The
+ * instances of a layer with the same rules share one, the one they share
+ * already where they can, else one of another instance with those rules, else
+ * one of theirs no other element shares, else a new one; a style element left
+ * with no element goes. Rules written for the whole of a group, all alike, are
+ * written into its style element as they are, which changes in place.
+ * `pendingLayer`: the layer of those with no layer id yet, stamped on them
+ * after. In a document whose elements keep theirs apart, each is a group alone.
+ */
+function writeRules(written: Written[], pendingLayer?: string) {
+  if (!written.length) return;
+  const doc = written[0].el.ownerDocument;
+  /** The layer an element is an instance of, to share its style element with the others; none to keep its own. */
+  const layerOf = (el: Element) => (apart.has(doc) ? null : (el.getAttribute(LAYER_ID_ATTR) ?? pendingLayer ?? null));
+  const empty = (blocks: RuleBlocks) => !Object.keys(blocks.base.style).length && blocks.base.hidden === undefined && !blocks.at.length;
+  const all = written.map(({ el, rules }) => {
+    rules.edits.at = rules.edits.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
+    if (rules.promoted && empty(rules.promoted)) delete rules.promoted;
+    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted;
+    return { el, rules, json: shows ? JSON.stringify(rules) : null, key: el.getAttribute(STYLE_KEY_ATTR) };
+  });
+
+  // A whole group, alike still, of a layer with no other group to join: its style element, as it is.
+  const [first] = all;
+  if (first.json && first.key !== null && all.every(({ key, json }) => key === first.key && json === first.json)) {
+    const sheet = sheetOf(doc, first.key);
+    const these = new Set(all.map(({ el }) => el));
+    const layer = layerOf(first.el);
+    const alone = !layer || !doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(layer)}"][${STYLE_KEY_ATTR}]:not([${STYLE_KEY_ATTR}="${CSS.escape(first.key)}"])`);
+    if (sheet && alone && membersOf(doc, first.key).every((el) => these.has(el))) {
+      showGroup(sheet as HTMLStyleElement, first.key, first.rules, first.json);
+      return;
+    }
+  }
+
+  const these = new Set(all.map(({ el }) => el));
+  const jsonOf = rulesReader(doc);
+  const outside = new Map<string, boolean>();
+  /** Whether elements not written here have key `key`. */
+  const othersHave = (key: string) => {
+    if (!outside.has(key)) outside.set(key, membersOf(doc, key).some((el) => !these.has(el)));
+    return outside.get(key)!;
+  };
+  const had = new Set(all.flatMap(({ key }) => (key !== null && sheetOf(doc, key) ? [key] : [])));
+  const taken = new Set<string>();
+  const groups = new Map<string, typeof all>();
+  all.forEach((one, i) => {
+    if (!one.json) {
+      one.el.removeAttribute(STYLE_KEY_ATTR);
+      // What was lifted off the style attribute goes back on it.
+      for (const name in one.rules.lifted) (one.el as HTMLElement).style.setProperty(name, one.rules.lifted[name], "important");
+      return;
+    }
+    const layer = layerOf(one.el);
+    // An element of no layer is a group alone.
+    const id = layer ? groupOf(layer, one.json) : String(i);
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id)!.push(one);
+  });
+  for (const group of groups.values()) {
+    const { el, rules, json } = group[0];
+    const layer = layerOf(el);
+    const own = [...new Set(group.flatMap(({ key }) => (key === null ? [] : [key])))];
+    const instances = layer ? [...new Set([...doc.querySelectorAll(`[${LAYER_ID_ATTR}="${CSS.escape(layer)}"][${STYLE_KEY_ATTR}]`)].map((instance) => instance.getAttribute(STYLE_KEY_ATTR)!))] : [];
+    const key =
+      [...own, ...instances].find((key) => !taken.has(key) && jsonOf(key) === json) ?? own.find((key) => !taken.has(key) && !othersHave(key)) ?? String(nextKey(doc));
+    taken.add(key);
+    for (const one of group) if (one.key !== key) one.el.setAttribute(STYLE_KEY_ATTR, key);
+    let sheet = sheetOf(doc, key);
+    if (!sheet) {
+      sheet = doc.createElement("style");
+      sheet.setAttribute(EDIT_STYLES_ATTR, "");
+      sheet.setAttribute(RULES_FOR_ATTR, key);
+      (doc.head ?? doc.documentElement).append(sheet);
+      orderEditStyles(doc);
+    }
+    showGroup(sheet as HTMLStyleElement, key, rules, json!);
+  }
+  for (const key of had) {
+    if (taken.has(key) || membersOf(doc, key).length || all.some(({ el }) => el.getAttribute(STYLE_KEY_ATTR) === key)) continue;
+    sheetOf(doc, key)?.remove();
+  }
+}
+
+/** Has the style element of the group with key `key` declare `rules`, as JSON `json`. */
+function showGroup(sheet: HTMLStyleElement, key: string, rules: Rules, json: string) {
   if (sheet.getAttribute(RULES_ATTR) === json) return;
   sheet.setAttribute(RULES_ATTR, json);
-  sheet.textContent = cssOf(key, effective(rules));
+  showRules(sheet, cssOf(key, effective(rules)));
+}
+
+/** The elements of the canvas with key `key`. */
+function membersOf(doc: Document, key: string): Element[] {
+  return [...doc.querySelectorAll(`[${STYLE_KEY_ATTR}="${CSS.escape(key)}"]`)];
+}
+
+/**
+ * Makes `root`, and every edit style element in it, declare what its rules
+ * have: in place where it can, else as text, which a copy that is not in a
+ * document yet always gets. For a copy of the canvas, or of any part of it,
+ * before it is shown or saved; and for a view, as its copy of an edit style
+ * element takes in new rules from the canvas.
+ */
+export function syncEditStyles(root: Element) {
+  const sheets = isEditStyles(root) ? [root] : root.querySelectorAll(`style[${RULES_ATTR}]`);
+  for (const sheet of sheets) {
+    const rules = JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules;
+    showRules(sheet as HTMLStyleElement, cssOf(sheet.getAttribute(RULES_FOR_ATTR)!, effective(rules)));
+  }
+}
+
+/**
+ * Whether `record` is of a change to an edit style element alone: to its
+ * rules, or to its text. A copy of the canvas writes its own text from the
+ * rules (`syncEditStyles`), so a change to the text alone, as `asPage` makes,
+ * changes nothing there.
+ */
+export function changesEditStyles(record: MutationRecord): boolean {
+  if (record.type === "attributes") return record.attributeName === RULES_ATTR && isEditStyles(record.target);
+  return isEditStyles(record.type === "characterData" ? (record.target.parentNode ?? record.target) : record.target);
+}
+
+/** Whether `node` is an edit style element: what it declares is its rules, its text maybe behind them. */
+export function isEditStyles(node: Node): node is HTMLStyleElement {
+  return node.nodeType === Node.ELEMENT_NODE && (node as Element).localName === "style" && (node as Element).hasAttribute(RULES_ATTR);
+}
+
+/** Has the style element declare `css`: in place when its rules are the same rules with other declarations, else as its text. */
+function showRules(sheet: HTMLStyleElement, css: string) {
+  if (!restyleInPlace(sheet, css) && sheet.textContent !== css) sheet.textContent = css;
+}
+
+/**
+ * Changes the declarations of the sheet's rules to those of `css`, through
+ * the CSSOM, when `css` has the same rules, in the same at-rules, in the same
+ * order; returns false, changing nothing, when it does not, or when the sheet
+ * is not in a document shown in a window.
+ */
+function restyleInPlace(sheet: HTMLStyleElement, css: string): boolean {
+  const live = sheet.sheet;
+  const View = sheet.ownerDocument.defaultView?.CSSStyleSheet;
+  if (!live || !View) return false;
+  const wanted = new View();
+  wanted.replaceSync(css);
+  if (!sameRules(live.cssRules, wanted.cssRules)) return false;
+  copyDeclarations(live.cssRules, wanted.cssRules);
+  return true;
+}
+
+function sameRules(a: CSSRuleList, b: CSSRuleList): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const [x, y] = [a[i], b[i]];
+    if (x.constructor.name !== y.constructor.name) return false;
+    if ("selectorText" in x && x.selectorText !== (y as CSSStyleRule).selectorText) return false;
+    if ("conditionText" in x && x.conditionText !== (y as CSSConditionRule).conditionText) return false;
+    if ("name" in x && x.name !== (y as CSSLayerBlockRule).name) return false;
+    const [xs, ys] = ["cssRules" in x ? (x as CSSGroupingRule).cssRules : null, "cssRules" in y ? (y as CSSGroupingRule).cssRules : null];
+    if (!xs !== !ys || (xs && !sameRules(xs, ys!))) return false;
+  }
+  return true;
+}
+
+function copyDeclarations(to: CSSRuleList, from: CSSRuleList) {
+  for (let i = 0; i < to.length; i++) {
+    const [x, y] = [to[i], from[i]];
+    if ("cssRules" in x) copyDeclarations((x as CSSGroupingRule).cssRules, (y as CSSGroupingRule).cssRules);
+    if (!("style" in x)) continue;
+    const [style, wanted] = [(x as CSSStyleRule).style, (y as CSSStyleRule).style];
+    for (const name of [...style]) if (!wanted.getPropertyValue(name)) style.removeProperty(name);
+    for (const name of wanted) {
+      const [value, priority] = [wanted.getPropertyValue(name), wanted.getPropertyPriority(name)];
+      if (style.getPropertyValue(name) !== value || style.getPropertyPriority(name) !== priority) style.setProperty(name, value, priority);
+    }
+  }
 }
 
 /** The style element of the rules with key `key`. */

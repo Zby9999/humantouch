@@ -1376,3 +1376,20 @@ describe("claim, Variables", () => {
     expect(section(output, 6)).toContain("- **Variables:** the color of shadow 1 is the Variable `--danger`, a CSS variable: use `var(--danger)`.\n");
   });
 });
+
+describe("claim, a round saved before the instances of a layer shared their edit styles", () => {
+  /** Saved by the code of then (ticket 60): `saved-round.browser.test.ts`. */
+  const FIXTURE = join(import.meta.dirname, "fixtures/round-before-60");
+
+  test("prints the change notes as it did then, word for word", async () => {
+    mkdirSync(join(project, ".vernier"), { recursive: true });
+    for (const file of ["canvas.html", "changeset.json", "off-canvas.json"]) writeFileSync(join(project, ".vernier", file), readFileSync(join(FIXTURE, file)));
+
+    const { code, output } = await cli("claim");
+
+    expect(code).toBe(0);
+    // Written once, by the code of then: never over the one kept.
+    if (process.env.VK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
+    expect(output).toBe(readFileSync(join(FIXTURE, "claim.md"), "utf8"));
+  });
+});

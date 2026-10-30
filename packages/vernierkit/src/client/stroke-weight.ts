@@ -7,7 +7,7 @@
  */
 import { declaredByEdit } from "./canvas-style";
 import { readStroke, strokeWith, type ColorReader, type Stroke } from "./paint";
-import { sourcesOf } from "./style-source";
+import { declarationsOf } from "./style-source";
 
 const SIDES = ["top", "right", "bottom", "left"];
 
@@ -45,7 +45,7 @@ function readSides(el: Element, colors: ColorReader): Sides | null {
   const stroke = readStroke(el, colors);
   if (!stroke) return null;
   const drawn = perSide(stroke.weight);
-  const written = drawn.map((weight, i) => (weight > 0 ? writtenWidth(el, `border-${SIDES[i]}-width`) : null));
+  const written = writtenWidths(el, drawn.map((weight) => weight > 0));
   const redrawn = drawnWidths(el.ownerDocument, written.map((w) => w ?? 0));
   return { stroke, drawn, written: written.map((w, i) => (w !== null && redrawn[i] === drawn[i] ? w : null)) };
 }
@@ -61,12 +61,25 @@ function asWritten({ stroke, drawn, written }: Sides): Stroke | null {
   return strokeWith(stroke, drawn.map((weight, i) => written[i] ?? weight) as Stroke["weight"]);
 }
 
+/** The widths borders are drawn at, as found in each document, by the widths written and the screen's pixel density. */
+const drawnIn = new WeakMap<Document, Map<string, number[]>>();
+
 /**
  * The widths the browser draws borders of `widths` px at in `doc`, top, right,
- * bottom and left: drawn on an element put in the page and taken out again at
- * once, before anything is painted.
+ * bottom and left; found once for each set of widths and pixel density, so
+ * the canvas is not changed each time the Design panel reads a stroke.
  */
 function drawnWidths(doc: Document, widths: number[]): number[] {
+  const key = `${doc.defaultView?.devicePixelRatio} ${widths.join(" ")}`;
+  let known = drawnIn.get(doc);
+  if (!known) drawnIn.set(doc, (known = new Map()));
+  let drawn = known.get(key);
+  if (!drawn) known.set(key, (drawn = probeWidths(doc, widths)));
+  return [...drawn];
+}
+
+/** Those widths, drawn on an element put in `doc` and taken out again at once, before anything is painted. */
+function probeWidths(doc: Document, widths: number[]): number[] {
   const probe = doc.createElement("div");
   const declarations = { position: "absolute", visibility: "hidden", "border-style": "solid", "border-width": widths.map((w) => `${w}px`).join(" ") };
   // Important, so no rule of the page's reaches it.
@@ -78,13 +91,25 @@ function drawnWidths(doc: Document, widths: number[]): number[] {
   return drawn;
 }
 
-/** A side's width as written, in px: by an edit on the canvas, or else by what sets it in the page's styles; null when not in px. */
-function writtenWidth(el: Element, property: string): number | null {
+/**
+ * Each side's width as written, in px, top, right, bottom and left: by an
+ * edit on the canvas, or else by what sets it in the page's styles, read in
+ * one pass over them; null for a side not drawn, or not written in px.
+ */
+function writtenWidths(el: Element, isDrawn: boolean[]): (number | null)[] {
   // An edit's declaration, on top of everything.
-  const edited = editedWidth(el, property);
-  if (edited) return pxOf(edited);
-  const [source] = sourcesOf(el, [property]);
-  return source.declaration ? pxOf(source.declaration.slice(source.declaration.indexOf(":") + 1)) : null;
+  const sides = SIDES.map((side, i) => {
+    const property = `border-${side}-width`;
+    return { property, drawn: isDrawn[i], edited: isDrawn[i] ? editedWidth(el, property) : "" };
+  });
+  const unread = sides.filter((side) => side.drawn && !side.edited).map((side) => side.property);
+  const declarations = unread.length ? declarationsOf(el, unread) : [];
+  return sides.map(({ property, drawn, edited }) => {
+    if (!drawn) return null;
+    if (edited) return pxOf(edited);
+    const declaration = declarations[unread.indexOf(property)];
+    return declaration ? pxOf(declaration.slice(declaration.indexOf(":") + 1)) : null;
+  });
 }
 
 /** A side's width as an edit declares it: on its own, or as one of the four `border-width` sets; empty when no edit does. */

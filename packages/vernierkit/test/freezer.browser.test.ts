@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "vitest";
-import { freeze, restore, serializeCanvas } from "../src/client/freezer";
-import { createViews } from "../src/client/views";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { copyCanvas, freeze, restore, serializeCanvas } from "../src/client/freezer";
+import { CATCH_UP_AFTER_MS, createViews, type View } from "../src/client/views";
 
 /**
  * A page that answers to the window's size in CSS: a media query on width
@@ -55,6 +55,8 @@ function livePage(): Window {
 
 /** Once the next frame is painted. */
 const painted = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+/** Once the next frame begins: with timers faked, too. */
+const frame = () => new Promise((done) => requestAnimationFrame(done));
 
 const style = (doc: Document, id: string) => getComputedStyle(doc.getElementById(id)!);
 
@@ -131,7 +133,7 @@ describe("the canvas shown at several widths", () => {
     expect(style(desktop.document, "tall").color).toBe("rgb(0, 128, 0)");
   });
 
-  test("while a drag holds the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
+  test("while a drag pins the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
     const canvas = await freeze(livePage(), iframe());
     const views = createViews(canvas);
     const phone = await views.add(iframe(), 390);
@@ -143,7 +145,7 @@ describe("the canvas shown at several widths", () => {
     const heights = () => [desktop, phone].map((view) => [view.height, frameOf(view.document).offsetHeight]);
     const before = heights();
 
-    const release = views.holdHeights();
+    const release = views.pinHeights();
     // Dragged far below the bottom of the page, as a drag shifts it: on the canvas, so in every view.
     const dragged = canvas.document.getElementById("narrow")!;
     dragged.style.setProperty("translate", "0 5000px", "important");
@@ -164,6 +166,90 @@ describe("the canvas shown at several widths", () => {
     expect(resized).toBeGreaterThan(0);
   });
 
+  test("layers making room for a drag in the desktop view go straight to their place there; the views beside follow once the shifts pause, the latest at once", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const tablet = await views.add(iframe(), 450);
+    const [desktop] = views.list();
+    const making = canvas.document.getElementById("tall")!;
+    const shifted = (view: View) => style(view.document, "tall").translate;
+    const styles = () => [desktop, phone, tablet].map((view) => view.document.getElementById("tall")!.getAttribute("style"));
+    const before = styles();
+    let caughtUp = 0;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      views.makeRoom(desktop, new Map([[making, { x: 0, y: 20 }]]), () => caughtUp++);
+      expect(shifted(desktop)).toBe("0px 20px");
+      expect(style(desktop.document, "tall").transitionDuration).toBe("0s");
+      // Not before the next paint either: the canvas did not change for the views beside to follow.
+      await frame();
+      for (const view of [phone, tablet]) expect(shifted(view)).toBe("none");
+      // The pointer moves on, the place changes: the pause starts again.
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      views.makeRoom(desktop, new Map([[making, { x: 0, y: 30 }]]), () => caughtUp++);
+      expect(shifted(desktop)).toBe("0px 30px");
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      for (const view of [phone, tablet]) expect(shifted(view)).toBe("none");
+      expect(caughtUp).toBe(0);
+      vi.advanceTimersByTime(1);
+      for (const view of [phone, tablet]) {
+        expect(shifted(view)).toBe("0px 30px");
+        expect(style(view.document, "tall").transitionDuration).toBe("0s");
+      }
+      expect(caughtUp).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+    // Let go: back in every view at once, and nothing of it is left on the canvas.
+    views.stopMakingRoom();
+    for (const view of [desktop, phone, tablet]) expect(shifted(view)).toBe("none");
+    expect(styles()).toEqual(before);
+    await frame();
+    expect(styles()).toEqual(before);
+  });
+
+  test("dragged in the phone view, the layers making room go there at once; the desktop view, which is the canvas, follows with the tablet view once the shifts pause, or as it is read", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const tablet = await views.add(iframe(), 450);
+    const [desktop] = views.list();
+    const making = canvas.document.getElementById("inline")!;
+    const shifted = (view: View) => style(view.document, "inline").translate;
+    const styles = () => [desktop, phone, tablet].map((view) => view.document.getElementById("inline")!.getAttribute("style"));
+    const before = styles();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      views.makeRoom(phone, new Map([[making, { x: 10, y: 0 }]]));
+      expect(shifted(phone)).toBe("10px");
+      await frame();
+      for (const view of [desktop, tablet]) expect(shifted(view)).toBe("none");
+      // Read, a view shows it first.
+      views.sync(tablet);
+      expect(shifted(tablet)).toBe("10px");
+      expect(shifted(desktop)).toBe("none");
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      expect(shifted(desktop)).toBe("10px");
+      // Nothing makes room now, dragged off the canvas: back in the phone view at once, in the others after the pause.
+      views.makeRoom(phone, new Map());
+      expect(shifted(phone)).toBe("none");
+      await frame();
+      for (const view of [desktop, tablet]) expect(shifted(view)).toBe("10px");
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      for (const view of [desktop, tablet]) expect(shifted(view)).toBe("none");
+      // Shifted again and let go before the pause: back everywhere, its own style as it was.
+      views.makeRoom(phone, new Map([[making, { x: 5, y: 5 }]]));
+      views.stopMakingRoom();
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+    await frame();
+    for (const view of [desktop, phone, tablet]) expect(shifted(view)).toBe("none");
+    expect(styles()).toEqual(before);
+  });
+
   test("a canvas saved and put back answers to each view's width the same way", async () => {
     const saved = serializeCanvas(await freeze(livePage(), iframe()));
     const canvas = await restore(saved, iframe());
@@ -171,5 +257,80 @@ describe("the canvas shown at several widths", () => {
 
     expectAt(canvas.document, 800);
     expectAt(phone.document, 390);
+  });
+});
+
+describe("freezing what the designer had scrolled", () => {
+  test("a box scrolled down, a text area, a field scrolled across and a list are shown scrolled as they were; nothing else is marked scrolled", async () => {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="box" style="height: 100px; overflow: auto"><div style="height: 1000px"></div></div>
+  <div id="hidden" style="height: 100px; overflow-x: hidden"><div style="height: 1000px; width: 2000px"></div></div>
+  <textarea id="area" rows="2">${"line\n".repeat(40)}</textarea>
+  <input id="field" style="width: 60px" value="${"wide ".repeat(40)}">
+  <select id="list" size="2">${"<option>o</option>".repeat(20)}</select>
+  <div id="plain"><div style="height: 50px"></div></div>
+</body>`);
+    doc.close();
+    const scroll = { box: [0, 300], hidden: [500, 0], area: [0, 120], field: [80, 0], list: [0, 60] } as const;
+    for (const [id, [left, top]] of Object.entries(scroll)) doc.getElementById(id)!.scrollTo(left, top);
+    const shown = Object.fromEntries(Object.keys(scroll).map((id) => [id, [doc.getElementById(id)!.scrollLeft, doc.getElementById(id)!.scrollTop]]));
+    expect(shown.box).toEqual([0, 300]);
+
+    const canvas = await freeze(live.contentWindow!, iframe());
+
+    for (const id of Object.keys(scroll)) {
+      const el = canvas.document.getElementById(id)!;
+      expect([el.scrollLeft, el.scrollTop], id).toEqual(shown[id]);
+    }
+    expect(canvas.document.querySelectorAll("[data-vk-scroll]")).toHaveLength(Object.keys(scroll).length);
+  });
+});
+
+describe("bringing the copy to rest", () => {
+  /** A page that uses a font of its own, still loading as it is frozen, or none. */
+  function pageWithFont(font: boolean): Window {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<style>${font ? `@font-face { font-family: Slow; src: url("/never-there-${Math.random()}.woff2") } p { font-family: Slow, sans-serif }` : ""}</style>
+<p>Words</p>`);
+    doc.close();
+    return live.contentWindow!;
+  }
+  /** Whether `promise` has settled once the microtasks queued so far have run: within the task that made it. */
+  async function settledAtOnce(promise: Promise<unknown>) {
+    let settled = false;
+    void promise.then(() => (settled = true));
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    return settled;
+  }
+
+  test("with nothing left to load, the copy is at rest in the task that froze it", async () => {
+    expect(await settledAtOnce(freeze(pageWithFont(false), iframe()))).toBe(true);
+  });
+
+  test("a font still loading is waited for", async () => {
+    const frozen = freeze(pageWithFont(true), iframe());
+    expect(await settledAtOnce(frozen)).toBe(false);
+    await frozen;
+  });
+
+  test("a view waiting for a font is as tall as what it shows meanwhile, never cut off at the height of a wider one", async () => {
+    const live = pageWithFont(true);
+    live.document.querySelector("p")!.textContent = "Words that wrap many times over in a narrow view. ".repeat(40);
+    const canvas = await freeze(live, iframe());
+    expect(canvas.height).toBe(600);
+    const narrow = iframe();
+    const copied = copyCanvas(canvas, narrow, 200);
+    expect(await settledAtOnce(copied)).toBe(false);
+    const shows = narrow.contentDocument!.documentElement.scrollHeight;
+    expect(shows).toBeGreaterThan(600);
+    expect(narrow.offsetHeight).toBe(shows);
+    await copied;
   });
 });

@@ -95,6 +95,44 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   await expect(badge(page)).toHaveCount(0);
 });
 
+test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows and Enter, and Tab do nothing; let go, ⌘Z takes the drag back, then the edit before it", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  // Something to undo, the cards red, and something to redo, a corner radius set and undone.
+  await setField(page, "Fill color", "ff0000");
+  await setField(page, "Corner radius", "2");
+  await page.keyboard.press("ControlOrMeta+z");
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  await expect(radius).toHaveValue("12");
+  // The focus stays in the field as its icon is dragged.
+  await radius.focus();
+  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const { x, y } = (await icon.boundingBox())!;
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  await expect(radius).toHaveValue("15");
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "ArrowUp", "Enter", "Tab"]) {
+    await page.keyboard.press(key);
+    await expect(radius, key).toHaveValue("15");
+    // Tab would take the focus out of the field, applying what is typed in it.
+    await expect(radius, key).toBeFocused();
+    expect(await cardStyles(page, "backgroundColor", "canvas"), key).toEqual([RED, RED, RED, WHITE]);
+    expect(await cardStyles(page, "borderRadius", "canvas"), key).toEqual(["15px", "15px", "15px", "12px"]);
+    await expect(badge(page), key).toHaveText("2");
+  }
+  for (let i = 4; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
+  await page.mouse.up();
+  await expect(radius).toHaveValue("17");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(radius).toHaveValue("12");
+  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([RED, RED, RED, WHITE]);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect(badge(page)).toHaveCount(0);
+});
+
 test("while a value is being typed, ⌘Z is the field's own; once applied, ⌘Z undoes the edit though the field keeps focus", async ({ page }) => {
   await makeThreeChanges(page);
   const hex = design(page).getByRole("textbox", { name: "Fill color", exact: true });

@@ -4,7 +4,7 @@
 
 参考本功能的 spec.md（同目录上一级），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
-**Blocked by:** 23（已完成）
+**Blocked by:** 23（已完成）、70（改名为 03Kind）
 
 **Status:** needs-triage
 

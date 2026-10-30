@@ -3,7 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { dropUnusedRules, moveInlineEdits, orderEditStyles } from "./canvas-style";
+import { dropUnusedRules, orderEditStyles, syncEditStyles, upgradeEditStyles } from "./canvas-style";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
@@ -113,9 +113,10 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     const ends = animationEnds.get(from);
     if (ends) for (const [name, value] of ends) setImportant(to, name, value);
     if (to.hasAttribute("style")) resolveViewportUnits(to.style, frozen);
-    pinToViewport(from, to, viewport);
+    const style = getComputedStyle(from);
+    pinToViewport(from, to, style, viewport);
     // The document's own scroll is shown by the canvas view instead.
-    if ((from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
+    if (canScroll(from, style) && (from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
       to.setAttribute(SCROLL_ATTR, `${from.scrollLeft} ${from.scrollTop}`);
     }
     if (from.matches(":modal")) to.setAttribute(TOP_LAYER_ATTR, "modal");
@@ -167,7 +168,7 @@ export function serializeCanvas(canvas: Canvas): string {
           to.remove();
           break;
         }
-        // The edits' styles are written from their rules: as they are.
+        // The edits' styles are written from their rules: as they are, by `syncEditStyles` below.
         if (from.hasAttribute(EDIT_STYLES_ATTR)) break;
         const rules = readRules((from as HTMLStyleElement).sheet);
         if (rules) to.textContent = serialize(rules, null);
@@ -193,6 +194,7 @@ export function serializeCanvas(canvas: Canvas): string {
     }
   }
   dropUnusedRules(copy);
+  syncEditStyles(copy);
   const layout: Layout = { width: canvas.width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY };
   copy.setAttribute(LAYOUT_ATTR, JSON.stringify(layout));
   return doctypeOf(doc) + copy.outerHTML;
@@ -216,8 +218,8 @@ export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas
   // Saved before the window's height was: no view shorter than the canvas was then.
   const layout: Layout = { ...saved, windowHeight: saved.windowHeight ?? saved.height };
   root.removeAttribute(LAYOUT_ATTR);
-  // Saved before the edits' styles were a stylesheet: they are moved into one.
-  moveInlineEdits(doc);
+  // Saved by an earlier Vernier Kit: as edits are kept now, looking as it did.
+  upgradeEditStyles(doc);
   const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
     const image = new Image();
     image.src = still.getAttribute(PIXELS_ATTR)!;
@@ -251,6 +253,7 @@ export function editable(doc: Document) {
 export function serializeEditable(doc: Document): string {
   const copy = doc.documentElement.cloneNode(true) as HTMLElement;
   for (const el of copy.querySelectorAll(`style[${CANVAS_STYLES_ATTR}]`)) el.remove();
+  syncEditStyles(copy);
   return doctypeOf(doc) + copy.outerHTML;
 }
 
@@ -268,6 +271,8 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
   doc.write(doctypeOf(from));
   doc.close();
   const copy = doc.importNode(from.documentElement, true);
+  // The canvas's edit styles may have changed in place since their text was written.
+  syncEditStyles(copy);
   doc.replaceChild(copy, doc.documentElement);
   // What lives outside the markup: the pixels of stills, the options chosen.
   const froms = from.documentElement.getElementsByTagName("*");
@@ -276,11 +281,15 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
     if (froms[i].localName === "canvas") drawInto(copies[i] as HTMLCanvasElement, froms[i] as HTMLCanvasElement);
     else if (froms[i].localName === "option") (copies[i] as HTMLOptionElement).selected = (froms[i] as HTMLOptionElement).selected;
   }
-  return layOut(doc, iframe, { width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY });
+  return layOut(doc, iframe, { width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY }, [], true);
 }
 
-/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page there, once what it loads is in. */
-function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = []): Promise<Canvas> {
+/** Brings a copy to rest in `iframe`, `layout.width` wide and as tall as the whole page there, once what it loads is in; `fitMeanwhile`, as tall as what it shows so far till then. */
+function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loading: Promise<unknown>[] = [], fitMeanwhile = false): Promise<Canvas> {
+  // Sized first: what follows works out the copy's styles, which its width answers to (media queries), only once.
+  const { width } = layout;
+  iframe.style.width = `${width}px`;
+  iframe.style.height = `${layout.height}px`;
   for (const el of doc.querySelectorAll<HTMLElement>(`[${TOP_LAYER_ATTR}]`)) {
     try {
       if (el.getAttribute(TOP_LAYER_ATTR) === "modal") {
@@ -298,18 +307,26 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
     }
   }
 
-  const { width } = layout;
-  iframe.style.width = `${width}px`;
-  iframe.style.height = `${layout.height}px`;
-
-  return Promise.all([settle(doc), ...loading]).then(() => {
+  const atRest = (): Canvas => {
     const height = fitHeight(doc, iframe, layout.windowHeight);
     for (const el of doc.querySelectorAll(`[${SCROLL_ATTR}]`)) {
       const [left, top] = el.getAttribute(SCROLL_ATTR)!.split(" ").map(Number);
       el.scrollTo(left, top);
     }
     return { document: doc, width, height, windowHeight: layout.windowHeight, scrollY: layout.scrollY };
-  });
+  };
+  const waiting = settle(doc);
+  // Nothing to wait for: at rest now, in this task, so the canvas can be shown in the next frame.
+  if (!waiting && !loading.length) {
+    try {
+      return Promise.resolve(atRest());
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+  // A copy at another width than the canvas: meanwhile as tall as what it shows so far, not cut off while what it loads comes in.
+  if (fitMeanwhile) fitHeight(doc, iframe, layout.windowHeight);
+  return Promise.all([waiting, ...loading]).then(atRest);
 }
 
 /**
@@ -328,8 +345,8 @@ export function fitHeight(doc: Document, iframe: HTMLIFrameElement, floor: numbe
   return height;
 }
 
-/** Waits, briefly, for what the copy loads again: fonts and cross-origin stylesheets. */
-function settle(doc: Document): Promise<unknown> {
+/** Waits, briefly, for what the copy loads again: fonts and cross-origin stylesheets. Null when it loads none, or has them all in already. */
+function settle(doc: Document): Promise<unknown> | null {
   const sheets = [...doc.querySelectorAll<HTMLLinkElement>("link[rel~=stylesheet]")]
     .filter((link) => !link.sheet)
     .map(
@@ -340,6 +357,7 @@ function settle(doc: Document): Promise<unknown> {
         }),
     );
   void doc.documentElement.scrollHeight; // Lay out, so the fonts it needs start loading.
+  if (!sheets.length && doc.fonts.status === "loaded") return null;
   const timeout = new Promise((done) => setTimeout(done, SETTLE_TIMEOUT_MS));
   return Promise.race([Promise.all([...sheets, doc.fonts.ready]), timeout]);
 }
@@ -549,8 +567,7 @@ const PINNED_ACROSS = ["left", "right", "width", "margin-left", "margin-right"];
  * the page places them. What is pinned is marked, so it is not taken for the
  * page's own style, and so is how far a fixed element moved with the page's scroll.
  */
-function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
-  const style = getComputedStyle(from);
+function pinToViewport(from: HTMLElement, to: HTMLElement, style: CSSStyleDeclaration, viewport: Viewport) {
   const fixed = style.position === "fixed" && fixedToViewport(from);
   if (!fixed && !(style.position === "absolute" && absoluteToViewport(from))) return;
   const across = fixed && viewport.scrollX !== 0;
@@ -563,6 +580,19 @@ function pinToViewport(from: HTMLElement, to: HTMLElement, viewport: Viewport) {
   if (across) pin("left", "right", PINNED_ACROSS, viewport.scrollX);
   to.setAttribute(PINNED_ATTR, (across ? [...PINNED_DOWN, ...PINNED_ACROSS] : PINNED_DOWN).join(" "));
   if (fixed && (viewport.scrollX || viewport.scrollY)) to.setAttribute(PIN_OFFSET_ATTR, `${viewport.scrollX} ${viewport.scrollY}`);
+}
+
+/** Fields scroll what is typed in them, whatever their overflow. */
+const FIELDS = new Set(["input", "textarea", "select"]);
+
+/**
+ * Whether the element can be scrolled: a scroll container, or a field.
+ * Asked before its scroll is read, which on a large page is a check of the
+ * layout per element, about 2µs each.
+ */
+function canScroll(el: Element, style: CSSStyleDeclaration): boolean {
+  const scrolls = (overflow: string) => overflow !== "visible" && overflow !== "clip";
+  return scrolls(style.overflowX) || scrolls(style.overflowY) || FIELDS.has(el.localName);
 }
 
 /** False when a transformed (or similar) ancestor holds the fixed element instead of the viewport. */

@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
-import { clearVernier } from "./project-files";
+import { expect, test, type Locator, type Page } from "./fixtures";
+import { clearVernier, vernierkit } from "./project-files";
 
 /** These tests save into the example project's `.vernier/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
@@ -180,4 +180,115 @@ test("a badge on the toggle counts the changes not yet applied", async ({ page }
   await expect.poll(savedChanges).toHaveLength(2);
   await page.reload();
   await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+});
+
+/**
+ * A round saved before the instances of a layer shared their edit styles
+ * (ticket 60): `e2e/fixtures/round-before-60/`, written once by the code of
+ * then, with `VK_WRITE_FIXTURE` set, and kept since.
+ *
+ * A saved round names files by where they are on disk: the source a style
+ * comes from, and the fonts the canvas loads through Vite's `/@fs/`. The
+ * fixture writes this checkout's folder as `CHECKOUT_MARK`, and each test puts
+ * its own checkout's folder back in, so the fixture works in any checkout.
+ */
+const BEFORE_60 = fileURLToPath(new URL("../fixtures/round-before-60/", import.meta.url));
+const CHECKOUT = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
+const CHECKOUT_MARK = "{{checkout}}";
+
+/** A file of the fixture, as this checkout would have saved it. */
+function readBefore60(file: string) {
+  return readFileSync(`${BEFORE_60}${file}`, "utf8").replaceAll(CHECKOUT_MARK, CHECKOUT);
+}
+
+function writeBefore60(file: string, text: string) {
+  writeFileSync(`${BEFORE_60}${file}`, text.replaceAll(CHECKOUT, CHECKOUT_MARK));
+}
+const VIEWS = ["Canvas", "Tablet 768", "Phone 390"];
+/** What is compared of each element, in each view. */
+const COMPARED = ["display", "position", "width", "height", "background-color", "border-top-left-radius", "padding-top", "color"];
+
+/** Each view, by its title: every element of its body, in page order, with the properties compared. */
+function viewStyles(page: Page): Promise<Record<string, string[][]>> {
+  return Promise.all(
+    VIEWS.map(async (title) => {
+      const styles = await page
+        .locator(`iframe[title="${title}"]`)
+        .contentFrame()
+        .locator("body")
+        .evaluate((body, names) => [...body.querySelectorAll("*")].map((el) => [el.localName, ...names.map((name) => getComputedStyle(el).getPropertyValue(name))]), COMPARED);
+      return [title, styles] as const;
+    }),
+  ).then(Object.fromEntries);
+}
+
+/** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */
+async function pick(page: Page, view: Locator, selector: string) {
+  const box = (await view.contentFrame().locator(selector).first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+}
+
+async function setField(page: Page, name: string, value: string) {
+  const field = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+  await field.fill(value);
+  await field.press("Enter");
+}
+
+async function enterEveryView(page: Page) {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  for (const title of VIEWS) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator("h1")).toBeVisible();
+}
+
+test.describe("a round saved before the instances of a layer shared their edit styles", () => {
+  test.skip(!process.env.VK_WRITE_FIXTURE, "writes the fixture, with the code of then");
+  // Written once, by the code of then: never over the one kept.
+  test.skip(existsSync(BEFORE_60), "the fixture is kept: written by the code of then");
+  test("is written", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEveryView(page);
+    const layers = page.getByRole("tree", { name: "Layers" });
+    // The three Cards of the loop: at every width, at the phone's breakpoint, and one of them deleted alone.
+    await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
+    await setField(page, "Fill color", "ff0000");
+    await setField(page, "Corner radius", "4");
+    await pick(page, page.locator('iframe[title="Phone 390"]'), "article");
+    await setField(page, "Corner radius", "20");
+    await layers.getByRole("treeitem", { name: "Card", exact: true }).nth(1).click();
+    await page.keyboard.press("Delete");
+    await expect.poll(savedChanges).toHaveLength(4);
+    await page.waitForTimeout(1000);
+
+    mkdirSync(BEFORE_60, { recursive: true });
+    writeBefore60("canvas.html", readFileSync(CANVAS, "utf8"));
+    writeBefore60("changeset.json", readFileSync(CHANGESET, "utf8"));
+    writeBefore60("styles.json", `${JSON.stringify(await viewStyles(page))}\n`);
+    writeBefore60("claim.md", await vernierkit("claim"));
+  });
+});
+
+test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the change notes are as they were", async ({ page }) => {
+  mkdirSync(VERNIER, { recursive: true });
+  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${VERNIER}${file}`, readBefore60(file));
+  const before = JSON.parse(readBefore60("styles.json"));
+  const changeSet = JSON.parse(readBefore60("changeset.json"));
+
+  await page.goto(DEV_URL);
+  await enterEveryView(page);
+  await expect.poll(() => viewStyles(page)).toEqual(before);
+  expect(readFileSync(CHANGESET, "utf8")).toBe(readBefore60("changeset.json"));
+
+  // The Cards of the loop, the one deleted alone left out.
+  const radii = () =>
+    Promise.all(VIEWS.map((title) => page.locator(`iframe[title="${title}"]`).contentFrame().locator("article:visible").evaluateAll((cards) => cards.slice(0, 2).map((card) => getComputedStyle(card).borderTopLeftRadius))));
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Corner radius", "8");
+  await expect.poll(radii).toEqual([["8px", "8px"], ["8px", "8px"], ["20px", "20px"]]);
+  await expect.poll(() => savedChanges()?.find((change: { property: string; breakpoint?: object }) => change.property === "radius" && !change.breakpoint)?.after).toBe(8);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => viewStyles(page)).toEqual(before);
+  await expect.poll(() => JSON.parse(readFileSync(CHANGESET, "utf8"))).toEqual(changeSet);
+  expect(await vernierkit("claim")).toBe(readBefore60("claim.md"));
 });

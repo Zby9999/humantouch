@@ -53,7 +53,7 @@ export function createWorkingView(views: Views, project: ProjectBreakpoints | nu
   };
   const shownIn = (view: View | null, el: Element): Element => {
     if (!view || view === views.list()[0]) return el;
-    views.sync();
+    views.sync(view);
     return view.elementOf(el) ?? el;
   };
   return {

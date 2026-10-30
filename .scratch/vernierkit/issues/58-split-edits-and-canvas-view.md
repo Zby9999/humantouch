@@ -62,3 +62,10 @@
 行数：`edits.ts` 2366 → 422（样式编辑与组合），`CanvasView.tsx` 1326 → 858（组件状态、指针事件、进出编辑模式的动画、播放）。新模块：`property-table.ts` 566、`structure-edits.ts` 1091、`edit-commands.ts` 225、`undo-steps.ts` 170、`breakpoint-edits.ts` 109、`layer-target.ts` 49；`AboveCanvas.tsx` 194、`canvas-drag.ts` 152、`camera.ts` 108、`view-layout.ts` 75、`canvas-keys.ts` 67。
 
 留给以后：`structure-edits.ts` 仍有一千多行，移动与微移（`move`、`nudge`、`canDrop` 和它们的位置计算）可以再拆成一块，但它们和新建、复制、删除共用 `placeOf`、`wrap` 等，要再开一个内部 seam；`EditorCore` 有 16 个成员，比较宽。ticket 22 调性能时如果要动这里，可以顺带做。
+
+**最后 review 修正（2026-10-30）**
+
+- **camera.ts 恢复成纯函数**（b8b01ac，ticket 22 的提交）：ticket 22 第七、八轮往 `camera.ts` 里加了改 DOM 的 `drawOnlyWhatShows` 和带定时器的 `onceAtRest`、`AT_REST_MS`，不符合上面拆分方案第 6 条。它们搬进新模块 `stage-redraw.ts`（相机停下或动画结束后让 stage 重新只画看得到的部分），单测跟着搬：`camera.browser.test.ts` 改名 `stage-redraw.browser.test.ts`，`camera.test.ts` 里 onceAtRest 的 5 条搬进 `stage-redraw.test.ts`。`camera.ts` 剩下的都是纯函数，只有 `currentCamera` 读一次计算样式（方案里已写明）。
+- **edits.ts 和 edit-commands.ts 的分工**（11fadc9）：两个文件的头注释原来都自称 "edit commands"。现在 `edit-commands.ts` 写明它只放类型，是调用方看到的 Editor；`edits.ts` 写明它组装 Editor（`createEditor`），自己做样式编辑，结构改动在 `structure-edits.ts`。
+- **一条导入路径**：`edits.ts` 原来转发 `Binder`、`Destination`、`Editor`、`LayerToPutBack`、`SetOptions` 这些类型（和没人用的 `LAYER_ID_ATTR`），而 `structure-edits.ts` 为了避开环直接从 `edit-commands.ts` 拿。转发删掉了，所有模块和测试都从 `edit-commands.ts` 拿这些类型，只从 `edits.ts` 拿 `createEditor`。
+- 设计师看到的不变；typecheck、单测、e2e 通过。

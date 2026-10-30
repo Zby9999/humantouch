@@ -112,7 +112,125 @@ test("selecting in one view selects the same layer in every view; an edit shows 
   }
 });
 
-test("a layer dragged in the phone view goes where it is let go there, and moves in every view", async ({ page }) => {
+/**
+ * Watches, from now on, for the first card in the tablet view to show `value`
+ * for the CSS property `property`: what it settles with, once it does, tells
+ * how many frames had been drawn since the last of the events `after` (the one
+ * that sets the value), and how long after it that was, ms. Watched in the page
+ * itself, frame by frame.
+ */
+async function watchTablet(page: Page, property: string, value: string, after: string) {
+  await tablet(page).evaluate(
+    (iframe: HTMLIFrameElement, [property, value, after]) => {
+      const card = iframe.contentDocument!.querySelector("article")!;
+      (window as Watched).tabletShows = new Promise((done) => {
+        let at = 0;
+        let frames = 0;
+        const startCounting = () => {
+          at = performance.now();
+          frames = 0;
+        };
+        addEventListener(after, startCounting, true);
+        const look = () => {
+          if (at) frames++;
+          if (at && getComputedStyle(card).getPropertyValue(property) === value) {
+            removeEventListener(after, startCounting, true);
+            done({ frames, ms: performance.now() - at });
+          } else requestAnimationFrame(look);
+        };
+        requestAnimationFrame(look);
+      });
+    },
+    [property, value, after],
+  );
+  return () => page.evaluate(() => (window as Watched).tabletShows!);
+}
+
+/** What `watchTablet` keeps in the page. */
+type Watched = { tabletShows?: Promise<{ frames: number; ms: number }> };
+
+test("a value set once in the Design panel shows in the views beside the frame after; stepped with ↑ or dragged on its icon, once the steps pause", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const clip = design(page).getByRole("checkbox", { name: "Clip content" });
+  // The first change to each property makes the card's edit styles, which every view shows at once.
+  await radius.fill("3");
+  await radius.press("Enter");
+  await clip.check();
+  await expect(tablet(page).contentFrame().locator("article").first()).toHaveCSS("overflow", "hidden");
+
+  // Typed, applied on Enter: the views beside show it within the two frames after the one that draws it in the desktop view (ADR 0011), far sooner than the steps pause.
+  let shown = await watchTablet(page, "border-radius", "5px", "keydown");
+  await radius.fill("5");
+  await radius.press("Enter");
+  expect((await shown()).frames).toBeLessThanOrEqual(3);
+  // Toggled: the same.
+  shown = await watchTablet(page, "overflow", "visible", "click");
+  await clip.uncheck();
+  expect((await shown()).frames).toBeLessThanOrEqual(3);
+
+  // ↑: one step of a run of them, which the views beside show once the steps pause (ADR 0011).
+  shown = await watchTablet(page, "border-radius", "6px", "keydown");
+  await radius.press("ArrowUp");
+  expect((await shown()).ms).toBeGreaterThanOrEqual(100);
+  // Dragged on the icon: so is each px.
+  const { x, y } = (await page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub').boundingBox())!;
+  shown = await watchTablet(page, "border-radius", "9px", "pointermove");
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  await page.mouse.up();
+  expect((await shown()).ms).toBeGreaterThanOrEqual(100);
+  await expect(radius).toHaveValue("9");
+});
+
+test("⌘Z and ⇧⌘Z right after steps of a value, while the views beside wait for them to pause, show in every view in the same frame (ADR 0011)", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const cards = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("article").first());
+  await radius.fill("3");
+  await radius.press("Enter");
+  for (const card of cards) await expect(card).toHaveCSS("border-radius", "3px");
+  // In the frame after each ⌘Z or ⇧⌘Z: the first card's corner radius in each view.
+  await page.evaluate(() => {
+    const w = window as unknown as { framesAfter: string[][] };
+    w.framesAfter = [];
+    const frames = [...document.querySelectorAll("vernier-kit")].flatMap((host) => [...(host.shadowRoot ?? host).querySelectorAll("iframe")]);
+    addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key.toLowerCase() !== "z" || !(event.metaKey || event.ctrlKey)) return;
+        requestAnimationFrame(() => {
+          const shown = frames.filter((frame) => /Canvas|Tablet|Phone/.test(frame.title));
+          w.framesAfter.push(shown.map((frame) => getComputedStyle(frame.contentDocument!.querySelector("article")!).borderRadius));
+        });
+      },
+      true,
+    );
+  });
+  const framesAfter = () => page.evaluate(() => (window as unknown as { framesAfter: string[][] }).framesAfter);
+
+  // Stepped with ↑ from 3 to 6: the views beside catch up with 4 as the steps pause, then wait again, at 4.
+  await radius.press("ArrowUp");
+  for (const card of cards) await expect(card).toHaveCSS("border-radius", "4px");
+  await radius.press("ArrowUp");
+  await radius.press("ArrowUp");
+  // Each press of ↑ is a step of its own: undone, 5, redone, 6, in every view at once.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(framesAfter).toEqual([["5px", "5px", "5px"]]);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(framesAfter).toEqual([
+    ["5px", "5px", "5px"],
+    ["6px", "6px", "6px"],
+  ]);
+  await expect(radius).toHaveValue("6");
+});
+
+test("a layer dragged in the phone view goes where it is let go there, and moves in every view; the layers making room go there at once, in the views beside once the pointer pauses", async ({ page }) => {
+  // With motion not reduced, too.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
   const hero = '[data-testid="hero"]';
@@ -122,18 +240,129 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   const start = (await button.boundingBox())!;
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();
+  // What each view shows as the paragraph first makes room: read as the move of the pointer that made it is handled.
+  await page.locator("iframe.vk-canvas").evaluateAll((frames: HTMLIFrameElement[], hero) => {
+    const shifted = (frame: HTMLIFrameElement) => getComputedStyle(frame.contentDocument!.querySelector(`${hero} > p`)!).translate;
+    const phone = frames.find((frame) => frame.title === "Phone 390")!;
+    const onMove = () => {
+      if (shifted(phone) === "none") return;
+      (window as Window & { firstRoom?: Record<string, string> }).firstRoom = Object.fromEntries(frames.map((frame) => [frame.title, shifted(frame)]));
+      removeEventListener("pointermove", onMove);
+    };
+    addEventListener("pointermove", onMove);
+  }, hero);
   const p = (await paragraph.boundingBox())!;
   await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
   // The line where it would go is drawn in the phone view.
   const line = (await page.locator(".vk-drop-line").boundingBox())!;
   expect(line.x).toBeGreaterThanOrEqual(p.x - 1);
   expect(line.x + line.width).toBeLessThanOrEqual(p.x + p.width + 1);
+  // The paragraph makes room in the phone view at once; the desktop and tablet views do not follow the pointer as it moves.
+  const first = await page.evaluate(() => (window as Window & { firstRoom?: Record<string, string> }).firstRoom);
+  expect(first?.["Phone 390"]).not.toBe("none");
+  expect(first?.["Canvas"]).toBe("none");
+  expect(first?.["Tablet 768"]).toBe("none");
+  // The pointer paused: every view has it make room, going straight to its place: no view slides it there.
+  for (const view of [desktop(page), tablet(page), phone(page)]) {
+    const making = view.contentFrame().locator(`${hero} > p`);
+    await expect(making).not.toHaveCSS("translate", "none");
+    expect(await making.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  }
   await page.mouse.up();
 
   for (const view of [desktop(page), tablet(page), phone(page)]) {
     const order = await view.contentFrame().locator(hero).evaluate((el) => [...el.children].map((child) => child.localName));
     expect(order).toEqual(["header", "button", "p"]);
+    await expect(view.contentFrame().locator(`${hero} > p`)).toHaveCSS("translate", "none");
   }
+});
+
+test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view; let go, one ⌘Z takes the drag back, and the one before it the edit made before", async ({ page }) => {
+  await enterEditMode(page);
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  // Something to undo, the title deleted, and something to redo, the Beta badge deleted and that undone.
+  await tree.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await tree.getByRole("treeitem", { name: "Badge", exact: true }).click();
+  await page.keyboard.press("Delete");
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+  const beta = (view: Locator) => view.contentFrame().getByTestId("acme-badge");
+  await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
+  const hero = '[data-testid="hero"]';
+  const views = [desktop(page), tablet(page), phone(page)];
+  const orders = () => Promise.all(views.map((view) => view.contentFrame().locator(hero).evaluate((el) => [...el.children].map((child) => child.localName))));
+  const paragraphStyles = () => Promise.all(views.map((view) => view.contentFrame().locator(`${hero} > p`).evaluate((el) => el.getAttribute("style"))));
+  const before = await paragraphStyles();
+  const rows = await tree.getByRole("treeitem").allTextContents();
+
+  const button = phone(page).contentFrame().locator(`${hero} > button`);
+  const start = (await button.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  const p = (await phone(page).contentFrame().locator(`${hero} > p`).boundingBox())!;
+  await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
+  // Once the pointer pauses, every view has the paragraph make room.
+  for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
+  for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z"]) {
+    await page.keyboard.press(key);
+    for (const view of views) {
+      await expect(view.contentFrame().locator("h1")).toBeHidden();
+      await expect(beta(view)).toBeVisible();
+      await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
+    }
+  }
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
+  expect(await tree.getByRole("treeitem").allTextContents()).toEqual(rows);
+  await page.mouse.up();
+
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
+  expect(await paragraphStyles()).toEqual(before);
+  await expect(badge).toHaveAccessibleName("2 changes not applied yet");
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+  for (const view of views) await expect(view.contentFrame().locator("h1")).toBeHidden();
+  await page.keyboard.press("ControlOrMeta+z");
+  for (const view of views) await expect(view.contentFrame().locator("h1")).toBeVisible();
+  await expect(badge).toHaveCount(0);
+});
+
+test("while dragging in the phone view, ⌘D, Delete and the other keys that edit do nothing in any view; let go, no view keeps a style of the drag, nor a copy of the layer", async ({ page }) => {
+  await enterEditMode(page);
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const badge = page.getByRole("button", { name: /not applied yet/ });
+  await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
+  const hero = '[data-testid="hero"]';
+  const views = [desktop(page), tablet(page), phone(page)];
+  const orders = () => Promise.all(views.map((view) => view.contentFrame().locator(hero).evaluate((el) => [...el.children].map((child) => child.localName))));
+  /** In each view, the elements of the hero with a style left of a drag: not taking the pointer, over the others, or shifted. */
+  const dragStyled = () =>
+    Promise.all(views.map((view) => view.contentFrame().locator(`${hero} [style*="pointer-events"], ${hero} [style*="z-index"], ${hero} [style*="translate"]`).count()));
+  expect(await dragStyled()).toEqual([0, 0, 0]);
+  const rows = await tree.getByRole("treeitem").allTextContents();
+
+  const button = phone(page).contentFrame().locator(`${hero} > button`);
+  const start = (await button.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  const p = (await phone(page).contentFrame().locator(`${hero} > p`).boundingBox())!;
+  await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
+  for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
+  for (const key of ["ControlOrMeta+d", "Delete", "Backspace", "ControlOrMeta+x", "Shift+A", "Alt+Shift+A", "ControlOrMeta+Shift+g", "ArrowDown"]) {
+    await page.keyboard.press(key);
+    expect(await orders(), key).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+    for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`), key).not.toHaveCSS("translate", "none");
+  }
+  await expect(badge).toHaveCount(0);
+  expect(await tree.getByRole("treeitem").allTextContents()).toEqual(rows);
+  await page.mouse.up();
+
+  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
+  expect(await dragStyled()).toEqual([0, 0, 0]);
+  await expect(badge).toHaveAccessibleName("1 change not applied yet");
 });
 
 test("a view of another width can be added and the tablet view deleted; the views stay so after a reload; the desktop view stays", async ({ page }) => {
@@ -174,6 +403,76 @@ test("a dialog open when the page was frozen is open in every view, laid out at 
     });
     expect(left).toBeCloseTo(right, 0);
     expect(width).toBe(Number(await view.evaluate((frame: HTMLIFrameElement) => frame.offsetWidth)));
+  }
+});
+
+test("the camera moved while typing in a view, and then at rest, the words go on where the caret was; once typing ends nothing shown changes", async ({ page }) => {
+  await enterEditMode(page);
+  const layers = page.getByRole("tree", { name: "Layers" });
+  await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
+  const title = phone(page).contentFrame().locator("h1");
+  const point = await pointOn(phone(page), "h1");
+  await page.mouse.dblclick(point.x, point.y);
+  await page.keyboard.type("Vernier ");
+  const caret = () =>
+    title.evaluate((el) => {
+      const doc = el.ownerDocument;
+      return doc.hasFocus() && doc.activeElement === el ? doc.getSelection()!.anchorOffset : null;
+    });
+  await expect.poll(caret).toBe("Vernier ".length);
+
+  // Panned and zoomed by the wheel, then left at rest well past the 100ms the stage waits for.
+  await page.mouse.wheel(0, 40);
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.wheel(0, -20);
+  await page.keyboard.up("ControlOrMeta");
+  await page.waitForTimeout(400);
+  expect(await caret()).toBe("Vernier ".length);
+  await page.keyboard.type("Edit");
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier Edit");
+
+  await page.keyboard.press("Escape");
+  const boxes = await selectionBoxes(page);
+  await page.waitForTimeout(400);
+  for (const h1 of titles) await expect(h1).toHaveText("Vernier Edit");
+  await expect(layers.getByRole("treeitem", { selected: true })).toHaveText("Vernier Edit");
+  expect(await selectionBoxes(page)).toEqual(boxes);
+});
+
+test("the camera moved while a number's icon or a layer is pressed: the stage is drawn again only once the mouse is let go", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  // The stage in place, its animation into edit mode over, and drawn again at its end.
+  await expect.poll(() => page.locator(".vk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
+  // And at rest well past the 100ms it waits for, whatever moved the camera as the views were laid out.
+  await page.waitForTimeout(400);
+  // Each time the stage is drawn only as far as it shows (`drawOnlyWhatShows`), it is taken out of the layout for a moment.
+  await page.locator(".vk-stage").evaluate((stage) => {
+    const w = window as unknown as { redrawn: number };
+    w.redrawn = 0;
+    new MutationObserver((records) => {
+      for (const record of records) if (record.oldValue?.includes("display: none")) w.redrawn++;
+    }).observe(stage, { attributes: true, attributeFilter: ["style"], attributeOldValue: true });
+  });
+  const redrawn = () => page.evaluate(() => (window as unknown as { redrawn: number }).redrawn);
+  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const onIcon = async () => {
+    const box = (await icon.boundingBox())!;
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+
+  for (const pressAt of [onIcon, () => pointOn(desktop(page), "article")]) {
+    const before = await redrawn();
+    const at = await pressAt();
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    // Pressed, not moved, the camera moved by ⇧1 (which goes on while pressed): well past the 100ms the stage waits for, it is not drawn again meanwhile.
+    await page.keyboard.press("Shift+Digit1");
+    await page.waitForTimeout(400);
+    expect(await redrawn()).toBe(before);
+    await page.mouse.up();
+    await expect.poll(redrawn).toBe(before + 1);
   }
 });
 

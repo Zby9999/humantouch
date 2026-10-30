@@ -4,7 +4,7 @@
  */
 import type { SavedRound } from "../service-protocol";
 import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack } from "./changeset";
-import { BRIEF_ATTR, changesOn, elementsOf, moveInlineEdits, restoreStyle } from "./canvas-style";
+import { BRIEF_ATTR, changesOn, elementsOf, restoreStyle, upgradeEditStyles } from "./canvas-style";
 import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
@@ -21,7 +21,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   const taken = withDependents(changes.list(), id);
   if (!taken.length) return round;
   const doc = new DOMParser().parseFromString(round.canvas, "text/html");
-  moveInlineEdits(doc);
+  upgradeEditStyles(doc);
   for (const change of taken) {
     changes.remove(change.id);
     const rest = changes.list();
@@ -44,9 +44,9 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
       }
     }
     else {
-      for (const el of elementsOf(doc, change.layer)) restoreStyle(el, cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
+      restoreStyle(elementsOf(doc, change.layer), cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
       // Placed freely at a breakpoint no more: its container is no positioning reference there for it.
-      if (change.within) for (const el of elementsOf(doc, change.within)) restoreStyle(el, ["position"], changesOn(change.within, rest), change.breakpoint ?? null);
+      if (change.within) restoreStyle(elementsOf(doc, change.within), ["position"], changesOn(change.within, rest), change.breakpoint ?? null);
     }
   }
   syncOrders(doc, changes);

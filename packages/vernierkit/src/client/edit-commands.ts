@@ -1,7 +1,10 @@
 /**
- * The Editor, as its callers see it: every edit command the designer edits
- * the canvas by, in design language, and what they take. `edits.ts` makes
- * one; the commands' modules build on it without reaching back into it.
+ * What the Editor is, as its callers see it: every edit command the designer
+ * edits the canvas by, in design language, and what they take. Types alone:
+ * `edits.ts` makes an Editor (`createEditor`), and `structure-edits.ts` makes
+ * some of its commands. Callers take these types from here, and only
+ * `createEditor` from `edits.ts`; the modules that make the commands build on
+ * them without reaching back into `edits.ts`.
  */
 import type { OffCanvasOrigin, SavedOffCanvasLayer } from "../service-protocol";
 import type { Breakpoint } from "./breakpoints";
@@ -16,6 +19,14 @@ export type Destination = { parent: Layer; index: number } | { parent: Layer; x:
 export interface SetOptions {
   /** One more step of an adjustment under way (a drag on a number, a color being picked): undone with the steps before it. */
   continues?: boolean;
+  /**
+   * One step of a run of them (a key held or pressed again and again, a drag
+   * on a number or a gradient stop), rather than a value set once (typed,
+   * toggled, chosen, picked): the views beside the one worked in show it once
+   * the steps pause, not once the next frame is drawn (ADR 0011). In `batch`,
+   * for each value set in it.
+   */
+  step?: boolean;
   /** The Variables the designer chose for the value, by part (see `Bindings`); null for a part: detached from its Variable. */
   variables?: Picked;
 }
@@ -102,7 +113,8 @@ export interface Editor {
    * in), the layers between moving a cell along, as dragging it there does,
    * in every view; it stays at the Grid's ends, and in a Grid that places its
    * layers itself (`placesItself`). `continues`: one more nudge of a run, undone
-   * with the nudges before it. Returns the layers where they are now.
+   * with the nudges before it. Each nudge is one step of a run (`step`), as the
+   * arrow keys make them. Returns the layers where they are now.
    */
   nudge(layers: Layer[], dx: number, dy: number, options?: SetOptions): Layer[];
   /**

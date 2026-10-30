@@ -1,0 +1,286 @@
+{
+  "lastId": 4,
+  "changes": [
+    {
+      "id": 1,
+      "kind": "style",
+      "layer": "1",
+      "target": {
+        "loc": "src/components/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:40:11",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": "src/main.tsx:8:5",
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 3,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "Stack",
+            "App",
+            "Grid",
+            "Card"
+          ],
+          "element": "<article class=\"rounded-xl border border-stone-200 bg-white p-5 shadow-sm\">",
+          "page": "/"
+        }
+      },
+      "scope": "usage",
+      "property": "fill",
+      "before": {
+        "type": "solid",
+        "color": "#FFFFFF",
+        "opacity": 1
+      },
+      "after": {
+        "type": "solid",
+        "color": "#FF0000",
+        "opacity": 1
+      },
+      "style": {
+        "background-color": "rgb(255 0 0 / 1)"
+      },
+      "sources": [
+        {
+          "properties": [
+            "background-color"
+          ],
+          "kind": "rule",
+          "selector": ".bg-white",
+          "file": "{{checkout}}/examples/vite-react19-tw4/src/index.css",
+          "layer": "utilities",
+          "important": false,
+          "className": "bg-white",
+          "declaration": "background-color: var(--color-white)"
+        }
+      ],
+      "variables": {
+        "color": null
+      }
+    },
+    {
+      "id": 2,
+      "kind": "style",
+      "layer": "1",
+      "target": {
+        "loc": "src/components/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:40:11",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": "src/main.tsx:8:5",
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 3,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "Stack",
+            "App",
+            "Grid",
+            "Card"
+          ],
+          "element": "<article class=\"rounded-xl border border-stone-200 bg-white p-5 shadow-sm\">",
+          "page": "/"
+        }
+      },
+      "scope": "usage",
+      "property": "radius",
+      "before": 12,
+      "after": 4,
+      "style": {
+        "border-radius": "4px"
+      },
+      "sources": [
+        {
+          "properties": [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius"
+          ],
+          "kind": "rule",
+          "selector": ".rounded-xl",
+          "file": "{{checkout}}/examples/vite-react19-tw4/src/index.css",
+          "layer": "utilities",
+          "important": false,
+          "className": "rounded-xl",
+          "declaration": "border-radius: var(--radius-xl)"
+        }
+      ],
+      "variables": {
+        "": {
+          "name": "sm",
+          "group": "radius",
+          "value": "0.25rem",
+          "from": "tailwind",
+          "css": "var(--radius-sm)",
+          "own": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "kind": "style",
+      "layer": "1",
+      "breakpoint": {
+        "min": null,
+        "max": 768,
+        "project": {
+          "tailwind": "max-md:"
+        }
+      },
+      "target": {
+        "loc": "src/components/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:40:11",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": "src/main.tsx:8:5",
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 3,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "Stack",
+            "App",
+            "Grid",
+            "Card"
+          ],
+          "element": "<article class=\"rounded-xl border border-stone-200 bg-white p-5 shadow-sm\">",
+          "page": "/"
+        }
+      },
+      "scope": "usage",
+      "property": "radius",
+      "before": 4,
+      "after": 20,
+      "style": {
+        "border-radius": "20px"
+      },
+      "sources": [
+        {
+          "properties": [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius"
+          ],
+          "kind": "rule",
+          "selector": ".rounded-xl",
+          "file": "{{checkout}}/examples/vite-react19-tw4/src/index.css",
+          "layer": "utilities",
+          "important": false,
+          "className": "rounded-xl",
+          "declaration": "border-radius: var(--radius-xl)"
+        }
+      ],
+      "variables": {
+        "": null
+      }
+    },
+    {
+      "id": 4,
+      "kind": "delete",
+      "layer": "1",
+      "target": {
+        "loc": "src/components/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:40:11",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": "src/main.tsx:8:5",
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 3,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "Stack",
+            "App",
+            "Grid",
+            "Card"
+          ],
+          "element": "<article class=\"rounded-xl border border-stone-200 bg-white p-5 shadow-sm\">",
+          "page": "/"
+        }
+      },
+      "scope": "usage",
+      "property": "delete-1",
+      "before": {
+        "container": {
+          "layer": "2",
+          "target": {
+            "loc": "src/App.tsx:38:7",
+            "chain": [
+              {
+                "component": "App",
+                "usage": "src/main.tsx:8:5",
+                "thirdParty": false
+              }
+            ],
+            "component": "App",
+            "instances": 1,
+            "locked": false,
+            "unlocated": false,
+            "context": {
+              "path": [
+                "Page",
+                "Stack",
+                "App",
+                "Grid"
+              ],
+              "element": "<div class=\"grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3\">",
+              "page": "/"
+            }
+          },
+          "grid": true
+        },
+        "nth": 2,
+        "slot": 1,
+        "absolute": null
+      },
+      "after": null,
+      "style": {
+        "display": "none"
+      },
+      "sources": [],
+      "data": true
+    }
+  ]
+}

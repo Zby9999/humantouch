@@ -9,14 +9,17 @@ import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, 
 import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
-import type { Destination, Editor } from "./edits";
+import type { Destination, Editor } from "./edit-commands";
 import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
+import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
+import { holdPointer, pointerHeld } from "./pointer-held";
 import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances } from "./snap";
+import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import { createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
@@ -110,13 +113,16 @@ export function CanvasView(props: Props) {
   const [measuring, setMeasuring] = useState(false);
   const pan = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [panning, setPanning] = useState(false);
-  /** A press on a layer, in the view pressed in, that a move of the pointer turns into a drag. */
-  const press = useRef<{ pointerId: number; layer: Layer; in: Shown; x: number; y: number } | null>(null);
+  /**
+   * A press on a layer, in the view pressed in, that a move of the pointer turns into a drag. Held from
+   * the moment it is pressed (`release`): until it is let go, or the drag cancelled, no key edits (ADR 0012).
+   */
+  const press = useRef<{ pointerId: number; layer: Layer; in: Shown; x: number; y: number; release(): void } | null>(null);
   const dragging = useRef<DragSession | null>(null);
   /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
   const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean } | null>(null);
-  /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. */
-  const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number } } | null>(null);
+  /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. Held until let go (ADR 0012). */
+  const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number }; release(): void } | null>(null);
   const [drawn, setDrawn] = useState<{ in: Shown; box: DOMRect } | null>(null);
   /** The text being typed in, and what was in it. */
   const typing = useRef<{ layer: Layer; html: string } | null>(null);
@@ -148,6 +154,26 @@ export function CanvasView(props: Props) {
   const played: Bounds | null = placed[0] ? { width: playWidth ?? placed[0].width, height: placed[0].height } : null;
 
   /**
+   * Once the camera is at rest, however it moved, the views are drawn only
+   * as far as they show again (`drawOnlyWhatShows`): zoomed out till every
+   * view shows in full, they would otherwise go on being drawn whole after
+   * zooming back in (ticket 22). Not while a mode switch or typing is under
+   * way, nor while the pointer is held down on something that edits as it
+   * moves (`pointerHeld`, ADR 0012): a layer pressed or dragged, one drawn
+   * with a tool, a value's icon or a gradient's stop. Once it is over.
+   */
+  const [atRest] = useState(() =>
+    onceAtRest(
+      () => stage.current && drawOnlyWhatShows(stage.current),
+      () => !!modeSwitch.current || wasLeaving.current || pointerHeld() || !!typing.current,
+    ),
+  );
+  useEffect(() => {
+    if (canvas) atRest.moved();
+  }, [camera]);
+  useEffect(() => () => atRest.cancel(), []);
+
+  /**
    * Plays a mode switch animation, taking over from one still running.
    * `travelling`: the canvas is out of its place in the viewport meanwhile.
    */
@@ -166,6 +192,8 @@ export function CanvasView(props: Props) {
       () => {
         if (modeSwitch.current !== animation) return;
         modeSwitch.current = null;
+        // Back where the camera has it, the views are drawn only as far as they show (`drawOnlyWhatShows`).
+        if (el === stage.current && !wasLeaving.current) atRest.moveEnded();
         setTravelling(false);
         done?.();
       },
@@ -228,22 +256,40 @@ export function CanvasView(props: Props) {
     };
   }, []);
 
+  /**
+   * The views beside the desktop view made while the canvas travels into
+   * place: hidden till it is there, they are made after the frame that first
+   * shows it, one a task, so that frame waits for none of them. Any not made
+   * by the time it is there are made at once (below).
+   */
+  const [besideLater] = useState(createLater);
+  const travellingNow = useRef(travelling);
+  travellingNow.current = travelling;
+  useLayoutEffect(() => {
+    if (!travelling) besideLater.runNow();
+  }, [travelling]);
+  useEffect(() => () => besideLater.cancel(), []);
   // The views beside the desktop view: each shows the canvas in its own iframe once there is a canvas, and stops when deleted.
   useEffect(() => {
     if (!views) return;
     for (const width of widths) {
-      const frame = frames.current.get(width);
-      if (attached.current.has(width) || !frame) continue;
+      if (attached.current.has(width) || !frames.current.get(width)) continue;
       const entry: { view: View | null; gone: boolean } = { view: null, gone: false };
       attached.current.set(width, entry);
-      views.add(frame, width).then(
-        (view) => {
-          if (entry.gone) return views.remove(view);
-          entry.view = view;
-          setBeside((laidOut) => new Map(laidOut).set(width, view));
-        },
-        (error: unknown) => console.error(error),
-      );
+      const add = () => {
+        const frame = frames.current.get(width);
+        if (entry.gone || !frame) return;
+        views.add(frame, width).then(
+          (view) => {
+            if (entry.gone) return views.remove(view);
+            entry.view = view;
+            setBeside((laidOut) => new Map(laidOut).set(width, view));
+          },
+          (error: unknown) => console.error(error),
+        );
+      };
+      if (travellingNow.current) besideLater.add(add);
+      else add();
     }
     for (const [width, entry] of attached.current) {
       if (widths.includes(width)) continue;
@@ -349,7 +395,7 @@ export function CanvasView(props: Props) {
       if (playing && !played) return;
       // Read once playing, as a page scrolls by it; not on each key typed elsewhere.
       const playedIn = playing ? viewport.current!.getBoundingClientRect() : null;
-      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, selected: selected.length > 0 });
+      const key = canvasKey(event, { playing, page: playedIn ? playedIn.height - 40 : 0, tool: !!tool, dragging: !!dragging.current, held: pointerHeld(), selected: selected.length > 0 });
       if (!playing) {
         if (event.key === "Meta" || event.key === "Control") {
           const deep = event.metaKey || event.ctrlKey;
@@ -459,18 +505,19 @@ export function CanvasView(props: Props) {
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
+    // What is pressed on is read as the view pressed in shows it now: one beside a value just changed catches up first (ADR 0011).
+    const over = viewAt(event);
+    if (over && !over.at.offCanvasLayer) views?.sync(over.at.view);
     if (event.button === 0 && !spaceHeld && tool && editor) {
       // Drawn in the view pressed in, or in a layer off the canvas; outside them all, nothing is.
-      const over = viewAt(event);
       if (!over) return;
       event.currentTarget.setPointerCapture(event.pointerId);
       const start = { x: over.x, y: over.y };
-      drawing.current = { pointerId: event.pointerId, in: over.at, start };
+      drawing.current = { pointerId: event.pointerId, in: over.at, start, release: holdPointer(event.pointerId) };
       setDrawn({ in: over.at, box: new DOMRect(start.x, start.y, 0, 0) });
       return;
     }
     if (event.button === 0 && !spaceHeld) {
-      const over = viewAt(event);
       if (over && !over.at.offCanvasLayer) setActive(over.at.view);
       const hit = layerAt(event);
       const layer = hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, primary));
@@ -480,7 +527,7 @@ export function CanvasView(props: Props) {
       // Pressed on a layer it can move: moving the pointer drags it.
       if (layer && over && !event.shiftKey && editorIn(over.at)?.canMove(layer)) {
         event.currentTarget.setPointerCapture(event.pointerId);
-        press.current = { pointerId: event.pointerId, layer, in: over.at, x: event.clientX, y: event.clientY };
+        press.current = { pointerId: event.pointerId, layer, in: over.at, x: event.clientX, y: event.clientY, release: holdPointer(event.pointerId) };
       }
       return;
     }
@@ -524,14 +571,15 @@ export function CanvasView(props: Props) {
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (drawing.current?.pointerId === event.pointerId) {
-      const { start, in: shown } = drawing.current;
+      const { start, in: shown, release } = drawing.current;
       drawing.current = null;
+      release();
       setDrawn(null);
       if (event.type === "pointerup" && tool && editor) draw(tool, shown, start, boxFrom(start, toView(event, shown)));
       return;
     }
     if (press.current?.pointerId === event.pointerId) {
-      press.current = null;
+      endPress();
       endDrag(event.type === "pointerup", event.altKey);
       return;
     }
@@ -553,9 +601,10 @@ export function CanvasView(props: Props) {
 
   /**
    * Starts dragging in a view: the layer stops taking the pointer, and where its
-   * neighbours are there is noted before any of them shifts. What shifts is
-   * shifted on the canvas, so in every view; no view grows or shrinks with it
-   * until the drop.
+   * neighbours are there is noted before any of them shifts. The layer dragged
+   * is shifted on the canvas, so in every view; the layers making room, in
+   * the view dragged in at once and in the others once the pointer pauses
+   * (ADR 0011). No view grows or shrinks with it until the drop.
    */
   const startDrag = (layer: Layer, shown: Shown): DragSession => startDragSession(layer, shown, views!);
 
@@ -595,7 +644,8 @@ export function CanvasView(props: Props) {
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;
     session.box = at;
-    shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop);
+    // The views beside show the layers making room once the pointer pauses: what is drawn over them is drawn anew then.
+    shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop, () => setDrag((d) => d && { ...d }));
     setDrag({ layer, in: shown, box: at, drop, out: session.out });
   };
   /** The drag again where the pointer is, as a modifier key changes. */
@@ -634,6 +684,8 @@ export function CanvasView(props: Props) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" && !(event.key === "Enter" && !event.shiftKey)) return;
       event.preventDefault();
+      // Typed in a view's own document, the key never reaches the Shell: held down on a value's icon, say, Enter sets nothing (ADR 0012).
+      if (event.key === "Enter" && pointerHeld()) return;
       el.blur();
     };
     const onInput = () => typedOn(undefined);
@@ -657,12 +709,19 @@ export function CanvasView(props: Props) {
     el.addEventListener("blur", end);
   };
 
+  /** The press on a layer is over: moving the pointer drags nothing, and the keys edit again. */
+  function endPress() {
+    press.current?.release();
+    press.current = null;
+  }
+
   /** Ends the drag: everything shifted goes back, and, let go where it can go, the layer moves there; with ⌥ held, a copy goes there. */
   function endDrag(commit: boolean, copy = false) {
     const session = dragging.current;
     if (!session) return;
     dragging.current = null;
-    press.current = null;
+    // The press is over with the drag: the keys edit again, though the pointer is still down after Esc.
+    endPress();
     restoreDragStyles(session);
     setDrag(null);
     if (!commit) return;
@@ -760,7 +819,12 @@ export function CanvasView(props: Props) {
           visibility: canvas ? "visible" : "hidden",
         }}
       >
-        <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" />
+        {/*
+          No view scrolls: each is as tall as what it shows, the camera moves over it, and its scrollbar is hidden
+          (`CANVAS_STYLES`). `scrolling="no"` tells the browser so: as a frame that could scroll, a view redrawn
+          had the whole editor around it redrawn too, a large page's frame slower by some 5ms (ticket 22).
+        */}
+        <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" scrolling="no" />
         {canvas &&
           placed
             .filter((p) => !p.desktop)
@@ -774,6 +838,7 @@ export function CanvasView(props: Props) {
                 class="vk-canvas is-beside"
                 title={`${p.name} ${p.width}`}
                 sandbox="allow-same-origin"
+                scrolling="no"
                 // Only the desktop view travels between the page and the canvas, and only it is played.
                 style={{ left: `${p.x}px`, visibility: playing || travelling ? "hidden" : undefined }}
               />

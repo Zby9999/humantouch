@@ -373,10 +373,9 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
    */
   const showPromoted = (id: string, loc: string, taken: Change[]) => {
     const others = changesOn(id, changes.list());
-    for (const el of elementsOf(doc, id)) {
-      for (const change of taken) if (change.kind === "style") restoreStyle(el, cssOf(change.property as Property), others, change.breakpoint ?? null);
-      if (others.some((change) => change.asStack && !change.breakpoint)) el.setAttribute(AS_STACK_ATTR, "");
-    }
+    const els = elementsOf(doc, id);
+    for (const change of taken) if (change.kind === "style") restoreStyle(els, cssOf(change.property as Property), others, change.breakpoint ?? null);
+    if (others.some((change) => change.asStack && !change.breakpoint)) for (const el of els) el.setAttribute(AS_STACK_ATTR, "");
     showComponent(doc, loc, changes.list());
   };
 

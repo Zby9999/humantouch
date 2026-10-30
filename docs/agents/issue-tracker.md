@@ -10,6 +10,14 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 
+## Numbering
+
+Ticket and ADR numbers are given out on `main` only, so lines working in parallel worktrees never take the same one:
+
+- To open a ticket or write an ADR, take the highest number on `main` plus one (tickets under `.scratch/<feature-slug>/issues/`, ADRs under `docs/adr/`). Commit only that file on `main`, in the main checkout, and push it; then bring `main` into your branch.
+- Never number a ticket or an ADR on a branch.
+- If the number turns out to be taken when you commit, take the next one.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).

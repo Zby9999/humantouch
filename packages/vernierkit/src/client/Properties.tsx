@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useRef, useState } from "preact/hooks";
-import type { Editor } from "./edits";
+import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
 import { Icon, type IconName } from "./icons";
 import { BreakpointMark, BreakpointMarksProvider, breakpointMarks } from "./BreakpointMark";
@@ -28,6 +28,7 @@ import {
   type Color,
   type RadialGradient,
 } from "./paint";
+import { holdPointer } from "./pointer-held";
 import { stepped } from "./stroke-weight";
 import { useToast } from "./Toast";
 import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
@@ -55,6 +56,30 @@ const NEW_STROKE: Stroke = { color: "#000000", opacity: 1, weight: 1, style: "so
 /** An effect added, as in Figma: a drop shadow. Fields in the order the editor reads them back in. */
 const NEW_SHADOW: Shadow = { type: "drop", x: 0, y: 4, blur: 4, spread: 0, color: "#000000", opacity: 0.25 };
 
+/** Set while a field hands on one step of a run of them (`asStep`). */
+let stepping = false;
+
+/**
+ * Hands on what `change` sets as one step of a run of them: a key held or
+ * pressed again and again, a drag on a number or a gradient stop. Any other
+ * value is set once (typed, toggled, chosen, picked): the views beside the one
+ * worked in show it after the next frame, not once the steps pause (ADR 0011).
+ */
+function asStep(change: () => void) {
+  const was = stepping;
+  stepping = true;
+  try {
+    change();
+  } finally {
+    stepping = was;
+  }
+}
+
+/** How a value is set now: `continues` the adjustment under way or not, and whether it is one step of a run (`asStep`). */
+export function stepOptions(continues: boolean): SetOptions {
+  return { continues, step: stepping };
+}
+
 /** A value the selected layers do not share: shown as Mixed. */
 const MIXED = Symbol("mixed");
 type Shown<T> = T | typeof MIXED;
@@ -79,7 +104,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const update = <P extends Property>(property: P, next: (current: PropertyValues[P], layer: Layer) => PropertyValues[P], continues = false) => {
     editor.batch(() => {
       for (const layer of layers) editor.set(layer, property, next(editor.read(layer, property), layer));
-    }, { continues });
+    }, stepOptions(continues));
     onEdit();
   };
   const set = <P extends Property>(property: P) => (value: PropertyValues[P], continues = false) => update(property, () => value, continues);
@@ -164,7 +189,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         const kept = effectOf(layer, property);
         if (kept) editor.set(layer, kept, next(editor.read(layer, kept), layer));
       }
-    }, { continues });
+    }, stepOptions(continues));
     onEdit();
   };
   /** Changes several effects of each selected layer, where the layer keeps them, as one edit. */
@@ -1079,6 +1104,8 @@ function GradientStops({ gradient, length, onChange, variable }: {
               event.preventDefault();
               event.currentTarget.focus();
               event.currentTarget.setPointerCapture(event.pointerId);
+              // Until it is let go, no key edits: an undo that changed the stops would leave this drag moving another one (ADR 0012).
+              holdPointer(event.pointerId);
               drag.current = { pointerId: event.pointerId, index, moved: false };
             }}
             onPointerMove={(event) => {
@@ -1087,7 +1114,7 @@ function GradientStops({ gradient, length, onChange, variable }: {
               const { unit } = stops[d.index];
               const position = positionAt(along(event.clientX), unit);
               if (position === stops[d.index].position) return;
-              d.index = place(d.index, position, unit, d.moved);
+              asStep(() => (d.index = place(d.index, position, unit, d.moved)));
               d.moved = true;
             }}
             onPointerUp={(event) => {
@@ -1098,7 +1125,7 @@ function GradientStops({ gradient, length, onChange, variable }: {
               const by = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[event.key];
               if (by) {
                 event.preventDefault();
-                place(index, s.position + by * (event.shiftKey ? 10 : 1), s.unit);
+                asStep(() => place(index, s.position + by * (event.shiftKey ? 10 : 1), s.unit));
               } else if (event.key === "Delete" || event.key === "Backspace") {
                 event.preventDefault();
                 remove(index);
@@ -1604,6 +1631,8 @@ function Scrub({ icon, glyph, value, min, max = Infinity, onChange }: {
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
     Promise.resolve(handle.requestPointerLock()).catch(() => {}); // Without the lock, the drag still works.
+    // Until it is let go, no key edits: the next move would set again a value undone (ADR 0012).
+    holdPointer(event.pointerId);
     drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false };
   };
 
@@ -1617,7 +1646,7 @@ function Scrub({ icon, glyph, value, min, max = Infinity, onChange }: {
     const next = Math.min(max, Math.max(min, d.value + px * (event.shiftKey ? 10 : 1)));
     if (next === d.value) return;
     d.value = next;
-    onChange(next, d.moved);
+    asStep(() => onChange(next, d.moved));
     d.moved = true;
   };
 
@@ -1698,7 +1727,8 @@ function TextField<T>({ label, class: className, value, placeholder, parse, step
     } else if (step && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
       event.preventDefault();
       setDraft(null);
-      step((event.key === "ArrowUp" ? 1 : -1) * (event.shiftKey ? 10 : 1));
+      const by = (event.key === "ArrowUp" ? 1 : -1) * (event.shiftKey ? 10 : 1);
+      asStep(() => step(by));
     }
   };
 

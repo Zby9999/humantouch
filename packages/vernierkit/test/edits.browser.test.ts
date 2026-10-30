@@ -5,7 +5,7 @@ import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/bre
 import { createChangeSet, type Place } from "../src/client/changeset";
 import { checkChange, type PageAt } from "../src/client/check";
 import { createClipboard } from "../src/client/clipboard";
-import { declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
+import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
 import type { Fill, PropertyValues, Shadow, Stroke } from "../src/client/property-table";
@@ -14,7 +14,7 @@ import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
 import { fontsOf } from "../src/client/typography";
-import { createViews, type View } from "../src/client/views";
+import { CATCH_UP_AFTER_MS, createViews, type View } from "../src/client/views";
 import { bind, bindRecorded, resolveVariables, type Catalog } from "../src/client/variables";
 import type { Variable } from "../src/service-protocol";
 
@@ -101,6 +101,8 @@ function find(layer: Layer, match: (layer: Layer) => boolean): Layer | undefined
 }
 
 const style = (el: Element) => getComputedStyle(el);
+/** Once the next frame is drawn, and what was put off till then is done. */
+const painted = () => new Promise((done) => requestAnimationFrame(() => setTimeout(() => setTimeout(done))));
 
 describe("solid fill", () => {
   test("paints every instance of the usage, and the change records target, scope, before, after, reference style and source", () => {
@@ -465,6 +467,18 @@ describe("stroke", () => {
     expect(read("border-bottom: 2px dotted blue; border-top: 3px none red")).toEqual({ color: "#0000FF", opacity: 1, weight: [0, 0, 2, 0], style: "dashed" });
   });
 
+  test("read again, as the Design panel does on each step of a value, a stroke changes nothing on the canvas", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    box.style.cssText = "height: 40px; border: 1px solid red";
+    const stroke = editor.read(layerOf(box), "stroke");
+    const observer = new MutationObserver(() => {});
+    observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    expect(editor.read(layerOf(box), "stroke")).toEqual(stroke);
+    expect(observer.takeRecords()).toEqual([]);
+    observer.disconnect();
+  });
+
   test("the page's own weight reads as the style that sets it writes it, though a 1x screen draws it narrower; through var(), as drawn", () => {
     const { doc, editor, layerOf } = openCanvas();
     doc.head.insertAdjacentHTML(
@@ -516,6 +530,14 @@ describe("stroke", () => {
     box.dir = "rtl";
     box.style.setProperty("border-inline-start-width", "2.5px");
     expect(editor.read(layer, "stroke")).toEqual({ ...red, weight: [1, 2.5, 1, 1] });
+  });
+
+  test("each side reads as its own declaration writes it, when one rule writes them side by side", () => {
+    const { doc, editor, layerOf } = openCanvas();
+    doc.head.insertAdjacentHTML("beforeend", "<style>.sides { border: 0 solid red; border-top-width: 1.5px; border-right-width: 3px; border-left-width: 2.5px }</style>");
+    const box = doc.getElementById("unmarked")!;
+    box.className = "sides";
+    expect(editor.read(layerOf(box), "stroke")).toEqual({ color: "#FF0000", opacity: 1, style: "solid", weight: [1.5, 3, 0, 2.5] });
   });
 
   test("a weight set this round reads back as set, though a 1x screen draws it narrower", () => {
@@ -1146,6 +1168,205 @@ describe("undo and redo", () => {
       { property: "fill", after: red },
       { property: "radius", after: 4 },
     ]);
+  });
+});
+
+describe("a value stepped again and again, as the arrow keys and scrubbing do", () => {
+  /** The canvas, shown as narrow as a phone too. */
+  const open = async () => {
+    const canvas = openCanvas();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    return { ...canvas, phone };
+  };
+  const radii = (doc: Document) => [...doc.querySelectorAll("article")].map((card) => style(card).borderRadius);
+
+  test("each step shows on every instance in every view, in the canvas saved, and in a view added after", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    for (const radius of [4, 5, 6]) {
+      editor.set(layerOf(cards[0]), "radius", radius);
+      views.sync(phone);
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill(`${radius}px`));
+      expect(radii(phone.document)).toEqual(radii(doc));
+    }
+    editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true });
+    editor.batch(() => editor.set(layerOf(cards[0]), "radius", 8), { continues: false });
+    views.sync(phone);
+    expect(radii(phone.document)).toEqual(["8px", "8px", "8px", "12px"]);
+
+    const saved = showSaved(serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }));
+    expect(radii(saved)).toEqual(["8px", "8px", "8px", "12px"]);
+    const tabletFrame = document.createElement("iframe");
+    document.body.append(tabletFrame);
+    try {
+      const tablet = await views.add(tabletFrame, 600);
+      expect(radii(tablet.document)).toEqual(["8px", "8px", "8px", "12px"]);
+    } finally {
+      tabletFrame.remove();
+    }
+  });
+
+  test("worked in the desktop view, each step shows there at once; the views beside it show the latest step once the steps pause, or at once as one is read", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    const tabletFrame = document.createElement("iframe");
+    document.body.append(tabletFrame);
+    /** Two frames drawn: the views beside wait for the steps to pause, not for a frame. */
+    const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    try {
+      const tablet = await views.add(tabletFrame, 600);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      editor.set(layerOf(cards[0]), "radius", 4, { step: true });
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
+      // As a key held down repeats: each step sooner after the last than the pause, frames drawn between them.
+      for (const radius of [5, 6]) {
+        editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true, step: true });
+        expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill(`${radius}px`));
+        await drawn();
+        vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+        for (const view of [phone, tablet]) expect(radii(view.document).slice(0, 3)).toEqual(Array(3).fill("4px"));
+      }
+      vi.advanceTimersByTime(1);
+      for (const view of [phone, tablet]) expect(radii(view.document)).toEqual(radii(doc));
+      vi.useRealTimers();
+
+      editor.batch(() => editor.set(layerOf(cards[0]), "radius", 7), { continues: true, step: true });
+      views.sync(phone);
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("7px"));
+      expect(radii(tablet.document).slice(0, 3)).toEqual(Array(3).fill("6px"));
+      // Anything else changed on the canvas brings every view up to date with it.
+      doc.body.append(doc.createElement("hr"));
+      views.sync();
+      expect(radii(tablet.document).slice(0, 3)).toEqual(Array(3).fill("7px"));
+      expect(tablet.document.querySelectorAll("hr")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      tabletFrame.remove();
+    }
+  });
+
+  test("the first value of a layer, which gives its instances edit styles, waits in the views beside as any other: a step till the steps pause, a value set once till the next frame", async () => {
+    const { doc, editor, cards, layerOf, phone, tree } = await open();
+    const title = find(tree.root, (layer) => layer.el === cards[0].querySelector("h3") && !layer.text)!;
+    const sizes = (d: Document) => [...d.querySelectorAll("h3")].map((h) => style(h).fontSize);
+    const before = sizes(phone.document);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      editor.set(layerOf(cards[0]), "radius", 4, { step: true });
+      await Promise.resolve();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("4px"));
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("12px"));
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("12px"));
+      vi.advanceTimersByTime(1);
+      expect(radii(phone.document)).toEqual(radii(doc));
+    } finally {
+      vi.useRealTimers();
+    }
+    editor.set(title, "fontSize", 30);
+    await Promise.resolve();
+    expect(sizes(doc).slice(0, 3)).toEqual(Array(3).fill("30px"));
+    expect(sizes(phone.document)).toEqual(before);
+    await painted();
+    expect(sizes(phone.document)).toEqual(sizes(doc));
+  });
+
+  test("set once in the desktop view, a value shows there at once, and in the views beside it once the next frame is drawn, with no pause to wait for", async () => {
+    const { doc, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 3);
+    await painted();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    await Promise.resolve();
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("4px"));
+    expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("3px"));
+    await painted();
+    expect(radii(phone.document)).toEqual(radii(doc));
+  });
+
+  test("set once right after steps, before they pause, a value shows in the views beside once the next frame is drawn, with no pause to wait for", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 3);
+    await painted();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      for (const radius of [4, 5]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: radius > 4, step: true });
+      editor.set(layerOf(cards[0]), "radius", 9);
+      await new Promise((done) => requestAnimationFrame(done));
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("3px"));
+      // The task after the frame: the steps are far from pausing.
+      vi.advanceTimersByTime(0);
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("9px"));
+      expect(radii(phone.document)).toEqual(radii(doc));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("undone or redone while the views beside wait for steps to pause, it shows in every view at once, as any other change (ADR 0011)", async () => {
+    const { doc, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 3);
+    await painted();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // Steps of one adjustment, 3 to 7: the views beside caught up with 5, then wait again.
+      for (const radius of [4, 5]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: radius > 4, step: true });
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      for (const radius of [6, 7]) editor.batch(() => editor.set(layerOf(cards[0]), "radius", radius), { continues: true, step: true });
+      expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("5px"));
+
+      editor.undo();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("3px"));
+      expect(radii(phone.document)).toEqual(radii(doc));
+      editor.redo();
+      expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("7px"));
+      expect(radii(phone.document)).toEqual(radii(doc));
+      // Nothing is left waiting to catch up.
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      expect(radii(phone.document)).toEqual(radii(doc));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("worked in the phone view, each step shows there at once, at its breakpoint, as in the canvas itself", async () => {
+    const { doc, editor, cards, layerOf, phone } = await open();
+    editor.at(phone);
+    editor.set(layerOf(cards[0]), "radius", 4);
+    await painted();
+    editor.batch(() => editor.set(layerOf(cards[0]), "radius", 5), { continues: true });
+    expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("5px"));
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("12px"));
+  });
+
+  test("read as the page has it between steps, the layer shows the latest step after, in every view", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "radius", 5);
+    expect(asPage(cards[0], () => style(cards[0]).borderRadius)).toBe("12px");
+    expect(style(cards[0]).borderRadius).toBe("5px");
+    editor.set(layerOf(cards[0]), "radius", 6);
+    views.sync(phone);
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("6px"));
+    expect(radii(phone.document)).toEqual(radii(doc));
+  });
+
+  test("a step at a breakpoint after steps at every width, and back, shows where each belongs in every view; undone, the page's own again", async () => {
+    const { doc, views, editor, cards, layerOf, phone } = await open();
+    editor.set(layerOf(cards[0]), "radius", 4);
+    editor.set(layerOf(cards[0]), "radius", 5);
+    editor.at(phone);
+    editor.set(layerOf(cards[0]), "radius", 9);
+    editor.set(layerOf(cards[0]), "radius", 10);
+    editor.at(null);
+    editor.set(layerOf(cards[0]), "radius", 6);
+    views.sync();
+    expect(radii(doc).slice(0, 3)).toEqual(Array(3).fill("6px"));
+    expect(radii(phone.document).slice(0, 3)).toEqual(Array(3).fill("10px"));
+    while (editor.undo().length);
+    views.sync();
+    expect(radii(doc)).toEqual(Array(4).fill("12px"));
+    expect(radii(phone.document)).toEqual(Array(4).fill("12px"));
   });
 });
 
@@ -2014,6 +2235,31 @@ describe("nudging layers, as the arrow keys do", () => {
     expect(changes.list()).toEqual([]);
     editor.redo();
     expect(place("free")).toEqual([23, 7]);
+  });
+
+  test("nudged in the desktop view, a layer placed freely moves in the views beside once the nudges pause, as the arrow keys step a value", async () => {
+    const { views, editor, layer, place } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The first nudge makes the layer's edit styles: the views beside wait for the pause all the same.
+      editor.nudge([layer("free")], 1, 0);
+      await new Promise((done) => requestAnimationFrame(done));
+      expect(place("free", phone.document)).toEqual([12, 8]);
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      expect(place("free", phone.document)).toEqual([13, 8]);
+      editor.nudge([layer("free")], 1, 0, { continues: true });
+      expect(place("free")).toEqual([14, 8]);
+      await new Promise((done) => requestAnimationFrame(done));
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      expect(place("free", phone.document)).toEqual([13, 8]);
+      vi.advanceTimersByTime(1);
+      expect(place("free", phone.document)).toEqual([14, 8]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("nudges apart are steps apart", () => {
@@ -3423,8 +3669,11 @@ describe("views", () => {
     document.body.append(phoneFrame);
     const phone = await canvas.views.add(phoneFrame, 390);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
-    /** Both views show the same canvas. */
-    const alike = () => expect(phone.document.documentElement.outerHTML).toBe(canvas.doc.documentElement.outerHTML);
+    /** Both views show the same canvas: read now, though the phone view would hold a value's steps back till they pause. */
+    const alike = () => {
+      canvas.views.sync(phone);
+      expect(phone.document.documentElement.outerHTML).toBe(canvas.doc.documentElement.outerHTML);
+    };
     return { ...canvas, phone, layer, alike };
   };
 
@@ -3845,8 +4094,11 @@ describe("breakpoints", () => {
     const phone = await canvas.views.add(phoneFrame, 390);
     const [desktop] = canvas.views.list();
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
-    /** How the element with id `id` is styled in each view: desktop, then phone. */
-    const shown = (id: string) => [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
+    /** How the element with id `id` is styled in each view, desktop then phone, as each shows the canvas now: the phone view caught up with a value just set (ADR 0011). */
+    const shown = (id: string) => {
+      canvas.views.sync(phone);
+      return [canvas.doc, phone.document].map((doc) => style(doc.getElementById(id)!));
+    };
     const fills = (id: string) => shown(id).map((s) => s.backgroundColor);
     /** Shows the canvas in one more view, `width` px wide. */
     const addView = async (width: number) => {

@@ -7,6 +7,7 @@
  */
 import { LAYER_ID_ATTR } from "./canvas-style";
 import { framedText, type Layer } from "./layers";
+import type { Views } from "./views";
 
 /**
  * The edits made, in order, to undo and redo, shared by editors that work
@@ -18,11 +19,13 @@ export interface History {
   readonly future: Entry[];
 }
 
-/** A step in a history, with the editor's own ways to find its layers and show it. */
+/** A step in a history, the editor that made it, and that editor's own ways to find its layers and show it, undone or redone. */
 interface Entry {
   step: Step;
+  by: Steps;
   found(ids: string[]): Layer[];
-  show(): void;
+  /** Shows it in every view now, though they wait for a value changed. */
+  showNow(): void;
 }
 
 export function createHistory(): History {
@@ -68,22 +71,29 @@ export interface Steps {
   group(edits: () => void, continues: boolean, run?: boolean): void;
   /** What the canvas has now, shown in every view at once: once an edit is made, not at each step of a group. */
   show(): void;
-  /** Takes back the latest step in the History not yet undone, whichever editor made it. Returns the layers it leaves. */
+  /**
+   * Takes back the latest step in the History not yet undone, whichever
+   * editor made it, shown in every view of that editor at once: though the
+   * views beside wait for a value changed, as any other change to the canvas
+   * (ADR 0011). Returns the layers it leaves.
+   */
   undo(): Layer[];
-  /** Makes again the latest step undone. Returns the layers it leaves. */
+  /** Makes again the latest step undone, shown in every view at once as `undo` is. Returns the layers it leaves. */
   redo(): Layer[];
 }
 
 /**
- * Steps of an editor, going into `history`. `sync` shows the canvas in every
- * view; `layersOf` finds the layers a step was made to, by id, as they are now.
+ * Steps of an editor, going into `history`, made to the canvas `views` show:
+ * an edit shows in them as `sync` has it, an undo or a redo as `catchUp`
+ * does. `layersOf` finds the layers a step was made to, by id, as they are now.
  */
-export function createSteps(history: History, sync: () => void, layersOf: (ids: string[]) => Layer[]): Steps {
+export function createSteps(history: History, views: Pick<Views, "sync" | "catchUp">, layersOf: (ids: string[]) => Layer[]): Steps {
   /** Steps of the group under way, if any. */
   let batching: Step[] | null = null;
   const show = () => {
-    if (!batching) sync();
+    if (!batching) views.sync();
   };
+  const showNow = () => views.catchUp();
   const push = (step: Step, continues: boolean, found: (ids: string[]) => Layer[] = layersOf) => {
     if (batching) {
       batching.push(step);
@@ -92,7 +102,7 @@ export function createSteps(history: History, sync: () => void, layersOf: (ids: 
     history.future.length = 0;
     const last = history.past.at(-1);
     // One adjustment is one step: the same edit to the same layers, in this editor.
-    if (continues && last?.show === show && last.step.key === step.key) {
+    if (continues && last?.by === ownSteps && last.step.key === step.key) {
       if (step.run) {
         const { undo, redo } = last.step;
         last.step.undo = () => {
@@ -115,7 +125,7 @@ export function createSteps(history: History, sync: () => void, layersOf: (ids: 
             }
           : step.redo;
       }
-    } else history.past.push({ step, found, show });
+    } else history.past.push({ step, by: ownSteps, found, showNow });
     show();
   };
   const group = (edits: () => void, continues: boolean, run = false) => {
@@ -141,7 +151,7 @@ export function createSteps(history: History, sync: () => void, layersOf: (ids: 
       continues,
     );
   };
-  return {
+  const ownSteps: Steps = {
     push,
     group,
     show,
@@ -150,7 +160,7 @@ export function createSteps(history: History, sync: () => void, layersOf: (ids: 
       if (!entry) return [];
       history.future.push(entry);
       entry.step.undo();
-      entry.show();
+      entry.showNow();
       return textsIn(entry.step, entry.found(entry.step.back ?? entry.step.layers));
     },
     redo() {
@@ -158,10 +168,11 @@ export function createSteps(history: History, sync: () => void, layersOf: (ids: 
       if (!entry) return [];
       history.past.push(entry);
       entry.step.redo();
-      entry.show();
+      entry.showNow();
       return textsIn(entry.step, entry.found(entry.step.layers));
     },
   };
+  return ownSteps;
 }
 
 /** Those of `layers` whose text the step was made to, as that text. */
