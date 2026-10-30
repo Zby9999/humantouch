@@ -20,15 +20,22 @@ export const PROMPT = "落地我的设计改动";
  */
 const PATH = [join(homedir(), ".npm-global/bin"), join(homedir(), ".local/bin"), dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
 
-/** The environment an Agent runs in: these and nothing else. */
+/**
+ * The environment an Agent runs in: these and nothing else. Of the bench's
+ * own, only who the user is and how the machine reaches the network (the
+ * designer's proxy, when their shell sets one): no API keys, base URLs or
+ * model settings.
+ */
 export function cleanEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { HOME: homedir(), PATH: PATH.join(delimiter), LANG: "en_US.UTF-8", TERM: "xterm-256color", TMPDIR: tmpdir() };
-  for (const name of ["USER", "LOGNAME", "SHELL"]) if (process.env[name]) env[name] = process.env[name];
+  for (const name of ["USER", "LOGNAME", "SHELL", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"]) if (process.env[name]) env[name] = process.env[name];
   return env;
 }
 
-/** The binary `name` on the Agent's PATH. */
+/** The binary `name` on the Agent's PATH; `VK_BENCH_CLAUDE` or `VK_BENCH_CURSOR` names another. */
 export function which(name: string): string {
+  const given = process.env[`VK_BENCH_${name === "claude" ? "CLAUDE" : "CURSOR"}`];
+  if (given) return given;
   const found = PATH.map((dir) => join(dir, name)).find((path) => existsSync(path));
   if (!found) throw new Error(`No ${name} on ${PATH.join(delimiter)}`);
   return found;
