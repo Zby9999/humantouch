@@ -15,12 +15,14 @@
 import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
+import { createLater } from "./later";
 
 /**
  * How long the steps of a value pause, ms, before the views beside the one
  * worked in catch up with them: longer than macOS repeats a key held down by
- * default (83ms), shorter than the selection box stays hidden after a step
- * (`ADJUSTING_MS` in `Shell.tsx`), so it comes back over views caught up (ADR 0011).
+ * default (83ms), and half as long as the selection box stays hidden after a
+ * step (`ADJUSTING_MS` in `Shell.tsx`, made from it), so it comes back over
+ * views caught up (ADR 0011).
  */
 export const CATCH_UP_AFTER_MS = 100;
 
@@ -124,7 +126,7 @@ export interface Views {
    * meanwhile, as a drag shifts layers: returns what lets go, and each view
    * is as tall as what it shows again before the next paint.
    */
-  holdHeights(): () => void;
+  pinHeights(): () => void;
 }
 
 /** The canvas, shown so far in the desktop view only. */
@@ -137,11 +139,11 @@ export function createViews(canvas: Canvas): Views {
 
   /** Each view made as tall as what it shows, once a frame, when anything may have changed it. */
   let frame = 0;
-  /** What holds every view as tall as it is: while any does, none is fitted. */
-  const holds = new Set<object>();
+  /** What pins every view as tall as it is: while any does, none is fitted. */
+  const pins = new Set<object>();
   const fit = () => {
     frame = 0;
-    if (holds.size) return;
+    if (pins.size) return;
     let changed = false;
     for (const fitting of fittings.values()) {
       const height = fitHeight(fitting.doc, fitting.iframe, canvas.windowHeight);
@@ -224,43 +226,36 @@ export function createViews(canvas: Canvas): Views {
     } else for (const follower of followers.values()) follower.sync();
   };
   /**
-   * While a value changed is held back, till the views beside catch up: which
-   * view is worked in, whether they wait for the steps to pause or for the
-   * next frame, and what stops that wait. None: no view is behind.
+   * While the views beside lag behind a value changed, till they catch up:
+   * which view is worked in, whether they wait for the steps to pause or for
+   * the next frame, and what stops that wait. None: no view is behind.
    */
-  let held: { worked: () => View | null; step: boolean; cancel: () => void } | null = null;
+  let lagging: { worked: () => View | null; step: boolean; cancel: () => void } | null = null;
   /** Set while a value is changed (`lagBeside`): whatever the canvas takes from it is the value's, held back with it. */
   let changing = false;
   const catchUp = () => {
-    held?.cancel();
-    held = null;
+    lagging?.cancel();
+    lagging = null;
     for (const follower of followers.values()) follower.catchUp();
   };
 
   /** Holds back a value changed in the view `worked` tells: in the other views till the next frame is drawn or, for a `step`, till the steps pause. */
   const holdBack = (worked: () => View | null, step: boolean) => {
     // Set once again before the views beside catch up: they still do after the frame they wait for.
-    if (held && !held.step && !step) {
-      held.worked = worked;
+    if (lagging && !lagging.step && !step) {
+      lagging.worked = worked;
       return;
     }
-    held?.cancel();
+    lagging?.cancel();
     if (step) {
       // Each step puts the catching up off again: it comes once the steps pause.
       const timer = setTimeout(catchUp, CATCH_UP_AFTER_MS);
-      held = { worked, step, cancel: () => clearTimeout(timer) };
+      lagging = { worked, step, cancel: () => clearTimeout(timer) };
     } else {
       // Once the next frame, with the value in the view worked in, is drawn.
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const frame = requestAnimationFrame(() => (timer = setTimeout(catchUp)));
-      held = {
-        worked,
-        step,
-        cancel: () => {
-          cancelAnimationFrame(frame);
-          clearTimeout(timer);
-        },
-      };
+      const later = createLater();
+      later.add(catchUp);
+      lagging = { worked, step, cancel: later.cancel };
     }
   };
 
@@ -283,7 +278,7 @@ export function createViews(canvas: Canvas): Views {
         canvas.document,
         doc,
         () => sync(),
-        () => !!held && held.worked() !== view,
+        () => !!lagging && lagging.worked() !== view,
         () => changing,
       );
       const view = viewOf(doc, width, follower, () => fittings.get(view)?.height ?? iframe.offsetHeight);
@@ -338,11 +333,11 @@ export function createViews(canvas: Canvas): Views {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    holdHeights() {
-      const hold = {};
-      holds.add(hold);
+    pinHeights() {
+      const pin = {};
+      pins.add(pin);
       return () => {
-        if (holds.delete(hold)) refit();
+        if (pins.delete(pin)) refit();
       };
     },
   };

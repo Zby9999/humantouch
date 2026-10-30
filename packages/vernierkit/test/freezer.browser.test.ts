@@ -133,7 +133,7 @@ describe("the canvas shown at several widths", () => {
     expect(style(desktop.document, "tall").color).toBe("rgb(0, 128, 0)");
   });
 
-  test("while a drag holds the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
+  test("while a drag pins the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
     const canvas = await freeze(livePage(), iframe());
     const views = createViews(canvas);
     const phone = await views.add(iframe(), 390);
@@ -145,7 +145,7 @@ describe("the canvas shown at several widths", () => {
     const heights = () => [desktop, phone].map((view) => [view.height, frameOf(view.document).offsetHeight]);
     const before = heights();
 
-    const release = views.holdHeights();
+    const release = views.pinHeights();
     // Dragged far below the bottom of the page, as a drag shifts it: on the canvas, so in every view.
     const dragged = canvas.document.getElementById("narrow")!;
     dragged.style.setProperty("translate", "0 5000px", "important");

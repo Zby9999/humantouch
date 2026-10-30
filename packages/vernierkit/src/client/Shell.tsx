@@ -21,7 +21,7 @@ import { BriefSection } from "./BriefSection";
 import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
-import type { View, Views } from "./views";
+import { CATCH_UP_AFTER_MS, type View, type Views } from "./views";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -62,8 +62,8 @@ interface Props {
   onLeft(): void;
 }
 
-/** How long after the last edit the selection box comes back: after the views beside have caught up (`CATCH_UP_AFTER_MS` in `views.ts`, ADR 0011). */
-const ADJUSTING_MS = 200;
+/** How long after the last edit the selection box comes back: twice as long as the views beside wait to catch up, so it comes back over views caught up (ADR 0011). */
+const ADJUSTING_MS = 2 * CATCH_UP_AFTER_MS;
 /** How long after the last edit the round is saved. */
 const AUTOSAVE_MS = 500;
 /** Nudges of the same layers this close together are a run: one step, undone at once. */

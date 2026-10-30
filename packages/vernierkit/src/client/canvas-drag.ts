@@ -88,7 +88,7 @@ export function startDragSession(layer: Layer, shown: Shown, views: Views): Drag
     if (r) session.rects.set(child.el, r);
   }
   if (!layer.text) setStyles(session, layer.el, { "pointer-events": "none", "z-index": "2147483647" });
-  if (!offCanvasLayer) session.release = views.holdHeights();
+  if (!offCanvasLayer) session.release = views.pinHeights();
   return session;
 }
 
