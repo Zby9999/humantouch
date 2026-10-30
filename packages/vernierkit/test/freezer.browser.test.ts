@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { freeze, restore, serializeCanvas } from "../src/client/freezer";
+import { copyCanvas, freeze, restore, serializeCanvas } from "../src/client/freezer";
 import { createViews } from "../src/client/views";
 
 /**
@@ -232,5 +232,19 @@ describe("bringing the copy to rest", () => {
     const frozen = freeze(pageWithFont(true), iframe());
     expect(await settledAtOnce(frozen)).toBe(false);
     await frozen;
+  });
+
+  test("a view waiting for a font is as tall as what it shows meanwhile, never cut off at the height of a wider one", async () => {
+    const live = pageWithFont(true);
+    live.document.querySelector("p")!.textContent = "Words that wrap many times over in a narrow view. ".repeat(40);
+    const canvas = await freeze(live, iframe());
+    expect(canvas.height).toBe(600);
+    const narrow = iframe();
+    const copied = copyCanvas(canvas, narrow, 200);
+    expect(await settledAtOnce(copied)).toBe(false);
+    const shows = narrow.contentDocument!.documentElement.scrollHeight;
+    expect(shows).toBeGreaterThan(600);
+    expect(narrow.offsetHeight).toBe(shows);
+    await copied;
   });
 });

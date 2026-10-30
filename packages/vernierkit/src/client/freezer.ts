@@ -324,6 +324,8 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
       return Promise.reject(error);
     }
   }
+  // Meanwhile as tall as what it shows so far, so it is not shown cut off while its fonts come in.
+  fitHeight(doc, iframe, layout.windowHeight);
   return Promise.all([waiting, ...loading]).then(atRest);
 }
 
