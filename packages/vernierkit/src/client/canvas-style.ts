@@ -116,7 +116,7 @@ export type Elements = Element | Iterable<Element>;
  * styles from then on.
  */
 export function declare(els: Elements, declarations: Record<string, string>, breakpoint: Breakpoint | null = null, layer?: string) {
-  editRules(els, (el, rules) => put(el, rules.edits, declarations, breakpoint), false, layer);
+  editRules(els, (el, rules) => put(el, rules.edits, declarations, breakpoint), { pendingLayer: layer });
 }
 
 /**
@@ -133,7 +133,7 @@ export function declarePromoted(els: Elements, changes: Change[]) {
       if (changes.length) rules.promoted = promoted;
       else delete rules.promoted;
     },
-    !changes.length,
+    { ruledOnly: !changes.length },
   );
 }
 
@@ -158,16 +158,20 @@ export function relayOut(els: Elements, declarations: Record<string, string>) {
  */
 export function restoreStyle(els: Elements, names: string[], others: Change[], breakpoint: Breakpoint | null = null) {
   // A move or a deletion of one of a loop's instances alone is not on the others: those elements are marked with it.
-  const othersOn = (el: Element) =>
-    others.filter((change) => {
-      const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
-      return !change.data || !mark || el.getAttribute(mark) === change.property;
-    });
   const list = elementsIn(els);
+  const othersOn = new Map(
+    list.map((el) => [
+      el,
+      others.filter((change) => {
+        const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
+        return !change.data || !mark || el.getAttribute(mark) === change.property;
+      }),
+    ]),
+  );
   editRules(
     list,
     (el, { edits }) => {
-      const own = othersOn(el);
+      const own = othersOn.get(el)!;
       if (!own.length) {
         edits.base = { style: {} };
         edits.at = [];
@@ -180,9 +184,9 @@ export function restoreStyle(els: Elements, names: string[], others: Change[], b
       }
       for (const change of own) put(el, edits, change.style, change.breakpoint ?? null);
     },
-    true,
+    { ruledOnly: true },
   );
-  for (const el of list) if (!othersOn(el).some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
+  for (const el of list) if (!othersOn.get(el)!.some((change) => change.asStack)) el.removeAttribute(AS_STACK_ATTR);
   declare(
     list.filter((el) => el.hasAttribute(REFERENCE_ATTR)),
     { position: "relative" },
@@ -327,7 +331,7 @@ export function shareEditStyles(doc: Document) {
     const key = el.getAttribute(STYLE_KEY_ATTR)!;
     const json = jsonOf(key);
     if (!json) continue;
-    const id = `${el.getAttribute(LAYER_ID_ATTR)}\n${json}`;
+    const id = groupOf(el.getAttribute(LAYER_ID_ATTR)!, json);
     if (!alike.has(id)) alike.set(id, new Set());
     alike.get(id)!.add(key);
   }
@@ -341,35 +345,17 @@ export function shareEditStyles(doc: Document) {
   }
 }
 
+/** Documents whose elements each keep edit styles of their own. */
+const apart = new WeakSet<Document>();
+
 /**
- * Gives each element of `root`, a copy of a document, that shares its key
- * with elements before it a key and a style element of its own, the same
- * rules in it: as each was kept before the instances of a layer shared them
- * (ticket 60). For the look of a layer off the canvas, which a put back
- * hands to the Agent as it was then.
+ * Has each element of `doc`, the document of a layer off the canvas, keep
+ * edit styles of its own, as before the instances of a layer shared them
+ * (ticket 60): its look is written out, put back, and read by the Agent, as
+ * it always was. It is small: sharing would gain nothing there.
  */
-export function unshareEditStyles(root: Element) {
-  let last = 0;
-  for (const el of root.querySelectorAll(`[${STYLE_KEY_ATTR}], style[${RULES_FOR_ATTR}]`)) {
-    last = Math.max(last, Number(el.getAttribute(STYLE_KEY_ATTR) ?? el.getAttribute(RULES_FOR_ATTR)) || 0);
-  }
-  /** The style element last written for each key: the next of its group goes after it. */
-  const latest = new Map<string, Element>();
-  for (const el of root.querySelectorAll(`[${STYLE_KEY_ATTR}]`)) {
-    const key = el.getAttribute(STYLE_KEY_ATTR)!;
-    const sheet = latest.get(key) ?? root.querySelector(`style[${RULES_FOR_ATTR}="${CSS.escape(key)}"]`);
-    if (!sheet) continue;
-    if (!latest.has(key)) {
-      latest.set(key, sheet);
-      continue;
-    }
-    const own = String(++last);
-    const copy = sheet.cloneNode(true) as Element;
-    copy.setAttribute(RULES_FOR_ATTR, own);
-    sheet.after(copy);
-    latest.set(key, copy);
-    el.setAttribute(STYLE_KEY_ATTR, own);
-  }
+export function keepEditStylesApart(doc: Document) {
+  apart.add(doc);
 }
 
 /** Puts the CSS layer of the edit styles first in the canvas's head, before any of the page's: where the layer order is settled. */
@@ -474,32 +460,41 @@ function elementsIn(els: Elements): Element[] {
   return "nodeType" in (els as object) ? [els as Element] : [...new Set(els as Iterable<Element>)];
 }
 
+/** An element, with the rules to write for it. */
+interface Written {
+  el: Element;
+  rules: Rules;
+}
+
+/** The instances of the layer with id `layer` whose rules, as JSON, are `json`: they share a style element. */
+const groupOf = (layer: string, json: string) => `${layer}\n${json}`;
+
 /**
  * Changes the rules of each of `els` as `change` does, given the element and
  * its rules as they are, for it alone; an element's rules are made on the
  * first, with what of its style attribute is important taken in, unless
- * `ruledOnly`: then those with none are left as they are. `layer`: the layer
- * of those with no layer id yet.
+ * `ruledOnly`: then those with none are left as they are. `pendingLayer`: the
+ * layer of those with no layer id yet, stamped on them after.
  */
-function editRules(els: Elements, change: (el: Element, rules: Rules) => void, ruledOnly = false, layer?: string) {
+function editRules(els: Elements, change: (el: Element, rules: Rules) => void, options: { ruledOnly?: boolean; pendingLayer?: string } = {}) {
   const list = elementsIn(els);
   if (!list.length) return;
   const docs = new Set(list.map((el) => el.ownerDocument));
   if (docs.size > 1) {
-    for (const doc of docs) editRules(list.filter((el) => el.ownerDocument === doc), change, ruledOnly, layer);
+    for (const doc of docs) editRules(list.filter((el) => el.ownerDocument === doc), change, options);
     return;
   }
   const jsonOf = rulesReader(list[0].ownerDocument);
-  const written: { el: Element; rules: Rules }[] = [];
+  const written: Written[] = [];
   for (const el of list) {
     const key = el.getAttribute(STYLE_KEY_ATTR);
     const json = key === null ? null : jsonOf(key);
-    if (!json && ruledOnly) continue;
+    if (!json && options.ruledOnly) continue;
     const rules = json ? (JSON.parse(json) as Rules) : liftedRules(el);
     change(el, rules);
     written.push({ el, rules });
   }
-  writeRules(written, layer);
+  writeRules(written, options.pendingLayer);
 }
 
 /** The rules of an element edited for the first time: none, but what of its style attribute is important, taken off it. */
@@ -524,11 +519,14 @@ function liftedRules(el: Element): Rules {
  * one of theirs no other element shares, else a new one; a style element left
  * with no element goes. Rules written for the whole of a group, all alike, are
  * written into its style element as they are, which changes in place.
- * `pending`: the layer of those with no layer id yet, stamped on them after.
+ * `pendingLayer`: the layer of those with no layer id yet, stamped on them
+ * after. In a document whose elements keep theirs apart, each is a group alone.
  */
-function writeRules(written: { el: Element; rules: Rules }[], pending?: string) {
+function writeRules(written: Written[], pendingLayer?: string) {
   if (!written.length) return;
   const doc = written[0].el.ownerDocument;
+  /** The layer an element is an instance of, to share its style element with the others; none to keep its own. */
+  const layerOf = (el: Element) => (apart.has(doc) ? null : (el.getAttribute(LAYER_ID_ATTR) ?? pendingLayer ?? null));
   const empty = (blocks: RuleBlocks) => !Object.keys(blocks.base.style).length && blocks.base.hidden === undefined && !blocks.at.length;
   const all = written.map(({ el, rules }) => {
     rules.edits.at = rules.edits.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
@@ -542,7 +540,7 @@ function writeRules(written: { el: Element; rules: Rules }[], pending?: string) 
   if (first.json && first.key !== null && all.every(({ key, json }) => key === first.key && json === first.json)) {
     const sheet = sheetOf(doc, first.key);
     const these = new Set(all.map(({ el }) => el));
-    const layer = first.el.getAttribute(LAYER_ID_ATTR);
+    const layer = layerOf(first.el);
     const alone = !layer || !doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(layer)}"][${STYLE_KEY_ATTR}]:not([${STYLE_KEY_ATTR}="${CSS.escape(first.key)}"])`);
     if (sheet && alone && membersOf(doc, first.key).every((el) => these.has(el))) {
       showGroup(sheet as HTMLStyleElement, first.key, first.rules, first.json);
@@ -568,15 +566,15 @@ function writeRules(written: { el: Element; rules: Rules }[], pending?: string) 
       for (const name in one.rules.lifted) (one.el as HTMLElement).style.setProperty(name, one.rules.lifted[name], "important");
       return;
     }
-    const layer = one.el.getAttribute(LAYER_ID_ATTR) ?? pending;
+    const layer = layerOf(one.el);
     // An element of no layer is a group alone.
-    const id = layer ? `${layer}\n${one.json}` : String(i);
+    const id = layer ? groupOf(layer, one.json) : String(i);
     if (!groups.has(id)) groups.set(id, []);
     groups.get(id)!.push(one);
   });
   for (const group of groups.values()) {
     const { el, rules, json } = group[0];
-    const layer = el.getAttribute(LAYER_ID_ATTR) ?? pending;
+    const layer = layerOf(el);
     const own = [...new Set(group.flatMap(({ key }) => (key === null ? [] : [key])))];
     const instances = layer ? [...new Set([...doc.querySelectorAll(`[${LAYER_ID_ATTR}="${CSS.escape(layer)}"][${STYLE_KEY_ATTR}]`)].map((instance) => instance.getAttribute(STYLE_KEY_ATTR)!))] : [];
     const key =

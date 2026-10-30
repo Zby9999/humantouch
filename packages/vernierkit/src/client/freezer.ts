@@ -3,7 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { dropUnusedRules, orderEditStyles, syncEditStyles, unshareEditStyles, upgradeEditStyles } from "./canvas-style";
+import { dropUnusedRules, orderEditStyles, syncEditStyles, upgradeEditStyles } from "./canvas-style";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
@@ -249,15 +249,10 @@ export function editable(doc: Document) {
   orderEditStyles(doc);
 }
 
-/**
- * `doc`, made `editable`, as an HTML document: what `editable` added left out,
- * and each element's edit styles its own, as they were kept before the
- * instances of a layer shared them (ticket 60).
- */
+/** `doc`, made `editable`, as an HTML document: what `editable` added left out. */
 export function serializeEditable(doc: Document): string {
   const copy = doc.documentElement.cloneNode(true) as HTMLElement;
   for (const el of copy.querySelectorAll(`style[${CANVAS_STYLES_ATTR}]`)) el.remove();
-  unshareEditStyles(copy);
   syncEditStyles(copy);
   return doctypeOf(doc) + copy.outerHTML;
 }

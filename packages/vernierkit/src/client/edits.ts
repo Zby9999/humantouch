@@ -50,6 +50,8 @@ export function createEditor(
   let lastId = 0;
   for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}]`)) lastId = Math.max(lastId, Number(el.getAttribute(LAYER_ID_ATTR)) || 0);
 
+  /** The layer's id: the one it has, else the one `idOf` stamps on it next. */
+  const idFor = (layer: Layer) => layer.el.getAttribute(LAYER_ID_ATTR) ?? String(lastId + 1);
   const idOf = (layer: Layer, instances: Layer[]) => {
     let id = layer.el.getAttribute(LAYER_ID_ATTR);
     if (!id) {
@@ -182,7 +184,7 @@ export function createEditor(
     const els = instances.map((instance) => instance.el);
     if (asStack && !breakpoint) for (const el of els) el.setAttribute(AS_STACK_ATTR, "");
     // The instances share their edit styles from the first edit on, their id stamped on them after, as it always was.
-    declare(els, declarations, breakpoint, layer.el.getAttribute(LAYER_ID_ATTR) ?? String(lastId + 1));
+    declare(els, declarations, breakpoint, idFor(layer));
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
     const variables = bind?.(property, value, picked, earlier?.variables);

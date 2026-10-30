@@ -227,6 +227,8 @@ async function enterEveryView(page: Page) {
 
 test.describe("a round saved before the instances of a layer shared their edit styles", () => {
   test.skip(!process.env.VK_WRITE_FIXTURE, "writes the fixture, with the code of then");
+  // Written once, by the code of then: never over the one kept.
+  test.skip(existsSync(BEFORE_60), "the fixture is kept: written by the code of then");
   test("is written", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEveryView(page);

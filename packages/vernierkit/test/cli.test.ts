@@ -1388,7 +1388,8 @@ describe("claim, a round saved before the instances of a layer shared their edit
     const { code, output } = await cli("claim");
 
     expect(code).toBe(0);
-    if (process.env.VK_WRITE_FIXTURE) writeFileSync(join(FIXTURE, "claim.md"), output);
+    // Written once, by the code of then: never over the one kept.
+    if (process.env.VK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
     expect(output).toBe(readFileSync(join(FIXTURE, "claim.md"), "utf8"));
   });
 });

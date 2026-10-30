@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { commands } from "vitest/browser";
-import { createChangeSet, type SavedChangeSet } from "../src/client/changeset";
+import { createChangeSet, type PutBack, type SavedChangeSet } from "../src/client/changeset";
 import { createEditor, type Destination } from "../src/client/edits";
 import { restore, serializeCanvas, type Canvas } from "../src/client/freezer";
 import type { Layer } from "../src/client/layers";
@@ -141,7 +141,18 @@ async function open(canvas: Canvas, saved?: { changeSet: SavedChangeSet; offCanv
     for (const view of views.list().slice(1)) views.sync(view);
     return Object.fromEntries(views.list().map((view) => [String(view.width), stylesOf(view.document)]));
   };
-  return { doc, views, changes, editor, offCanvas, layerOf, styles, history };
+  /** Puts a layer off the canvas back at `to`, as the designer lets it go over a view. */
+  const putBack = (outside: OffCanvasLayer, to: Destination) =>
+    editor.batch(() => {
+      editor.putBack({ el: outside.layer()!.el, kept: outside.keep() }, to);
+      editor.along(
+        () => offCanvas.take(outside),
+        () => offCanvas.put(outside),
+      );
+    });
+  /** The layer of what `selector` finds in a layer off the canvas. */
+  const insideOf = (outside: OffCanvasLayer, selector: string): Layer => outside.editor.tree().layerOf(outside.document.querySelector(selector)!)!;
+  return { doc, views, changes, editor, offCanvas, layerOf, styles, history, putBack, insideOf };
 }
 
 /** The page as a canvas, 800 px wide, as frozen. */
@@ -165,7 +176,7 @@ async function makeRound() {
   countedIds();
   const canvas = freshCanvas();
   const opened = await open(canvas);
-  const { doc, views, editor, offCanvas, layerOf } = opened;
+  const { doc, views, editor, offCanvas, layerOf, putBack, insideOf } = opened;
   const [, phone] = [views.list()[1], views.list()[2]];
   const tablet = views.list()[1];
   const cards = [...doc.querySelectorAll("article")];
@@ -183,15 +194,6 @@ async function makeRound() {
     });
     return outside;
   };
-  const putBack = (outside: OffCanvasLayer, to: Destination) =>
-    editor.batch(() => {
-      editor.putBack({ el: outside.layer()!.el, kept: outside.keep() }, to);
-      editor.along(
-        () => offCanvas.take(outside),
-        () => offCanvas.put(outside),
-      );
-    });
-  const insideOf = (outside: OffCanvasLayer, selector: string): Layer => outside.editor.tree().layerOf(outside.document.querySelector(selector)!)!;
 
   const loop = () => layerOf(cards[1]);
   editor.set(loop(), "fill", RED);
@@ -247,6 +249,12 @@ async function readFixture(): Promise<Fixture> {
 
 describe.runIf((import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_VK_WRITE_FIXTURE)("the fixture", () => {
   test("is written by the code of now", async () => {
+    // Written once, by the code of then (before ticket 60): never over the one kept.
+    const kept = await commands.readFile(`${FIXTURE}canvas.html`).then(
+      () => true,
+      () => false,
+    );
+    if (kept) throw new Error(`Vernier Kit: the fixture in ${FIXTURE} is kept as the code of then wrote it`);
     const { canvas, changes, offCanvas, styles } = await makeRound();
     const saved = { canvas: serializeCanvas(canvas), changeSet: changes.save() };
     const looks = { styles: styles(), reverted: revertedOf(saved), sheets: editSheets(canvas.document) };
@@ -305,6 +313,23 @@ describe("a round saved before the instances of a layer shared their edit styles
     expect(again.styles()["800"]).toEqual(styles()["800"]);
     again.editor.set(again.layerOf(loopOf(again.doc)), "radius", 4);
     expect(again.styles()).toEqual(fixture.styles);
+  });
+
+  test("a layer kept off the canvas as it was then is edited there and put back: each element of its look keeps a style element of its own, as the Agent read it then", async () => {
+    const fixture = await readFixture();
+    const { doc, changes, offCanvas, layerOf, putBack, insideOf } = await reopen(fixture);
+    const [box] = offCanvas.list();
+    box.editor.set(insideOf(box, "em"), "radius", 8);
+    box.editor.set(insideOf(box, "section"), "fill", RED);
+
+    putBack(box, { parent: layerOf(doc.querySelector("main")!), index: 0 });
+
+    const { look } = (changes.list().at(-1)!.after as PutBack).layer;
+    const looked = new DOMParser().parseFromString(look, "text/html");
+    const tags = [...looked.querySelectorAll("em")];
+    expect(tags.map((tag) => tag.getAttribute("data-vk-style"))).toEqual(["1", "2"]);
+    expect([...looked.querySelectorAll("style[data-vk-rules-for]")].map((sheet) => sheet.getAttribute("data-vk-rules-for"))).toEqual(["1", "2", "3"]);
+    expect([...doc.querySelectorAll("main em")].map((tag) => getComputedStyle(tag).borderTopLeftRadius)).toEqual(["8px", "8px"]);
   });
 
   test("the same edits, made now, record the same ChangeSet and keep the same layers off the canvas, word for word, and look the same in every view", async () => {
