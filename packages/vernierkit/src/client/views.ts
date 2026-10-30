@@ -8,7 +8,9 @@
  * changes, the views beside the one worked in hold it back (`lagBeside`): the
  * frame after draws it in the view worked in alone. A value set once, they show
  * after that frame; the steps of a run of them, once the steps pause, the
- * latest at once (ADR 0011).
+ * latest at once. So too the layers making room for a layer dragged
+ * (`shiftAside`): in the view dragged in at once, in the others once the
+ * pointer pauses (ADR 0011).
  */
 import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
@@ -21,6 +23,12 @@ import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
  * (`ADJUSTING_MS` in `Shell.tsx`), so it comes back over views caught up (ADR 0011).
  */
 export const CATCH_UP_AFTER_MS = 100;
+
+/** How far a layer making room for a drag is shifted aside, px. */
+export interface Shift {
+  x: number;
+  y: number;
+}
 
 export interface View {
   /** What the view shows: the canvas itself for the desktop view, a copy of it for any other. */
@@ -69,8 +77,9 @@ export interface Views {
   remove(view: View): void;
   /**
    * Shows every change made to the canvas so far in `view` now, rather than
-   * before the next paint. With no view, in every view, but for a value the
-   * views beside the one worked in hold back (`lagBeside`).
+   * before the next paint, and the layers shifted aside as the view dragged
+   * in has them. With no view, in every view, but for a value the views
+   * beside the one worked in hold back (`lagBeside`), and the shifts.
    */
   sync(view?: View): void;
   /**
@@ -87,6 +96,20 @@ export interface Views {
    * always shows every change at once.
    */
   lagBeside(worked: () => View | null, step: boolean, change: () => void): void;
+  /**
+   * Shifts elements of the canvas aside, straight to their place, as layers
+   * make room for one dragged in the view `worked`: each in `shifts` by so
+   * much, in that view's px; any shifted before and not in `shifts` goes back.
+   * The view dragged in shows it at once; the others, once the shifts pause
+   * for `CATCH_UP_AFTER_MS`, as each shift sets the pause going again, or on
+   * `sync` of them: then `caughtUp` is called (ADR 0011). It is no change to
+   * the canvas for the views to follow: each view shows the shifts as its
+   * own, till `shiftBack`. A view not of this canvas (a layer off it) shows
+   * them alone.
+   */
+  shiftAside(worked: View, shifts: ReadonlyMap<Element, Shift>, caughtUp?: () => void): void;
+  /** Puts every element `shiftAside` shifted back where it was, in every view, at once, its style as it was. */
+  shiftBack(): void;
   /** Calls `listener` whenever a view's height changes. Returns what stops it. */
   onResize(listener: () => void): () => void;
   /**
@@ -138,9 +161,60 @@ export function createViews(canvas: Canvas): Views {
   keepFitted(desktop, canvas.height);
   // Anything changed on the canvas may change how tall a view is: each is fitted again before the next frame.
   new MutationObserver(refit).observe(canvas.document.documentElement, EVERYTHING);
+  /**
+   * The layers shifted aside for a drag: the view dragged in, where it has
+   * them, what each view shows of them so far, the style attribute each
+   * view's element had before, and the pause the views beside wait for.
+   */
+  let aside: {
+    worked: View;
+    wanted: ReadonlyMap<Element, Shift>;
+    shown: Map<View, Map<Element, Shift>>;
+    styles: Map<Element, string | null>;
+    pause?: ReturnType<typeof setTimeout>;
+  } | null = null;
+  /** Shows the layers shifted aside in `view` as `wanted` has them: whether anything changed there. */
+  const shiftIn = (view: View, wanted: ReadonlyMap<Element, Shift>): boolean => {
+    const { shown, styles } = aside!;
+    let has = shown.get(view);
+    if (!has) shown.set(view, (has = new Map()));
+    const changed = [...has.keys()].filter((el) => !wanted.has(el));
+    for (const [el, to] of wanted) if (has.get(el)?.x !== to.x || has.get(el)?.y !== to.y) changed.push(el);
+    if (!changed.length) return false;
+    const write = () => {
+      for (const el of changed) {
+        const to = wanted.get(el);
+        const at = view.elementOf(el) as HTMLElement | null;
+        if (!at) continue;
+        if (!styles.has(at)) styles.set(at, at.getAttribute("style"));
+        if (to) {
+          at.style.setProperty("translate", `${to.x}px ${to.y}px`, "important");
+          at.style.setProperty("transition", "none", "important");
+          has.set(el, to);
+        } else {
+          // Set first, then taken off: as `style` was changed, its attribute may not be there yet to take off.
+          const style = styles.get(at)!;
+          at.setAttribute("style", style ?? "");
+          if (style === null) at.removeAttribute("style");
+          styles.delete(at);
+          has.delete(el);
+        }
+      }
+    };
+    if (view.document !== canvas.document) write();
+    else {
+      // On the canvas, the desktop view's own: the views beside take in what came before, and nothing of this.
+      for (const follower of followers.values()) follower.sync();
+      write();
+      for (const follower of followers.values()) follower.pass();
+    }
+    return true;
+  };
   const sync = (view?: View) => {
-    if (view) followers.get(view)?.catchUp();
-    else for (const follower of followers.values()) follower.sync();
+    if (view) {
+      followers.get(view)?.catchUp();
+      if (aside && view !== aside.worked) shiftIn(view, aside.wanted);
+    } else for (const follower of followers.values()) follower.sync();
   };
   /**
    * While a value changed is held back, till the views beside catch up: which
@@ -230,6 +304,25 @@ export function createViews(canvas: Canvas): Views {
         changing = was;
       }
     },
+    shiftAside(worked, shifts, caughtUp) {
+      if (aside && aside.worked !== worked) this.shiftBack();
+      aside ??= { worked, wanted: shifts, shown: new Map(), styles: new Map() };
+      const wanted = (aside.wanted = new Map(shifts));
+      shiftIn(worked, wanted);
+      clearTimeout(aside.pause);
+      if (!views.includes(worked)) return;
+      aside.pause = setTimeout(() => {
+        let changed = false;
+        for (const view of views) if (view !== worked && shiftIn(view, wanted)) changed = true;
+        if (changed) caughtUp?.();
+      }, CATCH_UP_AFTER_MS);
+    },
+    shiftBack() {
+      if (!aside) return;
+      clearTimeout(aside.pause);
+      for (const view of aside.shown.keys()) shiftIn(view, new Map());
+      aside = null;
+    },
     onResize(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -303,6 +396,8 @@ interface Follower extends Correspondence {
   sync(): void;
   /** Takes in every change to the canvas not taken in yet, those put off too. */
   catchUp(): void;
+  /** Takes in none of the changes to the canvas not taken in yet: they are the canvas's alone. */
+  pass(): void;
   /** Stops following the canvas. */
   stop(): void;
 }
@@ -435,6 +530,7 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     },
     sync: () => keepUpWith(observer.takeRecords()),
     catchUp,
+    pass: () => void observer.takeRecords(),
     stop: () => {
       // What was typed last is kept on the canvas.
       if (typing) takeIn(typing.observer.takeRecords(), up);

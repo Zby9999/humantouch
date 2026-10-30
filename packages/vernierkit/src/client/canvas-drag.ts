@@ -1,15 +1,17 @@
 /**
- * A drag on the canvas under way: the layer dragged and the layers making
- * room for it are shifted on the canvas, so in every view, with inline
- * styles that are all restored when it ends, whatever happens then. Where layers were laid out before anything shifted is noted, so a
- * drop is found as if nothing had. The layers making room go straight to
- * their place, in every view: sliding there, in three views of a large page,
- * cost the drag frames (ticket 22).
+ * A drag on the canvas under way: the layer dragged is shifted on the canvas,
+ * so in every view, with inline styles that are all restored when it ends,
+ * whatever happens then. The layers making room for it go straight to their
+ * place: in the view dragged in at once, in the views beside once the pointer
+ * pauses (`Views.shiftAside`); sliding there, or going there in three views
+ * at once, cost a large page's drag frames (ticket 22, ADR 0011). Where layers
+ * were laid out before anything shifted is noted, so a drop is found as if
+ * nothing had.
  */
 import type { Drop } from "./drag";
 import type { Layer } from "./layers";
 import type { Shown } from "./view-layout";
-import type { Views } from "./views";
+import type { Shift, Views } from "./views";
 
 /** Pointer travel (px) before a press on a layer counts as a drag. */
 export const DRAG_THRESHOLD = 3;
@@ -30,7 +32,12 @@ export interface DragSession {
   start: DOMRect;
   /** Where layers were laid out before anything shifted, by element. */
   rects: Map<Element, DOMRect>;
-  touched: Map<Element, { original: Record<string, [string, string]>; translate: boolean }>;
+  /** The inline styles of the layer dragged as they were, to put back. */
+  touched: Map<Element, Record<string, [string, string]>>;
+  /** The views, which show the layers making room. */
+  views: Views;
+  /** The layers making room now, and how far, as the view dragged in shows them. */
+  aside: ReadonlyMap<Element, Shift>;
   drop: Drop | null;
   /** Where the layer is dragged to, in the view's px; none before it moves. */
   box?: DOMRect;
@@ -57,7 +64,20 @@ export interface DragSession {
 export function startDragSession(layer: Layer, shown: Shown, views: Views): DragSession {
   const { view, offCanvasLayer } = shown;
   const start = view.boxOf(layer) ?? new DOMRect();
-  const session: DragSession = { layer, in: shown, start, rects: new Map(), touched: new Map(), drop: null, out: false, to: null, back: null, release: () => {} };
+  const session: DragSession = {
+    layer,
+    in: shown,
+    start,
+    rects: new Map(),
+    touched: new Map(),
+    views,
+    aside: new Map(),
+    drop: null,
+    out: false,
+    to: null,
+    back: null,
+    release: () => {},
+  };
   if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
     session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
     session.whole = true;
@@ -81,17 +101,16 @@ export function laidOut(session: DragSession, layer: Layer): DOMRect {
 }
 
 /**
- * Shifts the layer dragged `by` from where it was, and the layers making room
- * for it as `drop` has them, straight to their place; any shifted before and not now goes back.
+ * Shifts the layer dragged `by` from where it was, in every view, and the
+ * layers making room for it as `drop` has them, straight to their place; any
+ * shifted before and not now goes back. Those in the views beside, once the
+ * pointer pauses: then `caughtUp` is called.
  */
-export function shift(session: DragSession, by: { x: number; y: number }, drop: Drop | null): void {
+export function shift(session: DragSession, by: Shift, drop: Drop | null, caughtUp?: () => void): void {
   const { layer } = session;
-  const shifts = new Map(drop?.shifts);
-  if (!layer.text) shifts.set(layer.el, by);
-  for (const [el, saved] of session.touched) {
-    if (!shifts.has(el) && saved.translate) setStyles(session, el, { translate: null, transition: null });
-  }
-  for (const [el, { x, y }] of shifts) setStyles(session, el, { translate: `${x}px ${y}px`, transition: "none" });
+  if (!layer.text) setStyles(session, layer.el, { translate: `${by.x}px ${by.y}px`, transition: "none" });
+  session.aside = new Map([...(drop?.shifts ?? [])].filter(([el]) => el !== layer.el));
+  session.views.shiftAside(session.in.view, session.aside, caughtUp);
 }
 
 /** Shifts a layer off the canvas dragged whole `dx` and `dy` from where it is in the workspace. */
@@ -102,8 +121,9 @@ export function moveWhole(session: DragSession, dx: number, dy: number): void {
 /** Ends the drag on the canvas: every style it changed is as it was, and each view is as tall as what it shows again. */
 export function restoreDragStyles(session: DragSession): void {
   session.release();
-  for (const [el, saved] of session.touched) {
-    for (const [name, [value, priority]] of Object.entries(saved.original)) {
+  session.views.shiftBack();
+  for (const [el, original] of session.touched) {
+    for (const [name, [value, priority]] of Object.entries(original)) {
       if (value) (el as HTMLElement).style.setProperty(name, value, priority);
       else (el as HTMLElement).style.removeProperty(name);
     }
@@ -124,27 +144,21 @@ function unshifted(session: DragSession, el: Element): DOMRect {
   const r = (view.elementOf(el) ?? el).getBoundingClientRect();
   let [x, y] = [r.x, r.y];
   for (let e: Element | null = el; e; e = e.parentElement) {
-    if (e === session.layer.el || !session.touched.get(e)?.translate) continue;
-    const [dx = 0, dy = 0] = getComputedStyle(view.elementOf(e) ?? e).translate.split(" ").map((v) => parseFloat(v) || 0);
-    x -= dx;
-    y -= dy;
+    const by = e !== session.layer.el && session.aside.get(e);
+    if (!by) continue;
+    x -= by.x;
+    y -= by.y;
   }
   return new DOMRect(x, y, r.width, r.height);
 }
 
-/** Sets (or, with null, takes off) inline styles on a canvas element for the drag, noting what they were. */
-function setStyles(session: DragSession, el: Element, styles: Record<string, string | null>) {
+/** Sets inline styles on a canvas element for the drag, noting what they were. */
+function setStyles(session: DragSession, el: Element, styles: Record<string, string>) {
   const style = (el as HTMLElement).style;
-  let saved = session.touched.get(el);
-  if (!saved) session.touched.set(el, (saved = { original: {}, translate: false }));
+  let original = session.touched.get(el);
+  if (!original) session.touched.set(el, (original = {}));
   for (const name in styles) {
-    saved.original[name] ??= [style.getPropertyValue(name), style.getPropertyPriority(name)];
-    const value = styles[name];
-    if (value === null) {
-      const [original, priority] = saved.original[name];
-      if (original) style.setProperty(name, original, priority);
-      else style.removeProperty(name);
-    } else style.setProperty(name, value, "important");
+    original[name] ??= [style.getPropertyValue(name), style.getPropertyPriority(name)];
+    style.setProperty(name, styles[name], "important");
   }
-  if ("translate" in styles) saved.translate = styles.translate !== null;
 }

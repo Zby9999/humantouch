@@ -575,9 +575,10 @@ export function CanvasView(props: Props) {
 
   /**
    * Starts dragging in a view: the layer stops taking the pointer, and where its
-   * neighbours are there is noted before any of them shifts. What shifts is
-   * shifted on the canvas, so in every view; no view grows or shrinks with it
-   * until the drop.
+   * neighbours are there is noted before any of them shifts. The layer dragged
+   * is shifted on the canvas, so in every view; the layers making room, in
+   * the view dragged in at once and in the others once the pointer pauses
+   * (ADR 0011). No view grows or shrinks with it until the drop.
    */
   const startDrag = (layer: Layer, shown: Shown): DragSession => startDragSession(layer, shown, views!);
 
@@ -617,7 +618,8 @@ export function CanvasView(props: Props) {
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;
     session.box = at;
-    shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop);
+    // The views beside show the layers making room once the pointer pauses: what is drawn over them is drawn anew then.
+    shift(session, { x: dx + at.x - box.x, y: dy + at.y - box.y }, drop, () => setDrag((d) => d && { ...d }));
     setDrag({ layer, in: shown, box: at, drop, out: session.out });
   };
   /** The drag again where the pointer is, as a modifier key changes. */

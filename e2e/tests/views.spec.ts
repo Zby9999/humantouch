@@ -185,7 +185,7 @@ test("a value set once in the Design panel shows in the views beside the frame a
   await expect(radius).toHaveValue("9");
 });
 
-test("a layer dragged in the phone view goes where it is let go there, and moves in every view", async ({ page }) => {
+test("a layer dragged in the phone view goes where it is let go there, and moves in every view; the layers making room go there at once, in the views beside once the pointer pauses", async ({ page }) => {
   // With motion not reduced, too.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await enterEditMode(page);
@@ -197,23 +197,40 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   const start = (await button.boundingBox())!;
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();
+  // What each view shows as the paragraph first makes room: read as the move of the pointer that made it is handled.
+  await page.locator("iframe.vk-canvas").evaluateAll((frames: HTMLIFrameElement[], hero) => {
+    const shifted = (frame: HTMLIFrameElement) => getComputedStyle(frame.contentDocument!.querySelector(`${hero} > p`)!).translate;
+    const phone = frames.find((frame) => frame.title === "Phone 390")!;
+    const onMove = () => {
+      if (shifted(phone) === "none") return;
+      (window as Window & { firstRoom?: Record<string, string> }).firstRoom = Object.fromEntries(frames.map((frame) => [frame.title, shifted(frame)]));
+      removeEventListener("pointermove", onMove);
+    };
+    addEventListener("pointermove", onMove);
+  }, hero);
   const p = (await paragraph.boundingBox())!;
   await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
   // The line where it would go is drawn in the phone view.
   const line = (await page.locator(".vk-drop-line").boundingBox())!;
   expect(line.x).toBeGreaterThanOrEqual(p.x - 1);
   expect(line.x + line.width).toBeLessThanOrEqual(p.x + p.width + 1);
-  // The paragraph makes room in every view, going straight to its place: no view slides it there.
+  // The paragraph makes room in the phone view at once; the desktop and tablet views do not follow the pointer as it moves.
+  const first = await page.evaluate(() => (window as Window & { firstRoom?: Record<string, string> }).firstRoom);
+  expect(first?.["Phone 390"]).not.toBe("none");
+  expect(first?.["Canvas"]).toBe("none");
+  expect(first?.["Tablet 768"]).toBe("none");
+  // The pointer paused: every view has it make room, going straight to its place: no view slides it there.
   for (const view of [desktop(page), tablet(page), phone(page)]) {
-    const making = await view.contentFrame().locator(`${hero} > p`).evaluate((el) => ({ translate: getComputedStyle(el).translate, duration: getComputedStyle(el).transitionDuration }));
-    expect(making.translate).not.toBe("none");
-    expect(making.duration).toBe("0s");
+    const making = view.contentFrame().locator(`${hero} > p`);
+    await expect(making).not.toHaveCSS("translate", "none");
+    expect(await making.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
   }
   await page.mouse.up();
 
   for (const view of [desktop(page), tablet(page), phone(page)]) {
     const order = await view.contentFrame().locator(hero).evaluate((el) => [...el.children].map((child) => child.localName));
     expect(order).toEqual(["header", "button", "p"]);
+    await expect(view.contentFrame().locator(`${hero} > p`)).toHaveCSS("translate", "none");
   }
 });
 

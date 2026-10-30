@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { copyCanvas, freeze, restore, serializeCanvas } from "../src/client/freezer";
-import { createViews } from "../src/client/views";
+import { CATCH_UP_AFTER_MS, createViews, type View } from "../src/client/views";
 
 /**
  * A page that answers to the window's size in CSS: a media query on width
@@ -55,6 +55,8 @@ function livePage(): Window {
 
 /** Once the next frame is painted. */
 const painted = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+/** Once the next frame begins: with timers faked, too. */
+const frame = () => new Promise((done) => requestAnimationFrame(done));
 
 const style = (doc: Document, id: string) => getComputedStyle(doc.getElementById(id)!);
 
@@ -162,6 +164,90 @@ describe("the canvas shown at several widths", () => {
     expect(frameOf(desktop.document).offsetHeight).toBe(desktop.height);
     expect(phone.height).toBeGreaterThanOrEqual(before[1][0] + 500);
     expect(resized).toBeGreaterThan(0);
+  });
+
+  test("layers making room for a drag in the desktop view go straight to their place there; the views beside follow once the shifts pause, the latest at once", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const tablet = await views.add(iframe(), 450);
+    const [desktop] = views.list();
+    const making = canvas.document.getElementById("tall")!;
+    const shifted = (view: View) => style(view.document, "tall").translate;
+    const styles = () => [desktop, phone, tablet].map((view) => view.document.getElementById("tall")!.getAttribute("style"));
+    const before = styles();
+    let caughtUp = 0;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      views.shiftAside(desktop, new Map([[making, { x: 0, y: 20 }]]), () => caughtUp++);
+      expect(shifted(desktop)).toBe("0px 20px");
+      expect(style(desktop.document, "tall").transitionDuration).toBe("0s");
+      // Not before the next paint either: the canvas did not change for the views beside to follow.
+      await frame();
+      for (const view of [phone, tablet]) expect(shifted(view)).toBe("none");
+      // The pointer moves on, the place changes: the pause starts again.
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      views.shiftAside(desktop, new Map([[making, { x: 0, y: 30 }]]), () => caughtUp++);
+      expect(shifted(desktop)).toBe("0px 30px");
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS - 1);
+      for (const view of [phone, tablet]) expect(shifted(view)).toBe("none");
+      expect(caughtUp).toBe(0);
+      vi.advanceTimersByTime(1);
+      for (const view of [phone, tablet]) {
+        expect(shifted(view)).toBe("0px 30px");
+        expect(style(view.document, "tall").transitionDuration).toBe("0s");
+      }
+      expect(caughtUp).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+    // Let go: back in every view at once, and nothing of it is left on the canvas.
+    views.shiftBack();
+    for (const view of [desktop, phone, tablet]) expect(shifted(view)).toBe("none");
+    expect(styles()).toEqual(before);
+    await frame();
+    expect(styles()).toEqual(before);
+  });
+
+  test("dragged in the phone view, the layers making room go there at once; the desktop view, which is the canvas, follows with the tablet view once the shifts pause, or as it is read", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const tablet = await views.add(iframe(), 450);
+    const [desktop] = views.list();
+    const making = canvas.document.getElementById("inline")!;
+    const shifted = (view: View) => style(view.document, "inline").translate;
+    const styles = () => [desktop, phone, tablet].map((view) => view.document.getElementById("inline")!.getAttribute("style"));
+    const before = styles();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      views.shiftAside(phone, new Map([[making, { x: 10, y: 0 }]]));
+      expect(shifted(phone)).toBe("10px");
+      await frame();
+      for (const view of [desktop, tablet]) expect(shifted(view)).toBe("none");
+      // Read, a view shows it first.
+      views.sync(tablet);
+      expect(shifted(tablet)).toBe("10px");
+      expect(shifted(desktop)).toBe("none");
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      expect(shifted(desktop)).toBe("10px");
+      // Nothing makes room now, dragged off the canvas: back in the phone view at once, in the others after the pause.
+      views.shiftAside(phone, new Map());
+      expect(shifted(phone)).toBe("none");
+      await frame();
+      for (const view of [desktop, tablet]) expect(shifted(view)).toBe("10px");
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+      for (const view of [desktop, tablet]) expect(shifted(view)).toBe("none");
+      // Shifted again and let go before the pause: back everywhere, its own style as it was.
+      views.shiftAside(phone, new Map([[making, { x: 5, y: 5 }]]));
+      views.shiftBack();
+      vi.advanceTimersByTime(CATCH_UP_AFTER_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+    await frame();
+    for (const view of [desktop, phone, tablet]) expect(shifted(view)).toBe("none");
+    expect(styles()).toEqual(before);
   });
 
   test("a canvas saved and put back answers to each view's width the same way", async () => {
