@@ -6,7 +6,7 @@
  * from (no gateway, no model override), as the designer's own login.
  */
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import type { AgentName } from "./metrics.ts";
@@ -14,11 +14,8 @@ import type { AgentName } from "./metrics.ts";
 /** What the designer says to the Agent: the Skill's own trigger. */
 export const PROMPT = "落地我的设计改动";
 
-/**
- * Where the Agents' binaries are looked for, and all the PATH the Agent's
- * shell gets: its own installs, then Node's (for `npx`), then the system's.
- */
-const PATH = [join(homedir(), ".npm-global/bin"), join(homedir(), ".local/bin"), dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+/** All the PATH the Agent's shell gets: Cursor's install, Node's (for `npx`), then the system's. */
+const PATH = [join(homedir(), ".local/bin"), dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
 
 /**
  * The environment an Agent runs in: these and nothing else. Of the bench's
@@ -32,20 +29,38 @@ export function cleanEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-/** The binary `name` on the Agent's PATH; `VK_BENCH_CLAUDE` or `VK_BENCH_CURSOR` names another. */
-export function which(name: string): string {
-  const given = process.env[`VK_BENCH_${name === "claude" ? "CLAUDE" : "CURSOR"}`];
-  if (given) return given;
+/** The binary `name` on the Agent's PATH. */
+function onPath(name: string): string {
   const found = PATH.map((dir) => join(dir, name)).find((path) => existsSync(path));
   if (!found) throw new Error(`No ${name} on ${PATH.join(delimiter)}`);
   return found;
+}
+
+/** The agent-cli the Cursor app runs its Agent with: a link to its current version. */
+const CURSOR_APP_AGENT = join(homedir(), "Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/bin/cursor-agent");
+
+/** Where the Claude desktop app keeps the Claude Code it ships, one folder per version. */
+const DESKTOP_CLAUDE_CODE = join(homedir(), "Library/Application Support/Claude/claude-code");
+
+/** The Claude Code the desktop app ships, its newest version: `<version>/<hash>/claude.app/Contents/MacOS/claude`. */
+function desktopClaudeCode(): string {
+  const newer = (a: string, b: string) => b.split(".").map(Number).reduce((order, part, i) => order || part - Number(a.split(".")[i] ?? 0), 0);
+  const versions = existsSync(DESKTOP_CLAUDE_CODE) ? readdirSync(DESKTOP_CLAUDE_CODE).filter((name) => /^\d+(\.\d+)*$/.test(name)).sort(newer) : [];
+  for (const version of versions) {
+    for (const hash of readdirSync(join(DESKTOP_CLAUDE_CODE, version))) {
+      const binary = join(DESKTOP_CLAUDE_CODE, version, hash, "claude.app/Contents/MacOS/claude");
+      if (existsSync(binary)) return binary;
+    }
+  }
+  throw new Error(`No Claude Code of the desktop app in ${DESKTOP_CLAUDE_CODE}: name one with VK_BENCH_CLAUDE`);
 }
 
 /** The shell commands an Agent may run: the command line, and reading the project. */
 const SHELL = ["npx vernierkit", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
 
 export interface AgentSpec {
-  binary: string;
+  /** Where the Agent's binary is; an environment variable names another. */
+  binary(): string;
   /** The arguments, after the binary: the same for every run. */
   args: string[];
   /** Done in the project before the Agent starts. */
@@ -54,7 +69,8 @@ export interface AgentSpec {
 
 export const AGENTS: Record<AgentName, AgentSpec> = {
   claude: {
-    binary: "claude",
+    // The Claude Code the designer's desktop app ships, not one installed by npm.
+    binary: () => process.env.VK_BENCH_CLAUDE ?? desktopClaudeCode(),
     args: [
       "-p",
       PROMPT,
@@ -77,13 +93,16 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     ],
   },
   cursor: {
-    binary: "cursor-agent",
-    args: ["-p", PROMPT, "--output-format", "stream-json", "--trust"],
-    // Cursor takes its allowlist from the project: shell commands by their first word, files in the project.
+    // The agent-cli the Cursor app runs its own Agent with; else the one installed on its own.
+    binary: () => process.env.VK_BENCH_CURSOR ?? (existsSync(CURSOR_APP_AGENT) ? CURSOR_APP_AGENT : onPath("cursor-agent")),
+    // Run headless, Cursor turns every shell command away unless forced, its allowlist or not: forced, in its
+    // sandbox (writes in the project only), with the commands below denied besides.
+    args: ["-p", PROMPT, "--output-format", "stream-json", "--trust", "--force", "--sandbox", "enabled"],
     prepare(dir) {
       mkdirSync(join(dir, ".cursor"), { recursive: true });
       const shell = [...new Set(SHELL.map((command) => command.split(" ")[0]))].map((command) => `Shell(${command})`);
-      writeFileSync(join(dir, ".cursor/cli.json"), `${JSON.stringify({ permissions: { allow: [...shell, "Read(**)", "Write(**)"], deny: [] } }, null, 2)}\n`);
+      const denied = ["rm", "sudo", "curl", "wget", "ssh", "scp", "open", "osascript", "kill", "pkill"].map((command) => `Shell(${command})`);
+      writeFileSync(join(dir, ".cursor/cli.json"), `${JSON.stringify({ permissions: { allow: [...shell, "Read(**)", "Write(**)"], deny: denied } }, null, 2)}\n`);
     },
   },
 };
@@ -91,11 +110,11 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
 /** The command line as a person would type it, for the record. */
 export function commandLine(agent: AgentName): string {
   const { binary, args } = AGENTS[agent];
-  return [which(binary), ...args].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
+  return [binary(), ...args].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
 export async function agentVersion(agent: AgentName): Promise<string> {
-  const { stdout } = await run(which(AGENTS[agent].binary), ["--version"], tmpdir(), 30_000);
+  const { stdout } = await output(AGENTS[agent].binary(), ["--version"], tmpdir(), 30_000);
   return stdout.trim();
 }
 
@@ -111,7 +130,7 @@ export async function runAgent(agent: AgentName, dir: string, transcript: string
   const spec = AGENTS[agent];
   spec.prepare?.(dir);
   const startedAt = Date.now();
-  const child = spawn(which(spec.binary), spec.args, { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const child = spawn(spec.binary(), spec.args, { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
   child.stdout.pipe(createWriteStream(transcript));
   child.stderr.pipe(createWriteStream(log));
   let timedOut = false;
@@ -124,7 +143,8 @@ export async function runAgent(agent: AgentName, dir: string, transcript: string
   return { exitCode, timedOut, startedAt, endedAt: Date.now() };
 }
 
-function run(binary: string, args: string[], cwd: string, timeoutMs: number): Promise<{ stdout: string }> {
+/** What a short command prints. */
+function output(binary: string, args: string[], cwd: string, timeoutMs: number): Promise<{ stdout: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { cwd, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs });
     let stdout = "";

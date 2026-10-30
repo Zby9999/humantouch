@@ -19,6 +19,8 @@ export interface ToolCall {
   skill?: string;
   /** What the tool gave the Agent to read. */
   output: string;
+  /** How long it was, when the transcript gives only that (Cursor, for a long file read). */
+  size?: number;
 }
 
 export interface Transcript {
@@ -95,8 +97,10 @@ function parseCursor(all: Event[]): Transcript {
     const name = key.replace(/ToolCall$/, "");
     if (result.rejected || result.permissionDenied) transcript.permissionDenials++;
     const success = result.success;
-    const output = success ? [success.stdout, success.stderr, success.content].filter((part) => typeof part === "string").join("") || JSON.stringify(success) : JSON.stringify(result);
-    transcript.toolCalls.push({ name, ...where(args), output });
+    const text = success && [success.stdout, success.stderr, success.content].filter((part) => typeof part === "string").join("");
+    // A long file read comes with no content: only its size.
+    if (success && !text && typeof success.fileSize === "number" && name === "read") transcript.toolCalls.push({ name, ...where(args), output: "", size: success.fileSize });
+    else transcript.toolCalls.push({ name, ...where(args), output: text || JSON.stringify(success ?? result) });
   }
   return transcript;
 }
@@ -153,11 +157,16 @@ export function isRepoWideSearch(call: ToolCall): boolean {
   return call.path === undefined || !/\.[a-z0-9]+$/i.test(call.path);
 }
 
-const SKILL_FILE = /skills\/vernierkit\/SKILL\.md$/;
+const SKILL_FILE = /skills\/vernierkit\/SKILL\.md\b/;
+
+/** The Skill, loaded by name, read as a file, or printed in the shell (`cat …/SKILL.md`). */
+function readsTheSkill(call: ToolCall): boolean {
+  return call.skill === "vernierkit" || SKILL_FILE.test(call.path ?? "") || (/^\s*(cat|head|sed|less)\b/.test(call.command ?? "") && SKILL_FILE.test(call.command ?? ""));
+}
 
 export function toolCallStats(calls: ToolCall[]): ToolCallStats {
   const commands = calls.flatMap((call) => (call.command ? vernierkitCommands(call.command) : []));
-  const sum = (some: ToolCall[]) => some.reduce((total, call) => total + call.output.length, 0);
+  const sum = (some: ToolCall[]) => some.reduce((total, call) => total + (call.size ?? call.output.length), 0);
   return {
     toolCalls: calls.length,
     repoWideSearches: calls.filter(isRepoWideSearch).length,
@@ -165,7 +174,7 @@ export function toolCallStats(calls: ToolCall[]): ToolCallStats {
     dones: commands.filter((command) => command === "done").length,
     finished: commands.includes("finish"),
     charsRead: {
-      skill: sum(calls.filter((call) => call.skill === "vernierkit" || (call.path !== undefined && SKILL_FILE.test(call.path)))),
+      skill: sum(calls.filter(readsTheSkill)),
       claim: sum(calls.filter((call) => call.command !== undefined && vernierkitCommands(call.command).includes("claim"))),
       total: sum(calls),
     },
@@ -185,16 +194,20 @@ export interface ReportCheck {
 const ITEM = /^\s*[-*]\s*(\d+)[.)]/;
 
 /**
- * Reads the last ✓ section of `text`, and the ⚠️ section after it. The
+ * Reads the last ✓ section of `text`, and the ⚠️ section after it (or the
+ * last ⚠️ section alone, when no change was applied exactly). The
  * headings may be in the designer's language: the form is the marks, the
  * numbered lines, and under ⚠️ two indented lines for why and instead.
  */
 export function checkReport(text: string, ids: number[]): ReportCheck {
   const lines = text.split("\n");
-  const start = lines.findLastIndex((line) => /^\W*✓/.test(line.trim()) && !ITEM.test(line));
-  if (start < 0) return { compliant: false, applied: [], notApplied: [], problems: ["no ✓ section"] };
+  const heading = (mark: RegExp) => lines.findLastIndex((line) => mark.test(line.trim()) && !ITEM.test(line));
+  // Every change under ⚠️ is a report too: the ✓ section is left out when nothing was applied exactly.
+  const applied = heading(/^\W*✓/);
+  const start = applied >= 0 ? applied : heading(/^\W*⚠/);
+  if (start < 0) return { compliant: false, applied: [], notApplied: [], problems: ["no ✓ or ⚠️ section"] };
   const listed: { id: number; warned: boolean; notes: number }[] = [];
-  let warned = false;
+  let warned = applied < 0;
   for (const line of lines.slice(start + 1)) {
     if (/⚠/.test(line) && !ITEM.test(line)) warned = true;
     const item = ITEM.exec(line);
@@ -202,10 +215,10 @@ export function checkReport(text: string, ids: number[]): ReportCheck {
     else if (/^\s+\S.*[:：]/.test(line) && listed.at(-1)?.warned) listed.at(-1)!.notes++;
   }
   const problems: string[] = [];
-  const once = (id: number) => listed.filter((item) => item.id === id).length;
-  for (const id of new Set(listed.map((item) => item.id))) if (once(id) > 1) problems.push(`change ${id} listed more than once`);
+  const timesListed = (id: number) => listed.filter((item) => item.id === id).length;
+  for (const id of new Set(listed.map((item) => item.id))) if (timesListed(id) > 1) problems.push(`change ${id} listed more than once`);
   for (const item of listed) if (item.warned && item.notes < 2) problems.push(`change ${item.id} under ⚠️ without both why and instead`);
-  for (const id of ids) if (!once(id)) problems.push(`change ${id} not listed`);
+  for (const id of ids) if (!timesListed(id)) problems.push(`change ${id} not listed`);
   const unique = (warnedOnes: boolean) => [...new Set(listed.filter((item) => item.warned === warnedOnes).map((item) => item.id))];
   return { compliant: !problems.length, applied: unique(false), notApplied: unique(true), problems };
 }
@@ -226,10 +239,10 @@ export interface RunInput {
   report: ReportCheck;
   /**
    * In ms: the claim, the finish (null when the Agent never ran it), the
-   * Agent's end, and each bit of progress: a `done`, or a change newly shown
-   * on the page.
+   * Agent's end, each bit of progress (a `done`, or a change newly shown on
+   * the page), and each time the project's source changed.
    */
-  times: { claim: number; finish: number | null; end: number; progress: number[] };
+  times: { claim: number; finish: number | null; end: number; progress: number[]; edits: number[] };
 }
 
 export interface RunMeasures {
@@ -244,8 +257,13 @@ export interface RunMeasures {
   oneToOneByPage: number | null;
   /** Changes the report lists as applied that the page does not show (by the expectation; else by the last check). */
   falseChecks: number[];
-  /** The longest wait from the claim to a bit of progress, between two, or from the last to the end. */
-  maxProgressGapMs: number;
+  /** The longest wait between two bits of progress; null with fewer than two. */
+  maxProgressGapMs: number | null;
+  /**
+   * The longest time, from the claim to the end of the round, with no
+   * progress and no edit to the source: what ticket 67 calls stopped.
+   */
+  maxStillMs: number;
 }
 
 export function measureRun({ changes, checks, report, times }: RunInput): RunMeasures {
@@ -259,7 +277,11 @@ export function measureRun({ changes, checks, report, times }: RunInput): RunMea
     const change = changes.find((c) => c.id === id);
     return change?.shown === null || change === undefined ? outcome(id) === "not shown" : !change.shown;
   };
-  const events = [times.claim, ...[...times.progress].sort((a, b) => a - b).filter((t) => t >= times.claim && t <= end), end];
+  const within = (moments: number[]) => moments.filter((t) => t >= times.claim && t <= end);
+  const longestGap = (moments: number[]) => {
+    const sorted = [...moments].sort((a, b) => a - b);
+    return sorted.length < 2 ? null : Math.max(...sorted.slice(1).map((t, i) => t - sorted[i]));
+  };
   return {
     applyMs,
     applyMsPerChange: applyMs / changes.length,
@@ -267,7 +289,8 @@ export function measureRun({ changes, checks, report, times }: RunInput): RunMea
     oneToOneByChecks: rate(checkable.filter((change) => outcome(change.id) === "shown").length, checkable.length),
     oneToOneByPage: rate(expected.filter((change) => change.shown).length, expected.length),
     falseChecks: report.applied.filter(notShown),
-    maxProgressGapMs: Math.max(...events.slice(1).map((t, i) => t - events[i])),
+    maxProgressGapMs: longestGap(within(times.progress)),
+    maxStillMs: longestGap([times.claim, ...within([...times.progress, ...times.edits]), end])!,
   };
 }
 
@@ -280,16 +303,17 @@ export function summarize(values: (number | null)[]): { median: number | null; m
   return { median, min: sorted[0], max: sorted.at(-1)!, n: sorted.length };
 }
 
-/** The lines a diff adds, without the `+`. */
-export function addedLines(diff: string): string {
-  return diff
-    .split("\n")
-    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
-    .map((line) => line.slice(1))
-    .join("\n");
-}
-
-/** Whether `added` writes one of `tokens` (a Variable's class or CSS variable) as a whole word: `md:text-5xl!` writes `text-5xl`; `text-5xl` does not write `text-5`. */
-export function usesVariable(added: string, tokens: string[]): boolean {
-  return tokens.some((token) => new RegExp(`(^|[^\\w-])${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\w-])`, "m").test(added));
+/**
+ * Whether the Agent's diff writes one of `variables` (a Variable's class or
+ * CSS variable) as a whole word (`md:text-5xl!` writes `text-5xl`; `text-5xl`
+ * does not write `text-5`), more often in the lines it adds than in those it
+ * takes out: a line rewritten for another change carries its classes along.
+ */
+export function usesVariable(diff: string, variables: string[]): boolean {
+  const lines = diff.split("\n").filter((line) => !line.startsWith("+++") && !line.startsWith("---"));
+  const count = (sign: string, name: string) => {
+    const word = new RegExp(`(^|[^\\w-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\w-])`, "g");
+    return lines.filter((line) => line.startsWith(sign)).reduce((total, line) => total + (line.slice(1).match(word)?.length ?? 0), 0);
+  };
+  return variables.some((name) => count("+", name) > count("-", name));
 }

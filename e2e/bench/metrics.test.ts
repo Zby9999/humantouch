@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addedLines, checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -28,7 +28,7 @@ test("a Claude Code transcript gives its model, each tool call with what it prin
   });
 });
 
-test("a Cursor transcript gives its model, each finished tool call with what it printed, and the last words", () => {
+test("a Cursor transcript gives its model, each finished tool call with what it printed (or, for a long file read, its size), and the last words", () => {
   const transcript = parseTranscript(
     "cursor",
     lines(
@@ -47,6 +47,12 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
         tool_call: { readToolCall: { args: { path: "src/App.tsx" }, result: { success: { content: "export function App", totalLines: 1 } } } },
       },
       { type: "tool_call", subtype: "completed", call_id: "c", tool_call: { grepToolCall: { args: { pattern: "Card" }, result: { error: { message: "no" } } } } },
+      {
+        type: "tool_call",
+        subtype: "completed",
+        call_id: "d",
+        tool_call: { readToolCall: { args: { path: ".claude/skills/vernierkit/SKILL.md" }, result: { success: { isEmpty: false, totalLines: 147, fileSize: 24653 } } } },
+      },
       { type: "assistant", message: { content: [{ type: "text", text: "✓ Applied" }] } },
       { type: "result", subtype: "success", result: "Claiming.✓ Applied" },
     ),
@@ -58,16 +64,17 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
       { name: "shell", command: "npx vernierkit claim", output: "# Design changes\n" },
       { name: "read", path: "src/App.tsx", output: "export function App" },
       { name: "grep", output: '{"error":{"message":"no"}}' },
+      { name: "read", path: ".claude/skills/vernierkit/SKILL.md", output: "", size: 24653 },
     ],
     finalText: "✓ Applied",
     permissionDenials: 0,
   });
 });
 
-test("tool calls are counted: searches over the project, the command line's commands, and what the Agent read, the Skill and claim apart", () => {
+test("tool calls are counted: searches over the project, the command line's commands, and what the Agent read, the Skill (loaded, read, or printed in the shell) and claim apart", () => {
   const calls: ToolCall[] = [
     { name: "Skill", skill: "vernierkit", output: "S".repeat(30) },
-    { name: "Read", path: "/p/.agents/skills/vernierkit/SKILL.md", output: "K".repeat(14) },
+    { name: "Read", path: "/p/.agents/skills/vernierkit/SKILL.md", output: "", size: 14 },
     { name: "Bash", command: "npx vernierkit claim", output: "notes!" },
     { name: "Bash", command: "cd /p && npx vernierkit claim", output: "again" },
     { name: "Grep", output: "src/App.tsx:3" },
@@ -80,15 +87,16 @@ test("tool calls are counted: searches over the project, the command line's comm
     { name: "Bash", command: "find . -name '*.css'", output: "" },
     { name: "Bash", command: "npx vernierkit done 1", output: "Change 1 done" },
     { name: "Bash", command: "npx vernierkit done 2 && npx vernierkit finish", output: "Round finished" },
+    { name: "shell", command: "cat .agents/skills/vernierkit/SKILL.md", output: "C".repeat(20) },
   ];
 
   assert.deepEqual(toolCallStats(calls), {
-    toolCalls: 14,
+    toolCalls: 15,
     repoWideSearches: 6,
     claims: 2,
     dones: 2,
     finished: true,
-    charsRead: { skill: 44, claim: 11, total: 44 + 11 + 13 + 13 + 14 },
+    charsRead: { skill: 64, claim: 11, total: 64 + 11 + 13 + 13 + 14 },
   });
 });
 
@@ -123,7 +131,7 @@ test("a report in the Skill's form lists each change once, under ✓ or under �
   assert.deepEqual(checkReport(report, [1, 2, 3]), { compliant: true, applied: [1, 3], notApplied: [2], problems: [] });
 });
 
-test("a report missing a change, listing one twice, or a ⚠️ with no why, is not in the form; with no ✓ there is no report", () => {
+test("a report missing a change, listing one twice, or a ⚠️ with no why, is not in the form; with neither ✓ nor ⚠️ there is no report", () => {
   const report = ["✓ 已落地", "- 1. 填充", "- 1. 填充", "⚠️ 无法 1:1 落地", "- 2. 圆角", "  原因：组件库写死了"].join("\n");
 
   assert.deepEqual(checkReport(report, [1, 2, 3]), {
@@ -132,10 +140,16 @@ test("a report missing a change, listing one twice, or a ⚠️ with no why, is 
     notApplied: [2],
     problems: ["change 1 listed more than once", "change 2 under ⚠️ without both why and instead", "change 3 not listed"],
   });
-  assert.deepEqual(checkReport("All done!", [1]), { compliant: false, applied: [], notApplied: [], problems: ["no ✓ section"] });
+  assert.deepEqual(checkReport("All done!", [1]), { compliant: false, applied: [], notApplied: [], problems: ["no ✓ or ⚠️ section"] });
 });
 
-test("a run is measured from claim to finish: per change, against the page's checks and what the page shows, and by its longest wait for progress", () => {
+test("a report with every change under ⚠️ and no ✓ section is in the form", () => {
+  const report = ["⚠️ Not applied 1:1", "- 1. Fill: the cards", "  Why: the data comes from an API", "  Instead: left as it was"].join("\n");
+
+  assert.deepEqual(checkReport(report, [1]), { compliant: true, applied: [], notApplied: [1], problems: [] });
+});
+
+test("a run is measured from claim to finish: per change, against the page's checks and what the page shows, by its longest wait between two bits of progress, and by its longest time with no progress and no edit", () => {
   const run = measureRun({
     changes: [
       { id: 1, checkable: true, shown: true },
@@ -145,7 +159,7 @@ test("a run is measured from claim to finish: per change, against the page's che
     ],
     checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" }, 3: { outcome: "unchecked" } },
     report: { compliant: true, applied: [1, 2, 3], notApplied: [4], problems: [] },
-    times: { claim: 1000, finish: 41000, end: 45000, progress: [5000, 30000, 12000, 31000] },
+    times: { claim: 1000, finish: 41000, end: 45000, progress: [5000, 30000, 12000, 31000], edits: [20000, 3000] },
   });
 
   assert.deepEqual(run, {
@@ -156,6 +170,7 @@ test("a run is measured from claim to finish: per change, against the page's che
     oneToOneByPage: 2 / 3,
     falseChecks: [2],
     maxProgressGapMs: 18000,
+    maxStillMs: 10000,
   });
 });
 
@@ -164,10 +179,10 @@ test("with no finish, the round is measured to the Agent's end; with nothing to 
     changes: [{ id: 1, checkable: false, shown: null }],
     checks: {},
     report: { compliant: false, applied: [], notApplied: [], problems: ["no ✓ section"] },
-    times: { claim: 0, finish: null, end: 9000, progress: [] },
+    times: { claim: 0, finish: null, end: 9000, progress: [], edits: [] },
   });
 
-  assert.deepEqual(run, { applyMs: 9000, applyMsPerChange: 9000, checked: 0, oneToOneByChecks: null, oneToOneByPage: null, falseChecks: [], maxProgressGapMs: 9000 });
+  assert.deepEqual(run, { applyMs: 9000, applyMsPerChange: 9000, checked: 0, oneToOneByChecks: null, oneToOneByPage: null, falseChecks: [], maxProgressGapMs: null, maxStillMs: 9000 });
 });
 
 test("runs are summed up by their median and range; a run with no value is left out", () => {
@@ -176,7 +191,7 @@ test("runs are summed up by their median and range; a run with no value is left 
   assert.deepEqual(summarize([null]), { median: null, min: null, max: null, n: 0 });
 });
 
-test("a Variable counts as used when a line the Agent added writes its class, with any variant, or its CSS variable", () => {
+test("a Variable counts as used when the lines the Agent added write its class, with any variant, or its CSS variable", () => {
   const diff = [
     "--- a/src/App.tsx",
     "+++ b/src/App.tsx",
@@ -185,11 +200,15 @@ test("a Variable counts as used when a line the Agent added writes its class, wi
     "+  border-radius: var(--radius-lg);",
     "   gap-3 unchanged",
   ].join("\n");
-  const added = addedLines(diff);
+  assert.equal(usesVariable(diff, ["text-5xl"]), true);
+  assert.equal(usesVariable(diff, ["rounded-lg", "--radius-lg"]), true);
+  assert.equal(usesVariable(diff, ["text-4xl"]), false);
+  assert.equal(usesVariable(diff, ["gap-3"]), false);
+  assert.equal(usesVariable(diff, ["text-5"]), false);
+});
 
-  assert.equal(usesVariable(added, ["text-5xl"]), true);
-  assert.equal(usesVariable(added, ["rounded-lg", "--radius-lg"]), true);
-  assert.equal(usesVariable(added, ["text-4xl"]), false);
-  assert.equal(usesVariable(added, ["gap-3"]), false);
-  assert.equal(usesVariable(added, ["text-5"]), false);
+test("a Variable only carried along in a line the Agent rewrote for another change is not counted as used", () => {
+  const diff = ['-  <h1 className="text-stone-900">Title</h1>', "+  <div>", '+    <h1 className="text-stone-900">Title</h1>', '+  <p className="text-[#1c1917]">'].join("\n");
+
+  assert.equal(usesVariable(diff, ["text-stone-900"]), false);
 });

@@ -9,7 +9,9 @@
  * The scenarios drive the editor layer as a designer does; the e2e test
  * `bench-scenarios.spec.ts` checks they still make the changes they name.
  */
-import type { Locator, Page } from "@playwright/test";
+import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
+import type { Change } from "../../packages/vernierkit/src/client/changeset.ts";
+import { TOGGLE_LABEL } from "../playwright.config.ts";
 
 /** What a scenario's designer works with: the page, and the project behind it. */
 export interface Desk {
@@ -28,7 +30,7 @@ export interface Desk {
 /** A change as the ChangeSet saves it; the bench reads only these. */
 export interface SavedChange {
   id: number;
-  kind: string;
+  kind: Change["kind"];
   property?: string;
   after?: any;
 }
@@ -41,8 +43,8 @@ export interface SavedChange {
 export type Shows = (arg: { change: SavedChange; width: number }) => boolean;
 
 export interface ScenarioChange {
-  /** As the ChangeSet has it: `style`, `move`, `stack`, `unstack`, `create`, `text`, `delete`, `duplicate`, `putBack`, `brief`. */
-  kind: string;
+  /** As the ChangeSet has it. */
+  kind: Change["kind"];
   /** What the page shows once it is applied, in words. */
   expect: string;
   /** Whether the editor layer's page check can tell it (the Skill's list): not a new layer, a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief. */
@@ -64,7 +66,6 @@ export interface Scenario {
   changes: ScenarioChange[];
 }
 
-const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
@@ -119,12 +120,12 @@ async function roomOnTheLeft(page: Page) {
   await page.mouse.wheel(-400, 0);
 }
 
-/** Drags a layer, selected from the Layers panel, out of the desktop view to its left. */
-async function moveOffTheCanvas(page: Page, name: string, element: Locator) {
+/** Drags a layer, selected from the Layers panel by `name`, out of the desktop view to its left; `onCanvas` finds it on the canvas. */
+async function moveOffTheCanvas(page: Page, name: string, onCanvas: Locator) {
   await layer(page, name).click();
   const view = await boxOf(desktop(page));
-  const box = await boxOf(element);
-  await drag(page, element, async () => ({ x: view.x - 200, y: box.y }));
+  const box = await boxOf(onCanvas);
+  await drag(page, onCanvas, async () => ({ x: view.x - 200, y: box.y }));
 }
 
 /** Waits until the round has `count` changes saved. */
@@ -174,8 +175,9 @@ export const SCENARIOS: Scenario[] = [
         expect: "The three cards of the loop have a red border; the fourth keeps its stone one.",
         checkable: true,
         shows: () => {
+          // Tailwind v4's stone is an oklch() color: the fourth is only to be not red.
           const strokes = [...document.querySelectorAll("article")].map((card) => getComputedStyle(card).borderTopColor);
-          return strokes.join() === ["rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(231, 229, 228)"].join();
+          return strokes.length === 4 && strokes.slice(0, 3).every((stroke) => stroke === "rgb(255, 0, 0)") && strokes[3] !== "rgb(255, 0, 0)";
         },
       },
     ],
@@ -235,11 +237,18 @@ export const SCENARIOS: Scenario[] = [
         expect: "The intro paragraph's text is #1C1917.",
         checkable: true,
         variable: ["text-stone-900", "--color-stone-900"],
-        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p, [data-testid="hero"] p')!).color === "rgb(28, 25, 23)",
+        shows: () => {
+          // Through a pixel: Tailwind v4's stone-900 is an oklch() color, #1C1917 in sRGB, give or take rounding.
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.fillStyle = getComputedStyle(document.querySelector('[data-testid="hero"] p')!).color;
+          context.fillRect(0, 0, 1, 1);
+          const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+          return Math.abs(r - 28) <= 2 && Math.abs(g - 25) <= 2 && Math.abs(b - 23) <= 2;
+        },
       },
       {
         kind: "stack",
-        expect: "The title and the Beta badge are in a new element of their own in the header, a flex row with a 12px gap.",
+        expect: "The title and the Beta badge are in a new horizontal Stack of their own, with a 12px gap, in the header.",
         checkable: false,
         shows: () => {
           const title = document.querySelector("h1")!;
@@ -591,7 +600,7 @@ export const SCENARIOS: Scenario[] = [
       },
       {
         kind: "create",
-        expect: "The hero has a new element where the Frame was drawn (360 × 80px, within 4px), with a row of three partner logos in it.",
+        expect: "The hero has a new Frame where it was drawn (360 × 80px, within 4px), with a row of three partner logos in it.",
         checkable: false,
         shows: ({ change }) => {
           const hero = document.querySelector('[data-testid="hero"]')!;
@@ -600,7 +609,9 @@ export const SCENARIOS: Scenario[] = [
           const { width, height } = change.after;
           return [...hero.querySelectorAll("*")].some((el) => {
             const r = el.getBoundingClientRect();
-            return Math.abs(r.left - box.left - x) <= 4 && Math.abs(r.top - box.top - y) <= 4 && Math.abs(r.width - width) <= 4 && Math.abs(r.height - height) <= 4;
+            const placed = Math.abs(r.left - box.left - x) <= 4 && Math.abs(r.top - box.top - y) <= 4 && Math.abs(r.width - width) <= 4 && Math.abs(r.height - height) <= 4;
+            // Three logos at least: an empty Frame is not what the brief asks for.
+            return placed && el.querySelectorAll("*").length >= 3;
           });
         },
       },
@@ -628,4 +639,30 @@ export async function shown(pages: Map<number, Page>, scenario: Scenario, saved:
 /** The widths a scenario's tests run at. */
 export function widthsOf(scenario: Scenario): number[] {
   return [...new Set(scenario.changes.flatMap((change) => (change.shows ? (change.widths ?? [1280]) : [])))];
+}
+
+/**
+ * Pages that only look: one at each width the scenario's tests run at, with
+ * the editor layer kept from the local service, so they are no pages of the
+ * designer's for the round's checks.
+ */
+export async function openObservers(browser: Browser, scenario: Scenario, url: string) {
+  const contexts: BrowserContext[] = [];
+  const pages = new Map<number, Page>();
+  const close = () => Promise.all(contexts.map((context) => context.close()));
+  try {
+    for (const width of widthsOf(scenario)) {
+      const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 720 }, reducedMotion: "reduce" });
+      contexts.push(context);
+      await context.route((target) => target.hostname === "127.0.0.1", (route) => route.abort());
+      const page = await context.newPage();
+      await page.goto(url);
+      await page.locator("main").waitFor();
+      pages.set(width, page);
+    }
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return { pages, close };
 }

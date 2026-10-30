@@ -11,15 +11,15 @@
  * Runs go one after another, never side by side, so their times compare. Raw
  * results go to `bench-results/agents/<when>/`, which git ignores.
  */
-import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chromium, type Browser, type Page } from "@playwright/test";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, runAgent } from "./agents.ts";
-import { addedLines, checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { agentVersion, AGENTS, commandLine, runAgent, type AgentRun } from "./agents.ts";
+import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
-import { SCENARIOS, shown, widthsOf, type SavedChange, type Scenario } from "./scenarios.ts";
+import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/agents/", import.meta.url));
 /** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. */
@@ -44,8 +44,8 @@ interface RawRun {
   startedAt: number;
   endedAt: number;
   changes: { id: number; kind: string; checkable: boolean; variable?: string[]; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
-  /** In ms since the epoch: the claim, each `done`, the finish, and each change newly shown on the page. */
-  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[] };
+  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, and each edit to the project's source. */
+  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[] };
   /** The page's last check of each change, as the round was archived (or left, unfinished). */
   checks: Record<string, { outcome: string }>;
 }
@@ -94,7 +94,7 @@ async function main(argv: string[]) {
             try {
               await runOnce({ browser, base, port: FIRST_PORT + (port++ % PORTS), scenario, agent, run, version: versions[agent]!, folder });
               const measures = measureFolder(folder);
-              console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${describe(measures)}`);
+              console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${oneLine(measures)}`);
             } catch (error) {
               failures.push(`${agent} ${scenario.id} #${run}: ${(error as Error).message}`);
               console.log(`✗ ${agent} ${scenario.id} #${run}: ${(error as Error).message}`);
@@ -112,92 +112,90 @@ async function main(argv: string[]) {
   if (failures.length) process.exitCode = 1;
 }
 
-/** A desk on a fresh copy of the project: its page, with the editor layer as a designer has it. */
-async function openDesk(browser: Browser, project: RunProject, url: string) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
-  await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
-  const page = await context.newPage();
-  await page.goto(url);
-  await page.locator("main").waitFor();
-  return { context, page, desk: { page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet } };
-}
-
 /**
- * Pages that only look: one at each width the scenario's tests run at, with
- * the editor layer kept from the local service, so they are no pages of the
- * designer's for the round's checks.
+ * A fresh copy of the project, its dev server, and the scenario designed on
+ * it in the editor layer, as a designer has it, with pages beside that only
+ * look; `work` goes on from there. All of it is taken down after.
  */
-async function openObservers(browser: Browser, scenario: Scenario, url: string) {
-  const widths = widthsOf(scenario);
-  const contexts: BrowserContext[] = [];
-  const pages = new Map<number, Page>();
-  for (const width of widths) {
-    const context = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 720 }, reducedMotion: "reduce" });
-    await context.route((target) => target.hostname === "127.0.0.1", (route) => route.abort());
-    const page = await context.newPage();
-    await page.goto(url);
-    await page.locator("main").waitFor();
-    contexts.push(context);
-    pages.set(width, page);
-  }
-  return { pages, close: () => Promise.all(contexts.map((context) => context.close())) };
-}
-
-/** Sets a scenario up with no Agent; what is wrong with it: changes not as it names them, or shown on the page already. */
-async function setUp(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
+async function withScenario<T>(
+  browser: Browser,
+  base: string,
+  port: number,
+  scenario: Scenario,
+  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page> }) => Promise<T>,
+): Promise<T> {
   const project = await cloneBase(base);
   const server = await startDevServer(project.dir, port);
-  const { context, desk } = await openDesk(browser, project, server.url);
-  const observers = await openObservers(browser, scenario, server.url);
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
+  let observers: Awaited<ReturnType<typeof openObservers>> | null = null;
   try {
-    await scenario.design(desk);
-    const saved: SavedChange[] = project.changeSet()!.changes;
-    const problems: string[] = [];
-    const kinds = saved.map((change) => change.kind).join(", ");
-    const named = scenario.changes.map((change) => change.kind).join(", ");
-    if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
-    (await shown(observers.pages, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
-    return problems;
-  } catch (error) {
-    return [(error as Error).message.split("\n")[0]];
+    await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    const page = await context.newPage();
+    await page.goto(server.url);
+    await page.locator("main").waitFor();
+    observers = await openObservers(browser, scenario, server.url);
+    await scenario.design({ page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
+    return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages });
   } finally {
-    await observers.close();
+    await observers?.close();
     await context.close();
     server.stop();
     project.remove();
   }
 }
 
-async function runOnce({ browser, base, port, scenario, agent, run, version, folder }: { browser: Browser; base: string; port: number; scenario: Scenario; agent: AgentName; run: number; version: string; folder: string }) {
-  const project = await cloneBase(base);
-  const server = await startDevServer(project.dir, port);
-  const { context, desk } = await openDesk(browser, project, server.url);
-  const observers = await openObservers(browser, scenario, server.url);
+/** Sets a scenario up with no Agent; what is wrong with it: changes not as it names them, or shown on the page already. */
+async function setUp(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
   try {
-    await scenario.design(desk);
-    const head = await project.head();
-    const saved: SavedChange[] = project.changeSet()!.changes;
-    writeFileSync(join(folder, "changeset.json"), `${JSON.stringify({ changes: saved }, null, 2)}\n`);
-    const before = await shown(observers.pages, scenario, saved);
+    return await withScenario(browser, base, port, scenario, async ({ saved, observers }) => {
+      const problems: string[] = [];
+      const kinds = saved.map((change) => change.kind).join(", ");
+      const named = scenario.changes.map((change) => change.kind).join(", ");
+      if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
+      (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
+      return problems;
+    });
+  } catch (error) {
+    return [(error as Error).message.split("\n")[0]];
+  }
+}
 
-    // While the Agent works: the claim, each done and the finish from the round's files; each change newly shown from the page.
-    const times: RawRun["times"] = { claim: null, dones: [], finish: null, shown: [] };
+/** The newest file under `dir`, by when it changed, in ms; `node_modules` and dot folders left out. */
+function lastEdited(dir: string): number {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    const path = join(dir, entry.name);
+    newest = Math.max(newest, entry.isDirectory() ? lastEdited(path) : statSync(path).mtimeMs);
+  }
+  return newest;
+}
+
+/** One Agent run of one scenario, its raw results written to `folder`. */
+async function runOnce({ browser, base, port, scenario, agent, run, version, folder }: { browser: Browser; base: string; port: number; scenario: Scenario; agent: AgentName; run: number; version: string; folder: string }) {
+  await withScenario(browser, base, port, scenario, async ({ project, saved, observers }) => {
+    const head = await project.head();
+    writeFileSync(join(folder, "changeset.json"), `${JSON.stringify({ changes: saved }, null, 2)}\n`);
+    const before = await shown(observers, scenario, saved);
+
+    // While the Agent works: the claim, each done and the finish from the round's files; each source edit; each change newly shown on the page.
+    const times: RawRun["times"] = { claim: null, dones: [], finish: null, shown: [], edits: [] };
     const vernier = join(project.dir, ".vernier");
     const readJson = (file: string) => {
       try {
         return JSON.parse(readFileSync(join(vernier, file), "utf8"));
       } catch {
-        return null;
+        return null; // Not there, or being written.
       }
     };
-    const archived = () => {
-      const rounds = existsSync(join(vernier, "history")) ? readdirSync(join(vernier, "history")).sort() : [];
-      // The round before, in the put-back scenario, was archived before the Agent started.
-      return rounds.length ? readJson(`history/${rounds.at(-1)}/result.json`) : null;
-    };
-    const roundsBefore = existsSync(join(vernier, "history")) ? readdirSync(join(vernier, "history")).length : 0;
+    const rounds = () => (existsSync(join(vernier, "history")) ? readdirSync(join(vernier, "history")).sort() : []);
+    // The put-back scenario archived a round before the Agent started.
+    const roundsBefore = rounds().length;
+    /** This round's result, once archived in full: `finish` writes it last into its folder. */
+    const archived = () => (rounds().length > roundsBefore ? readJson(`history/${rounds().at(-1)}/result.json`) : null);
     let lastAsk: string | null = null;
-    let lastState: { done: number[]; check?: { at: string } } | null = null;
+    let lastState: unknown = null;
+    let lastEdit = lastEdited(project.dir);
     const watchFiles = () => {
       const state = readJson("state.json");
       if (state) lastState = state;
@@ -206,15 +204,17 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
         lastAsk = state.check.at;
         times.dones.push(Date.parse(state.check.at));
       }
-      const rounds = existsSync(join(vernier, "history")) ? readdirSync(join(vernier, "history")).length : 0;
-      if (times.finish === null && rounds > roundsBefore) times.finish = Date.parse(archived().at);
+      const result = times.finish === null ? archived() : null;
+      if (result) times.finish = Date.parse(result.at);
+      const edited = lastEdited(project.dir);
+      if (edited > lastEdit) times.edits.push((lastEdit = edited));
     };
     // Each change once, the first time it shows: a page reloading as the dev server brings an edit in shows nothing for a moment.
     const seen = new Set(saved.filter((_, i) => before[i]).map((change) => change.id));
     let looking = Promise.resolve();
     const lookAtThePage = () => {
       looking = looking.then(async () => {
-        const now = await shown(observers.pages, scenario, saved);
+        const now = await shown(observers, scenario, saved);
         const at = Date.now();
         now.forEach((shows, i) => {
           if (!shows || seen.has(saved[i].id)) return;
@@ -223,22 +223,32 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
         });
       });
     };
-    const fileTimer = setInterval(watchFiles, FILES_POLL_MS);
+    const fileTimer = setInterval(() => {
+      try {
+        watchFiles();
+      } catch (error) {
+        console.error("Bench:", error);
+      }
+    }, FILES_POLL_MS);
     const pageTimer = setInterval(lookAtThePage, SHOWN_POLL_MS);
-    const agentRun = await runAgent(agent, project.dir, join(folder, "transcript.jsonl"), join(folder, "agent.log"), AGENT_TIMEOUT_MS);
-    clearInterval(fileTimer);
-    clearInterval(pageTimer);
-    await looking;
+    let agentRun: AgentRun;
+    try {
+      agentRun = await runAgent(agent, project.dir, join(folder, "transcript.jsonl"), join(folder, "agent.log"), AGENT_TIMEOUT_MS);
+    } finally {
+      clearInterval(fileTimer);
+      clearInterval(pageTimer);
+      await looking;
+    }
     watchFiles();
 
     // The end: the dev server brings the last edits in, and the page is loaded afresh.
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    await Promise.all([...observers.pages.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
-    const atEnd = await shown(observers.pages, scenario, saved);
-    const result = times.finish === null ? null : archived();
+    await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
+    const atEnd = await shown(observers, scenario, saved);
+    const result = archived();
     const checks = result?.checks ?? readJson("checks.json")?.results ?? {};
-    if (!result && lastState) writeFileSync(join(folder, "state.json"), `${JSON.stringify(lastState, null, 2)}\n`);
     if (result) writeFileSync(join(folder, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
+    else if (lastState) writeFileSync(join(folder, "state.json"), `${JSON.stringify(lastState, null, 2)}\n`);
     await sh("git", ["add", "-A"], project.dir);
     writeFileSync(join(folder, "diff.patch"), await sh("git", ["diff", "--cached", head], project.dir));
 
@@ -262,12 +272,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       checks: Object.fromEntries(Object.entries(checks).map(([id, check]) => [id, { outcome: (check as { outcome: string }).outcome }])),
     };
     writeFileSync(join(folder, "raw.json"), `${JSON.stringify(raw, null, 2)}\n`);
-  } finally {
-    await observers.close();
-    await context.close();
-    server.stop();
-    project.remove();
-  }
+  });
 }
 
 /** A run's measures, from its folder: the numbers the bench compares. */
@@ -278,9 +283,9 @@ export function measureFolder(folder: string) {
   const ids = raw.changes.map((change) => change.id);
   const report = checkReport(transcript.finalText, ids);
   const count = raw.changes.length;
-  const added = addedLines(readFileSync(join(folder, "diff.patch"), "utf8"));
+  const diff = readFileSync(join(folder, "diff.patch"), "utf8");
   const withVariable = raw.changes.filter((change) => change.variable);
-  const usedVariable = withVariable.filter((change) => usesVariable(added, change.variable!));
+  const usedVariable = withVariable.filter((change) => usesVariable(diff, change.variable!));
   const round =
     raw.times.claim === null
       ? null
@@ -288,7 +293,7 @@ export function measureFolder(folder: string) {
           changes: raw.changes.map((change) => ({ id: change.id, checkable: change.checkable, shown: change.shownAtEnd })),
           checks: raw.checks,
           report,
-          times: { claim: raw.times.claim, finish: raw.times.finish, end: raw.endedAt, progress: [...raw.times.dones, ...raw.times.shown.map((event) => event.at)] },
+          times: { claim: raw.times.claim, finish: raw.times.finish, end: raw.endedAt, progress: [...raw.times.dones, ...raw.times.shown.map((event) => event.at)], edits: raw.times.edits ?? [] },
         });
   return {
     agent: raw.agent,
@@ -318,6 +323,7 @@ export function measureFolder(folder: string) {
     oneToOneByPage: round?.oneToOneByPage ?? null,
     falseChecks: round?.falseChecks ?? [],
     maxProgressGapMs: round?.maxProgressGapMs ?? null,
+    maxStillMs: round?.maxStillMs ?? null,
     reportCompliant: report.compliant,
     reportProblems: report.problems,
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
@@ -328,7 +334,8 @@ export function measureFolder(folder: string) {
 
 type Measures = ReturnType<typeof measureFolder>;
 
-function describe(m: Measures): string {
+/** One line on a run, as it ends. */
+function oneLine(m: Measures): string {
   const seconds = (ms: number | null) => (ms === null ? "–" : `${Math.round(ms / 1000)}s`);
   const percent = (rate: number | null) => (rate === null ? "–" : `${Math.round(rate * 100)}%`);
   return `round ${seconds(m.applyMs)}, ${m.toolCalls} tool calls, 1:1 ${percent(m.oneToOneByPage)} (checks ${percent(m.oneToOneByChecks)}), done ${m.ranDone ? "✓" : "✗"}, finish ${m.ranFinish ? "✓" : "✗"}, report ${m.reportCompliant ? "✓" : "✗"}`;
@@ -352,8 +359,12 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["报告格式合规", (m) => Number(m.reportCompliant)],
   ["设计变量使用率", (m) => m.variableUse],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
+  ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
   ["被权限拦下的工具调用", (m) => m.permissionDenials],
 ];
+
+/** The numbers the table by scenario shows. */
+const BY_SCENARIO = ["整轮用时每条（秒）", "每条平均工具调用", "1:1 落地率（页面预期）", "虚假的 ✓（条）", "两次进度最长间隔（秒）", "没进度也没改源码的最长时间（秒）"];
 
 /** Measures every run in `out` again, and writes `summary.json` and `summary.md` beside them. */
 function writeSummary(out: string) {
@@ -399,11 +410,9 @@ function writeSummary(out: string) {
         "|---|---|---|",
         ...METRICS.map(([name]) => `| ${name} | ${cell(agent.overall[name])} | ${agent.overall[name].n} |`),
         "",
-        `| 场景 | ${METRICS.slice(0, 2).concat(METRICS.slice(3, 4), METRICS.slice(8, 9), METRICS.slice(15, 16)).map(([name]) => name).join(" | ")} |`,
-        `|---|${"---|".repeat(5)}`,
-        ...Object.entries(agent.scenarios).map(
-          ([scenario, s]) => `| ${scenario} | ${[METRICS[0], METRICS[1], METRICS[3], METRICS[8], METRICS[15]].map(([name]) => cell(s[name])).join(" | ")} |`,
-        ),
+        `| 场景 | ${BY_SCENARIO.join(" | ")} |`,
+        `|---|${"---|".repeat(BY_SCENARIO.length)}`,
+        ...Object.entries(agent.scenarios).map(([scenario, s]) => `| ${scenario} | ${BY_SCENARIO.map((name) => cell(s[name])).join(" | ")} |`),
         ...(agent.brokenTests.length ? ["", `场景的预期在 Agent 开始前就成立（测试有误）：${agent.brokenTests.join("; ")}`] : []),
       ].join("\n"),
     )

@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import type { Page } from "@playwright/test";
-import { SCENARIOS, shown, widthsOf } from "../bench/scenarios.ts";
+import { openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
 import { DEV_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
 import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
@@ -46,16 +45,11 @@ for (const scenario of SCENARIOS) {
     expect(saved.map((change: { kind: string }) => change.kind)).toEqual(scenario.changes.map((change) => change.kind));
 
     // Pages of their own, kept from the local service as the bench keeps them.
-    const pages = new Map<number, Page>();
-    for (const width of widthsOf(scenario)) {
-      const context = await browser.newContext({ viewport: { width, height: 800 } });
-      await context.route((url) => url.hostname === "127.0.0.1", (route) => route.abort());
-      const observer = await context.newPage();
-      await observer.goto(DEV_URL);
-      await observer.locator("main").waitFor();
-      pages.set(width, observer);
+    const observers = await openObservers(browser, scenario, DEV_URL);
+    try {
+      expect(await shown(observers.pages, scenario, saved)).toEqual(scenario.changes.map((change) => (change.shows ? false : null)));
+    } finally {
+      await observers.close();
     }
-    expect(await shown(pages, scenario, saved)).toEqual(scenario.changes.map((change) => (change.shows ? false : null)));
-    for (const observer of pages.values()) await observer.context().close();
   });
 }

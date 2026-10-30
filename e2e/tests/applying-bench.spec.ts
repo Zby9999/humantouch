@@ -123,31 +123,49 @@ function record(id: string, metrics: Record<string, unknown>) {
   console.log(`bench ${id}: ${JSON.stringify(metrics)}`);
 }
 
+/** Whether either notice shows now: while the Agent works as it should, each one that does is a false one. */
+async function falseNotices(page: Page) {
+  return { stalled: (await stallNotice(page).count()) > 0, unclaimed: (await unclaimedNotice(page).count()) > 0 };
+}
+
 test("playbook: the Agent follows the workflow, done after each change, then finish", async ({ page }) => {
   await designTheRound(page);
   await vernierkit("claim");
   const gaps: number[] = [];
+  const notices: { stalled: boolean; unclaimed: boolean }[] = [];
   for (const id of IDS) {
     await apply(page, id);
     gaps.push(await progressGap(page));
+    notices.push(await falseNotices(page));
     await vernierkit("done", String(id));
     await expect(ring(page)).toHaveAttribute("aria-valuenow", String(id));
     gaps.push(await progressGap(page));
+    notices.push(await falseNotices(page));
   }
   const atEnd = await progressGap(page);
-  const stallNotices = await stallNotice(page).count();
   await vernierkit("finish");
-  record("follows-the-workflow", { checkCoverage: checkCoverage(), progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps), stallNotices });
+  record("follows-the-workflow", {
+    checkCoverage: checkCoverage(),
+    progressGapAtEnd: atEnd,
+    progressGapMax: Math.max(...gaps),
+    falseStallNotices: notices.filter((notice) => notice.stalled).length,
+    falseUnclaimedNotices: notices.filter((notice) => notice.unclaimed).length,
+    looked: notices.length,
+  });
 });
 
 test("playbook: the Agent skips done, applies every change and finishes", async ({ page }) => {
   await designTheRound(page);
   await vernierkit("claim");
   await expect(ring(page)).toBeVisible();
-  for (const id of IDS) await apply(page, id);
-  const atEnd = await progressGap(page);
+  const gaps: number[] = [];
+  for (const id of IDS) {
+    await apply(page, id);
+    gaps.push(await progressGap(page));
+  }
+  const atEnd = gaps.at(-1)!;
   await vernierkit("finish");
-  record("skips-done", { checkCoverage: checkCoverage(), progressGapAtEnd: atEnd, progressGapMax: atEnd });
+  record("skips-done", { checkCoverage: checkCoverage(), progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps) });
 });
 
 test("playbook: the Agent applies every change first, then runs done for them all, then finish", async ({ page }) => {
@@ -166,7 +184,9 @@ test("playbook: the Agent applies every change first, then runs done for them al
 test("playbook: the Agent stops halfway, with no finish; the designer ends the round and edits again", async ({ page }) => {
   await designTheRound(page);
   await vernierkit("claim");
-  const unapplied = readVernier("changeset.json").changes.filter((change: { id: number }) => change.id !== 1).map((change: { property: string }) => change.property);
+  const properties: { id: number; property: string }[] = readVernier("changeset.json").changes;
+  const unapplied = properties.filter((change) => change.id !== 1).map((change) => change.property);
+  const applied = properties.find((change) => change.id === 1)!.property;
   await apply(page, 1);
   await vernierkit("done", "1");
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
@@ -185,13 +205,15 @@ test("playbook: the Agent stops halfway, with no finish; the designer ends the r
   // Edit mode again: the two changes never applied are to be in the round still (ticket 68).
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const kept = (readVernier("changeset.json")?.changes ?? []).filter((change: { property: string }) => unapplied.includes(change.property)).length;
+  const nextRound: { property: string }[] = readVernier("changeset.json")?.changes ?? [];
+  const kept = nextRound.filter((change) => unapplied.includes(change.property)).length;
   record("stops-halfway", {
     stallNoticeAfterMs,
     stallWatchedMs: STALL_WATCH_MS,
     progressGapWhenStopped: gapWhenStopped,
     checkCoverageWhenStopped: coverageWhenStopped,
     unappliedKeptForNextRound: kept / unapplied.length,
+    appliedBackInNextRound: nextRound.some((change) => change.property === applied),
   });
 });
 
