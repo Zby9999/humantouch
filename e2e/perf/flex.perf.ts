@@ -454,13 +454,14 @@ async function holdValue(page: Page, field: string, selector: string, property: 
  */
 interface FrameRecord {
   times: number[];
+  /** Frames in which `shows` was on screen: where the layer would go, or the size of the layer resized. */
   withLine: number;
   long: number[];
   moves: number;
   stop(): void;
 }
 
-function armFrames() {
+function armFrames(shows: string) {
   const w = window as unknown as { vkFrames: FrameRecord };
   const root = document.querySelector("vernier-kit")!.shadowRoot!;
   const record: FrameRecord = { times: [], withLine: 0, long: [], moves: 0, stop() {} };
@@ -469,7 +470,7 @@ function armFrames() {
   let on = true;
   const loop = (time: number) => {
     record.times.push(time);
-    if (root.querySelector(".vk-drop-line")) record.withLine++;
+    if (root.querySelector(shows)) record.withLine++;
     if (on) requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -489,7 +490,7 @@ async function dragCard(page: Page, n: number) {
   const step = (await canvas(page).locator(card(n + 1)).boundingBox())!.x - box.x;
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
   await page.mouse.move(from.x, from.y);
-  await page.evaluate(armFrames);
+  await page.evaluate(armFrames, ".vk-drop-line");
   await page.mouse.down();
   // Sent straight to the browser every few ms, each without waiting for the last to be taken: as a mouse reports,
   // whether or not the page keeps up. (Playwright's own moves each wait for the page, so a busy page would get fewer.)
@@ -517,6 +518,47 @@ async function dragCard(page: Page, n: number) {
     return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
   });
   // Esc puts the card back as it was: the next drag starts from the same page.
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await settle(page);
+  return record;
+}
+
+/**
+ * Presses the bottom right handle of card `n`, selected, and drags it about
+ * for `DRAG_MS`, the card wider and taller and back, every instance of it with
+ * it (ticket 69); then Esc takes the resize back, so the next one starts from
+ * the same page. The pointer is sent as `dragCard` sends it.
+ */
+async function resizeCard(page: Page) {
+  const corner = (await host(page).locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="se"]').boundingBox())!;
+  const from = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.evaluate(armFrames, ".vk-size-label");
+  await page.mouse.down();
+  const cdp = await page.context().newCDPSession(page);
+  const sent: Promise<unknown>[] = [];
+  const started = Date.now();
+  await new Promise<void>((done) => {
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - started;
+      if (elapsed >= DRAG_MS) {
+        clearInterval(timer);
+        return done();
+      }
+      // Out and back once every 1.25s: up to 80 screen px wider and 60 taller, never back within the threshold of where it was pressed.
+      const phase = (elapsed / 1250) * 2 * Math.PI;
+      const [x, y] = [from.x + 10 + (1 - Math.cos(phase)) * 40, from.y + 10 + (1 - Math.cos(phase)) * 30];
+      sent.push(cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 }));
+    }, POINTER_EVERY_MS);
+  });
+  await Promise.all(sent);
+  await cdp.detach();
+  const record = await page.evaluate(() => {
+    const record = (window as unknown as { vkFrames: FrameRecord }).vkFrames;
+    record.stop();
+    return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
+  });
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await settle(page);
@@ -973,4 +1015,46 @@ test("dragging a layer keeps 60fps", async ({ page }) => {
     ),
   );
   verdict(met, "dragging keeps 60fps");
+});
+
+test("dragging a layer's handle keeps 60fps", async ({ page }) => {
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await selectCard(page, 6, { parent: true });
+  const width = () => canvas(page).locator(card(6)).evaluate((el) => el.getBoundingClientRect().width);
+  const before = await width();
+  const intervals: number[] = [];
+  const fps: number[] = [];
+  const long: number[] = [];
+  const moves: number[] = [];
+  for (let i = 0; i < DRAGS; i++) {
+    const record = await resizeCard(page);
+    expect(record.withLine, "the resize shows the card's size").toBeGreaterThan(0);
+    // Esc took it back: the next resize starts from the same card.
+    expect(await width(), "Esc puts the card back as it was").toBe(before);
+    const gaps = record.times.slice(1).map((time, j) => time - record.times[j]);
+    intervals.push(...gaps);
+    fps.push(((record.times.length - 1) / (record.times.at(-1)! - record.times[0])) * 1000);
+    long.push(...record.long);
+    moves.push((record.moves / (record.times.at(-1)! - record.times[0])) * 1000);
+  }
+  const frameSummary = summarize(intervals);
+  const fpsSummary = summarize(fps, { higherIsBetter: true });
+  const dropped = intervals.filter((gap) => gap > FRAME_MS * 1.5).length;
+  // As a drag (ticket 22): every resize at 58fps or more, 19 in 20 frames on time, fewer than 1 in 20 late.
+  const met = fpsSummary.worst >= 58 && frameSummary.p95 <= FRAME_MS * 1.25 && dropped < intervals.length / 20;
+  const movesSummary = summarize(moves, { higherIsBetter: true });
+  keep("resize", { fps: fpsSummary, frameIntervals: frameSummary, dropped, frames: intervals.length, longTasks: long, pointerMovesPerSecond: movesSummary });
+  print(
+    report(
+      `Resizing a card by its corner, every instance with it, ${elements} elements, ${VIEWS.length} views — ${mode}`,
+      [
+        { name: "frames per second, per resize", summary: fpsSummary, unit: (v) => v.toFixed(1), target: "every resize ≥ 58", met: fpsSummary.worst >= 58 },
+        { name: "pointer moves per second, per resize", summary: movesSummary, unit: (v) => v.toFixed(0) },
+        { name: "time between frames", summary: frameSummary, target: `p95 ≤ ${(FRAME_MS * 1.25).toFixed(1)}ms`, met: frameSummary.p95 <= FRAME_MS * 1.25 },
+      ],
+      [`${dropped} of ${intervals.length} frames late (more than 1.5 frames apart; target fewer than 5%); ${long.length} long tasks${long.length ? `, the longest ${Math.max(...long).toFixed(0)}ms` : ""}.`],
+    ),
+  );
+  verdict(met, "resizing by a handle keeps 60fps");
 });
