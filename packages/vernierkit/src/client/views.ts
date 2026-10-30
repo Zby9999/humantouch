@@ -13,7 +13,12 @@ import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style"
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 
-/** How long the steps of a value pause, ms, before the views beside the one worked in catch up with them. */
+/**
+ * How long the steps of a value pause, ms, before the views beside the one
+ * worked in catch up with them: longer than macOS repeats a key held down by
+ * default (83ms), shorter than the selection box stays hidden after a step
+ * (`ADJUSTING_MS` in `Shell.tsx`), so it comes back over views caught up (ADR 0011).
+ */
 export const CATCH_UP_AFTER_MS = 100;
 
 export interface View {
