@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { CHECK_SETTLE_MS, type CheckReport } from "../src/service-protocol";
+import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Place } from "../src/client/changeset";
@@ -3549,6 +3549,27 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     write("border: 1px solid #ff0000");
     await expect.poll(() => shown.at(-1)).toEqual([]);
     expect(reports.at(-1)).toMatchObject({ id: change.id, outcome: "not shown", undone: true });
+    checks.stop();
+  });
+
+  test("the dev server brought the code in just before the page began to check, and the page draws it a moment later (React, say): the page sees it show, with no further word", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    write("border: 1px solid #ff0000");
+    // The Agent's edit is in: the dev server said so before the page heard of the claim.
+    const win = page.defaultView!;
+    (win as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0 };
+    win.dispatchEvent(new Event(CODE_EVENT));
+    const shown: number[][] = [];
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: win, changes: [change], report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
+
+    // The page's first look, before the page is drawn anew.
+    await expect.poll(() => reports.at(-1)?.outcome).toBe("not shown");
+    write("border: 1.5px solid #ff0000");
+
+    await expect.poll(() => shown.at(-1)).toEqual([change.id]);
     checks.stop();
   });
 

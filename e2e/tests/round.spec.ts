@@ -112,6 +112,52 @@ test("a change the page shows, undone by a later edit before any done: the ring 
   expect(await vernierkit("finish")).toBe("Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n");
 });
 
+test("an Agent that edits the code as it claims, with no done: the page draws the edit only after it began to check, and the ring fills all the same", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  // React draws the Card anew only once the test lets it: after the dev server has brought the code in, and the page has looked.
+  await page.evaluate(() => {
+    const win = window as unknown as { __vkDraw: Promise<void>; __vkLetDraw: () => void; __registerBeforePerformReactRefresh(hold: () => Promise<void>): void };
+    win.__vkDraw = new Promise((resolve) => (win.__vkLetDraw = resolve));
+    win.__registerBeforePerformReactRefresh(() => win.__vkDraw);
+  });
+  const code = () => page.evaluate(() => (window as unknown as { __VERNIERKIT_CODE__: { at: number; updating: number } }).__VERNIERKIT_CODE__);
+  const codeAt = (await code()).at;
+  // The round the page reads again as it hears of the claim: held till the dev server has brought the edit in.
+  let letRound!: () => void;
+  const roundHeld = new Promise<void>((resolve) => (letRound = resolve));
+  const isRound = (url: URL) => url.hostname === "127.0.0.1" && url.pathname === "/round";
+  await page.route(isRound, async (route) => {
+    if (route.request().method() === "GET") await roundHeld;
+    await route.continue();
+  });
+  /** When the page said what it saw of the fill. */
+  const fillLooks: number[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/checks" && request.postDataJSON()?.id === 1) fillLooks.push(Date.now());
+  });
+
+  await vernierkit("claim");
+  writeFileSync(CARD, readFileSync(CARD, "utf8").replace(...CARD_EDITS.fill));
+  // The Card's module and the stylesheet with its new class are both in; React has not drawn it yet.
+  await expect.poll(async () => ((c) => c.at > codeAt && c.updating === 0)(await code())).toBe(true);
+  await expect.poll(() => page.evaluate(() => [...document.querySelectorAll("style")].some((style) => style.textContent?.includes("bg-\\[\\#ff0000\\]")))).toBe(true);
+  const roundIn = page.waitForResponse((response) => isRound(new URL(response.url())) && response.request().method() === "GET");
+  letRound();
+  await roundIn;
+  const roundAt = Date.now();
+  // The page, with the round read again, has looked: the fill is not drawn yet.
+  await expect.poll(() => fillLooks.some((at) => at >= roundAt)).toBe(true);
+  expect(await page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
+
+  await page.evaluate(() => (window as unknown as { __vkLetDraw: () => void }).__vkLetDraw());
+
+  await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 0, 0)");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
+  await expect(badge(page)).toHaveText("1");
+});
+
 test("done for several changes at once: each with how the page checked it, those the page shows already at once", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
