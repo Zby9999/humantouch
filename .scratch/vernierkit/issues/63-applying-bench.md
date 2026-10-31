@@ -516,3 +516,18 @@ Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/L
   - 每个剧本多记 `unclaimedNoticesShown`；
   - 加了 66 的断言。数字见 66 的 Comments。
 
+
+**不加载 Skill 的运行（2026-10-31，ticket 65 的 b5fdf36）**
+
+- `pnpm bench:agents --no-skill`：项目里没有 Skill，Agent 只被告知「运行 `npx vernierkit claim`，照输出落地」。
+  - 打基础项目时，`init` 之后、提交之前，拿掉它放进去的 Skill（`.agents/skills/vernierkit/`、`.claude/skills/vernierkit/`，空了的上级文件夹一起），以及 AGENTS.md 里指向它的那一行（只剩这一行时删掉整个文件）。所以 git 历史里也没有 Skill。
+  - 包里自带的那份 `node_modules/vernierkit/skill/SKILL.md` 还在。
+- 记录：
+  - `meta.json` 多了 `skill`；
+  - 每次运行的 `raw.json` 多了 `skill: false`（之前的运行没有这一项，按 true 算）；
+  - `summary.md` 的标题注明「不加载 Skill」。
+  - 命令行里提示词不同，所以不加载 Skill 的运行不能接进加载的那一批（测量台按命令行拒绝）。
+- 计分只改了一处：读到包里自带的那份 Skill，也算「读入字数：Skill」。原来只认 `skills/vernierkit/SKILL.md`，没有 Skill 的 Agent 去 `node_modules` 里找到它时会漏算。
+  - 用新规则把基线 A、B 和 64 的 6 个结果文件夹（各 30 次）在副本上重算了一遍：180 次的每项数字都和原来的 `measures.json` 一样。
+- 单测：提示词和命令行（`agents.test.ts`）；拿掉 Skill 只拿掉 `init` 放的那些（`agents.test.ts`）；包里那份算读了 Skill（`metrics.test.ts`）。
+- 不影响任何已有的计分，也不改加载 Skill 时的运行条件。
