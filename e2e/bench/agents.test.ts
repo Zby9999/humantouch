@@ -46,14 +46,14 @@ test("Cursor's run gets the designer's two browser plugins by their own names, t
   const shell = fakeBinary(join(scratch, "shell/chrome-headless-shell"));
 
   assert.deepEqual(cursorPlugins(shell), {
-    playwright: { playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated", "--executable-path", shell] } },
+    playwright: { playwright: { command: "npx", args: ["-y", "@playwright/mcp@0.0.83", "--headless", "--isolated", "--executable-path", shell] } },
     "chrome-devtools-mcp": { "chrome-devtools": { command: "npx", args: ["-y", "chrome-devtools-mcp@1.11.0", "--headless", "--isolated", "--executablePath", shell] } },
   });
 });
 
 test("with no headless shell to be found, the two servers are still headless and isolated, with no browser path", () => {
   assert.deepEqual(cursorPlugins(join(scratch, "nowhere/chrome-headless-shell")), {
-    playwright: { playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated"] } },
+    playwright: { playwright: { command: "npx", args: ["-y", "@playwright/mcp@0.0.83", "--headless", "--isolated"] } },
     "chrome-devtools-mcp": { "chrome-devtools": { command: "npx", args: ["-y", "chrome-devtools-mcp@1.11.0", "--headless", "--isolated"] } },
   });
 });
@@ -123,4 +123,22 @@ test("a project with no Skill: init's Skill and its line in AGENTS.md are taken 
   writeFileSync(join(alone, "AGENTS.md"), `${line}\n`);
   withoutSkill(alone);
   assert.deepEqual(readdirSync(alone), []);
+});
+
+test("a project with no Skill: init's record of its line in AGENTS.md is taken out too, its other edits kept (ticket 63)", () => {
+  const dir = mkdtempSync(join(scratch, "project-"));
+  const line = "Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.";
+  writeFileSync(join(dir, "AGENTS.md"), `${line}\n`);
+  mkdirSync(join(dir, ".vernier"));
+  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [vernier(), " };
+  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".vernier/\n" }], created: ["AGENTS.md"] };
+  writeFileSync(join(dir, ".vernier/install.json"), JSON.stringify(record));
+
+  withoutSkill(dir);
+
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".vernier/install.json"), "utf8")), {
+    dependency: true,
+    edits: [config, { file: ".gitignore", before: "", after: ".vernier/\n" }],
+    created: [],
+  });
 });

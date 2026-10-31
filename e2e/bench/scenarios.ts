@@ -35,6 +35,9 @@ export interface SavedChange {
   after?: any;
   /** A layer placed by its X and Y: the margins the canvas draws it past them by. */
   margins?: { x: number; y: number };
+  /** A change at a breakpoint: its range, and the parts of it the page was read in. */
+  breakpoint?: object;
+  parts?: object[];
 }
 
 /**
@@ -134,6 +137,12 @@ async function moveOffTheCanvas(page: Page, name: string, onCanvas: Locator) {
 async function saved(desk: Desk, count: number) {
   for (let tries = 0; desk.changeSet()?.changes.length !== count; tries++) {
     if (tries > 100) throw new Error(`The round has ${desk.changeSet()?.changes.length ?? 0} changes saved, not ${count}`);
+    await desk.page.waitForTimeout(100);
+  }
+  // A style change at a breakpoint is saved again once the page is read in each part of its range (ticket 65): the example's ranges all have parts.
+  const unread = () => desk.changeSet()!.changes.filter((change) => change.kind === "style" && change.breakpoint && !["x", "y", "absolute"].includes(change.property ?? "") && !change.parts);
+  for (let tries = 0; unread().length; tries++) {
+    if (tries > 100) throw new Error(`Changes ${unread().map((change) => change.id).join(", ")} are saved with no parts of their range read`);
     await desk.page.waitForTimeout(100);
   }
 }

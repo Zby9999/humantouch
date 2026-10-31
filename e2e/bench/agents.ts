@@ -92,10 +92,17 @@ export function headlessShell(env: NodeJS.ProcessEnv = process.env, chromiumPath
 export function browserPlugins(headlessShellPath: string | null): { name: BrowserPlugin; mcpServers: Record<string, { command: string; args: string[] }> }[] {
   const path = (flag: string) => (headlessShellPath ? [flag, headlessShellPath] : []);
   return [
-    { name: "playwright", mcpServers: { playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated", ...path("--executable-path")] } } },
+    { name: "playwright", mcpServers: { playwright: { command: "npx", args: ["-y", `@playwright/mcp@${PLAYWRIGHT_MCP}`, "--headless", "--isolated", ...path("--executable-path")] } } },
     { name: "chrome-devtools-mcp", mcpServers: { "chrome-devtools": { command: "npx", args: ["-y", "chrome-devtools-mcp@1.11.0", "--headless", "--isolated", ...path("--executablePath")] } } },
   ];
 }
+
+/**
+ * The version of `@playwright/mcp` the designer's plugin asks for as `@latest`,
+ * pinned to the one npx had installed for it when 64 and 65 ran (ticket 63):
+ * `@latest` asks the registry on every run, and would follow a new release.
+ */
+export const PLAYWRIGHT_MCP = "0.0.83";
 
 /** The designer's browser plugins the bench gives Cursor headless copies of, by their names. */
 const BROWSER_PLUGINS = ["playwright", "chrome-devtools-mcp"] as const;

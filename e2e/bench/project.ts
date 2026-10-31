@@ -21,7 +21,8 @@ const SKILL_LINE = /^Vernier Kit: .*skills\/vernierkit\/SKILL\.md`\.\n/m;
 /**
  * Takes out of the project in `dir` what `init` put there for the Agent to
  * find the Skill by: the Skill, its folders when left empty, and its line in
- * AGENTS.md (the file too, when that was all of it). The package keeps its own copy.
+ * AGENTS.md (the file too, when that was all of it), and that line in what
+ * `init` recorded in `.vernier/install.json`. The package keeps its own copy.
  */
 export function withoutSkill(dir: string) {
   for (const folder of SKILL_FOLDERS) {
@@ -29,6 +30,14 @@ export function withoutSkill(dir: string) {
     for (let parent = dirname(folder); parent !== "."; parent = dirname(parent)) {
       if (existsSync(join(dir, parent)) && !readdirSync(join(dir, parent)).length) rmSync(join(dir, parent), { recursive: true });
     }
+  }
+  // What `init` recorded of that line goes too: `doctor` and `remove` find nothing of it to stand on (ticket 63).
+  const record = join(dir, ".vernier/install.json");
+  if (existsSync(record)) {
+    const installed = JSON.parse(readFileSync(record, "utf8"));
+    installed.edits = installed.edits.filter((edit: { file: string }) => edit.file !== "AGENTS.md");
+    installed.created = installed.created.filter((file: string) => file !== "AGENTS.md");
+    writeFileSync(record, `${JSON.stringify(installed, null, 2)}\n`);
   }
   const agents = join(dir, "AGENTS.md");
   if (!existsSync(agents)) return;

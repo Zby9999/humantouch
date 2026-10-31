@@ -127,7 +127,8 @@ function modelsIn(value: unknown): string[] {
 function where(input: Event): Pick<ToolCall, "command" | "path" | "skill"> {
   if (typeof input.command === "string") return { command: input.command };
   if (typeof input.skill === "string") return { skill: input.skill };
-  const path = input.file_path ?? input.path;
+  // Cursor's glob names the folder it looks in as its target.
+  const path = input.file_path ?? input.path ?? input.targetDirectory;
   return typeof path === "string" ? { path } : {};
 }
 
@@ -148,6 +149,8 @@ export interface ToolCallStats {
   dones: number;
   /** Whether it ran `finish`. */
   finished: boolean;
+  /** Calls that read the Vernier Kit package itself, in `node_modules` (its built code, its own Skill), rather than run its command line (ticket 65). */
+  packageReads: number;
   /**
    * Characters the Agent read: of the Skill (loaded, or read as a file), of
    * `claim`'s output, and of every tool's output, those two included.
@@ -183,6 +186,15 @@ function readsTheSkill(call: ToolCall): boolean {
   return call.skill === "vernierkit" || SKILL_FILE.test(call.path ?? "") || (/^\s*(cat|head|sed|less)\b/.test(call.command ?? "") && SKILL_FILE.test(call.command ?? ""));
 }
 
+/** The package in the project's `node_modules`, as linked or in pnpm's store. */
+const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?vernierkit(?:[\/\s"'`]|$)/;
+
+/** A call that reads the package itself: not one that runs its command line, by `npx` or by its file. */
+function readsThePackage(call: ToolCall): boolean {
+  if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !vernierkitCommands(call.command).length && !/vernierkit\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
+  return IN_PACKAGE.test(call.path ?? "");
+}
+
 export function toolCallStats(calls: ToolCall[]): ToolCallStats {
   const commands = calls.flatMap((call) => (call.command ? vernierkitCommands(call.command) : []));
   const sum = (some: ToolCall[]) => some.reduce((total, call) => total + (call.size ?? call.output.length), 0);
@@ -192,6 +204,7 @@ export function toolCallStats(calls: ToolCall[]): ToolCallStats {
     claims: commands.filter((command) => command === "claim").length,
     dones: commands.filter((command) => command === "done").length,
     finished: commands.includes("finish"),
+    packageReads: calls.filter(readsThePackage).length,
     charsRead: {
       skill: sum(calls.filter(readsTheSkill)),
       claim: sum(calls.filter((call) => call.command !== undefined && vernierkitCommands(call.command).includes("claim"))),
