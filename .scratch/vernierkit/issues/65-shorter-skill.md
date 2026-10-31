@@ -6,13 +6,16 @@
 
 **Blocked by:** 63, 64
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Skill 只剩流程与报告格式，长度不超过现在的三分之一
-- [ ] `claim` 的输出只包含这一轮出现过的改动种类的写法，每种只出现一次
-- [ ] 真实 Agent（与 63 同一 Agent、同一模型）：每轮读入的字数比 63 的基线少；整轮用时、每条平均工具调用次数不高于基线；1:1 落地率、设计变量使用率、虚假的 ✓ 不变差；前后数字记在 Comments
-- [ ] 不加载 Skill 的场景：只对 Agent 说「运行 `npx vernierkit claim`，照输出落地」，真实 Agent 能走完一轮，报告格式合规
-- [ ] spec 中 Skill 的内容随之更新
+- [x] Skill 只剩流程与报告格式，长度不超过现在的三分之一（146 → 40 行，25,106 → 3,673 字节）
+- [x] `claim` 的输出只包含这一轮出现过的改动种类的写法，每种只出现一次
+- [ ] 真实 Agent（与 63 同一 Agent、同一模型）：每轮读入的字数比 63 的基线少；整轮用时、每条平均工具调用次数不高于基线；1:1 落地率、设计变量使用率、虚假的 ✓ 不变差；前后数字记在 Comments（未全部达到：Claude 每项都达到；Cursor 整轮用时中位数 61.52 → 76.21 秒，高于基线 B，其余各项达到。归因见 Comments「Cursor 整轮用时高于基线 B」）
+- [ ] 不加载 Skill 的场景：只对 Agent 说「运行 `npx vernierkit claim`，照输出落地」，真实 Agent 能走完一轮，报告格式合规（未全部达到：Claude 10 次都走完一轮，报告合规 8 / 10；Cursor 没跑成，账号里的 Grok 4.7 256K High 在主批之后不能用了，外部原因，见 Comments）
+- [x] spec 中 Skill 的内容随之更新
+- [x] 桌面视图的改动，`claim` 的输出写清两点：作用于所有宽度；项目里该属性已有的断点写法（`sm:`、`md:`）一并覆盖。只在这一轮出现桌面视图的样式改动时打印。10/31 总调度加入，理由：63 的 Grid 列数场景里，两家 Agent 都只改了 `sm:grid-cols-*`，手机宽度仍是 1 列。（promote-and-grid 两家各 3 次都 1:1）
+- [x] `claim` 输出开头的「done after each」和新的 Skill 对齐：改完一条或一组相关改动后 `done`，`finish` 前至少一次。10/31 总调度加入，理由：64 发现这句和 64 改过的 Skill 对不上。
+- [x] 报告格式写得更不容易出错，合规率不比基线 B 差，争取更高。10/31 总调度加入，理由：基线里 Claude 不合规的两种方式是同一条同时出现在 ✓ 和 ⚠️ 下、⚠️ 缺理由那一行。（Claude 19 / 30 → 26 / 30，Cursor 28 / 30 → 30 / 30；「同时在两处」仍有 4 次）
 
 ## 背景
 
@@ -58,7 +61,7 @@
     - Moves、Cells of a Grid、Grids
     - Making a Stack、Make it a Stack、Dissolving a Stack、Sizes
     - New Frame with a brief、Brief、Text、Copies、Data changes
-  - 文字从原 Skill 的对应条目搬过来，没有新加做法。改动那一节已经写全的（新建文字、删除、拖回画布、Wrap it、Drop the margins、设计变量等）不另列。
+  - 文字从原 Skill 的对应条目搬过来，没有新加做法。例外：「All breakpoints」里「本轮在断点单独改过的宽度保留那条改动的值」一句，来自 ADR 0008（桌面视图的改动作用于所有断点，除非某个断点已单独改过），原 Skill 没有写。改动那一节已经写全的（新建文字、删除、拖回画布、Wrap it、Drop the margins、设计变量等）不另列。
   - `last`（撤销上一轮）的输出不带这一节。
 - `finish` 的输出在结果那一行之后给出报告格式，和 Skill 的一样（10/31 第 3 条）。针对基线里 Claude 不合规的两种情况，多写了三句：
   - 每条只出现一次、只在一个标题下；
@@ -250,3 +253,57 @@ Cursor：没跑成。
 - 随后 `cursor-agent --list-models` 列出的 grok 4.7 只有 `grok-4.7-low/medium/high/xhigh`（及 fast），没有 256K 那一档。主批 30 次（最后一次约 13:37 结束）都还是 Grok 4.7 256K High。
 - 账号能用的模型在这几分钟里变了，是外部原因。按 brief 不换成别的模型（换了就不能和基线比），这一批停下，由总调度决定。
 - 这 1 次记作外部原因的尝试，不进任何数字；结果文件夹 `bench-results/agents/2026-10-31T05-44-47-220Z/`。
+
+**code-review（299f522 到 90c572f，两路）**
+
+修了的（5c36f44）：
+- 触发条件漏了几处：
+  - 「Sizes」（Fixed、Hug、Fill 的含义）原来只在改宽高时打印。现在新建 Frame、解散 Stack、断点上改为自由定位也打印，这几种改动的说明里也有「Fixed 宽 × 高」。
+  - 「What sets the value now」现在也在合成 Stack、且说明里有「Currently set by（外边距）」时打印。
+  - 「Make it a Stack」现在也在复制的图层在断点上是真正的 Stack 时打印。
+- 原 Skill 里两句没跟过来，补上了：
+  - 做不到 1:1 时取最接近的，仍要 `done`；不做就不 `done`。这句在「Every change」和 Skill 里。
+  - `finish` 列出没 `done` 的改动时，原来只说「Report why in your reply」，现在说「Report them under ⚠️, with why」。原来这句只在 Skill 里。
+- 命名和结构：
+  - 写法的类型 `Rule` 改名 `HowToWrite`：「规则」和说明里的 CSS 规则同名。`for` 改名 `calledFor`。
+  - 每条写法按一条改动判断，不再各自包一层 `list.some`。
+  - 报告格式挪进自己的模块 `report-form.ts`。
+
+**review 之后的改动没有用真实 Agent 复测。** 上面的数字是 8f5ee30（Skill 3,634 字节）上跑的。5c36f44 的变化：
+- Skill 多 39 字节；
+- 每轮的「Every change」多约 40 字；
+- dissolve-place-frame 多一条「Sizes」，约 160 字；
+- `finish` 遇到没 `done` 的改动时那一句换了说法。
+
+没改的（判断题）：
+- 没加回原 Skill 里「页面怎么核对」那一段（断点改动在哪个宽度核对、结构改动核对哪几种）。
+  - review 也指出这是丢掉的说明，和上面 Cursor 读包代码的归因是同一件事。
+  - 加回来会改变 Cursor 读到的东西，要两家各再跑 30 次才知道效果。Cursor 现在连模型都用不了，这一项交给总调度定。
+- `forOneUsage` 和 `change-notes.ts` 的 `scope()` 判断同一件事（是不是只改一处使用），各写了一次。共用要让 `change-notes.ts` 反过来引入写法模块，留着；两处都有测试。
+- 测量台：
+  - `project.ts` 里 Skill 的文件夹和 AGENTS.md 那一行，和 `install.ts` 各写了一份。测量台不能直接引入包的源码（Node 跑 `.ts` 要求带扩展名），留着；单测按 `init` 写的那一行检查。
+  - `skill` 和提示词在 `main`、`runOnce` 里各算一次；`prompt = PROMPT` 的默认值写了四处。都是测量台内部的，留着。
+- 不加载 Skill 的项目里，`.vernier/` 的安装记录还记着 AGENTS.md 那一行。Agent 若跑 `doctor`，会被告知 `init`，`init` 会把 Skill 装回来。这批 10 次都没有跑 `doctor` 或 `init`。
+- 两条「在 60 之前存下的一轮」的测试改为逐字比对每条改动那几节，比原来宽松。原因：这两条测试要守的是存下的改动单读出来和当时一样，开头和末尾的写法是 65 有意改的。样例文件 `claim.md` 没动，旧的 `claim` 输出也还能对上。
+
+**测试**
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：
+  - 8f5ee30 上 vitest 608 个通过、1 个跳过，测量台的 node 测试 24 个通过；
+  - 5c36f44 上 vitest 613 个通过、1 个跳过，node 测试 24 个通过。
+  - 新加的：`claim` 开头一段 1 个；写法 26 个（每种改动带出哪条写法、每条只出现一次、`last` 不带）；`finish` 的报告格式 1 个；Skill 和 `finish` 的格式逐字相同 1 个；Skill 的长度 1 个；测量台 3 个。
+- `VK_E2E_PORT=5600 pnpm test:e2e`：b5fdf36、5c36f44 上各 321 个通过、1 个跳过（4.9 分钟、4.8 分钟）。
+- 六个剧本：两次都和 66 一样。结果在 `bench-results/playbooks-65-b5fdf36/`、`bench-results/playbooks-65-5c36f44/`。
+- `pnpm bench:agents --dry`、`--dry --no-skill`：10 个场景都设得起来。
+
+**没做到的、有风险的**
+
+- Cursor 整轮用时高于基线 B（见上）。按 brief，整条线不合回 main，由总调度决定。可能的改法是在命令的输出里补上页面怎么核对，要两家复测。
+- 不加载 Skill：
+  - Cursor 没跑成，Grok 4.7 256K High 在这个账号上不能用了。之后能用了要补跑 10 次；要是换模型，就不能和基线比了。
+  - Claude 报告合规 8 / 10。
+- 报告格式：最主要的那种不合规（同一条同时在 ✓ 和 ⚠️ 下），Claude 仍有 4 / 30（主批）和 2 / 10（不加载 Skill）。
+  - 只靠说明压不住。要再往下压，可以让 `finish` 按页面结果先列好每条该放在哪一节，Agent 只填文字；这是新的做法，没做。
+- data-and-text 的复制那一节没说复制的是循环里的第几个实例，Claude 这次复制错了一次。这个缺口 65 之前就有，没改，可以单开一张。
+- `claim` 的输出每轮多了 0.9–3.2 千字。「All breakpoints」几乎每轮都会打印（有桌面视图的样式改动就打印）。Skill 少了约 2.1 万字，合计仍少一半以上。
