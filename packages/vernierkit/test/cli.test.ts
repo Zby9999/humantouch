@@ -1041,9 +1041,17 @@ function openPage(answer: (id: number) => object | null, pages = 1, { saw, answe
   let results: Record<string, object> = {};
   write(results);
   const heard = new Map<string, number>();
+  /** What was last written in answer to each ask, by its key and change id: written again only when it changes, as a page does. */
+  const given = new Map<string, string>();
   const timer = setInterval(() => {
+    let now;
+    try {
+      now = state();
+    } catch {
+      return; // `finish` taking it away as it was read.
+    }
     // What `done` asks, and `finish` before it ends the round.
-    for (const check of [state()?.check, state()?.closing]) {
+    for (const check of [now?.check, now?.closing]) {
       if (!check) continue;
       if (!heard.has(check.key)) {
         heard.set(check.key, performance.now() + answerAfter);
@@ -1056,9 +1064,11 @@ function openPage(answer: (id: number) => object | null, pages = 1, { saw, answe
       for (const id of check.ids) {
         const result = answer(id);
         if (!result) continue;
-        const next = { at: new Date().toISOString(), answers: check.key, ...result };
-        if (JSON.stringify(results[id]) === JSON.stringify(next)) continue;
-        results = { ...results, [id]: next };
+        // Not again and again, as `done` and `finish` both ask for the change: written after `finish` has archived the round, it would come back.
+        const next = JSON.stringify({ at: check.at, answers: check.key, ...result });
+        if (given.get(`${check.key} ${id}`) === next) continue;
+        given.set(`${check.key} ${id}`, next);
+        results = { ...results, [id]: JSON.parse(next) };
         write(results);
       }
     }

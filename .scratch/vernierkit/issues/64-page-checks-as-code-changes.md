@@ -399,3 +399,55 @@
 - `pnpm typecheck` 通过。
 - `pnpm test`：vitest 579 个通过、1 个跳过；测量台的 node 测试 21 个通过。
 - `VK_E2E_PORT=5600 pnpm test:e2e`：3d78ebf 上 321 个通过、1 个跳过。review 后第一遍 320 个通过、1 个失败（上面「跑全套时发现的」那条）、1 个跳过；再跑一遍 321 个通过、1 个跳过。
+
+**`done` 按问题的标记认回答，不再按毫秒时间（2026-10-31，提交 2f035d6 和本条，起点 4d57d39）**
+
+上一节「跑全套时发现的」那条，总调度定在 65 之前修：65 两家各复测 30 次，碰上一次就会给 Agent 一个假的「没显示」。
+
+问题：
+- `done`、`finish` 问页面时，问题里带 `at`（当时的毫秒时间）。页面回答时带回这个 `at`，CLI 和本机服务按 `at` 相等认出回答。
+- 页面在代码变化时自己看的结果，`at` 也是当时的毫秒时间。两者落在同一毫秒时，页面自己看的结果就被当成了回答。
+- CLI：`done` 当场收下页面自己看的「没显示、12px」，不再等真正的回答（66 那次就是这样，`done` 不到 30ms 就退出）。
+- 本机服务也按 `at` 判断「这是被问到的」：同一毫秒里一个落后页面没被问到的「没显示」，会被当成回答收下，盖掉别的页面看到的「显示了」，进度环少算。
+
+修法（协议，`service-protocol.ts`）：
+- 问题（`CheckAsk`）多了 `key`：CLI 每问一次（`done`、`finish` 各一次）用 `randomUUID()` 生成一个。`at` 保留，只表示什么时候问的（测量台按它记 `done` 的时间）。
+- 页面的结果（`CheckReport`）多了 `answers`：回答某个问题时带上那个问题的 `key`；页面在代码变化时自己看的结果不带。`at` 统一表示页面什么时候看的（回答也用页面看的时间，不再抄问题的 `at`）。
+- CLI 只收 `answers` 等于这次 `key` 的结果；本机服务只把带着当前 `check` 或 `closing` 的 `key` 的结果当作被问到的。「两个页面回答同一个问题时，能核对的那个说了算」也改为按 `answers` 判断。
+- 页面每个问题只答一次，也改为按 `key` 记；编辑层按 `key` 的变化去答新的问题。
+- 64 原有的行为没有变：页面已显示的当场再看一眼就回答；`done 1 2 3` 一次问多条；等 Agent 最后一次改动到达页面再下结论；有第二个页面连着时，没有页面能核对的改动不白等。没有打开的页面时，用这一轮页面看到的「显示了」，照旧按 `at` 不早于认领。
+- 66 的提示没有碰：提示的代码（`code-changes.ts`、`CodeChangeNotice.tsx`）没改。
+
+切换按钮体积（照 ticket 34 的量法：发布的文件 `react.dev.js` + 共用 chunk，各自 gzip，zlib 默认级别）：
+
+| | 4d57d39（前） | 2f035d6（后） | 目标 |
+|---|---|---|---|
+| 页面加载时的编辑层代码 | 10,001 B | 10,001 B | ≤ 10,240 B（10 KiB） |
+
+- 协议只加了类型，没有加常量，共用 chunk 一字节没变；页面一边的改动都在进入编辑模式才加载的 `editor.dev.js` 里（gzip 后 97,381 B）。
+
+测试：
+- 单测 `cli.test.ts`「what the page saw as the code changed, in the very millisecond done asks, is no answer to it: done waits for the page's answer」：只固定 `Date`（`vi.useFakeTimers({ toFake: ["Date"] })`），模拟的页面一看到问题就写下自己看的「没显示」（和问题同一毫秒），300ms 后再回答「显示了」。
+  - 修之前失败：`done 1` 当场输出「0 of 2 changes applied … it does not show the change. The fill is #FFFFFF」，和 66 那次一样。
+  - 修之后通过：`done` 等到真正的回答，输出「it shows the change」。
+- 单测 `off-canvas-service.test.ts`「a page behind the one that showed a change, saying unasked it does not show, in the very millisecond done asks, is not taken for an answer; the answer to the ask is」：页面先报「显示了」，再有一个和问题同一毫秒、没带 `key` 的「没显示」，进度仍算这一条；带着 `key` 的「没显示」才算。修之前失败（`applied` 是 `[]`），修之后通过。
+- 单测 `edits.browser.test.ts`「asked by done while the dev server brings the edit in…」：改为按 `answers` 找回答，并断言页面自己看的结果都不带 `answers`。只改协议类型、页面还没改时失败（找不到回答），改了页面后通过。
+- 模拟页面的测试工具 `openPage` 改为带上问题的 `key` 回答，其余 CLI 单测照旧通过。
+- 跑负载时发现、一起修的（只在测试里）：模拟页面 `openPage` 在每一跳里把 `done` 的问题和 `finish` 的问题都答一遍。两个问题都问到同一条改动时，`checks.json` 里这条的结果在两个回答之间来回换，每 20ms 重写一次文件，`finish` 归档删掉 `checks.json` 之后还可能写回来。「finish names the changes the page did not show, and archives the checks」因此在两路 `pnpm test` 同时跑时偶尔失败（最后一步 `checks.json` 还在）。
+  - 改法：模拟页面对每个问题、每条改动，只在回答变了时才再写，和真的页面一样；读状态文件时，`finish` 正好删掉它就跳过这一跳。
+  - 来回换在按 `at` 认回答时也有（两个问题的 `at` 不同），这一点是推断，没有在 4d57d39 上复现。
+  - 两路 `pnpm test` 同时跑：改之前 102 次里失败 3 次（只改了第一处时）；改之后 143 次，全部通过。
+
+在机器忙时（两路 `pnpm test` 循环同时跑）：
+- 66 的「no notice as the Agent claims the round and edits the code at once, before the page hears of the claim」连跑 20 次，20 次通过；负载刚起来时先跑过一批 20 次（load 1.5 → 6.3），也是 20 次通过。第二批跑的时候 load 5.9–8.0。
+- `round.spec.ts` 整个文件连跑 20 遍（17 条 × 20 = 340 个），340 个通过，18.4 分钟，load 7.8–24.3。
+
+没做到、有风险的：
+- 页面答完一个问题后，代码马上又变，页面自己看的结果会在 CLI 下一次读 `checks.json`（每 50ms）之前盖掉这个回答。`checks.json` 每条改动只留最新的一个结果，这个问题按 `at` 认回答时就有。碰上时 `done` 等满 26 秒，说「the page did not answer in time」，不会给出假的结果。没有改：要改成按问题分开存回答，改动面更大。
+- 认领期间升级 Vernier Kit 时，旧的状态文件里的问题没有 `key`。新的 CLI 每次都生成新的问题，不受影响。
+
+**测试（本条）**
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 581 个通过、1 个跳过（多了上面两条新单测）；测量台的 node 测试 21 个通过。
+- `VK_E2E_PORT=5600 pnpm test:e2e`：321 个通过、1 个跳过（4.5 分钟）。
