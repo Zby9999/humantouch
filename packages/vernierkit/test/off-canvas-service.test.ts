@@ -98,6 +98,21 @@ describe("layers off the canvas, in the local service", () => {
   });
 });
 
+describe("the pages open on the round", () => {
+  test("a page that stops listening at once, as React's strict mode has it on mount, is not counted as open from then on", async () => {
+    await call("PUT", ROUND_PATH, { canvas: "<html></html>", changeSet: { lastId: 0, changes: [] } });
+    const folder = vernierFolder(root);
+    for (let i = 0; i < 40; i++) {
+      const stop = new AbortController();
+      const listening = fetch(`${service.url}${EVENTS_PATH}`, { headers: { [TOKEN_HEADER]: service.token }, signal: stop.signal }).catch(() => {});
+      setTimeout(() => stop.abort(), i % 4);
+      await listening;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(JSON.parse(readFileSync(folder.checks, "utf8")).pages).toBe(0);
+  });
+});
+
 describe("how the round stands, as the editor layer is told", () => {
   test("which changes count as applied: those the page shows, done or not, and those done that it cannot check; not one done that it does not show", async () => {
     const folder = vernierFolder(root);

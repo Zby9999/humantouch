@@ -129,9 +129,12 @@ export async function startService({ root }: { root: string }): Promise<Service>
         await rm(files.changeSet, { force: true });
         await rm(files.canvas, { force: true });
         return send(res, 204);
-      case `GET ${EVENTS_PATH}`:
+      case `GET ${EVENTS_PATH}`: {
         res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" });
-        res.write(`${JSON.stringify(await status())}\n`);
+        const now = await status();
+        // Gone while the status was read (React's strict mode stops listening right after it starts): no page open here.
+        if (res.destroyed) return;
+        res.write(`${JSON.stringify(now)}\n`);
         listeners.add(res);
         countPages();
         res.on("close", () => {
@@ -139,6 +142,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
           countPages();
         });
         return;
+      }
       case `POST ${CHECKS_PATH}`: {
         const state = await readState(files);
         if (!state) return send(res, 409);
