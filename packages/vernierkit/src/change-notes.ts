@@ -26,6 +26,7 @@ import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/property-table";
 import { variablesLine } from "./variable-notes";
+import { writingRules } from "./writing-rules";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
@@ -35,13 +36,18 @@ export interface NotesOptions {
   intro(count: string): string;
   /** A status line for each change, when there is one to give. */
   status?(change: Change): string;
+  /** What the notes end with, after the last change. */
+  end?(list: Change[]): string;
 }
 
 /** For a round to apply. */
 export const TO_APPLY: NotesOptions = {
   heading: "Design changes to apply",
   intro: (count) =>
-    `${count}, made by the designer in Vernier Kit. Apply each one to the source as the project already writes styles, and run \`npx vernierkit done <number>\` after each. When you are through them, run \`npx vernierkit finish\`.`,
+    `${count}, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round. ` +
+    "After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers: it says whether the designer's page shows each. " +
+    "Run it at least once before `npx vernierkit finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
+  end: writingRules,
 };
 
 /** "1 change", "3 changes". */
@@ -54,7 +60,7 @@ export function describeChanges(list: Change[], root: string, options: NotesOpti
   const count = changes(list.length);
   let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
   for (const change of list) notes += section(change, list, root, options.status?.(change));
-  return notes;
+  return notes + (options.end?.(list) ?? "");
 }
 
 function section(change: Change, list: Change[], root: string, status: string | undefined): string {

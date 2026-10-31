@@ -94,7 +94,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "2");
   await expect(badge(page)).toHaveCount(0);
 
-  expect(await vernierkit("finish")).toBe("Round finished: 2 of 2 changes applied.\n");
+  expect(await vernierkit("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report:/);
   await expect(progress(page)).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "finished", done: [1], applied: [1, 2], checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" } } }]);
 });
@@ -112,7 +112,7 @@ test("a change the page shows, undone by a later edit before any done: the ring 
 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(badge(page)).toHaveText("2");
-  expect(await vernierkit("finish")).toBe("Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n");
+  expect(await vernierkit("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n\nEnd your reply with this report:/);
 });
 
 /** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */
@@ -347,7 +347,7 @@ test.describe("done checks the change on the page", () => {
     const fixed = await vernierkit("done", "1");
     expect(fixed).toContain("Checked on the page: it shows the change.");
 
-    expect(await vernierkit("finish")).toBe("Round finished: 1 of 1 change applied.\n");
+    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report:/);
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
 

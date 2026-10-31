@@ -10,6 +10,7 @@ import { ordinal, propertyName, value } from "./design-values";
 import type { PlacedOnPage } from "./client/check";
 import type { Change, Margins, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
+import { REPORT_FORM } from "./writing-rules";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
@@ -129,7 +130,7 @@ function checkLine(change: Change, result: CheckResult | undefined): string {
     case "not shown":
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
-      return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}.`;
+      return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
   }
 }
 
@@ -280,7 +281,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}. Report why in your reply.`;
   if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}. Report them as not applied 1:1, with why.`;
-  io.write(`${text}\n`);
+  io.write(`${text}\n\n${REPORT_FORM}`);
   return 0;
 }
 

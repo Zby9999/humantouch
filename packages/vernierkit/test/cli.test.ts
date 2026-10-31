@@ -65,6 +65,19 @@ function section(notes: string, id: number) {
   return notes.split(/^## /m).find((part) => part.startsWith(`${id}. `)) ?? "";
 }
 
+/** The change notes' sections of the changes, one after another: what is said around them left out. */
+function changeSections(notes: string) {
+  return notes
+    .split(/^## /m)
+    .filter((part) => /^\d+\. /.test(part))
+    .join("## ");
+}
+
+/** What `finish` says of the round: its first line, before the form of the report. */
+function finished(output: string) {
+  return output.slice(0, output.indexOf("\n") + 1);
+}
+
 /** Runs the command line in the project, as an Agent would: what it prints, and its errors apart. */
 async function cli(...args: string[]) {
   let output = "";
@@ -163,6 +176,118 @@ describe("claim", () => {
     expect(notes).toContain(
       "- **Scope:** **Usage not determined.** Pricing is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page at `/pricing?plan=team` (Layer, above), and leave the other usages of Pricing as they are.\n",
     );
+  });
+});
+
+describe("claim, the way through a round (ticket 65)", () => {
+  test("opens with the way through the round: done after a change or a group of related ones, at least once before finish, then the report", async () => {
+    saveRound(redFill, smallRadius);
+
+    const { output } = await cli("claim");
+
+    const intro = output.split(/^## /m)[0];
+    expect(intro).not.toMatch(/after each/);
+    expect(intro).toContain("After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers");
+    expect(intro).toContain("at least once before `npx vernierkit finish`");
+    expect(intro).toContain("report");
+  });
+});
+
+describe("claim, how to write the changes (ticket 65)", () => {
+  /** The rules the notes end with, by name: each `- **Name:** text` line of **How to write them**. */
+  function rules(notes: string) {
+    const [, section = ""] = notes.split(/^## How to write them\n/m);
+    return section.split("\n").flatMap((line) => {
+      const [, name, text] = /^- \*\*(.+?):\*\* (.*)$/.exec(line) ?? [];
+      return name ? [{ name, text }] : [];
+    });
+  }
+  const names = (notes: string) => rules(notes).map((rule) => rule.name);
+  const rule = (notes: string, name: string) => rules(notes).find((r) => r.name === name)?.text ?? "";
+
+  const inApp = { ...cards, loc: "src/App.tsx:27:9", chain: [APP], component: "App", instances: 1 };
+  const container = { ...inApp, loc: "src/App.tsx:20:7", context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, more: object = {}) => ({ container: { layer: "4", target: container, ...more }, nth, slot: nth - 1, absolute: null });
+  const style = (property: string, more: object = {}) => ({ ...redFill, target: inApp, property, ...more });
+  const change = (kind: string, more: object = {}) => ({ ...redFill, kind, property: kind, target: inApp, before: place(1), after: place(2), style: {}, sources: [], ...more });
+  const settings = { direction: "vertical", gap: 8, padding: [0, 0, 0, 0], align: { x: "start", y: "start", distribute: false } };
+  const ruleSource = (selector: string, layer: string | null, file = "src/index.css") => ({ properties: ["background-color"], kind: "rule", selector, file, layer, important: false, className: null, declaration: "background-color: white" });
+
+  test("end with how to write them, after the last change: the rules for every round, and those for the kinds of change in this one only, each once", async () => {
+    saveRound(style("fill"), { ...style("radius"), id: 2, before: 12, after: 4 });
+
+    const { output } = await cli("claim");
+
+    expect(output.indexOf("## How to write them")).toBeGreaterThan(output.indexOf("## 2. "));
+    expect(names(output)).toEqual(["Every change", "What sets the value now", "All breakpoints"]);
+    expect(rule(output, "Every change")).toContain("the reference style is the CSS that showed it on the canvas, to understand it by, not code to paste");
+    expect(rule(output, "Every change")).toContain("Never change third-party code");
+  });
+
+  test.each([
+    ["a rule in no CSS layer sets the value", "A rule in no CSS layer", [style("fill", { sources: [ruleSource("button", null)] })]],
+    ["a CSS Module sets the value", "CSS Modules", [style("fill", { sources: [ruleSource(".card", null, "src/components/Card.module.css")] })]],
+    ["a change at a breakpoint", "Breakpoints", [style("fill", { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } } })]],
+    [
+      "a layer placed freely at a breakpoint",
+      "Absolute at a breakpoint",
+      [style("absolute", { before: null, after: { x: 12, y: 40 }, breakpoint: { min: null, max: 768 }, style: { position: "absolute", left: "12px", top: "40px" } })],
+    ],
+    ["a change for one usage of a component", "This usage only", [redFill]],
+    ["a change promoted to the component", "The component itself", [{ ...redFill, scope: "component" }]],
+    ["a move", "Moves", [change("move")]],
+    ["a move to another cell of a Grid", "Cells of a Grid", [change("move", { before: place(1, { grid: true }), after: place(3, { grid: true }) })]],
+    ["a Grid's columns", "Grids", [style("columns", { before: 3, after: 2 })]],
+    ["a Grid's row gap", "Grids", [style("rowGap", { before: 16, after: 24 })]],
+    ["a Stack made", "Making a Stack", [change("stack", { before: null, after: { ...settings, place: place(1), layers: [{ layer: "5", target: inApp, from: place(1) }] } })]],
+    ["a plain flow made a real Stack", "Make it a Stack", [style("gap", { before: 0, after: 16, asStack: true })]],
+    [
+      "a Stack dissolved",
+      "Dissolving a Stack",
+      [change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target: inApp, x: 0, y: 0, width: 200, height: 40 }] } })],
+    ],
+    ["a size", "Sizes", [style("width", { before: { type: "hug" }, after: { type: "fill" } })]],
+    ["a new Frame with a brief", "New Frame with a brief", [change("create", { before: null, after: { type: "frame", place: place(2), width: 200, height: 120, brief: "A pricing table" } })]],
+    ["a brief", "Brief", [change("brief", { before: null, after: "Bounce back harder when pressed" })]],
+    ["new words", "Text", [change("text", { before: "Vernier Kit", after: "Vernier Studio" })]],
+    [
+      "a copy with values of its own at breakpoints",
+      "Copies",
+      [change("duplicate", { copiedBreakpoints: [{ change: 9, inside: null, breakpoint: { min: null, max: 768 }, property: "radius", value: 4 }] })],
+    ],
+    ["a loop's instance deleted", "Data changes", [change("delete", { data: true, target: { ...inApp, instances: 3 }, after: null })]],
+  ])("%s: the notes say how to write it (%s)", async (_, name, round) => {
+    saveRound(...round.map((c, i) => ({ ...c, id: i + 1 })));
+
+    const output = (await cli("claim")).output;
+
+    expect(names(output)).toContain(name);
+  });
+
+  test("a rule is said once, however many changes call for it; none a change of the round does not call for", async () => {
+    saveRound({ ...change("move"), id: 1 }, { ...change("move", { before: place(2), after: place(1) }), id: 2 }, { ...change("text", { before: "A", after: "B" }), id: 3 });
+
+    const all = names((await cli("claim")).output);
+
+    expect(all).toEqual(["Every change", "Moves", "Text"]);
+  });
+
+  test("the notes of the last round, to undo it by, say none", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    await cli("finish");
+
+    expect((await cli("last")).output).not.toContain("How to write them");
+  });
+
+  test("a change made in the desktop view applies at every width: what the project writes for that property at its breakpoints is covered too", async () => {
+    saveRound(redFill);
+
+    const all = rule((await cli("claim")).output, "All breakpoints");
+
+    expect(all).toContain("applies at every width");
+    expect(all).toContain("a breakpoint variant such as `sm:` or `md:`");
+    expect(all).toContain("change those too");
   });
 });
 
@@ -999,7 +1124,7 @@ describe("done", () => {
 
     expect(code).toBe(0);
     expect(state()).toMatchObject({ status: "claimed", done: [2] });
-    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with Vernier Kit is open.\n");
+    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with Vernier Kit is open. That is no error: go on.\n");
   });
 
   test("refuses a number that is not a change of the round, or a round not claimed", async () => {
@@ -1246,7 +1371,7 @@ describe("done, checked on the page", () => {
     await cli("claim");
     closePage = openPage(() => ({ outcome: "unchecked", reason: "the layer is not on the page now" }));
 
-    expect((await cli("done", "1")).output).toContain("\nNot checked on the page: the layer is not on the page now.\n");
+    expect((await cli("done", "1")).output).toContain("\nNot checked on the page: the layer is not on the page now. That is no error: go on.\n");
   });
 
   test("of two pages, waits for the one that can check, while the other cannot", async () => {
@@ -1291,7 +1416,7 @@ describe("done, checked on the page", () => {
     );
     await cli("done", "1");
 
-    expect((await cli("finish")).output).toBe("Round finished: 1 of 1 change applied.\n");
+    expect(finished((await cli("finish")).output)).toBe("Round finished: 1 of 1 change applied.\n");
     expect(history()[0].result.checks).toEqual({});
   });
 
@@ -1304,8 +1429,7 @@ describe("done, checked on the page", () => {
 
     const { output } = await cli("finish");
 
-    expect(output).toBe(
-      "Round finished: 1 of 2 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n",
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n",
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
     expect(existsSync(join(project, ".vernier/checks.json"))).toBe(false);
@@ -1326,7 +1450,7 @@ describe("progress, as the page shows it", () => {
 
     const { output } = await cli("finish");
 
-    expect(output).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n");
+    expect(finished(output)).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n");
     expect(history()[0].result).toMatchObject({ done: [2, 3], applied: [1, 3] });
     expect(section((await cli("last")).output, 1)).toContain("- **Status:** Applied\n");
     expect(section((await cli("last")).output, 2)).toContain("- **Status:** Not applied\n");
@@ -1342,7 +1466,7 @@ describe("progress, as the page shows it", () => {
     const { output } = await cli("finish");
 
     expect(closing).toBe(true);
-    expect(output).toBe("Round finished: 1 of 2 changes applied. The page does not show: 1. Report them as not applied 1:1, with why.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 1. Report them as not applied 1:1, with why.\n");
     expect(history()[0].result).toMatchObject({ applied: [2] });
   });
 });
@@ -1357,7 +1481,7 @@ describe("finish", () => {
     const { code, output } = await cli("finish");
 
     expect(code).toBe(0);
-    expect(output).toBe("Round finished: 2 of 2 changes applied.\n");
+    expect(finished(output)).toBe("Round finished: 2 of 2 changes applied.\n");
     expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
     expect(history()).toEqual([
       {
@@ -1374,8 +1498,41 @@ describe("finish", () => {
 
     const { output } = await cli("finish");
 
-    expect(output).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report why in your reply.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report why in your reply.\n");
     expect(history()[0].result.done).toEqual([2]);
+  });
+
+  test("ends with the form of the report: every change once, under one heading only, and each under ⚠️ with why and instead (ticket 65)", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+
+    const { output } = await cli("finish");
+
+    const [first, ...rest] = output.split("\n");
+    expect(first).toBe("Round finished: 0 of 2 changes applied. Not marked done: 1, 2. Report why in your reply.");
+    const form = rest.join("\n");
+    expect(form).toContain("End your reply with this report");
+    expect(form).toContain("✓ Applied\n- 1. ");
+    expect(form).toMatch(/⚠️ Not applied 1:1\n- 3\. Corner radius: <which layer>\n {2}Why: <the reason[^>]*>\n {2}Instead: <what you did, or “left as it was”>\n/);
+    expect(form).toContain("under one heading only");
+    expect(form).toContain("goes under ⚠️ alone, not under ✓ as well");
+    expect(form).toContain("both lines, Why and Instead");
+  });
+
+  test("the Skill is the way through a round and the report only: a third as long as before ticket 65 at most (146 lines, 24935 characters)", () => {
+    const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
+
+    expect(skill.split("\n").length).toBeLessThanOrEqual(146 / 3);
+    expect(skill.length).toBeLessThanOrEqual(24935 / 3);
+  });
+
+  test("the Skill gives the report in the very form finish does", async () => {
+    saveRound(redFill);
+    await cli("claim");
+
+    const form = (await cli("finish")).output.split("\n").slice(1).join("\n").trim();
+
+    expect(readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8")).toContain(form);
   });
 
   test("refuses a round that is not claimed", async () => {
@@ -1576,7 +1733,7 @@ describe("claim, a round saved before the instances of a layer shared their edit
   /** Saved by the code of then (ticket 60): `saved-round.browser.test.ts`. */
   const FIXTURE = join(import.meta.dirname, "fixtures/round-before-60");
 
-  test("prints the change notes as it did then, word for word", async () => {
+  test("prints the notes of each change as it did then, word for word", async () => {
     mkdirSync(join(project, ".vernier"), { recursive: true });
     for (const file of ["canvas.html", "changeset.json", "off-canvas.json"]) writeFileSync(join(project, ".vernier", file), readFileSync(join(FIXTURE, file)));
 
@@ -1585,6 +1742,7 @@ describe("claim, a round saved before the instances of a layer shared their edit
     expect(code).toBe(0);
     // Written once, by the code of then: never over the one kept.
     if (process.env.VK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
-    expect(output).toBe(readFileSync(join(FIXTURE, "claim.md"), "utf8"));
+    // What goes around the changes, the way through the round and how to write them, is of the notes of now (ticket 65).
+    expect(changeSections(output)).toBe(changeSections(readFileSync(join(FIXTURE, "claim.md"), "utf8")));
   });
 });
