@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { startService, type Service } from "../src/service";
-import { CHECKS_PATH, EVENTS_PATH, OFF_CANVAS_PATH, ROUND_PATH, TOKEN_HEADER, type SavedOffCanvasLayer } from "../src/service-protocol";
+import { CHECKS_PATH, EVENTS_PATH, OFF_CANVAS_PATH, ROUND_PATH, STATUS_PATH, TOKEN_HEADER, type SavedOffCanvasLayer } from "../src/service-protocol";
 import { archiveRound, roundStatus, vernierFolder, writeState } from "../src/vernier-folder";
 
 const APP = `export function App() {
@@ -147,5 +147,16 @@ describe("how the round stands, as the editor layer is told", () => {
 
     await report({ outcome: "not shown", actual: 12, undone: true });
     expect(await applied()).toEqual([]);
+  });
+
+  test("asked now, the status is read afresh: claimed the moment the command line claims, before any page is told (ticket 66)", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 1, changes: [] }));
+    expect(await (await call("GET", STATUS_PATH)).json()).toEqual({ status: "editing" });
+
+    await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString() });
+
+    expect(await (await call("GET", STATUS_PATH)).json()).toMatchObject({ status: "claimed", done: [], applied: [] });
   });
 });

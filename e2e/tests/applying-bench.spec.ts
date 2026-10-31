@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
+import { recordUnclaimedNotices, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Page } from "./fixtures";
 import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
 
@@ -35,12 +36,12 @@ const CHANGES = [
 const IDS = [1, 2, 3];
 
 /**
- * The toggle's notice that the Agent seems to have stopped (ticket 67), and
- * the editor layer's that the code changes with no Agent claiming the changes
- * (ticket 66). Neither is there yet: those tickets make these find theirs.
+ * The toggle's notice that the Agent seems to have stopped (ticket 67): not
+ * there yet, that ticket makes this find it. The editor layer's that the code
+ * changes with no Agent claiming the changes (ticket 66) is `unclaimedNotice`,
+ * found as the bench finds it on the designer's page.
  */
 const stallNotice = (page: Page) => page.getByRole("alert").filter({ hasText: /Agent/ });
-const unclaimedNotice = (page: Page) => page.getByRole("alert").or(page.getByRole("alertdialog")).filter({ hasText: /claim/i });
 
 test.beforeEach(() => clearVernier(VERNIER));
 test.afterEach(async () => {
@@ -53,8 +54,9 @@ test.afterAll(() => clearVernier(VERNIER));
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const ring = (page: Page) => page.getByRole("progressbar", { name: "Applying design changes" });
 
-/** The designer makes the round in edit mode, and it is saved. */
+/** The designer makes the round in edit mode, and it is saved. Each time the notice that no Agent claimed the changes shows is noted from here on. */
 async function designTheRound(page: Page) {
+  await recordUnclaimedNotices(page);
   await page.goto(DEV_URL);
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
@@ -151,7 +153,10 @@ test("playbook: the Agent follows the workflow, done after each change, then fin
     falseStallNotices: notices.filter((notice) => notice.stalled).length,
     falseUnclaimedNotices: notices.filter((notice) => notice.unclaimed).length,
     looked: notices.length,
+    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
   });
+  // Ticket 66: an Agent that claims first never has the designer told the code changes unclaimed.
+  expect((await unclaimedNoticesShown(page)).length).toBe(0);
 });
 
 test("playbook: the Agent skips done, applies every change and finishes", async ({ page }) => {
@@ -166,10 +171,13 @@ test("playbook: the Agent skips done, applies every change and finishes", async 
   const atEnd = gaps.at(-1)!;
   await vernierkit("finish");
   const coverage = checkCoverage();
-  record("skips-done", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps) });
+  const unclaimedShown = (await unclaimedNoticesShown(page)).length;
+  record("skips-done", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps), unclaimedNoticesShown: unclaimedShown });
   // Ticket 64: the page checks each change as the code changes, done or not, and the ring counts what it shows.
   expect(coverage).toBe(1);
   expect(atEnd).toBe(0);
+  // Ticket 66: no false notice.
+  expect(unclaimedShown).toBe(0);
 });
 
 test("playbook: the Agent applies every change first, then runs done for them all, then finish", async ({ page }) => {
@@ -183,10 +191,13 @@ test("playbook: the Agent applies every change first, then runs done for them al
   const atEnd = await progressGap(page);
   await vernierkit("finish");
   const coverage = checkCoverage();
-  record("done-all-at-the-end", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(beforeDone, atEnd) });
+  const unclaimedShown = (await unclaimedNoticesShown(page)).length;
+  record("done-all-at-the-end", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(beforeDone, atEnd), unclaimedNoticesShown: unclaimedShown });
   // Ticket 64: no worse than before (100%), and the ring is the page's.
   expect(coverage).toBe(1);
   expect(atEnd).toBe(0);
+  // Ticket 66: no false notice.
+  expect(unclaimedShown).toBe(0);
 });
 
 test("playbook: the Agent stops halfway, with no finish; the designer ends the round and edits again", async ({ page }) => {
@@ -222,7 +233,10 @@ test("playbook: the Agent stops halfway, with no finish; the designer ends the r
     checkCoverageWhenStopped: coverageWhenStopped,
     unappliedKeptForNextRound: kept / unapplied.length,
     appliedBackInNextRound: nextRound.some((change) => change.property === applied),
+    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
   });
+  // Ticket 66: the code the Agent changed while it had the round claimed asks nothing once the designer edits again.
+  expect((await unclaimedNoticesShown(page)).length).toBe(0);
 });
 
 test("playbook: the Agent changes the code with no claim, while the designer is in edit mode", async ({ page }) => {
@@ -230,17 +244,28 @@ test("playbook: the Agent changes the code with no claim, while the designer is 
   // Not claimed: the Agent goes by the chat, not the Skill.
   writeFileSync(CARD, original.replace(CHANGES[0].from, CHANGES[0].to));
   const noticeAfterMs = await watchFor(unclaimedNotice(page), UNCLAIMED_WATCH_MS);
-  // Can the designer still edit, on a canvas the code has moved on from?
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
-  const field = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Corner radius", exact: true });
-  const editable = (await field.count()) > 0 && (await field.isEditable());
+  // Can the designer still edit, on a canvas the code has moved on from? Asked as the notice shows. Paused, nothing behind it takes the press.
+  let editable = false;
+  try {
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click({ timeout: 2000 });
+    const field = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Corner radius", exact: true });
+    editable = (await field.count()) > 0 && (await field.isEditable());
+  } catch {
+    // Not pressed.
+  }
+  const changesKept = (readVernier("changeset.json")?.changes.length ?? 0) / CHANGES.length;
   record("changes-code-unclaimed", {
     detected: noticeAfterMs !== null,
     noticeAfterMs,
     watchedMs: UNCLAIMED_WATCH_MS,
     editingPaused: !editable,
-    changesKept: (readVernier("changeset.json")?.changes.length ?? 0) / CHANGES.length,
+    changesKept,
+    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
   });
+  // Ticket 66: found, with editing paused as the notice shows, and not a change of the canvas's lost.
+  expect(noticeAfterMs).not.toBeNull();
+  expect(editable).toBe(false);
+  expect(changesKept).toBe(1);
 });
 
 test("playbook: the Agent sits still a long time between two changes, then goes on to finish", async ({ page }) => {
@@ -264,5 +289,8 @@ test("playbook: the Agent sits still a long time between two changes, then goes 
     noticeLeftAfterResuming: noticeAfterResuming > 0,
     checkCoverage: checkCoverage(),
     progressGapAtEnd: atEnd,
+    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
   });
+  // Ticket 66: an Agent that sits still and goes on, claimed all along, never has the designer told the code changes unclaimed.
+  expect((await unclaimedNoticesShown(page)).length).toBe(0);
 });

@@ -46,3 +46,18 @@ export function holdPointer(pointerId: number): () => void {
 export function pointerHeld(): boolean {
   return held.size > 0;
 }
+
+/**
+ * Runs `then` once no press is held: at once when none is, else in the task
+ * after the pointer is let go, so what the press does as it ends (a drop, say) is done first.
+ */
+export function whenLetGo(then: () => void) {
+  if (!pointerHeld()) return then();
+  const go = () => {
+    window.removeEventListener("pointerup", go, true);
+    window.removeEventListener("pointercancel", go, true);
+    setTimeout(() => whenLetGo(then));
+  };
+  window.addEventListener("pointerup", go, true);
+  window.addEventListener("pointercancel", go, true);
+}

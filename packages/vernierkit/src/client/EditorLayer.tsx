@@ -2,11 +2,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
+import { CodeChangeNotice } from "./CodeChangeNotice";
+import { watchCodeChanges } from "./code-changes";
 import type { ProjectBreakpoints } from "./breakpoints";
 import { putBackBy, withDependents, type Change } from "./changeset";
 import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { watchPage, type PageChecks } from "./page-checks";
+import { whenLetGo } from "./pointer-held";
 import { revertSaved } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
@@ -69,6 +72,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * they left: once anything else saves it, they are dropped.
    */
   const listSteps = useRef<{ past: ListStep[]; future: ListStep[] }>({ past: [], future: [] });
+  /** Editing is paused: the code changed in edit mode with no Agent claiming the round (ticket 66). */
+  const [paused, setPaused] = useState(false);
   /** The canvas, while edit mode is up: the change list works on it then. */
   const control = useRef<RoundControl | null>(null);
 
@@ -236,6 +241,26 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   );
   // In edit mode, the way back and the changes so far sit beside the Design panel's title, in place of the toggle.
   const editing = mode === "edit" && shellShown.current;
+
+  // In edit mode, with the round not claimed, the code changing under the canvas pauses editing (ticket 66). A file the
+  // page does not use brings nothing in; a claim, as the Agent applies the round, folds edit mode away instead. The
+  // Agent may claim and edit at once, before the page hears of the claim: the local service is asked how the round stands.
+  const unclaimed = editing && !claimed;
+  useEffect(() => {
+    if (!unclaimed) return setPaused(false);
+    let watching = true;
+    const stop = watchCodeChanges(window, () => {
+      const now = store ? store.status().catch(() => lastStatus.current) : Promise.resolve(lastStatus.current);
+      void now.then((status) => {
+        // A press under way ends first, as the designer meant it: what it does is an edit made before the pause.
+        if (watching && status?.status !== "claimed") whenLetGo(() => watching && setPaused(true));
+      });
+    });
+    return () => {
+      watching = false;
+      stop();
+    };
+  }, [unclaimed]);
   return (
     <>
       {shellShown.current && (
@@ -277,11 +302,21 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           onSaveOffCanvas={saveOffCanvas}
           onChanges={setLive}
           control={control}
+          paused={unclaimed && paused}
           leaving={mode === "leaving"}
           animate={animate}
           onLeft={() => {
             setMode("preview");
             setLive(null);
+          }}
+        />
+      )}
+      {unclaimed && paused && (
+        <CodeChangeNotice
+          onKeepEditing={() => setPaused(false)}
+          onBackToPreview={(animate) => {
+            setPaused(false);
+            switchMode(animate);
           }}
         />
       )}

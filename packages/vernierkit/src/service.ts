@@ -22,6 +22,7 @@ import {
   EVENTS_PATH,
   OFF_CANVAS_PATH,
   ROUND_PATH,
+  STATUS_PATH,
   TOKEN_HEADER,
   UNLOCK_PATH,
   VARIABLES_PATH,
@@ -143,6 +144,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
         });
         return;
       }
+      case `GET ${STATUS_PATH}`:
+        return send(res, 200, JSON.stringify(await status()));
       case `POST ${CHECKS_PATH}`: {
         const state = await readState(files);
         if (!state) return send(res, 409);
@@ -188,7 +191,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 

@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+import { after, before, test } from "node:test";
+import { chromium, type Browser, type Page } from "@playwright/test";
+import { recordUnclaimedNotices, unclaimedNoticesShown } from "./notices.ts";
+
+let browser: Browser;
+before(async () => {
+  browser = await chromium.launch();
+});
+after(() => browser.close());
+
+/** A page with the editor layer's host, as `mount.ts` puts it on the page, and a way to show and take away a notice in its Shadow DOM. */
+async function pageWithEditorLayer(): Promise<Page> {
+  const page = await browser.newPage();
+  await recordUnclaimedNotices(page);
+  await page.route("http://bench.test/", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><main></main>" }));
+  await page.goto("http://bench.test/");
+  await page.evaluate(() => {
+    const host = document.createElement("vernier-kit");
+    host.attachShadow({ mode: "open" }).append(document.createElement("div"));
+    document.documentElement.append(host);
+  });
+  return page;
+}
+
+const show = (page: Page, text: string) =>
+  page.evaluate((text) => {
+    const notice = document.createElement("div");
+    notice.setAttribute("role", "alertdialog");
+    notice.innerHTML = `<h2>${text}</h2>`;
+    document.querySelector("vernier-kit")!.shadowRoot!.firstElementChild!.append(notice);
+  }, text);
+const takeAway = (page: Page) => page.evaluate(() => document.querySelector("vernier-kit")!.shadowRoot!.querySelector('[role="alertdialog"]')!.remove());
+
+test("each time the notice that no Agent claimed the changes shows, once however long it stays; other notices are not it", async () => {
+  const page = await pageWithEditorLayer();
+  assert.equal((await unclaimedNoticesShown(page)).length, 0);
+
+  await show(page, "The code is changing, but no Agent has claimed your changes");
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  assert.equal((await unclaimedNoticesShown(page)).length, 1);
+  await takeAway(page);
+  await show(page, "Something else");
+  await takeAway(page);
+  await show(page, "The code is changing, but no Agent has claimed your changes");
+
+  const times = await unclaimedNoticesShown(page);
+  assert.equal(times.length, 2);
+  assert.ok(times[0] <= times[1] && times[1] <= Date.now());
+  await page.close();
+});
+
+test("a notice taken away as soon as the task after is counted; the count is kept when the page loads again", async () => {
+  const page = await pageWithEditorLayer();
+  await page.evaluate(() => {
+    const root = document.querySelector("vernier-kit")!.shadowRoot!.firstElementChild!;
+    const notice = document.createElement("div");
+    notice.setAttribute("role", "alertdialog");
+    notice.textContent = "The code is changing, but no Agent has claimed your changes";
+    root.append(notice);
+    // Taken away a task later, as a claim heard at once would.
+    return new Promise((resolve) => setTimeout(() => resolve(notice.remove()), 0));
+  });
+  assert.equal((await unclaimedNoticesShown(page)).length, 1);
+
+  await page.reload();
+  assert.equal((await unclaimedNoticesShown(page)).length, 1);
+  await page.close();
+});

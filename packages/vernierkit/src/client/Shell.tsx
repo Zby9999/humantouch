@@ -56,6 +56,8 @@ interface Props {
   onChanges(changes: Change[]): void;
   /** Set once there is a canvas, for the change list to reach it. */
   control: { current: RoundControl | null };
+  /** Editing is paused, a notice over the shell (ticket 66): nothing in it takes the pointer or the focus. */
+  paused?: boolean;
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -73,7 +75,7 @@ const NUDGE_RUN_MS = 1000;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, paused = false, leaving, animate, onLeft }: Props) {
   /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
   const [layersShown, setLayersShown] = useState(readLayersShown);
   const layersToggle = useRef<HTMLButtonElement>(null);
@@ -477,7 +479,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   return (
-    <div class={`vk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
+    <div class={`vk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`} inert={paused}>
       {layersShown ? (
         <aside class="vk-panel is-layers" aria-label="Layers">
           <div class="vk-panel-header">

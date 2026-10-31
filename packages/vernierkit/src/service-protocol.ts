@@ -15,6 +15,12 @@ export const ROUND_PATH = "/round";
  * line, the current one first. The answer stays open.
  */
 export const EVENTS_PATH = "/events";
+/**
+ * `GET`: the round's status now, one `RoundStatus`, read afresh: claimed the
+ * moment the command line claims it, before `EVENTS_PATH` tells the pages.
+ * The editor layer asks it as the code changes in edit mode (ticket 66).
+ */
+export const STATUS_PATH = "/status";
 /** `POST`: the designer unlocks a claimed round by hand. It ends as it is. */
 export const UNLOCK_PATH = "/unlock";
 /** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */

@@ -27,7 +27,7 @@ async function keepRoundIn(context: BrowserContext) {
   /** The layers off the canvas, which belong to no round. */
   let offCanvas: string | null = null;
   await context.route(
-    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/unlock", "/checks", "/off-canvas"].includes(url.pathname),
+    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/status", "/unlock", "/checks", "/off-canvas"].includes(url.pathname),
     (route) => {
       const request = route.request();
       const headers = {
@@ -44,6 +44,7 @@ async function keepRoundIn(context: BrowserContext) {
       if (pathname === "/events") {
         return route.fulfill({ status: 200, headers, contentType: "application/x-ndjson", body: `${JSON.stringify({ status: "editing" })}\n` });
       }
+      if (pathname === "/status") return route.fulfill({ status: 200, headers, contentType: "application/json", body: JSON.stringify({ status: "editing" }) });
       if (pathname === "/unlock" || pathname === "/checks") return route.fulfill({ status: 409, headers });
       if (request.method() === "GET" && saved) {
         return route.fulfill({ status: 200, headers, contentType: "application/json", body: saved });
