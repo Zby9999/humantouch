@@ -554,3 +554,101 @@ Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/L
   - 回补的数在 65 的 Comments。Claude 每批都是 0；Cursor A 39、B 5、64 26、65 99。
 - 测量台等断点改动的各段读完、存下，才让 Agent 开始（`scenarios.ts` 的 `saved`，ticket 65 补修）。各段的值是编辑层在设计师改完约半秒后读的，测量台不等的话，Agent 可能在存下之前就认领。
 - 不影响任何已有的计分，也不改 Agent 的命令行。
+
+**基线 B'（Cursor）（2026-10-31，北京时间 16:31–17:52）**
+
+为什么重测：65 之后 Cursor 的整轮用时比基线 B 高，可 B 测完已经过了半天多，Cursor 那边的模型服务可能变了。设计师决定在 B 的同一份代码上再测一次 Cursor，叫基线 B'，紧接着在最终代码上测，和 B' 比（见 65 的 Comments）。B 和 B' 的差，就是这半天模型服务漂移有多大。
+
+条件：
+- 代码：用 `git archive 067d737` 导出到系统临时目录（`$TMPDIR/vk-baselineBprime-067d737-wbmI/`）。067d737 和 B 测的 d3ee07d 是同一份代码，也就是基线 B 的代码。没有在 worktree 里切分支，也没有新建 worktree。
+- 测量台：`e2e/bench/` 用 83d3227 里的那份，就是 B 当时用的，和 067d737 里的一字不差。在上面打了四个补丁：
+  1. 109f7d2：Cursor 的两个浏览器插件改成 headless，用 `--plugin-dir` 加载，并记下 `headedBrowsers`（`git diff 83d3227 109f7d2 -- e2e/bench`）。
+  2. 63e2f57：跳过已经有东西在应答的端口（`git diff cc746bc 63e2f57 -- e2e/bench`）。
+  3. 4ff531e 里的一处：`@playwright/mcp` 固定到 0.0.83（只打了 `PLAYWRIGHT_MCP` 这一处和对应的测试，这个提交里的其他改动没打）。
+  4. 跑到中途加的：用 `VK_BENCH_CURSOR_MODEL` 改 `--model` 的 id（和 2cced7f 同一行改动）。
+     - 理由：账号拒绝了原来的 id，设计师事先定了「后面的运行改用 `grok-4.7-high`」。
+     - 命令行里的 `--model` 要能看出用的是哪个 id。
+  - 别的没打。现在的测量台会等断点改动的各段读完、存下才让 Agent 开始，旧代码不支持这一步，所以 B' 不用现在的测量台。
+  - 补丁打完后：`pnpm typecheck` 通过，`node --test 'e2e/bench/*.test.ts'` 18 个都过，`--dry` 10 个场景都设得起来。
+- 场景、提示、次数和 B 一样：10 个场景 × 3 次，顺序跑，先跑完每个场景的第 1 次。跑的时候没有跑测试。
+- 版本：
+  - agent-cli 用 `VK_BENCH_CURSOR` 指向 `.local/bin/cursor-agent` 这个 symlink，就是 64 起用的那一个。
+  - 跑前跑后都核对过：它指向 `versions/2026.10.22-27dcf5f`，`--version` 是 2026.10.22-27dcf5f。
+  - 两批的 meta.json 版本都是这个；命令行和 64、65 的逐字比过，只有 `--model` 不同（见下）。
+- 模型 id：
+  - 前 25 次用的是原来的 `grok-4.7[context=256k,reasoning_effort=high,fast=false]`，和 B 一样。
+    - 24 次正常跑完。
+    - 第 25 次（promote-and-grid #3，约 17:31）被拒：「Cannot use this model: grok-4.7[context=256k,…]」。可用的模型列表里有 `grok-4.7-high`，没有 256K 那个 id。
+    - 这次 0 次工具调用，测量台照规则停掉了这一批。
+  - 剩下 6 次（promote-and-grid #3 起：reorder-and-move、data-and-text、put-back-and-new-text、phone-breakpoints、dissolve-place-frame 各一次第 3 次）改用 `--model grok-4.7-high`，另起一个结果文件夹。
+    - 测量台不让命令行不同的运行接进同一批，所以必须另起。
+    - init 事件里 6 次报的都是「Grok 4.7 256K High」。
+  - 设计师确认这两个 id 在 Cursor 那边是同一个模型。所以 30 次合在一起算，不分开统计。
+  - 从这次起，测量台的 Cursor 默认用 `grok-4.7-high`（2cced7f），因为原来的 id 时好时坏。`VK_BENCH_CURSOR_MODEL` 可以改成别的 id，命令行里能看到实际用的是哪个。
+- 补跑：被拒的那 1 次属于外部原因，用 `grok-4.7-high` 补跑了 1 次。没有作废的批次。
+- 机器负载（开跑前用 ps 记）：
+  - 第一批开跑前 load 2.9–3.5。在跑的有设计师的 Claude app、Notion、ChatGPT 和 Codex、pi。
+  - 第二批开跑前 load 3.9–4.2。syspolicyd 占约 52%，另外开着 Grok Bot。
+  - 5620–5649 和 5173 上都没有开发服务器。
+- 原始结果（不进 git）：
+  - `bench-results/agents/2026-10-31T08-31-09-baselineBprime-067d737/`：原 id 的 25 次，含被拒的 promote-and-grid #3。
+  - `bench-results/agents/2026-10-31T09-34-05-baselineBprime-067d737-grok-4.7-high/`：6 次。
+  - 合起来的 30 次在 `bench-results/rescored-Bprime/baselineBprime-067d737-30runs/`：去掉了被拒的那次，dissolve-place-frame 已按画布位置重新打分，统计用现在的 metrics 算过。
+  - 同一文件夹里还有 `rescore.json`（逐次明细）、`rescore.ts`（就是 `rescored-position-64/` 里那份，没改），以及下面几张表用的分析脚本：`tally.ts`、`breakdown.py`、`stats.py`。
+
+跑完后怎么打分：
+- dissolve-place-frame 用 64 补完时的重放办法（`rescore.ts`）重新打分，比的是画布画出来的位置。
+  - 3 次重放的旧预期判定，和当时 `raw.json` 记下的 `shownAtEnd` 全部一致。
+  - 3 次都去掉了 `mt-4`、`mt-6`（header、段落、按钮的 `top` 写成 283.2、323.2、488px），画出来比画布高 0、16、24px。
+  - 所以按新预期，每次都有 2 条没落地；报告里把它们列在 ✓ 下，算 2 条虚假的 ✓。
+- 后来才加的统计（读 node_modules/vernierkit 的次数等），用现在的 `summary` 在合起来的副本上补算。
+- 旧代码本来就没有的项记为不适用：`unclaimedNotices`（「没认领在改代码」的提示是 66 才有的）。
+
+数字（中位数（范围），30 次）。B 的 1:1 和虚假的 ✓ 用按画布位置重新打分后的数字，其余各项用现在的 metrics 重算：
+
+| 指标 | B | B' | 漂移 B → B' |
+|---|---|---|---|
+| 整轮用时 claim→finish（秒） | 61.52（25.76–544.24） | 66.45（25.85–538.93） | +8% |
+| 整轮用时每条（秒） | 20.75（10.73–181.41） | 23.79（12.79–179.64） | +15% |
+| claim→finish 合计（秒） | 3,319 | 3,371 | +1.6% |
+| Agent 总用时（秒） | 90.78（54.5–1200.23） | 102.41（57.52–581.86） | |
+| 每条平均工具调用（合计） | 5.67（3.33–16）；579 | 5.33（3.67–17.33）；583 | |
+| 全仓搜索（中位数；合计） | 2.5；97 | 2；94 | |
+| 读入字数：Skill / claim / 全部 | 24,653 / 2,938.5 / 51,279.5 | 24,653 / 2,938.5 / 51,292 | Skill、claim 不变（代码相同） |
+| 读 node_modules/vernierkit（调用；运行数） | 5；2 | 9；1（phone-breakpoints #1） | |
+| 按页面预期 1:1（合计） | 73 / 81 | 74 / 81 | |
+| 虚假的 ✓（合计） | 4 | 7（dissolve-place-frame 三次各 2 条，promote-and-grid #2 一条） | |
+| 设计变量使用率（15 次） | 1 | 1 | |
+| 报告格式合规 | 28 / 30 | 30 / 30 | |
+| 跑了 done / finish | 30 / 30，30 / 30 | 30 / 30，30 / 30 | |
+| `done` 次数（合计） | 85 | 84 | |
+| 两次进度最长间隔（秒） | 11.35（2.97–98.53） | 10.62（3.03–75.74） | |
+| 没进度也没改源码的最长时间（秒） | 42.77（11.22–406.83） | 44.57（10.6–473.29） | |
+| Light（每条 ≤ 3 次工具调用且 0 次全仓搜索） | 0 / 30 | 0 / 30 | |
+| 超时（20 分钟） | 2 | 0 | |
+| `unclaimedNotices` | 不适用 | 不适用（旧代码没有这个提示） | |
+| `headedBrowsers` | 不适用（B 还没记这一项；3 次用过有窗口的 playwright 插件） | 30 次都为空 | |
+| done、finish 输出里的「did not answer in time」 | 0 | 0 | |
+
+漂移有多大：
+- claim→finish：Mann-Whitney p ≈ 0.74，每条 p ≈ 0.73。
+- 按场景（3 次的中位数）比，B' / B 的几何平均是 1.01，同一场景的 |log 比值| 中位数是 0.20，和 A 对 B 的 0.20 一样。
+- 中位数高了 8%，合计只高了 1.6%，总体上没有可见的漂移。
+- 同一场景的摆动照旧很大，例如 data-and-text 119 → 175 秒、fill-gap-brief 179 → 112 秒。
+- B 里 dissolve-place-frame 有两次挂到超时，这次没有出现：B' 三次都没有自己起 Vite。
+- 按页面预期 1:1 和虚假的 ✓ 也没有实质差别：B' 三次 dissolve-place-frame 都去掉了外边距，B 是一次（另两次超时，没有报告）。
+
+| 场景（claim→finish 中位数，秒） | B | B' |
+|---|---|---|
+| button-over-rule | 39.9 | 48.8 |
+| cards-style | 60.2 | 58.5 |
+| data-and-text | 119.1 | 174.5 |
+| dissolve-place-frame | 210.7 | 186.7 |
+| fill-gap-brief | 178.5 | 111.6 |
+| phone-breakpoints | 229.7 | 230.6 |
+| promote-and-grid | 41.4 | 51.0 |
+| put-back-and-new-text | 56.4 | 69.6 |
+| reorder-and-move | 30.1 | 27.6 |
+| type-and-stack | 47.0 | 38.8 |
+
+从现在起，Cursor 的「改动前」和 B' 比，不再和 B 比。最终代码的数字和对比见 65 的 Comments。
