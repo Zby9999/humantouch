@@ -7,6 +7,11 @@
  */
 import { CODE_EVENT, CODE_GLOBAL, type CodeUpdates } from "../service-protocol";
 
+/** How the code `win`'s page has stands, as the dev server says; undefined when it says nothing (Next.js). */
+export function codeUpdates(win: Window): CodeUpdates | undefined {
+  return (win as unknown as Record<string, CodeUpdates | undefined>)[CODE_GLOBAL];
+}
+
 /** Updates closer together than this are one change: several files saved at once, or one edit's CSS and its module. */
 export const CODE_QUIET_MS = 1000;
 
@@ -16,19 +21,19 @@ export const CODE_QUIET_MS = 1000;
  * the way to stop.
  */
 export function watchCodeChanges(win: Window, onChange: () => void, { quietMs = CODE_QUIET_MS } = {}): () => void {
-  const code = () => (win as unknown as Record<string, CodeUpdates | undefined>)[CODE_GLOBAL];
-  let at = code()?.at ?? 0;
-  let last = -Infinity;
+  let at = codeUpdates(win)?.at ?? 0;
+  /** When the last update of the run so far came. */
+  let lastUpdate = -Infinity;
   const onCode = () => {
-    const now = code();
-    if (!now) return;
+    const updates = codeUpdates(win);
+    if (!updates) return;
     // An update begun, or one in (begun before this watch did): an error brings no code in.
-    const brought = now.updating > 0 || now.at > at;
-    at = Math.max(at, now.at);
+    const brought = updates.updating > 0 || updates.at > at;
+    at = Math.max(at, updates.at);
     if (!brought) return;
-    const time = performance.now();
-    const fresh = time - last >= quietMs;
-    last = time;
+    const now = performance.now();
+    const fresh = now - lastUpdate >= quietMs;
+    lastUpdate = now;
     if (fresh) onChange();
   };
   win.addEventListener(CODE_EVENT, onCode);

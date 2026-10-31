@@ -49,15 +49,29 @@ export function pointerHeld(): boolean {
 
 /**
  * Runs `then` once no press is held: at once when none is, else in the task
- * after the pointer is let go, so what the press does as it ends (a drop, say) is done first.
+ * after the pointer is let go, so what the press does as it ends (a drop, say)
+ * is done first. Returns what calls it off, if it has not run yet.
  */
-export function whenLetGo(then: () => void) {
-  if (!pointerHeld()) return then();
-  const go = () => {
+export function whenLetGo(then: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let off = () => {};
+  const stopWaiting = () => {
     window.removeEventListener("pointerup", go, true);
     window.removeEventListener("pointercancel", go, true);
-    setTimeout(() => whenLetGo(then));
   };
+  function go() {
+    stopWaiting();
+    timer = setTimeout(() => (off = whenLetGo(then)));
+  }
+  if (!pointerHeld()) {
+    then();
+    return () => {};
+  }
   window.addEventListener("pointerup", go, true);
   window.addEventListener("pointercancel", go, true);
+  return () => {
+    stopWaiting();
+    clearTimeout(timer);
+    off();
+  };
 }

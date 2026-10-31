@@ -249,16 +249,18 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   useEffect(() => {
     if (!unclaimed) return setPaused(false);
     let watching = true;
+    const waits: (() => void)[] = [];
     const stop = watchCodeChanges(window, () => {
-      const now = store ? store.status().catch(() => lastStatus.current) : Promise.resolve(lastStatus.current);
-      void now.then((status) => {
+      const asked = store ? store.status().catch(() => lastStatus.current) : Promise.resolve(lastStatus.current);
+      void asked.then((status) => {
         // A press under way ends first, as the designer meant it: what it does is an edit made before the pause.
-        if (watching && status?.status !== "claimed") whenLetGo(() => watching && setPaused(true));
+        if (watching && status?.status !== "claimed") waits.push(whenLetGo(() => setPaused(true)));
       });
     });
     return () => {
       watching = false;
       stop();
+      for (const callOff of waits) callOff();
     };
   }, [unclaimed]);
   return (

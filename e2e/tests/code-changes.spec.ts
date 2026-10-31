@@ -70,6 +70,7 @@ test("the code changing in edit mode with no claim: editing pauses as the design
 
   const notice = unclaimedNotice(page);
   await expect(notice).toBeVisible();
+  await expect(page.getByRole("alertdialog", { name: "The code is changing, but no Agent has claimed your changes" })).toBeVisible();
   await expect(notice).toContainText("Editing is paused");
   await expect(notice.getByRole("button", { name: "Keep editing" })).toBeFocused();
   // Paused: no key edits the canvas, and nothing behind the notice can be pressed.
@@ -80,9 +81,18 @@ test("the code changing in edit mode with no claim: editing pauses as the design
   expect(savedChanges()).toBe(1);
 });
 
+/** What has the focus, through the editor layer's Shadow DOM: its tag and name. */
+const focused = (page: Page) =>
+  page.evaluate(() => {
+    let el = document.activeElement;
+    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+    return el && `${el.localName} ${el.getAttribute("aria-label") ?? ""}`;
+  });
+
 test("keep editing: the notice goes and editing goes on; the code changing again, after a quiet while, asks again", async ({ page }) => {
   await page.goto(DEV_URL);
   await designARound(page);
+  const before = await focused(page);
   await changeTheCard(page);
   const notice = unclaimedNotice(page);
   await expect(notice).toBeVisible();
@@ -90,6 +100,9 @@ test("keep editing: the notice goes and editing goes on; the code changing again
   await notice.getByRole("button", { name: "Keep editing" }).click();
 
   await expect(notice).toHaveCount(0);
+  // The focus is back where it was as the code changed.
+  expect(await focused(page)).toBe(before);
+  expect(before).not.toMatch(/^(body|html) /);
   await layer(page, "Button").click();
   await setField(page, "Corner radius", "8");
   await expect.poll(savedChanges).toBe(2);
@@ -238,4 +251,44 @@ test("the Agent claiming once the notice is up: edit mode folds away as for any 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toBeVisible();
   await vernierkit("finish");
+});
+
+test("no notice as the Agent claims and edits at once, even with the page never told of the claim: it asks the local service", async ({ page }) => {
+  await recordUnclaimedNotices(page);
+  // The page hears the round is being edited, and nothing after: it is told of no claim.
+  await page.route(
+    (url) => url.hostname === "127.0.0.1" && url.pathname === "/events",
+    (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-Vernier-Token, Content-Type" },
+        contentType: "application/x-ndjson",
+        body: `${JSON.stringify({ status: "editing" })}\n`,
+      }),
+  );
+  await page.goto(DEV_URL);
+  await designARound(page);
+
+  await vernierkit("claim");
+  await changeTheCard(page);
+  await page.waitForTimeout(2500);
+
+  expect(await unclaimedNoticesShown(page)).toEqual([]);
+  await expect(page.locator('iframe[title="Canvas"]')).toBeVisible();
+  await page.unroute((url) => url.hostname === "127.0.0.1" && url.pathname === "/events");
+  await vernierkit("finish");
+});
+
+test("words typed in a text layer on the canvas are set as the notice takes the focus: no change is lost", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await designARound(page);
+  await layer(page, "Vernier Kit").click();
+  await canvas(page).locator("h1").dblclick();
+  await page.keyboard.type("Vernier");
+
+  await changeTheCard(page);
+
+  await expect(unclaimedNotice(page)).toBeVisible();
+  await expect(canvas(page).locator("h1")).toHaveText("Vernier");
+  await expect.poll(savedChanges).toBe(2);
 });

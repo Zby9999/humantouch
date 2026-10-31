@@ -4,13 +4,18 @@
  */
 import type { BrowserContext, Page } from "@playwright/test";
 
-/** What names the notice that the code is changing in edit mode, but no Agent has claimed the changes (ticket 66). */
-const UNCLAIMED = "no Agent has claimed";
+/**
+ * The notice that the code is changing in edit mode, but no Agent has claimed
+ * the changes (ticket 66), by what the editor layer marks it with
+ * (`UNCLAIMED_NOTICE` in `CodeChangeNotice.tsx`, which cannot be imported
+ * here: it runs on a page), not by its words, which may change.
+ */
+const UNCLAIMED = '[role="alertdialog"][data-vk-notice="unclaimed"]';
 /** Where the page keeps when it showed: on its window, and in its session's storage, so a reload keeps it. */
 const KEY = "__vkBenchUnclaimedNotices";
 
 /** In edit mode: the code is changing, but no Agent has claimed the changes (ticket 66). */
-export const unclaimedNotice = (page: Page) => page.getByRole("alertdialog", { name: new RegExp(UNCLAIMED) });
+export const unclaimedNotice = (page: Page) => page.locator(UNCLAIMED);
 
 /**
  * Has the page, from its next load on, note each time that notice shows: once
@@ -21,7 +26,7 @@ export const unclaimedNotice = (page: Page) => page.getByRole("alertdialog", { n
  */
 export async function recordUnclaimedNotices(on: Page | BrowserContext) {
   await on.addInitScript(
-    ({ key, name }) => {
+    ({ key, selector }) => {
       if (window.top !== window) return;
       let times: number[] = [];
       try {
@@ -30,7 +35,7 @@ export async function recordUnclaimedNotices(on: Page | BrowserContext) {
       (window as unknown as Record<string, number[]>)[key] = times;
       let shown = false;
       const look = (root: ShadowRoot) => {
-        const now = [...root.querySelectorAll('[role="alertdialog"]')].some((notice) => notice.textContent?.includes(name));
+        const now = root.querySelector(selector) !== null;
         if (now && !shown) {
           times.push(Date.now());
           try {
@@ -44,16 +49,17 @@ export async function recordUnclaimedNotices(on: Page | BrowserContext) {
         const root = document.querySelector("vernier-kit")?.shadowRoot;
         if (!root) return;
         findHost.disconnect();
-        new MutationObserver(() => look(root)).observe(root, { childList: true, subtree: true, characterData: true });
+        new MutationObserver(() => look(root)).observe(root, { childList: true, subtree: true });
         look(root);
       });
       findHost.observe(document, { childList: true, subtree: true });
     },
-    { key: KEY, name: UNCLAIMED },
+    { key: KEY, selector: UNCLAIMED },
   );
 }
 
-/** When, in ms since the epoch, the notice showed on `page` since `recordUnclaimedNotices`. */
-export async function unclaimedNoticesShown(page: Page): Promise<number[]> {
-  return page.evaluate((key) => [...((window as unknown as Record<string, number[] | undefined>)[key] ?? [])], KEY);
+/** When, in ms since the epoch, the notice showed on `page`: since `recordUnclaimedNotices`, or from `since` on. */
+export async function unclaimedNoticesShown(page: Page, since = -Infinity): Promise<number[]> {
+  const times = await page.evaluate((key) => [...((window as unknown as Record<string, number[] | undefined>)[key] ?? [])], KEY);
+  return times.filter((at) => at >= since);
 }

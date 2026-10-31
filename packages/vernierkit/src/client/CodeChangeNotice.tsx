@@ -1,30 +1,34 @@
 /** @jsxImportSource preact */
-import { useLayoutEffect, useRef } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 
-/**
- * The notice up, while editing is paused: what holds the keys. Null when
- * there is none.
- */
-let up: HTMLElement | null = null;
+/** The notice on the page, while editing is paused: what holds the keys. Null when there is none. */
+let shownNotice: HTMLElement | null = null;
 
 /**
  * While editing is paused no key reaches the editor layer's own handlers, which
- * listen on the window: this one, added as the module loads, comes before all
- * of them and stops each key there. What a key does by default goes on, so
- * the notice's buttons still answer Enter and Space; Tab goes round them.
- * Keys let go are left alone: a key held as editing paused (Space, to pan)
- * is let go as usual.
+ * listen on the window: this one comes before all of them and stops each key
+ * there. It is added once, as the module loads, for that: the Shell's and the
+ * canvas's are added as they mount, after it, and listeners on the same target
+ * run in the order they were added. So it needs no `pointerHeld()` of its own
+ * (ADR 0012): it holds every key, and editing pauses only once no press is held.
+ * What a key does by default goes on, so the notice's buttons still answer
+ * Enter and Space; Tab goes round them. Keys let go are left alone: a key held
+ * as editing paused (Space, to pan) is let go as usual. Keys typed in a view's
+ * own document never come here: typing there ends as the notice takes the focus.
  */
 function holdKeys(event: KeyboardEvent) {
-  if (!up) return;
+  if (!shownNotice) return;
   event.stopImmediatePropagation();
   if (event.key !== "Tab") return;
   event.preventDefault();
-  const buttons = [...up.querySelectorAll("button")];
-  const at = buttons.indexOf((up.getRootNode() as ShadowRoot).activeElement as HTMLButtonElement);
+  const buttons = [...shownNotice.querySelectorAll("button")];
+  const at = buttons.indexOf((shownNotice.getRootNode() as ShadowRoot).activeElement as HTMLButtonElement);
   buttons.at((at + (event.shiftKey ? -1 : 1)) % buttons.length)?.focus();
 }
 window.addEventListener("keydown", holdKeys, true);
+
+/** What the bench and the tests find this notice by (`data-vk-notice`), whatever its words. */
+export const UNCLAIMED_NOTICE = "unclaimed";
 
 interface Props {
   /** The change has nothing to do with the designer's: editing goes on. */
@@ -42,17 +46,24 @@ interface Props {
 export function CodeChangeNotice({ onKeepEditing, onBackToPreview }: Props) {
   const notice = useRef<HTMLDivElement>(null);
   const keep = useRef<HTMLButtonElement>(null);
+  // Before the shell behind it pauses: once it does, nothing in it has the focus.
+  const [before] = useState(focusedNow);
   // As it goes on the page: a key pressed meanwhile would edit. Focus moving here ends what was being typed, as an edit.
+  // Once it goes, the focus goes back where it was, if that is still there (the canvas, say).
   useLayoutEffect(() => {
-    up = notice.current;
+    shownNotice = notice.current;
     keep.current!.focus({ preventScroll: true });
     return () => {
-      if (up === notice.current) up = null;
+      if (shownNotice === notice.current) shownNotice = null;
+      // Once the shell takes the focus again: it pauses no more by the end of this update.
+      queueMicrotask(() => {
+        if (before?.isConnected && !before.closest("[inert]")) before.focus({ preventScroll: true });
+      });
     };
   }, []);
   return (
     <div class="vk-paused">
-      <div ref={notice} class="vk-notice" role="alertdialog" aria-modal="true" aria-labelledby="vk-notice-title" aria-describedby="vk-notice-text">
+      <div ref={notice} class="vk-notice" role="alertdialog" data-vk-notice={UNCLAIMED_NOTICE} aria-modal="true" aria-labelledby="vk-notice-title" aria-describedby="vk-notice-text">
         <h2 id="vk-notice-title" class="vk-notice-title">
           The code is changing, but no Agent has claimed your changes
         </h2>
@@ -71,4 +82,11 @@ export function CodeChangeNotice({ onKeepEditing, onBackToPreview }: Props) {
       </div>
     </div>
   );
+}
+
+/** What has the focus now, through the editor layer's Shadow DOM, if anything does. */
+function focusedNow(): HTMLElement | null {
+  let el = document.activeElement;
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+  return el instanceof HTMLElement && el !== document.body ? el : null;
 }

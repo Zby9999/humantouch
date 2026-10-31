@@ -245,13 +245,16 @@ test("playbook: the Agent changes the code with no claim, while the designer is 
   writeFileSync(CARD, original.replace(CHANGES[0].from, CHANGES[0].to));
   const noticeAfterMs = await watchFor(unclaimedNotice(page), UNCLAIMED_WATCH_MS);
   // Can the designer still edit, on a canvas the code has moved on from? Asked as the notice shows. Paused, nothing behind it takes the press.
+  const button = page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true });
+  await expect(button).toHaveCount(1);
   let editable = false;
   try {
-    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click({ timeout: 2000 });
+    await button.click({ timeout: 2000 });
     const field = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Corner radius", exact: true });
     editable = (await field.count()) > 0 && (await field.isEditable());
-  } catch {
-    // Not pressed.
+  } catch (error) {
+    // Not pressed: something else takes the press. Any other failure is the test's.
+    if (!String(error).includes("intercepts pointer events")) throw error;
   }
   const changesKept = (readVernier("changeset.json")?.changes.length ?? 0) / CHANGES.length;
   record("changes-code-unclaimed", {

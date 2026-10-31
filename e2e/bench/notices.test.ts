@@ -23,30 +23,36 @@ async function pageWithEditorLayer(): Promise<Page> {
   return page;
 }
 
+const UNCLAIMED_TITLE = "The code is changing, but no Agent has claimed your changes";
+/** Shows an alert dialog with `text`: the notice no Agent claimed the changes, as the editor layer marks it, when it is that notice's. */
 const show = (page: Page, text: string) =>
-  page.evaluate((text) => {
+  page.evaluate(({ text, UNCLAIMED_TITLE }) => {
     const notice = document.createElement("div");
     notice.setAttribute("role", "alertdialog");
+    if (text === UNCLAIMED_TITLE) notice.dataset.vkNotice = "unclaimed";
     notice.innerHTML = `<h2>${text}</h2>`;
     document.querySelector("vernier-kit")!.shadowRoot!.firstElementChild!.append(notice);
-  }, text);
+  }, { text, UNCLAIMED_TITLE });
 const takeAway = (page: Page) => page.evaluate(() => document.querySelector("vernier-kit")!.shadowRoot!.querySelector('[role="alertdialog"]')!.remove());
 
-test("each time the notice that no Agent claimed the changes shows, once however long it stays; other notices are not it", async () => {
+test("each time the notice that no Agent claimed the changes shows, once however long it stays, and from a time on; other notices are not it", async () => {
   const page = await pageWithEditorLayer();
   assert.equal((await unclaimedNoticesShown(page)).length, 0);
 
-  await show(page, "The code is changing, but no Agent has claimed your changes");
+  await show(page, UNCLAIMED_TITLE);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
   assert.equal((await unclaimedNoticesShown(page)).length, 1);
   await takeAway(page);
   await show(page, "Something else");
   await takeAway(page);
-  await show(page, "The code is changing, but no Agent has claimed your changes");
+  await show(page, UNCLAIMED_TITLE);
 
   const times = await unclaimedNoticesShown(page);
   assert.equal(times.length, 2);
   assert.ok(times[0] <= times[1] && times[1] <= Date.now());
+  // Only those from a time on, as the bench counts those from the Agent's start.
+  assert.deepEqual(await unclaimedNoticesShown(page, times[1]), [times[1]]);
+  assert.deepEqual(await unclaimedNoticesShown(page, times[1] + 1), []);
   await page.close();
 });
 
@@ -56,6 +62,7 @@ test("a notice taken away as soon as the task after is counted; the count is kep
     const root = document.querySelector("vernier-kit")!.shadowRoot!.firstElementChild!;
     const notice = document.createElement("div");
     notice.setAttribute("role", "alertdialog");
+    notice.dataset.vkNotice = "unclaimed";
     notice.textContent = "The code is changing, but no Agent has claimed your changes";
     root.append(notice);
     // Taken away a task later, as a claim heard at once would.
@@ -80,9 +87,9 @@ test("recorded for a browser context, as the bench does for the designer's page,
           const host = document.createElement("vernier-kit");
           const root = host.attachShadow({ mode: "open" });
           document.documentElement.append(host);
-          setTimeout(() => (root.innerHTML = '<div role="alertdialog"><h2>The code is changing, but no Agent has claimed your changes</h2></div>'), 20);
+          setTimeout(() => (root.innerHTML = '<div role="alertdialog" data-vk-notice="unclaimed"><h2>The code is changing, but no Agent has claimed your changes</h2></div>'), 20);
         });
-      </script><iframe srcdoc="<div role=alertdialog>no Agent has claimed</div>"></iframe>`,
+      </script><iframe srcdoc="<div role=alertdialog data-vk-notice=unclaimed>no Agent has claimed</div>"></iframe>`,
     }),
   );
   await page.goto("http://bench.test/");

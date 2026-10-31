@@ -316,7 +316,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       await looking;
     }
     watchFiles();
-    times.unclaimedNotices = (await unclaimedNoticesShown(designer)).filter((at) => at >= agentRun.startedAt);
+    times.unclaimedNotices = await unclaimedNoticesShown(designer, agentRun.startedAt);
 
     // The end: the dev server brings the last edits in, and the page is loaded afresh.
     await new Promise((resolve) => setTimeout(resolve, 3000));

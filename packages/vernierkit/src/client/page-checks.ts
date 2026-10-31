@@ -11,9 +11,10 @@
  * Looking is spread out so it never holds the page up for long: as many
  * changes as fit in a short slice of time, the rest after the page has had a turn.
  */
-import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckAsk, type CheckReport, type CheckResult, type CodeUpdates } from "../service-protocol";
+import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
 import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
+import { codeUpdates } from "./code-changes";
 import { CHECK_MEASURE } from "./host";
 import { copyPage, type PageCopy } from "./page-copy";
 
@@ -55,7 +56,7 @@ const QUIET_MS = 500;
  */
 export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn }: Options): PageChecks {
   const doc = win.document;
-  const code = () => (win as unknown as Record<string, CodeUpdates | undefined>)[CODE_GLOBAL];
+  const code = () => codeUpdates(win);
   const shown = new Set<number>();
   /** What was last said of each change as the code changed, to say it again only when it changes. */
   const said = new Map<number, string>();
