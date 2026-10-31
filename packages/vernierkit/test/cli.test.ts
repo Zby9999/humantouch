@@ -193,12 +193,17 @@ describe("claim, the way through a round (ticket 65)", () => {
     expect(intro).toContain("report");
   });
 
-  test("says the designer's page and its dev server are running, and the page checks the edits: no dev server to start, no browser to open", async () => {
+  test("with the designer's page open, says it and its dev server are running, and the page checks the edits: no dev server to start, no browser to open; with none, says nothing of it", async () => {
+    const sentence = "The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look.";
     saveRound(redFill);
+    expect((await cli("claim")).output.split(/^## /m)[0]).not.toContain(sentence);
 
-    const intro = (await cli("claim")).output.split(/^## /m)[0];
-
-    expect(intro).toContain("The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look.");
+    const closePage = openPage(() => ({ outcome: "shown" }));
+    try {
+      expect((await cli("claim")).output.split(/^## /m)[0]).toContain(sentence);
+    } finally {
+      closePage();
+    }
   });
 });
 
@@ -311,13 +316,14 @@ describe("claim, how to write the changes (ticket 65)", () => {
 
   test("how the page checks says what it reads, and at which widths, for the kinds of change in this round only (ticket 65)", async () => {
     const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
-    saveRound(style("fill"), { ...style("radius", { before: 12, after: 4, breakpoint: PHONE }), id: 2 }, { ...change("move", { before: place(2), after: place(1) }), id: 3 });
+    const order = { signs: ["li A", "li B"], self: 1, others: [] };
+    saveRound(style("fill"), { ...style("radius", { before: 12, after: 4, breakpoint: PHONE }), id: 2 }, { ...change("move", { before: place(2), after: place(1), order }), id: 3 });
 
     const checks = rule((await cli("claim")).output, "How the page checks");
 
     expect(checks).toContain("the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance");
     expect(checks).toContain("at the page's own width and at each of the designer's views' widths");
-    expect(checks).toContain("at one width in each part of its range");
+    expect(checks).toContain("a change at a breakpoint in each part the project's breakpoints cut its range into");
     expect(checks).toContain("a reorder by the order of its container's layers");
     expect(checks).not.toContain("deletion");
     expect(checks).not.toContain("Not checked");
@@ -1039,10 +1045,10 @@ describe("claim, new layers, words, deleting and copying", () => {
   });
 
   test("a loop's instance copied, deleted or changed alone says which of the instances it is, and its words, as the page renders them (ticket 65)", async () => {
-    const item = { nth: 1, of: 3, words: "Freeze Turn the current page into a canvas." };
+    const instance = { nth: 1, words: "Freeze Turn the current page into a canvas." };
     saveRound(
-      change(1, "delete", { property: "delete-1", before: place(2), after: null, target: cards, data: true, style: { display: "none" }, item: { nth: 2, of: 3, words: "Arrange Drag layers." } }),
-      change(2, "duplicate", { property: "copy", before: place(1), after: place(2), target: cards, data: true, item }),
+      change(1, "delete", { property: "delete-1", before: place(2), after: null, target: cards, data: true, style: { display: "none" }, instance: { nth: 2, words: "Arrange Drag layers." } }),
+      change(2, "duplicate", { property: "copy", before: place(1), after: place(2), target: cards, data: true, instance }),
     );
 
     const output = (await cli("claim")).output;
@@ -1557,7 +1563,7 @@ describe("done, checked on the page", () => {
 
     const { output } = await cli("finish");
 
-    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n",
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 2.\n",
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
     expect(existsSync(join(project, ".vernier/checks.json"))).toBe(false);
@@ -1578,7 +1584,7 @@ describe("progress, as the page shows it", () => {
 
     const { output } = await cli("finish");
 
-    expect(finished(output)).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2. Report them as not applied 1:1, with why.\n");
+    expect(finished(output)).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2.\n");
     expect(history()[0].result).toMatchObject({ done: [2, 3], applied: [1, 3] });
     expect(section((await cli("last")).output, 1)).toContain("- **Status:** Applied\n");
     expect(section((await cli("last")).output, 2)).toContain("- **Status:** Not applied\n");
@@ -1594,7 +1600,7 @@ describe("progress, as the page shows it", () => {
     const { output } = await cli("finish");
 
     expect(closing).toBe(true);
-    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 1. Report them as not applied 1:1, with why.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 1.\n");
     expect(history()[0].result).toMatchObject({ applied: [2] });
   });
 });
@@ -1629,7 +1635,7 @@ describe("finish", () => {
 
     const { output } = await cli("finish");
 
-    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report them under ⚠️, with why.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1.\n");
     expect(history()[0].result.done).toEqual([2]);
   });
 
@@ -1644,7 +1650,7 @@ describe("finish", () => {
     const { output } = await cli("finish");
 
     const [first, ...rest] = output.split("\n");
-    expect(first).toBe("Round finished: 2 of 4 changes applied. Not marked done: 3. Report them under ⚠️, with why. The page does not show: 2. Report them as not applied 1:1, with why.");
+    expect(first).toBe("Round finished: 2 of 4 changes applied. Not marked done: 3. The page does not show: 2.");
     expect(rest.join("\n")).toBe(
       "\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n" +
         "```\n" +
@@ -1654,7 +1660,7 @@ describe("finish", () => {
         "\n" +
         "⚠️ Not applied 1:1\n" +
         "- 2. Corner radius: <the layer>\n" +
-        "  Why: at 390px wide, the page shows the corner radius 12px, not 4px\n" +
+        "  Why: at 390px wide, the page shows the corner radius 12px, not 4px: <what keeps it so>\n" +
         "  Instead: <what you did, or “left as it was”>\n" +
         "- 3. Text: <the layer>\n" +
         "  Why: <why it is not applied>\n" +

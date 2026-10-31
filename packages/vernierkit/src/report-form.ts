@@ -8,7 +8,7 @@
  */
 import type { Change } from "./client/changeset";
 import type { CheckResult } from "./service-protocol";
-import { changeTitle, propertyName, value } from "./design-values";
+import { changeTitle, listed, propertyName, value } from "./design-values";
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
 export const REPORT_RULES =
@@ -16,6 +16,7 @@ export const REPORT_RULES =
   "- Give each change under ⚠️ both lines, Why and Instead.\n" +
   "- Leave the ⚠️ section out only when every change was applied exactly. Keep each line short.\n";
 
+/** The second line of each change under ⚠️, for the Agent to fill in. */
 const INSTEAD = "  Instead: <what you did, or “left as it was”>";
 
 /**
@@ -26,17 +27,18 @@ const INSTEAD = "  Instead: <what you did, or “left as it was”>";
  */
 export function reportFor(changes: Change[], applied: number[], checks: Record<number, CheckResult | undefined>): string {
   const line = (change: Change, what: string) => `- ${change.id}. ${changeTitle(change)}: ${what}`;
-  const shown = (change: Change) => applied.includes(change.id);
-  const notShown = (change: Change) => !shown(change) && checks[change.id]?.outcome === "not shown";
-  const unchecked = changes.filter((change) => shown(change) && checks[change.id]?.outcome !== "shown");
-  const ok = changes.filter(shown).map((change) => line(change, "<the layer, and what you changed>"));
+  const isApplied = (change: Change) => applied.includes(change.id);
+  const notShown = (change: Change) => !isApplied(change) && checks[change.id]?.outcome === "not shown";
+  // Applied, as they count once done: the page has no look at them to stand on.
+  const appliedUnseen = changes.filter((change) => isApplied(change) && checks[change.id]?.outcome !== "shown");
+  const ok = changes.filter(isApplied).map((change) => line(change, "<the layer, and what you changed>"));
   const warned = changes
-    .filter((change) => !shown(change))
-    .map((change) => [line(change, "<the layer>"), `  Why: ${notShown(change) ? pageShows(change, checks[change.id]!) : "<why it is not applied>"}`, INSTEAD].join("\n"));
+    .filter((change) => !isApplied(change))
+    .map((change) => [line(change, "<the layer>"), `  Why: ${notShown(change) ? `${pageShows(change, checks[change.id]!)}: <what keeps it so>` : "<why it is not applied>"}`, INSTEAD].join("\n"));
   const sections = [ok.length ? ["✓ Applied", ...ok].join("\n") : null, warned.length ? ["⚠️ Not applied 1:1", ...warned].join("\n") : null].filter((section) => section !== null);
-  const ids = unchecked.map((change) => change.id);
+  const ids = appliedUnseen.map((change) => change.id);
   const move = ids.length
-    ? `- ${list(ids)} the page cannot check: keep ${ids.length === 1 ? "it" : "each"} under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n`
+    ? `- ${listed(ids)} the page cannot check: keep ${ids.length === 1 ? "it" : "each"} under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n`
     : "";
   return (
     "End your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n" +
@@ -52,9 +54,4 @@ function pageShows(change: Change, check: CheckResult): string {
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
-}
-
-/** `1`, `1 and 2`, `1, 2 and 3`. */
-function list(ids: number[]): string {
-  return ids.length < 2 ? `${ids[0]}` : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
 }

@@ -5,9 +5,9 @@
  * `last` prints the round before, to undo it by. `init`, `doctor` and
  * `remove` install Vernier Kit, check it, and take it back out.
  */
-import { changes as changesWord, describeChanges, TO_APPLY } from "./change-notes";
+import { changes as changesWord, describeChanges, toApply } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
-import { ordinal, propertyName, value } from "./design-values";
+import { listed, ordinal, propertyName, value } from "./design-values";
 import type { PlacedOnPage } from "./client/check";
 import type { Change, Margins, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
@@ -76,7 +76,9 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   // The code as it was before the Agent changed anything, to undo the round by.
   if (!state) await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) });
   const status = state && ((change: Change) => (state.done.includes(change.id) ? "Done" : "Not done yet"));
-  io.write(describeChanges(changeSet.changes, root, status ? { ...TO_APPLY, status } : TO_APPLY));
+  const checks = await readChecks(folder);
+  const notes = toApply(!!checks?.pages && isRunning(checks.service));
+  io.write(describeChanges(changeSet.changes, root, status ? { ...notes, status } : notes));
   return 0;
 }
 
@@ -107,7 +109,7 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   const applied = appliedOf(claimed, (await readChecks(folder))?.results);
   const lines = changes.map((change) => checkLine(change, results.get(change.id)));
   const one = changes.length === 1;
-  io.write(`${one ? "Change" : "Changes"} ${list(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
+  io.write(`${one ? "Change" : "Changes"} ${listed(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
   io.write(one ? `${lines[0]}\n` : lines.map((line, i) => `Change ${reported[i]}: ${line[0].toLowerCase()}${line.slice(1)}\n`).join(""));
   return 0;
 }
@@ -117,10 +119,6 @@ async function newAsk(folder: VernierFolder, ids: number[]): Promise<CheckAsk> {
   return { ids, at: new Date().toISOString(), key: randomUUID(), codeAt: await lastEdited(dirname(folder.dir)) };
 }
 
-/** `1`, `1 and 2`, `1, 2 and 3`. */
-function list(ids: number[]): string {
-  return ids.length < 2 ? `${ids[0]}` : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
-}
 
 /** What `done` says of a change, as the page checked it. */
 function checkLine(change: Change, result: CheckResult | undefined): string {
@@ -279,8 +277,8 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   const notShown = ids.filter((id) => !applied.includes(id) && result.checks[id]?.outcome === "not shown");
   const missing = ids.filter((id) => !applied.includes(id) && !notShown.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
-  if (missing.length) text += ` Not marked done: ${missing.join(", ")}. Report them under ⚠️, with why.`;
-  if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}. Report them as not applied 1:1, with why.`;
+  if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
+  if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }

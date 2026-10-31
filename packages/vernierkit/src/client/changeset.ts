@@ -229,8 +229,8 @@ export interface Change {
   offCanvas?: string;
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
-  /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1 of `of`, as the page renders them, and its words (ticket 65). */
-  item?: { nth: number; of: number; words?: string };
+  /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1, as the page renders them, those deleted on the canvas too, and its words (ticket 65). */
+  instance?: { nth: number; words?: string };
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
@@ -280,7 +280,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "item"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "instance"
     > & {
       kind?: Change["kind"];
     },

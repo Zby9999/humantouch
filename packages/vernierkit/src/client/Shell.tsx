@@ -24,7 +24,7 @@ import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
 import { CATCH_UP_AFTER_MS, type View, type Views } from "./views";
 import { HOST_TAG } from "./host";
-import { measureParts } from "./range-parts";
+import { hasParts, measureParts } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -218,7 +218,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const { changeSet } = now;
     const current = (change: Change) => !left.current && !leavingNow.current && round.current?.changeSet === changeSet && changeSet.list().includes(change);
     for (const change of changeSet.list()) {
-      if (change.kind !== "style" || !change.breakpoint || change.parts || partsRead.current.has(change.id)) continue;
+      if (!hasParts(change) || change.parts || partsRead.current.has(change.id)) continue;
       partsRead.current.add(change.id);
       setTimeout(() => {
         if (!current(change)) return;

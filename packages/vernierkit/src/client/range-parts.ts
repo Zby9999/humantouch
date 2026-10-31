@@ -12,6 +12,11 @@ import { valueOn } from "./check";
 import { copyPage } from "./page-copy";
 import { PLACING, type Property } from "./property-table";
 
+/** A change whose range's parts are read: a style change at a breakpoint, not a placement. */
+export function hasParts(change: Change): boolean {
+  return change.kind === "style" && !!change.breakpoint && !PLACING.includes(change.property as Property);
+}
+
 /**
  * Each part of `change`'s range, with the value `page` shows the layer at in
  * it, read on a copy of the page put in `into` for the while; null for a
@@ -19,8 +24,8 @@ import { PLACING, type Property } from "./property-table";
  * the page does not show in one of them.
  */
 export async function measureParts(page: Document, change: Change, project: ProjectBreakpoints | null, into: ParentNode): Promise<RangePart[] | null> {
-  if (change.kind !== "style" || !change.breakpoint || PLACING.includes(change.property as Property)) return null;
-  const parts = partsOf(change.breakpoint, project);
+  if (!hasParts(change)) return null;
+  const parts = partsOf(change.breakpoint!, project);
   if (parts.length < 2) return null;
   const read: RangePart[] = [];
   for (const breakpoint of parts) {

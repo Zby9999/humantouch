@@ -40,9 +40,9 @@ export function targetOf(layer: Layer, instances: number): Target {
 /**
  * Which of a loop's instances, `all` as the page renders them (those deleted
  * on the canvas too), `el` is, from 1, and its words, each piece of text apart,
- * as the page has them: for the Agent to find its item in the data by (ticket 65).
+ * as the page has them: for the Agent to find it in the data by (ticket 65).
  */
-export function itemOf(el: Element, all: Element[]): NonNullable<Change["item"]> {
+export function instanceOf(el: Element, all: Element[]): NonNullable<Change["instance"]> {
   const pieces: string[] = [];
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) pieces.push((node as Text).data);
@@ -51,7 +51,7 @@ export function itemOf(el: Element, all: Element[]): NonNullable<Change["item"]>
   };
   walk(el);
   const words = pieces.join(" ").replace(/\s+/g, " ").trim().slice(0, SIGN_WORDS);
-  return { nth: all.indexOf(el) + 1, of: all.length, ...(words && { words }) };
+  return { nth: all.indexOf(el) + 1, ...(words && { words }) };
 }
 
 const MAX_CLASSES = 200;

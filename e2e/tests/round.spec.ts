@@ -112,7 +112,7 @@ test("a change the page shows, undone by a later edit before any done: the ring 
 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(badge(page)).toHaveText("2");
-  expect(await vernierkit("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n\nEnd your reply with this report\. Each change is under the heading/);
+  expect(await vernierkit("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2.\n\nEnd your reply with this report\. Each change is under the heading/);
 });
 
 /** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */

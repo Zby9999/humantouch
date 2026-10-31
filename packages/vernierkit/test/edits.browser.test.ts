@@ -2092,7 +2092,7 @@ describe("moving layers", () => {
     editor.move(second, { parent: layer("list"), index: 0 });
 
     expect([...doc.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Two", "One", "Three"]);
-    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 }, item: { nth: 2, of: 3, words: "Two" } });
+    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 }, instance: { nth: 2, words: "Two" } });
   });
 
   test("where a layer can go: not into itself, into a locked layer, or into a usage it does not repeat with", () => {
@@ -3054,7 +3054,7 @@ describe("editing text", () => {
     editor.setText(layerOf(cards[1].querySelector("h3")!), "Second");
 
     expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Card 1", "Second", "Card 3"]);
-    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second", item: { nth: 2, of: 3, words: "Card 2" } });
+    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second", instance: { nth: 2, words: "Card 2" } });
     editor.undo();
     expect(cards[1].querySelector("h3")!.textContent).toBe("Card 2");
   });
@@ -3312,9 +3312,9 @@ describe("deleting layers", () => {
       ["delete-2", true, 3],
     ]);
     // Which of them, as the page renders them: the first is still the first, though the second is deleted on the canvas.
-    expect(changes.list().map((c) => c.item)).toEqual([
-      { nth: 2, of: 3, words: "Card 2" },
-      { nth: 1, of: 3, words: "Card 1" },
+    expect(changes.list().map((c) => c.instance)).toEqual([
+      { nth: 2, words: "Card 2" },
+      { nth: 1, words: "Card 1" },
     ]);
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     const reverted = showSaved(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas);
@@ -3397,7 +3397,7 @@ describe("duplicating layers", () => {
     editor.duplicate(layerOf(cards[1]));
 
     expect([...doc.querySelectorAll("article")].map((el) => el.querySelector("h3")!.textContent)).toEqual(["Card 1", "Card 2", "Card 2", "Card 3", "Your turn"]);
-    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 }, item: { nth: 2, of: 3, words: "Card 2" } });
+    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 }, instance: { nth: 2, words: "Card 2" } });
   });
 
   test("to where it is dragged: in a Stack, or absolute in a Frame; taken back from a saved round, the copy goes", () => {
