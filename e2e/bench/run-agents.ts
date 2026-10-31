@@ -6,6 +6,7 @@
  *
  *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
  *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
+ *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
@@ -20,7 +21,7 @@ import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, effortSeen, runAgent, type AgentRun } from "./agents.ts";
+import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { recordUnclaimedNotices, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
@@ -56,6 +57,8 @@ interface RawRun {
   date: string;
   version: string;
   commandLine: string;
+  /** False for a run in a project with no Skill (`--no-skill`); missing in runs before ticket 65, which all had it. */
+  skill?: boolean;
   /** The effort the command line sets, and, for Claude Code, the one its debug log shows the session ran at. */
   effort: { set: string; seen: string | null };
   exitCode: number | null;
@@ -92,18 +95,20 @@ async function main(argv: string[]) {
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
   const dry = argv.includes("--dry");
+  const skill = !argv.includes("--no-skill");
+  const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
 
   const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
-  console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}. Raw results in ${out}`);
+  console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
 
   const versions: Partial<Record<AgentName, string>> = {};
   if (!dry) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
-    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each(commandLine) };
+    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each((agent) => commandLine(agent, prompt)), skill: each(() => skill) };
     // Runs added to a round of runs compare with it only on the same Agent and command line.
     const before = existsSync(join(out, "meta.json")) ? JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) : null;
     for (const agent of agents) {
@@ -115,7 +120,7 @@ async function main(argv: string[]) {
     writeFileSync(join(out, "meta.json"), `${JSON.stringify(merged, null, 2)}\n`);
   }
 
-  const { base, remove } = await prepareBase();
+  const { base, remove } = await prepareBase({ skill });
   const browser = await chromium.launch();
   let port = 0;
   /**
@@ -151,7 +156,7 @@ async function main(argv: string[]) {
             mkdirSync(folder, { recursive: true });
             const started = Date.now();
             try {
-              await runOnce({ browser, base, port: await nextPort(), scenario, agent, run, version: versions[agent]!, folder });
+              await runOnce({ browser, base, port: await nextPort(), scenario, agent, run, version: versions[agent]!, folder, skill });
               agentRuns++;
               const measures = measureFolder(folder);
               console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${oneLine(measures)}`);
@@ -248,7 +253,28 @@ function lastEdited(dir: string): number {
 }
 
 /** One Agent run of one scenario, its raw results written to `folder`. */
-async function runOnce({ browser, base, port, scenario, agent, run, version, folder }: { browser: Browser; base: string; port: number; scenario: Scenario; agent: AgentName; run: number; version: string; folder: string }) {
+async function runOnce({
+  browser,
+  base,
+  port,
+  scenario,
+  agent,
+  run,
+  version,
+  folder,
+  skill,
+}: {
+  browser: Browser;
+  base: string;
+  port: number;
+  scenario: Scenario;
+  agent: AgentName;
+  run: number;
+  version: string;
+  folder: string;
+  skill: boolean;
+}) {
+  const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
   await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
     const head = await project.head();
     writeFileSync(join(folder, "changeset.json"), `${JSON.stringify({ changes: saved }, null, 2)}\n`);
@@ -309,7 +335,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
     const pageTimer = setInterval(lookAtThePage, SHOWN_POLL_MS);
     let agentRun: AgentRun;
     try {
-      agentRun = await runAgent(agent, project.dir, folder, AGENT_TIMEOUT_MS);
+      agentRun = await runAgent(agent, project.dir, folder, AGENT_TIMEOUT_MS, prompt);
     } finally {
       clearInterval(fileTimer);
       clearInterval(pageTimer);
@@ -335,7 +361,8 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       run,
       date: new Date(agentRun.startedAt).toISOString(),
       version,
-      commandLine: commandLine(agent),
+      commandLine: commandLine(agent, prompt),
+      skill,
       effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
@@ -390,6 +417,7 @@ export function measureFolder(folder: string) {
     run: raw.run,
     date: raw.date,
     version: raw.version,
+    skill: raw.skill ?? true,
     model: transcript.model,
     changes: count,
     exitCode: raw.exitCode,
@@ -490,6 +518,7 @@ function writeSummary(out: string) {
       models: [...new Set(mine.map((m) => m.model))],
       subagentModels: [...new Set(mine.flatMap((m) => m.subagents.models))],
       efforts: [...new Set(mine.map((m) => (m.effort ? `${m.effort.set}${m.effort.seen ? `, seen ${m.effort.seen}` : ""}` : "?")))],
+      skill: mine.every((m) => m.skill) ? "yes" : mine.some((m) => m.skill) ? "mixed" : "no",
       runs: mine.length,
       dates: [...new Set(mine.map((m) => m.date.slice(0, 10)))],
       overall: sum(mine),
@@ -504,7 +533,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
+        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
         "| 指标 | 中位数（范围） | 次数 |",
         "|---|---|---|",

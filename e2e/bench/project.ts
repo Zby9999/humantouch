@@ -5,20 +5,45 @@
  * committed. Each run gets a clone of it of its own, so no run sees another's
  * code, and the Agent never works in this repository.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLI, copyWithoutVernier, pack, replaceIn, sh, startServer } from "../tests/install-copy.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
 const COMMIT = ["-c", "user.name=bench", "-c", "user.email=bench@example.com", "commit", "-qm"];
 
+/** Where `init` puts the Skill, and the line of AGENTS.md that points to it. */
+const SKILL_FOLDERS = [".agents/skills/vernierkit", ".claude/skills/vernierkit"];
+const SKILL_LINE = /^Vernier Kit: .*skills\/vernierkit\/SKILL\.md`\.\n/m;
+
+/**
+ * Takes out of the project in `dir` what `init` put there for the Agent to
+ * find the Skill by: the Skill, its folders when left empty, and its line in
+ * AGENTS.md (the file too, when that was all of it). The package keeps its own copy.
+ */
+export function withoutSkill(dir: string) {
+  for (const folder of SKILL_FOLDERS) {
+    rmSync(join(dir, folder), { recursive: true, force: true });
+    for (let parent = dirname(folder); parent !== "."; parent = dirname(parent)) {
+      if (existsSync(join(dir, parent)) && !readdirSync(join(dir, parent)).length) rmSync(join(dir, parent), { recursive: true });
+    }
+  }
+  const agents = join(dir, "AGENTS.md");
+  if (!existsSync(agents)) return;
+  const text = readFileSync(agents, "utf8").replace(SKILL_LINE, "");
+  if (text.trim()) writeFileSync(agents, text);
+  else rmSync(agents);
+}
+
 /**
  * The project every run starts from, in a folder of its own beside the
- * package it installs: Vernier Kit installed by `init`, committed.
+ * package it installs: Vernier Kit installed by `init`, committed. With
+ * `skill: false`, the Skill is taken out before the commit, so it is in none
+ * of the project's history either.
  */
-export async function prepareBase(): Promise<{ base: string; remove(): void }> {
+export async function prepareBase({ skill = true } = {}): Promise<{ base: string; remove(): void }> {
   const packed = await pack(mkdtempSync(join(tmpdir(), "vernierkit-bench-pack-")));
   const base = await copyWithoutVernier(EXAMPLE, (dir) => {
     replaceIn(dir, "vite.config.ts", 'import vernier from "vernierkit/vite";\n');
@@ -27,6 +52,7 @@ export async function prepareBase(): Promise<{ base: string; remove(): void }> {
     replaceIn(dir, "src/App.tsx", "      <Vernier />\n");
   });
   await sh(process.execPath, [CLI, "init"], base, { VERNIERKIT_INSTALL_FROM: packed });
+  if (!skill) withoutSkill(base);
   await sh("git", ["add", "-A"], base);
   await sh("git", [...COMMIT, "With Vernier Kit"], base);
   return {

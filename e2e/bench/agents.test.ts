@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AGENTS, headedBrowsers, headlessShell } from "./agents.ts";
+import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, PROMPT } from "./agents.ts";
+import { withoutSkill } from "./project.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "vernierkit-bench-agents-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -92,4 +93,34 @@ test("of the processes under the Agent, the browsers that came up with a window 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --remote-debugging-pipe --user-data-dir=/tmp/q",
     "/x/Chromium.app/Contents/MacOS/Chromium --no-first-run",
   ]);
+});
+
+test("with no Skill, each Agent is asked only to run claim and apply as it says, by a command line of its own (ticket 65)", () => {
+  for (const agent of ["claude", "cursor"] as const) {
+    const args = AGENTS[agent].args("/run", NO_SKILL_PROMPT);
+    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx vernierkit claim`，照输出落地");
+    assert.equal(AGENTS[agent].args("/run")[1], PROMPT);
+    assert.notEqual(commandLine(agent, NO_SKILL_PROMPT), commandLine(agent));
+  }
+});
+
+test("a project with no Skill: init's Skill and its line in AGENTS.md are taken out, and nothing else (ticket 65)", () => {
+  const dir = mkdtempSync(join(scratch, "project-"));
+  for (const folder of [".agents/skills/vernierkit", ".claude/skills/vernierkit", ".claude/skills/deploy"]) {
+    mkdirSync(join(dir, folder), { recursive: true });
+    writeFileSync(join(dir, folder, "SKILL.md"), "# Skill");
+  }
+  const line = "Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.";
+  writeFileSync(join(dir, "AGENTS.md"), `# Project\n\nUse pnpm.\n${line}\n`);
+
+  withoutSkill(dir);
+
+  assert.deepEqual(readdirSync(dir).sort(), [".claude", "AGENTS.md"]);
+  assert.deepEqual(readdirSync(join(dir, ".claude/skills")), ["deploy"]);
+  assert.equal(readFileSync(join(dir, "AGENTS.md"), "utf8"), "# Project\n\nUse pnpm.\n");
+
+  const alone = mkdtempSync(join(scratch, "project-"));
+  writeFileSync(join(alone, "AGENTS.md"), `${line}\n`);
+  withoutSkill(alone);
+  assert.deepEqual(readdirSync(alone), []);
 });

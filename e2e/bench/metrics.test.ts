@@ -240,3 +240,13 @@ test("subagents are counted apart: Claude Code's Task or Agent calls and the oth
   );
   assert.deepEqual(cursor.subagents, { calls: 1, models: ["Composer 2.5"] });
 });
+
+test("the Skill read from the package's own copy, as an Agent with none in the project may find it, is the Skill read too (ticket 65)", () => {
+  const calls: ToolCall[] = [
+    { name: "Read", path: "/p/node_modules/vernierkit/skill/SKILL.md", output: "S".repeat(12) },
+    { name: "Bash", command: "cat node_modules/vernierkit/skill/SKILL.md", output: "C".repeat(5) },
+    { name: "Read", path: "/p/src/skill/SKILL.md", output: "x" },
+  ];
+
+  assert.equal(toolCallStats(calls).charsRead.skill, 17);
+});

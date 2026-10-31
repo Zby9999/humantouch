@@ -17,6 +17,8 @@ const execFileAsync = promisify(execFile);
 
 /** What the designer says to the Agent: the Skill's own trigger. */
 export const PROMPT = "落地我的设计改动";
+/** What the Agent is told in a project with no Skill (ticket 65): only to run `claim` and apply as it says. */
+export const NO_SKILL_PROMPT = "运行 `npx vernierkit claim`，照输出落地";
 
 /** All the PATH the Agent's shell gets: Cursor's install, Node's (for `npx`), then the system's. */
 const PATH = [join(homedir(), ".local/bin"), dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -108,8 +110,8 @@ const SHELL = ["npx vernierkit", "git diff", "git status", "git log", "git show"
 export interface AgentSpec {
   /** Where the Agent's binary is; an environment variable names another. */
   binary(): string;
-  /** The arguments, after the binary: the same for every run but where the run's own files go, in `folder`. */
-  args(folder: string): string[];
+  /** The arguments, after the binary: the same for every run but where the run's own files go, in `folder`, and what the Agent is told. */
+  args(folder: string, prompt?: string): string[];
   /** The model every run is to be on, as the transcript names it: a run on another stops the bench. */
   model: string;
   /** The reasoning effort the arguments set, for the record. */
@@ -124,9 +126,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     binary: () => process.env.VK_BENCH_CLAUDE ?? desktopClaudeCode(),
     model: "claude-sonnet-5-5",
     effort: "high (--effort high)",
-    args: (folder) => [
+    args: (folder, prompt = PROMPT) => [
       "-p",
-      PROMPT,
+      prompt,
       "--output-format",
       "stream-json",
       "--verbose",
@@ -162,9 +164,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     model: "Grok 4.7 256K High",
     effort: "reasoning_effort=high (in --model)",
     // The browser plugins as the run's own, headless (browserPlugins).
-    args: (folder) => [
+    args: (folder, prompt = PROMPT) => [
       "-p",
-      PROMPT,
+      prompt,
       "--output-format",
       "stream-json",
       "--model",
@@ -192,9 +194,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
 };
 
 /** The command line as a person would type it, for the record. */
-export function commandLine(agent: AgentName): string {
+export function commandLine(agent: AgentName, prompt = PROMPT): string {
   const { binary, args } = AGENTS[agent];
-  return [binary(), ...args("<run folder>")].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
+  return [binary(), ...args("<run folder>", prompt)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
 export async function agentVersion(agent: AgentName): Promise<string> {
@@ -249,15 +251,15 @@ async function processTable(): Promise<ProcessRow[]> {
 }
 
 /**
- * Runs the Agent in `dir`, its transcript to `transcript` and what else it
+ * Runs the Agent in `dir`, told `prompt`, its transcript to `transcript` and what else it
  * prints to `log`, its own files in `folder`; stopped after `timeoutMs`. What
  * it leaves running once it exits (Cursor's worker server) goes with it.
  */
-export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number): Promise<AgentRun> {
+export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number, prompt = PROMPT): Promise<AgentRun> {
   const spec = AGENTS[agent];
   const prepared = spec.prepare?.(dir, folder);
   const startedAt = Date.now();
-  const child = spawn(spec.binary(), spec.args(folder), { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
   // Only looked at, never stopped: a window that came up is for the record.
   const headed = new Set<string>();
   let looking: Promise<void> = Promise.resolve();

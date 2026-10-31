@@ -175,7 +175,8 @@ export function isRepoWideSearch(call: ToolCall): boolean {
   return call.path === undefined || !/\.[a-z0-9]+$/i.test(call.path);
 }
 
-const SKILL_FILE = /skills\/vernierkit\/SKILL\.md\b/;
+/** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/vernierkit/skill/SKILL.md`), which an Agent with none in the project may find. */
+const SKILL_FILE = /(skills\/vernierkit|vernierkit\/skill)\/SKILL\.md\b/;
 
 /** The Skill, loaded by name, read as a file, or printed in the shell (`cat …/SKILL.md`). */
 function readsTheSkill(call: ToolCall): boolean {
