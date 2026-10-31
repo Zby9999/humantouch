@@ -183,6 +183,7 @@ test("no notice as the Agent claims the round and edits the code at once, before
 
   await vernierkit("claim");
   writeFileSync(CARD, original.replace("rounded-xl", "rounded-[4px]"));
+  expect(await vernierkit("done", "1")).toContain("it shows the change");
   await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toHaveAttribute("aria-valuenow", "1");
   await vernierkit("finish");
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
