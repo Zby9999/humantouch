@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium, type Browser, type Page } from "@playwright/test";
-import { recordUnclaimedNotices, unclaimedNoticesShown } from "./notices.ts";
+import { recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 
 let browser: Browser;
 before(async () => {
@@ -12,7 +12,7 @@ after(() => browser.close());
 /** A page with the editor layer's host, as `mount.ts` puts it on the page, and a way to show and take away a notice in its Shadow DOM. */
 async function pageWithEditorLayer(): Promise<Page> {
   const page = await browser.newPage();
-  await recordUnclaimedNotices(page);
+  await recordNotices(page);
   await page.route("http://bench.test/", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><main></main>" }));
   await page.goto("http://bench.test/");
   await page.evaluate(() => {
@@ -77,7 +77,7 @@ test("a notice taken away as soon as the task after is counted; the count is kep
 
 test("recorded for a browser context, as the bench does for the designer's page, before the page opens", async () => {
   const context = await browser.newContext();
-  await recordUnclaimedNotices(context);
+  await recordNotices(context);
   const page = await context.newPage();
   await page.route("http://bench.test/", (route) =>
     route.fulfill({
@@ -97,4 +97,29 @@ test("recorded for a browser context, as the bench does for the designer's page,
 
   assert.equal((await unclaimedNoticesShown(page)).length, 1);
   await context.close();
+});
+
+test("each time the notice that the Agent seems to have stopped shows, apart from the other notice: by its mark, once however long it stays", async () => {
+  const page = await pageWithEditorLayer();
+  const stalled = () =>
+    page.evaluate(() => {
+      const notice = document.createElement("div");
+      notice.setAttribute("role", "alert");
+      notice.dataset.vkNotice = "stalled";
+      notice.textContent = "Your Agent seems to have stopped";
+      document.querySelector("vernier-kit")!.shadowRoot!.firstElementChild!.append(notice);
+    });
+  const takeStalledAway = () => page.evaluate(() => document.querySelector("vernier-kit")!.shadowRoot!.querySelector('[data-vk-notice="stalled"]')!.remove());
+
+  await stalled();
+  await show(page, UNCLAIMED_TITLE);
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  await takeStalledAway();
+  await stalled();
+
+  const times = await stalledNoticesShown(page);
+  assert.equal(times.length, 2);
+  assert.equal((await unclaimedNoticesShown(page)).length, 1);
+  assert.deepEqual(await stalledNoticesShown(page, times[1]), [times[1]]);
+  await page.close();
 });

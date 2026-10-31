@@ -1825,18 +1825,61 @@ describe("last", () => {
 });
 
 describe("claim, again", () => {
-  test("prints the notes once more, with the changes done so far, and keeps them done", async () => {
+  // The designer tells an Agent that stopped to go on (ticket 67): it gets what is left, as the page counts it (ADR 0013).
+  const halfOpacity = { ...redFill, id: 3, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
+
+  test("gives only the changes not applied yet: those neither shown on the page nor done; the round stays as it was", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "1");
+    pageSaw({ 2: { outcome: "shown" } });
+
+    const { code, output } = await cli("claim");
+
+    expect(code).toBe(0);
+    expect(state()).toMatchObject({ status: "claimed", done: [1] });
+    expect(changeSections(output)).toBe(changeSections((await describeOnly(halfOpacity)).output));
+    expect(output).toContain("This round is claimed already, and 2 of its 3 changes are applied (1 and 2), as the designer's page shows them or as you reported them done. Left: 1 change, made by the designer");
+    expect(output).not.toContain("**Status:**");
+  });
+
+  test("gives again a change done that the page does not show", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
     await cli("done", "1");
+    pageSaw({ 1: { outcome: "not shown", actual: null } });
 
     const { output } = await cli("claim");
 
-    expect(state()).toMatchObject({ status: "claimed", done: [1] });
-    expect(section(output, 1)).toContain("- **Status:** Done\n");
-    expect(section(output, 2)).toContain("- **Status:** Not done yet\n");
+    expect(section(output, 1)).not.toBe("");
+    expect(section(output, 2)).not.toBe("");
+    expect(output).toContain("This round is claimed already, and none of its 2 changes are applied yet. Left: 2 changes, made by the designer");
+  });
+
+  test("with every change applied, says to finish the round", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1", "2");
+
+    const { code, output } = await cli("claim");
+
+    expect(code).toBe(0);
+    expect(output).toBe("This round is claimed already, and all 2 of its changes are applied, as the designer's page shows them or as you reported them done: run `npx vernierkit finish` to end it.\n");
   });
 });
+
+/** What `claim` gives for a round of these changes alone, in another project. */
+async function describeOnly(...changes: object[]) {
+  const other = project;
+  project = mkdtempSync(join(tmpdir(), "vernierkit-cli-"));
+  try {
+    saveRound(...changes);
+    return await cli("claim");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    project = other;
+  }
+}
 
 describe("a claimed state left without its round", () => {
   // As when `done` writes the state back just after the designer unlocked the round.

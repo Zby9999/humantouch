@@ -1,6 +1,6 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { recordUnclaimedNotices, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
+import { recordNotices, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Page } from "./fixtures";
 import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
 
@@ -141,7 +141,7 @@ test("back to preview mode: the round is kept, and edit mode comes back to the s
 });
 
 test("no notice for a file the page does not use: a note, a module nothing imports", async ({ page }) => {
-  await recordUnclaimedNotices(page);
+  await recordNotices(page);
   await page.goto(DEV_URL);
   await designARound(page);
 
@@ -160,7 +160,7 @@ test("no notice for a file the page does not use: a note, a module nothing impor
 });
 
 test("no notice as the editor layer saves the round, the layers off the canvas, or the canvas itself", async ({ page }) => {
-  await recordUnclaimedNotices(page);
+  await recordNotices(page);
   await page.goto(DEV_URL);
   await designARound(page);
   for (const [field, value] of [["Fill color", "ff0000"], ["Stroke color", "0000ff"], ["Corner radius", "6"]]) {
@@ -190,7 +190,7 @@ test("no notice as the editor layer saves the round, the layers off the canvas, 
 });
 
 test("no notice as the Agent claims the round and edits the code at once, before the page hears of the claim", async ({ page }) => {
-  await recordUnclaimedNotices(page);
+  await recordNotices(page);
   await page.goto(DEV_URL);
   await designARound(page);
 
@@ -254,7 +254,7 @@ test("the Agent claiming once the notice is up: edit mode folds away as for any 
 });
 
 test("no notice as the Agent claims and edits at once, even with the page never told of the claim: it asks the local service", async ({ page }) => {
-  await recordUnclaimedNotices(page);
+  await recordNotices(page);
   // The page hears the round is being edited, and nothing after: it is told of no claim.
   await page.route(
     (url) => url.hostname === "127.0.0.1" && url.pathname === "/events",

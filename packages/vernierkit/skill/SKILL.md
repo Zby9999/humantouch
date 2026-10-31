@@ -7,7 +7,7 @@ description: Apply the design changes a designer made in Vernier Kit, the editor
 
 The designer edits the page in Vernier Kit, which saves every change to `.vernier/` in the project. You write those changes into the source code. The command line gives you everything: what each change is, where it goes, and how to write it.
 
-1. **Claim.** From the project root, run `npx vernierkit claim`. It claims the round and prints the change notes: a numbered section per change, then **How to write them**, the rules for the kinds of change in this round. The designer's editor locks while you work. If it says there are no design changes to apply, tell the designer and stop. Running `claim` again prints the notes once more, with the changes done so far.
+1. **Claim.** From the project root, run `npx vernierkit claim`. It claims the round and prints the change notes: a numbered section per change, then **How to write them**, the rules for the kinds of change in this round. The designer's editor locks while you work. If it says there are no design changes to apply, tell the designer and stop. Running `claim` again prints the notes for the changes not applied yet.
 2. **Apply** the changes in order, as their sections and the rules say. If one cannot be applied exactly as asked, apply the closest you can and still run `done` for it, or leave it out and do not; report it either way.
 3. **Done.** After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers (`npx vernierkit done 1 2 3`), and run it at least once before `finish`. For each change it says what the designer's open page shows:
    - **it shows the change**: go on.

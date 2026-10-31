@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
-import { recordUnclaimedNotices, unclaimedNoticesShown } from "./notices.ts";
+import { recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
 
@@ -78,8 +78,14 @@ interface RawRun {
    * editing unclaimed, after it a false one. Missing in runs before ticket 66.
    */
   unclaimedNotices?: number;
-  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, each edit to the project's source, and each time that notice showed. */
-  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[]; unclaimedNotices?: number[] };
+  /**
+   * How many times, from the Agent's start on, the designer's toggle said the
+   * Agent seems to have stopped (ticket 67): with the Agent at work all along,
+   * each is a false one. Missing in runs before ticket 67.
+   */
+  stalledNotices?: number;
+  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, each edit to the project's source, and each time either notice showed. */
+  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[]; unclaimedNotices?: number[]; stalledNotices?: number[] };
   /** The page's last check of each change, as the round was archived (or left, unfinished). */
   checks: Record<string, { outcome: string }>;
 }
@@ -209,7 +215,7 @@ async function withScenario<T>(
     server = await startDevServer(project.dir, port);
     context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
     await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
-    await recordUnclaimedNotices(context);
+    await recordNotices(context);
     const page = await context.newPage();
     await page.goto(server.url);
     await page.locator("main").waitFor();
@@ -353,6 +359,7 @@ async function runOnce({
     }
     watchFiles();
     times.unclaimedNotices = await unclaimedNoticesShown(designer, agentRun.startedAt);
+    times.stalledNotices = await stalledNoticesShown(designer, agentRun.startedAt);
 
     // The end: the dev server brings the last edits in, and the page is loaded afresh.
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -376,6 +383,7 @@ async function runOnce({
       effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
+      stalledNotices: times.stalledNotices.length,
       changes: scenario.changes.map((change, i) => ({
         id: saved[i].id,
         kind: change.kind,
@@ -455,6 +463,11 @@ export function measureFolder(folder: string) {
     falseChecks: round?.falseChecks ?? [],
     maxProgressGapMs: round?.maxProgressGapMs ?? null,
     maxStillMs: round?.maxStillMs ?? null,
+    /** The editor layer's notices on the designer's page from the Agent's start (tickets 66, 67): how many, and when, in ms from the Agent's start; null in runs before. */
+    unclaimedNotices: raw.unclaimedNotices ?? null,
+    unclaimedNoticesAtMs: raw.times.unclaimedNotices?.map((at) => at - raw.startedAt) ?? null,
+    stalledNotices: raw.stalledNotices ?? null,
+    stalledNoticesAtMs: raw.times.stalledNotices?.map((at) => at - raw.startedAt) ?? null,
     reportCompliant: report.compliant,
     reportProblems: report.problems,
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
@@ -492,6 +505,8 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["设计变量使用率", (m) => m.variableUse],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
+  ["没认领就改代码的提示（次）", (m) => m.unclaimedNotices],
+  ["Agent 好像停了的提示（次）", (m) => m.stalledNotices],
   ["被权限拦下的工具调用", (m) => m.permissionDenials],
   ["子 Agent 调用", (m) => m.subagents.calls],
   ["API 重试", (m) => m.apiRetries],
@@ -518,7 +533,8 @@ function writeSummary(out: string) {
         const s = summarize(values);
         // A yes or no is summed up by how often it is yes.
         const share = name.endsWith("（比例）") && s.n ? values.reduce((total: number, value) => total + (value ?? 0), 0) / s.n : null;
-        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share) }];
+        const total = values.reduce((sum: number, value) => sum + (value ?? 0), 0);
+        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share), total: round(total) }];
       }),
     );
   const agents = [...new Set(measures.map((m) => m.agent))];
@@ -536,10 +552,19 @@ function writeSummary(out: string) {
       overall: sum(mine),
       scenarios: Object.fromEntries([...new Set(mine.map((m) => m.scenario))].map((scenario) => [scenario, sum(mine.filter((m) => m.scenario === scenario))])),
       brokenTests: mine.filter((m) => m.shownBefore.length).map((m) => `${m.scenario} #${m.run}: ${m.shownBefore.join(", ")}`),
+      /** Each run whose designer's page showed a notice, and when, in seconds from the Agent's start. */
+      notices: mine
+        .filter((m) => m.unclaimedNotices || m.stalledNotices)
+        .map((m) => {
+          const at = (times: number[] | null) => (times ?? []).map((ms) => `${Math.round(ms / 1000)}s`).join(", ");
+          return `${m.scenario} #${m.run}: ${[m.unclaimedNotices ? `没认领就改代码 ${at(m.unclaimedNoticesAtMs)}` : "", m.stalledNotices ? `Agent 好像停了 ${at(m.stalledNoticesAtMs)}` : ""].filter(Boolean).join("; ")}`;
+        }),
     };
   });
   writeFileSync(join(out, "measures.json"), `${JSON.stringify(measures, null, 2)}\n`);
   writeFileSync(join(out, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+  /** A count's total over the runs that have it; – when none does (runs before it was counted). */
+  const sumOf = (s: { n: number; total: number | null }) => (s.n ? s.total : "–");
   const cell = (s: { median: number | null; min: number | null; max: number | null; share: number | null }) =>
     s.share !== null ? `${Math.round(s.share * 100)}%` : s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`;
   const md = summary
@@ -555,6 +580,9 @@ function writeSummary(out: string) {
         `|---|${"---|".repeat(BY_SCENARIO.length)}`,
         ...Object.entries(agent.scenarios).map(([scenario, s]) => `| ${scenario} | ${BY_SCENARIO.map((name) => cell(s[name])).join(" | ")} |`),
         ...(agent.brokenTests.length ? ["", `场景的预期在 Agent 开始前就成立（测试有误）：${agent.brokenTests.join("; ")}`] : []),
+        // Counted from the Agent's start: the Agent at work, each is a false one (tickets 66, 67).
+        "",
+        `提示合计（从 Agent 开始算）：没认领就改代码 ${sumOf(agent.overall["没认领就改代码的提示（次）"])} 次，Agent 好像停了 ${sumOf(agent.overall["Agent 好像停了的提示（次）"])} 次${agent.notices.length ? `：${agent.notices.join("; ")}` : ""}`,
       ].join("\n"),
     )
     .join("\n\n");

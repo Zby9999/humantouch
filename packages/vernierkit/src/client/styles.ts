@@ -136,6 +136,12 @@ export const styles = /* css */ `
 }
 .vk-notice-title { margin: 0; padding: 8px 12px 4px; font: inherit; font-weight: 600; }
 .vk-notice-text { margin: 0; padding: 0 12px 4px; color: rgb(255 255 255 / 0.7); }
+/* The Agent seems to have stopped (ticket 67): on the toggle, where its change list opens. */
+.vk-stalled { position: absolute; width: 300px; }
+.vk-dock[data-corner^="bottom"] .vk-stalled { bottom: calc(100% + 8px); }
+.vk-dock[data-corner^="top"] .vk-stalled { top: calc(100% + 8px); }
+.vk-dock[data-corner$="right"] .vk-stalled { right: 0; }
+.vk-dock[data-corner$="left"] .vk-stalled { left: 0; }
 
 /* Edit mode shell. Figma-like; follows the system light / dark setting. */
 .vk-shell {

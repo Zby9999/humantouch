@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
+import { watchStall, type StallWatch } from "./agent-stall";
 import { CodeChangeNotice } from "./CodeChangeNotice";
 import { watchCodeChanges } from "./code-changes";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
@@ -14,6 +15,7 @@ import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
+import { StalledNotice } from "./StalledNotice";
 import { Toggle } from "./Toggle";
 import { readViewWidths } from "./ViewLabels";
 
@@ -140,6 +142,25 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   };
   useLayoutEffect(() => answer(claimed?.check), [claimed?.check?.key, round]);
   useLayoutEffect(() => answer(claimed?.closing), [claimed?.closing?.key, round]);
+
+  // Once claimed, till the round ends: nothing the page sees moving for a while, the Agent seems to have stopped (ticket 67).
+  // What moves: the code coming in (watched by `watchStall`), the ring, and each `done` and `finish` asking the page.
+  const [stalled, setStalled] = useState(false);
+  const stall = useRef<StallWatch | null>(null);
+  useEffect(() => {
+    if (!isClaimed) return;
+    const watch = watchStall(window, setStalled);
+    stall.current = watch;
+    return () => {
+      watch.stop();
+      stall.current = null;
+      setStalled(false);
+    };
+  }, [isClaimed]);
+  const moves = claimed && [applied.map((change) => change.id).join(), claimed.done.join(), claimed.check?.key, claimed.closing?.key].join("|");
+  useEffect(() => stall.current?.moved(), [moves]);
+  /** Ends a claimed round as it is: pressing and holding the toggle, or the notice that the Agent seems to have stopped. */
+  const endRound = () => store?.unlock().catch((error: unknown) => console.warn(error));
 
   const lastStatus = useRef(status);
   useEffect(
@@ -360,12 +381,14 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           changesOpen={listOpen && listed.length > 0}
           onShowChanges={() => setListOpen(!listOpen)}
           applying={claimed && { done: applied.length, total: changes.length }}
-          onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
+          onUnlock={endRound}
           onToggle={switchMode}
           // Edit mode has been asked for, and the canvas is not up yet: what it needs is still loading.
           busy={mode === "edit" && !ready}
         >
           {list}
+          {/* Not over the change list, opened from the badge to look at what is left. */}
+          {claimed && stalled && !list && <StalledNotice onKeepWaiting={() => stall.current?.moved()} onEndRound={endRound} />}
         </Toggle>
       )}
     </>

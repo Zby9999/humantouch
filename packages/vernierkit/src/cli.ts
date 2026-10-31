@@ -66,7 +66,7 @@ export async function run(args: string[], io: Io): Promise<number> {
 }
 
 async function claim(folder: VernierFolder, root: string, io: Io): Promise<number> {
-  // Claimed already: the Agent may have lost the notes. What it did so far stays done.
+  // Claimed already: the Agent stopped, or lost the notes. What is applied so far stays applied; it gets the rest (ticket 67).
   const state = await readState(folder);
   // Not claimed yet: the open page may still be reading what it shows in each part of a change's range, the code as it is.
   const changeSet = state ? await readChangeSet(folder) : await waitForPartsRead(folder);
@@ -76,10 +76,23 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   }
   // The code as it was before the Agent changed anything, to undo the round by.
   if (!state) await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) });
-  const status = state && ((change: Change) => (state.done.includes(change.id) ? "Done" : "Not done yet"));
   const checks = await readChecks(folder);
   const notes = toApply(!!checks?.pages && isRunning(checks.service));
-  io.write(describeChanges(changeSet.changes, root, status ? { ...notes, status } : notes));
+  if (!state) {
+    io.write(describeChanges(changeSet.changes, root, notes));
+    return 0;
+  }
+  // As the page counts them (ADR 0013): shown on the page, or done and not said not to show.
+  const applied = appliedOf(state, checks?.results);
+  const all = changeSet.changes.length;
+  const how = "as the designer's page shows them or as you reported them done";
+  if (applied.length === all) {
+    io.write(`This round is claimed already, and all ${all} of its changes are applied, ${how}: run \`npx vernierkit finish\` to end it.\n`);
+    return 0;
+  }
+  const so = applied.length ? `${applied.length} of its ${all} changes are applied (${listed(applied)}), ${how}` : `none of its ${all} changes are applied yet`;
+  const left = changeSet.changes.filter((change) => !applied.includes(change.id));
+  io.write(describeChanges(changeSet.changes, root, { ...notes, only: left, intro: (count) => `This round is claimed already, and ${so}. Left: ${notes.intro(count)}` }));
   return 0;
 }
 

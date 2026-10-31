@@ -38,6 +38,8 @@ export interface NotesOptions {
   status?(change: Change): string;
   /** What the notes end with, after the last change. */
   end?(list: Change[]): string;
+  /** The changes to give, when not all of the round: the others are only referred to (a layer one of them made, say). */
+  only?: Change[];
 }
 
 /** The sentence that says the designer's page is up, and checks the edits: no dev server to start, no browser to open (ticket 65). */
@@ -63,10 +65,10 @@ export function changes(count: number): string {
 
 /** `root`: the project's folder, which file paths are given from. */
 export function describeChanges(list: Change[], root: string, options: NotesOptions = toApply(false)): string {
-  const count = changes(list.length);
-  let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
-  for (const change of list) notes += section(change, list, root, options.status?.(change));
-  return notes + (options.end?.(list) ?? "");
+  const given = options.only ?? list;
+  let notes = `# ${options.heading}\n\n${options.intro(changes(given.length))}\n\n`;
+  for (const change of given) notes += section(change, list, root, options.status?.(change));
+  return notes + (options.end?.(given) ?? "");
 }
 
 function section(change: Change, list: Change[], root: string, status: string | undefined): string {
