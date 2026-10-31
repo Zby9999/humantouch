@@ -15,6 +15,8 @@ export interface ToolCall {
   command?: string;
   /** For a tool on one path: a file read, written or searched. */
   path?: string;
+  /** For Cursor's glob: the folder it looks in, which is no path searched in the bench's counting. */
+  folder?: string;
   /** For a Skill the Agent loads by name (Claude Code's Skill tool). */
   skill?: string;
   /** What the tool gave the Agent to read. */
@@ -124,12 +126,13 @@ function modelsIn(value: unknown): string[] {
 }
 
 /** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on. */
-function where(input: Event): Pick<ToolCall, "command" | "path" | "skill"> {
+function where(input: Event): Pick<ToolCall, "command" | "path" | "skill" | "folder"> {
   if (typeof input.command === "string") return { command: input.command };
   if (typeof input.skill === "string") return { skill: input.skill };
+  const path = input.file_path ?? input.path;
+  if (typeof path === "string") return { path };
   // Cursor's glob names the folder it looks in as its target.
-  const path = input.file_path ?? input.path ?? input.targetDirectory;
-  return typeof path === "string" ? { path } : {};
+  return typeof input.targetDirectory === "string" ? { folder: input.targetDirectory } : {};
 }
 
 /** A tool result's text: a string, or text parts. */
@@ -192,7 +195,7 @@ const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?vernier
 /** A call that reads the package itself: not one that runs its command line, by `npx` or by its file. */
 function readsThePackage(call: ToolCall): boolean {
   if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !vernierkitCommands(call.command).length && !/vernierkit\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
-  return IN_PACKAGE.test(call.path ?? "");
+  return IN_PACKAGE.test(call.path ?? call.folder ?? "");
 }
 
 export function toolCallStats(calls: ToolCall[]): ToolCallStats {

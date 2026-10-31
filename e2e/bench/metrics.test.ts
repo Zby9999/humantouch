@@ -267,12 +267,12 @@ test("calls that read the Vernier Kit package itself are counted, not those that
   assert.equal(toolCallStats(calls).packageReads, 4);
 });
 
-test("Cursor's glob in a folder of the package is a call there: its target folder is the call's path", () => {
+test("Cursor's glob in a folder of the package is a call there, by its target folder (ticket 65)", () => {
   const transcript = parseTranscript(
     "cursor",
     lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/vernierkit", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
   );
 
-  assert.equal(transcript.toolCalls[0].path, "/t/node_modules/vernierkit");
+  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/vernierkit");
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });

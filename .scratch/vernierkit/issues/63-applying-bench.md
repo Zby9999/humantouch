@@ -531,3 +531,26 @@ Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/L
   - 用新规则把基线 A、B 和 64 的 6 个结果文件夹（各 30 次）在副本上重算了一遍：180 次的每项数字都和原来的 `measures.json` 一样。
 - 单测：提示词和命令行（`agents.test.ts`）；拿掉 Skill 只拿掉 `init` 放的那些（`agents.test.ts`）；包里那份算读了 Skill（`metrics.test.ts`）。
 - 不影响任何已有的计分，也不改加载 Skill 时的运行条件。
+
+**`@playwright/mcp` 固定版本、不加载 Skill 的安装记录、读包的统计（2026-10-31，ticket 65 补修的 4ff531e 和本条）**
+
+- `@playwright/mcp` 从 `@latest` 改为固定 0.0.83（`agents.ts` 的 `PLAYWRIGHT_MCP`）。
+  - 来源：npx 缓存里 `@playwright/mcp@latest` 那份（`~/.npm/_npx/9833c18b2d85bc59`）装的是 0.0.83，10/7 装上，之后没换过（64、65 跑分时 npx 每次都去问 registry，仍是这一份；10/31 13:46 是 65 的 Cursor 批次碰过它）。
+  - 缓存里另有一份 0.0.79（10/23），是不带 `@latest` 的 `npx @playwright/mcp` 装的，测量台没用过。
+  - `chrome-devtools-mcp` 本来就固定在 1.11.0，没动。
+  - 这两项写在每次运行自己的插件文件里，不在 Cursor 的命令行里，所以 `meta.json` 的命令行不变。
+- `--no-skill` 的项目，`withoutSkill` 也把 `.vernier/install.json` 里 AGENTS.md 那一行的记录去掉（`edits` 里 AGENTS.md 的那条，`created` 里的 AGENTS.md），其他记录不动。有单测。
+  - 说明：这只让 `remove` 不再去撤一条已经不在的行。
+  - **没做到「免得 Agent 跑 `doctor` 或 `init` 时把 Skill 装回去」**：
+    - `doctor` 直接看项目里的 SKILL.md 和 AGENTS.md，不看安装记录，所以仍会说「SKILL.md is missing: run `npx vernierkit init`」；`init` 总是写回 Skill。
+    - 而且 `.vernier/` 被 `.gitignore` 忽略，每次运行的项目是 git clone 出来的，本来就没有 `install.json`。
+    - 要真的挡住，得改 Agent 能跑的命令（Claude 的 `Bash(npx vernierkit:*)`、Cursor 的 `Shell(npx)`），这会改命令行，就不能和 65 的不加载 Skill 那批比了。没做，由总调度定。
+    - 65 和补修这两批不加载 Skill 的 20 次 Claude 都没有跑 `doctor` 或 `init`。
+- 新统计「读 node_modules/vernierkit（次）」（`metrics.ts` 的 `packageReads`，`summary.md` 多一行）：
+  - 数读包本身的工具调用：读文件、在包里 grep，`node -e` 读包里的文件，pnpm store 里那份也算，包里自带的 Skill 也算；Cursor 的 glob 按它的 `targetDirectory` 算。
+  - 跑命令行（`npx vernierkit …`、`node …/dist/cli.js claim`）不算。
+  - Cursor 的 glob 的目标文件夹记在 `folder`，不当作搜索的路径，所以全仓搜索的数不变。
+  - 用新统计把基线 A、B、64、65（两家）和 65 不加载 Skill 的 9 个结果文件夹在副本上重算了一遍：除了新的这一项，每项数字都和原来的 `measures.json` 一样。
+  - 回补的数在 65 的 Comments。Claude 每批都是 0；Cursor A 39、B 5、64 26、65 99。
+- 测量台等断点改动的各段读完、存下，才让 Agent 开始（`scenarios.ts` 的 `saved`，ticket 65 补修）。各段的值是编辑层在设计师改完约半秒后读的，测量台不等的话，Agent 可能在存下之前就认领。
+- 不影响任何已有的计分，也不改 Agent 的命令行。
