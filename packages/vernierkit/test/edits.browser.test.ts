@@ -3535,6 +3535,23 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     checks.stop();
   });
 
+  test("shown, then undone by later code before done asks: the page sees it is no longer shown, and says so", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    const shown: number[][] = [];
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
+
+    write("border: 1.5px solid #ff0000");
+    await expect.poll(() => shown.at(-1)).toEqual([change.id]);
+    // A later edit of the code's takes it back out.
+    write("border: 1px solid #ff0000");
+    await expect.poll(() => shown.at(-1)).toEqual([]);
+    expect(reports.at(-1)).toMatchObject({ id: change.id, outcome: "not shown" });
+    checks.stop();
+  });
+
   test("written through a design variable, it is compared as the page draws it", async () => {
     const { page, editor, changes, board, write } = open();
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });

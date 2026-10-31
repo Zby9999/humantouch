@@ -1,7 +1,9 @@
 /**
  * The page checking a claimed round itself (ADR 0013): each time the code
  * changes, it looks again at the changes it does not show yet, and says what
- * it saw; a change it shows once is not looked at again. `done` asks it too:
+ * it saw; a change it shows already it looks at again as wide as its window
+ * only (a later edit may have undone it), its copies at other widths left
+ * for `done` and `finish` to bring up to date. `done` asks it too:
  * a change it shows already is answered at once; any other once the code
  * edited before the ask has reached the page, as far as the dev server can
  * say, and then had a moment to show.
@@ -11,7 +13,7 @@
  */
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckAsk, type CheckReport, type CheckResult, type CodeUpdates } from "../service-protocol";
 import type { Change } from "./changeset";
-import { checkAcross, uncheckable, widthsOf, type PageWidth } from "./check";
+import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
 import { CHECK_MEASURE } from "./host";
 import { copyPage, type PageCopy } from "./page-copy";
 
@@ -100,10 +102,18 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     return { width, doc: copy.doc, own: false, of: copy.of };
   };
   /** Looks at `change` now; what looking puts in the page is not the code changing. */
-  const check = (change: Change): CheckResult => {
+  const check = (change: Change): CheckResult => measured(change, () => lookNow(change));
+  /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
+  const checkAgain = (change: Change): CheckResult | null =>
+    measured(change, () => {
+      const result = checkHere(doc, change, changes, viewWidths());
+      observer.takeRecords();
+      return result;
+    });
+  const measured = <T,>(change: Change, look: () => T): T => {
     const start = performance.now();
     try {
-      return lookNow(change);
+      return look();
     } finally {
       performance.measure(CHECK_MEASURE, { start, end: performance.now(), detail: change.id });
     }
@@ -121,22 +131,19 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   };
   const saw = (change: Change, result: CheckResult) => {
     if (stopped || (result.outcome === "unchecked" && result.reason === "loading")) return;
-    // Shown once, a change is looked at again only when `done` asks: a later edit may have undone it.
+    const undone = shown.has(change.id) && result.outcome !== "shown";
     if ((result.outcome === "shown") !== shown.has(change.id)) {
       if (result.outcome === "shown") shown.add(change.id);
-      else {
-        shown.delete(change.id);
-        watchCode();
-      }
+      else shown.delete(change.id);
       onShown([...shown]);
     }
     const text = JSON.stringify(result);
     if (said.get(change.id) === text) return;
     said.set(change.id, text);
-    report({ id: change.id, at: new Date().toISOString(), ...result });
+    report({ id: change.id, at: new Date().toISOString(), ...result, ...(undone && { undone: true as const }) });
   };
 
-  // Looking at every change not shown yet, a slice at a time.
+  // Looking at every change, a slice at a time: those not shown yet at every width, those shown as wide as the window.
   let looking = false;
   let again = false;
   let lastLook = 0;
@@ -147,21 +154,27 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       return;
     }
     looking = true;
-    const todo = checkable.filter((change) => !shown.has(change.id));
+    const todo = [...checkable.filter((change) => !shown.has(change.id)), ...checkable.filter((change) => shown.has(change.id))];
     const slice = () => {
       if (stopped) return;
       const start = performance.now();
       while (todo.length) {
         const change = todo[0];
-        // A copy of the page the change is looked at on, readied first, a step to a task: the costly part.
-        const stepStart = performance.now();
-        const step = !shown.has(change.id) && widthsOf(change, changes, win.innerWidth, viewWidths()).others.some((width) => prepare(width));
-        if (step) {
-          performance.measure(CHECK_MEASURE, { start: stepStart, end: performance.now() });
-          return later(slice, 0);
+        if (shown.has(change.id)) {
+          todo.shift();
+          // Undone by a later edit, it is not shown: looked at at every width again from now on.
+          const result = checkAgain(change);
+          if (result && result.outcome !== "shown") saw(change, result);
+        } else {
+          // A copy of the page the change is looked at on, readied first, a step to a task: the costly part.
+          const stepStart = performance.now();
+          if (widthsOf(change, changes, win.innerWidth, viewWidths()).others.some((width) => prepare(width))) {
+            performance.measure(CHECK_MEASURE, { start: stepStart, end: performance.now() });
+            return later(slice, 0);
+          }
+          todo.shift();
+          saw(change, check(change));
         }
-        todo.shift();
-        if (!shown.has(change.id)) saw(change, check(change));
         if (todo.length && performance.now() - start > SLICE_MS) return later(slice, 0);
       }
       looking = false;
@@ -169,10 +182,6 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       if (again) {
         again = false;
         look();
-      }
-      if (shown.size === checkable.length) {
-        observer.disconnect();
-        observing = false;
       }
     };
     slice();
@@ -211,13 +220,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     look();
   };
   win.addEventListener(CODE_EVENT, onCode);
-  let observing = false;
-  const watchCode = () => {
-    if (observing || !checkable.length) return;
-    observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    observing = true;
-  };
-  watchCode();
+  // Watched all along: a change shown may be undone by a later edit.
+  if (checkable.length) observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
   later(look, 0);
 
   /**

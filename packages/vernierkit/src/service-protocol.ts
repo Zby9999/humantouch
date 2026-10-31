@@ -112,8 +112,12 @@ export type CheckResult =
   /** `anyPage`: no page could check it either (a brief, a layer new this round): not worth waiting for another. */
   | { outcome: "unchecked"; reason: string; anyPage?: true };
 
-/** How a page checked change `id`: `at` the ask it answers, or when it checked as the code changed. */
-export type CheckReport = { id: number; at: string } & CheckResult;
+/**
+ * How a page checked change `id`: `at` the ask it answers, or when it checked
+ * as the code changed. `undone`: the page showed it, and shows it no more:
+ * a later edit undid it.
+ */
+export type CheckReport = { id: number; at: string; undone?: true } & CheckResult;
 
 export interface ServiceConfig {
   /** `http://127.0.0.1:<port>` */

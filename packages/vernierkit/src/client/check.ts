@@ -140,6 +140,18 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
   return checked ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" };
 }
 
+/**
+ * Whether the page, as wide as its window, still shows a change it has
+ * shown at every width: a quick look as the code changes, with no copy of the
+ * page to bring up to date. Null when the change is not to show at that
+ * width, and is looked at on copies of the page only.
+ */
+export function checkHere(doc: Document, change: Change, round: Change[], viewWidths: number[]): CheckResult | null {
+  if (uncheckable(change)) return null;
+  const page = itself(doc);
+  return widthsOf(change, round, page.width, viewWidths).own ? lookAt(doc, change, ownValues(change, round), page) : null;
+}
+
 /** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. */
 export function checkChange(doc: Document, change: Change, round: Change[] = []): CheckResult {
   const reason = uncheckable(change);

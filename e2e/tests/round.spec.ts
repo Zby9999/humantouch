@@ -96,6 +96,22 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   expect(results()).toMatchObject([{ ended: "finished", done: [1], applied: [1, 2], checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" } } }]);
 });
 
+test("a change the page shows, undone by a later edit before any done: the ring goes back down", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await changeTheCards(page);
+  await vernierkit("claim");
+  await applyToCard(page, "fill");
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
+
+  // The Agent's next edit puts the fill back as it was.
+  writeFileSync(CARD, originalCard);
+  await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
+
+  await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
+  await expect(badge(page)).toHaveText("2");
+  expect(await vernierkit("finish")).toBe("Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n");
+});
+
 test("done for several changes at once: each with how the page checked it, those the page shows already at once", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { startService, type Service } from "../src/service";
 import { CHECKS_PATH, EVENTS_PATH, OFF_CANVAS_PATH, ROUND_PATH, TOKEN_HEADER, type SavedOffCanvasLayer } from "../src/service-protocol";
-import { archiveRound, vernierFolder, writeState } from "../src/vernier-folder";
+import { archiveRound, roundStatus, vernierFolder, writeState } from "../src/vernier-folder";
 
 const APP = `export function App() {
   return (
@@ -116,5 +116,21 @@ describe("how the round stands, as the editor layer is told", () => {
     await reader.cancel();
 
     expect(JSON.parse(value!.split("\n")[0])).toMatchObject({ status: "claimed", done: [2, 3], applied: [1, 3] });
+  });
+
+  test("a change shown, then not by a page behind the one that showed it, still counts; undone by a later edit, as the page that showed it says, it does not", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 1, changes: [] }));
+    await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString() });
+    const report = (result: object) => call("POST", CHECKS_PATH, { id: 1, at: new Date().toISOString(), ...result });
+    const applied = async () => ((await roundStatus(folder)) as { applied: number[] }).applied;
+
+    await report({ outcome: "shown" });
+    await report({ outcome: "not shown", actual: 12 });
+    expect(await applied()).toEqual([1]);
+
+    await report({ outcome: "not shown", actual: 12, undone: true });
+    expect(await applied()).toEqual([]);
   });
 });
