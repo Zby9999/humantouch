@@ -1,4 +1,4 @@
-import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
+import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
 import { clearVernier, readVernier, VERNIER, vernierkit } from "./project-files";
 
@@ -193,4 +193,43 @@ test("the Grid's columns changed in the phone view: what the page shows in each 
   expect(columns).toContain(
     "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n",
   );
+});
+
+/** Selects the first card's Grid in the phone view and gives it 2 columns: one column below 640px, three from 640px up, as the page shows it now. */
+async function twoColumnsInPhone(page: Page) {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const phone = page.locator('iframe[title="Phone 390"]');
+  await expect(phone.contentFrame().locator("h1")).toBeVisible();
+  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true })).toHaveAttribute("aria-selected", "true");
+  await setField(page, "Columns", "2");
+}
+
+const COLUMNS_PART_BY_PART =
+  "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n";
+
+test("back in preview mode at once after a change in the phone view, the page is still read in each part of the range, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  await twoColumnsInPhone(page);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  // Saved as edit mode ended, the parts not read yet.
+  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+
+  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(columns).toContain(COLUMNS_PART_BY_PART);
+});
+
+test("claimed the moment a change in the phone view is saved, claim waits for the page to read each part of the range, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  await twoColumnsInPhone(page);
+  await expect.poll(() => readVernier("changeset.json")?.changes.length, { intervals: [20] }).toBe(1);
+
+  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(columns).toContain(COLUMNS_PART_BY_PART);
 });

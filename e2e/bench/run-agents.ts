@@ -8,6 +8,7 @@
  *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
  *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
+ *                     [--claim-out <dir>]   and write what `claim` prints for each to <dir>/<scenario>.md, to compare two versions word for word
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
  * Runs go one after another, never side by side, so their times compare,
@@ -95,6 +96,7 @@ async function main(argv: string[]) {
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
   const dry = argv.includes("--dry");
+  const claimOut = option("claim-out");
   const skill = !argv.includes("--no-skill");
   const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
@@ -140,7 +142,7 @@ async function main(argv: string[]) {
   try {
     if (dry) {
       for (const scenario of scenarios) {
-        const problems = await setUp(browser, base, await nextPort(), scenario);
+        const problems = await setUp(browser, base, await nextPort(), scenario, claimOut && join(claimOut, `${scenario.id}.md`));
         console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
         failures.push(...problems);
       }
@@ -222,10 +224,14 @@ async function withScenario<T>(
   }
 }
 
-/** Sets a scenario up with no Agent; what is wrong with it: changes not as it names them, or shown on the page already. */
-async function setUp(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
+/**
+ * Sets a scenario up with no Agent; what is wrong with it: changes not as it
+ * names them, or shown on the page already. `claimTo`: then claims the round,
+ * and writes what `claim` prints there.
+ */
+async function setUp(browser: Browser, base: string, port: number, scenario: Scenario, claimTo?: string): Promise<string[]> {
   try {
-    return await withScenario(browser, base, port, scenario, async ({ saved, observers, designer }) => {
+    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
       const problems: string[] = [];
       // Designing touches no code with no claim: the editor layer has no cause to ask.
       const notices = (await unclaimedNoticesShown(designer)).length;
@@ -234,6 +240,10 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
       const named = scenario.changes.map((change) => change.kind).join(", ");
       if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
       (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
+      if (claimTo) {
+        mkdirSync(join(claimTo, ".."), { recursive: true });
+        writeFileSync(claimTo, await project.cli("claim"));
+      }
       return problems;
     });
   } catch (error) {

@@ -3,13 +3,23 @@
  * reload. The saved canvas is parsed, changed and written back as it is.
  */
 import type { SavedRound } from "../service-protocol";
-import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack } from "./changeset";
+import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack, type RangePart } from "./changeset";
 import { BRIEF_ATTR, changesOn, elementsOf, restoreStyle, upgradeEditStyles } from "./canvas-style";
 import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
 import { componentBrief, showComponent } from "./promote";
 import { decompose, undissolve } from "./stacks";
+
+/** The round with what the page shows in each part of change `id`'s range, read (ticket 65); null: it could not be, and the change is as one with no parts. */
+export function withPartsRead(round: SavedRound, id: number, parts: RangePart[] | null): SavedRound {
+  const changes = round.changeSet.changes.map((change) => {
+    if (change.id !== id) return change;
+    const { parts: _unread, ...rest } = change;
+    return parts ? { ...rest, parts } : rest;
+  });
+  return { ...round, changeSet: { ...round.changeSet, changes } };
+}
 
 /**
  * The round with change `id` taken back out, its layer back to where it

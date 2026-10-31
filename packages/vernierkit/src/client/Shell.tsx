@@ -6,7 +6,7 @@ import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { pointerHeld } from "./pointer-held";
-import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
+import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
 import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
@@ -23,8 +23,7 @@ import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type P
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
 import { CATCH_UP_AFTER_MS, type View, type Views } from "./views";
-import { HOST_TAG } from "./host";
-import { hasParts, measureParts } from "./range-parts";
+import { hasPartsToRead } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -37,6 +36,8 @@ const LAYERS_KEY = "vernierkit:layers-panel";
 export interface RoundControl {
   /** Takes change `id` back out, as an edit that can be undone. */
   revert(id: number): void;
+  /** What the page shows in each part of change `id`'s range, read (null: it could not be): kept with it, and saved at once. */
+  partsRead(id: number, parts: RangePart[] | null): void;
   /** Takes every change back out and stops saving: the round is being discarded. */
   discard(): void;
 }
@@ -202,36 +203,20 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     [],
   );
 
-  /** Changes at a breakpoint the live page has been read for in each part of their range, or is being, or saved before: by id (ticket 65). */
-  const partsRead = useRef(new Set<number>());
-  /** Edit mode is ending (a claim, say): what is read from then on is not saved, the round no longer the designer's to save. */
-  const leavingNow = useRef(leaving);
-  leavingNow.current = leaving;
+  /** Changes made in this edit mode, and those of the round it opened with: by id. A change at a breakpoint is marked for its parts to be read only as it is made (ticket 65). */
+  const known = useRef(new Set<number>());
   /**
-   * Reads what the live page shows, the code as it is, in each part of the
-   * range of the changes at a breakpoint that have not been read yet, a moment
-   * after the edit: copying the page is no part of showing it. Saved with them.
+   * Marks each change made since the last edit at a breakpoint the project's
+   * breakpoints cut into parts: the page is to be read in each part, the code
+   * as it is (`parts` null). The editor layer reads it once the round is
+   * saved, and `claim` waits for it.
    */
-  const readParts = () => {
-    const now = round.current;
-    if (!now) return;
-    const { changeSet } = now;
-    const current = (change: Change) => !left.current && !leavingNow.current && round.current?.changeSet === changeSet && changeSet.list().includes(change);
+  const markParts = (changeSet: ChangeSet) => {
+    const project = breakpoints ?? readMediaBreakpoints(document);
     for (const change of changeSet.list()) {
-      if (!hasParts(change) || change.parts || partsRead.current.has(change.id)) continue;
-      partsRead.current.add(change.id);
-      setTimeout(() => {
-        if (!current(change)) return;
-        const into = document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
-        void measureParts(document, change, breakpoints ?? readMediaBreakpoints(document), into).then(
-          (parts) => {
-            if (!parts || !current(change)) return;
-            change.parts = parts;
-            latest.current.changed();
-          },
-          (error: unknown) => console.warn(error),
-        );
-      }, AUTOSAVE_MS);
+      if (known.current.has(change.id)) continue;
+      known.current.add(change.id);
+      if (change.parts === undefined && hasPartsToRead(change, project)) change.parts = null;
     }
   };
 
@@ -239,8 +224,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const changed = () => {
     clearTimeout(pendingSave.current);
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
-    if (round.current) onChanges(round.current.changeSet.list());
-    readParts();
+    if (round.current) {
+      markParts(round.current.changeSet);
+      onChanges(round.current.changeSet.list());
+    }
   };
   const onEdit = () => {
     // A move builds the layers anew: the selection is found again in them.
@@ -542,8 +529,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         restoreFrom={restoreFrom?.canvas ?? null}
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
-          // A round saved before opens as it was: only the changes made from now on have the parts of their range read.
-          for (const change of changeSet.list()) partsRead.current.add(change.id);
+          // A round saved before opens as it was: changes in it the page has yet to be read for are read by the editor layer as it is.
+          for (const change of changeSet.list()) known.current.add(change.id);
           viewsNow.current = views;
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
           // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.
@@ -580,6 +567,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             };
           };
           control.current = {
+            partsRead(id, parts) {
+              const change = changeSet.list().find((change) => change.id === id);
+              if (change?.parts !== null) return;
+              if (parts) change.parts = parts;
+              else delete change.parts;
+              latest.current.changed();
+              flush();
+            },
             revert(id) {
               const { taken, brought } = offAgain(withDependents(changeSet.list(), id));
               let reverted = false;

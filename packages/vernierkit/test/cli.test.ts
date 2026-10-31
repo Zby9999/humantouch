@@ -443,6 +443,69 @@ describe("claim, breakpoints", () => {
     expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
   });
 
+  describe("a change whose range's parts the page has yet to read (ticket 65)", () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+    ];
+    const columns = { ...redFill, property: "columns", before: 1, after: 2, style: { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }, breakpoint: PHONE };
+    const PART_BY_PART = "Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.";
+
+    test("with a page open, claim waits till the page has read them and saved the round again, and gives them part by part; claimed only then", async () => {
+      saveRound({ ...columns, parts: null });
+      pageSaw({});
+      const claimedBefore: unknown[] = [];
+      const reads = setTimeout(() => {
+        claimedBefore.push(state());
+        saveRound({ ...columns, parts });
+      }, 300);
+      try {
+        const { output } = await cli("claim");
+
+        expect(section(output, 1)).toContain(PART_BY_PART);
+        expect(claimedBefore).toEqual([null]);
+        expect(state().status).toBe("claimed");
+      } finally {
+        clearTimeout(reads);
+      }
+    });
+
+    test("read as none (the page does not show the layer in one of them), the change is given as before", async () => {
+      saveRound({ ...columns, parts: null });
+      pageSaw({});
+      const reads = setTimeout(() => saveRound(columns), 100);
+      try {
+        const { output } = await cli("claim");
+
+        expect(section(output, 1)).toContain("- **Design intent:** Change the number of columns from 1 to 2.\n");
+      } finally {
+        clearTimeout(reads);
+      }
+    });
+
+    test("with no page open, claim waits for none, and gives the value the view showed", async () => {
+      saveRound({ ...columns, parts: null });
+      const started = Date.now();
+
+      const { output } = await cli("claim");
+
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(section(output, 1)).toContain("- **Design intent:** Change the number of columns from 1 to 2.\n");
+    });
+
+    test("with a page open that does not read them in time, claim waits no longer, and gives the value the view showed", async () => {
+      saveRound({ ...columns, parts: null });
+      pageSaw({});
+      const started = Date.now();
+
+      const { output } = await cli("claim");
+
+      expect(Date.now() - started).toBeGreaterThanOrEqual(5000);
+      expect(section(output, 1)).toContain("- **Design intent:** Change the number of columns from 1 to 2.\n");
+    }, 15_000);
+  });
+
   test("a copy of a layer with values of its own at breakpoints lists them, for the copy to have them there too; a copy of one with none says nothing of it", async () => {
     const PHONE = { min: null, max: 768 };
     const place = (nth: number) => ({ container: { layer: "9", target: cards }, nth, slot: nth - 1, absolute: null });

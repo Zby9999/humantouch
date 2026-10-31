@@ -66,13 +66,14 @@ export async function run(args: string[], io: Io): Promise<number> {
 }
 
 async function claim(folder: VernierFolder, root: string, io: Io): Promise<number> {
-  const changeSet = await readChangeSet(folder);
+  // Claimed already: the Agent may have lost the notes. What it did so far stays done.
+  const state = await readState(folder);
+  // Not claimed yet: the open page may still be reading what it shows in each part of a change's range, the code as it is.
+  const changeSet = state ? await readChangeSet(folder) : await withPartsRead(folder);
   if (!changeSet?.changes.length) {
     io.write("No design changes to apply: the designer has not changed anything in Vernier Kit since the last round.\n");
     return 0;
   }
-  // Claimed already: the Agent may have lost the notes. What it did so far stays done.
-  const state = await readState(folder);
   // The code as it was before the Agent changed anything, to undo the round by.
   if (!state) await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) });
   const status = state && ((change: Change) => (state.done.includes(change.id) ? "Done" : "Not done yet"));
@@ -80,6 +81,26 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   const notes = toApply(!!checks?.pages && isRunning(checks.service));
   io.write(describeChanges(changeSet.changes, root, status ? { ...notes, status } : notes));
   return 0;
+}
+
+/** The longest `claim` waits for an open page to read the parts of the changes' ranges it has yet to: it takes a page a moment. */
+const PARTS_WAIT_MS = 5000;
+
+/**
+ * The round as saved once the open page has read what it shows in each part
+ * of the range of every change it has yet to (`parts` null, ticket 65), and
+ * saved it again; as it is, with no page open to read them, or once a while
+ * has gone by. Read before the round is claimed: from then on the code changes.
+ */
+async function withPartsRead(folder: VernierFolder) {
+  const until = Date.now() + PARTS_WAIT_MS;
+  for (;;) {
+    const changeSet = await readChangeSet(folder);
+    if (!changeSet?.changes.some((change) => change.parts === null)) return changeSet;
+    const checks = await readChecks(folder);
+    if (!checks?.pages || !isRunning(checks.service) || Date.now() > until) return changeSet;
+    await new Promise((resolve) => setTimeout(resolve, CHECK_POLL_MS));
+  }
 }
 
 const NOT_CLAIMED = "The round is not claimed: run `npx vernierkit claim` first.\n";

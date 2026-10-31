@@ -880,3 +880,124 @@ test.describe("a claimed round", () => {
     verdict(met, `checking a claimed round: longest stretch ${longest.toFixed(1)}ms, ${ofCheck.length} long tasks of its own`);
   });
 });
+
+/**
+ * docs/goals.md, Robust (ticket 65): a style change made in the tablet view,
+ * whose range (560–1119px, `sm:max-lg:`) the project's `md` breakpoint at
+ * 820px cuts in two, has the
+ * editor layer read what the page shows now in each part, on a copy of the
+ * page at a width in it, and save it with the change. On this page of about
+ * 5000 elements that must make no long task: not once the designer has
+ * stopped, nor when they leave edit mode at once, which has the reading
+ * finish after. Three changes to the hero made one after another in the
+ * tablet view, each read once the designer stops; then two each followed at
+ * once by going back to preview mode. Each stretch of reading is a
+ * `vernierkit:parts` measure; a long task is the reading's when it would not
+ * be one without the reading in it, as for the check.
+ */
+test.describe("a change at a breakpoint", () => {
+  test.use({ keepRoundInMemory: false });
+  const VERNIER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.vernier", import.meta.url));
+  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.afterEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+
+  const HERO = "[data-testid=big-hero]";
+  const HERO_PICTURE = `${HERO} img`;
+  const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
+  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes : []);
+
+  interface Seen {
+    long: { start: number; duration: number }[];
+    reads: { start: number; duration: number }[];
+  }
+  function arm() {
+    const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+    const seen: Seen = { long: [], reads: [] };
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.entryType === "longtask") seen.long.push({ start: entry.startTime, duration: entry.duration });
+        else if (entry.name === "vernierkit:parts") seen.reads.push({ start: entry.startTime, duration: entry.duration });
+      }
+    });
+    observer.observe({ type: "longtask" });
+    observer.observe({ type: "measure" });
+    w.vkSeen = seen;
+    w.vkStop = () => observer.disconnect();
+  }
+
+  /** Selects the deepest layer at a point just inside `selector`'s box in the tablet view: edits apply from 560px to 1119px. */
+  async function selectInTablet(page: Page, selector: string) {
+    const box = (await tablet(page).locator(selector).boundingBox())!;
+    await page.keyboard.down("ControlOrMeta");
+    await page.mouse.click(box.x + 3, box.y + 3);
+    await page.keyboard.up("ControlOrMeta");
+    await settle(page);
+  }
+
+  /** Sets `field` to `value`; with `leave`, goes back to preview mode at once. Waits till change `id` is saved with the parts of its range read; what was seen meanwhile. */
+  async function changeAndRead(page: Page, id: number, field: string, value: string, leave = false) {
+    await page.evaluate(arm);
+    const box = design(page).getByRole("textbox", { name: field, exact: true });
+    await box.fill(value);
+    await box.press("Enter");
+    if (leave) await page.getByRole("button", { name: EXIT_LABEL }).click();
+    const started = Date.now();
+    await expect.poll(() => changes().find((change) => change.id === id)?.parts?.length ?? 0, { timeout: 20_000 }).toBe(2);
+    const saved = Date.now() - started;
+    await settle(page, 1000);
+    const seen = await page.evaluate(() => {
+      const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+      w.vkStop();
+      return w.vkSeen;
+    });
+    const own = [...seen.reads].sort((a, b) => a.start - b.start);
+    const ofReading = seen.long.filter((task) => {
+      const reading = own.filter((s) => s.start >= task.start && s.start + s.duration <= task.start + task.duration + 1).reduce((sum, s) => sum + s.duration, 0);
+      return reading > 0 && task.duration - reading < 50;
+    });
+    return {
+      name: `${field}${leave ? ", then back to preview mode at once" : ""}`,
+      saved,
+      stretches: own.length,
+      longest: Math.max(0, ...own.map((s) => s.duration)),
+      reading: own.reduce((sum, s) => sum + s.duration, 0),
+      longTasks: seen.long.map((task) => task.duration),
+      longTasksOfReading: ofReading.map((task) => task.duration),
+    };
+  }
+
+  test("reading what the page shows in each part of a change's range makes no long task, the designer stopped or gone back to preview mode", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectInTablet(page, HERO);
+    const rows = [];
+    rows.push(await changeAndRead(page, 1, "Corner radius", "20"));
+    rows.push(await changeAndRead(page, 2, "Fill color", "fafafa"));
+    rows.push(await changeAndRead(page, 3, "Gap", "10"));
+    keep("rangeParts", { elements, rows });
+    rows.push(await changeAndRead(page, 4, "Opacity", "90", true));
+    await enterEditMode(page);
+    await selectInTablet(page, HERO_PICTURE);
+    rows.push(await changeAndRead(page, 5, "Corner radius", "12", true));
+
+    const longest = Math.max(...rows.map((row) => row.longest));
+    const ofReading = rows.flatMap((row) => row.longTasksOfReading);
+    const met = ofReading.length === 0 && longest < 50;
+    keep("rangeParts", { elements, rows });
+    print(
+      report(
+        `Reading each part of a tablet-view change's range, ${elements} elements, 2 parts (560–819px, 820–1119px) — ${mode}`,
+        [
+          { name: "longest stretch of reading", summary: summarize(rows.map((row) => row.longest)), target: "< 50ms, no long task of its own", met },
+          { name: "reading per change", summary: summarize(rows.map((row) => row.reading)) },
+          { name: "edit to parts saved", summary: summarize(rows.map((row) => row.saved)) },
+        ],
+        rows.map(
+          (row) =>
+            `${row.name}: ${row.stretches} stretches, the longest ${ms(row.longest)}, ${ms(row.reading)} in all, saved ${row.saved}ms after; long tasks ${row.longTasks.map((d) => d.toFixed(0)).join(", ") || "none"} (the reading's: ${row.longTasksOfReading.length})`,
+        ),
+      ),
+    );
+    verdict(met, `reading the parts of a change's range: longest stretch ${longest.toFixed(1)}ms, ${ofReading.length} long tasks of its own`);
+  });
+});

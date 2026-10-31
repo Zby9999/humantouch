@@ -4,13 +4,14 @@ import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRoun
 import { ChangeList } from "./ChangeList";
 import { CodeChangeNotice } from "./CodeChangeNotice";
 import { watchCodeChanges } from "./code-changes";
-import type { ProjectBreakpoints } from "./breakpoints";
-import { putBackBy, withDependents, type Change } from "./changeset";
+import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
+import { putBackBy, withDependents, type Change, type RangePart } from "./changeset";
 import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { watchPage, type PageChecks } from "./page-checks";
 import { whenLetGo } from "./pointer-held";
-import { revertSaved } from "./saved-round";
+import { measureParts } from "./range-parts";
+import { revertSaved, withPartsRead } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
 import { Toggle } from "./Toggle";
@@ -158,12 +159,46 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     setMode(shellShown.current ? "leaving" : "preview");
   }, [claimed !== null, mode]);
 
+  /** The round as saved last: what a reading that ends after the canvas has gone is saved into. */
+  const roundNow = useRef(round);
+  roundNow.current = round;
   const save = (next: SavedRound | null) => {
     // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
     if (lastStatus.current?.status === "claimed") return;
+    roundNow.current = next;
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
   };
+
+  // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
+  // one change after another, whether edit mode is up, going, or over, or the page has been opened since. `claim`
+  // waits for it. Not once claimed: the code is the Agent's to change from then on.
+  const reading = useRef({ ids: new Set<number>(), queue: Promise.resolve() });
+  const partsRead = (id: number, parts: RangePart[] | null) => {
+    if (lastStatus.current?.status === "claimed") return;
+    if (control.current) return control.current.partsRead(id, parts);
+    const now = roundNow.current;
+    if (now?.changeSet.changes.some((change) => change.id === id && change.parts === null)) save(withPartsRead(now, id, parts));
+  };
+  useEffect(() => {
+    if (!round || claimed || breakpoints === undefined) return;
+    for (const change of round.changeSet.changes) {
+      if (change.parts !== null || reading.current.ids.has(change.id)) continue;
+      reading.current.ids.add(change.id);
+      reading.current.queue = reading.current.queue.then(async () => {
+        try {
+          if (lastStatus.current?.status === "claimed") return;
+          const into = document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
+          partsRead(change.id, await measureParts(document, change, breakpoints ?? readMediaBreakpoints(document), into));
+        } catch (error) {
+          console.warn(error);
+          partsRead(change.id, null);
+        } finally {
+          reading.current.ids.delete(change.id);
+        }
+      });
+    }
+  }, [round, claimed !== null, breakpoints]);
   const saveOffCanvas = (layers: SavedOffCanvasLayer[]) => {
     setOffCanvas(layers);
     return (

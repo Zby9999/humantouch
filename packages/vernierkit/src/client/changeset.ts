@@ -198,10 +198,11 @@ export interface Change {
   /**
    * A style change at a breakpoint the project's own breakpoints cut into
    * parts (ticket 65): each part, and the value the live page showed there,
-   * the code as it was, once the change was made. None: the range is one
-   * part, or the page could not be looked at.
+   * the code as it was, once the change was made. Null: the page has yet to
+   * be read, and `claim` waits for it. None: the range is one part, or the
+   * page could not be looked at.
    */
-  parts?: RangePart[];
+  parts?: RangePart[] | null;
   property: string;
   before: unknown;
   after: unknown;

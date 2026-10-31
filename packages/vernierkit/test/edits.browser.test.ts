@@ -5,7 +5,7 @@ import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/c
 import { createChangeSet, type Place } from "../src/client/changeset";
 import { checkAcross, checkChange, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
-import { measureParts } from "../src/client/range-parts";
+import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
 import { watchPage } from "../src/client/page-checks";
 import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
@@ -4529,6 +4529,34 @@ describe("breakpoints", () => {
     expect(await measureParts(page, change, null, document.body)).toBeNull();
     expect(await measureParts(page, { ...change, breakpoint: undefined }, TAILWIND, document.body)).toBeNull();
     expect(document.querySelectorAll("iframe[data-vk-check]").length).toBe(0);
+  });
+
+  test("reading each part of a change's range is done a step at a time, each in a task of its own, so a large page is never held up for long (ticket 65)", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""), TAILWIND);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    const page = livePage(1000, "#board { background-color: rgb(255, 255, 255) }");
+    performance.clearMeasures(PARTS_MEASURE);
+    let tasks = 0;
+    const channel = new MessageChannel();
+    let reading = true;
+    channel.port1.onmessage = () => {
+      tasks++;
+      if (reading) channel.port2.postMessage(null);
+    };
+    channel.port2.postMessage(null);
+
+    const read = await measureParts(page, change, TAILWIND, document.body);
+    reading = false;
+
+    expect(read).toHaveLength(2);
+    // Making the copy, bringing it up to date, laying it out and reading it: apart, for each part.
+    const steps = performance.getEntriesByName(PARTS_MEASURE);
+    expect(steps.length).toBeGreaterThanOrEqual(8);
+    // The page had its turns in between.
+    expect(tasks).toBeGreaterThanOrEqual(steps.length - 1);
+    channel.port1.close();
   });
 
   test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value does not show it; one the round changed at a breakpoint of its own keeps its own", async () => {
