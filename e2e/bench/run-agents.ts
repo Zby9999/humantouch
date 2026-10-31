@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, effortSeen, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { recordUnclaimedNotices, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
 
@@ -66,8 +67,15 @@ interface RawRun {
   /** Browsers that came up under the Agent with a window. */
   headedBrowsers: string[];
   changes: { id: number; kind: string; checkable: boolean; variable?: string[]; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
-  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, and each edit to the project's source. */
-  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[] };
+  /**
+   * How many times, from the Agent's start on, the designer's page showed the
+   * notice that the code is changing but no Agent has claimed the changes
+   * (ticket 66). Recorded only, never scored: before the claim it is the Agent
+   * editing unclaimed, after it a false one. Missing in runs before ticket 66.
+   */
+  unclaimedNotices?: number;
+  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, each edit to the project's source, and each time that notice showed. */
+  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[]; unclaimedNotices?: number[] };
   /** The page's last check of each change, as the round was archived (or left, unfinished). */
   checks: Record<string, { outcome: string }>;
 }
@@ -184,7 +192,7 @@ async function withScenario<T>(
   base: string,
   port: number,
   scenario: Scenario,
-  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page> }) => Promise<T>,
+  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page>; designer: Page }) => Promise<T>,
 ): Promise<T> {
   const project = await cloneBase(base);
   let server: Awaited<ReturnType<typeof startDevServer>> | null = null;
@@ -194,12 +202,13 @@ async function withScenario<T>(
     server = await startDevServer(project.dir, port);
     context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
     await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    await recordUnclaimedNotices(context);
     const page = await context.newPage();
     await page.goto(server.url);
     await page.locator("main").waitFor();
     observers = await openObservers(browser, scenario, server.url);
     await scenario.design({ page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
-    return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages });
+    return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages, designer: page });
   } finally {
     await observers?.close().catch(() => {});
     await context?.close().catch(() => {});
@@ -211,8 +220,11 @@ async function withScenario<T>(
 /** Sets a scenario up with no Agent; what is wrong with it: changes not as it names them, or shown on the page already. */
 async function setUp(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
   try {
-    return await withScenario(browser, base, port, scenario, async ({ saved, observers }) => {
+    return await withScenario(browser, base, port, scenario, async ({ saved, observers, designer }) => {
       const problems: string[] = [];
+      // Designing touches no code with no claim: the editor layer has no cause to ask.
+      const notices = (await unclaimedNoticesShown(designer)).length;
+      if (notices) problems.push(`the notice that no Agent claimed the changes showed ${notices} times as it was set up`);
       const kinds = saved.map((change) => change.kind).join(", ");
       const named = scenario.changes.map((change) => change.kind).join(", ");
       if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
@@ -237,7 +249,7 @@ function lastEdited(dir: string): number {
 
 /** One Agent run of one scenario, its raw results written to `folder`. */
 async function runOnce({ browser, base, port, scenario, agent, run, version, folder }: { browser: Browser; base: string; port: number; scenario: Scenario; agent: AgentName; run: number; version: string; folder: string }) {
-  await withScenario(browser, base, port, scenario, async ({ project, saved, observers }) => {
+  await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
     const head = await project.head();
     writeFileSync(join(folder, "changeset.json"), `${JSON.stringify({ changes: saved }, null, 2)}\n`);
     const before = await shown(observers, scenario, saved);
@@ -304,6 +316,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       await looking;
     }
     watchFiles();
+    times.unclaimedNotices = (await unclaimedNoticesShown(designer)).filter((at) => at >= agentRun.startedAt);
 
     // The end: the dev server brings the last edits in, and the page is loaded afresh.
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -325,6 +338,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       commandLine: commandLine(agent),
       effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
       ...agentRun,
+      unclaimedNotices: times.unclaimedNotices.length,
       changes: scenario.changes.map((change, i) => ({
         id: saved[i].id,
         kind: change.kind,

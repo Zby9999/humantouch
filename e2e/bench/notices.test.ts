@@ -67,3 +67,27 @@ test("a notice taken away as soon as the task after is counted; the count is kep
   assert.equal((await unclaimedNoticesShown(page)).length, 1);
   await page.close();
 });
+
+test("recorded for a browser context, as the bench does for the designer's page, before the page opens", async () => {
+  const context = await browser.newContext();
+  await recordUnclaimedNotices(context);
+  const page = await context.newPage();
+  await page.route("http://bench.test/", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><script>
+        addEventListener("DOMContentLoaded", () => {
+          const host = document.createElement("vernier-kit");
+          const root = host.attachShadow({ mode: "open" });
+          document.documentElement.append(host);
+          setTimeout(() => (root.innerHTML = '<div role="alertdialog"><h2>The code is changing, but no Agent has claimed your changes</h2></div>'), 20);
+        });
+      </script><iframe srcdoc="<div role=alertdialog>no Agent has claimed</div>"></iframe>`,
+    }),
+  );
+  await page.goto("http://bench.test/");
+  await page.waitForFunction(() => document.querySelector("vernier-kit")?.shadowRoot?.childElementCount);
+
+  assert.equal((await unclaimedNoticesShown(page)).length, 1);
+  await context.close();
+});
