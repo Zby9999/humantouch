@@ -69,7 +69,7 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   // Claimed already: the Agent may have lost the notes. What it did so far stays done.
   const state = await readState(folder);
   // Not claimed yet: the open page may still be reading what it shows in each part of a change's range, the code as it is.
-  const changeSet = state ? await readChangeSet(folder) : await withPartsRead(folder);
+  const changeSet = state ? await readChangeSet(folder) : await waitForPartsRead(folder);
   if (!changeSet?.changes.length) {
     io.write("No design changes to apply: the designer has not changed anything in Vernier Kit since the last round.\n");
     return 0;
@@ -92,7 +92,7 @@ const PARTS_WAIT_MS = 5000;
  * saved it again; as it is, with no page open to read them, or once a while
  * has gone by. Read before the round is claimed: from then on the code changes.
  */
-async function withPartsRead(folder: VernierFolder) {
+async function waitForPartsRead(folder: VernierFolder) {
   const until = Date.now() + PARTS_WAIT_MS;
   for (;;) {
     const changeSet = await readChangeSet(folder);

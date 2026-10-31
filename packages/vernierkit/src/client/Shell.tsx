@@ -203,8 +203,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     [],
   );
 
-  /** Changes made in this edit mode, and those of the round it opened with: by id. A change at a breakpoint is marked for its parts to be read only as it is made (ticket 65). */
-  const known = useRef(new Set<number>());
+  /** The changes seen so far, by id: those of the round edit mode opened with, and those made since. A change at a breakpoint is marked for its parts to be read only as it is first seen, made (ticket 65). */
+  const seenChanges = useRef(new Set<number>());
   /**
    * Marks each change made since the last edit at a breakpoint the project's
    * breakpoints cut into parts: the page is to be read in each part, the code
@@ -214,8 +214,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const markParts = (changeSet: ChangeSet) => {
     const project = breakpoints ?? readMediaBreakpoints(document);
     for (const change of changeSet.list()) {
-      if (known.current.has(change.id)) continue;
-      known.current.add(change.id);
+      if (seenChanges.current.has(change.id)) continue;
+      seenChanges.current.add(change.id);
       if (change.parts === undefined && hasPartsToRead(change, project)) change.parts = null;
     }
   };
@@ -530,7 +530,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
           // A round saved before opens as it was: changes in it the page has yet to be read for are read by the editor layer as it is.
-          for (const change of changeSet.list()) known.current.add(change.id);
+          for (const change of changeSet.list()) seenChanges.current.add(change.id);
           viewsNow.current = views;
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
           // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.

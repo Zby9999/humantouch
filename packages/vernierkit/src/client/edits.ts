@@ -104,7 +104,8 @@ export function createEditor(
    * `range`, one range or two. `off` cuts it; `on` puts it back whole.
    */
   const cutting = (change: Change, range: Breakpoint) => {
-    const { id: _, layer: id, ...record } = change;
+    // Each piece is a range of its own: what the page shows in the parts of the range cut is no piece's (ticket 65).
+    const { id: _, layer: id, parts: _parts, ...record } = change;
     const names = cssOf(change.property as Property);
     const pieces = outside(change.breakpoint!, range).map((piece) => ({ ...piece, ...writtenWith(piece, project) }));
     /** What is left, as first recorded: put back as it was each time it is redone. */

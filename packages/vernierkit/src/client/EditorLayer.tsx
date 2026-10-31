@@ -10,7 +10,7 @@ import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { watchPage, type PageChecks } from "./page-checks";
 import { whenLetGo } from "./pointer-held";
-import { measureParts } from "./range-parts";
+import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
@@ -27,6 +27,9 @@ interface ListStep {
   offCanvasBefore: SavedOffCanvasLayer[];
   offCanvasAfter: SavedOffCanvasLayer[];
 }
+
+/** Where copies of the page at other widths go, for the check and for reading the parts of a change's range: apart from the page, so they never copy themselves. */
+const copiesIn = () => document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
 
 /**
  * The layers off the canvas once `changes` are taken back: but those they
@@ -120,7 +123,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       report,
       onShown: setSeen,
       viewWidths: readViewWidths,
-      copiesIn: () => document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement,
+      copiesIn,
     });
     checks.current = watcher;
     return () => {
@@ -173,32 +176,26 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
   // one change after another, whether edit mode is up, going, or over, or the page has been opened since. `claim`
   // waits for it. Not once claimed: the code is the Agent's to change from then on.
-  const reading = useRef({ ids: new Set<number>(), queue: Promise.resolve() });
+  const [partsReader] = useState(() => createPartsReader(document, copiesIn, () => lastStatus.current?.status !== "claimed"));
   const partsRead = (id: number, parts: RangePart[] | null) => {
     if (lastStatus.current?.status === "claimed") return;
     if (control.current) return control.current.partsRead(id, parts);
     const now = roundNow.current;
-    if (now?.changeSet.changes.some((change) => change.id === id && change.parts === null)) save(withPartsRead(now, id, parts));
+    if (!now?.changeSet.changes.some((change) => change.id === id && change.parts === null)) return;
+    const next = withPartsRead(now, id, parts);
+    // The same round, read further: the undos made from the change list still hold.
+    for (const step of [...listSteps.current.past, ...listSteps.current.future]) {
+      if (step.before === now) step.before = next;
+      if (step.after === now) step.after = next;
+    }
+    save(next);
   };
   useEffect(() => {
-    if (!round || claimed || breakpoints === undefined) return;
-    for (const change of round.changeSet.changes) {
-      if (change.parts !== null || reading.current.ids.has(change.id)) continue;
-      reading.current.ids.add(change.id);
-      reading.current.queue = reading.current.queue.then(async () => {
-        try {
-          if (lastStatus.current?.status === "claimed") return;
-          const into = document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
-          partsRead(change.id, await measureParts(document, change, breakpoints ?? readMediaBreakpoints(document), into));
-        } catch (error) {
-          console.warn(error);
-          partsRead(change.id, null);
-        } finally {
-          reading.current.ids.delete(change.id);
-        }
-      });
-    }
-  }, [round, claimed !== null, breakpoints]);
+    // Not till the local service has said how the round stands: it may be claimed.
+    if (!round || !status || claimed || breakpoints === undefined) return;
+    const project = breakpoints ?? readMediaBreakpoints(document);
+    for (const change of round.changeSet.changes) if (change.parts === null) partsReader.read(change, project, (parts) => partsRead(change.id, parts));
+  }, [round, status?.status, breakpoints]);
   const saveOffCanvas = (layers: SavedOffCanvasLayer[]) => {
     setOffCanvas(layers);
     return (

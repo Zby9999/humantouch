@@ -57,6 +57,34 @@ export async function measureParts(page: Document, change: Change, project: Proj
   return read;
 }
 
+/** Reads the parts of changes' ranges one change after another, never two at once, so only one copy of the page is made at a time. */
+export interface PartsReader {
+  /** Reads what `page` shows in each part of `change`'s range, unless it is being read already; `then` is given it. */
+  read(change: Change, project: ProjectBreakpoints | null, then: (parts: RangePart[] | null) => void): void;
+}
+
+/** Reads on `page`, its copies put in `into()`; a change whose turn comes once `reads()` says no more is left unread. */
+export function createPartsReader(page: Document, into: () => ParentNode, reads: () => boolean): PartsReader {
+  const reading = new Set<number>();
+  let queue = Promise.resolve();
+  return {
+    read(change, project, then) {
+      if (reading.has(change.id)) return;
+      reading.add(change.id);
+      queue = queue.then(async () => {
+        try {
+          if (reads()) then(await measureParts(page, change, project, into()));
+        } catch (error) {
+          console.warn(error);
+          then(null);
+        } finally {
+          reading.delete(change.id);
+        }
+      });
+    },
+  };
+}
+
 /**
  * Does `work` in a task of its own, once the page has had a turn, and
  * measures it. A message, not a timer: a timer in a tab in the background

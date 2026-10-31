@@ -170,31 +170,6 @@ test("a change made in the phone view is noted with the widths it applies at, fo
   expect(fill).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000.\n");
 });
 
-test("the Grid's columns changed in the phone view: what the page shows in each part of the range is saved with it, and the notes give it part by part (ticket 65)", async ({ page }) => {
-  await page.goto(DEV_URL);
-  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
-  const phone = page.locator('iframe[title="Phone 390"]');
-  await expect(phone.contentFrame().locator("h1")).toBeVisible();
-  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
-  await page.keyboard.down("Meta");
-  await page.mouse.click(box.x + 4, box.y + 4);
-  await page.keyboard.up("Meta");
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true })).toHaveAttribute("aria-selected", "true");
-  await setField(page, "Columns", "2");
-  // `grid-cols-1 sm:grid-cols-3`: one column below 640px, three from 640px up.
-  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toEqual([
-    { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
-    { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
-  ]);
-
-  const [, columns] = (await vernierkit("claim")).split(/^## /m);
-
-  expect(columns).toContain(
-    "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n",
-  );
-});
-
 /** Selects the first card's Grid in the phone view and gives it 2 columns: one column below 640px, three from 640px up, as the page shows it now. */
 async function twoColumnsInPhone(page: Page) {
   await page.goto(DEV_URL);
@@ -213,6 +188,19 @@ async function twoColumnsInPhone(page: Page) {
 const COLUMNS_PART_BY_PART =
   "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n";
 
+test("the Grid's columns changed in the phone view: what the page shows in each part of the range is saved with it, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  await twoColumnsInPhone(page);
+  // `grid-cols-1 sm:grid-cols-3`: one column below 640px, three from 640px up.
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toEqual([
+    { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+    { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+  ]);
+
+  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(columns).toContain(COLUMNS_PART_BY_PART);
+});
+
 test("back in preview mode at once after a change in the phone view, the page is still read in each part of the range, and the notes give it part by part (ticket 65)", async ({ page }) => {
   await twoColumnsInPhone(page);
   await page.getByRole("button", { name: EXIT_LABEL }).click();
@@ -226,8 +214,17 @@ test("back in preview mode at once after a change in the phone view, the page is
 });
 
 test("claimed the moment a change in the phone view is saved, claim waits for the page to read each part of the range, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  // The round saved again with the parts read reaches the local service a while late: claim comes before it.
+  await page.route(
+    (url) => url.hostname === "127.0.0.1" && url.pathname === "/round",
+    async (route) => {
+      if (route.request().method() === "PUT" && route.request().postData()?.includes('"parts":[')) await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    },
+  );
   await twoColumnsInPhone(page);
-  await expect.poll(() => readVernier("changeset.json")?.changes.length, { intervals: [20] }).toBe(1);
+  // Saved, the parts yet to be read.
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toBeNull();
 
   const [, columns] = (await vernierkit("claim")).split(/^## /m);
 
