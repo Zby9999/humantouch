@@ -222,6 +222,7 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(names(output)).toEqual(["Every change", "What sets the value now", "All breakpoints"]);
     expect(rule(output, "Every change")).toContain("the reference style is the CSS that showed it on the canvas, to understand it by, not code to paste");
     expect(rule(output, "Every change")).toContain("Never change third-party code");
+    expect(rule(output, "Every change")).toContain("apply the closest you can and still run `done` for it, or leave it out and do not");
   });
 
   test.each([
@@ -256,6 +257,33 @@ describe("claim, how to write the changes (ticket 65)", () => {
       [change("duplicate", { copiedBreakpoints: [{ change: 9, inside: null, breakpoint: { min: null, max: 768 }, property: "radius", value: 4 }] })],
     ],
     ["a loop's instance deleted", "Data changes", [change("delete", { data: true, target: { ...inApp, instances: 3 }, after: null })]],
+    ["a new Frame, Fixed as drawn", "Sizes", [change("create", { before: null, after: { type: "frame", place: place(2), width: 200, height: 120 } })]],
+    [
+      "a Stack dissolved into a Frame of a Fixed size",
+      "Sizes",
+      [change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target: inApp, x: 0, y: 0, width: 200, height: 40 }] } })],
+    ],
+    [
+      "a layer placed freely at a breakpoint, at its size",
+      "Sizes",
+      [style("absolute", { before: null, after: { x: 12, y: 40 }, breakpoint: { min: null, max: 768 }, style: { position: "absolute", left: "12px", top: "40px" } })],
+    ],
+    [
+      "a copy whose layer is a real Stack at a breakpoint",
+      "Make it a Stack",
+      [change("duplicate", { copiedBreakpoints: [{ change: 9, inside: null, breakpoint: { min: null, max: 768 }, property: "gap", value: 16, asStack: true }] })],
+    ],
+    [
+      "a Stack made of layers with margins",
+      "What sets the value now",
+      [
+        change("stack", {
+          before: null,
+          after: { ...settings, place: place(1), layers: [{ layer: "5", target: inApp, from: place(1), unmargined: true }] },
+          sources: [{ ...ruleSource(".mt-4", "utilities"), properties: ["margin-top"] }],
+        }),
+      ],
+    ],
   ])("%s: the notes say how to write it (%s)", async (_, name, round) => {
     saveRound(...round.map((c, i) => ({ ...c, id: i + 1 })));
 
@@ -1498,7 +1526,7 @@ describe("finish", () => {
 
     const { output } = await cli("finish");
 
-    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report why in your reply.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report them under ⚠️, with why.\n");
     expect(history()[0].result.done).toEqual([2]);
   });
 
@@ -1509,7 +1537,7 @@ describe("finish", () => {
     const { output } = await cli("finish");
 
     const [first, ...rest] = output.split("\n");
-    expect(first).toBe("Round finished: 0 of 2 changes applied. Not marked done: 1, 2. Report why in your reply.");
+    expect(first).toBe("Round finished: 0 of 2 changes applied. Not marked done: 1, 2. Report them under ⚠️, with why.");
     const form = rest.join("\n");
     expect(form).toContain("End your reply with this report");
     expect(form).toContain("✓ Applied\n- 1. ");
