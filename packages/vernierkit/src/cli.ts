@@ -10,6 +10,7 @@ import { ordinal, propertyName, value } from "./design-values";
 import type { PlacedOnPage } from "./client/check";
 import type { Change, Margins, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
 import {
@@ -97,7 +98,7 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   const doneIds = [...new Set([...state.done, ...reported])];
   // A brief has no value to check on the page: what the Agent did is for its report.
   const asked = changes.filter((change) => change.kind !== "brief").map((change) => change.id);
-  const check: CheckAsk = { ids: asked, at: new Date().toISOString(), codeAt: await lastEdited(dirname(folder.dir)) };
+  const check = await ask(folder, asked);
   const claimed = { ...state, done: doneIds, check };
   await writeState(folder, claimed);
   const results = asked.length ? await waitForChecks(folder, check, state.claimedAt) : new Map<number, CheckResult>();
@@ -107,6 +108,11 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   io.write(`${one ? "Change" : "Changes"} ${list(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
   io.write(one ? `${lines[0]}\n` : lines.map((line, i) => `Change ${reported[i]}: ${line[0].toLowerCase()}${line.slice(1)}\n`).join(""));
   return 0;
+}
+
+/** Asks the open pages to check changes `ids`, under a key of its own that their answers carry. */
+async function ask(folder: VernierFolder, ids: number[]): Promise<CheckAsk> {
+  return { ids, at: new Date().toISOString(), key: randomUUID(), codeAt: await lastEdited(dirname(folder.dir)) };
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`. */
@@ -223,7 +229,8 @@ async function waitForChecks(folder: VernierFolder, check: CheckAsk, claimedAt: 
     for (const id of check.ids) {
       if (answers.has(id)) continue;
       const result = checks?.results[id];
-      if (result?.at === check.at) {
+      // An answer to this very ask: what a page saw as the code changed, even in the same millisecond, is not.
+      if (result?.answers === check.key) {
         if (result.outcome !== "unchecked" || result.anyPage || checks!.pages === 1) answers.set(id, result);
         else unchecked.set(id, result);
       } else if (!open && result?.outcome === "shown" && (!claimedAt || result.at >= claimedAt)) answers.set(id, result);
@@ -257,7 +264,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   // The round's result is the page's (ADR 0013): it looks at every change it can once more, once the last edit has reached it.
   if (state && changeSet) {
     const ids = changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id);
-    const closing: CheckAsk = { ids, at: new Date().toISOString(), codeAt: await lastEdited(dirname(folder.dir)) };
+    const closing = await ask(folder, ids);
     await writeState(folder, { ...state, closing });
     if (ids.length) await waitForChecks(folder, closing, state.claimedAt);
   }

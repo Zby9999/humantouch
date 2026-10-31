@@ -149,6 +149,22 @@ describe("how the round stands, as the editor layer is told", () => {
     expect(await applied()).toEqual([]);
   });
 
+  test("a page behind the one that showed a change, saying unasked it does not show, in the very millisecond done asks, is not taken for an answer; the answer to the ask is", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 1, changes: [] }));
+    const at = "2026-10-31T02:06:21.127Z";
+    await writeState(folder, { status: "claimed", done: [1], claimedAt: "2026-10-31T02:06:20.000Z", check: { ids: [1], at, key: "ask-1" } });
+    const applied = async () => ((await roundStatus(folder)) as { applied: number[] }).applied;
+
+    await call("POST", CHECKS_PATH, { id: 1, at, outcome: "shown" });
+    await call("POST", CHECKS_PATH, { id: 1, at, outcome: "not shown", actual: 12 });
+    expect(await applied()).toEqual([1]);
+
+    await call("POST", CHECKS_PATH, { id: 1, at, answers: "ask-1", outcome: "not shown", actual: 12 });
+    expect(await applied()).toEqual([]);
+  });
+
   test("asked now, the status is read afresh: claimed the moment the command line claims, before any page is told (ticket 66)", async () => {
     const folder = vernierFolder(root);
     mkdirSync(folder.dir, { recursive: true });

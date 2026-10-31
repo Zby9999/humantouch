@@ -61,14 +61,18 @@ export interface Variable {
 }
 
 /**
- * `done` asking the page to check changes `ids`; `at` tells one ask from the
- * next. `codeAt`: when the project's code was last edited, as far as the
- * command line can tell (ms since the epoch), so the page waits for that edit
- * to reach it before it says a change does not show; null when it cannot tell.
+ * `done` asking the page to check changes `ids`, at `at` (an ISO date).
+ * `key`: this ask's own, made afresh each time, that the page's answers carry
+ * (`CheckReport.answers`): what the page saw as the code changed may carry
+ * the same millisecond as the ask, but never its key. `codeAt`: when the
+ * project's code was last edited, as far as the command line can tell (ms
+ * since the epoch), so the page waits for that edit to reach it before it
+ * says a change does not show; null when it cannot tell.
  */
 export interface CheckAsk {
   ids: number[];
   at: string;
+  key: string;
   codeAt?: number | null;
 }
 
@@ -119,11 +123,11 @@ export type CheckResult =
   | { outcome: "unchecked"; reason: string; anyPage?: true };
 
 /**
- * How a page checked change `id`: `at` the ask it answers, or when it checked
- * as the code changed. `undone`: the page showed it, and shows it no more:
- * a later edit undid it.
+ * How a page checked change `id`, at `at` (an ISO date). `answers`: the key
+ * of the ask it answers; none when the page checked as the code changed.
+ * `undone`: the page showed it, and shows it no more: a later edit undid it.
  */
-export type CheckReport = { id: number; at: string; undone?: true } & CheckResult;
+export type CheckReport = { id: number; at: string; answers?: string; undone?: true } & CheckResult;
 
 export interface ServiceConfig {
   /** `http://127.0.0.1:<port>` */

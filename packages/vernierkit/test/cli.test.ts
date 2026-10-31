@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { run } from "../src/cli";
 
 let project: string;
@@ -1026,9 +1026,11 @@ function history() {
 
 /**
  * Stands in for an open page: answers each check `done` asks for with
- * `answer(id)`, as the editor layer does through the local service.
+ * `answer(id)`, as the editor layer does through the local service. `saw`:
+ * what the page says it saw as the code changed, the moment an ask comes,
+ * before it answers (`answerAfter` ms later).
  */
-function openPage(answer: (id: number) => object | null, pages = 1) {
+function openPage(answer: (id: number) => object | null, pages = 1, { saw, answerAfter = 0 }: { saw?: (id: number) => object; answerAfter?: number } = {}) {
   const dir = join(project, ".vernier");
   // The local service runs in this very process, as far as the command line can tell.
   // Written whole, as the service writes it: `done` reads the file in several steps, and must never see half of it.
@@ -1038,13 +1040,23 @@ function openPage(answer: (id: number) => object | null, pages = 1) {
   };
   let results: Record<string, object> = {};
   write(results);
+  const heard = new Map<string, number>();
   const timer = setInterval(() => {
     // What `done` asks, and `finish` before it ends the round.
     for (const check of [state()?.check, state()?.closing]) {
-      for (const id of check?.ids ?? []) {
+      if (!check) continue;
+      if (!heard.has(check.key)) {
+        heard.set(check.key, performance.now() + answerAfter);
+        if (saw) {
+          results = { ...results, ...Object.fromEntries(check.ids.map((id: number) => [id, { at: new Date().toISOString(), ...saw(id) }])) };
+          write(results);
+        }
+      }
+      if (performance.now() < heard.get(check.key)!) continue;
+      for (const id of check.ids) {
         const result = answer(id);
         if (!result) continue;
-        const next = { at: check.at, ...result };
+        const next = { at: new Date().toISOString(), answers: check.key, ...result };
         if (JSON.stringify(results[id]) === JSON.stringify(next)) continue;
         results = { ...results, [id]: next };
         write(results);
@@ -1178,6 +1190,22 @@ describe("done, checked on the page", () => {
         "Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 4px. " +
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 2` again.\n",
     );
+  });
+
+  test("what the page saw as the code changed, in the very millisecond done asks, is no answer to it: done waits for the page's answer", async () => {
+    // One clock that never moves: the page's look and the ask, both at the same millisecond.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-31T02:06:21.127Z") });
+    try {
+      saveRound(redFill, smallRadius);
+      await cli("claim");
+      closePage = openPage(() => ({ outcome: "shown" }), 1, { saw: () => ({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } }), answerAfter: 300 });
+
+      const { output } = await cli("done", "1");
+
+      expect(output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("with no page open now, a change a page showed this round, as the code changed, is shown", async () => {

@@ -150,12 +150,13 @@ export async function startService({ root }: { root: string }): Promise<Service>
         const state = await readState(files);
         if (!state) return send(res, 409);
         const { id, undone, ...result } = JSON.parse(body) as CheckReport;
-        if (typeof id !== "number" || typeof result.at !== "string") return send(res, 400);
-        const asked = state.check?.at === result.at || state.closing?.at === result.at;
+        if (typeof id !== "number" || typeof result.at !== "string" || !["string", "undefined"].includes(typeof result.answers)) return send(res, 400);
+        // Asked by its key: what a page saw as the code changed carries none, though it may carry the ask's millisecond.
+        const asked = !!result.answers && (state.check?.key === result.answers || state.closing?.key === result.answers);
         await updateChecks((checks) => {
           const earlier = checks.results[id];
-          // Of two pages, the one that could check has the say.
-          if (earlier?.at === result.at && earlier.outcome !== "unchecked" && result.outcome === "unchecked") return;
+          // Of two pages answering the same ask, the one that could check has the say.
+          if (result.answers && earlier?.answers === result.answers && earlier.outcome !== "unchecked" && result.outcome === "unchecked") return;
           // Shown, a change is not shown again only as the page that showed it says, a later edit undoing it: what another says of it, unasked, is behind.
           if (earlier?.outcome === "shown" && result.outcome !== "shown" && !asked && !undone && (!state.claimedAt || earlier.at >= state.claimedAt)) return;
           checks.results[id] = result;

@@ -19,7 +19,7 @@ import { CHECK_MEASURE } from "./host";
 import { copyPage, type PageCopy } from "./page-copy";
 
 export interface PageChecks {
-  /** Answers what `done` asks; each ask once. */
+  /** Answers what `done` asks; each ask, by its key, once. */
   ask(ask: CheckAsk): void;
   stop(): void;
 }
@@ -315,10 +315,11 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const asked = new Set<string>();
   return {
     ask(ask) {
-      if (asked.has(ask.at) || stopped) return;
-      asked.add(ask.at);
+      if (asked.has(ask.key) || stopped) return;
+      asked.add(ask.key);
+      // Under the ask's key: what the page says as the code changes carries none, so is never taken for an answer.
       const answer = (id: number, result: CheckResult) => {
-        if (!stopped) report({ id, at: ask.at, ...result });
+        if (!stopped) report({ id, at: new Date().toISOString(), answers: ask.key, ...result });
       };
       // With no word from the dev server, a change may take a while to show: as long as it ever did.
       const settle = code() ? SHOW_MS : CHECK_SETTLE_MS;

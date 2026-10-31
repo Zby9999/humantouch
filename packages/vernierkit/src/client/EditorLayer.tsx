@@ -132,10 +132,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const answer = (ask: CheckAsk | undefined) => {
     if (!ask || !store || round === undefined) return;
     if (checks.current) checks.current.ask(ask);
-    else for (const id of ask.ids) store.report({ id, at: ask.at, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
+    else for (const id of ask.ids) store.report({ id, at: new Date().toISOString(), answers: ask.key, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
   };
-  useLayoutEffect(() => answer(claimed?.check), [claimed?.check?.at, round]);
-  useLayoutEffect(() => answer(claimed?.closing), [claimed?.closing?.at, round]);
+  useLayoutEffect(() => answer(claimed?.check), [claimed?.check?.key, round]);
+  useLayoutEffect(() => answer(claimed?.closing), [claimed?.closing?.key, round]);
 
   const lastStatus = useRef(status);
   useEffect(

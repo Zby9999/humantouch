@@ -35,8 +35,8 @@ export interface Checks {
   pages: number;
   /** The process of the local service that counts them: once it is gone, so are they. */
   service: number;
-  /** The latest answer for each change id, and the ask it answers. */
-  results: Record<string, CheckResult & { at: string }>;
+  /** The latest word from a page on each change id: when it checked, and the key of the ask it answers, if it answers one. */
+  results: Record<string, CheckResult & { at: string; answers?: string }>;
 }
 
 /**

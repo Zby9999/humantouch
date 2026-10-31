@@ -3526,12 +3526,15 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     const reports: CheckReport[] = [];
     const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
 
-    checks.ask({ ids: [change.id], at: "ask-1" });
+    checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "ask-1" });
     write("border: 3px solid #ff0000");
     await new Promise((resolve) => setTimeout(resolve, 20));
     write("border: 1.5px solid #ff0000");
 
-    await expect.poll(() => reports.find((r) => r.at === "ask-1")).toMatchObject({ outcome: "shown" });
+    await expect.poll(() => reports.find((r) => r.answers === "ask-1")).toMatchObject({ outcome: "shown" });
+    // What it saw as the code changed answers no ask: it carries no key, though it may carry the ask's millisecond.
+    expect(reports.filter((r) => r.answers !== "ask-1").length).toBeGreaterThan(0);
+    expect(reports.filter((r) => r.answers !== "ask-1").every((r) => !("answers" in r))).toBe(true);
     checks.stop();
   });
 
