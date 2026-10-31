@@ -189,3 +189,52 @@ test("no notice as the Agent claims the round and edits the code at once, before
 
   expect(await unclaimedNoticesShown(page)).toEqual([]);
 });
+
+test("a press held as the code changes ends first, as the designer meant it; then editing pauses", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await designARound(page);
+  // The title dragged out of the canvas, held there, not let go yet.
+  const view = (await page.locator('iframe[title="Canvas"]').boundingBox())!;
+  const title = (await canvas(page).locator("h1").boundingBox())!;
+  await page.mouse.move(title.x + 10, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(view.x - 200, title.y, { steps: 10 });
+
+  await changeTheCard(page);
+  await page.waitForTimeout(1500);
+  const notice = unclaimedNotice(page);
+  await expect(notice).toHaveCount(0);
+
+  await page.mouse.up();
+  await expect(notice).toBeVisible();
+  // The drag was an edit, made before the pause: what was pressed is off the canvas, a deletion on the page.
+  await expect.poll(savedChanges).toBe(2);
+  expect(readVernier("changeset.json").changes.map((change: { kind: string }) => change.kind)).toEqual(["style", "delete"]);
+});
+
+test("a value typed, not yet set, is set as the notice takes the focus: no change is lost", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await designARound(page);
+  await design(page).getByRole("textbox", { name: "Fill color", exact: true }).fill("00ff00");
+
+  await changeTheCard(page);
+
+  await expect(unclaimedNotice(page)).toBeVisible();
+  await expect.poll(savedChanges).toBe(2);
+  expect(await canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(0, 255, 0)");
+});
+
+test("the Agent claiming once the notice is up: edit mode folds away as for any claim, and the round is applied as usual", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await designARound(page);
+  await changeTheCard(page);
+  const notice = unclaimedNotice(page);
+  await expect(notice).toBeVisible();
+
+  await vernierkit("claim");
+
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+  await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toBeVisible();
+  await vernierkit("finish");
+});
