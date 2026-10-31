@@ -10,8 +10,9 @@
 
 - [x] Skill 只剩流程与报告格式，长度不超过现在的三分之一（146 → 40 行，25,106 → 3,673 字节）
 - [x] `claim` 的输出只包含这一轮出现过的改动种类的写法，每种只出现一次
-- [ ] 真实 Agent（与 63 同一 Agent、同一模型）：每轮读入的字数比 63 的基线少；整轮用时、每条平均工具调用次数不高于基线；1:1 落地率、设计变量使用率、虚假的 ✓ 不变差；前后数字记在 Comments（未全部达到：Claude 每项都达到；Cursor 整轮用时中位数 61.52 → 76.21 秒，高于基线 B，其余各项达到。归因见 Comments「Cursor 整轮用时高于基线 B」）
-- [ ] 不加载 Skill 的场景：只对 Agent 说「运行 `npx vernierkit claim`，照输出落地」，真实 Agent 能走完一轮，报告格式合规（未全部达到：Claude 10 次都走完一轮，报告合规 8 / 10；Cursor 没跑成，账号里的 Grok 4.7 256K High 在主批之后不能用了，外部原因，见 Comments）
+- [ ] 真实 Agent（与 63 同一 Agent、同一模型）：每轮读入的字数比 63 的基线少；整轮用时、每条平均工具调用次数不高于基线；1:1 落地率、设计变量使用率、虚假的 ✓ 不变差；前后数字记在 Comments（未全部达到：Claude 每项都达到；Cursor 整轮用时中位数 61.52 → 76.21 秒，高于基线 B，其余各项达到。归因见 Comments「Cursor 整轮用时高于基线 B」。补修之后只复测了 Claude，Cursor 待设计师定）
+- [ ] 不加载 Skill 的场景：只对 Agent 说「运行 `npx vernierkit claim`，照输出落地」，真实 Agent 能走完一轮，报告格式合规（未全部达到：Claude 已达到，见下一项；Cursor 没跑成，账号里的 Grok 4.7 256K High 在主批之后不能用了，外部原因，见 Comments。Cursor 待设计师定）
+- [x] 不加载 Skill 的场景，Claude：10 次都走完一轮，报告合规比 65 的 8 / 10 好。10/31 补修加入、补修后达到：10 / 10（见 Comments「补修：页面怎么核对、断点逐段、`finish` 排好报告」）
 - [x] spec 中 Skill 的内容随之更新
 - [x] 桌面视图的改动，`claim` 的输出写清两点：作用于所有宽度；项目里该属性已有的断点写法（`sm:`、`md:`）一并覆盖。只在这一轮出现桌面视图的样式改动时打印。10/31 总调度加入，理由：63 的 Grid 列数场景里，两家 Agent 都只改了 `sm:grid-cols-*`，手机宽度仍是 1 列。（promote-and-grid 两家各 3 次都 1:1）
 - [x] `claim` 输出开头的「done after each」和新的 Skill 对齐：改完一条或一组相关改动后 `done`，`finish` 前至少一次。10/31 总调度加入，理由：64 发现这句和 64 改过的 Skill 对不上。
@@ -307,3 +308,198 @@ Cursor：没跑成。
   - 只靠说明压不住。要再往下压，可以让 `finish` 按页面结果先列好每条该放在哪一节，Agent 只填文字；这是新的做法，没做。
 - data-and-text 的复制那一节没说复制的是循环里的第几个实例，Claude 这次复制错了一次。这个缺口 65 之前就有，没改，可以单开一张。
 - `claim` 的输出每轮多了 0.9–3.2 千字。「All breakpoints」几乎每轮都会打印（有桌面视图的样式改动就打印）。Skill 少了约 2.1 万字，合计仍少一半以上。
+
+**补修：页面怎么核对、断点逐段、`finish` 排好报告（2026-10-31，提交 aa899bd、4ff531e、aba6682 和本条，起点 751c288）**
+
+起因：65 之后 Claude 每项都达标，Cursor 整轮用时比基线 B 高 39%。慢运行分析（只读 transcript）显示多出来的时间几乎都是模型在想、在绕路，起因是说明有缺口：原 Skill 讲页面怎么核对的那段删了，命令输出里没补，Cursor 去读 `node_modules/vernierkit`；phone-breakpoints 写「从 1 到 2」，页面在 640–767px 却是 3 列；「Breakpoints」的例子被套到 768px；Cursor 自己起 vite、开浏览器。总调度定了下面七项，这次只复测 Claude。
+
+做了什么：
+
+1. **说清页面怎么核对。**
+   - 「How to write them」最后加一条「How the page checks」，只写这一轮出现的种类，每种一次：
+     - 样式改动读浏览器对参考样式里那几个 CSS 属性算出的值（`getComputedStyle`），每个实例都看；
+     - 所有断点的改动在页面宽度和每个视图宽度看；
+     - 断点改动在项目断点切出的每一段各看一个宽度；
+     - 自由定位看画出来的位置，重排看顺序，删除看图层不在了；
+     - 页面核对不了的种类点名列出（`done` 会说没能核对，不是错误）。
+     - 末尾一句：没显示时 `done` 会给出页面上的值和宽度，不必再去找它怎么核对。
+     - 哪些种类能核对，照 `check.ts` 的规则判断（review 后对齐：换容器、裹了 `<span>` 的移动、从自由定位挪回流式的移动都算核对不了）。
+   - 原来「All breakpoints」里那句 `done` 怎么核对挪到这一条，不再说两遍。
+   - `done` 说没显示时，样式改动多说读的是哪个 CSS 属性（「as the browser computes `grid-template-columns` on the layer」）；断点改动也给出宽度，并说改动在那个宽度也生效。原来断点改动没显示时不说宽度，只说「Something overrides your change」。
+2. **断点改动逐段写改前 → 改后。**
+   - 断点范围里有项目断点时（手机视图的 0–767px 里有 Tailwind 的 `sm` 640px），编辑层把范围切成几段（`partsOf`）。
+   - 设计师改完约半秒，编辑层在页面的一份副本上每段取一个宽度，读出页面现在（代码还没改）的值，记进改动（`parts`）再保存一次（`range-parts.ts`，从 `Shell.tsx` 调）。
+   - 各段的值不同时，设计意图逐段写：「below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2」，断点一行不再写「改前的值是它在这些宽度显示的值」。各段相同时照旧只写一次。
+   - 页面核对也按段：每段看一个宽度（窗口所在的那段在窗口宽度，其余在下沿，从 0 起的在上沿减 1px）。原来只看 767px：Agent 只改了 `sm:max-md:` 时，390px 还是 1 列，也算显示了。
+   - 读不到时照旧：设计师半秒内就离开编辑模式或 Agent 已认领、之前保存的一轮（打开时原样，不补读）。
+3. **说明页面和开发服务器已经开着。** `claim` 开头一句：「The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look.」review 后改为有打开的页面时才说（`checks.json` 里有页面、本机服务还在）。
+4. **「Breakpoints」不再举具体类名。** 改成：照断点一行的写法；设计意图逐段给出时每段各有设值的类或规则，都改到新值；正好覆盖那段宽度（或一段）的类就改它，不另加。「Absolute at a breakpoint」里的 `max-md:` 例子也去掉了。「All breakpoints」的 `grid-cols-1 sm:grid-cols-3` → `grid-cols-2` 留着：它说的是所有宽度，没有套错范围的问题。
+5. **`finish` 先排好报告（ADR 0013）。**
+   - `finish` 末尾给出这一轮的报告骨架，按页面核对的结果分好：
+     - 已落地的放 ✓；
+     - 页面没显示的放 ⚠️，Why 先填好页面上的值和宽度，后面留 `<what keeps it so>`；
+     - 没 `done` 的放 ⚠️，Why 留给 Agent；
+     - 页面看不出来、`done` 过的先放 ✓，下面一句「看不出来的这几条，照做了就留在 ✓，没有就挪到 ⚠️ 并写两行」。
+   - 后面跟原来的三条规则，和 Skill 里逐字相同（单测守着）。Skill 的第 4、5 步改成「照 `finish` 排好的报告填」，通用示例留着。Skill 3,634 → 3,742 字节，仍是 40 行。
+   - 第一行「Report them under ⚠️, with why」「Report them as not applied 1:1, with why」两句去掉了，骨架里已经有。
+6. **数据改动写明是第几个实例。** 循环里单个实例的删除、复制、移动、改文字，记下它是第几个（按页面渲染的顺序，画布上删掉的也算）和它的文字（`instance`）。复制那一节写「the layer is one of the 3 instances a loop renders, the 1st of them, which reads “Freeze Turn the current page into a canvas.”」。
+7. **测量台（ticket 63，见 63 的 Comments）。** `@playwright/mcp` 固定在 0.0.83；`--no-skill` 的项目去掉安装记录里 AGENTS.md 那一行；新统计「读 node_modules/vernierkit」。
+
+**测试**
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 624 个通过、1 个跳过；测量台的 node 测试 27 个通过。新加或改的测试：
+  - `claim`：逐段的设计意图 1 个；有页面时才说页面开着 1 个；「How the page checks」3 个；「Breakpoints」不举类名 1 个；数据改动写第几个 1 个。
+  - `done`：断点改动按段没显示时说宽度 1 个；原来几条没显示的说法补上读的 CSS 属性。
+  - `finish`：排好的报告 2 个；Skill 和 `finish` 的规则逐字相同 1 个。
+  - 浏览器：`partsOf` 1 个；按段核对 1 个；在页面副本上读各段的值 1 个；循环实例记下第几个 4 处。
+  - 测量台：`@playwright/mcp` 的版本 2 处；去掉安装记录 1 个；读包的统计 2 个。
+- `VK_E2E_PORT=5600 pnpm test:e2e`：aba6682 上 322 个通过、1 个跳过（5.0 分钟）。
+  - 新加的一条：在手机视图改 Grid 列数，`changeset.json` 里存下两段（640px 以下 1 列、640–767px 3 列），`claim` 逐段写。
+  - 改了的几条：
+    - `done` 没显示的说法；
+    - 手机视图的改动先等两段存下再认领，第一段在 639px 看；
+    - `finish` 的第一行；
+    - 数据改动的那两句。
+- 六个剧本：每项都和 65（5c36f44）一样，「没认领就改代码」189ms（65 是 186ms）。结果在 `bench-results/playbooks-65fix-aba6682/`。
+- `pnpm bench:agents --dry`、`--dry --no-skill`：10 个场景都设得起来。测量台等断点改动的各段存下才开始（`scenarios.ts` 的 `saved`）。
+- 切换按钮体积（照 66 的量法：`react.dev.js` + 共用 chunk，gzip，zlib 默认级别）：751c288 10,001 B → aba6682 10,001 B，限额 10,240 B，没变。进入编辑模式才加载的 `editor.dev.js` 97,381 → 97,960 B。
+
+**code-review（751c288 到 4ff531e，两路）**
+
+修了的（aba6682）：
+- 「How the page checks」原来自己判断能不能核对，和 `check.ts` 不一致：裹 `<span>` 的移动、从自由定位挪回流式的移动被说成能核对。现在照 `check.ts` 的条件。
+- 移动和改文字记的第几个实例，原来不算画布上删掉的，和删除、复制不一样。现在都按页面渲染的顺序算。
+- `finish` 给没显示的改动预填的 Why 只有现象，没让 Agent 写原因，现在后面留 `<what keeps it so>`。
+- `finish` 第一行和骨架重复的两句去掉。
+- 页面开着那句改为有页面时才说。
+- 断点的「each part」那句写清：窗口所在的那段在窗口宽度看。
+- 命名与重复：
+  - `item` 改名 `instance`（GLOSSARY：实例不叫「列表项」），去掉没人用的 `of`；
+  - 「1、2 和 3」的写法合成 `design-values.ts` 的 `listed`；
+  - 逐段的 Tailwind 写法用 `tailwindOf`；
+  - 哪些改动要读各段，`Shell.tsx` 和 `range-parts.ts` 共用 `hasParts`。
+
+没改的：
+- 「免得 Agent 跑 `doctor` 或 `init` 时把 Skill 装回去」没做到，记在 63。
+- 读各段的时机：改完约半秒才读、读完再保存。设计师一秒内离开编辑模式或 Agent 马上认领，就读不到，说明照旧只写视图里的值，核对照旧只看一个宽度，之后也不补读。测量台为此等各段存下才开始。真实使用里设计师说「落地」通常在几秒之后。
+- 读各段时，在页面副本里整份复制页面是同步做的，约 5000 个元素的页面上会是一个 long task。只在断点上的样式改动第一次记下、设计师停手半秒后发生一次，性能测试没有覆盖。
+- 「How the page checks」把 `check.ts` 的规则用文字再说一遍，以后改核对时要一起改。
+- 只有页面核对不了的改动时，那一条读起来是「the page reads a change to one of a loop's instances alone and new words, not at all: …」，语句别扭但意思对。复测量的是这份代码，没再改。
+
+**前后数字（2026-10-31，提交 751c288 → aba6682，只测 Claude）**
+
+真实 Agent：
+- Claude Code 2.1.309（`VK_BENCH_CLAUDE` 固定到 `claude-code/2.1.309/5af865b9901c` 那份，机器上另有 2.1.308），`claude-sonnet-5-5`，`--effort high`。
+- meta.json 逐项核对：版本、模型、effort 和 65 一样，命令行和 65 一字不差；30 + 10 次的模型都是 `claude-sonnet-5-5`，没有子 Agent。
+- 先跑主批 30 次（10 个场景 × 3），再跑不加载 Skill 的 10 次（10 × 1），顺序跑，没有补跑，也没有作废的批次。跑的时候没有跑单测或 e2e。
+- 机器上的其他负载（开跑前 ps 记的）：
+  - load 6.7–7.4；
+  - 设计师的 Codex CLI 占一个核（97%），`replayd` 约 95%；
+  - Notion、Claude app、ChatGPT。
+  - 不加载 Skill 那批开跑前 load 2.6–3.5。
+- 没有开发服务器在 5173 或 56xx 上。
+- 原始结果：主批 `bench-results/agents/2026-10-31T06-51-29-819Z/`，不加载 Skill `bench-results/agents/2026-10-31T07-17-56-030Z/`。
+- 基线 A、B、64 的 1:1 和虚假的 ✓ 用 63 里按画布位置重新打分后的数字（同 65）；「读 node_modules/vernierkit」是用新的统计在副本上回补的，其余各项回补后和原来的 `measures.json` 一样。
+
+### Claude Code（Sonnet 5.5 high），中位数（范围），30 次
+
+| 指标 | A | B | 64 | 65 | 补修 | 目标 |
+|---|---|---|---|---|---|---|
+| 整轮用时 claim→finish（秒） | 20.84（9.53–223.36） | 22.85（9.82–213.52） | 14.01（4.85–30.23） | 14.88（5.99–43.77） | 12.62（6.8–30.57） | 不比 65 差 ✓ |
+| 整轮用时每条（秒） | 8.05（3.18–74.45） | 7.62（3.27–71.17） | 5.46（1.62–10.08） | 5.19（2–14.59） | 4.78（2.51–10.19） | 不比 65 差 ✓ |
+| Agent 总用时（秒） | 38.61 | 35.54 | 23.37 | 24.15 | 22.74（13.93–40.94） | |
+| 每条平均工具调用 | 3.5（2.67–5.67） | 3.67（2.67–5.67） | 3.33（2–4.67） | 3.33（2–6.33） | 3.17（2–5） | 不比 65 差 ✓ |
+| 全仓搜索次数（中位数（范围）；合计） | 0（0–2）；17 | 1（0–2）；20 | 0（0–2）；18 | 0（0–2）；14 | 1（0–2）；20 | 合计多 6 次（p ≈ 0.14），和 B 一样 |
+| 读入字数：Skill | 24,482 | 24,482 | 24,935 | 3,458（3,458–3,698） | 3,570 | 多 112 |
+| 读入字数：claim 输出 | 2,936.5（1,523–4,858） | 2,936.5 | 2,936.5 | 5,588（2,809–6,489） | 6,199（3,418–7,434） | 多约 610（p ≈ 0.003） |
+| 读入字数：全部工具输出（每轮合计） | 30,866 | 31,212.5 | 31,865 | 12,890.5（9,504–19,005） | 13,185（10,192–19,487） | 多 2%（p ≈ 0.54） |
+| 读 node_modules/vernierkit（调用合计；运行数） | 0；0 | 0；0 | 0；0 | 0；0 | 0；0 | Claude 本来就是 0 |
+| 按页面预期 1:1 的改动（合计） | 72 / 81 | 72 / 81 | 75 / 81 | 77 / 81 | 81 / 81 | 不比 65 差 ✓ |
+| 1:1 落地率（done 核对，27 次） | 1（0–1） | 1（0–1） | 1（1–1） | 1（1–1） | 1（1–1） | |
+| 虚假的 ✓（合计条数） | 9 | 9 | 6 | 4 | 0 | 不比 65 差 ✓ |
+| 设计变量使用率（15 次） | 1 | 1 | 1 | 1 | 1 | 不比 65 差 ✓ |
+| 报告格式合规 | 16 / 30 | 19 / 30 | 23 / 30 | 26 / 30 | 30 / 30 | 不比 65 差 ✓ |
+| 跑了 done / finish | 100% / 100% | 100% / 100% | 100% / 100% | 100% / 100% | 100% / 100% | |
+| `done` 次数（合计） | 105 | 93 | 45 | 45 | 40 | |
+| 两次进度最长间隔（秒） | 6.08 | 4.01（0.13–11.42） | 1.31（0.09–10.84） | 1.21（0.02–15.81） | 1.24（0.08–7.47） | 中位数持平，上限降 |
+| 没进度也没改源码的最长时间（秒） | 12.05 | 10.96（3.63–199.51） | 8.84（3.21–17.89） | 9.29（3.75–18.27） | 8.39（4.88–24.34） | 不比 65 差 ✓ |
+| Light：每条 ≤ 3 次工具调用且 0 次全仓搜索 | 6 / 30 | 4 / 30 | 8 / 30 | 11 / 30 | 9 / 30 | 少 2 次，目标 30 / 30 |
+| `unclaimedNotices` / `headedBrowsers` / did not answer in time / 超时 | 0 / 空 / 0 / 0 | 同左 | 同左 | 同左 | 同左 | |
+
+- 整轮用时：65 对补修 Mann-Whitney p ≈ 0.65（每条 p ≈ 0.46），没有显著差别，中位数低了 2.3 秒。按场景（3 次的中位数，秒，65 → 补修）：
+  - phone-breakpoints 30.12 → 21.74；
+  - data-and-text 16.14 → 11.22；
+  - cards-style 15.01 → 12.18；
+  - fill-gap-brief 19.39 → 17.85；
+  - button-over-rule 10.88 → 9.62；
+  - dissolve-place-frame 31.51 → 30.24；
+  - promote-and-grid 8.78 → 10.04；
+  - put-back-and-new-text 11.26 → 13.88；
+  - reorder-and-move 9.54 → 11.25；
+  - type-and-stack 6.39 → 8.87。
+- phone-breakpoints：
+  - 65 三次第一次 `done` 都是「The number of columns is 3, not 2. Something overrides your change」（只在 767px 看，不给宽度），三次都改了第二遍。
+  - 补修三次都让两段都是 2 列，写法各不同：
+    - #1 `grid-cols-2 sm:grid-cols-3 sm:max-md:grid-cols-2`；
+    - #2 `grid-cols-2 md:grid-cols-3`；
+    - #3 `grid-cols-1 max-sm:grid-cols-2 sm:grid-cols-3 sm:max-md:grid-cols-2`。
+  - 只有 #3 第一次 `done` 没显示，输出是「At 640px wide, the number of columns is 3, not 2, as the browser computes `grid-template-columns` on the layer. The change applies below 768px only, at that width too: …」，改一次就显示了。
+- 虚假的 ✓ 4 → 0：
+  - data-and-text 三次都复制了「Freeze」（65 #1 复制成了「Apply」）。
+  - dissolve-place-frame 三次的解散 Stack 那条都没有算成虚假的 ✓。
+    - #1 按 `finish` 排好的报告，把它从 ✓ 挪到 ⚠️，写了两行（`h-screen` 没改成 720px）。
+    - #2、#3 留在 ✓。
+- 报告格式合规 26 / 30 → 30 / 30：「同一条同时在 ✓ 和 ⚠️ 下」（65 有 4 次）和「⚠️ 缺理由」都没有出现。
+- 读入字数：`claim` 输出每轮多约 610 字（每轮都有的那句页面开着约 190 字，「How the page checks」约 300–450 字）。Skill 多 112 字（第 4、5 步）。`finish` 每轮中位数 791 → 779.5 字，`done` 348 → 348 字。全部合计多 2%，不显著，仍比基线 B 少一半以上。
+- 全仓搜索：多出来的是查 `twMerge` / `clsx`（「This usage only」那条要的）、`<button`、字体，65 里也有这几种，B 是 20 次。Light 少 2 次也是这几次搜索带来的。
+
+### 不加载 Skill（10 个场景各 1 次）
+
+只对 Agent 说「运行 `npx vernierkit claim`，照输出落地」（`--no-skill --runs 1`）。10 次的 init 事件都没有 `vernierkit`，读入字数：Skill 10 次都是 0，读 node_modules/vernierkit 0 次。
+
+| 指标（中位数（范围），10 次） | 65 不加载 Skill | 补修不加载 Skill | 对照：补修主批（30 次） |
+|---|---|---|---|
+| 走完一轮（claim、done、finish 都跑了） | 10 / 10 | 10 / 10 | 30 / 30 |
+| 报告格式合规 | 8 / 10 | **10 / 10** | 30 / 30 |
+| 整轮用时 claim→finish（秒） | 13.92（6.39–40.58） | 11.86（8.12–22.01） | 12.62（6.8–30.57） |
+| 整轮用时每条（秒） | 6.1（2.13–13.53） | 4.44（2.71–7.34） | 4.78（2.51–10.19） |
+| 每条平均工具调用 | 2.83（1.67–5.33） | 2.83（1.67–3.67） | 3.17（2–5） |
+| 全仓搜索（合计） | 5 | 6 | 20 |
+| 读入字数：Skill / claim 输出 / 全部工具输出 | 0 / 5,588 / 9,395.5 | 0 / 6,199 / 9,522 | 3,570 / 6,199 / 13,185 |
+| 按页面预期 1:1 的改动（合计） | 26 / 27 | 27 / 27 | 81 / 81 |
+| 虚假的 ✓（合计） | 1 | 0 | 0 |
+| 设计变量使用率 | 1 | 1 | 1 |
+| 两次进度最长间隔 / 没进度也没改源码的最长时间（秒） | 1.68 / 8.78 | 0.64 / 7.66 | 1.24 / 8.39 |
+| Light | 3 / 10 | 4 / 10 | 9 / 30 |
+| `unclaimedNotices` / `headedBrowsers` / did not answer in time | 0 / 空 / 0 | 0 / 空 / 0 | 0 / 空 / 0 |
+
+验收：Claude 不加载 Skill 那批的报告合规 10 / 10，比 65 的 8 / 10 好，勾上了。
+
+### 输出前后（Claude，字数）
+
+- `claim`：phone-breakpoints 6,489 → 7,434；reorder-and-move 2,809 → 3,418（中位数）。第 3 条的设计意图从「Change the number of columns from 1 to 2.」变成逐段两句，末尾多「How the page checks」。
+- `done`：phone-breakpoints 没显示的那一句，从「The number of columns is 3, not 2. Something overrides your change: see what sets the value in the notes (Currently set by) …」变成「At 640px wide, the number of columns is 3, not 2, as the browser computes `grid-template-columns` on the layer. The change applies below 768px only, at that width too: …」。
+- `finish`：原来是固定的示例报告（791 字），现在是这一轮排好的骨架（全 ✓ 的 637 字；dissolve-place-frame 820 字，多一句「1 and 3 the page cannot check: …」）。
+
+### 读 node_modules/vernierkit：回补（新统计，各批 30 次）
+
+数的是读包本身的工具调用：读文件、在包里 grep 或 glob、`node -e` 读包里的文件，包里自带的 Skill 也算；跑 `npx vernierkit …` 或 `node …/dist/cli.js claim` 不算。
+
+| | A | B | 64 | 65 | 补修 |
+|---|---|---|---|---|---|
+| Claude | 0 | 0 | 0 | 0（不加载 Skill 0） | 0（不加载 Skill 0） |
+| Cursor | 39（3 次运行） | 5（2 次运行） | 26（1 次运行） | 99（8 次运行） | 没跑 |
+
+- Cursor 的数和慢运行分析（A 43、B 5、64 26、65 100）差几次：分析把跑命令行的调用也算进去了。
+- Claude 在每一批都没有读过包，所以「读 node_modules/vernierkit 的次数明显下降」这一项，只测 Claude 看不出来。要看 Cursor 才知道。
+
+**没做到的、有风险的**
+
+- Cursor 没测，基线用的 Grok 4.7 256K High 已经不能用，测量台里也没换模型。补修是否让 Cursor 不再读包、整轮用时回到基线 B 以下，要等设计师定 Cursor 怎么测。上面两项 Cursor 的验收仍不勾。
+- Claude 有三项比 65 略多，都不显著：
+  - `claim` 输出每轮多约 610 字，这项显著，是这次加的说明本身；
+  - 全仓搜索合计 14 → 20；
+  - Light 11 → 9。
+- 只在读各段之前认领、或设计师马上离开编辑模式的一轮，各段读不到（见上面「没改的」）。
+- 「免得 Agent 跑 `doctor` 或 `init` 时把 Skill 装回去」没做到（见 63）。
