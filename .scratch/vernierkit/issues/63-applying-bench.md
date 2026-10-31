@@ -499,3 +499,20 @@ Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/L
 - 每次运行的「1:1 落地率（页面预期）」中位数四组都还是 1，范围下限从 0.67 变成 0.33。
 - 「1:1 落地率（done 核对）」不受影响：它用的是当时页面核对的结果，重放没有重做页面核对。当时的核对只比 `top`，这 16 次按钮 Y 都报了「显示了」；按 64 补完后的核对，会报「没显示」，并说明是外边距的差别。
 - 上面「基线 A」「基线 B」两节的表保留原来的数字。和 64–68 比时用这里的新数字，64 的数字在 64 的 Comments。
+
+**记下「没认领在改代码」的提示（2026-10-31，ticket 66）**
+
+- 每次真实 Agent 运行的 `raw.json` 多了两项，只记录，不改任何计分，`summary` 和 `measures.json` 也没变：
+  - `unclaimedNotices`：从 Agent 开始算，设计师的页面上「The code is changing, but no Agent has claimed your changes」提示出现过几次；
+  - `times.unclaimedNotices`：每次出现的时间。
+- 怎么记（`e2e/bench/notices.ts`，有单测 `notices.test.ts`）：
+  - 设计师页面的 context 先装一个初始化脚本，看着编辑层的 Shadow DOM，按编辑层给提示的标记（`data-vk-notice="unclaimed"`）记下每次出现。一闪而过的也记；页面刷新后接着记。
+  - 这个提示只在编辑模式、没认领时出现。所以认领前出现的，是 Agent 没认领就改了代码，提示是对的；认领后出现的才是误报。用 `times.claim` 区分。
+- 65 两家各复测 30 次时，顺带用这一项验证真实落地时 0 误报。之前的运行没有这一项。
+- `--dry` 也查：设场景时出现这个提示，就报这个场景有问题。
+- 剧本那边（`applying-bench.spec.ts`）：
+  - `unclaimedNotice` 改为按标记找；
+  - 「没认领就改代码」探「编辑还能不能改」时，点图层树限时 2 秒，只有被提示挡住才算暂停（原来不限时，提示挡住时会等到测试超时）；
+  - 每个剧本多记 `unclaimedNoticesShown`；
+  - 加了 66 的断言。数字见 66 的 Comments。
+
