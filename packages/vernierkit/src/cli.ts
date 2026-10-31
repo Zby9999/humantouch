@@ -98,7 +98,7 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   const doneIds = [...new Set([...state.done, ...reported])];
   // A brief has no value to check on the page: what the Agent did is for its report.
   const asked = changes.filter((change) => change.kind !== "brief").map((change) => change.id);
-  const check = await ask(folder, asked);
+  const check = await newAsk(folder, asked);
   const claimed = { ...state, done: doneIds, check };
   await writeState(folder, claimed);
   const results = asked.length ? await waitForChecks(folder, check, state.claimedAt) : new Map<number, CheckResult>();
@@ -110,8 +110,8 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   return 0;
 }
 
-/** Asks the open pages to check changes `ids`, under a key of its own that their answers carry. */
-async function ask(folder: VernierFolder, ids: number[]): Promise<CheckAsk> {
+/** An ask for the open pages to check changes `ids`, under a key of its own that their answers carry: it goes out with the state. */
+async function newAsk(folder: VernierFolder, ids: number[]): Promise<CheckAsk> {
   return { ids, at: new Date().toISOString(), key: randomUUID(), codeAt: await lastEdited(dirname(folder.dir)) };
 }
 
@@ -264,7 +264,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   // The round's result is the page's (ADR 0013): it looks at every change it can once more, once the last edit has reached it.
   if (state && changeSet) {
     const ids = changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id);
-    const closing = await ask(folder, ids);
+    const closing = await newAsk(folder, ids);
     await writeState(folder, { ...state, closing });
     if (ids.length) await waitForChecks(folder, closing, state.claimedAt);
   }

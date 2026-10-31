@@ -432,11 +432,11 @@
   - 修之后通过：`done` 等到真正的回答，输出「it shows the change」。
 - 单测 `off-canvas-service.test.ts`「a page behind the one that showed a change, saying unasked it does not show, in the very millisecond done asks, is not taken for an answer; the answer to the ask is」：页面先报「显示了」，再有一个和问题同一毫秒、没带 `key` 的「没显示」，进度仍算这一条；带着 `key` 的「没显示」才算。修之前失败（`applied` 是 `[]`），修之后通过。
 - 单测 `edits.browser.test.ts`「asked by done while the dev server brings the edit in…」：改为按 `answers` 找回答，并断言页面自己看的结果都不带 `answers`。只改协议类型、页面还没改时失败（找不到回答），改了页面后通过。
-- 模拟页面的测试工具 `openPage` 改为带上问题的 `key` 回答，其余 CLI 单测照旧通过。
+- 模拟页面的测试工具 `openPage` 改为带上问题的 `key` 回答，`at` 用它回答的时间（和页面一样），其余 CLI 单测照旧通过。
 - 跑负载时发现、一起修的（只在测试里）：模拟页面 `openPage` 在每一跳里把 `done` 的问题和 `finish` 的问题都答一遍。两个问题都问到同一条改动时，`checks.json` 里这条的结果在两个回答之间来回换，每 20ms 重写一次文件，`finish` 归档删掉 `checks.json` 之后还可能写回来。「finish names the changes the page did not show, and archives the checks」因此在两路 `pnpm test` 同时跑时偶尔失败（最后一步 `checks.json` 还在）。
   - 改法：模拟页面对每个问题、每条改动，只在回答变了时才再写，和真的页面一样；读状态文件时，`finish` 正好删掉它就跳过这一跳。
   - 来回换在按 `at` 认回答时也有（两个问题的 `at` 不同），这一点是推断，没有在 4d57d39 上复现。
-  - 两路 `pnpm test` 同时跑：改之前 102 次里失败 3 次（只改了第一处时）；改之后 143 次，全部通过。
+  - 两路 `pnpm test` 同时跑：2f035d6 上的模拟页面（回答带上页面看的时间，所以每跳都写）约 417 次里失败 8 次；只改成每个问题写一次、两个问题仍来回换时，102 次里失败 3 次；照上面改完后 143 次，全部通过。
 
 在机器忙时（两路 `pnpm test` 循环同时跑）：
 - 66 的「no notice as the Agent claims the round and edits the code at once, before the page hears of the claim」连跑 20 次，20 次通过；负载刚起来时先跑过一批 20 次（load 1.5 → 6.3），也是 20 次通过。第二批跑的时候 load 5.9–8.0。
@@ -451,3 +451,17 @@
 - `pnpm typecheck` 通过。
 - `pnpm test`：vitest 581 个通过、1 个跳过（多了上面两条新单测）；测量台的 node 测试 21 个通过。
 - `VK_E2E_PORT=5600 pnpm test:e2e`：321 个通过、1 个跳过（4.5 分钟）。
+- review 后（见下）又跑了一遍：`pnpm typecheck` 通过；`pnpm test` vitest 581 个通过、1 个跳过，node 测试 21 个通过；全套 e2e 321 个通过、1 个跳过（4.6 分钟）；两路 `pnpm test` 同时跑 74 次，全部通过；新单测在旧的按 `at` 认回答下仍失败、现在通过；切换按钮仍是 10,001 B。
+
+**code-review（4d57d39 到 446a477，两路）**
+
+修了的：
+- 模拟页面的回答 `at` 还抄着问题的 `at`，和改过的页面（用它看的时间）不一样。改为用回答的时间，只在这个问题的回答变了时再写。
+- CLI 里生成问题的函数原来叫 `ask`，可它只是做出一个问题，问出去是写状态文件那一步。改名为 `newAsk`。测试工具里装状态的变量 `now` 改名为 `round`，免得和 `performance.now()` 混。
+
+没改的（判断题）：
+- `checks.json` 的结果类型改用 `Omit<CheckReport, "id" | "undone">`：试了，`Omit` 会把 `CheckResult` 的几种结果并成一种，类型检查不过，所以保留原来的写法。
+- `answers` 这个名字读起来像复数：它就是「这个结果回答的是哪个问题」，协议的注释写明了，留着。`key` 没有另起一个类型。
+- 页面拼「没有这一轮」的回答和 `page-checks.ts` 拼回答各写了一次，两处都很短，留着。
+- 测量台 `run-agents.ts` 仍按 `check.at` 区分两次 `done`：每次 `done` 是一个单独的进程，不会落在同一毫秒，记的是时间，没改（63 的东西）。
+- GLOSSARY 没有加「问题的标记」：只在协议里用，设计师看不到。
