@@ -3548,7 +3548,23 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     // A later edit of the code's takes it back out.
     write("border: 1px solid #ff0000");
     await expect.poll(() => shown.at(-1)).toEqual([]);
-    expect(reports.at(-1)).toMatchObject({ id: change.id, outcome: "not shown" });
+    expect(reports.at(-1)).toMatchObject({ id: change.id, outcome: "not shown", undone: true });
+    checks.stop();
+  });
+
+  test("shown, then gone from the page with its layer (another route, say): the page cannot check it, which is no word that it is undone", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+
+    write("border: 1.5px solid #ff0000");
+    await expect.poll(() => reports.at(-1)?.outcome).toBe("shown");
+    // Another route: nothing of this one's on the page.
+    page.body.replaceChildren();
+    await expect.poll(() => reports.at(-1)?.outcome).toBe("unchecked");
+    expect(reports.at(-1)).not.toHaveProperty("undone");
     checks.stop();
   });
 
@@ -3678,6 +3694,21 @@ describe("changes to the structure are checked on the live page", () => {
     // Their room put into `left` and `top`: drawn where the canvas draws it.
     Object.assign(tag.style, { left: "42px", top: "36px" });
     expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+  });
+
+  test("at the other views' widths, where the canvas's margins are not known, a layer with its margins put into its `left` and `top` is shown, as one that keeps them is", () => {
+    const { page, editor, changes, layer } = open(MARGINED);
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    const [placed] = changes.list();
+    page.getElementById("board")!.style.position = "relative";
+    const tag = page.getElementById("tag") as HTMLElement;
+    // The page at a view's width: here, as the page is.
+    const viewWidth = (width: number): PageWidth => ({ width, doc: page, own: false, of: (el) => el });
+
+    Object.assign(tag.style, { position: "absolute", left: "42px", top: "36px", margin: "0px" });
+    expect(checkAcross(page, placed, changes.list(), [390], viewWidth)).toEqual({ outcome: "shown" });
+    Object.assign(tag.style, { left: "40px", top: "30px", margin: "6px 0 0 2px" });
+    expect(checkAcross(page, placed, changes.list(), [390], viewWidth)).toEqual({ outcome: "shown" });
   });
 
   test("the Y of an absolute layer is where the canvas draws it too: its `top`, past it by the top margin it keeps there", () => {

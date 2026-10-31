@@ -85,9 +85,10 @@ export interface Dissolved {
   /**
    * Its layers, each where it was: `x` and `y` in px from the Frame's top
    * left, its size, the CSS that places it so, and its margins, which it
-   * keeps (`Change.margins`): it is drawn past `x` and `y` by them.
+   * keeps (`Change.margins`): it is drawn past `x` and `y` by them. None in
+   * a round saved before the canvas recorded them.
    */
-  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins: Margins })[];
+  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins?: Margins })[];
 }
 
 /** A layer's left and top margins, in px. */

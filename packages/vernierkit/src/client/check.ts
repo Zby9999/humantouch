@@ -267,7 +267,7 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
  * absolute and drawn where the canvas draws it (`drawnThere`). `actual`:
  * along one axis, its `left` or `top` and its margin there; both, as a placement is.
  */
-function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: Margins): CheckResult {
+function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): CheckResult {
   for (const el of els) {
     if (!absolute(el)) return { outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) };
     const placed = placedOn(el);
@@ -285,19 +285,24 @@ function lookPosition(els: Element[], property: Property, after: number | { x: n
 
 /**
  * The margins the canvas draws a placed layer past its X and Y by, at the
- * width it is looked at: where they were measured on the canvas, as wide as
- * the page's window (a breakpoint's change, in its range). At the other widths
- * a change made in the desktop view is checked at, its margins may differ,
- * by the page's own breakpoints, from what the canvas had in the desktop view:
- * there its `left` and `top` alone are looked at (null). A change recorded
- * before the canvas kept its margins has none: the same.
+ * width it is looked at; null for a change recorded before the canvas kept
+ * them, looked at by its `left` and `top` alone. `known`: they were measured
+ * on the canvas at that width, as wide as the page's window (a breakpoint's
+ * change, in its range). At the other widths a change made in the desktop
+ * view is looked at, the page's own breakpoints may give the layer other
+ * margins than the desktop view's: there either way counts, its margins kept
+ * (its `left` and `top` are X and Y) or put into its `left` and `top`.
  */
-function marginsFor(change: Change, at: PageWidth): Margins | null {
-  return change.margins && (at.own || change.breakpoint) ? change.margins : null;
+function marginsFor(change: Change, at: PageWidth): CanvasMargins | null {
+  return change.margins ? { margins: change.margins, known: !!(at.own || change.breakpoint) } : null;
 }
 
+type CanvasMargins = { margins: Margins; known: boolean };
+
 /** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px. */
-function placedOn(el: Element): { x: number; y: number; margins: Margins } {
+export type PlacedOnPage = { x: number; y: number; margins: Margins };
+
+function placedOn(el: Element): PlacedOnPage {
   const style = getComputedStyle(el);
   const px = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100;
   return { x: px(style.left), y: px(style.top), margins: { x: px(style.marginLeft), y: px(style.marginTop) } };
@@ -306,15 +311,16 @@ function placedOn(el: Element): { x: number; y: number; margins: Margins } {
 /**
  * Whether the page draws a layer placed at `placed` where the canvas draws
  * one at `to`'s X and Y (either, or both): past them by the canvas's
- * `margins`, its `left` and `top` and its own margins adding up to as much.
- * With no margins to go by, at X and Y themselves.
+ * margins, its `left` and `top` and its own margins adding up to as much
+ * (`marginsFor`). With no margins to go by, at X and Y themselves.
  */
-function drawnThere(placed: { x: number; y: number; margins: Margins }, to: { x?: number; y?: number }, margins: Margins | null): boolean {
+function drawnThere(placed: PlacedOnPage, to: { x?: number; y?: number }, canvas: CanvasMargins | null): boolean {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
   return (["x", "y"] as const).every((side) => {
     const value = to[side];
     if (value === undefined) return true;
-    const [page, canvas] = margins ? [placed[side] + placed.margins[side], value + margins[side]] : [placed[side], value];
-    return Math.abs(page - canvas) <= 0.5;
+    const drawn = !!canvas && near(placed[side] + placed.margins[side], value + canvas.margins[side]);
+    return drawn || ((!canvas || !canvas.known) && near(placed[side], value));
   });
 }
 

@@ -1142,6 +1142,20 @@ describe("done, checked on the page", () => {
         "where the canvas draws it at 512px (its Y is its `top`, 488px, and it keeps its 24px top margin). " +
         "Its `top` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mt-6` or `margin-top`), or add it to `top`, and run `npx vernierkit done 2` again.\n",
     );
+    closePage();
+    closePage = openPage((id) => ({ outcome: "not shown", width: 390, actual: id === 2 ? { value: 470, margin: 0 } : { x: 0, y: 470, margins: { x: 0, y: 0 } } }));
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. At 390px wide, the layer is drawn at X 0px and Y 470px in its container (`left` 0px and `top` 470px, margins none), " +
+        "where the canvas places it at X 0px and Y 488px, its `left` and `top`, and keeps its margins (24px top in the desktop view; at this width, the margins the project's breakpoints give it). " +
+        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. At 390px wide, the Y position is drawn at 470px in its container (`top` 470px, top margin 0px), " +
+        "where the canvas places it at 488px, its `top`, and keeps its top margin (24px in the desktop view; at this width, the margin the project's breakpoints give it). " +
+        "Check its `position` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 2` again.\n",
+    );
+    closePage();
+    closePage = openPage((id) => ({ outcome: "not shown", actual: id === 1 ? { x: 0, y: 488, margins: { x: 0, y: 0 } } : id === 2 ? { value: 488, margin: 0 } : { x: 0, y: 0, margins: { x: 2, y: 6 } } }));
     expect((await cli("done", "3")).output).toContain(
       "The layer is drawn at X 2px and Y 6px in its container (`left` 0px and `top` 0px, margins 2px left and 6px top), " +
         "where the canvas draws it at X 42px and Y 18px (its X and Y are its `left` and `top`, 40px and 12px, and it keeps its margins, 2px left and 6px top). " +

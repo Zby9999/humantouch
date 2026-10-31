@@ -131,7 +131,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   };
   const saw = (change: Change, result: CheckResult) => {
     if (stopped || (result.outcome === "unchecked" && result.reason === "loading")) return;
-    const undone = shown.has(change.id) && result.outcome !== "shown";
+    // Not shown where it was: a later edit undid it. Not to be checked now (the layer not on the page, on another route say) is no word of that.
+    const undone = shown.has(change.id) && result.outcome === "not shown";
     if ((result.outcome === "shown") !== shown.has(change.id)) {
       if (result.outcome === "shown") shown.add(change.id);
       else shown.delete(change.id);
