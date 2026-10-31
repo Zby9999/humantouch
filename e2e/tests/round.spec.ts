@@ -53,6 +53,9 @@ async function changeTheCards(page: Page) {
   await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
 }
 
+/** The local service's round, as the page loads and saves it. */
+const isRound = (url: URL) => url.hostname === "127.0.0.1" && url.pathname === "/round";
+
 const progress = (page: Page) => page.getByRole("progressbar", { name: "Applying design changes" });
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
 
@@ -112,12 +115,19 @@ test("a change the page shows, undone by a later edit before any done: the ring 
   expect(await vernierkit("finish")).toBe("Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n");
 });
 
+/** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */
+interface HeldDrawing {
+  __vkDraw: Promise<void>;
+  __vkLetDraw(): void;
+  __registerBeforePerformReactRefresh(hold: () => Promise<void>): void;
+}
+
 test("an Agent that edits the code as it claims, with no done: the page draws the edit only after it began to check, and the ring fills all the same", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
   // React draws the Card anew only once the test lets it: after the dev server has brought the code in, and the page has looked.
   await page.evaluate(() => {
-    const win = window as unknown as { __vkDraw: Promise<void>; __vkLetDraw: () => void; __registerBeforePerformReactRefresh(hold: () => Promise<void>): void };
+    const win = window as unknown as HeldDrawing;
     win.__vkDraw = new Promise((resolve) => (win.__vkLetDraw = resolve));
     win.__registerBeforePerformReactRefresh(() => win.__vkDraw);
   });
@@ -126,7 +136,6 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   // The round the page reads again as it hears of the claim: held till the dev server has brought the edit in.
   let letRound!: () => void;
   const roundHeld = new Promise<void>((resolve) => (letRound = resolve));
-  const isRound = (url: URL) => url.hostname === "127.0.0.1" && url.pathname === "/round";
   await page.route(isRound, async (route) => {
     if (route.request().method() === "GET") await roundHeld;
     await route.continue();
@@ -151,7 +160,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   expect(await page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
-  await page.evaluate(() => (window as unknown as { __vkLetDraw: () => void }).__vkLetDraw());
+  await page.evaluate(() => (window as unknown as HeldDrawing).__vkLetDraw());
 
   await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 0, 0)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
@@ -181,7 +190,7 @@ test("an edit not yet saved when the Agent claims stays out of the round", async
   let saving!: () => void;
   const saveSent = new Promise<void>((resolve) => (saving = resolve));
   await page.route(
-    (url) => url.hostname === "127.0.0.1" && url.pathname === "/round",
+    isRound,
     async (route) => {
       if (route.request().method() !== "PUT") return route.continue();
       saving();

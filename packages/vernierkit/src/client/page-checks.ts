@@ -41,7 +41,7 @@ interface Options {
 /** The longest the page looks in one go before it lets the page have a turn. */
 const SLICE_MS = 12;
 /** After the dev server brings code in, or the page begins to check, how long the page's own changes (React drawing it anew, say) are looked at too. */
-const AFTER_CODE_MS = 3000;
+const FOLLOW_PAGE_MS = 3000;
 /** With no word from the dev server, the least time between two looks as the page changes. */
 const LOOK_EVERY_MS = 250;
 /** Once the code an ask waits for has reached the page, how long a change it does not show yet may take to show: from the dev server's last update. */
@@ -203,10 +203,12 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   /**
    * Till when the page's own changes are looked at too, with word from the
    * dev server: a while after it brought code in, and after the page began to
-   * check, as the code may have come in just before (with the claim, the
-   * Agent editing at once) for the page to draw it only after its first look.
+   * check, as the code may have come in just before (the Agent editing as it
+   * claims), the page drawing it only after its first look.
    */
-  let followUntil = performance.now() + AFTER_CODE_MS;
+  let followUntil = -Infinity;
+  const follow = () => (followUntil = performance.now() + FOLLOW_PAGE_MS);
+  follow();
   let waiting = false;
   const observer = new MutationObserver(() => {
     if (code()) {
@@ -226,7 +228,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   });
   const onCode = () => {
     codeCameAt = performance.now();
-    followUntil = codeCameAt + AFTER_CODE_MS;
+    follow();
     look();
   };
   win.addEventListener(CODE_EVENT, onCode);
