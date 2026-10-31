@@ -1,9 +1,12 @@
 /**
  * The Agents the bench runs, each by one command line, fixed here: the
  * numbers of two rounds compare only when both ran the same one (docs/goals.md,
- * Measuring). Each runs unattended in the run's project, on the account's
- * default model, in an environment with nothing of the shell it was started
- * from (no gateway, no model override), as the designer's own login.
+ * Measuring). Each runs unattended in the run's project, on the model its
+ * arguments pin, in an environment with nothing of the shell it was started
+ * from (no gateway, no model setting), as the designer's own login.
+ * VK_BENCH_CLAUDE and VK_BENCH_CURSOR name another binary; VK_BENCH_CURSOR_MODEL
+ * another id of Cursor's model, which must name the same model (its command
+ * line, in meta.json, shows the id; a run on another model stops the bench).
  */
 import { execFile, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -167,9 +170,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     binary: () => process.env.VK_BENCH_CURSOR ?? (existsSync(CURSOR_APP_AGENT) ? CURSOR_APP_AGENT : onPath("cursor-agent")),
     // Run headless, Cursor turns every shell command away unless forced, its allowlist or not: forced, in its
     // sandbox (writes in the project only), with the commands below denied besides.
-    // Pinned to the model the designer chose, as their Cursor settings have it; its explore subagent keeps its own.
+    // Pinned to the model the designer chose (Grok 4.7 256K High, as its runs name it); its explore subagent keeps its own.
     model: "Grok 4.7 256K High",
-    effort: "reasoning_effort=high (in --model)",
+    effort: "high (in --model)",
     // The browser plugins as the run's own, headless (browserPlugins).
     args: (folder, prompt = PROMPT) => [
       "-p",
@@ -177,7 +180,10 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--output-format",
       "stream-json",
       "--model",
-      "grok-4.7[context=256k,reasoning_effort=high,fast=false]",
+      // Baselines A and B ran it as `grok-4.7[context=256k,reasoning_effort=high,fast=false]`, the id in the designer's
+      // Cursor settings. The account turned that id away on 10/31, now and then; the designer confirmed `grok-4.7-high`
+      // is the same model, and it is the bench's id from baseline B' on (ticket 63).
+      process.env.VK_BENCH_CURSOR_MODEL ?? "grok-4.7-high",
       "--trust",
       "--force",
       "--sandbox",

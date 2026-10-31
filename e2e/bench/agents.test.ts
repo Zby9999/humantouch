@@ -104,6 +104,20 @@ test("with no Skill, each Agent is asked only to run claim and apply as it says,
   }
 });
 
+test("Cursor runs on grok-4.7-high unless VK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
+  const saved = process.env.VK_BENCH_CURSOR_MODEL;
+  try {
+    delete process.env.VK_BENCH_CURSOR_MODEL;
+    assert.match(commandLine("cursor"), / --model grok-4\.7-high /);
+    process.env.VK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
+    assert.match(commandLine("cursor"), / --model 'grok-4\.7\[context=256k,reasoning_effort=high,fast=false\]' /);
+    assert.doesNotMatch(commandLine("cursor"), /grok-4\.7-high/);
+  } finally {
+    if (saved === undefined) delete process.env.VK_BENCH_CURSOR_MODEL;
+    else process.env.VK_BENCH_CURSOR_MODEL = saved;
+  }
+});
+
 test("a project with no Skill: init's Skill and its line in AGENTS.md are taken out, and nothing else (ticket 65)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
   for (const folder of [".agents/skills/vernierkit", ".claude/skills/vernierkit", ".claude/skills/deploy"]) {
