@@ -66,6 +66,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "Leave the layer as it is at every other width, and do not change its value at all breakpoints to get there. " +
       "Where the design intent gives the range part by part, the layer shows another value in each now, each set by a class or rule of its own: change them so every part shows the new value. " +
       "A class that holds at exactly the widths of the range, or of a part, is changed rather than another added beside it. " +
+      "With Tailwind, of the classes for a property that hold at a width, the one latest in the stylesheet shows, whatever their order in `class`: " +
+      "those with no breakpoint variant come first, then the `max-*` ones from the widest, then `sm:`, `md:` and on up, each directly followed by the ranges that start there (`sm:max-lg:`). " +
       "Hidden at a breakpoint is hidden there only (`display: none` at those widths); a layer hidden at every width that a breakpoint shows gets its display back there.",
   },
   {
@@ -221,7 +223,7 @@ const HOW_CHECKED: HowChecked[] = [
   },
   {
     calledFor: (change) => checked(change) && placing(change),
-    text: "a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, and its `left` and `top` with its margins where the canvas draws it, at X and Y with the margins it keeps there",
+    text: "a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, its `left` and `top` the X and Y given, its margins kept, not taken off, so drawn at `left` and `top` plus its margins, as on the canvas",
   },
   { calledFor: (change) => checked(change) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change) => checked(change) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },

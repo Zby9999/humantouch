@@ -745,3 +745,86 @@ Cursor：没跑成。
   - 两处都是说明可以写清的地方：画出来的位置 = `top` + 外边距；逐段改时，正好覆盖那段的类和原来的类谁先谁后。这次没改，要改就得两家复测。
 - 全仓搜索合计 94 → 114。
 - 模型 id 中途换过（B' 的后 6 次和最终的 40 次用 `grok-4.7-high`）。设计师确认两个 id 是同一个模型；要是 Cursor 那边两个 id 的服务实际上有差别，B' 和最终之间会混进这一项。
+
+**补修三：自由定位的外边距、Tailwind 类的先后，两处说明写清（2026-10-31，起点 ed26d76，packages 和 9623bd4 相同）**
+
+起因：上面 Cursor 在最终代码 9623bd4 上的 30 次，用时门槛达到了，但有两项比 B' 差：全仓搜索合计 94 → 114，读 `node_modules/vernierkit` 9 → 30 次调用（3 次运行）。只读 transcript 看，原因在两处说明：
+
+- dissolve-place-frame（读包的 30 次都在这里）：「How the page checks」里那句「its `left` and `top` with its margins where the canvas draws it, at X and Y with the margins it keeps there」，Cursor 三次都读成「`top` 加外边距要等于 Y」，于是拿不准按钮的 `top` 该写 488px 还是扣掉 `mt-6` 写 464px（段落的 323.2px 也一样），就去包的 `dist/cli.js` 里找 `offByMargins`。三次最后都照画布留着外边距，1:1 3 / 3。B' 的 Skill 里没有这句，Cursor 也没去读包。
+- phone-breakpoints：三次都去读 Tailwind 的源码，#1、#2 还用 `@tailwindcss/node` 跑 `compile`。要确认的是：`sm:grid-cols-3` 和新加的 `sm:max-md:grid-cols-2` 在 640–767px 谁生效；Card 里的 `bg-white` 和使用处的 `max-md:bg-[#FF0000]` 谁生效；`max-md:` 能不能压过 `sm:`。说明里没有这条信息。
+- Claude 在补修那批（`bench-results/agents/2026-10-31T06-51-29-819Z/`）这两个场景都没读包，也没读 Tailwind：dissolve-place-frame 三次都留着外边距；phone-breakpoints 三次写法各不同，都对。下面的新写法和 Claude 的做法一致。
+
+改了什么（`writing-rules.ts`，只改这两句的字）：
+
+1. 「How the page checks」里自由定位那一项。
+   - 改前：「a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, and its `left` and `top` with its margins where the canvas draws it, at X and Y with the margins it keeps there」
+   - 改后：「a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, its `left` and `top` the X and Y given, its margins kept, not taken off, so drawn at `left` and `top` plus its margins, as on the canvas」
+   - 语义没变：Y 就是 `top`，外边距保留，页面核对的是 `top` 加外边距画出来的位置。
+2. 「Breakpoints」在「A class that holds at exactly the widths … beside it.」后加一句：「With Tailwind, of the classes for a property that hold at a width, the one latest in the stylesheet shows, whatever their order in `class`: those with no breakpoint variant come first, then the `max-*` ones from the widest, then `sm:`, `md:` and on up, each directly followed by the ranges that start there (`sm:max-lg:`).」
+   - 怎么核对的：在 scratchpad 里分别用示例项目自己的 Tailwind 编译出 CSS，看规则的先后，没有改示例项目。
+     - v4.3.3（vite-react19-tw4 的版本，`@tailwindcss/node` 的 `compile`，默认主题）；
+     - v3.4.19（vite-react18-tw3 的 CLI，默认 screens 和这个示例自己的 screens 560 / 820 / 1120px 各一次）。
+   - 结果三次一样：
+     - 先是不带断点变体的（`hover:` 这类只带别的变体的，紧跟在不带变体的后面）；
+     - 然后是 `max-*`，从宽到窄（`max-lg:`、`max-md:`、`max-sm:`）；
+     - 然后是 `sm:`，紧跟着 `sm:max-md:`、`sm:max-lg:`（写成 `max-md:sm:` 的也在这里）；
+     - 然后是 `md:`，紧跟着 `md:max-lg:`；再往上是 `lg:`。
+   - 所以：`sm:grid-cols-3 max-md:grid-cols-2` 在 640–767px 是 3 列；加 `sm:max-md:grid-cols-2` 是 2 列；`bg-white` 输给 `max-md:bg-[#FF0000]`；`sm:max-lg:` 输给 `md:`。
+   - 该改哪个类、要不要另加，原来那两句已经定了，这次没动。补修第 4 条定的「不举具体类名」也照旧：这句只举变体，原有的单测（不出现 `grid-cols`、`max-sm:`、`md:max-lg:`、`max-md:`）仍然通过。
+3. spec 里这两条是中文转述，没有逐字引用；转述跟着补上（「How the page checks」一条、断点一条）。
+
+**测试**
+
+- 新加两个单测（`test/cli.test.ts`，经 `claim` 的输出），先失败、再改代码：
+  - 有自由定位的改动时，「How the page checks」写着 `left` / `top` 就是给的 X / Y、外边距不扣；只有填充改动的一轮，这一条里没有 margins。
+  - 有断点改动时，「Breakpoints」有 Tailwind 先后那一句；没有断点改动的一轮，整份输出里都没有。
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 631 个通过、1 个跳过；测量台的 node 测试 28 个通过。
+- `VK_E2E_PORT=5600 pnpm test:e2e`：324 个通过、1 个跳过（5.2 分钟，review 后的代码；review 前那版也是 324 / 1，5.6 分钟）。
+
+**claim 输出逐字比较（`pnpm bench:agents --dry --claim-out`，10 个标准场景）**
+
+改前在 ed26d76 上跑（packages 和 9623bd4 相同），改后在 review 后的代码上跑。字数是字符串长度，和测量台的「读入字数」同一个量法。
+
+| 场景 | 改前 | 改后 | 差 | 逐字 |
+|---|---|---|---|---|
+| button-over-rule | 4,566 | 4,566 | 0 | 相同 |
+| cards-style | 6,227 | 6,227 | 0 | 相同 |
+| data-and-text | 4,929 | 4,929 | 0 | 相同 |
+| dissolve-place-frame | 6,625 | 6,650 | +25 | 只有「How the page checks」那一行变了 |
+| fill-gap-brief | 6,600 | 6,600 | 0 | 相同 |
+| phone-breakpoints | 7,435 | 7,758 | +323 | 只有「Breakpoints」那一行变了 |
+| promote-and-grid | 6,173 | 6,173 | 0 | 相同 |
+| put-back-and-new-text | 6,377 | 6,377 | 0 | 相同 |
+| reorder-and-move | 3,419 | 3,419 | 0 | 相同 |
+| type-and-stack | 5,883 | 5,883 | 0 | 相同 |
+
+- 变的只有这两个场景：只有它们有自由定位的改动（dissolve-place-frame 的第 2 条 Y），或断点上的改动（phone-breakpoints 三条都是）。
+- `done`、`finish` 不受影响：这两处说明只在 `claim` 的「How to write them」里（`change-notes.ts` 的 `toApply`），`done`、`finish` 不用它。
+- 每次 `--dry` 都是 10 个场景全部设得起来（改前一次，review 前后各一次）。
+
+**code-review（两路，ed26d76 到这次的代码）**
+
+修了的：
+- 外边距那句原来有两个冒号、结尾又说了一遍「画出来」，收成一个冒号，少了 36 字。
+- 「stacked on it」和 GLOSSARY 的 Stack 撞词，改成「the ranges that start there」。
+- 「no variant」会把 `hover:` 这类也算进去（它们在不带变体的类之后、`max-*` 之前），改成「no breakpoint variant」。
+- 两个新单测原来逐字钉住整句，改成钉关键短语，和这个文件里其他测试一样。
+
+没改的：
+- 外边距那句写在「How the page checks」里，算是写法而不是核对：Cursor 读错的就是这一句，所以在原处改清楚。
+- 那句要求外边距不扣，比页面核对严：把外边距并进 `left` / `top` 页面也算显示了（`done` 没显示时也这么提示）。说明只给一种写法，省得 Agent 再想。
+- 只有复制带断点值的图层（`copiedBreakpoints`）时也会打印「Breakpoints」，新句子随这一条出现，没有单独加测试。
+- 测试里 `{ min: null, max: 768, project: { tailwind: "max-md:" } }` 又写了一次，没有抽成常量。
+
+**切换按钮体积**
+
+照 34 / 66 的量法：`react.dev.js` + 共用 chunk，gzip，zlib 默认级别。
+- 切换按钮：10,001 B → 10,001 B（819 + 9,182），限额 10,240 B，没变。
+- `editor.dev.js` 98,439 B，没变。改的只是命令行的文字。
+
+**没做到的、有风险的**
+
+- 这次没单跑真实 Agent，只比了 `claim` 的输出。效果之后在最终代码上测：Claude 用 ticket 67 的 30 次，Cursor 在 68 之后再跑 30 次。
+- Tailwind 先后那一句只在 v4.3.3 和 v3.4.19 上核对过。任意值的断点（`min-[700px]:`、`max-[700px]:`）、自定义变体都没写进去。v3 只看过默认 screens 和这个示例从窄到宽写的 screens，没看过 screens 乱序写的配置。
+- 外边距那句只在有自由定位改动的一轮出现。只解散 Stack、没有自由定位的一轮看不到；B' 里也没有这句，Cursor 那时没为这个去读包。

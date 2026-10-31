@@ -341,6 +341,18 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(checks).not.toContain("getComputedStyle");
   });
 
+  test("a layer placed absolute: how the page checks says its `left` and `top` are the X and Y given, its margins kept, not taken off; a round with none says nothing of margins (ticket 65)", async () => {
+    saveRound(style("y", { before: 368, after: 488, margins: { x: 0, y: 24 }, style: { top: "488px", bottom: "auto" } }));
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("its `left` and `top` the X and Y given, its margins kept, not taken off");
+    expect(checks).toContain("drawn at `left` and `top` plus its margins");
+
+    saveRound(style("fill"));
+    expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("margins");
+  });
+
   test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
     saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
 
@@ -348,6 +360,18 @@ describe("claim, how to write the changes (ticket 65)", () => {
 
     expect(breakpoints).not.toMatch(/grid-cols|max-sm:|md:max-lg:|max-md:/);
     expect(breakpoints).toContain("Where the design intent gives the range part by part, the layer shows another value in each now");
+  });
+
+  test("the rule for breakpoints says which Tailwind class shows where several hold, as Tailwind orders them; a round with no breakpoint says nothing of it (ticket 65)", async () => {
+    saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
+
+    const breakpoints = rule((await cli("claim")).output, "Breakpoints");
+
+    expect(breakpoints).toContain("With Tailwind, of the classes for a property that hold at a width, the one latest in the stylesheet shows, whatever their order in `class`");
+    expect(breakpoints).toContain("those with no breakpoint variant come first, then the `max-*` ones from the widest, then `sm:`, `md:` and on up, each directly followed by the ranges that start there");
+
+    saveRound(style("columns", { before: 1, after: 2 }));
+    expect((await cli("claim")).output).not.toContain("latest in the stylesheet");
   });
 
   test("the notes of the last round, to undo it by, say none", async () => {
