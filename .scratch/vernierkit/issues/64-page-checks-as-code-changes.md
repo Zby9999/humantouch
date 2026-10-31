@@ -281,7 +281,7 @@
 
 - 来源是我们自己的本机服务，不是外部的东西。
 - 查法：临时让本机服务把每个 `/events` 连接的开和关记到文件里（端口、来源、User-Agent），跑了一遍全套 e2e。
-  - 示例项目的服务上共开了 125 次、关了 124 次。
+  - 示例项目的服务上共开了 99 次、关了 98 次。
   - 没关的那一次在 `autosave.spec.ts`「a round saved before the instances of a layer shared their edit styles opens as it was in every view…」里，00:11:48.868 开的，对方端口已经是 `undefined`。
   - 从那以后，示例项目上每个测试都多算一个页面：bench-scenarios、claim、round、off-canvas-round 等。
 - 原因：
