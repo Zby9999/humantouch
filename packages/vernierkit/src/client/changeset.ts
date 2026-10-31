@@ -39,6 +39,12 @@ export interface Target {
   };
 }
 
+/** A part of a change's breakpoint, between two of the project's breakpoints, and what the page showed there before the change. */
+export interface RangePart {
+  breakpoint: Breakpoint;
+  before: unknown;
+}
+
 /** Where a moved layer is: the container it is in, its place there, and its position when absolute. */
 export interface Place {
   /** The container: its id on the canvas, how the Agent finds it in the source, and whether it is a Grid, whose places are its cells. */
@@ -189,6 +195,13 @@ export interface Change {
    * None: at every width, unless a breakpoint changes the property on its own.
    */
   breakpoint?: Breakpoint;
+  /**
+   * A style change at a breakpoint the project's own breakpoints cut into
+   * parts (ticket 65): each part, and the value the live page showed there,
+   * the code as it was, once the change was made. None: the range is one
+   * part, or the page could not be looked at.
+   */
+  parts?: RangePart[];
   property: string;
   before: unknown;
   after: unknown;
@@ -216,6 +229,8 @@ export interface Change {
   offCanvas?: string;
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
+  /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1 of `of`, as the page renders them, and its words (ticket 65). */
+  item?: { nth: number; of: number; words?: string };
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
@@ -265,7 +280,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "item"
     > & {
       kind?: Change["kind"];
     },

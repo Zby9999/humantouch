@@ -82,14 +82,18 @@ export function itself(doc: Document): PageWidth {
 /**
  * Where the change is to show (ADR 0008): the page itself, when its window is
  * at a width the change applies at, and the other widths to look at it on a
- * copy of the page. A change at a breakpoint: one width in its range, when
- * the window is at none. One made in the desktop view: every view's width
+ * copy of the page. A change at a breakpoint: one width in each part of its
+ * range the project's breakpoints cut it into, where the window is not. One made in the desktop view: every view's width
  * too, but those where the round changes the same property of the layer at a
  * breakpoint of its own. A reorder is the same at every width.
  */
 export function widthsOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): { own: boolean; others: number[] } {
   const { breakpoint } = change;
-  if (breakpoint) return within(breakpoint, pageWidth) ? { own: true, others: [] } : { own: false, others: [widthIn(breakpoint)] };
+  if (breakpoint) {
+    // Each part of the range the project's breakpoints cut it into (ticket 65): the page itself in the part its window is in.
+    const parts = change.parts?.map((part) => part.breakpoint) ?? [breakpoint];
+    return { own: parts.some((part) => within(part, pageWidth)), others: parts.filter((part) => !within(part, pageWidth)).map(widthIn) };
+  }
   if (change.kind === "move" && !(change.after as Place).absolute) return { own: true, others: [] };
   const { loc, chain } = change.target;
   const sameLayer = (other: Change) => other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain);
@@ -174,19 +178,29 @@ function ownValues(change: Change, round: Change[]): string[] {
  * `doc`, read where `at` shows it. A change to a component, but in the usages `apart`.
  */
 function lookAt(doc: Document, change: Change, apart: string[], at: PageWidth): CheckResult {
-  // A change at a breakpoint is looked at at a width in its range: which one does not matter.
-  const width = at.own || change.breakpoint ? undefined : at.width;
+  // A change at a breakpoint is looked at at a width in its range: which one does not matter, but for a range in parts (ticket 65).
+  const width = at.own || (change.breakpoint && !change.parts) ? undefined : at.width;
   const result = look(doc, change, apart, at);
   return result.outcome === "not shown" && width !== undefined ? { ...result, width } : result;
+}
+
+/** The elements a style change is to show on, as `at` shows them: a change to a component itself shows in every usage of it, but those `apart`. */
+function styledBy(doc: Document, change: Change, apart: string[], at: PageWidth): Element[] {
+  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
+  return found.map((el) => at.of(el)).filter((el): el is Element => !!el);
+}
+
+/** The value of a style change's property the page, as `at` shows it, has on the layer now; undefined when the layer is not there. */
+export function valueOn(doc: Document, change: Change, at: PageWidth): unknown {
+  const [el] = styledBy(doc, change, ownValues(change, [change]), at);
+  return el ? readValue(el, change.property as Property) : undefined;
 }
 
 function look(doc: Document, change: Change, apart: string[], at: PageWidth): CheckResult {
   if (change.kind === "delete") return lookDeleted(doc, change, at);
   if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, at) : lookOrder(doc, change);
   const property = change.property as Property;
-  // A change to a component itself shows in every usage of it.
-  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
-  const els = found.map((el) => at.of(el)).filter((el): el is Element => !!el);
+  const els = styledBy(doc, change, apart, at);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const margins = marginsFor(change, at);
   if (margins && change.after !== null && PLACING.includes(property)) return lookPosition(els, property, change.after as number | { x: number; y: number }, margins);

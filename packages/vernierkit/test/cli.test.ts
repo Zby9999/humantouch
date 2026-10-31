@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { run } from "../src/cli";
+import { REPORT_RULES } from "../src/report-form";
 
 let project: string;
 
@@ -191,6 +192,14 @@ describe("claim, the way through a round (ticket 65)", () => {
     expect(intro).toContain("at least once before `npx vernierkit finish`");
     expect(intro).toContain("report");
   });
+
+  test("says the designer's page and its dev server are running, and the page checks the edits: no dev server to start, no browser to open", async () => {
+    saveRound(redFill);
+
+    const intro = (await cli("claim")).output.split(/^## /m)[0];
+
+    expect(intro).toContain("The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look.");
+  });
 });
 
 describe("claim, how to write the changes (ticket 65)", () => {
@@ -219,7 +228,7 @@ describe("claim, how to write the changes (ticket 65)", () => {
     const { output } = await cli("claim");
 
     expect(output.indexOf("## How to write them")).toBeGreaterThan(output.indexOf("## 2. "));
-    expect(names(output)).toEqual(["Every change", "What sets the value now", "All breakpoints"]);
+    expect(names(output)).toEqual(["Every change", "What sets the value now", "All breakpoints", "How the page checks"]);
     expect(rule(output, "Every change")).toContain("the reference style is the CSS that showed it on the canvas, to understand it by, not code to paste");
     expect(rule(output, "Every change")).toContain("Never change third-party code");
     expect(rule(output, "Every change")).toContain("apply the closest you can and still run `done` for it, or leave it out and do not");
@@ -297,7 +306,42 @@ describe("claim, how to write the changes (ticket 65)", () => {
 
     const all = names((await cli("claim")).output);
 
-    expect(all).toEqual(["Every change", "Moves", "Text"]);
+    expect(all).toEqual(["Every change", "Moves", "Text", "How the page checks"]);
+  });
+
+  test("how the page checks says what it reads, and at which widths, for the kinds of change in this round only (ticket 65)", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    saveRound(style("fill"), { ...style("radius", { before: 12, after: 4, breakpoint: PHONE }), id: 2 }, { ...change("move", { before: place(2), after: place(1) }), id: 3 });
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance");
+    expect(checks).toContain("at the page's own width and at each of the designer's views' widths");
+    expect(checks).toContain("at one width in each part of its range");
+    expect(checks).toContain("a reorder by the order of its container's layers");
+    expect(checks).not.toContain("deletion");
+    expect(checks).not.toContain("Not checked");
+    expect(checks).toContain("Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks.");
+    // Said here, not in All breakpoints as well.
+    expect(rule((await cli("claim")).output, "All breakpoints")).not.toContain("`done`");
+  });
+
+  test("how the page checks names the kinds of change in this round it cannot check: done says so, and the report says what was done", async () => {
+    saveRound({ ...change("text", { before: "A", after: "B" }), id: 1 }, { ...change("brief", { before: null, after: "Bounce" }), id: 2 });
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("new words and a brief, not at all: `done` says Not checked, which is no error; say in the report what you did");
+    expect(checks).not.toContain("getComputedStyle");
+  });
+
+  test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
+    saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
+
+    const breakpoints = rule((await cli("claim")).output, "Breakpoints");
+
+    expect(breakpoints).not.toMatch(/grid-cols|max-sm:|md:max-lg:|max-md:/);
+    expect(breakpoints).toContain("Where the design intent gives the range part by part, the layer shows another value in each now");
   });
 
   test("the notes of the last round, to undo it by, say none", async () => {
@@ -368,6 +412,29 @@ describe("claim, breakpoints", () => {
     expect(section(output, 3)).toContain(
       "The project writes these widths with its own media queries, whose edges these are: 600px, where `(max-width: 599px)` starts or stops holding, and 1000px, where `(min-width: 1000px)` starts or stops holding: make the change apply at these widths only that way",
     );
+  });
+
+  test("a change at a range the project's breakpoints cut into parts says, part by part, what the page shows there now and what it is to show (ticket 65)", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+    ];
+    const columns = { ...redFill, property: "columns", before: 1, after: 2, style: { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }, breakpoint: PHONE };
+    const sameEverywhere = [
+      { breakpoint: parts[0].breakpoint, before: 12 },
+      { breakpoint: parts[1].breakpoint, before: 12 },
+    ];
+    saveRound({ ...columns, parts }, { ...smallRadius, breakpoint: PHONE, parts: sameEverywhere });
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n",
+    );
+    expect(section(output, 1)).not.toContain("Its value before is what it showed at these widths.");
+    // The same value at every part: said once.
+    expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
   });
 
   test("a copy of a layer with values of its own at breakpoints lists them, for the copy to have them there too; a copy of one with none says nothing of it", async () => {
@@ -970,6 +1037,23 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
     expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
   });
+
+  test("a loop's instance copied, deleted or changed alone says which of the instances it is, and its words, as the page renders them (ticket 65)", async () => {
+    const item = { nth: 1, of: 3, words: "Freeze Turn the current page into a canvas." };
+    saveRound(
+      change(1, "delete", { property: "delete-1", before: place(2), after: null, target: cards, data: true, style: { display: "none" }, item: { nth: 2, of: 3, words: "Arrange Drag layers." } }),
+      change(2, "duplicate", { property: "copy", before: place(1), after: place(2), target: cards, data: true, item }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Data change:** the layer is one of the 3 instances a loop renders, the 2nd of them, which reads “Arrange Drag layers.”: take its item out of the data the loop goes through.",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Data change:** the layer is one of the 3 instances a loop renders, the 1st of them, which reads “Freeze Turn the current page into a canvas.”: add an item to the data the loop goes through, a copy of this one's, at the place given.",
+    );
+  });
 });
 
 describe("claim and done, a brief on a layer", () => {
@@ -1266,7 +1350,7 @@ describe("done, checked on the page", () => {
     // Done, but not shown: it does not count as applied.
     expect(first.output).toBe(
       "Change 1 done: 0 of 2 changes applied.\n" +
-        "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity. " +
+        "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity, as the browser computes `background-color` on the layer. " +
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 1` again.\n",
     );
     expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
@@ -1350,7 +1434,7 @@ describe("done, checked on the page", () => {
     expect(output).toBe(
       "Changes 1 and 2 done: 1 of 2 changes applied.\n" +
         "Change 1: checked on the page: it shows the change.\n" +
-        "Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 4px. " +
+        "Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 4px, as the browser computes `border-radius` on the layer. " +
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 2` again.\n",
     );
   });
@@ -1389,8 +1473,24 @@ describe("done, checked on the page", () => {
     closePage = openPage(() => ({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 }));
 
     expect((await cli("done", "1")).output).toContain(
-      "Checked on the page: it does not show the change. At 390px wide, the fill is #FFFFFF, not #FF0000 at 50% opacity. " +
+      "Checked on the page: it does not show the change. At 390px wide, the fill is #FFFFFF, not #FF0000 at 50% opacity, as the browser computes `background-color` on the layer. " +
         "The change applies at every width: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
+    );
+  });
+
+  test("a change at a range in parts, not shown in one of them, says at which width, and that the change applies there too (ticket 65)", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+    ];
+    saveRound({ ...redFill, property: "columns", before: 1, after: 2, style: { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }, breakpoint: PHONE, parts });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: 3, width: 640 }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "Checked on the page: it does not show the change. At 640px wide, the number of columns is 3, not 2, as the browser computes `grid-template-columns` on the layer. " +
+        "The change applies below 768px only, at that width too: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
     );
   });
 
@@ -1500,6 +1600,9 @@ describe("progress, as the page shows it", () => {
 });
 
 describe("finish", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+
   test("archives the round with what was done, and leaves no round behind, so the designer can start the next", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
@@ -1530,21 +1633,48 @@ describe("finish", () => {
     expect(history()[0].result.done).toEqual([2]);
   });
 
-  test("ends with the form of the report: every change once, under one heading only, and each under ⚠️ with why and instead (ticket 65)", async () => {
-    saveRound(redFill, smallRadius);
+  test("ends with the round's report laid out: each change under the heading the page's checks put it under, those under ⚠️ with why and instead (ticket 65)", async () => {
+    const words = { ...redFill, id: 3, kind: "text", property: "text", before: "Vernier Kit", after: "Vernier Studio", style: {}, target: { ...cards, instances: 1 } };
+    const brief = { ...redFill, id: 4, kind: "brief", property: "brief", before: null, after: "Bounce back harder", style: {} };
+    saveRound(redFill, smallRadius, words, brief);
     await cli("claim");
+    closePage = openPage((id) => (id === 2 ? { outcome: "not shown", actual: 12, width: 390 } : id === 3 ? { outcome: "unchecked", reason: "the text has no element of its own on the page" } : { outcome: "shown" }));
+    await cli("done", "1", "2", "4");
 
     const { output } = await cli("finish");
 
     const [first, ...rest] = output.split("\n");
-    expect(first).toBe("Round finished: 0 of 2 changes applied. Not marked done: 1, 2. Report them under ⚠️, with why.");
-    const form = rest.join("\n");
-    expect(form).toContain("End your reply with this report");
-    expect(form).toContain("✓ Applied\n- 1. ");
-    expect(form).toMatch(/⚠️ Not applied 1:1\n- 3\. Corner radius: <which layer>\n {2}Why: <the reason[^>]*>\n {2}Instead: <what you did, or “left as it was”>\n/);
-    expect(form).toContain("under one heading only");
-    expect(form).toContain("goes under ⚠️ alone, not under ✓ as well");
-    expect(form).toContain("both lines, Why and Instead");
+    expect(first).toBe("Round finished: 2 of 4 changes applied. Not marked done: 3. Report them under ⚠️, with why. The page does not show: 2. Report them as not applied 1:1, with why.");
+    expect(rest.join("\n")).toBe(
+      "\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n" +
+        "```\n" +
+        "✓ Applied\n" +
+        "- 1. Fill: <the layer, and what you changed>\n" +
+        "- 4. Brief: <the layer, and what you changed>\n" +
+        "\n" +
+        "⚠️ Not applied 1:1\n" +
+        "- 2. Corner radius: <the layer>\n" +
+        "  Why: at 390px wide, the page shows the corner radius 12px, not 4px\n" +
+        "  Instead: <what you did, or “left as it was”>\n" +
+        "- 3. Text: <the layer>\n" +
+        "  Why: <why it is not applied>\n" +
+        "  Instead: <what you did, or “left as it was”>\n" +
+        "```\n\n" +
+        "- 4 the page cannot check: keep it under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n" +
+        REPORT_RULES,
+    );
+  });
+
+  test("with every change shown on the page, the report has no ⚠️ section", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "shown" }));
+    await cli("done", "1");
+
+    const form = (await cli("finish")).output;
+
+    expect(form).toContain("```\n✓ Applied\n- 1. Fill: <the layer, and what you changed>\n```\n");
+    expect(form).not.toContain("⚠️ Not applied");
   });
 
   test("the Skill is the way through a round and the report only: a third as long as before ticket 65 at most (146 lines, 24935 characters)", () => {
@@ -1554,13 +1684,8 @@ describe("finish", () => {
     expect(skill.length).toBeLessThanOrEqual(24935 / 3);
   });
 
-  test("the Skill gives the report in the very form finish does", async () => {
-    saveRound(redFill);
-    await cli("claim");
-
-    const form = (await cli("finish")).output.split("\n").slice(1).join("\n").trim();
-
-    expect(readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8")).toContain(form);
+  test("the Skill gives the report's rules in the very words finish does", () => {
+    expect(readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8")).toContain(REPORT_RULES);
   });
 
   test("refuses a round that is not claimed", async () => {

@@ -13,8 +13,8 @@ The designer edits the page in Vernier Kit, which saves every change to `.vernie
    - **it shows the change**: go on.
    - **it does not show the change**: something overrides your edit, at the width it names. Fix what sets the value there, and run `done` with that number again. Go on once it shows, or once you know it cannot: then report it.
    - **Not checked**: the page cannot tell this kind of change, or could not look. It is not an error: go on.
-4. **Finish.** When you have been through every change, run `npx vernierkit finish`. It ends the round and unlocks the editor, and names the changes never marked done and those the page does not show: report both under ⚠️.
-5. **Report.** End your reply with this report:
+4. **Finish.** When you have been through every change, run `npx vernierkit finish`. It ends the round and unlocks the editor, and lays out the report for the round: each change under the heading the page's checks put it under, with what the page shows of those it does not.
+5. **Report.** End your reply with that report, filled in. Its form:
 
 ```
 ✓ Applied

@@ -92,6 +92,21 @@ export function writtenWith({ min, max }: Breakpoint, project: ProjectBreakpoint
   return { project: { queries: [below, above].filter((point) => !!point).map((point) => point.name) } };
 }
 
+/**
+ * The parts `range` is cut into by the project's own breakpoints inside it,
+ * narrowest widths first, each written as the project writes it (ticket 65):
+ * the range itself, when none is inside it.
+ */
+export function partsOf(range: Breakpoint, project: ProjectBreakpoints | null): Breakpoint[] {
+  const inside = (project?.list ?? []).map((point) => point.width).filter((width) => (range.min === null || width > range.min) && (range.max === null || width < range.max));
+  if (!inside.length) return [range];
+  const edges = [range.min, ...inside, range.max];
+  return edges.slice(0, -1).map((min, i) => {
+    const part = { min, max: edges[i + 1] };
+    return { ...part, ...writtenWith(part, project) };
+  });
+}
+
 /** Tailwind's variants for the range, as the project writes it (`md:max-lg:`); null when it is not written with Tailwind's. */
 export function tailwindOf(breakpoint: Breakpoint | null | undefined): string | null {
   const project = breakpoint?.project;

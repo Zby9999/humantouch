@@ -342,6 +342,11 @@ describe("a round saved before the instances of a layer shared their edit styles
     const placed = saved.changes.filter((change) => change.margins);
     expect(placed.map((change) => [change.kind, change.margins])).toEqual([["move", { x: 0, y: 0 }]]);
     for (const change of placed) delete change.margins;
+    // Since ticket 65, a change to one of a loop's instances alone records which of them it is.
+    const items = saved.changes.filter((change) => change.item);
+    expect(items.every((change) => change.data)).toBe(true);
+    expect(items.length).toBeGreaterThan(0);
+    for (const change of items) delete change.item;
     expect(JSON.stringify(saved, null, 2)).toBe(JSON.stringify(fixture.changeSet, null, 2));
     expect(JSON.stringify(offCanvas.save(), null, 2)).toBe(JSON.stringify(fixture.offCanvas, null, 2));
     expect(styles()).toEqual(fixture.styles);

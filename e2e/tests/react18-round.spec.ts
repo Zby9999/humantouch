@@ -172,7 +172,7 @@ test("a whole round: claim locks the editor, done checks the fill on the page on
 
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");
-    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report:/);
+    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
   } finally {
     writeFileSync(CARD, original);
   }

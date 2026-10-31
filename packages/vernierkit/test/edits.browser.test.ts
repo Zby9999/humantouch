@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
-import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
+import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Place } from "../src/client/changeset";
 import { checkAcross, checkChange, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
+import { measureParts } from "../src/client/range-parts";
 import { watchPage } from "../src/client/page-checks";
 import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
@@ -2091,7 +2092,7 @@ describe("moving layers", () => {
     editor.move(second, { parent: layer("list"), index: 0 });
 
     expect([...doc.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Two", "One", "Three"]);
-    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 } });
+    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 }, item: { nth: 2, of: 3, words: "Two" } });
   });
 
   test("where a layer can go: not into itself, into a locked layer, or into a usage it does not repeat with", () => {
@@ -3053,7 +3054,7 @@ describe("editing text", () => {
     editor.setText(layerOf(cards[1].querySelector("h3")!), "Second");
 
     expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Card 1", "Second", "Card 3"]);
-    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second" });
+    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second", item: { nth: 2, of: 3, words: "Card 2" } });
     editor.undo();
     expect(cards[1].querySelector("h3")!.textContent).toBe("Card 2");
   });
@@ -3310,6 +3311,11 @@ describe("deleting layers", () => {
       // The page still renders three.
       ["delete-2", true, 3],
     ]);
+    // Which of them, as the page renders them: the first is still the first, though the second is deleted on the canvas.
+    expect(changes.list().map((c) => c.item)).toEqual([
+      { nth: 2, of: 3, words: "Card 2" },
+      { nth: 1, of: 3, words: "Card 1" },
+    ]);
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     const reverted = showSaved(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas);
     expect([...reverted.querySelectorAll("article")].map((card) => style(card).display)).toEqual(["none", "block", "block", "block"]);
@@ -3391,7 +3397,7 @@ describe("duplicating layers", () => {
     editor.duplicate(layerOf(cards[1]));
 
     expect([...doc.querySelectorAll("article")].map((el) => el.querySelector("h3")!.textContent)).toEqual(["Card 1", "Card 2", "Card 2", "Card 3", "Your turn"]);
-    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 } });
+    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 }, item: { nth: 2, of: 3, words: "Card 2" } });
   });
 
   test("to where it is dragged: in a Stack, or absolute in a Frame; taken back from a saved round, the copy goes", () => {
@@ -4484,6 +4490,45 @@ describe("breakpoints", () => {
     const narrow = copiesOf(narrowPage);
     expect(checkAcross(narrowPage, change, changes.list(), [768, 390], narrow.at)).toEqual({ outcome: "shown" });
     expect(narrow.widths).toEqual([]);
+  });
+
+  test("a change at a range the project's breakpoints cut into parts is checked at a width in each part, and one not shown says which width (ticket 65)", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""), TAILWIND);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [made] = changes.list();
+    const change = { ...made, parts: partsOf(made.breakpoint!, TAILWIND).map((breakpoint) => ({ breakpoint, before: null })) };
+    const round = [change];
+
+    const allOfIt = livePage(1000, "@media (width < 768px) { #board { background-color: rgb(255, 0, 0) } }");
+    const shown = copiesOf(allOfIt);
+    expect(checkAcross(allOfIt, change, round, [390], shown.at)).toEqual({ outcome: "shown" });
+    expect(shown.widths).toEqual([639, 640]);
+    // Below 640px only: the part from 640px is not.
+    const partOfIt = livePage(1000, "@media (width < 640px) { #board { background-color: rgb(255, 0, 0) } }");
+    expect(checkAcross(partOfIt, change, round, [390], copiesOf(partOfIt).at)).toEqual({ outcome: "not shown", actual: null, width: 640 });
+    // The window in one part: the page itself there, a copy for the other.
+    const narrow = livePage(700, "@media (width < 768px) { #board { background-color: rgb(255, 0, 0) } }");
+    const inPart = copiesOf(narrow);
+    expect(checkAcross(narrow, change, round, [390], inPart.at)).toEqual({ outcome: "shown" });
+    expect(inPart.widths).toEqual([639]);
+  });
+
+  test("what the live page shows in each part of a change's range is read there, the code as it is, before the change is applied (ticket 65)", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""), TAILWIND);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    const page = livePage(1000, "#board { background-color: rgb(255, 255, 255) } @media (width >= 640px) { #board { background-color: rgb(0, 0, 255) } }");
+
+    expect(await measureParts(page, change, TAILWIND, document.body)).toEqual([
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: { type: "solid", color: "#FFFFFF", opacity: 1 } },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: BLUE },
+    ]);
+    // A range no breakpoint of the project's cuts, or a change at every width: nothing to read.
+    expect(await measureParts(page, change, null, document.body)).toBeNull();
+    expect(await measureParts(page, { ...change, breakpoint: undefined }, TAILWIND, document.body)).toBeNull();
+    expect(document.querySelectorAll("iframe[data-vk-check]").length).toBe(0);
   });
 
   test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value does not show it; one the round changed at a breakpoint of its own keeps its own", async () => {

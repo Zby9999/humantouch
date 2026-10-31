@@ -1,23 +1,60 @@
-/** The report the Agent ends its reply with (ticket 65). */
 /**
- * As `finish` gives it and the Skill has it, word for word: the designer
- * reads only the exceptions, so every change is listed once, under one
- * heading, and each under ⚠️ says why and what was done instead.
+ * The report the Agent ends its reply with (ticket 65). The designer reads
+ * only the exceptions, so every change is listed once, under one heading, and
+ * each under ⚠️ says why and what was done instead. `finish` lays it out for
+ * the round, each change already under the heading the page's checks put it
+ * under (ADR 0013: the round's result is the page's, not the Agent's word);
+ * the Skill gives its form, and its rules in the very words `finish` does.
  */
-export const REPORT_FORM = `End your reply with this report:
+import type { Change } from "./client/changeset";
+import type { CheckResult } from "./service-protocol";
+import { changeTitle, propertyName, value } from "./design-values";
 
-\`\`\`
-✓ Applied
-- 1. Fill: the cards of the feature grid, white → red
-- 2. Brief on Button: pressed, it shrinks a little and springs back (\`active:scale-95\` with a springy transition)
+/** The rules of the report, as `finish` and the Skill give them, word for word. */
+export const REPORT_RULES =
+  "- List every change once, under one heading only. One applied, but not exactly as asked, goes under ⚠️ alone, not under ✓ as well; more to say of one applied exactly goes on its ✓ line.\n" +
+  "- Give each change under ⚠️ both lines, Why and Instead.\n" +
+  "- Leave the ⚠️ section out only when every change was applied exactly. Keep each line short.\n";
 
-⚠️ Not applied 1:1
-- 3. Corner radius: <which layer>
-  Why: <the reason, e.g. the component library sets it and cannot be changed from the usage>
-  Instead: <what you did, or “left as it was”>
-\`\`\`
+const INSTEAD = "  Instead: <what you did, or “left as it was”>";
 
-- List every change once, under one heading only. One applied, but not exactly as asked, goes under ⚠️ alone, not under ✓ as well; more to say of one applied exactly goes on its ✓ line.
-- Give each change under ⚠️ both lines, Why and Instead.
-- Leave the ⚠️ section out only when every change was applied exactly. Keep each line short.
-`;
+/**
+ * The report for a round, laid out: under ✓ the changes applied, under ⚠️
+ * those the page does not show (why: what it shows instead) and those not
+ * applied; the changes applied that the page cannot check stay under ✓ for
+ * the Agent to move if it did not apply them exactly.
+ */
+export function reportFor(changes: Change[], applied: number[], checks: Record<number, CheckResult | undefined>): string {
+  const line = (change: Change, what: string) => `- ${change.id}. ${changeTitle(change)}: ${what}`;
+  const shown = (change: Change) => applied.includes(change.id);
+  const notShown = (change: Change) => !shown(change) && checks[change.id]?.outcome === "not shown";
+  const unchecked = changes.filter((change) => shown(change) && checks[change.id]?.outcome !== "shown");
+  const ok = changes.filter(shown).map((change) => line(change, "<the layer, and what you changed>"));
+  const warned = changes
+    .filter((change) => !shown(change))
+    .map((change) => [line(change, "<the layer>"), `  Why: ${notShown(change) ? pageShows(change, checks[change.id]!) : "<why it is not applied>"}`, INSTEAD].join("\n"));
+  const sections = [ok.length ? ["✓ Applied", ...ok].join("\n") : null, warned.length ? ["⚠️ Not applied 1:1", ...warned].join("\n") : null].filter((section) => section !== null);
+  const ids = unchecked.map((change) => change.id);
+  const move = ids.length
+    ? `- ${list(ids)} the page cannot check: keep ${ids.length === 1 ? "it" : "each"} under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n`
+    : "";
+  return (
+    "End your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n" +
+    `\`\`\`\n${sections.join("\n\n")}\n\`\`\`\n\n${move}${REPORT_RULES}`
+  );
+}
+
+/** What the page shows of a change it does not show, as the report's Why. */
+function pageShows(change: Change, check: CheckResult): string {
+  if (check.outcome !== "not shown") return "<why it is not applied>";
+  const at = check.width ? `at ${check.width}px wide, ` : "";
+  if (change.kind === "delete") return `${at}the layer is still on the page`;
+  if (change.kind === "move") return `${at}the page does not have it where the change puts it`;
+  if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
+  return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
+}
+
+/** `1`, `1 and 2`, `1, 2 and 3`. */
+function list(ids: number[]): string {
+  return ids.length < 2 ? `${ids[0]}` : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`;
+}

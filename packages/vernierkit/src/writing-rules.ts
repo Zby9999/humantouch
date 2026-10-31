@@ -6,6 +6,9 @@
  */
 import type { Change, Created, Place } from "./client/changeset";
 
+/** The properties that place a layer, as `property-table.ts` has them. */
+const PLACING = ["x", "y", "absolute"];
+
 /** How to write one kind of change: its name in the notes, the changes it is for, and what it says. */
 interface HowToWrite {
   name: string;
@@ -38,8 +41,7 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "a change at all breakpoints, made in the desktop view, applies at every width, not only at the width the page is at. " +
       "Where the project already writes the property for some widths (a breakpoint variant such as `sm:` or `md:`, a media query), change those too, so every width shows the new value: " +
       "in `grid-cols-1 sm:grid-cols-3`, two columns at all breakpoints is `grid-cols-2`. " +
-      "Widths a change of this round makes at a breakpoint of its own keep that change's value. " +
-      "`done` checks it at the page's width and at each of the designer's views (a phone's, a tablet's), and names the width where it does not show.",
+      "Widths a change of this round makes at a breakpoint of its own keep that change's value.",
   },
   {
     name: "A rule in no CSS layer",
@@ -58,17 +60,18 @@ const HOW_TO_WRITE: HowToWrite[] = [
     name: "Breakpoints",
     calledFor: (change) => !!change.breakpoint || !!change.copiedBreakpoints?.length,
     text:
-      "a change at a width range applies at those widths only: write it as its Breakpoint line says the project writes that range (the Tailwind variants given, `max-sm:bg-red-500`, `md:max-lg:p-4`; on Tailwind v3, `max-*` variants need v3.2 or later and screens given as plain widths; " +
-      "or a media query beside the rule that styles the layer, with the edges named, `@media (max-width: 767px)`). When it names none, use the project's breakpoint nearest the range, and say in the report that the edges differ. " +
-      "Leave the layer as it is at every other width, and do not change its value at all breakpoints to get there. Where it already has a class that holds at exactly those widths, change that one rather than add another " +
-      "(in `grid-cols-1 sm:grid-cols-3`, `grid-cols-1` is the value below 640px, so two columns there is `grid-cols-2 sm:grid-cols-3`). " +
-      "Hidden at a breakpoint is hidden there only (`max-md:hidden`, or `display: none` in the media query); a layer hidden at every width that a breakpoint shows gets its display back there.",
+      "a change at a width range applies at those widths only: write it as its Breakpoint line says the project writes that range (with Tailwind, the variant given, as a prefix to the class; on Tailwind v3, `max-*` variants need v3.2 or later and screens given as plain widths; " +
+      "with CSS, a media query beside the rule that styles the layer, with the edges named). When it names none, use the project's breakpoint nearest the range, and say in the report that the edges differ. " +
+      "Leave the layer as it is at every other width, and do not change its value at all breakpoints to get there. " +
+      "Where the design intent gives the range part by part, the layer shows another value in each now, each set by a class or rule of its own: change them so every part shows the new value. " +
+      "A class that holds at exactly the widths of the range, or of a part, is changed rather than another added beside it. " +
+      "Hidden at a breakpoint is hidden there only (`display: none` at those widths); a layer hidden at every width that a breakpoint shows gets its display back there.",
   },
   {
     name: "Absolute at a breakpoint",
     calledFor: (change) => change.kind === "style" && change.property === "absolute",
     text:
-      "the layer leaves its container's layout at those widths only: `position: absolute`, the `left` / `top` and the size given, in the media query or with the variant (`max-md:absolute max-md:left-3 max-md:top-10 max-md:w-[120px]`); " +
+      "the layer leaves its container's layout at those widths only: `position: absolute`, the `left` / `top` and the size given, in the media query or with the variant given on each class; " +
       "its container becomes its positioning reference at those widths (`position: relative`, the same way) where it is not one already.",
   },
   {
@@ -174,9 +177,66 @@ function forOneUsage({ target: { chain } }: Change): boolean {
   return !!own && !(own.usage && !outer.length);
 }
 
-/** The **How to write them** section of a round's notes: the rules its changes call for. */
+/** How the page checks one kind of change (ticket 65): what it reads, and where, said once for the changes it is for. */
+interface HowChecked {
+  calledFor(change: Change): boolean;
+  text: string;
+}
+
+/** A layer placed absolute, as the page checks it: where it is drawn. */
+const placing = (change: Change) =>
+  (change.kind === "style" && PLACING.includes(change.property)) || (change.kind === "move" && !!(change.after as Place).absolute && sameContainer(change));
+const sameContainer = ({ before, after }: Change) => (before as Place).container.layer === (after as Place).container.layer;
+/** What the page checks a change by, in so far as the notes can tell: the page itself says, for one it finds it cannot. */
+const checked = (change: Change) =>
+  !change.data && !change.target.made && (change.kind === "style" || change.kind === "delete" || (change.kind === "move" && sameContainer(change)));
+
+const HOW_CHECKED: HowChecked[] = [
+  {
+    calledFor: (change) => checked(change) && change.kind === "style" && !placing(change),
+    text: "a style change by the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance, whatever class or rule gives it",
+  },
+  {
+    calledFor: (change) => checked(change) && change.kind === "style" && !change.breakpoint,
+    text: "a change at all breakpoints at the page's own width and at each of the designer's views' widths (a phone's, a tablet's), but where this round changes it at a breakpoint of its own",
+  },
+  {
+    calledFor: (change) => checked(change) && !!change.breakpoint,
+    text: "a change at a breakpoint at one width in each part of its range the design intent gives (else in the range): a part's lower edge, or, for one from no width at all, 1px under its upper edge",
+  },
+  {
+    calledFor: (change) => checked(change) && placing(change),
+    text: "a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, and its `left` and `top` with its margins where the canvas draws it, at X and Y with the margins it keeps there",
+  },
+  { calledFor: (change) => checked(change) && change.kind === "move" && !(change.after as Place).absolute, text: "a reorder by the order of its container's layers" },
+  { calledFor: (change) => checked(change) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
+];
+
+/** The kinds of change the page cannot check, as the rule names them, in this order. */
+const UNCHECKED: [string, (change: Change) => boolean][] = [
+  ["a change to one of a loop's instances alone", (change) => !!change.data],
+  ["a change to a layer made this round", (change) => !change.data && !!change.target.made && change.kind !== "create"],
+  ["a new layer", (change) => change.kind === "create" || change.kind === "putBack"],
+  ["a Stack made or dissolved", (change) => change.kind === "stack" || change.kind === "unstack"],
+  ["a move into another container", (change) => change.kind === "move" && !change.data && !sameContainer(change)],
+  ["a copy", (change) => change.kind === "duplicate" && !change.data],
+  ["new words", (change) => change.kind === "text" && !change.data],
+  ["a brief", (change) => change.kind === "brief"],
+];
+
+/** The **How the page checks** rule: for the kinds of change of the round, each once (ticket 65). */
+function howChecked(list: Change[]): string {
+  const said = HOW_CHECKED.filter((how) => list.some(how.calledFor)).map((how) => how.text);
+  const unchecked = UNCHECKED.filter(([, of]) => list.some(of)).map(([name]) => name);
+  if (unchecked.length) said.push(`${unchecked.length > 1 ? `${unchecked.slice(0, -1).join(", ")} and ${unchecked.at(-1)}` : unchecked[0]}, not at all: \`done\` says Not checked, which is no error; say in the report what you did`);
+  const shows = list.some(checked) ? " Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks." : "";
+  return `the page reads ${said.join("; ")}.${shows}`;
+}
+
+/** The **How to write them** section of a round's notes: the rules its changes call for, and how the page checks them. */
 export function writingRules(list: Change[]): string {
-  const called = HOW_TO_WRITE.filter((how) => list.some(how.calledFor));
+  const called = HOW_TO_WRITE.filter((how) => list.some(how.calledFor)).map((how) => ({ name: how.name, text: how.text }));
+  called.push({ name: "How the page checks", text: howChecked(list) });
   return `## How to write them\n\n${called.map((how) => `- **${how.name}:** ${how.text}\n`).join("")}`;
 }
 

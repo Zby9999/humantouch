@@ -23,6 +23,8 @@ import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type P
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
 import { CATCH_UP_AFTER_MS, type View, type Views } from "./views";
+import { HOST_TAG } from "./host";
+import { measureParts } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -200,11 +202,45 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     [],
   );
 
+  /** Changes at a breakpoint the live page has been read for in each part of their range, or is being, or saved before: by id (ticket 65). */
+  const partsRead = useRef(new Set<number>());
+  /** Edit mode is ending (a claim, say): what is read from then on is not saved, the round no longer the designer's to save. */
+  const leavingNow = useRef(leaving);
+  leavingNow.current = leaving;
+  /**
+   * Reads what the live page shows, the code as it is, in each part of the
+   * range of the changes at a breakpoint that have not been read yet, a moment
+   * after the edit: copying the page is no part of showing it. Saved with them.
+   */
+  const readParts = () => {
+    const now = round.current;
+    if (!now) return;
+    const { changeSet } = now;
+    const current = (change: Change) => !left.current && !leavingNow.current && round.current?.changeSet === changeSet && changeSet.list().includes(change);
+    for (const change of changeSet.list()) {
+      if (change.kind !== "style" || !change.breakpoint || change.parts || partsRead.current.has(change.id)) continue;
+      partsRead.current.add(change.id);
+      setTimeout(() => {
+        if (!current(change)) return;
+        const into = document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
+        void measureParts(document, change, breakpoints ?? readMediaBreakpoints(document), into).then(
+          (parts) => {
+            if (!parts || !current(change)) return;
+            change.parts = parts;
+            latest.current.changed();
+          },
+          (error: unknown) => console.warn(error),
+        );
+      }, AUTOSAVE_MS);
+    }
+  };
+
   /** The round changed: saved soon, and its changes told. */
   const changed = () => {
     clearTimeout(pendingSave.current);
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
     if (round.current) onChanges(round.current.changeSet.list());
+    readParts();
   };
   const onEdit = () => {
     // A move builds the layers anew: the selection is found again in them.
@@ -506,6 +542,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         restoreFrom={restoreFrom?.canvas ?? null}
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
+          // A round saved before opens as it was: only the changes made from now on have the parts of their range read.
+          for (const change of changeSet.list()) partsRead.current.add(change.id);
           viewsNow.current = views;
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
           // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.

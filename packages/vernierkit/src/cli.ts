@@ -6,11 +6,12 @@
  * `remove` install Vernier Kit, check it, and take it back out.
  */
 import { changes as changesWord, describeChanges, TO_APPLY } from "./change-notes";
+import { breakpointName } from "./client/breakpoints";
 import { ordinal, propertyName, value } from "./design-values";
 import type { PlacedOnPage } from "./client/check";
 import type { Change, Margins, Place } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { REPORT_FORM } from "./report-form";
+import { reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
@@ -157,16 +158,15 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as PlacedOnPage, again, width);
     if (change.property === "x" || change.property === "y") return axisOffByMargins(change.property, change.after as number, change.margins, actual as { value: number; margin: number }, again, width);
   }
+  // What the page read: the property as the browser computes it, which the reference style writes.
+  const css = Object.keys(change.style);
+  const read = css.length ? `, as the browser computes ${css.map((name) => `\`${name}\``).join(" and ")} on the layer` : "";
+  const instead = `${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}${read}.`;
   if (width) {
-    return (
-      `At ${width}px wide, the ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}. ` +
-      `The change applies at every width: see what sets the value at that width (a breakpoint variant such as \`sm:\`, a media query), fix it, and ${again}.`
-    );
+    const applies = change.breakpoint ? `${breakpointName(change.breakpoint)} only, at that width too` : "at every width";
+    return `At ${width}px wide, the ${instead} The change applies ${applies}: see what sets the value at that width (a breakpoint variant such as \`sm:\`, a media query), fix it, and ${again}.`;
   }
-  return (
-    `The ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}. ` +
-    `Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and ${again}.`
-  );
+  return `The ${instead} Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and ${again}.`;
 }
 
 /** Margins in words: `2px left and 6px top`, `24px top`, `none`. */
@@ -281,7 +281,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}. Report them under ⚠️, with why.`;
   if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}. Report them as not applied 1:1, with why.`;
-  io.write(`${text}\n\n${REPORT_FORM}`);
+  io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }
 

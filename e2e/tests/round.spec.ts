@@ -94,7 +94,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "2");
   await expect(badge(page)).toHaveCount(0);
 
-  expect(await vernierkit("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report:/);
+  expect(await vernierkit("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report\. Each change is under the heading/);
   await expect(progress(page)).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "finished", done: [1], applied: [1, 2], checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" } } }]);
 });
@@ -112,7 +112,7 @@ test("a change the page shows, undone by a later edit before any done: the ring 
 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(badge(page)).toHaveText("2");
-  expect(await vernierkit("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n\nEnd your reply with this report:/);
+  expect(await vernierkit("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2. Report them as not applied 1:1, with why.\n\nEnd your reply with this report\. Each change is under the heading/);
 });
 
 /** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */
@@ -178,7 +178,7 @@ test("done for several changes at once: each with how the page checked it, those
 
   expect(output).toContain("Changes 1 and 2 done: 1 of 2 changes applied.\n");
   expect(output).toContain("Change 1: checked on the page: it shows the change.\n");
-  expect(output).toContain("Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 2px.");
+  expect(output).toContain("Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 2px, as the browser computes `border-radius` on the layer.");
 });
 
 test("an edit not yet saved when the Agent claims stays out of the round", async ({ page }) => {
@@ -341,13 +341,13 @@ test.describe("done checks the change on the page", () => {
     // A utility class: the example's own `button` rule, in no CSS layer, beats it.
     editSource(APP, 'className="mt-6 flex items-center gap-2 self-start px-4 py-2 text-white"', 'className="mt-6 flex items-center gap-2 self-start bg-[#2563eb] px-4 py-2 text-white"');
     const overridden = await vernierkit("done", "1");
-    expect(overridden).toContain("Checked on the page: it does not show the change. The fill is #DC2626, not #2563EB.");
+    expect(overridden).toContain("Checked on the page: it does not show the change. The fill is #DC2626, not #2563EB, as the browser computes");
 
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
     const fixed = await vernierkit("done", "1");
     expect(fixed).toContain("Checked on the page: it shows the change.");
 
-    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report:/);
+    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
 
@@ -361,12 +361,12 @@ test.describe("done checks the change on the page", () => {
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // The code is not edited yet: its 1px draws as 1.5px would on this 1x screen, and is not 1.5px all the same.
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4.");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
 
     const drawn = () => page.locator("article").first().evaluate((card) => getComputedStyle(card).borderTopWidth);
     editSource(CARD, "rounded-xl border border-stone-200", "rounded-xl border-[3px] border-stone-200");
     await expect.poll(drawn).toBe("3px");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4.");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
 
     editSource(CARD, "border-[3px]", "border-[1.5px]");
     await expect.poll(drawn).toBe("1px");
@@ -411,11 +411,13 @@ test.describe("done checks the change on the page", () => {
     await page.keyboard.up("Meta");
     await setField(page, "Fill color", "ff0000");
     await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
+    // Saved again once the page is read in each part of the range, below 640px and from 640px (ticket 65).
+    await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts?.length).toBe(2);
     await vernierkit("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
-    // Not applied yet: the cards are white at the phone's width too.
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The fill is #FFFFFF, not #FF0000.");
+    // Not applied yet: the cards are white at the phone's width too, the first part's looked at first.
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. At 639px wide, the fill is #FFFFFF, not #FF0000, as the browser computes");
     // Applied below `md` only, as the notes say: the window, 1280px wide, still shows them white.
     editSource(CARD, "bg-white p-5", "bg-white p-5 max-md:bg-[#ff0000]");
     expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
@@ -436,7 +438,7 @@ test.describe("done checks the change on the page", () => {
 
     // As both Agents did on the bench (ticket 63): the phone still has one column.
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2.");
+    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");

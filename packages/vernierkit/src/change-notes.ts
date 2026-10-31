@@ -44,7 +44,8 @@ export interface NotesOptions {
 export const TO_APPLY: NotesOptions = {
   heading: "Design changes to apply",
   intro: (count) =>
-    `${count}, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round. ` +
+    `${count}, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. ` +
+    "The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. " +
     "After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers: it says whether the designer's page shows each. " +
     "Run it at least once before `npx vernierkit finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
   end: writingRules,
@@ -106,7 +107,22 @@ function breakpoint(change: Change): string {
   const how = written
     ? `The project writes these widths with ${written}: make the change apply at these widths only that way`
     : "Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries)";
-  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. ${how}, and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
+  const before = partsDiffer(change) ? "" : " Its value before is what it showed at these widths.";
+  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. ${how}, and leave the layer as it is at every other width.${before}`;
+}
+
+/** Whether the page showed the layer otherwise in some part of the change's range than in another before it (ticket 65). */
+function partsDiffer({ parts }: Change): boolean {
+  return !!parts && new Set(parts.map((part) => JSON.stringify(part.before))).size > 1;
+}
+
+/** A change at a range whose parts showed different values: from what each showed, to the one value. */
+function partByPart({ property, parts, after }: Change): string {
+  const each = parts!.map(({ breakpoint, before }) => {
+    const written = breakpoint.project && "tailwind" in breakpoint.project ? ` (\`${breakpoint.project.tailwind}\`)` : "";
+    return `${breakpointName(breakpoint)}${written}, from ${value(property, before)} to ${value(property, after)}`;
+  });
+  return `Change the ${propertyName(property)} at each part of these widths, as the page shows it now: ${each.join("; ")}.`;
 }
 
 /**
@@ -159,6 +175,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
+      if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":
       return moveIntent(change);
@@ -449,8 +466,9 @@ function container({ container: { target } }: Place): string {
 }
 
 /** What a change to one of a loop's instances alone asks of the data the loop goes through. */
-function dataChange({ kind, target: { instances } }: Change): string {
-  const one = `**Data change:** the layer is one of the ${instances} instances a loop renders`;
+function dataChange({ kind, target: { instances }, item }: Change): string {
+  const which = item ? `, the ${ordinal(item.nth)} of them${item.words ? `, which reads ${quoted(item.words)}` : ""}` : "";
+  const one = `**Data change:** the layer is one of the ${instances} instances a loop renders${which}`;
   const outside = "if the data comes from outside the code (an API, a CMS), say so in the report.";
   if (kind === "text") return `${one}, each with words of its own: they come from the data the loop goes through. Change them there; ${outside}`;
   if (kind === "delete") return `${one}: take its item out of the data the loop goes through. ${capitalized(outside)}`;
