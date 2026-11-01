@@ -31,12 +31,12 @@ export function LayerTreeView({ tree, offCanvas, selected, undone, onSelect }: P
   // Built anew after a move: the same layers stay collapsed. A layer new off the canvas starts so.
   // Brought back by an undo or redo, a layer is as it was before it went (ticket 74).
   const shown = useRef(trees);
-  const [folds] = useState(createFolds);
+  const [folds] = useState(() => createFolds(closedOutside));
   const undoneSeen = useRef(undone);
   const undoing = undone !== undoneSeen.current;
   undoneSeen.current = undone;
   if (shown.current.length !== trees.length || shown.current.some((t, i) => t !== trees[i])) {
-    const next = folds.follow(collapsed, shown.current, trees, undoing, closedOutside);
+    const next = folds.follow(collapsed, shown.current, trees, undoing);
     shown.current = trees;
     if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
   }

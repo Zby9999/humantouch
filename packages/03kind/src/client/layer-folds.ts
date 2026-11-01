@@ -11,20 +11,20 @@ import type { Layer, LayerTree } from "./layers";
 export interface Folds {
   /**
    * The layers closed in `trees`, the layers as built anew from `shown`, where
-   * `closed` were closed. `undone`: built anew by an undo or a redo. `fresh`:
-   * what a tree of a layer off the canvas has closed as it is first listed.
+   * `closed` were closed. `undone`: built anew by an undo or a redo.
    */
-  follow(closed: ReadonlySet<Layer>, shown: LayerTree[], trees: LayerTree[], undone: boolean, fresh: (tree: LayerTree) => Layer[]): Set<Layer>;
+  follow(closed: ReadonlySet<Layer>, shown: LayerTree[], trees: LayerTree[], undone: boolean): Set<Layer>;
 }
 
-export function createFolds(): Folds {
+/** `fresh`: what the layers of a layer off the canvas have closed as they are first listed. */
+export function createFolds(fresh: (tree: LayerTree) => Layer[]): Folds {
   /** The elements of the layers closed as they went from the list. */
   const away = new Set<Element>();
   /** The documents listed so far: the canvas, and those of layers off it. */
   const listed = new WeakSet<Document>();
   const docOf = (tree: LayerTree) => tree.root.el.ownerDocument;
   return {
-    follow(closed, shown, trees, undone, fresh) {
+    follow(closed, shown, trees, undone) {
       for (const tree of shown) listed.add(docOf(tree));
       const known = new Set(shown.map(docOf));
       const layerOf = (el: Element) => trees.find((tree) => docOf(tree) === el.ownerDocument)?.layerOf(el) ?? null;
