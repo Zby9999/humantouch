@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
 import { BRIEF_ATTR } from "./canvas-style";
+import { createFolds } from "./layer-folds";
 import { Icon, LayerIcon } from "./icons";
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   /** The layers of each layer off the canvas (ADR 0009): listed beside the canvas's, as Framer lists them. */
   offCanvas: LayerTree[];
   selected: Layer[];
+  /** Counts the undos and redos: the layers one brings back are listed closed and open as they were before they went. */
+  undone: number;
   /** `extend`: ⇧ held, the layer joins the selection or leaves it. */
   onSelect(layer: Layer, extend: boolean): void;
 }
@@ -21,18 +24,20 @@ const MAX_OPEN_ROWS = 200;
  * layers off the canvas come first, each as it is named on the canvas, at
  * the level of the canvas's outermost layers; the canvas's follow.
  */
-export function LayerTreeView({ tree, offCanvas, selected, onSelect }: Props) {
+export function LayerTreeView({ tree, offCanvas, selected, undone, onSelect }: Props) {
   const trees = [...offCanvas, tree];
   const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => new Set([...initiallyCollapsed(tree.root), ...offCanvas.flatMap(closedOutside)]));
   const list = useRef<HTMLDivElement>(null);
   // Built anew after a move: the same layers stay collapsed. A layer new off the canvas starts so.
+  // Brought back by an undo or redo, a layer is as it was before it went (ticket 74).
   const shown = useRef(trees);
+  const [folds] = useState(createFolds);
+  const undoneSeen = useRef(undone);
+  const undoing = undone !== undoneSeen.current;
+  undoneSeen.current = undone;
   if (shown.current.length !== trees.length || shown.current.some((t, i) => t !== trees[i])) {
-    const known = new Set(shown.current.map((t) => t.root.el.ownerDocument));
+    const next = folds.follow(collapsed, shown.current, trees, undoing, closedOutside);
     shown.current = trees;
-    const treeOf = (layer: Layer) => trees.find((t) => t.root.el.ownerDocument === layer.el.ownerDocument);
-    const kept = [...collapsed].map((layer) => treeOf(layer)?.layerOf(layer.el) ?? null).filter((layer) => layer !== null);
-    const next = new Set([...kept, ...offCanvas.filter((t) => !known.has(t.root.el.ownerDocument)).flatMap(closedOutside)]);
     if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
   }
 

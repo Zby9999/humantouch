@@ -150,6 +150,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const [worked, setWorked] = useState<{ view: View; name: string } | null>(null);
   /** The selected layers, the one selected last at the end. */
   const [selected, setSelected] = useState<Layer[]>([]);
+  /** Bumped on each undo and redo: the Layers panel lists what one brings back as it was. */
+  const [undone, bumpUndone] = useReducer((n: number) => n + 1, 0);
   /** Bumped on each edit: the panel reads its values from the canvas. */
   const [, edited] = useReducer((n: number) => n + 1, 0);
   /** Values are being adjusted: the selection box steps aside so the change shows. */
@@ -455,6 +457,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       lastNudge.current = null;
       const layers = redo ? editor.redo() : editor.undo();
       if (history.past.length === steps) return;
+      bumpUndone(undefined);
       select(layers);
       onEdit();
     };
@@ -517,6 +520,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               tree={tree}
               offCanvas={offCanvas?.list().map((outside) => outside.editor.tree()) ?? []}
               selected={selected}
+              undone={undone}
               onSelect={(layer, extend) => select(extend ? toggleIn(selected, layer) : [layer])}
             />
           )}

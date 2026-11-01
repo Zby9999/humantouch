@@ -137,6 +137,39 @@ test("on a large page, deeper levels start collapsed and open up to the selected
   await expect(selectedRow(page)).toBeInViewport();
 });
 
+test("a layer deleted and the delete undone is listed open and closed as it was, after a redo and an undo too", async ({ page }) => {
+  // Too many rows in the list items for them to start open: they start closed.
+  await page.evaluate(() => {
+    const list = document.createElement("ul");
+    const item = (i: number) => Array.from({ length: 8 }, (_, j) => `<span style="display: block">Item ${i}-${j}</span>`).join("");
+    list.innerHTML = Array.from({ length: 40 }, (_, i) => `<li>${item(i)}</li>`).join("");
+    document.body.append(list);
+  });
+  await enterEditMode(page);
+  // A closed list item opened by hand; another opened as the text in it is selected; then the list selected.
+  await layerTree(page).locator('[role="treeitem"][aria-expanded="false"]').nth(3).locator(".tk-tree-chevron").click();
+  await page.keyboard.press("Shift+Digit1");
+  await clickOn(page, "li:nth-child(1) span", "Meta");
+  await expect(selectedRow(page)).toHaveText("Item 0-0");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  const before = await treeRows(page);
+  expect(before).toContain("3 Item 0-0 — Text");
+  expect(before.filter((row) => row.includes(" Item "))).toHaveLength(16);
+
+  await page.keyboard.press("Delete");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
+  expect(await treeRows(page)).toEqual(before);
+
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
+  expect(await treeRows(page)).toEqual(before);
+});
+
 test("each part of the page shows up as Stack, Grid, Frame, text or a locked layer", async ({ page }) => {
   await page.getByRole("button", { name: "Get started" }).click();
   await page.evaluate(() => {
