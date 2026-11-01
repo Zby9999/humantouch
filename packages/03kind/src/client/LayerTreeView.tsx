@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
 import { BRIEF_ATTR } from "./canvas-style";
-import { createFolds } from "./layer-folds";
+import { closedOutside, type Folds } from "./layer-folds";
 import { Icon, LayerIcon } from "./icons";
 
 interface Props {
@@ -10,8 +10,10 @@ interface Props {
   /** The layers of each layer off the canvas (ADR 0009): listed beside the canvas's, as Framer lists them. */
   offCanvas: LayerTree[];
   selected: Layer[];
-  /** Counts the edits that restore layers (undo, redo, a deletion taken back, a layer put back as it was): the layers one brings back are listed closed and open as they were before they went. */
-  restored: number;
+  /** What the panel remembers of its closed layers, kept while it is hidden (`createFolds`). */
+  folds: Folds;
+  /** Counts the edits that bring layers back as they were (undo, redo, a deletion taken back, a layer put back as it was): the layers one brings back are listed closed and open as they were before they went. */
+  broughtBack: number;
   /** `extend`: ⇧ held, the layer joins the selection or leaves it. */
   onSelect(layer: Layer, extend: boolean): void;
 }
@@ -24,19 +26,25 @@ const MAX_OPEN_ROWS = 200;
  * layers off the canvas come first, each as it is named on the canvas, at
  * the level of the canvas's outermost layers; the canvas's follow.
  */
-export function LayerTreeView({ tree, offCanvas, selected, restored, onSelect }: Props) {
+export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, onSelect }: Props) {
   const trees = [...offCanvas, tree];
-  const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => new Set([...initiallyCollapsed(tree.root), ...offCanvas.flatMap(closedOutside)]));
+  // Shown, the panel starts its layers anew; hidden, it leaves those closed then with what it remembers.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => {
+    folds.shown(trees);
+    return new Set([...initiallyCollapsed(tree.root), ...offCanvas.flatMap(closedOutside)]);
+  });
+  const closedNow = useRef(collapsed);
+  closedNow.current = collapsed;
+  useEffect(() => () => folds.hidden(closedNow.current), []);
   const list = useRef<HTMLDivElement>(null);
   // Built anew after a move: the same layers stay collapsed. A layer new off the canvas starts so.
   // Brought back by an undo, a redo, a deletion taken back or put back as it was, a layer is as it was before it went (ticket 74).
   const shown = useRef(trees);
-  const [folds] = useState(() => createFolds(closedOutside));
-  const restoredSeen = useRef(restored);
-  const restoring = restored !== restoredSeen.current;
-  restoredSeen.current = restored;
+  const broughtBackSeen = useRef(broughtBack);
+  const bringingBack = broughtBack !== broughtBackSeen.current;
+  broughtBackSeen.current = broughtBack;
   if (shown.current.length !== trees.length || shown.current.some((t, i) => t !== trees[i])) {
-    const next = folds.follow(collapsed, shown.current, trees, restoring);
+    const next = folds.follow(collapsed, shown.current, trees, bringingBack);
     shown.current = trees;
     if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
   }
@@ -106,11 +114,6 @@ export function LayerTreeView({ tree, offCanvas, selected, restored, onSelect }:
       })}
     </div>
   );
-}
-
-/** A layer off the canvas starts with what is in it closed: it is one row beside the canvas's. */
-function closedOutside(tree: LayerTree): Layer[] {
-  return tree.root.children.filter((layer) => layer.children.length > 0);
 }
 
 /** Opens level after level while the rows fit; everything from the first level that does not fit stays closed. */

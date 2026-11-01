@@ -170,6 +170,42 @@ test("a layer deleted and the delete undone is listed open and closed as it was,
   expect(await treeRows(page)).toEqual(before);
 });
 
+test("a layer deleted, then the Layers panel hidden and shown again: the delete undone, the layer is listed open and closed as it was", async ({ page }) => {
+  // As above: too many rows in the list items for them to start open.
+  await page.evaluate(() => {
+    const list = document.createElement("ul");
+    const item = (i: number) => Array.from({ length: 8 }, (_, j) => `<span style="display: block">Item ${i}-${j}</span>`).join("");
+    list.innerHTML = Array.from({ length: 40 }, (_, i) => `<li>${item(i)}</li>`).join("");
+    document.body.append(list);
+  });
+  await enterEditMode(page);
+  await layerTree(page).locator('[role="treeitem"][aria-expanded="false"]').nth(3).locator(".tk-tree-chevron").click();
+  await page.keyboard.press("Shift+Digit1");
+  await clickOn(page, "li:nth-child(1) span", "Meta");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  /** The rows of the list, the last layer at the top level, and of the layers in it. */
+  const listRows = async () => {
+    const rows = await treeRows(page);
+    return rows.slice(rows.findLastIndex((row) => row.startsWith("1 ")));
+  };
+  const before = await listRows();
+  expect(before).toContain("3 Item 0-0 — Text");
+  expect(before.filter((row) => row.includes(" Item "))).toHaveLength(16);
+
+  await page.keyboard.press("Delete");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(0);
+  // Shown again, the panel starts its other layers anew, as on entering edit mode; the list is not among them.
+  await page.getByRole("button", { name: "Hide layers" }).click();
+  await expect(layerTree(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await expect(layerTree(page).getByRole("treeitem").first()).toBeVisible();
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
+  expect(await listRows()).toEqual(before);
+});
+
 test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
   await enterEditMode(page);
   // The header closed by hand, then the Stack it is in deleted: the button beside it is open.

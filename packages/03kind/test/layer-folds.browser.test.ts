@@ -1,9 +1,19 @@
+import { h, render } from "preact";
+import { act } from "preact/test-utils";
 import { afterEach, expect, test } from "vitest";
 import { createChangeSet } from "../src/client/changeset";
 import { createEditor } from "../src/client/edits";
 import { createFolds } from "../src/client/layer-folds";
-import type { Layer, LayerTree } from "../src/client/layers";
+import type { LayerTree } from "../src/client/layers";
+import { LayerTreeView } from "../src/client/LayerTreeView";
 import { createViews } from "../src/client/views";
+
+/**
+ * The Layers panel's rows as layers go and come back (ticket 74): the panel
+ * as the shell shows it, given the canvas's layers and those off it, what it
+ * remembers of its closed layers (kept by the shell), and a count of the
+ * edits that bring layers back as they were.
+ */
 
 /** A list of three items, each with two lines of text in it. */
 const PAGE = `<!DOCTYPE html>
@@ -14,101 +24,148 @@ const PAGE = `<!DOCTYPE html>
   <p id="after">After</p>
 </body>`;
 
-const frames: HTMLIFrameElement[] = [];
-afterEach(() => frames.splice(0).forEach((frame) => frame.remove()));
+/** The list's rows, it and its items open. */
+const OPEN = ["1 Stack", "2 Stack", "3 Item 0", "3 More 0", "2 Stack", "3 Item 1", "3 More 1", "2 Stack", "3 Item 2", "3 More 2"];
+
+const cleanups: (() => void)[] = [];
+afterEach(() => cleanups.splice(0).forEach((cleanup) => cleanup()));
 
 function openCanvas() {
   const frame = document.createElement("iframe");
   frame.style.width = "800px";
   document.body.append(frame);
-  frames.push(frame);
+  cleanups.push(() => frame.remove());
   const doc = frame.contentDocument!;
   doc.open();
   doc.write(PAGE);
   doc.close();
   const editor = createEditor(createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), createChangeSet(), null);
-  const at = (tree: LayerTree, id: string) => tree.layerOf(doc.getElementById(id)!)!;
-  return { editor, at };
+  const layer = (id: string) => editor.tree().layerOf(doc.getElementById(id)!)!;
+  return { editor, layer };
 }
 
-/** The ids of the elements of the closed layers. */
-const ids = (closed: Set<Layer>) => [...closed].map((layer) => layer.el.id).sort();
+/** The panel on the canvas `editor` edits, and `outside()`'s layers off the canvas. */
+function openPanel(editor: ReturnType<typeof openCanvas>["editor"], outside: () => LayerTree[] = () => []) {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const folds = createFolds();
+  let broughtBack = 0;
+  let shown = true;
+  const draw = () =>
+    act(() => render(shown ? h(LayerTreeView, { tree: editor.tree(), offCanvas: outside(), selected: [], folds, broughtBack, onSelect() {} }) : null, host));
+  cleanups.push(() => {
+    render(null, host);
+    host.remove();
+  });
+  draw();
+  const rows = () => [...host.querySelectorAll('[role="treeitem"]')];
+  return {
+    /** Each row as `level name`, and whether it is closed. */
+    rows: () => rows().map((row) => `${row.getAttribute("aria-level")} ${row.textContent!.trim()}${row.getAttribute("aria-expanded") === "false" ? " (closed)" : ""}`),
+    /** Opens or closes the row `nth` among those at `level`. */
+    toggle(level: number, nth: number) {
+      const row = rows().filter((row) => row.getAttribute("aria-level") === String(level))[nth];
+      act(() => {
+        row.querySelector(".tk-tree-chevron")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      });
+    },
+    /** Makes `edit`, which brings layers back as they were (an undo, a redo) when `bringsBack`, and shows what it leaves. */
+    edit(edit: () => void, { bringsBack }: { bringsBack: boolean }) {
+      edit();
+      if (bringsBack) broughtBack++;
+      draw();
+    },
+    hide() {
+      shown = false;
+      draw();
+    },
+    show() {
+      shown = true;
+      draw();
+    },
+  };
+}
 
-test("a deleted layer comes back closed and open as it was when the delete is undone, and again after a redo and an undo", () => {
-  const { editor, at } = openCanvas();
-  const folds = createFolds(() => []);
-  let tree = editor.tree();
+test("a deleted layer comes back listed open and closed as it was when the delete is undone, and again after a redo and an undo; the layers still listed stay as they were", () => {
+  const { editor, layer } = openCanvas();
+  const panel = openPanel(editor);
   // The list open, two of its items closed, one open.
-  let closed = new Set([at(tree, "item-0"), at(tree, "item-2")]);
-  const step = (restoring: boolean) => {
-    const next = editor.tree();
-    closed = folds.follow(closed, [tree], [next], restoring);
-    tree = next;
-  };
+  panel.toggle(2, 0);
+  panel.toggle(2, 2);
+  const before = panel.rows();
+  expect(before).toEqual(["1 Stack", "2 Stack (closed)", "2 Stack", "3 Item 1", "3 More 1", "2 Stack (closed)", "1 After"]);
 
-  editor.remove(at(tree, "list"));
-  step(false);
-  expect(ids(closed)).toEqual([]);
-  editor.undo();
-  step(true);
-  expect(ids(closed)).toEqual(["item-0", "item-2"]);
-  expect(closed.has(at(tree, "item-0"))).toBe(true);
+  panel.edit(() => editor.remove(layer("list")), { bringsBack: false });
+  expect(panel.rows()).toEqual(["1 After"]);
+  panel.edit(() => editor.undo(), { bringsBack: true });
+  expect(panel.rows()).toEqual(before);
 
-  editor.redo();
-  step(true);
-  expect(ids(closed)).toEqual([]);
-  editor.undo();
-  step(true);
-  expect(ids(closed)).toEqual(["item-0", "item-2"]);
+  panel.edit(() => editor.redo(), { bringsBack: true });
+  panel.edit(() => editor.undo(), { bringsBack: true });
+  expect(panel.rows()).toEqual(before);
+  // Built anew by an edit to another layer, the list stays as it is.
+  panel.edit(() => editor.remove(layer("after")), { bringsBack: false });
+  expect(panel.rows()).toEqual(before.slice(0, -1));
 });
 
-test("a layer that comes back other than by an edit that restores it is open, as any layer new to the list, and stays so", () => {
-  const { editor, at } = openCanvas();
-  const folds = createFolds(() => []);
-  let tree = editor.tree();
-  let closed = new Set([at(tree, "item-1")]);
-  const step = (restoring: boolean) => {
-    const next = editor.tree();
-    closed = folds.follow(closed, [tree], [next], restoring);
-    tree = next;
-  };
+test("a layer that comes back other than by an edit that brings it back as it was is listed open, as any layer new to the list, and stays so", () => {
+  const { editor, layer } = openCanvas();
+  const panel = openPanel(editor);
+  panel.toggle(2, 1);
+  panel.toggle(1, 0);
 
-  editor.remove(at(tree, "list"));
-  step(false);
-  editor.undo();
-  step(false);
-  expect(ids(closed)).toEqual([]);
+  panel.edit(() => editor.remove(layer("list")), { bringsBack: false });
+  panel.edit(() => editor.undo(), { bringsBack: false });
+  expect(panel.rows()).toEqual([...OPEN, "1 After"]);
   // Gone and back again: it is not closed from before.
-  editor.redo();
-  step(true);
-  editor.undo();
-  step(true);
-  expect(ids(closed)).toEqual([]);
+  panel.edit(() => editor.redo(), { bringsBack: true });
+  panel.edit(() => editor.undo(), { bringsBack: true });
+  expect(panel.rows()).toEqual([...OPEN, "1 After"]);
 });
 
-test("the layers still listed stay closed, found in the layers built anew", () => {
-  const { editor, at } = openCanvas();
-  const folds = createFolds(() => []);
-  const tree = editor.tree();
-  editor.remove(at(tree, "after"));
-  const next = editor.tree();
-  const closed = folds.follow(new Set([at(tree, "item-1")]), [tree], [next], false);
-  expect([...closed]).toEqual([at(next, "item-1")]);
+test("the Layers panel hidden and shown again: a layer deleted before, or while it was hidden, comes back as it was when it went, or when the panel was hidden; the others start anew", () => {
+  const { editor, layer } = openCanvas();
+  const panel = openPanel(editor);
+  panel.toggle(2, 1);
+  const itemClosed = panel.rows();
+  expect(itemClosed).toContain("2 Stack (closed)");
+
+  // Deleted, then the panel hidden and shown again: the undo brings the list back as it was.
+  panel.edit(() => editor.remove(layer("list")), { bringsBack: false });
+  panel.hide();
+  panel.show();
+  panel.edit(() => editor.undo(), { bringsBack: true });
+  expect(panel.rows()).toEqual(itemClosed);
+
+  // Hidden with the item closed, the list deleted meanwhile: brought back as the panel had it then.
+  panel.hide();
+  panel.edit(() => editor.remove(layer("list")), { bringsBack: false });
+  panel.show();
+  panel.edit(() => editor.undo(), { bringsBack: true });
+  expect(panel.rows()).toEqual(itemClosed);
+
+  // On the canvas as the panel is shown again, the list starts anew, open; an undo of something else leaves it so.
+  panel.edit(() => editor.remove(layer("after")), { bringsBack: false });
+  panel.hide();
+  panel.show();
+  expect(panel.rows()).toEqual(OPEN);
+  panel.edit(() => editor.undo(), { bringsBack: true });
+  expect(panel.rows()).toEqual([...OPEN, "1 After"]);
 });
 
-test("a layer off the canvas new to the list has what it is given closed; one listed before and back by an undo, what was closed then", () => {
+test("a layer off the canvas new to the list has the layers in it closed; one listed before and brought back by an undo, as they were then", () => {
   const canvas = openCanvas();
   const outside = openCanvas();
-  const fresh = (tree: LayerTree) => tree.root.children.filter((layer) => layer.children.length > 0);
-  const folds = createFolds(fresh);
-  const tree = canvas.editor.tree();
-  const out = outside.editor.tree();
+  let off = false;
+  const panel = openPanel(canvas.editor, () => (off ? [outside.editor.tree()] : []));
+  const canvasRows = panel.rows();
 
   // New to the list: its list closed.
-  let closed = folds.follow(new Set(), [tree], [out, tree], false);
-  expect(ids(closed)).toEqual(["list"]);
+  panel.edit(() => (off = true), { bringsBack: false });
+  expect(panel.rows()).toEqual(["1 Stack (closed)", "1 After", ...canvasRows]);
   // The designer opens it, then it goes, then an undo brings it back: open still.
-  closed = folds.follow(new Set(), [out, tree], [tree], false);
-  closed = folds.follow(closed, [tree], [out, tree], true);
-  expect(ids(closed)).toEqual([]);
+  panel.toggle(1, 0);
+  panel.edit(() => (off = false), { bringsBack: false });
+  panel.edit(() => (off = true), { bringsBack: true });
+  expect(panel.rows()).toEqual([...OPEN, "1 After", ...canvasRows]);
 });
