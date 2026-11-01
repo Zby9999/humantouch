@@ -18,7 +18,7 @@ export function App() {
       {/* Fills exactly one screen: the canvas has to keep vh units at the viewport height. */}
       <section className="flex h-screen flex-col justify-center" data-testid="hero">
         <header className="flex items-center gap-3">
-          <h1 className="font-display text-4xl font-bold text-stone-900">03Kind</h1>
+          <h1 className="font-display text-4xl font-bold text-stone-900">Third Kind</h1>
           <Badge>Beta</Badge>
         </header>
         <p className="mt-4 text-stone-600">

@@ -123,14 +123,15 @@
   - Skill 的 description 和标题。
   - aria-label：`03Kind: enter edit mode`、`03Kind: back to preview mode`、`03Kind: applying design changes…`。
   - 报错、开发服务器日志、源码注释、快照。
-- 示例页面：标题和 h1 改为「03Kind」。e2e 和测量台里按这个图层名、文字选图层的地方都跟着改。测试里设计师打的字原来是「Vernier…」，改为「Third…」；测量台场景里的「Vernier Studio」改为「Third Kind Studio」。打的字只用字母，不用「03Kind」，免得测试打字时碰上画布的数字键快捷键（现在只有 Shift+1 一个）。
+- 示例页面：三个示例的 h1 改为「Third Kind」，页面 `<title>` 里的产品名改为「03Kind example: …」。e2e 和测量台里按标题文字选图层、比对标题的地方都跟着改。测试里设计师打的字原来是「Vernier…」，改为「Third…」；测量台场景里的「Vernier Studio」改为「Third Kind Studio」。打的字只用字母，不用「03Kind」，免得测试打字时碰上画布的数字键快捷键（现在只有 Shift+1 一个）。
 - 历史 fixture `round-before-60`（两处）：
   - 旧名换成了新名字：`data-tk-*`、`third-kind-edits`、`npx 03kind`、`made … in 03Kind`、`code 03Kind could not locate`。存法仍是 60 之前的样子：每个实例各有一份 `<style data-tk-edit-styles data-tk-rules…>`。它测的仍是 60 之前的存法能照样打开，测试有意义。
-  - e2e 那份画布里冻结的 h1 文字也从「Vernier Kit」改为「03Kind」。这样 styles.json 里 h1 的宽度在三个视图里都要从 184.172px 改为 124.406px，这个值由现在的代码量出，其余样式一个没动。
-- 示例标题变短、成了一个词，有三处测试原来靠旧标题的几何关系，改了测的办法，测的事不变：
-  - **drag.spec「dragged into another Stack … beside a locked layer」**：标题变窄后，桌面视图里 Beta 徽章落在标题行左边四分之一以内。按 drag.ts 的规则，同级的 Stack 只能从它的中间一半拖进去，所以按钮被放到了标题行旁边，这是设计如此的行为。测试改为在手机视图里拖，那里徽章在标题行的中间一半。
-  - **测量台场景 reorder-and-move**：原因同上，按钮拖进 header 的那一步也改在手机视图里做。bench-scenarios.spec 和 `bench:agents --dry` 都通过。
-  - **resize.spec「text dragged narrower is Fixed in width … as they wrap」**：「03Kind」是一个词，拖窄不会折行。测试改为拖窄它下面那段介绍文字。
+  - e2e 那份画布里冻结的 h1 文字也随示例改为「Third Kind」。这样 styles.json 里 h1 的宽度在三个视图里都要从 184.172px 改为 179.109px。这个值是手改的：把画布里的文字换成新标题后，用现在的代码跑 autosave.spec 的这条测试，取它在三个视图里报出的 h1 宽度（三个视图相同）填进去。其余样式一个没动，仍是当时的代码写的。
+- 示例标题怎么选：e2e 和测量台里有几处测法靠标题的宽度，改名不应改变它们测的东西，所以标题要和原来「Vernier Kit」的宽度接近（h1 原来 184.172px），且要多于一个词。这几处测法一律保持 51da820 时的样子，只把其中的旧名换成新名：drag.spec「dragged into another Stack … beside a locked layer」、测量台场景 reorder-and-move、resize.spec「text dragged narrower … as they wrap」。
+  - 先试过「03Kind」（124.406px）：标题太窄，Beta 徽章落进标题行左边四分之一。按 drag.ts 的规则，同级的 Stack 只能从中间一半拖进去，前两处拖进 header 的那一步因此不成立；一个词拖窄也不会折行，resize 那条不成立。
+  - 再试「03Kind Studio」（250.766px）：这三处都过，但 layers.spec「the hover outline … the deepest one」五次里五次失败。标题在画布上约 69.5 屏幕像素宽，悬停框和元素各自取整后差 1 px。
+  - 最后用「Third Kind」（179.109px）：这三处和 layers.spec 都过，全量也全过。
+  - 拖进 header 那一步的余量变小了：徽章中点要在标题行中间一半以内，大约要求 h1 宽于 174.5px。
 - 清了 Next 示例的 `.next` 缓存（不进 git）。Turbopack 的持久缓存里还留着旧 loader 的输出，元素上没有 `data-tk-loc`，next.spec 有 3 条因此失败，清掉缓存后通过。
 
 **改前、改后（同一台机器，e2e 用 TK_E2E_PORT=5900，改前用 VK_E2E_PORT=5900）**
@@ -142,7 +143,7 @@
 | `pnpm test` 里的 e2e/bench | 29 pass | 29 pass |
 | `pnpm test:e2e` | 349 passed、1 skipped | 349 passed、1 skipped |
 | 切换按钮体积，toggle-first.spec，已发布文件 gzip 后 | 10000 B | 9990 B |
-| 切换按钮体积，install.spec，从打的包安装、Vite 送出的样子 | 10167 B | 10152–10155 B（三次） |
+| 切换按钮体积，install.spec，从打的包安装、Vite 送出的样子 | 10167 B | 10154 B（前几次同样的包量到 10152–10155 B） |
 | 体积上限 | 10240 B | 10240 B |
 | `pnpm bench:agents --dry` | 没测 | 10 个场景全 ✓ |
 
@@ -154,8 +155,8 @@
 
 - 本地示例项目或别处存着的旧画布（`data-vk-*`、`vernierkit-edits`）会失效，localStorage 里旧的 `vernierkit:` 键也不再读（面板开合、视图、切换按钮位置会回到默认）。没有外部用户，按 70 的约定不做迁移。
 - 已有的 Next 项目，`.next` 里的 Turbopack 缓存要清掉一次，否则元素上没有 `data-tk-loc`。
-- 示例标题变短后，靠标题几何关系的测试，上面三处已改。别的测试这几次全量里都过了，但以后改示例布局时还会遇到同类问题。
-- e2e fixture 的 styles.json 里，h1 的宽度是现在的代码量出来的，不是当时的代码写的；其余部分仍是当时写的。
+- 有的测试靠示例标题的宽度：drag.spec、测量台 reorder-and-move 拖进 header 那一步，以及 layers.spec 的悬停框取整。这次的标题是按它们挑的。以后再改示例标题，要先量 h1 的宽度。
+- e2e fixture 的 styles.json 里，h1 的宽度 179.109px 是手改的：现在的代码量出来的值，不是当时的代码写的。其余部分仍是当时写的。
 - 代码评审提了一条，不属于这一步：`data-tk-` 前缀在约 20 处直接写成字面量，没有共用常量；e2e 里的 `X-03Kind-Token` 也没有从 `TOKEN_HEADER` 取。这些在改名前就是这样，这一步没动。
 
 **留给第三步**

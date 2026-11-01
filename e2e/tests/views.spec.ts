@@ -282,7 +282,7 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
   const tree = page.getByRole("tree", { name: "Layers" });
   const badge = page.getByRole("button", { name: /not applied yet/ });
   // Something to undo, the title deleted, and something to redo, the Beta badge deleted and that undone.
-  await tree.getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await tree.getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await tree.getByRole("treeitem", { name: "Badge", exact: true }).click();
   await page.keyboard.press("Delete");
@@ -409,7 +409,7 @@ test("a dialog open when the page was frozen is open in every view, laid out at 
 test("the camera moved while typing in a view, and then at rest, the words go on where the caret was; once typing ends nothing shown changes", async ({ page }) => {
   await enterEditMode(page);
   const layers = page.getByRole("tree", { name: "Layers" });
-  await layers.getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await layers.getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
   const title = phone(page).contentFrame().locator("h1");
   const point = await pointOn(phone(page), "h1");
@@ -572,7 +572,7 @@ test("a view deleted, the others then showing whole, and added back: each time, 
 
 test("a double click on text in the phone view types in it there, the caret in that view; the words show in every view as they are typed", async ({ page }) => {
   await enterEditMode(page);
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
   const title = phone(page).contentFrame().locator("h1");
   const point = await pointOn(phone(page), "h1");
@@ -607,11 +607,11 @@ test("a double click on text in the phone view types in it there, the caret in t
   await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third 基", exact: true })).toBeVisible();
   // The same change as typed in the desktop view: words for every width.
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“03Kind” → “Third 基”/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“Third Kind” → “Third 基”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");
-  for (const h1 of titles) await expect(h1).toHaveText("03Kind");
+  for (const h1 of titles) await expect(h1).toHaveText("Third Kind");
   await page.keyboard.press("ControlOrMeta+Shift+z");
   for (const h1 of titles) await expect(h1).toHaveText("Third 基");
 

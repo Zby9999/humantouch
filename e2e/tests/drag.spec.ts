@@ -78,13 +78,11 @@ test("dragged within a Stack, a layer takes another place; the others make room 
 test("dragged into another Stack, it goes in where it is let go, beside a locked layer rather than into it", async ({ page }) => {
   await enterEditMode(page);
   await selectButton(page);
-  // In the phone view: there the badge is in the middle half of the title's row, which is entered from its middle only.
-  const phone = page.locator('iframe[title="Phone 390"]').contentFrame();
-  const button = phone.locator(`${HERO} > button`);
+  const button = canvas(page).locator(`${HERO} > button`);
 
   // Let go over the Beta badge, which comes from a dependency.
   await drag(page, button, async () => {
-    const badge = await boxOf(phone.getByTestId("acme-badge"));
+    const badge = await boxOf(canvas(page).getByTestId("acme-badge"));
     return { x: badge.x + badge.width / 2 + 1, y: badge.y + badge.height / 2 };
   });
 
@@ -167,7 +165,7 @@ async function aboveParagraph(page: Page) {
 
 /** The title deleted, from the Layers panel: an edit to undo. */
 async function deleteTitle(page: Page) {
-  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await expect(canvas(page).locator("h1")).toBeHidden();
 }

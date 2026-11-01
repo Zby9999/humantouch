@@ -72,7 +72,7 @@ test("edits are saved into the project about half a second after the designer st
   expect(waited).toBeLessThan(1500);
   // The saved canvas, edits included: the frozen page with red cards.
   const saved = readFileSync(CANVAS, "utf8");
-  expect(saved).toContain("03Kind</h1>");
+  expect(saved).toContain("Third Kind</h1>");
   // In the canvas's edit styles, over the page's.
   expect(saved).toMatch(/background-color:rgb\(255 0 0 \/ 1\)!important/);
 });

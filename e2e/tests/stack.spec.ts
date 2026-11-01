@@ -107,7 +107,7 @@ test("a Stack dissolved from the Design panel is a Frame, its layers absolute wh
     for (const side of ["x", "y", "width", "height"] as const) expect(Math.abs(box[side] - before[i][side])).toBeLessThan(0.1);
   });
   await expect(layerTree(page).getByRole("treeitem", { name: "Header", exact: true })).toHaveAttribute("aria-description", "Frame");
-  await expect(layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true })).toHaveAttribute("aria-description", "Text · Absolute");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true })).toHaveAttribute("aria-description", "Text · Absolute");
   await expect(page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Dissolve Stack" })).toHaveCount(0);
 
   await page.keyboard.press("ControlOrMeta+z");

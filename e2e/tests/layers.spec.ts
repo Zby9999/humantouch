@@ -99,7 +99,7 @@ test("the layer tree shows the page structure, named after components, text and 
     "2 App — Vertical Stack",
     "3 Stack — Vertical Stack",
     "4 Header — Horizontal Stack",
-    "5 03Kind — Text",
+    "5 Third Kind — Text",
     "5 Badge — Locked",
     "4 A Framer-style editor layer for any page. — Text",
     "4 Button — Horizontal Stack",
@@ -194,7 +194,7 @@ test.describe("selecting layers on the canvas", () => {
     await expect(selectedRow(page)).toHaveAttribute("aria-level", "3");
     await doubleClickOn(page, "h1");
     await doubleClickOn(page, "h1");
-    await expect(selectedRow(page)).toHaveText("03Kind");
+    await expect(selectedRow(page)).toHaveText("Third Kind");
   });
 
   test("double clicks do not select the page's text the way a browser would", async ({ page }) => {

@@ -146,7 +146,7 @@ test("a layer off the canvas dragged back into a Frame's empty space snaps as an
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await page.mouse.wheel(-400, 0);
-  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).first().click();
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).first().click();
   const view = (await desktop(page).boundingBox())!;
   const title = (await desktop(page).contentFrame().locator("h1").boundingBox())!;
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);

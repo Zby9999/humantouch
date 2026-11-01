@@ -491,7 +491,7 @@ async function designTheRoundAcrossViews(page: Page) {
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await page.mouse.wheel(-400, 0);
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   const title = (await desktop.contentFrame().locator("h1").boundingBox())!;
   const view = (await desktop.boundingBox())!;
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);

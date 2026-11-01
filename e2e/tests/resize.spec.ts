@@ -97,7 +97,7 @@ test("the layer selected alone has handles on its corners and edges in every vie
   await expect(handle(page, "se")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(handle(page, "e")).toHaveCSS("cursor", "ew-resize");
 
-  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click({ modifiers: ["Shift"] });
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click({ modifiers: ["Shift"] });
   await expect(page.locator(".tk-handle")).toHaveCount(0);
 });
 
@@ -203,13 +203,12 @@ test("dragged near a layer beside it, its edge snaps there with a red line; with
 
 test("text dragged narrower is Fixed in width, its height still Hug, following its words as they wrap", async ({ page }) => {
   await enterEditMode(page);
-  // The paragraph under the title: words enough to wrap, where the title is one word.
-  await layerTree(page).getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
-  const before = await boxIn(desktop(page), `${HERO} > p`);
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
+  const before = await boxIn(desktop(page), "h1");
 
   await dragHandle(page, handle(page, "e"), { x: 100 - before.width, y: 0 });
 
-  const after = await boxIn(desktop(page), `${HERO} > p`);
+  const after = await boxIn(desktop(page), "h1");
   expect(after.width).toBe(100);
   expect(after.height).toBeGreaterThan(before.height);
   await expect(sizing(page, "Width")).toHaveValue("fixed");

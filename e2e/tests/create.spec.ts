@@ -155,7 +155,7 @@ test("while a Frame is drawn with F, ⌘Z, ⇧⌘Z, Delete and the tool keys do 
   const badge = page.getByRole("button", { name: /not applied yet/ });
   const frameTool = page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Frame" });
   // Something to undo, the title deleted, and something to redo, the paragraph deleted and that undone.
-  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await layerTree(page).getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
   await page.keyboard.press("Delete");
@@ -204,7 +204,7 @@ test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys
   const badge = page.getByRole("button", { name: /not applied yet/ });
   const textTool = page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Text" });
   // Something to undo, the title deleted, and something to redo, the button deleted and that undone.
-  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await layerTree(page).getByRole("treeitem", { name: "Get started", exact: true }).click();
   await page.keyboard.press("Delete");
@@ -250,7 +250,7 @@ test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys
 
 test("a double click on the selected text types in it; the words change as an edit", async ({ page }) => {
   await enterEditMode(page);
-  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
 
   await canvas(page).locator("h1").dblclick();
   await page.keyboard.type("Third");
@@ -258,11 +258,11 @@ test("a double click on the selected text types in it; the words change as an ed
 
   await expect(canvas(page).locator("h1")).toHaveText("Third");
   await expect(layerTree(page).getByRole("treeitem", { name: "Third", exact: true })).toBeVisible();
-  await expect(await changeRows(page)).toHaveText([/Text.*“03Kind” → “Third”/]);
+  await expect(await changeRows(page)).toHaveText([/Text.*“Third Kind” → “Third”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(canvas(page).locator("h1")).toHaveText("03Kind");
+  await expect(canvas(page).locator("h1")).toHaveText("Third Kind");
 });
 
 test("Delete deletes the selected layer; ⌘D copies a card of the loop beside it", async ({ page }) => {

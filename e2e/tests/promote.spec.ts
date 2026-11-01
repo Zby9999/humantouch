@@ -98,7 +98,7 @@ test("Promote goes as the layer is deselected and comes back as it is selected a
   await radius(page).press("Enter");
   await expect(promote(page)).toBeVisible();
 
-  await selectRow(page, "03Kind");
+  await selectRow(page, "Third Kind");
   await expect(promote(page)).toHaveCount(0);
   await selectRow(page, "Card", 3);
   await expect(promote(page)).toBeVisible();
@@ -119,7 +119,7 @@ test("no Promote with more than one layer selected, nor on a layer with no compo
   await expect(promote(page)).toHaveCount(0);
 
   // The heading the App writes itself: it is changed where it is written.
-  await selectRow(page, "03Kind");
+  await selectRow(page, "Third Kind");
   await design(page).getByRole("textbox", { name: "Opacity", exact: true }).fill("50");
   await design(page).getByRole("textbox", { name: "Opacity", exact: true }).press("Enter");
   await expect(badge(page)).toHaveText("2");

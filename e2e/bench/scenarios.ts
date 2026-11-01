@@ -227,11 +227,11 @@ export const SCENARIOS: Scenario[] = [
     async design(desk) {
       const { page } = desk;
       await enterEditMode(page);
-      await layer(page, "03Kind").click();
+      await layer(page, "Third Kind").click();
       await setField(page, "Font size", "48");
       await pick(page, desktop(page), `${HERO} > p`);
       await setField(page, "Fill color", "1c1917");
-      await layer(page, "03Kind").click();
+      await layer(page, "Third Kind").click();
       await layer(page, "Badge").click({ modifiers: ["Shift"] });
       await page.keyboard.press("Shift+A");
       await saved(desk, 3);
@@ -374,10 +374,8 @@ export const SCENARIOS: Scenario[] = [
       });
       await saved(desk, 1);
       await layer(page, "Button").click();
-      // In the phone view: there the badge is in the middle half of the header, which is entered from its middle only.
-      const phoneHero = phone(page).contentFrame().getByTestId("hero");
-      await drag(page, phoneHero.locator("button").first(), async () => {
-        const badge = await boxOf(phoneHero.getByTestId("acme-badge"));
+      await drag(page, hero.locator("button").first(), async () => {
+        const badge = await boxOf(hero.getByTestId("acme-badge"));
         return { x: badge.x + badge.width / 2 + 1, y: badge.y + badge.height / 2 };
       });
       await saved(desk, 2);
@@ -416,7 +414,7 @@ export const SCENARIOS: Scenario[] = [
       await page.keyboard.press("Delete");
       await layer(page, "Card", 0).click();
       await page.keyboard.press("ControlOrMeta+d");
-      await layer(page, "03Kind").click();
+      await layer(page, "Third Kind").click();
       await desktop(page).contentFrame().locator("h1").dblclick();
       await page.keyboard.type("Third Kind Studio");
       await page.keyboard.press("Enter");
@@ -453,10 +451,10 @@ export const SCENARIOS: Scenario[] = [
       // The round before, applied as the Skill says: the title moved off the canvas, deleted from the code.
       await enterEditMode(page);
       await roomOnTheLeft(page);
-      await moveOffTheCanvas(page, "03Kind", desktop(page).contentFrame().locator("h1"));
+      await moveOffTheCanvas(page, "Third Kind", desktop(page).contentFrame().locator("h1"));
       await saved(desk, 1);
       await desk.cli("claim");
-      await desk.edit("src/App.tsx", '          <h1 className="font-display text-4xl font-bold text-stone-900">03Kind</h1>\n', "");
+      await desk.edit("src/App.tsx", '          <h1 className="font-display text-4xl font-bold text-stone-900">Third Kind</h1>\n', "");
       await page.locator("h1").waitFor({ state: "detached" });
       await desk.cli("done", "1");
       await desk.cli("finish");
@@ -488,11 +486,11 @@ export const SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "putBack",
-        expect: "The header starts with the title, “03Kind”, as it was written before.",
+        expect: "The header starts with the title, “Third Kind”, as it was written before.",
         checkable: false,
         shows: () => {
           const first = document.querySelector('[data-testid="hero"] header')?.firstElementChild;
-          return first?.localName === "h1" && first.textContent === "03Kind";
+          return first?.localName === "h1" && first.textContent === "Third Kind";
         },
       },
       {
