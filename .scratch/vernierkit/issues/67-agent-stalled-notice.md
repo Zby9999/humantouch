@@ -262,3 +262,17 @@
     - 旧代码上那几次 400–600 秒的长停，主要是读包、读 Tailwind 源码，补修和补修三之后少了（见 65）。
     - 这批没再出现。
 - 风险照旧：Cursor 再像 65 那样认领后读包 600 秒，会误报。这一批最长的一段只有阈值的 37%，没看到这种情况。不加载 Skill 的 Cursor（定阈值用的 367 秒那批）这次没跑。
+
+**真实 Agent：两家各 30 次（2026-11-01，北京时间 17:32–18:48，代码 c39f839，即本 ticket、68 及 65 的补修四、补修五）**
+
+- 运行条件和数字都记在 65 的 Comments「复测：最终代码 c39f839（11/01）」。这里只记停住提示。
+  - Cursor：agent-cli 2026.10.22-27dcf5f（64 起用的那个 symlink，跑前跑后都核对过），`--model grok-4.7-high`，init 事件 30 次都是「Grok 4.7 256K High」。原始结果 `bench-results/agents/2026-11-01T09-32-06-final-c39f839-cursor/`。
+  - Claude：Claude Code 2.1.309（`VK_BENCH_CLAUDE` 固定），`claude-sonnet-5-5`，`--effort high`，init 事件 30 次都是 `claude-sonnet-5-5`。原始结果 `bench-results/agents/2026-11-01T10-32-41-final-c39f839-claude/`。
+  - 各 10 个场景 × 3 次，顺序跑（先 Cursor 后 Claude），没有补跑，也没有作废的批次。
+- **`stalledNotices` 两家 60 次都是 0**，`times.stalledNotices` 都是空的。`unclaimedNotices` 60 次也都是 0。设计师的页面从 Agent 开始一直开着，所以这 60 次里停住提示一次都没出现过，误报 0。
+- 离阈值 551 秒多远（「没进度、没有 `done`、源码也没变」的最长一段）：
+  - Cursor：中位数 38.42 秒，最长 **196.01 秒**（phone-breakpoints #2），是阈值的 36%。其次 194.12（dissolve-place-frame #3）、139.55（fill-gap-brief #1）、132.93（dissolve-place-frame #2）、130.79（phone-breakpoints #3）秒。e5b2877 那批最长 201.21 秒。
+  - Claude：中位数 9.1 秒，最长 **24.03 秒**（dissolve-place-frame #3）。67 那批最长 21.44 秒。
+  - 60 次最长的一段都在认领和第一次改源码之间，没有一段落在两次改动之间，也没有落在最后一次改动到 `finish` 之间。
+  - Cursor 的 button-over-rule 这次最长只有 22.72 秒（e5b2877 是 201.21 秒，那时在想收窄规则还是用 `!`，见 65 补修五）。
+- 风险照旧：Cursor 再像 65 那样认领后读包 600 秒，会误报。这一批没读过 Vernier Kit 的包，最长一段只有阈值的 36%。不加载 Skill 的 Cursor（定阈值用的 367 秒那批）这次也没跑。
