@@ -3,8 +3,8 @@
  * reload. The saved canvas is parsed, changed and written back as it is.
  */
 import type { SavedRound } from "../service-protocol";
-import { createChangeSet, withDependents, type Change, type SavedChangeSet, type Composed, type Created, type Dissolved, type Place, type PutBack, type RangePart } from "./changeset";
-import { BRIEF_ATTR, changesOn, DELETED_ATTR, elementsOf, LAYER_ID_ATTR, MOVE_ATTR, ORIGINAL_TEXT_ATTR, restoreStyle, takeInEdits, TEXT_ATTR, upgradeEditStyles } from "./canvas-style";
+import { createChangeSet, placedAt, withDependents, type Change, type SavedChangeSet, type Composed, type Created, type Dissolved, type Place, type PutBack, type RangePart } from "./changeset";
+import { BRIEF_ATTR, changesOn, DELETED_ATTR, elementsOf, LAYER_ID_ATTR, MOVE_ATTR, ORIGINAL_TEXT_ATTR, REFERENCE_ATTR, restoreStyle, takeInEdits, TEXT_ATTR, upgradeEditStyles } from "./canvas-style";
 import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
@@ -79,13 +79,17 @@ export function takeInApplied(doc: Document, changeSet: SavedChangeSet) {
   const applied = changeSet.applied ?? [];
   if (!applied.length) return;
   const left = changeSet.changes;
-  // A move or a deletion of one of a loop's instances alone is not on the others: those elements are marked with it.
   const on = (changes: Change[]) => (el: Element) => {
     const id = el.getAttribute(LAYER_ID_ATTR);
-    return (id ? changesOn(id, changes) : []).filter((change) => {
+    if (!id) return [];
+    // A move or a deletion of one of a loop's instances alone is not on the others: those elements are marked with it.
+    const own = changesOn(id, changes).filter((change) => {
       const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
       return !change.data || !mark || el.getAttribute(mark) === change.property;
     });
+    // A container made the positioning reference of what they place absolute in it (`holdAbsolute`): its `position` is theirs.
+    const holding = el.hasAttribute(REFERENCE_ATTR) ? changes.filter((change) => placedAt(change)?.absolute && placedAt(change)!.container.layer === id) : [];
+    return [...own, ...holding.map((change) => ({ ...change, style: { position: "relative" } }))];
   };
   // The elements each component's changes are written on, those applied and those left.
   const written = new Map<Element, { applied: Change[]; left: Change[] }>();

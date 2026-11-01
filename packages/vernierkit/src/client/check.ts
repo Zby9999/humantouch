@@ -14,7 +14,7 @@ import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Margins, type Place } from "./changeset";
 import { openingTag } from "./layer-target";
-import { absolute, PLACING, readValue, type Property, type Stroke } from "./property-table";
+import { absolute, PLACING, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import { colorReader } from "./paint";
@@ -112,9 +112,10 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * a copy of the page, by `at` (null when there is none to be had). `round`:
  * the changes of its round, where a usage with a change of its own to the
  * property a change to its component makes shows that one instead, and a
- * breakpoint changed on its own keeps its value.
+ * breakpoint changed on its own keeps its value. `sources`: a style change
+ * not shown says what sets the value shown instead too.
  */
-export function checkAcross(doc: Document, change: Change, round: Change[], viewWidths: number[], at: (width: number) => PageWidth | null): CheckResult {
+export function checkAcross(doc: Document, change: Change, round: Change[], viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
   const reason = uncheckable(change);
   if (reason) return { outcome: "unchecked", reason };
   const page = itself(doc);
@@ -122,7 +123,7 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
   const apart = ownValues(change, round);
   let checked = false;
   if (own) {
-    const result = lookAt(doc, change, apart, page);
+    const result = lookAt(doc, change, apart, page, sources);
     if (result.outcome !== "shown") return result;
     checked = true;
   }
@@ -135,7 +136,7 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
     if (change.breakpoint && !copy.doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
       return { outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
     }
-    const result = lookAt(doc, change, apart, copy);
+    const result = lookAt(doc, change, apart, copy, sources);
     // Not there at this width at all: nothing to show there.
     if (result.outcome === "unchecked") continue;
     if (result.outcome === "not shown") return result;
@@ -175,12 +176,13 @@ function ownValues(change: Change, round: Change[]): string[] {
 
 /**
  * Whether the page, as `at` shows it, shows the change: found on the page
- * `doc`, read where `at` shows it. A change to a component, but in the usages `apart`.
+ * `doc`, read where `at` shows it. A change to a component, but in the usages
+ * `apart`. `sources`: a style change not shown says what sets the value there.
  */
-function lookAt(doc: Document, change: Change, apart: string[], at: PageWidth): CheckResult {
+function lookAt(doc: Document, change: Change, apart: string[], at: PageWidth, sources = false): CheckResult {
   // A change at a breakpoint is looked at at a width in its range: which one does not matter, but for a range in parts (ticket 65).
   const width = at.own || (change.breakpoint && !change.parts) ? undefined : at.width;
-  const result = look(doc, change, apart, at);
+  const result = look(doc, change, apart, at, sources);
   return result.outcome === "not shown" && width !== undefined ? { ...result, width } : result;
 }
 
@@ -196,19 +198,25 @@ export function valueOn(doc: Document, change: Change, at: PageWidth): unknown {
   return el ? readValue(el, change.property as Property) : undefined;
 }
 
-function look(doc: Document, change: Change, apart: string[], at: PageWidth): CheckResult {
+function look(doc: Document, change: Change, apart: string[], at: PageWidth, sources: boolean): CheckResult {
   if (change.kind === "delete") return lookDeleted(doc, change, at);
   if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, at) : lookOrder(doc, change);
   const property = change.property as Property;
   const els = styledBy(doc, change, apart, at);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const margins = marginsFor(change, at);
-  if (margins && change.after !== null && PLACING.includes(property)) return lookPosition(els, property, change.after as number | { x: number; y: number }, margins);
+  const [result, wrong] = margins && change.after !== null && PLACING.includes(property) ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins) : lookStyle(els, property, change.after, at);
+  // What sets the value shown instead, read on the element that shows it.
+  return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
+}
+
+/** Whether every one of `els` shows `after`; not, the first that does not, and the value it shows. */
+function lookStyle(els: Element[], property: Property, after: unknown, at: PageWidth): [CheckResult, Element | null] {
   const comparison = AS_WRITTEN[property];
-  const drawn = comparison && comparison.draw(at.doc, change.after);
-  const shows = comparison ? (el: Element) => comparison.shows(el, change.after, drawn) : (el: Element) => sameValue(readValue(el, property), change.after);
+  const drawn = comparison && comparison.draw(at.doc, after);
+  const shows = comparison ? (el: Element) => comparison.shows(el, after, drawn) : (el: Element) => sameValue(readValue(el, property), after);
   const wrong = els.find((el) => !shows(el));
-  return wrong === undefined ? { outcome: "shown" } : { outcome: "not shown", actual: readValue(wrong, property) };
+  return wrong === undefined ? [{ outcome: "shown" }, null] : [{ outcome: "not shown", actual: readValue(wrong, property) }, wrong];
 }
 
 /**
@@ -279,22 +287,23 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
 /**
  * An `x`, `y` or `absolute` style change: shown where every instance is
  * absolute and drawn where the canvas draws it (`drawnThere`). `actual`:
- * along one axis, its `left` or `top` and its margin there; both, as a placement is.
+ * along one axis, its `left` or `top` and its margin there; both, as a
+ * placement is. Not shown: with the first that is not.
  */
-function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): CheckResult {
+function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): [CheckResult, Element | null] {
   for (const el of els) {
-    if (!absolute(el)) return { outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) };
+    if (!absolute(el)) return [{ outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) }, el];
     const placed = placedOn(el);
     if (typeof after !== "number") {
-      if (!drawnThere(placed, after, margins)) return { outcome: "not shown", actual: placed };
+      if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
       continue;
     }
     const axis = property as "x" | "y";
     if (!drawnThere(placed, { [axis]: after }, margins)) {
-      return { outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } };
+      return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
     }
   }
-  return { outcome: "shown" };
+  return [{ outcome: "shown" }, null];
 }
 
 /**

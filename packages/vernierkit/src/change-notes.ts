@@ -439,22 +439,24 @@ function member(target: Target): string {
 }
 
 /**
- * A layer made by no change of this round, in a round changes were carried
- * over to (ticket 68): by one of a round before, applied then. The code has
- * it now; the canvas has no marker of the source for it.
+ * A layer made by no change of this round, so by one of a round before,
+ * applied then (ticket 68): the canvas came back with it, as a round ended
+ * with changes left, and still has it once they are all discarded. The code
+ * has it now; the canvas has no marker of the source for it. A layer made
+ * this round always has its maker in the round: a change to it goes when the
+ * change that makes it goes (`withDependents`).
  */
 function madeBefore(target: Target, list: Change[]): boolean {
-  return !!target.made && list.some((change) => change.carried) && !list.some((change) => madeBy(change) === target.made);
+  return !!target.made && !list.some((change) => madeBy(change) === target.made);
 }
 
 const MADE_BEFORE =
   "**Made in a round before.** The layer was made by a change of an earlier round, applied then: it is in the source now, but the canvas has no source marker for it. Find it in the source from its place on the page, above.";
 
-/** Where a layer made this round is: in the change that makes it. */
+/** Where a layer made this round is: in the change that makes it, which the round has (`madeBefore`). */
 function newLayer(made: string, list: Change[]): string {
-  const maker = list.find((change) => madeBy(change) === made);
-  const which = maker ? `in change ${maker.id}` : "earlier this round";
-  return `**New:** the layer is made ${which}, and is not in the source yet. Apply that change first, then change it there.`;
+  const maker = list.find((change) => madeBy(change) === made)!;
+  return `**New:** the layer is made in change ${maker.id}, and is not in the source yet. Apply that change first, then change it there.`;
 }
 
 /** Where a move takes the layer from, and to. */

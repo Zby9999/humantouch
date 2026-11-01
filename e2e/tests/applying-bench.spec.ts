@@ -673,3 +673,114 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   expect(leftAtLast).toBeNull();
   expect(refrozen).toBe(true);
 });
+
+/** The padding top of the canvas's Cards, in page order: the three of the loop, then the one of its own. */
+const cardPaddings = (page: Page) => canvas(page).locator("article").evaluateAll((cards) => cards.map((card) => getComputedStyle(card).paddingTop));
+
+test("playbook: changes left over and under what was applied: a change to the Card itself left under one to its usage applied, and a move placed absolute in a Frame given a fill applied; on the same canvas each looks as it did, and each undone leaves the page's own (ticket 68, after review)", async ({ page }) => {
+  await recordNotices(page);
+  await page.goto(DEV_URL);
+  // A Frame of the page's (added by hand, outside React: not located, so the page cannot check what changes it).
+  await page.evaluate(() => {
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "height: 240px; margin: 16px 0; background: #eee";
+    document.querySelector("main")!.append(board);
+  });
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const tree = page.getByRole("tree", { name: "Layers" });
+  // 1: the Card itself, its padding top 16px; 2: the Cards of the loop, 24px.
+  await tree.getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Padding top", "16");
+  await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Promote" }).click();
+  await setField(page, "Padding top", "24");
+  // 3: the board filled; 4: the Get started button dragged into it, absolute.
+  await pickIn(page, "Canvas", "#board");
+  await setField(page, "Fill color", "00ff00");
+  await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
+  const button = canvas(page).locator('[data-testid="hero"] > button');
+  const board = canvas(page).locator("#board");
+  const from = (await button.boundingBox())!;
+  const to = (await board.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 60 + from.width / 2, to.y + 40 + from.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect
+    .poll(() => changesNow().map((change) => [change.id, change.kind, change.property, (change as { scope?: string }).scope]))
+    .toEqual([
+      [1, "style", "padding", "component"],
+      [2, "style", "padding", "usage"],
+      [3, "style", "fill", "usage"],
+      [4, "move", "move", "usage"],
+    ]);
+  const before = await canvasLooks(page);
+  const paddingsBefore = await cardPaddings(page);
+  const boardBefore = await board.evaluate((el) => getComputedStyle(el).position);
+  await leaveEditMode(page);
+
+  // The Agent writes the loop's padding into the Card (the page shows 24px: change 2, and not change 1's 16px), reports the board's fill done (the page cannot check it), and stops.
+  await vernierkit("claim");
+  writeFileSync(CARD, original.replace("p-5", "p-5 pt-6"));
+  await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).paddingTop)).toBe("24px");
+  await vernierkit("done", "3");
+  await pressAndHold(page);
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
+  const left = changesNow().map((change) => [change.id, change.kind, change.property]);
+
+  // Edit mode again: the same canvas, as it was.
+  await enterAgain(page);
+  const same = compareLooks(before, await canvasLooks(page));
+  const paddingsAgain = await cardPaddings(page);
+  await leaveEditMode(page);
+
+  // The next claim: what the Agent reads of the Card's own padding left, the code changed since; the round then ended by hand again, nothing more applied.
+  const claimed = await vernierkit("claim");
+  const leftNotes = claimed.split(/^## /m).find((part) => part.startsWith("1. "))!;
+  const paddingNotes = leftNotes.split("\n").filter((line) => /^- \*\*(Design intent|Currently set by)/.test(line));
+  await pressAndHold(page);
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
+
+  // The move undone from the list with no canvas up: the board is no positioning reference any more.
+  await page.getByRole("button", { name: /not applied yet$/ }).click();
+  const changeList = page.getByRole("dialog", { name: "Changes" });
+  await changeList.getByRole("button", { name: /^Undo the .* of Button$/ }).click();
+  await expect.poll(() => changesNow().length).toBe(left.length - 1);
+  await page.keyboard.press("Escape");
+  await enterAgain(page);
+  const boardOnceMoveUndone = await board.evaluate((el) => [getComputedStyle(el).position, getComputedStyle(el).backgroundColor, el.childElementCount]);
+  // The change to the Card itself undone from the list, the canvas up: the Cards of the loop as the page has them, with the padding applied.
+  await page.getByRole("button", { name: /not applied yet$/ }).click();
+  await changeList.getByRole("button", { name: /^Undo the padding of / }).click();
+  await expect.poll(() => changesNow().length).toBe(0);
+  await page.keyboard.press("Escape");
+  const paddingsOnceComponentUndone = await cardPaddings(page);
+
+  record("carries-over-under-and-around", {
+    left,
+    canvasElementsCompared: same.compared,
+    canvasElementsDiffering: same.differing,
+    differingByView: same.differingIn,
+    cardPaddingsBefore: paddingsBefore,
+    cardPaddingsAgain: paddingsAgain,
+    nextClaimOpening: claimed.split("\n")[2],
+    nextClaimPadding: paddingNotes,
+    boardPositionBefore: boardBefore,
+    boardOnceMoveUndone,
+    cardPaddingsOnceComponentUndone: paddingsOnceComponentUndone,
+  });
+  expect(left).toEqual([
+    [1, "style", "padding"],
+    [2, "move", "move"],
+  ]);
+  expect(paddingsBefore).toEqual(["24px", "24px", "24px", "16px"]);
+  expect(same.differing).toBe(0);
+  expect(paddingsAgain).toEqual(paddingsBefore);
+  // From what the page shows now, set by the class the Agent wrote.
+  expect(paddingNotes.join("\n")).toContain("pt-6");
+  expect(boardBefore).toBe("relative");
+  // As the page had it, with the fill applied.
+  expect(boardOnceMoveUndone).toEqual(["static", "rgb(0, 255, 0)", 0]);
+  // The page's own: the loop's padding applied; the Card of its own as the page was frozen.
+  expect(paddingsOnceComponentUndone).toEqual(["24px", "24px", "24px", "20px"]);
+});

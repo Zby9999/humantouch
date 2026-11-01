@@ -1023,6 +1023,25 @@ describe("claim, Stacks made and dissolved", () => {
     await cli("finish");
     expect(history()[1].changeSet).not.toHaveProperty("applied");
   });
+
+  test("a change made since to a layer made in a round before, every change left of that one discarded, says the same", async () => {
+    const made = { ...board, loc: null, unlocated: false, made: "7", context: { path: ["Page", "App", "Frame", "Stack"], element: "<div>" } };
+    saveRound(
+      stack({ layer: "7", after: { ...settings, place: place(1), layers: [{ layer: "5", target: title, from: place(1) }] } }),
+      { ...smallRadius, layer: "7", target: made },
+    );
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+    // The change left discarded, then the layer edited again: nothing of this round is carried over.
+    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ lastId: 1, changes: [{ ...smallRadius, id: 1, layer: "7", target: made, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } }] }));
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Location:** **Made in a round before.** ");
+    expect(notes).not.toContain("not in the source yet");
+    expect(notes).toContain("- **Currently set by:** unknown: the layer was made in a round before\n");
+  });
 });
 
 describe("claim, new layers, words, deleting and copying", () => {
@@ -1920,6 +1939,73 @@ describe("changes not applied, carried over to the next round on the same canvas
     expect((await cli("done", "2")).output).toBe("Change 2 done: 1 of 3 changes applied.\nChecked on the page: it shows the change.\n");
   });
 
+  /** A round of `changes` ended with change 1 applied alone: the others carried over, from 1. */
+  async function carriedOver(...changes: object[]) {
+    saveRound(...changes);
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+  }
+
+  test("an X carried over goes from the X the page shows now: its `left`, the margin kept apart", async () => {
+    const x = { ...redFill, id: 2, property: "x", before: 10, after: 40, style: { left: "40px", right: "auto" }, margins: { x: 8, y: 0 } };
+    const placed = { ...redFill, id: 3, property: "absolute", before: null, after: { x: 40, y: 50 }, style: { position: "absolute", left: "40px", top: "50px" }, margins: { x: 8, y: 0 } };
+    await carriedOver({ ...smallRadius, id: 1 }, x, placed);
+    closePage = openPage((id) => (id === 1 ? { outcome: "not shown", actual: { value: 32, margin: 8 } } : { outcome: "not shown", actual: { x: 5, y: 6, margins: { x: 8, y: 0 } } }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the X position from 32px to 40px.\n");
+    expect(output).not.toContain("[object Object]");
+    expect(changeSet().changes.map((change: { before: unknown }) => change.before)).toEqual([32, { x: 5, y: 6 }]);
+  });
+
+  test("an X the page does not place absolute now keeps the X it went from", async () => {
+    const x = { ...redFill, id: 2, property: "x", before: 10, after: 40, style: { left: "40px", right: "auto" }, margins: { x: 8, y: 0 } };
+    await carriedOver({ ...smallRadius, id: 1 }, x);
+    // In the layout: what the page reads is its `left` as CSS sets it, no X (null when \`auto\`).
+    closePage = openPage(() => ({ outcome: "not shown", actual: 0 }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the X position from 10px to 40px.\n");
+    // A round of one change says so.
+    expect(output).toContain("not applied then (1), and its 1 change is not applied yet. Left: 1 change");
+  });
+
+  test("a change at a range in parts carried over goes from what the page shows in them now, the same in every part too", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = (before: number) => [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before },
+    ];
+    await carriedOver(redFill, { ...smallRadius, breakpoint: PHONE, parts: parts(12) });
+    // As the page read the parts again, the code as it is, before the claim.
+    const next = changeSet();
+    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ ...next, changes: [{ ...next.changes[0], parts: parts(8) }] }));
+    closePage = openPage(() => ({ outcome: "not shown", actual: 8 }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the corner radius from 8px to 4px.\n");
+    expect(changeSet().changes[0].before).toBe(8);
+  });
+
+  test("what sets a change's value carried over is read again from the page with the value, in the same ask; with no page open, it is as it was", async () => {
+    const was = { properties: ["border-top-left-radius"], kind: "rule", selector: ".rounded-xl", file: "src/index.css", layer: null, important: false, className: "rounded-xl", declaration: null };
+    const now = { ...was, selector: ".rounded-lg", className: "rounded-lg" };
+    await carriedOver(redFill, { ...smallRadius, sources: [was] });
+    expect(section((await describeClaimOf(changeSet())), 1)).toContain("class `rounded-xl`");
+    closePage = openPage(() => ({ outcome: "not shown", actual: 8, sources: [now] }));
+
+    const { output } = await cli("claim");
+
+    expect(state().opening.ids).toEqual([1]);
+    expect(section(output, 1)).toContain("class `rounded-lg`");
+    expect(section(output, 1)).not.toContain("class `rounded-xl`");
+    expect(changeSet().changes[0].sources).toEqual([now]);
+  });
+
   test("with every change left shown on the page now, says to finish the round", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
@@ -1930,7 +2016,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     const { output } = await cli("claim");
 
     expect(output).toBe(
-      "This round carries 1 change over from the round before, not applied then (1), and all 1 of its changes are applied already, as the designer's page shows them: run `npx vernierkit finish` to end it.\n",
+      "This round carries 1 change over from the round before, not applied then (1), and its 1 change is applied already, as the designer's page shows it: run `npx vernierkit finish` to end it.\n",
     );
   });
 });
@@ -1952,6 +2038,16 @@ describe("claim, again", () => {
     expect(changeSections(output)).toBe(changeSections((await describeOnly(halfOpacity)).output));
     expect(output).toContain("This round is claimed already, and 2 of its 3 changes are applied (1 and 2), as the designer's page shows them or as you reported them done. Left: 1 change, made by the designer");
     expect(output).not.toContain("**Status:**");
+  });
+
+  test("says of one change applied that it is", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "1");
+
+    const { output } = await cli("claim");
+
+    expect(output).toContain("This round is claimed already, and 1 of its 3 changes is applied (1), as the designer's page shows them or as you reported them done. Left: 2 changes, made by the designer");
   });
 
   test("gives again a change done that the page does not show", async () => {
@@ -1978,6 +2074,11 @@ describe("claim, again", () => {
     expect(output).toBe("This round is claimed already, and all 2 of its changes are applied, as the designer's page shows them or as you reported them done: run `npx vernierkit finish` to end it.\n");
   });
 });
+
+/** What `claim` gives for a round saved as `changeSet`, in another project, with no page open. */
+async function describeClaimOf(changeSet: { changes: object[] }) {
+  return (await describeOnly(...changeSet.changes)).output;
+}
 
 /** What `claim` gives for a round of these changes alone, in another project. */
 async function describeOnly(...changes: object[]) {

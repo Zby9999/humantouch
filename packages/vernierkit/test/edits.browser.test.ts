@@ -3544,6 +3544,27 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     checks.stop();
   });
 
+  test("asked by claim of a change carried over from a round before (ticket 68), the page says with the value it shows what sets it: asked by done, not", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    write("border: 3px solid #ff0000");
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+
+    checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "opening", sources: true });
+    checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "done" });
+
+    await expect.poll(() => reports.find((r) => r.answers === "opening"), { timeout: 10_000 }).toMatchObject({
+      outcome: "not shown",
+      actual: { weight: 3 },
+      sources: [expect.objectContaining({ kind: "inline", properties: expect.arrayContaining(["border-top-width"]) })],
+    });
+    await expect.poll(() => reports.find((r) => r.answers === "done"), { timeout: 10_000 }).toMatchObject({ outcome: "not shown" });
+    expect(reports.find((r) => r.answers === "done")).not.toHaveProperty("sources");
+    checks.stop();
+  });
+
   test("shown, then undone by later code before done asks: the page sees it is no longer shown, and says so", async () => {
     const { page, editor, changes, board, write } = open();
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });

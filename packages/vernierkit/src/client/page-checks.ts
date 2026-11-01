@@ -92,7 +92,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     return true;
   };
   /** The page `width` px wide, as a copy of it kept up to date; null while its stylesheets load. */
-  const at = (width: number): PageWidth | null => {
+  const copyAt = (width: number): PageWidth | null => {
     if (!copies.has(width)) prepare(width);
     const copy = copies.get(width)!;
     if (copy.sync()) laidOut.delete(width);
@@ -102,8 +102,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     }
     return { width, doc: copy.doc, own: false, of: copy.of };
   };
-  /** Looks at `change` now; what looking puts in the page is not the code changing. */
-  const check = (change: Change): CheckResult => measured(change, () => lookNow(change));
+  /** Looks at `change` now; what looking puts in the page is not the code changing. `sources`: not shown, what sets the value shown instead too. */
+  const check = (change: Change, sources = false): CheckResult => measured(change, () => lookNow(change, sources));
   /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
   const checkAgain = (change: Change): CheckResult | null =>
     measured(change, () => {
@@ -119,13 +119,14 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       performance.measure(CHECK_MEASURE, { start, end: performance.now(), detail: change.id });
     }
   };
-  const lookNow = (change: Change): CheckResult => {
+  const lookNow = (change: Change, sources: boolean): CheckResult => {
     let loading = false;
-    const result = checkAcross(doc, change, changes, viewWidths(), (width) => {
-      const copy = at(width);
+    const at = (width: number) => {
+      const copy = copyAt(width);
       loading ||= !copy;
       return copy;
-    });
+    };
+    const result = checkAcross(doc, change, changes, viewWidths(), at, sources);
     observer.takeRecords();
     // A copy still loading its stylesheets: looked at again once it has.
     return loading && result.outcome === "unchecked" ? { outcome: "unchecked", reason: "loading" } : result;
@@ -265,9 +266,9 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   /**
    * Looks at `change` till it shows, or `ms` have passed since the dev server
    * last brought code in (or since now): as the page changes, at most once a
-   * turn, its copies readied first.
+   * turn, its copies readied first. `sources`: as `check`.
    */
-  const showsWithin = (change: Change, ms: number, deadline: number): Promise<CheckResult> =>
+  const showsWithin = (change: Change, ms: number, deadline: number, sources: boolean): Promise<CheckResult> =>
     new Promise((resolve) => {
       const since = performance.now();
       let last: CheckResult | null = null;
@@ -280,7 +281,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
           () =>
             whenReady(change, () => {
               looking = false;
-              last = check(change);
+              last = check(change, sources);
               if (last.outcome === "shown" || then) end();
             }),
           0,
@@ -327,11 +328,11 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       const deadline = performance.now() + CHECK_ARRIVE_MS;
       const waitFor = (change: Change) =>
         arrived(ask.codeAt, deadline).then(async () => {
-          let result = await showsWithin(change, settle, deadline);
+          let result = await showsWithin(change, settle, deadline, !!ask.sources);
           // A copy still loading: once it has.
           if (result.outcome === "unchecked" && result.reason === "loading") {
             await Promise.all([...copies.values()].map((copy) => copy.loaded()));
-            result = check(change);
+            result = check(change, !!ask.sources);
             if (result.outcome === "unchecked" && result.reason === "loading") result = { outcome: "unchecked", reason: "the page could not be shown at every width the change applies at, to check it" };
           }
           saw(change, result);

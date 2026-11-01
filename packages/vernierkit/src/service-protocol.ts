@@ -1,6 +1,7 @@
 /** How the editor layer and the local service talk. Shared by both sides. */
 import type { Place, SavedChangeSet, Target } from "./client/changeset";
 import type { Snippet } from "./source-snippet";
+import type { StyleSource } from "./client/style-source";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__VERNIERKIT__";
@@ -67,13 +68,17 @@ export interface Variable {
  * the same millisecond as the ask, but never its key. `codeAt`: when the
  * project's code was last edited, as far as the command line can tell (ms
  * since the epoch), so the page waits for that edit to reach it before it
- * says a change does not show; null when it cannot tell.
+ * says a change does not show; null when it cannot tell. `sources`: of a
+ * style change the page does not show, it says what sets the value it shows
+ * instead too, as `claim` asks of the changes carried over from the round
+ * before (ticket 68).
  */
 export interface CheckAsk {
   ids: number[];
   at: string;
   key: string;
   codeAt?: number | null;
+  sources?: true;
 }
 
 /**
@@ -118,8 +123,13 @@ export interface CodeSnapshot {
 /** Whether the live page shows a change: its value there is the value the change sets. */
 export type CheckResult =
   | { outcome: "shown" }
-  /** `actual`: the value the page shows instead, in design language. `width`: shown that wide, when not as wide as the page's window. */
-  | { outcome: "not shown"; actual: unknown; width?: number }
+  /**
+   * `actual`: the value the page shows instead, in design language. `width`:
+   * shown that wide, when not as wide as the page's window. `sources`: of a
+   * style change carried over from a round before, what sets that value on
+   * the page, read where `actual` is, as `claim` asks (ticket 68).
+   */
+  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[] }
   /** `anyPage`: no page could check it either (a brief, a layer new this round): not worth waiting for another. */
   | { outcome: "unchecked"; reason: string; anyPage?: true };
 

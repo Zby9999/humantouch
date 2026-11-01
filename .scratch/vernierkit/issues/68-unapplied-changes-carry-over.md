@@ -7,7 +7,7 @@
 - 没落地的留在改动单和改动列表里，按原来的顺序从 1 重新编号，新改的接在后面；改动列表、`claim`、`done` 用同一套编号。
 - 下次进入编辑模式回到同一张画布，不重新冻结；样子和结束前一致，断点上的改动、画布外的图层也一样。⌘Z 只撤这次新做的编辑；留下的改动用改动列表逐条放弃，Discard all 照常可用。
 - 两轮之间：角标显示留下了几条，改动列表可以逐条放弃；这时 Agent 跑 `claim`，拿到的就是这些留下的改动加上之后新改的。
-- 留下的改动的「改前」由活页面在认领时按代码现状重新读；`claim` 写「从页面现在的值到改后」，页面已经显示的算已落地。开头的写法和 67「claim 再跑一次」一致。
+- 留下的改动的「改前」由活页面在认领时按代码现状重新读；`claim` 写「从页面现在的值到改后」，页面已经显示的算已落地。「Currently set by」也由活页面重读，和改前在同一次问里（设计师 2026-11-01 定）；没有打开的页面时都不问。开头的写法和 67「claim 再跑一次」一致。
 - 结构改动涉及的图层在活页面上找不到时照旧：页面核对说找不到，Agent 照源码位置去改。画布上不做「找不到」的标记。
 - 上一轮 Agent 新建、已落地的图层（例如新建的 Frame），对它的改动没落地的照常留下；`claim` 给出层级路径和开头标签让 Agent 找到它，页面核对照旧说没能核对。
 - 留下的改动都落地或都放弃之后，下次进入编辑模式才按新代码重新冻结；所有改动都落地时，和以前一样归档、丢画布。
@@ -97,3 +97,64 @@
 - 留下的改动的 `sources`（Currently set by）还是冻结时读的，没有重读。
 - 上一轮新建的图层在页面上找不到，核对的原因那句还写「the layer is new this round」。让它在页面上找得到要另开 ticket（合回 main 时编号）。
 - 有留下改动的一轮，`claim` 要等页面回答 `opening` 才打印，比平常的 claim 慢一些（和一次 `done` 差不多，没单独量）。
+
+**审查后补修（11/01，起点 ed1fb77）**
+
+最终审查查出 7 条，设计师已定，都修了。只影响有留下改动的一轮，另有 67「claim 再跑一次」恰好 1 条已落地时的一个词。
+
+- **画布和结束前不一致**（违反「差异 0」）：原来已落地的「只改这一处」挪进 `copied`，压在留下的「组件本身」改动（`promoted`）下面，画布显示组件的值。现在编辑样式多一层 `taken`（`canvas-style.ts`），放已落地的编辑，层序是 copied < promoted < taken < edits，和结束前编辑所在的位置一样；已落地的「组件本身」改动照旧进 `copied`。`asPage` 把 `taken` 当页面自己的。
+- **放弃留下的绝对定位移动，容器还是 relative**：`holdAbsolute` 写在容器上的 `position: relative` 原来跟着进了底层。现在 `takeInApplied` 把它算作「把图层放成绝对定位的那条改动」的（和 `changesOn` 对断点上的 `within` 一样）：那条改动留下，它就留在 edits；已落地，才进底层。列表里放弃（画布开着）和预览模式里撤销（`revertSaved`）都走这里。
+- **X/Y 的改前成了 `[object Object]`**：`claim` 重读改前时，X/Y 取页面上的 `left`/`top`（`{value, margin}` 的 `value`，和 `check.ts` 的 `lookPosition`、65 补修三的说法一致：X、Y 就是 left/top，外边距另算）；Absolute 取 `{x, y}`；页面上没有绝对定位（读出来不是数）就保留原来的改前，不写成 `nullpx`。
+- **分段改动的改前是旧的**：各段由页面在认领前重读（65 的机制）；各段相同时，这个值写回改动的 `before`，说明里的「从…到…」就是页面现在的值。
+- **边缘情况的位置说明**：「上一轮新建」改为只看改动单里有没有新建它的改动，不再要求有留下的改动；留下的都放弃后再改上一轮新建、已落地的图层，也写「Made in a round before」和 Currently set by unknown。本轮内一个图层的新建改动被撤掉时，对它的改动一起撤掉（`withDependents`），所以「本轮新建却找不到新建它的改动」不会出现，`newLayer` 里那个兜底（「earlier this round」）去掉了。
+- **Currently set by 也重读**：`claim` 的 `opening` 问法带 `sources: true`，页面对没显示的样式改动在读出 `actual` 的那个元素上一起读出 sources（`property-table.ts` 的 `sourcesFor`，和编辑时读的元素、CSS 属性同一套），写回改动单。`done`、`finish` 的问法不带，不读。没有打开的页面就不问。
+- **审查（code-review）之后再改的**：带外边距的 X/Y 只认页面读出的 `{value, margin}`（页面上绝对定位、画在别处），读出的是数说明图层在排版里，保留原来的改前；页面读出的 sources 为空时不覆盖；有留下改动的一轮只有 1 条改动时，开头写「its 1 change is …」。
+- **重复代码**：`claim` 再跑一次和有留下改动的 `claim` 共用 `claimedAgain`（全都落地的一句、`so`、`left`、说明）；三处「问页面并等回答」合成 `askPages`。67 那条路恰好 1 条已落地时由「1 of its 3 changes are applied」改为「is applied」，其余输出不变。
+
+测试（去掉对应修复会失败的）：`carried-round.browser.test.ts` 的「the component's change left under its usage's applied」（1）、「a move absolute left in a container with a change applied」（2，画布开着和不开各一次）；`cli.test.ts` 的两条 X 用例（3）、「a change at a range in parts carried over」（4）、「a change made since to a layer made in a round before, every change left of that one discarded」（5）、「what sets a change's value carried over is read again」（6，命令行）、「says of one change applied that it is」和 68 原有的「with a page open…」（7）；`edits.browser.test.ts` 的「asked by claim of a change carried over…」（6，页面）。
+
+**剧本**（新剧本 carries-over-under-and-around；结果在 `bench-results/playbooks-68fix/`，修复前的在 `before-ed1fb77/`；`bench-results/playbooks/` 跑前备份，跑完恢复原样）
+
+- 场景：Card（循环那处）padding top 16 后 Promote（#1，组件本身），再改这处 24（#2）；页面上手加的一个 Frame（#board）填绿色（#3），把 Get started 按钮拖进去，绝对定位（#4）。Agent 把 `p-5` 写成 `p-5 pt-6`（页面显示 #2，不显示 #1），`done 3`，停住；设计师长按结束。
+
+| | 前（ed1fb77） | 后 |
+|---|---|---|
+| 没落地的留下 | 100%（#1、#4 → 1、2） | 100%（同） |
+| 再进编辑模式，逐个元素比（三个视图） | 78 个比了，**57 个不同**（每个视图 19） | 78 个比了，**0 个不同** |
+| 循环那 3 张 Card 的 padding top（结束前 24px） | 16px（组件的值压上来） | 24px |
+| 预览模式里撤销 #4 之后，#board 的 position | relative | **static**（填充仍是已落地的绿色，按钮回到原处） |
+| 编辑模式里放弃 #1 之后，Card 的 padding top | 24/24/24/20px | 24/24/24/20px（循环那 3 张是已落地的 24；单独那张是冻结时的 20） |
+| 下一轮 claim，#1 的 Currently set by | class `p-5`（冻结时） | `padding-top`: class `pt-6`；其余三边：class `p-5`（页面现在的） |
+
+- 其余 9 个剧本（含 68 的 carries-over-what-is-left、finishes-with-changes-left）在修复后的代码上照常通过，数字和 `playbooks-68/` 相同（只有计时差 1ms 级：提示出现的时刻 551,301 → 551,312ms，没认领改代码的提示 84 → 83ms）：画布 76 / 75 个比了，0 个不同。
+
+**Agent 读到的输出**
+
+- 没有留下改动的一轮：10 个场景 `--dry --claim-out` 的 claim 和 `claim-0e96358/` 逐字相同；用不提交的 `rest-out.patch` 接着跑 `done <全部>` 和 `finish`，20 份输出和 `rest-0e96358/` 逐字相同（补丁用完已撤）。
+- 有留下改动的一轮（同一补丁里 `finish` 之后再 `claim`，和 e5b2877 的 `rest-68/` 比）：10 个场景里 8 个逐字相同（页面重读的 sources 和冻结时一样，代码没变）。不同的 2 个：
+  - 只留下 1 条的一轮（dissolve-place-frame、put-back-and-new-text），开头的单复数：前「…not applied then (1), and none of its 1 changes are applied yet. Left: 1 change, …」，后「…not applied then (1), and its 1 change is not applied yet. Left: 1 change, …」；全都落地时同样由「all 1 of its changes are applied already, as the designer's page shows them」改为「its 1 change is applied already, as the designer's page shows it」（单测）。67 的「claim 再跑一次」不用这个写法，照旧。
+  - dissolve-place-frame 的 Y：前 `- **Design intent:** Change the Y position from nullpx to 488px.`，后 `- **Design intent:** Change the Y position from 368px to 488px.`（页面上这个按钮现在不是绝对定位，没有 Y 可读，保留原来的改前）。
+- 页面上绝对定位、画在别处的 X（单测）：前「Change the X position from [object Object]px to 40px.」，后「from 32px to 40px.」（32 是页面的 `left`，外边距 8px 另算）。
+- Currently set by（剧本，见上表）：前 `class \`p-5\``；后 `` `padding-top`: class `pt-6`: rule `.pt-6` in CSS layer `utilities` of `src/index.css`, …; `padding-right`, `padding-bottom`, `padding-left`: class `p-5`: … ``。同一节的意图前后都是「Change the padding from top 24px, right 20px, bottom 20px, left 20px to top 16px, …」。
+- 67「claim 再跑一次」恰好 1 条已落地：「1 of its 3 changes are applied (1)」→「1 of its 3 changes is applied (1)」。
+
+**性能**（`VK_PERF_PORT=5610 VK_PERF_HEADLESS=1 pnpm test:perf`，headless shell，前后紧挨着跑，只作对比）
+
+| | ed1fb77 | 补修后 |
+|---|---|---|
+| 进入编辑模式（重新冻结），全部，中位数 / p95 | 131.8 / 165.6ms | 114.6 / 137.9ms |
+| 回到同一张画布：保存的一轮，中位数 / p95 | 108.8 / 116.4ms | 108.6 / 114.4ms |
+| 回到同一张画布：留下改动的一轮，中位数 / p95 | 110.0 / 119.5ms | 106.4 / 114.3ms |
+| 回到同一张画布时的 long task | 每次 1 个，最长 102 / 105ms | 每次 1 个，最长 100 / 101ms |
+| 认领期间核对、读分段 | 核对自身 0 个 long task | 同 |
+
+- 都在 150ms 以内。上次（68）是 128.7、123.5、111.8ms，机器状态不同，只看同一次前后。
+
+**切换按钮体积**（gzip）：10,001 → **9,998 B**（819 + 9,182 → 818 + 9,180）。`editor.dev.js` 99,533 → 99,760 B。
+
+**留下的风险**
+
+- 上面「没做到的、留下的风险」里第 2、3、4 条（已落地的被组件改动压住、结构改动写的东西放弃时撤不干净、sources 没重读）由本次补修解决；第 1、5、6 条照旧。
+- 绝对定位之外，结构改动在别的元素上写的东西（合成 Stack 时成员的 `position: static`、去掉的外边距，解散时的定位）本来就在 `changesOn` 里，随那条改动；没另加用例。
+- sources 在读出 `actual` 的那个元素上读：组件改动有多处使用时，读的是第一处没显示的；分段改动读的是没显示的那一段。
+

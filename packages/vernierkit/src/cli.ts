@@ -88,67 +88,140 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
     return 0;
   }
   // As the page counts them (ADR 0013): shown on the page, or done and not said not to show.
-  const applied = appliedOf(state, checks?.results);
-  const all = changeSet.changes.length;
-  const how = "as the designer's page shows them or as you reported them done";
-  if (applied.length === all) {
-    io.write(`This round is claimed already, and all ${all} of its changes are applied, ${how}: run \`npx vernierkit finish\` to end it.\n`);
-    return 0;
-  }
-  const so = applied.length ? `${applied.length} of its ${all} changes are applied (${listed(applied)}), ${how}` : `none of its ${all} changes are applied yet`;
-  const left = changeSet.changes.filter((change) => !applied.includes(change.id));
-  io.write(describeChanges(changeSet.changes, root, { ...notes, only: left, intro: (count) => `This round is claimed already, and ${so}. Left: ${notes.intro(count)}` }));
+  io.write(
+    claimedAgain(changeSet.changes, appliedOf(state, checks?.results), root, notes, {
+      opening: "This round is claimed already",
+      already: "",
+      how: () => "as the designer's page shows them or as you reported them done",
+    }),
+  );
   return 0;
+}
+
+/**
+ * What `claim` gives of a round some of whose changes, `applied`, are applied
+ * already: what it says of them, then the notes of the others; all applied,
+ * only to finish the round. Claim run again (ticket 67) and the claim of a
+ * round changes were carried over to (ticket 68) say it alike, from their
+ * own `opening`, with their own `already` and `how` (`one`: of one change).
+ * `alone`: a round of one change is said to have one, not all 1 or none of
+ * its 1 changes; claim run again says it as it always has.
+ */
+function claimedAgain(
+  changes: Change[],
+  applied: number[],
+  root: string,
+  notes: NotesOptions,
+  { opening, already, how, alone = false }: { opening: string; already: string; how: (one: boolean) => string; alone?: boolean },
+): string {
+  const all = changes.length;
+  const single = alone && all === 1;
+  if (applied.length === all) {
+    const these = single ? "its 1 change is" : `all ${all} of its changes are`;
+    return `${opening}, and ${these} applied${already}, ${how(single)}: run \`npx vernierkit finish\` to end it.\n`;
+  }
+  const one = applied.length === 1;
+  const none = single ? "its 1 change is not applied yet" : `none of its ${all} changes are applied yet`;
+  const so = applied.length ? `${applied.length} of its ${all} changes ${one ? "is" : "are"} applied${already} (${listed(applied)}), ${how(one)}` : none;
+  const left = changes.filter((change) => !applied.includes(change.id));
+  return describeChanges(changes, root, { ...notes, only: left, intro: (count) => `${opening}, and ${so}. Left: ${notes.intro(count)}` });
 }
 
 /**
  * Claims a round that changes were carried over to, from one that ended with
  * them not applied (ticket 68). An open page is asked first what it shows of
  * them now, the code as it is: those it shows are applied already, as in
- * claim run again (ticket 67); the others go from the value it shows now.
- * That value is kept as the change's `before`, for claim run again and `last`.
+ * claim run again (ticket 67); the others go from the value it shows now, and
+ * are set by what sets it now (`readAgain`). Those values are kept in the
+ * change, for claim run again and `last`.
  */
 async function claimCarried(folder: VernierFolder, root: string, io: Io, claimed: RoundState, changeSet: SavedChangeSet, notes: NotesOptions, pageOpen: boolean): Promise<number> {
   const carried = changeSet.changes.filter((change) => change.carried).map((change) => change.id);
   let applied: number[] = [];
+  let results = new Map<number, CheckResult>();
   if (pageOpen) {
     // A brief has no value to check on the page.
     const asked = changeSet.changes.filter((change) => change.carried && change.kind !== "brief").map((change) => change.id);
-    const opening = await newAsk(folder, asked);
-    await writeState(folder, { ...claimed, opening });
-    const results = asked.length ? await waitForChecks(folder, opening, claimed.claimedAt) : new Map<number, CheckResult>();
+    results = (await askPages(folder, claimed, "opening", asked)).results;
     applied = appliedOf(claimed, Object.fromEntries([...results].map(([id, result]) => [id, { ...result, at: claimed.claimedAt! }])));
-    const reread = changeSet.changes.map((change) => {
-      const result = results.get(change.id);
-      return result?.outcome === "not shown" && readsBefore(change, result.width) ? { ...change, before: result.actual } : change;
-    });
-    if (reread.some((change, i) => change !== changeSet.changes[i])) {
-      changeSet = { ...changeSet, changes: reread };
-      await writeAtomically(folder.changeSet, `${JSON.stringify(changeSet, null, 2)}\n`);
-    }
   }
-  const all = changeSet.changes.length;
-  const how = applied.length === 1 ? "as the designer's page shows it" : "as the designer's page shows them";
-  const over = `This round carries ${changesWord(carried.length)} over from the round before, not applied then (${listed(carried)})`;
-  if (applied.length === all) {
-    io.write(`${over}, and all ${all} of its changes are applied already, as the designer's page shows them: run \`npx vernierkit finish\` to end it.\n`);
-    return 0;
+  const reread = changeSet.changes.map((change) => (change.carried ? readAgain(change, results.get(change.id)) : change));
+  if (reread.some((change, i) => change !== changeSet.changes[i])) {
+    changeSet = { ...changeSet, changes: reread };
+    await writeAtomically(folder.changeSet, `${JSON.stringify(changeSet, null, 2)}\n`);
   }
-  const so = applied.length ? `${applied.length} of its ${all} changes ${applied.length === 1 ? "is" : "are"} applied already (${listed(applied)}), ${how}` : `none of its ${all} changes are applied yet`;
-  const left = changeSet.changes.filter((change) => !applied.includes(change.id));
-  io.write(describeChanges(changeSet.changes, root, { ...notes, only: left, intro: (count) => `${over}, and ${so}. Left: ${notes.intro(count)}` }));
+  io.write(
+    claimedAgain(changeSet.changes, applied, root, notes, {
+      opening: `This round carries ${changesWord(carried.length)} over from the round before, not applied then (${listed(carried)})`,
+      already: " already",
+      how: (one) => (one ? "as the designer's page shows it" : "as the designer's page shows them"),
+      alone: true,
+    }),
+  );
   return 0;
 }
 
 /**
- * Whether what the page shows instead of a change, as it checked it, is the
- * change's value before, the code as it is: a style change's, read as wide as
- * the window (`width` none), or in its one range. One whose range is in parts
- * has them read again by the page before the claim instead.
+ * A style change carried over from a round before, as the page shows it now,
+ * the code as it is (ticket 68): from the value the page shows instead, as
+ * its check read it (`result`, not shown), and set by what sets that value,
+ * read with it; from the value each part of its range shows, when every part
+ * shows the same (the page read them before the claim, ticket 65). As it is
+ * where the page read none of that.
  */
-function readsBefore(change: Change, width: number | undefined): boolean {
-  if (change.kind !== "style" || change.parts) return false;
+function readAgain(change: Change, result: CheckResult | undefined): Change {
+  if (change.kind !== "style") return change;
+  let next = change;
+  // Each part read again: one value in all of them is the change's before, as the notes say it once.
+  const [first, ...others] = change.parts ?? [];
+  if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
+  if (result?.outcome !== "not shown" || !readWhereMade(change, result.width)) return next;
+  const before = change.parts ? undefined : beforeOf(change, result.actual);
+  return { ...next, ...(before !== undefined && { before }), ...(result.sources?.length && { sources: result.sources }) };
+}
+
+/**
+ * Whether the page read a change, not shown, where it is made: a change at a
+ * breakpoint, in its range (in one of its parts, for one in parts); one made
+ * in the desktop view, as wide as the window (`width` none).
+ */
+function readWhereMade(change: Change, width: number | undefined): boolean {
   return change.breakpoint ? true : width === undefined;
+}
+
+/**
+ * The value a change goes from, in design language, as the page's check read
+ * what it shows instead (`actual`); undefined when that is no such value. A
+ * layer placed by its X and Y, absolute but drawn elsewhere, is read as its
+ * `left` and `top` with its margins apart (`lookPosition` in `check.ts`): its
+ * X and Y are its `left` and `top`, and it keeps its margins (ticket 65).
+ */
+function beforeOf(change: Change, actual: unknown): unknown {
+  if (change.property === "x" || change.property === "y") {
+    // With its margins kept (`margins`), the page read it so only absolute: a number is of a layer in the layout, with no X or Y.
+    const placed = actual as { value?: unknown } | null;
+    if (change.margins) return typeof placed?.value === "number" ? placed.value : undefined;
+    return typeof actual === "number" ? actual : undefined;
+  }
+  if (change.property === "absolute" && actual !== null) {
+    const { x, y } = actual as PlacedOnPage;
+    return { x, y };
+  }
+  return actual;
+}
+
+/**
+ * Asks the open pages to check changes `ids`, under the state's `field` (an
+ * ask of its own that their answers carry: `opening`, `check` or `closing`),
+ * and waits for their answers. Returns the state as asked, and the answers.
+ * `opening` asks what sets the value a style change shows instead, too.
+ */
+async function askPages(folder: VernierFolder, state: RoundState, field: "opening" | "check" | "closing", ids: number[]): Promise<{ asked: RoundState; results: Map<number, CheckResult> }> {
+  const ask = await newAsk(folder, ids, field === "opening");
+  const asked = { ...state, [field]: ask };
+  await writeState(folder, asked);
+  const results = ids.length ? await waitForChecks(folder, ask, state.claimedAt) : new Map<number, CheckResult>();
+  return { asked, results };
 }
 
 /** The longest `claim` waits for an open page to read the parts of the changes' ranges it has yet to: it takes a page a moment. */
@@ -191,10 +264,7 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   const doneIds = [...new Set([...state.done, ...reported])];
   // A brief has no value to check on the page: what the Agent did is for its report.
   const asked = changes.filter((change) => change.kind !== "brief").map((change) => change.id);
-  const check = await newAsk(folder, asked);
-  const claimed = { ...state, done: doneIds, check };
-  await writeState(folder, claimed);
-  const results = asked.length ? await waitForChecks(folder, check, state.claimedAt) : new Map<number, CheckResult>();
+  const { asked: claimed, results } = await askPages(folder, { ...state, done: doneIds }, "check", asked);
   const applied = appliedOf(claimed, (await readChecks(folder))?.results);
   const lines = changes.map((change) => checkLine(change, results.get(change.id)));
   const one = changes.length === 1;
@@ -204,8 +274,8 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
 }
 
 /** An ask for the open pages to check changes `ids`, under a key of its own that their answers carry: it goes out with the state. */
-async function newAsk(folder: VernierFolder, ids: number[]): Promise<CheckAsk> {
-  return { ids, at: new Date().toISOString(), key: randomUUID(), codeAt: await lastEdited(dirname(folder.dir)) };
+async function newAsk(folder: VernierFolder, ids: number[], sources: boolean): Promise<CheckAsk> {
+  return { ids, at: new Date().toISOString(), key: randomUUID(), codeAt: await lastEdited(dirname(folder.dir)), ...(sources && { sources: true as const }) };
 }
 
 
@@ -351,10 +421,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
   // The round's result is the page's (ADR 0013): it looks at every change it can once more, once the last edit has reached it.
   if (state && changeSet) {
-    const ids = changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id);
-    const closing = await newAsk(folder, ids);
-    await writeState(folder, { ...state, closing });
-    if (ids.length) await waitForChecks(folder, closing, state.claimedAt);
+    await askPages(folder, state, "closing", changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id));
   }
   const result = changeSet && (await archiveRound(folder, "finished"));
   if (!result) {

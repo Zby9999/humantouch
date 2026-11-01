@@ -209,4 +209,73 @@ describe("a round carried over to the next on the same canvas (ticket 68)", () =
     expect(look(cardsOf(doc)[0])[0]).toBe("rgb(255, 0, 0)");
     expect(cardsOf(doc)[1].querySelector("h3")!.textContent).toBe("Your turn");
   });
+
+  test("the component's change left under its usage's applied: as it was, and undone, the usage's value stays", async () => {
+    const opened = await open(freshCanvas());
+    const { doc, editor, layerOf } = opened;
+    const card = () => layerOf(cardsOf(doc)[0]);
+    editor.set(card(), "radius", 16);
+    editor.promote(card());
+    editor.set(card(), "radius", 24);
+    editor.set(card(), "opacity", 0.5);
+    expect(opened.changes.list().map((change) => [change.id, change.property, change.scope])).toEqual([
+      [1, "radius", "component"],
+      [2, "radius", "usage"],
+      [3, "opacity", "usage"],
+    ]);
+    const styles = opened.styles();
+    const saved = { canvas: serializeCanvas(opened.views.canvas), changeSet: opened.changes.save() };
+    // The usage's corners applied; the Card's own corners and the opacity left.
+    const next = { ...saved, changeSet: carryOver(saved.changeSet, [2])! };
+    const corners = (doc: Document) => cardsOf(doc).map((el) => getComputedStyle(el).borderTopLeftRadius);
+
+    const again = await reopen(next);
+
+    expect(again.styles()).toEqual(styles);
+    again.editor.revert(1);
+    expect(corners(again.doc)).toEqual(["24px", "24px", "24px"]);
+
+    const left = revertSaved(next, 1)!;
+    const shown = iframe(800).contentDocument!;
+    shown.open();
+    shown.write(left.canvas);
+    shown.close();
+    expect(corners(shown)).toEqual(["24px", "24px", "24px"]);
+  });
+
+  test("a move absolute left in a container with a change applied: undone, the container is no positioning reference", async () => {
+    const opened = await open(freshCanvas());
+    const { doc, editor, layerOf } = opened;
+    const main = doc.querySelector("main")!;
+    editor.set(layerOf(main), "opacity", 0.8);
+    editor.move(layerOf(cardsOf(doc)[1]), { parent: layerOf(main), x: 10, y: 300 });
+    editor.set(layerOf(cardsOf(doc)[0]), "radius", 4);
+    expect(opened.changes.list().map((change) => [change.id, change.kind])).toEqual([
+      [1, "style"],
+      [2, "move"],
+      [3, "style"],
+    ]);
+    expect(getComputedStyle(main).position).toBe("relative");
+    const styles = opened.styles();
+    const saved = { canvas: serializeCanvas(opened.views.canvas), changeSet: opened.changes.save() };
+    // The opacity applied; the move and the corners left.
+    const next = { ...saved, changeSet: carryOver(saved.changeSet, [1])! };
+    const look = (doc: Document) => {
+      const main = doc.querySelector("main")!;
+      return [getComputedStyle(main).position, getComputedStyle(main).opacity, getComputedStyle(cardsOf(doc)[1]).position];
+    };
+
+    const again = await reopen(next);
+
+    expect(again.styles()).toEqual(styles);
+    again.editor.revert(1);
+    expect(look(again.doc)).toEqual(["static", "0.8", "static"]);
+
+    const left = revertSaved(next, 1)!;
+    const shown = iframe(800).contentDocument!;
+    shown.open();
+    shown.write(left.canvas);
+    shown.close();
+    expect(look(shown)).toEqual(["static", "0.8", "static"]);
+  });
 });
