@@ -1,10 +1,11 @@
 /**
  * How a layer placed freely is placed along each axis (GLOSSARY: Placement,
  * ticket 75): from its container's left or top edge, from its right or bottom
- * edge (`right`, `bottom`), or centered on where it is placed (`translate:
- * -50%`, as Tailwind's `-translate-x-1/2` writes it, in v3 through
- * `transform`, in v4 through `translate`). Resized, it stays placed so: what
- * changes is the value that places it from the edge it is placed from.
+ * edge (`right`, `bottom`), or centered on where it is placed from either
+ * (`translate: -50%` from its left, as Tailwind's `-translate-x-1/2` writes
+ * it, in v3 through `transform`, in v4 through `translate`; `50%` from its
+ * right). Resized, it stays placed so: what changes is the value that places
+ * it from the edge it is placed from, or, centered, its size alone.
  */
 import { SIDES, type Edge, type PlacedFrom } from "./checkable";
 import { absolute, declaredValue } from "./property-table";
