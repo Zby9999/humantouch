@@ -1,4 +1,4 @@
-import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
+import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
 import { clearVernier, readVernier, VERNIER, vernierkit } from "./project-files";
 
@@ -137,9 +137,9 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
   const [, deleted, copied, stack] = (await vernierkit("claim")).split(/^## /m);
 
   expect(deleted).toMatch(/^1\. Delete\n/);
-  expect(deleted).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: take its item out of the data the loop goes through.");
+  expect(deleted).toContain("- **Data change:** the layer is one of the 3 instances a loop renders, the 2nd of them, which reads “Arrange Drag layers, build Stacks, tune spacing.”: take its item out of the data the loop goes through.");
   expect(copied).toMatch(/^2\. Duplicate\n/);
-  expect(copied).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through");
+  expect(copied).toContain("- **Data change:** the layer is one of the 3 instances a loop renders, the 1st of them, which reads “Freeze Turn the current page into a canvas.”: add an item to the data the loop goes through");
   expect(stack).toMatch(/^3\. Make Stack\n/);
   expect(stack).toMatch(/Wrap these 2 layers, in this order, in a new Stack: horizontal, with a gap of 12px, no padding, aligned center left\. Put it in the layout of Header/);
   expect(stack).toMatch(/\n {2}1\. Vernier Kit \(`<h1 class="[^"]*">`, at `src\/App\.tsx:\d+:\d+`\)\n {2}2\. Badge/);
@@ -168,4 +168,65 @@ test("a change made in the phone view is noted with the widths it applies at, fo
 
   expect(fill).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `max-md:`");
   expect(fill).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000.\n");
+});
+
+/** Selects the first card's Grid in the phone view and gives it 2 columns: one column below 640px, three from 640px up, as the page shows it now. */
+async function twoColumnsInPhone(page: Page) {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  const phone = page.locator('iframe[title="Phone 390"]');
+  await expect(phone.contentFrame().locator("h1")).toBeVisible();
+  const box = (await phone.contentFrame().locator("article").first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true })).toHaveAttribute("aria-selected", "true");
+  await setField(page, "Columns", "2");
+}
+
+const COLUMNS_PART_BY_PART =
+  "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n";
+
+test("the Grid's columns changed in the phone view: what the page shows in each part of the range is saved with it, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  await twoColumnsInPhone(page);
+  // `grid-cols-1 sm:grid-cols-3`: one column below 640px, three from 640px up.
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toEqual([
+    { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+    { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+  ]);
+
+  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(columns).toContain(COLUMNS_PART_BY_PART);
+});
+
+test("back in preview mode at once after a change in the phone view, the page is still read in each part of the range, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  await twoColumnsInPhone(page);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  // Saved as edit mode ended, the parts not read yet.
+  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+
+  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(columns).toContain(COLUMNS_PART_BY_PART);
+});
+
+test("claimed the moment a change in the phone view is saved, claim waits for the page to read each part of the range, and the notes give it part by part (ticket 65)", async ({ page }) => {
+  // The round saved again with the parts read reaches the local service a while late: claim comes before it.
+  await page.route(
+    (url) => url.hostname === "127.0.0.1" && url.pathname === "/round",
+    async (route) => {
+      if (route.request().method() === "PUT" && route.request().postData()?.includes('"parts":[')) await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    },
+  );
+  await twoColumnsInPhone(page);
+  // Saved, the parts yet to be read.
+  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toBeNull();
+
+  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+
+  expect(columns).toContain(COLUMNS_PART_BY_PART);
 });

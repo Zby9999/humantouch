@@ -1,6 +1,7 @@
 /** How the editor layer and the local service talk. Shared by both sides. */
 import type { Place, SavedChangeSet, Target } from "./client/changeset";
 import type { Snippet } from "./source-snippet";
+import type { StyleSource } from "./client/style-source";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__VERNIERKIT__";
@@ -15,6 +16,12 @@ export const ROUND_PATH = "/round";
  * line, the current one first. The answer stays open.
  */
 export const EVENTS_PATH = "/events";
+/**
+ * `GET`: the round's status now, one `RoundStatus`, read afresh: claimed the
+ * moment the command line claims it, before `EVENTS_PATH` tells the pages.
+ * The editor layer asks it as the code changes in edit mode (ticket 66).
+ */
+export const STATUS_PATH = "/status";
 /** `POST`: the designer unlocks a claimed round by hand. It ends as it is. */
 export const UNLOCK_PATH = "/unlock";
 /** `POST`: a page reports a `CheckReport`, the answer to the check `done` asked for. */
@@ -54,20 +61,53 @@ export interface Variable {
   own: boolean;
 }
 
-/** `done` asking the page to check change `id`; `at` tells one ask from the next. */
+/**
+ * `done` asking the page to check changes `ids`, at `at` (an ISO date).
+ * `key`: this ask's own, made afresh each time, that the page's answers carry
+ * (`CheckReport.answers`): what the page saw as the code changed may carry
+ * the same millisecond as the ask, but never its key. `codeAt`: when the
+ * project's code was last edited, as far as the command line can tell (ms
+ * since the epoch), so the page waits for that edit to reach it before it
+ * says a change does not show; null when it cannot tell. `sources`: of a
+ * style change the page does not show, it says what sets the value it shows
+ * instead too, as `claim` asks of the changes carried over from the round
+ * before (ticket 68).
+ */
 export interface CheckAsk {
-  id: number;
+  ids: number[];
   at: string;
+  key: string;
+  codeAt?: number | null;
+  sources?: true;
 }
 
 /**
- * Edited by the designer, or claimed and being applied by the Agent, with the
- * ids of the changes done so far, and the check the last `done` asks for.
+ * Edited by the designer, or claimed and being applied by the Agent: with the
+ * ids of the changes the Agent reported done, those that count as applied (as
+ * the page shows them, ADR 0013), the check `claim` asks for of the changes
+ * carried over from the round before (ticket 68), the check the last `done`
+ * asks for, and the one `finish` asks for before it ends the round.
  */
-export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; check?: CheckAsk };
+export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; applied: number[]; opening?: CheckAsk; check?: CheckAsk; closing?: CheckAsk };
 
-/** How long a page waits for the dev server to bring an edit in before it says a change does not show. */
+/** How long a page waits for the dev server to bring an edit in before it says a change does not show, when it cannot tell whether one is on its way. */
 export const CHECK_SETTLE_MS = 3000;
+
+/** The longest a page takes to answer `done`: waiting for an edit the dev server is bringing in, then for the change to show; then it says it does not show all the same. */
+export const CHECK_ARRIVE_MS = 20_000;
+
+/**
+ * Global the dev server's code updates are kept in on the page, when it can
+ * say (Vite): `at`, when the code the page has was last brought in (ms since
+ * the epoch, the dev server's clock); `updating`, updates under way. A
+ * `CODE_EVENT` on the window follows each change.
+ */
+export const CODE_GLOBAL = "__VERNIERKIT_CODE__";
+export const CODE_EVENT = "vernierkit:code";
+export interface CodeUpdates {
+  at: number;
+  updating: number;
+}
 
 /** Why a brief is never checked on the page: it asks for what no value of a property shows. */
 export const BRIEF_UNCHECKED = "a brief asks for what the Design panel cannot set, so the page has no value to check it by";
@@ -80,15 +120,25 @@ export interface CodeSnapshot {
   tree: string;
 }
 
-/** Whether the live page shows a change the Agent has done: its value there is the value the change sets. */
+/** Whether the live page shows a change: its value there is the value the change sets. */
 export type CheckResult =
   | { outcome: "shown" }
-  /** `actual`: the value the page shows instead, in design language. */
-  | { outcome: "not shown"; actual: unknown }
-  | { outcome: "unchecked"; reason: string };
+  /**
+   * `actual`: the value the page shows instead, in design language. `width`:
+   * shown that wide, when not as wide as the page's window. `sources`: of a
+   * style change carried over from a round before, what sets that value on
+   * the page, read where `actual` is, as `claim` asks (ticket 68).
+   */
+  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[] }
+  /** `anyPage`: no page could check it either (a brief, a layer new this round): not worth waiting for another. */
+  | { outcome: "unchecked"; reason: string; anyPage?: true };
 
-/** A page's answer to a check. */
-export type CheckReport = CheckAsk & CheckResult;
+/**
+ * How a page checked change `id`, at `at` (an ISO date). `answers`: the key
+ * of the ask it answers; none when the page checked as the code changed.
+ * `undone`: the page showed it, and shows it no more: a later edit undid it.
+ */
+export type CheckReport = { id: number; at: string; answers?: string; undone?: true } & CheckResult;
 
 export interface ServiceConfig {
   /** `http://127.0.0.1:<port>` */

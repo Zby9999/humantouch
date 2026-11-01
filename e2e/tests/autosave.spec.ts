@@ -268,7 +268,7 @@ test.describe("a round saved before the instances of a layer shared their edit s
   });
 });
 
-test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the change notes are as they were", async ({ page }) => {
+test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the notes of each change are as they were", async ({ page }) => {
   mkdirSync(VERNIER, { recursive: true });
   for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${VERNIER}${file}`, readBefore60(file));
   const before = JSON.parse(readBefore60("styles.json"));
@@ -290,5 +290,14 @@ test("a round saved before the instances of a layer shared their edit styles ope
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => viewStyles(page)).toEqual(before);
   await expect.poll(() => JSON.parse(readFileSync(CHANGESET, "utf8"))).toEqual(changeSet);
-  expect(await vernierkit("claim")).toBe(readBefore60("claim.md"));
+  // Each change's notes as they were; what goes around them, the way through the round and how to write them, is of the notes of now (ticket 65).
+  expect(changeSections(await vernierkit("claim"))).toBe(changeSections(readBefore60("claim.md")));
 });
+
+/** The change notes' sections of the changes, one after another: what is said around them left out. */
+function changeSections(notes: string) {
+  return notes
+    .split(/^## /m)
+    .filter((part) => /^\d+\. /.test(part))
+    .join("## ");
+}

@@ -6,6 +6,7 @@
  */
 import { isAbsolute, relative } from "node:path";
 import {
+  drawnIn,
   madeBy,
   movedOffBy,
   placedAt,
@@ -20,12 +21,13 @@ import {
   type StackSettings,
   type Target,
 } from "./client/changeset";
-import { breakpointName, mediaOf, type Breakpoint } from "./client/breakpoints";
+import { breakpointName, mediaOf, tailwindOf, type Breakpoint } from "./client/breakpoints";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/property-table";
 import { variablesLine } from "./variable-notes";
+import { writingRules } from "./writing-rules";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
 
 export interface NotesOptions {
@@ -35,14 +37,27 @@ export interface NotesOptions {
   intro(count: string): string;
   /** A status line for each change, when there is one to give. */
   status?(change: Change): string;
+  /** What the notes end with, after the last change. */
+  end?(list: Change[]): string;
+  /** The changes to give, when not all of the round: the others are only referred to (a layer one of them made, say). */
+  only?: Change[];
 }
 
-/** For a round to apply. */
-export const TO_APPLY: NotesOptions = {
-  heading: "Design changes to apply",
-  intro: (count) =>
-    `${count}, made by the designer in Vernier Kit. Apply each one to the source as the project already writes styles, and run \`npx vernierkit done <number>\` after each. When you are through them, run \`npx vernierkit finish\`.`,
-};
+/** The sentence that says the designer's page is up, and checks the edits: no dev server to start, no browser to open (ticket 65). */
+const PAGE_OPEN = "The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. ";
+
+/** For a round to apply; `pageOpen`: a page with Vernier Kit is open now, to check it. */
+export function toApply(pageOpen: boolean): NotesOptions {
+  return {
+    heading: "Design changes to apply",
+    intro: (count) =>
+      `${count}, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. ` +
+      (pageOpen ? PAGE_OPEN : "") +
+      "After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers: it says whether the designer's page shows each. " +
+      "Run it at least once before `npx vernierkit finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
+    end: writingRules,
+  };
+}
 
 /** "1 change", "3 changes". */
 export function changes(count: number): string {
@@ -50,11 +65,11 @@ export function changes(count: number): string {
 }
 
 /** `root`: the project's folder, which file paths are given from. */
-export function describeChanges(list: Change[], root: string, options: NotesOptions = TO_APPLY): string {
-  const count = changes(list.length);
-  let notes = `# ${options.heading}\n\n${options.intro(count)}\n\n`;
-  for (const change of list) notes += section(change, list, root, options.status?.(change));
-  return notes;
+export function describeChanges(list: Change[], root: string, options: NotesOptions = toApply(false)): string {
+  const given = options.only ?? list;
+  let notes = `# ${options.heading}\n\n${options.intro(changes(given.length))}\n\n`;
+  for (const change of given) notes += section(change, list, root, options.status?.(change));
+  return notes + (options.end?.(given) ?? "");
 }
 
 function section(change: Change, list: Change[], root: string, status: string | undefined): string {
@@ -64,7 +79,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(status ? [`**Status:** ${status}`] : []),
     `**Kind:** ${kindTitle(change)}`,
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
-    `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
+    `**Location:** ${target.made ? (madeBefore(target, list) ? MADE_BEFORE : newLayer(target.made, list)) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
@@ -83,7 +98,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
-    ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
+    ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${madeBefore(target, list) ? "unknown: the layer was made in a round before" : target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
     ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
@@ -100,7 +115,23 @@ function breakpoint(change: Change): string {
   const how = written
     ? `The project writes these widths with ${written}: make the change apply at these widths only that way`
     : "Make it apply at these widths only, the way the project already writes breakpoints (Tailwind's responsive prefixes, its media queries)";
-  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. ${how}, and leave the layer as it is at every other width. Its value before is what it showed at these widths.`;
+  const valueBefore = partsDiffer(change) ? "" : " Its value before is what it showed at these widths.";
+  return `${breakpointName(change.breakpoint)} only (\`@media ${mediaOf(change.breakpoint)}\`), as the designer changed it in a narrower view. ${how}, and leave the layer as it is at every other width.${valueBefore}`;
+}
+
+/** Whether the page showed the layer otherwise in some part of the change's range than in another before it (ticket 65). */
+function partsDiffer({ parts }: Change): boolean {
+  return !!parts && new Set(parts.map((part) => JSON.stringify(part.before))).size > 1;
+}
+
+/** A change at a range whose parts showed different values: from what each showed, to the one value. */
+function partByPart({ property, parts, after }: Change): string {
+  const each = parts!.map(({ breakpoint, before }) => {
+    const variant = tailwindOf(breakpoint);
+    const written = variant ? ` (\`${variant}\`)` : "";
+    return `${breakpointName(breakpoint)}${written}, from ${value(property, before)} to ${value(property, after)}`;
+  });
+  return `Change the ${propertyName(property)} at each part of these widths, as the page shows it now: ${each.join("; ")}.`;
 }
 
 /**
@@ -153,6 +184,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
+      if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":
       return moveIntent(change);
@@ -342,9 +374,8 @@ function sketch(change: Change, list: Change[]): string[] {
   // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
   const latest = <T>(layer: string, property: string, then: T) =>
     (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property && !c.breakpoint)?.after as T) ?? then;
-  const items = list.flatMap((c) => {
-    const place = placedAt(c);
-    if (c.kind === "stack" || place?.container.layer !== change.layer) return [];
+  const items = drawnIn(change.layer, list).map((c) => {
+    const place = placedAt(c)!;
     const made = c.kind === "create" ? (c.after as Created) : null;
     const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
     let where = `${ordinal(place.nth)} in its layout`;
@@ -353,10 +384,12 @@ function sketch(change: Change, list: Change[]): string[] {
     const width = fixed(latest<Size | undefined>(c.layer, "width", undefined)) ?? made?.width ?? null;
     const height = fixed(latest<Size | undefined>(c.layer, "height", undefined)) ?? made?.height ?? null;
     const size = width === null ? "" : height === null ? `, ${width}px wide` : `, ${width} × ${height}px`;
-    return [`\n  - ${what}: ${where}${size} (change ${c.id})`];
+    return `\n  - ${what}: ${where}${size} (change ${c.id})`;
   });
+  // With nothing drawn in the Frame, no sketch is named: an Agent told of one went looking for it (ticket 65).
+  const layout = items.length ? "laid out as the sketch shows." : "laid out within its size as the brief says: the designer drew nothing in it.";
   return [
-    `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.`,
+    `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, ${layout}`,
     ...(items.length ? [`**Sketch:** what the designer drew in the Frame, from its top left, shows the layout they have in mind:${items.join("")}`] : []),
   ];
 }
@@ -407,11 +440,25 @@ function member(target: Target): string {
   return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${target.loc ? `at \`${target.loc}\`` : "not located"})`;
 }
 
-/** Where a layer made this round is: in the change that makes it. */
+/**
+ * A layer made by no change of this round, so by one of a round before,
+ * applied then (ticket 68): the canvas came back with it, as a round ended
+ * with changes left, and still has it once they are all discarded. The code
+ * has it now; the canvas has no marker of the source for it. A layer made
+ * this round always has its maker in the round: a change to it goes when the
+ * change that makes it goes (`withDependents`).
+ */
+function madeBefore(target: Target, list: Change[]): boolean {
+  return !!target.made && !list.some((change) => madeBy(change) === target.made);
+}
+
+const MADE_BEFORE =
+  "**Made in a round before.** The layer was made by a change of an earlier round, applied then: it is in the source now, but the canvas has no source marker for it. Find it in the source from its place on the page, above.";
+
+/** Where a layer made this round is: in the change that makes it, which the round has (`madeBefore`). */
 function newLayer(made: string, list: Change[]): string {
-  const maker = list.find((change) => madeBy(change) === made);
-  const which = maker ? `in change ${maker.id}` : "earlier this round";
-  return `**New:** the layer is made ${which}, and is not in the source yet. Apply that change first, then change it there.`;
+  const maker = list.find((change) => madeBy(change) === made)!;
+  return `**New:** the layer is made in change ${maker.id}, and is not in the source yet. Apply that change first, then change it there.`;
 }
 
 /** Where a move takes the layer from, and to. */
@@ -443,8 +490,9 @@ function container({ container: { target } }: Place): string {
 }
 
 /** What a change to one of a loop's instances alone asks of the data the loop goes through. */
-function dataChange({ kind, target: { instances } }: Change): string {
-  const one = `**Data change:** the layer is one of the ${instances} instances a loop renders`;
+function dataChange({ kind, target: { instances }, instance }: Change): string {
+  const which = instance ? `, the ${ordinal(instance.nth)} of them${instance.words ? `, which reads ${quoted(instance.words)}` : ""}` : "";
+  const one = `**Data change:** the layer is one of the ${instances} instances a loop renders${which}`;
   const outside = "if the data comes from outside the code (an API, a CMS), say so in the report.";
   if (kind === "text") return `${one}, each with words of its own: they come from the data the loop goes through. Change them there; ${outside}`;
   if (kind === "delete") return `${one}: take its item out of the data the loop goes through. ${capitalized(outside)}`;

@@ -12,7 +12,7 @@ import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
-import { pinOffsetOf, sourcesOf } from "./style-source";
+import { pinOffsetOf, sourcesOf, type StyleSource } from "./style-source";
 import { TYPOGRAPHY, type TypographyValues } from "./typography";
 
 export type { ColorStop, Fill, Gradient, Stroke } from "./paint";
@@ -299,6 +299,12 @@ export function definitionOf<P extends Property>(property: P): Definition<Proper
 
 export function readValue<P extends Property>(el: Element, property: P): PropertyValues[P] {
   return PROPERTIES[property].read(el, colorReader(el.ownerDocument));
+}
+
+/** What sets the property of `el` now, where the editor reads it from: on the element the property is set on, its CSS properties. */
+export function sourcesFor(el: Element, property: Property): StyleSource[] {
+  const definition = PROPERTIES[property];
+  return sourcesOf(definition.setOn?.(el) ?? el, definition.setsOn?.(el) ?? definition.sets);
 }
 
 /** A property of an element as the editor reads it: as if shown, apart from whether it is shown. */

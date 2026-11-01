@@ -101,6 +101,7 @@ test("tool calls are counted: searches over the project, the command line's comm
     claims: 2,
     dones: 2,
     finished: true,
+    packageReads: 0,
     charsRead: { skill: 64, claim: 11, total: 64 + 11 + 13 + 13 + 14 },
   });
 });
@@ -239,4 +240,39 @@ test("subagents are counted apart: Claude Code's Task or Agent calls and the oth
     ),
   );
   assert.deepEqual(cursor.subagents, { calls: 1, models: ["Composer 2.5"] });
+});
+
+test("the Skill read from the package's own copy, as an Agent with none in the project may find it, is the Skill read too (ticket 65)", () => {
+  const calls: ToolCall[] = [
+    { name: "Read", path: "/p/node_modules/vernierkit/skill/SKILL.md", output: "S".repeat(12) },
+    { name: "Bash", command: "cat node_modules/vernierkit/skill/SKILL.md", output: "C".repeat(5) },
+    { name: "Read", path: "/p/src/skill/SKILL.md", output: "x" },
+  ];
+
+  assert.equal(toolCallStats(calls).charsRead.skill, 17);
+});
+
+test("calls that read the Vernier Kit package itself are counted, not those that run its command line (ticket 65)", () => {
+  const calls: ToolCall[] = [
+    { name: "read", path: "/t/run/node_modules/vernierkit/dist/cli.js", output: "x" },
+    { name: "grep", path: "/t/run/node_modules/.pnpm/vernierkit@file+..+pack/node_modules/vernierkit/dist", output: "" },
+    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/vernierkit/dist/editor.dev.js\")'", output: "" },
+    { name: "Read", path: "/p/node_modules/vernierkit/skill/SKILL.md", output: "" },
+    { name: "Bash", command: "npx vernierkit done 1", output: "" },
+    { name: "Bash", command: "node node_modules/vernierkit/dist/cli.js claim", output: "" },
+    { name: "Read", path: "/p/node_modules/vernierkitten/index.js", output: "" },
+    { name: "Read", path: "/p/src/App.tsx", output: "" },
+  ];
+
+  assert.equal(toolCallStats(calls).packageReads, 4);
+});
+
+test("Cursor's glob in a folder of the package is a call there, by its target folder (ticket 65)", () => {
+  const transcript = parseTranscript(
+    "cursor",
+    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/vernierkit", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
+  );
+
+  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/vernierkit");
+  assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });

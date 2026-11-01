@@ -105,6 +105,12 @@ interface Rules {
   copied?: RuleBlocks;
   /** What changes to the component itself declare, on an element it writes: under the edits of its usage, which win over them. */
   promoted?: RuleBlocks;
+  /**
+   * What the edits of rounds before declared, applied then (ticket 68): the
+   * page's own now, which no undo takes back off. Where the edits were, over
+   * the component's changes, under the edits from then on.
+   */
+  taken?: RuleBlocks;
   /** The edits'. */
   edits: RuleBlocks;
 }
@@ -197,6 +203,45 @@ export function restoreStyle(els: Elements, names: string[], others: Change[], b
   );
 }
 
+/**
+ * Takes what changes applied in a round before declare on canvas elements
+ * out of their edits, as the page's own (ticket 68), which no undo takes back
+ * off, and the look the page has from then on (`asPage`): what the edits
+ * declared, in `taken`, where they were, over the component's changes; what
+ * the changes to the component itself declared, as a copy's look is, under
+ * them. What the changes left of each element declare stays in its edits,
+ * alone; of the changes to the component itself the element writes
+ * (`component`), those left stay as they are. The elements look as they did.
+ */
+export function takeInEdits(els: Elements, applied: (el: Element) => Change[], left: (el: Element) => Change[], component: (el: Element) => { applied: Change[]; left: Change[] }) {
+  editRules(
+    els,
+    (el, rules) => {
+      const own = left(el);
+      // What the edits declare but what the changes left do: the applied ones', and what goes with them.
+      const kept: RuleBlocks = structuredClone(rules.edits);
+      for (const change of own) {
+        const block = blockOf(kept, change.breakpoint ?? null, false);
+        if (!block) continue;
+        for (const name in change.style) delete block.style[name];
+        if ("display" in change.style) delete block.hidden;
+      }
+      for (const change of applied(el)) put(el, kept, change.style, change.breakpoint ?? null);
+      const promoted = (changes: Change[]) => {
+        const blocks: RuleBlocks = { base: { style: {} }, at: [] };
+        for (const change of changes) put(el, blocks, change.style, change.breakpoint ?? null);
+        return blocks;
+      };
+      const written = component(el);
+      rules.copied = effective({ lifted: {}, copied: rules.copied, promoted: promoted(written.applied), edits: promoted([]) });
+      rules.taken = effective({ lifted: {}, copied: rules.taken, edits: kept });
+      rules.promoted = promoted(written.left);
+      rules.edits = promoted(own);
+    },
+    { ruledOnly: true },
+  );
+}
+
 /** Runs `look` on an element as if shown: what the edits hide is read and measured as it is laid out when shown. Nothing of it is painted meanwhile. */
 export function asShown<T>(el: Element, look: () => T): T {
   if (!hiddenByEdit(el)) return look();
@@ -211,8 +256,8 @@ export function asShown<T>(el: Element, look: () => T): T {
 /**
  * Runs `look` on an element as the page styles it: none of this round's edits
  * to it, nor its component's, apply meanwhile, those that hide it among them;
- * what the freezer wrote on it, and the look a layer was copied or made with,
- * still do. Nothing of it is painted meanwhile; the instances sharing its
+ * what the freezer wrote on it, the look a layer was copied or made with,
+ * and what rounds before applied, still do. Nothing of it is painted meanwhile; the instances sharing its
  * edit styles are as the page styles them meanwhile too.
  */
 export function asPage<T>(el: Element, look: () => T): T {
@@ -222,7 +267,7 @@ export function asPage<T>(el: Element, look: () => T): T {
   if (!sheet) return look();
   // Put back as the rules have it: the text may be behind them.
   const css = cssOf(key, effective(rules));
-  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, edits: { base: { style: {} }, at: [] } }));
+  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, taken: rules.taken, edits: { base: { style: {} }, at: [] } }));
   try {
     return look();
   } finally {
@@ -427,10 +472,10 @@ function applying(el: Element, blocks: RuleBlocks): AtBreakpoint[] {
   return [...blocks.at].sort((a, b) => widestFirst(a.breakpoint, b.breakpoint)).filter((at) => view.matchMedia(mediaOf(at.breakpoint)).matches);
 }
 
-/** What applies, all told: the lifted declarations, then what a copy took over, then the component's changes, then the edits. */
+/** What applies, all told: the lifted declarations, then what a copy took over, then the component's changes, then the edits of rounds before applied, then the edits. */
 function effective(rules: Rules): RuleBlocks {
   const all: RuleBlocks = { base: { style: { ...rules.lifted } }, at: [] };
-  for (const blocks of [rules.copied, rules.promoted, rules.edits]) {
+  for (const blocks of [rules.copied, rules.promoted, rules.taken, rules.edits]) {
     if (!blocks) continue;
     Object.assign(all.base.style, blocks.base.style);
     if (blocks.base.hidden !== undefined) all.base.hidden = blocks.base.hidden;
@@ -535,7 +580,8 @@ function writeRules(written: Written[], pendingLayer?: string) {
   const all = written.map(({ el, rules }) => {
     rules.edits.at = rules.edits.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
     if (rules.promoted && empty(rules.promoted)) delete rules.promoted;
-    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted;
+    if (rules.taken && empty(rules.taken)) delete rules.taken;
+    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted || !!rules.taken;
     return { el, rules, json: shows ? JSON.stringify(rules) : null, key: el.getAttribute(STYLE_KEY_ATTR) };
   });
 

@@ -151,6 +151,11 @@ function briefShown(brief: string): string {
   return quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief);
 }
 
+/** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */
+export function listed(things: (string | number)[]): string {
+  return things.length < 2 ? `${things[0]}` : `${things.slice(0, -1).join(", ")} and ${things.at(-1)}`;
+}
+
 /** 1st, 2nd, 3rd, 4th, … */
 export function ordinal(n: number): string {
   const tens = n % 100;

@@ -6,13 +6,14 @@ import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { pointerHeld } from "./pointer-held";
-import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet } from "./changeset";
+import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
 import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
 import { createHistory } from "./undo-steps";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
+import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
@@ -23,6 +24,7 @@ import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type P
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
 import { ADJUSTING_MS, type View, type Views } from "./views";
+import { hasPartsToRead } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
@@ -35,6 +37,8 @@ const LAYERS_KEY = "vernierkit:layers-panel";
 export interface RoundControl {
   /** Takes change `id` back out, as an edit that can be undone. */
   revert(id: number): void;
+  /** What the page shows in each part of change `id`'s range, read (null: it could not be): kept with it, and saved at once. */
+  partsRead(id: number, parts: RangePart[] | null): void;
   /** Takes every change back out and stops saving: the round is being discarded. */
   discard(): void;
 }
@@ -56,6 +60,8 @@ interface Props {
   onChanges(changes: Change[]): void;
   /** Set once there is a canvas, for the change list to reach it. */
   control: { current: RoundControl | null };
+  /** Editing is paused, a notice over the shell (ticket 66): nothing in it takes the pointer or the focus. */
+  paused?: boolean;
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -71,7 +77,7 @@ const NUDGE_RUN_MS = 1000;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, paused = false, leaving, animate, onLeft }: Props) {
   /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
   const [layersShown, setLayersShown] = useState(readLayersShown);
   const layersToggle = useRef<HTMLButtonElement>(null);
@@ -196,11 +202,31 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     [],
   );
 
+  /** The changes seen so far, by id: those of the round edit mode opened with, and those made since. A change at a breakpoint is marked for its parts to be read only as it is first seen, made (ticket 65). */
+  const seenChanges = useRef(new Set<number>());
+  /**
+   * Marks each change made since the last edit at a breakpoint the project's
+   * breakpoints cut into parts: the page is to be read in each part, the code
+   * as it is (`parts` null). The editor layer reads it once the round is
+   * saved, and `claim` waits for it.
+   */
+  const markParts = (changeSet: ChangeSet) => {
+    const project = breakpoints ?? readMediaBreakpoints(document);
+    for (const change of changeSet.list()) {
+      if (seenChanges.current.has(change.id)) continue;
+      seenChanges.current.add(change.id);
+      if (change.parts === undefined && hasPartsToRead(change, project)) change.parts = null;
+    }
+  };
+
   /** The round changed: saved soon, and its changes told. */
   const changed = () => {
     clearTimeout(pendingSave.current);
     pendingSave.current = setTimeout(flush, AUTOSAVE_MS);
-    if (round.current) onChanges(round.current.changeSet.list());
+    if (round.current) {
+      markParts(round.current.changeSet);
+      onChanges(round.current.changeSet.list());
+    }
   };
   /** An edit made: the panel and the Layers panel follow it; `adjust`, a value set, the selection box steps aside meanwhile. Resized by a handle, it stays. */
   const onEdit = (adjust = true) => {
@@ -477,7 +503,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   return (
-    <div class={`vk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
+    <div class={`vk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`} inert={paused}>
       {layersShown ? (
         <aside class="vk-panel is-layers" aria-label="Layers">
           <div class="vk-panel-header">
@@ -502,8 +528,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
+        // A round carried over (ticket 68): what was applied in the rounds before stays on the canvas, under what is left, as the page's own.
+        takeIn={restoreFrom?.changeSet.applied?.length ? (doc) => takeInApplied(doc, restoreFrom.changeSet) : undefined}
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
+          // A round saved before opens as it was: changes in it the page has yet to be read for are read by the editor layer as it is.
+          for (const change of changeSet.list()) seenChanges.current.add(change.id);
           viewsNow.current = views;
           // Edits go to the canvas, and show in every view of it; the layers are the canvas's, one across the views.
           // The views' ranges line up with the project's own breakpoints: its Tailwind theme's, or its media queries'.
@@ -540,6 +570,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             };
           };
           control.current = {
+            partsRead(id, parts) {
+              const change = changeSet.list().find((change) => change.id === id);
+              if (change?.parts !== null) return;
+              if (parts) change.parts = parts;
+              else delete change.parts;
+              latest.current.changed();
+              flush();
+            },
             revert(id) {
               const { taken, brought } = offAgain(withDependents(changeSet.list(), id));
               let reverted = false;

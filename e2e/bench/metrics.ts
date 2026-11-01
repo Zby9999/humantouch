@@ -15,6 +15,8 @@ export interface ToolCall {
   command?: string;
   /** For a tool on one path: a file read, written or searched. */
   path?: string;
+  /** For Cursor's glob: the folder it looks in, which is no path searched in the bench's counting. */
+  folder?: string;
   /** For a Skill the Agent loads by name (Claude Code's Skill tool). */
   skill?: string;
   /** What the tool gave the Agent to read. */
@@ -124,11 +126,13 @@ function modelsIn(value: unknown): string[] {
 }
 
 /** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on. */
-function where(input: Event): Pick<ToolCall, "command" | "path" | "skill"> {
+function where(input: Event): Pick<ToolCall, "command" | "path" | "skill" | "folder"> {
   if (typeof input.command === "string") return { command: input.command };
   if (typeof input.skill === "string") return { skill: input.skill };
   const path = input.file_path ?? input.path;
-  return typeof path === "string" ? { path } : {};
+  if (typeof path === "string") return { path };
+  // Cursor's glob names the folder it looks in as its target.
+  return typeof input.targetDirectory === "string" ? { folder: input.targetDirectory } : {};
 }
 
 /** A tool result's text: a string, or text parts. */
@@ -148,6 +152,8 @@ export interface ToolCallStats {
   dones: number;
   /** Whether it ran `finish`. */
   finished: boolean;
+  /** Calls that read the Vernier Kit package itself, in `node_modules` (its built code, its own Skill), rather than run its command line (ticket 65). */
+  packageReads: number;
   /**
    * Characters the Agent read: of the Skill (loaded, or read as a file), of
    * `claim`'s output, and of every tool's output, those two included.
@@ -175,11 +181,21 @@ export function isRepoWideSearch(call: ToolCall): boolean {
   return call.path === undefined || !/\.[a-z0-9]+$/i.test(call.path);
 }
 
-const SKILL_FILE = /skills\/vernierkit\/SKILL\.md\b/;
+/** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/vernierkit/skill/SKILL.md`), which an Agent with none in the project may find. */
+const SKILL_FILE = /(skills\/vernierkit|vernierkit\/skill)\/SKILL\.md\b/;
 
 /** The Skill, loaded by name, read as a file, or printed in the shell (`cat …/SKILL.md`). */
 function readsTheSkill(call: ToolCall): boolean {
   return call.skill === "vernierkit" || SKILL_FILE.test(call.path ?? "") || (/^\s*(cat|head|sed|less)\b/.test(call.command ?? "") && SKILL_FILE.test(call.command ?? ""));
+}
+
+/** The package in the project's `node_modules`, as linked or in pnpm's store. */
+const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?vernierkit(?:[\/\s"'`]|$)/;
+
+/** A call that reads the package itself: not one that runs its command line, by `npx` or by its file. */
+function readsThePackage(call: ToolCall): boolean {
+  if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !vernierkitCommands(call.command).length && !/vernierkit\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
+  return IN_PACKAGE.test(call.path ?? call.folder ?? "");
 }
 
 export function toolCallStats(calls: ToolCall[]): ToolCallStats {
@@ -191,6 +207,7 @@ export function toolCallStats(calls: ToolCall[]): ToolCallStats {
     claims: commands.filter((command) => command === "claim").length,
     dones: commands.filter((command) => command === "done").length,
     finished: commands.includes("finish"),
+    packageReads: calls.filter(readsThePackage).length,
     charsRead: {
       skill: sum(calls.filter(readsTheSkill)),
       claim: sum(calls.filter((call) => call.command !== undefined && vernierkitCommands(call.command).includes("claim"))),

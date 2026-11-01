@@ -4,9 +4,11 @@ import {
   BREAKPOINTS_PATH,
   CHECKS_PATH,
   OFF_CANVAS_PATH,
+  STATUS_PATH,
   UNLOCK_PATH,
   VARIABLES_PATH,
   type CheckReport,
+  type RoundStatus,
   type SavedOffCanvasLayer,
   type OffCanvasSaveAnswer,
   type SavedRound,
@@ -17,6 +19,8 @@ import { roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./ro
 export interface RoundStore extends RoundWatch {
   /** Saves the round; null drops it. */
   save(round: SavedRound | null): Promise<void>;
+  /** How the round stands now, read afresh: claimed the moment the Agent claims it, before `watch` says so. */
+  status(): Promise<RoundStatus>;
   /** Ends a claimed round as it is. */
   unlock(): Promise<void>;
   /** Answers the check `done` asked for. */
@@ -56,6 +60,9 @@ export function connectRoundStore(): RoundStore | null {
       const next = saving.then(() => (round ? request("PUT", { body: JSON.stringify(round) }) : request("DELETE")));
       saving = next.catch(() => {});
       return next.then(() => {});
+    },
+    async status() {
+      return (await (await request("GET", { path: STATUS_PATH })).json()) as RoundStatus;
     },
     async unlock() {
       await request("POST", { path: UNLOCK_PATH });

@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { CHECK_SETTLE_MS } from "../src/service-protocol";
+import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
-import { readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
+import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Place } from "../src/client/changeset";
-import { checkChange, type PageAt } from "../src/client/check";
+import { checkAcross, checkChange, type PageWidth } from "../src/client/check";
+import { copyPage, type PageCopy } from "../src/client/page-copy";
+import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
+import { watchPage } from "../src/client/page-checks";
 import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
@@ -2089,7 +2092,7 @@ describe("moving layers", () => {
     editor.move(second, { parent: layer("list"), index: 0 });
 
     expect([...doc.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Two", "One", "Three"]);
-    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 } });
+    expect(changes.list()[0]).toMatchObject({ data: true, target: { instances: 3 }, before: { nth: 2 }, after: { nth: 1 }, instance: { nth: 2, words: "Two" } });
   });
 
   test("where a layer can go: not into itself, into a locked layer, or into a usage it does not repeat with", () => {
@@ -3224,7 +3227,7 @@ describe("editing text", () => {
     editor.setText(layerOf(cards[1].querySelector("h3")!), "Second");
 
     expect(cards.slice(0, 3).map((card) => card.querySelector("h3")!.textContent)).toEqual(["Card 1", "Second", "Card 3"]);
-    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second" });
+    expect(changes.list()[0]).toMatchObject({ kind: "text", data: true, before: "Card 2", after: "Second", instance: { nth: 2, words: "Card 2" } });
     editor.undo();
     expect(cards[1].querySelector("h3")!.textContent).toBe("Card 2");
   });
@@ -3481,6 +3484,11 @@ describe("deleting layers", () => {
       // The page still renders three.
       ["delete-2", true, 3],
     ]);
+    // Which of them, as the page renders them: the first is still the first, though the second is deleted on the canvas.
+    expect(changes.list().map((c) => c.instance)).toEqual([
+      { nth: 2, words: "Card 2" },
+      { nth: 1, words: "Card 1" },
+    ]);
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
     const reverted = showSaved(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas);
     expect([...reverted.querySelectorAll("article")].map((card) => style(card).display)).toEqual(["none", "block", "block", "block"]);
@@ -3562,7 +3570,7 @@ describe("duplicating layers", () => {
     editor.duplicate(layerOf(cards[1]));
 
     expect([...doc.querySelectorAll("article")].map((el) => el.querySelector("h3")!.textContent)).toEqual(["Card 1", "Card 2", "Card 2", "Card 3", "Your turn"]);
-    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 } });
+    expect(changes.list()[0]).toMatchObject({ kind: "duplicate", data: true, target: { instances: 3 }, instance: { nth: 2, words: "Card 2" } });
   });
 
   test("to where it is dragged: in a Stack, or absolute in a Frame; taken back from a saved round, the copy goes", () => {
@@ -3623,6 +3631,22 @@ describe("text styles are checked on the live page", () => {
   });
 });
 
+describe("a layer wrapped in a new element on its own line", () => {
+  test("the new element, which has the layer's old marker now, is not taken for the layer: the layer is found where its marker moved", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(STRUCTURE);
+    editor.set(layerOf(doc.getElementById("one")!), "fontSize", 20);
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    // As an Agent writes it: a <div> on line 11 now, the paragraph, at 20px, on the line below.
+    page.write(STRUCTURE.replace(`<p id="one" ${loc("11:7")} style="margin: 0">One</p>`, `<div ${loc("11:7")}><p id="one" ${loc("12:9")} style="margin: 0; font-size: 20px">One</p></div>`).replace(loc("12:7"), loc("13:7")));
+    page.close();
+
+    expect(checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+  });
+});
+
 describe("a stroke is checked on the live page as the code writes it, else as the browser draws it", () => {
   /** The canvas, edited; and the live page, as the page is, its board as the Agent writes its border in the code. */
   const open = () => {
@@ -3673,18 +3697,99 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1.25, style: "solid" } });
   });
 
-  test("while the dev server brings the edit in, each change to the page is looked at once: still wrong, then right", async () => {
+  test("asked by done while the dev server brings the edit in, the page answers once it shows: still wrong, then right", async () => {
     const { page, editor, changes, board, write } = open();
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
     const [change] = changes.list();
     write("border: 1px solid #ff0000");
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
 
-    const result = checkChange(page, change);
+    checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "ask-1" });
     write("border: 3px solid #ff0000");
     await new Promise((resolve) => setTimeout(resolve, 20));
     write("border: 1.5px solid #ff0000");
 
-    expect(await result).toEqual({ outcome: "shown" });
+    await expect.poll(() => reports.find((r) => r.answers === "ask-1")).toMatchObject({ outcome: "shown" });
+    // What it saw as the code changed answers no ask: it carries no key, though it may carry the ask's millisecond.
+    expect(reports.filter((r) => r.answers !== "ask-1").length).toBeGreaterThan(0);
+    expect(reports.filter((r) => r.answers !== "ask-1").every((r) => !("answers" in r))).toBe(true);
+    checks.stop();
+  });
+
+  test("asked by claim of a change carried over from a round before (ticket 68), the page says with the value it shows what sets it: asked by done, not", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    write("border: 3px solid #ff0000");
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+
+    checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "opening", sources: true });
+    checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "done" });
+
+    await expect.poll(() => reports.find((r) => r.answers === "opening"), { timeout: 10_000 }).toMatchObject({
+      outcome: "not shown",
+      actual: { weight: 3 },
+      sources: [expect.objectContaining({ kind: "inline", properties: expect.arrayContaining(["border-top-width"]) })],
+    });
+    await expect.poll(() => reports.find((r) => r.answers === "done"), { timeout: 10_000 }).toMatchObject({ outcome: "not shown" });
+    expect(reports.find((r) => r.answers === "done")).not.toHaveProperty("sources");
+    checks.stop();
+  });
+
+  test("shown, then undone by later code before done asks: the page sees it is no longer shown, and says so", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    const shown: number[][] = [];
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
+
+    write("border: 1.5px solid #ff0000");
+    await expect.poll(() => shown.at(-1)).toEqual([change.id]);
+    // A later edit of the code's takes it back out.
+    write("border: 1px solid #ff0000");
+    await expect.poll(() => shown.at(-1)).toEqual([]);
+    expect(reports.at(-1)).toMatchObject({ id: change.id, outcome: "not shown", undone: true });
+    checks.stop();
+  });
+
+  test("the dev server brought the code in just before the page began to check, and the page draws it a moment later (React, say): the page sees it show, with no further word", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    write("border: 1px solid #ff0000");
+    // The Agent's edit is in: the dev server said so before the page heard of the claim.
+    const win = page.defaultView!;
+    (win as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0 };
+    win.dispatchEvent(new Event(CODE_EVENT));
+    const shown: number[][] = [];
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: win, changes: [change], report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
+
+    // The page's first look, before the page is drawn anew.
+    await expect.poll(() => reports.at(-1)?.outcome).toBe("not shown");
+    write("border: 1.5px solid #ff0000");
+
+    await expect.poll(() => shown.at(-1)).toEqual([change.id]);
+    checks.stop();
+  });
+
+  test("shown, then gone from the page with its layer (another route, say): the page cannot check it, which is no word that it is undone", async () => {
+    const { page, editor, changes, board, write } = open();
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
+    const [change] = changes.list();
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+
+    write("border: 1.5px solid #ff0000");
+    await expect.poll(() => reports.at(-1)?.outcome).toBe("shown");
+    // Another route: nothing of this one's on the page.
+    page.body.replaceChildren();
+    await expect.poll(() => reports.at(-1)?.outcome).toBe("unchecked");
+    expect(reports.at(-1)).not.toHaveProperty("undone");
+    checks.stop();
   });
 
   test("written through a design variable, it is compared as the page draws it", async () => {
@@ -3732,14 +3837,14 @@ describe("a stroke is checked on the live page as the code writes it, else as th
 
 describe("changes to the structure are checked on the live page", () => {
   /** The canvas, edited; and the live page, as the page is. */
-  const open = () => {
-    const canvas = openCanvas(STRUCTURE);
+  const open = (html = STRUCTURE) => {
+    const canvas = openCanvas(html);
     live = document.createElement("iframe");
     live.style.width = "800px";
     document.body.append(live);
     const page = live.contentDocument!;
     page.open();
-    page.write(STRUCTURE);
+    page.write(html);
     page.close();
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
     return { ...canvas, page, layer };
@@ -3791,6 +3896,59 @@ describe("changes to the structure are checked on the live page", () => {
     }
     page.getElementById("board")!.style.position = "relative";
     expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+  });
+
+  /** The board's tag with margins, 2px on its left and 6px on its top. */
+  const MARGINED = STRUCTURE.replace(`id="tag" ${loc("14:7")} style="`, `id="tag" ${loc("14:7")} style="margin: 6px 0 0 2px; `);
+
+  test("a layer placed absolute is where the canvas draws it: past its X and Y by the margins it keeps there; one the code takes them off is not, and says so", () => {
+    const { page, editor, changes, layer } = open(MARGINED);
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    const [placed] = changes.list();
+    expect(placed.margins).toEqual({ x: 2, y: 6 });
+    page.getElementById("board")!.style.position = "relative";
+    const tag = page.getElementById("tag") as HTMLElement;
+
+    // As the Agent writes it: `left` and `top` as given, its margins kept.
+    Object.assign(tag.style, { position: "absolute", left: "40px", top: "30px" });
+    expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+    // Its margins taken off: drawn 2px and 6px off where the canvas draws it.
+    tag.style.margin = "0px";
+    expect(checkChange(page, placed)).toEqual({ outcome: "not shown", actual: { x: 40, y: 30, margins: { x: 0, y: 0 } } });
+    // Their room put into `left` and `top`: drawn where the canvas draws it.
+    Object.assign(tag.style, { left: "42px", top: "36px" });
+    expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+  });
+
+  test("at the other views' widths, where the canvas's margins are not known, a layer with its margins put into its `left` and `top` is shown, as one that keeps them is", () => {
+    const { page, editor, changes, layer } = open(MARGINED);
+    editor.move(layer("tag"), { parent: layer("board"), x: 40, y: 30 });
+    const [placed] = changes.list();
+    page.getElementById("board")!.style.position = "relative";
+    const tag = page.getElementById("tag") as HTMLElement;
+    // The page at a view's width: here, as the page is.
+    const viewWidth = (width: number): PageWidth => ({ width, doc: page, own: false, of: (el) => el });
+
+    Object.assign(tag.style, { position: "absolute", left: "42px", top: "36px", margin: "0px" });
+    expect(checkAcross(page, placed, changes.list(), [390], viewWidth)).toEqual({ outcome: "shown" });
+    Object.assign(tag.style, { left: "40px", top: "30px", margin: "6px 0 0 2px" });
+    expect(checkAcross(page, placed, changes.list(), [390], viewWidth)).toEqual({ outcome: "shown" });
+  });
+
+  test("the Y of an absolute layer is where the canvas draws it too: its `top`, past it by the top margin it keeps there", () => {
+    const html = MARGINED.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace("display: inline-block;", "position: absolute; left: 12px; top: 8px;");
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "y", 30);
+    const [y] = changes.list();
+    expect(y).toMatchObject({ property: "y", after: 30, margins: { x: 2, y: 6 } });
+    const tag = page.getElementById("tag") as HTMLElement;
+
+    tag.style.top = "30px";
+    expect(checkChange(page, y)).toEqual({ outcome: "shown" });
+    tag.style.margin = "0px";
+    expect(checkChange(page, y)).toEqual({ outcome: "not shown", actual: { value: 30, margin: 0 } });
+    tag.style.top = "36px";
+    expect(checkChange(page, y)).toEqual({ outcome: "shown" });
   });
 
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
@@ -4477,56 +4635,144 @@ describe("breakpoints", () => {
     expect(editor.breakpointAt(700)).toEqual({ min: 600, max: 750, project: { queries: ["(max-width: 599px)", "(min-width: 750px)"] } });
   });
 
-  test("a change at a breakpoint is checked on the page shown at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
-    // As the live page has it: source markers, and no usage chains, which only the canvas is given.
-    const live = MOVES.replace(/ data-vk-chain='[^']*'/g, "");
-    const { editor, changes, phone, layer } = await open(live);
+  /** The live page, `width` px wide, with `css` in it: as the page has it, source markers and no usage chains, which only the canvas is given. */
+  const livePage = (width: number, css: string) => {
+    const frame = document.createElement("iframe");
+    frame.style.width = `${width}px`;
+    document.body.append(frame);
+    extraFrames.push(frame);
+    const page = frame.contentDocument!;
+    page.open();
+    page.write(MOVES.replace(/ data-vk-chain='[^']*'/g, "").replace("<body", `<style>${css}</style>\n<body`));
+    page.close();
+    return page;
+  };
+  /** Copies of `page` at the widths asked for, kept as `checkAcross` is to look at them. */
+  const copiesOf = (page: Document) => {
+    const widths: number[] = [];
+    const at = (width: number): PageWidth => {
+      widths.push(width);
+      const copy = copyPage(page, width, document.body);
+      copies.push(copy);
+      copy.sync();
+      return { width, doc: copy.doc, own: false, of: copy.of };
+    };
+    return { at, widths };
+  };
+  let copies: PageCopy[] = [];
+  afterEach(() => {
+    for (const copy of copies) copy.close();
+    copies = [];
+  });
+
+  test("a change at a breakpoint is checked on a copy of the page at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""));
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
-    /** The live page, `width` px wide: with the fill applied below 800px, or not. */
-    const pageAt = (width: number, applied: boolean) => {
-      const frame = document.createElement("iframe");
-      frame.style.width = `${width}px`;
-      document.body.append(frame);
-      extraFrames.push(frame);
-      const page = frame.contentDocument!;
-      page.open();
-      page.write(live.replace("<body", `<style>${applied ? "@media (width < 800px) { #board { background-color: rgb(255, 0, 0) } }" : ""}</style>\n<body`));
-      page.close();
-      return page;
-    };
-    const widths: number[] = [];
-    let closed = 0;
-    const openAt = (applied: boolean) => async (width: number) => {
-      widths.push(width);
-      return { doc: pageAt(width, applied), close: () => void closed++ };
-    };
-    const check = async (applied: boolean, at: PageAt = openAt(applied)) => {
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      try {
-        const result = checkChange(pageAt(1000, applied), change, at);
-        await vi.advanceTimersByTimeAsync(CHECK_SETTLE_MS);
-        return await result;
-      } finally {
-        vi.useRealTimers();
-      }
-    };
+    const applied = "@media (width < 800px) { #board { background-color: rgb(255, 0, 0) } }";
 
-    expect(await check(true)).toEqual({ outcome: "shown" });
-    expect(await check(false)).toEqual({ outcome: "not shown", actual: null });
-    expect(widths).toEqual([799, 799]);
-    expect(closed).toBe(2);
-    expect(await check(true, async () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
+    const wide = livePage(1000, applied);
+    const shown = copiesOf(wide);
+    expect(checkAcross(wide, change, changes.list(), [768, 390], shown.at)).toEqual({ outcome: "shown" });
+    expect(shown.widths).toEqual([799]);
+    const page = livePage(1000, "");
+    expect(checkAcross(page, change, changes.list(), [768, 390], copiesOf(page).at)).toEqual({ outcome: "not shown", actual: null });
+    expect(checkAcross(page, change, changes.list(), [768, 390], () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
     // The window in the range already: checked on the page as it is.
-    widths.length = 0;
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      expect(await checkChange(pageAt(700, true), change, openAt(true))).toEqual({ outcome: "shown" });
-    } finally {
-      vi.useRealTimers();
-    }
-    expect(widths).toEqual([]);
+    const narrowPage = livePage(700, applied);
+    const narrow = copiesOf(narrowPage);
+    expect(checkAcross(narrowPage, change, changes.list(), [768, 390], narrow.at)).toEqual({ outcome: "shown" });
+    expect(narrow.widths).toEqual([]);
+  });
+
+  test("a change at a range the project's breakpoints cut into parts is checked at a width in each part, and one not shown says which width (ticket 65)", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""), TAILWIND);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [made] = changes.list();
+    const change = { ...made, parts: partsOf(made.breakpoint!, TAILWIND).map((breakpoint) => ({ breakpoint, before: null })) };
+    const round = [change];
+
+    const allOfIt = livePage(1000, "@media (width < 768px) { #board { background-color: rgb(255, 0, 0) } }");
+    const shown = copiesOf(allOfIt);
+    expect(checkAcross(allOfIt, change, round, [390], shown.at)).toEqual({ outcome: "shown" });
+    expect(shown.widths).toEqual([639, 640]);
+    // Below 640px only: the part from 640px is not.
+    const partOfIt = livePage(1000, "@media (width < 640px) { #board { background-color: rgb(255, 0, 0) } }");
+    expect(checkAcross(partOfIt, change, round, [390], copiesOf(partOfIt).at)).toEqual({ outcome: "not shown", actual: null, width: 640 });
+    // The window in one part: the page itself there, a copy for the other.
+    const narrow = livePage(700, "@media (width < 768px) { #board { background-color: rgb(255, 0, 0) } }");
+    const inPart = copiesOf(narrow);
+    expect(checkAcross(narrow, change, round, [390], inPart.at)).toEqual({ outcome: "shown" });
+    expect(inPart.widths).toEqual([639]);
+  });
+
+  test("what the live page shows in each part of a change's range is read there, the code as it is, before the change is applied (ticket 65)", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""), TAILWIND);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    const page = livePage(1000, "#board { background-color: rgb(255, 255, 255) } @media (width >= 640px) { #board { background-color: rgb(0, 0, 255) } }");
+
+    expect(await measureParts(page, change, TAILWIND, document.body)).toEqual([
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: { type: "solid", color: "#FFFFFF", opacity: 1 } },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: BLUE },
+    ]);
+    // A range no breakpoint of the project's cuts, or a change at every width: nothing to read.
+    expect(await measureParts(page, change, null, document.body)).toBeNull();
+    expect(await measureParts(page, { ...change, breakpoint: undefined }, TAILWIND, document.body)).toBeNull();
+    expect(document.querySelectorAll("iframe[data-vk-check]").length).toBe(0);
+  });
+
+  test("reading each part of a change's range is done a step at a time, each in a task of its own, so a large page is never held up for long (ticket 65)", async () => {
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""), TAILWIND);
+    editor.at(phone);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    const page = livePage(1000, "#board { background-color: rgb(255, 255, 255) }");
+    performance.clearMeasures(PARTS_MEASURE);
+    let tasks = 0;
+    const channel = new MessageChannel();
+    let reading = true;
+    channel.port1.onmessage = () => {
+      tasks++;
+      if (reading) channel.port2.postMessage(null);
+    };
+    channel.port2.postMessage(null);
+
+    const read = await measureParts(page, change, TAILWIND, document.body);
+    reading = false;
+
+    expect(read).toHaveLength(2);
+    // Making the copy, bringing it up to date, laying it out and reading it: apart, for each part.
+    const steps = performance.getEntriesByName(PARTS_MEASURE);
+    expect(steps.length).toBeGreaterThanOrEqual(8);
+    // The page had its turns in between.
+    expect(tasks).toBeGreaterThanOrEqual(steps.length - 1);
+    channel.port1.close();
+  });
+
+  test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value does not show it; one the round changed at a breakpoint of its own keeps its own", async () => {
+    const { editor, changes, desktop, phone, layer } = await open(MOVES.replace(/ data-vk-chain='[^']*'/g, ""));
+    editor.at(desktop);
+    editor.set(layer("board"), "fill", RED);
+    const [change] = changes.list();
+    // The code writes red at every width but below 640px, where a rule of its own keeps it white.
+    const css = "#board { background-color: rgb(255, 0, 0) } @media (width < 640px) { #board { background-color: rgb(255, 255, 255) } }";
+    const page = livePage(1000, css);
+    const { at, widths } = copiesOf(page);
+
+    expect(checkAcross(page, change, changes.list(), [768, 390], at)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 });
+    expect(widths).toEqual([768, 390]);
+
+    // Changed in the phone view too, the board keeps that value below 800px: not looked at there.
+    editor.at(phone);
+    editor.set(layer("board"), "fill", { type: "solid", color: "#FFFFFF", opacity: 1 });
+    const desktopChange = changes.list().find((c) => !c.breakpoint)!;
+    const again = copiesOf(page);
+    expect(checkAcross(page, desktopChange, changes.list(), [768, 390], again.at)).toEqual({ outcome: "shown" });
+    expect(again.widths).toEqual([]);
   });
 
   test("the project's media queries are read from the page's stylesheets: each width one starts or stops holding at, named by the first there", () => {

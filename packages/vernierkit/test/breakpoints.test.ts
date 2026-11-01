@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { breakpointOf, type ProjectBreakpoints } from "../src/client/breakpoints";
+import { breakpointOf, partsOf, type ProjectBreakpoints } from "../src/client/breakpoints";
 
 /** Tailwind's own breakpoints, as the local service reads them from a theme that keeps them. */
 const TAILWIND: ProjectBreakpoints = {
@@ -72,5 +72,20 @@ describe("the range a view stands for, with no breakpoints of the project's", ()
     expect(breakpointOf(390, 1440, [390, 768])).toEqual({ min: null, max: 768 });
     expect(breakpointOf(768, 1440, [390, 768])).toEqual({ min: 768, max: 1440 });
     expect(breakpointOf(1440, 1440, [390, 768])).toBeNull();
+  });
+});
+
+describe("the parts of a range, between the project's breakpoints (ticket 65)", () => {
+  test("the project's breakpoints inside a range cut it into parts, each written as the project writes it; a range none cuts is one part", () => {
+    expect(partsOf({ min: null, max: 768, project: { tailwind: "max-md:" } }, TAILWIND)).toEqual([
+      { min: null, max: 640, project: { tailwind: "max-sm:" } },
+      { min: 640, max: 768, project: { tailwind: "sm:max-md:" } },
+    ]);
+    expect(partsOf({ min: 768, max: 1280, project: { tailwind: "md:max-xl:" } }, TAILWIND)).toEqual([
+      { min: 768, max: 1024, project: { tailwind: "md:max-lg:" } },
+      { min: 1024, max: 1280, project: { tailwind: "lg:max-xl:" } },
+    ]);
+    expect(partsOf({ min: 1536, max: null, project: { tailwind: "2xl:" } }, TAILWIND)).toEqual([{ min: 1536, max: null, project: { tailwind: "2xl:" } }]);
+    expect(partsOf({ min: null, max: 800 }, null)).toEqual([{ min: null, max: 800 }]);
   });
 });

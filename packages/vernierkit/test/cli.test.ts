@@ -1,9 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { run } from "../src/cli";
+import type { Change } from "../src/client/changeset";
+import { uncheckable } from "../src/client/check";
+import { REPORT_RULES } from "../src/report-form";
 
 let project: string;
 
@@ -63,6 +66,19 @@ function state() {
 /** The section of the change notes about change `id`. */
 function section(notes: string, id: number) {
   return notes.split(/^## /m).find((part) => part.startsWith(`${id}. `)) ?? "";
+}
+
+/** The change notes' sections of the changes, one after another: what is said around them left out. */
+function changeSections(notes: string) {
+  return notes
+    .split(/^## /m)
+    .filter((part) => /^\d+\. /.test(part))
+    .join("## ");
+}
+
+/** What `finish` says of the round: its first line, before the form of the report. */
+function finished(output: string) {
+  return output.slice(0, output.indexOf("\n") + 1);
 }
 
 /** Runs the command line in the project, as an Agent would: what it prints, and its errors apart. */
@@ -166,6 +182,289 @@ describe("claim", () => {
   });
 });
 
+describe("claim, the way through a round (ticket 65)", () => {
+  test("opens with the way through the round: done after a change or a group of related ones, at least once before finish, then the report", async () => {
+    saveRound(redFill, smallRadius);
+
+    const { output } = await cli("claim");
+
+    const intro = output.split(/^## /m)[0];
+    expect(intro).not.toMatch(/after each/);
+    expect(intro).toContain("After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers");
+    expect(intro).toContain("at least once before `npx vernierkit finish`");
+    expect(intro).toContain("report");
+  });
+
+  test("with the designer's page open, says it and its dev server are running, and the page checks the edits: no dev server to start, no browser to open; with none, says nothing of it", async () => {
+    const sentence = "The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look.";
+    saveRound(redFill);
+    expect((await cli("claim")).output.split(/^## /m)[0]).not.toContain(sentence);
+
+    const closePage = openPage(() => ({ outcome: "shown" }));
+    try {
+      expect((await cli("claim")).output.split(/^## /m)[0]).toContain(sentence);
+    } finally {
+      closePage();
+    }
+  });
+});
+
+describe("claim, how to write the changes (ticket 65)", () => {
+  /** The rules the notes end with, by name: each `- **Name:** text` line of **How to write them**. */
+  function rules(notes: string) {
+    const [, section = ""] = notes.split(/^## How to write them\n/m);
+    return section.split("\n").flatMap((line) => {
+      const [, name, text] = /^- \*\*(.+?):\*\* (.*)$/.exec(line) ?? [];
+      return name ? [{ name, text }] : [];
+    });
+  }
+  const names = (notes: string) => rules(notes).map((rule) => rule.name);
+  const rule = (notes: string, name: string) => rules(notes).find((r) => r.name === name)?.text ?? "";
+
+  const inApp = { ...cards, loc: "src/App.tsx:27:9", chain: [APP], component: "App", instances: 1 };
+  const container = { ...inApp, loc: "src/App.tsx:20:7", context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, more: object = {}) => ({ container: { layer: "4", target: container, ...more }, nth, slot: nth - 1, absolute: null });
+  const style = (property: string, more: object = {}) => ({ ...redFill, target: inApp, property, ...more });
+  const change = (kind: string, more: object = {}) => ({ ...redFill, kind, property: kind, target: inApp, before: place(1), after: place(2), style: {}, sources: [], ...more });
+  const settings = { direction: "vertical", gap: 8, padding: [0, 0, 0, 0], align: { x: "start", y: "start", distribute: false } };
+  const ruleSource = (selector: string, layer: string | null, file = "src/index.css") => ({ properties: ["background-color"], kind: "rule", selector, file, layer, important: false, className: null, declaration: "background-color: white" });
+
+  test("end with how to write them, after the last change: the rules for every round, and those for the kinds of change in this one only, each once", async () => {
+    saveRound(style("fill"), { ...style("radius"), id: 2, before: 12, after: 4 });
+
+    const { output } = await cli("claim");
+
+    expect(output.indexOf("## How to write them")).toBeGreaterThan(output.indexOf("## 2. "));
+    expect(names(output)).toEqual(["Every change", "What sets the value now", "All breakpoints", "How the page checks"]);
+    expect(rule(output, "Every change")).toContain("the reference style is the CSS that showed it on the canvas, to understand it by, not code to paste");
+    expect(rule(output, "Every change")).toContain("Never change third-party code");
+    expect(rule(output, "Every change")).toContain("apply the closest you can and still run `done` for it, or leave it out and do not");
+  });
+
+  test.each([
+    ["a rule in no CSS layer sets the value", "A rule in no CSS layer", [style("fill", { sources: [ruleSource("button", null)] })]],
+    ["a CSS Module sets the value", "CSS Modules", [style("fill", { sources: [ruleSource(".card", null, "src/components/Card.module.css")] })]],
+    ["a change at a breakpoint", "Breakpoints", [style("fill", { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } } })]],
+    [
+      "a layer placed freely at a breakpoint",
+      "Absolute at a breakpoint",
+      [style("absolute", { before: null, after: { x: 12, y: 40 }, breakpoint: { min: null, max: 768 }, style: { position: "absolute", left: "12px", top: "40px" } })],
+    ],
+    ["a change for one usage of a component", "This usage only", [redFill]],
+    ["a change promoted to the component", "The component itself", [{ ...redFill, scope: "component" }]],
+    ["a move", "Moves", [change("move")]],
+    ["a move to another cell of a Grid", "Cells of a Grid", [change("move", { before: place(1, { grid: true }), after: place(3, { grid: true }) })]],
+    ["a Grid's columns", "Grids", [style("columns", { before: 3, after: 2 })]],
+    ["a Grid's row gap", "Grids", [style("rowGap", { before: 16, after: 24 })]],
+    ["a Stack made", "Making a Stack", [change("stack", { before: null, after: { ...settings, place: place(1), layers: [{ layer: "5", target: inApp, from: place(1) }] } })]],
+    ["a plain flow made a real Stack", "Make it a Stack", [style("gap", { before: 0, after: 16, asStack: true })]],
+    [
+      "a Stack dissolved",
+      "Dissolving a Stack",
+      [change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target: inApp, x: 0, y: 0, width: 200, height: 40 }] } })],
+    ],
+    ["a size", "Sizes", [style("width", { before: { type: "hug" }, after: { type: "fill" } })]],
+    ["a new Frame with a brief", "New Frame with a brief", [change("create", { before: null, after: { type: "frame", place: place(2), width: 200, height: 120, brief: "A pricing table" } })]],
+    ["a brief", "Brief", [change("brief", { before: null, after: "Bounce back harder when pressed" })]],
+    ["new words", "Text", [change("text", { before: "Vernier Kit", after: "Vernier Studio" })]],
+    [
+      "a copy with values of its own at breakpoints",
+      "Copies",
+      [change("duplicate", { copiedBreakpoints: [{ change: 9, inside: null, breakpoint: { min: null, max: 768 }, property: "radius", value: 4 }] })],
+    ],
+    ["a loop's instance deleted", "Data changes", [change("delete", { data: true, target: { ...inApp, instances: 3 }, after: null })]],
+    ["a new Frame, Fixed as drawn", "Sizes", [change("create", { before: null, after: { type: "frame", place: place(2), width: 200, height: 120 } })]],
+    [
+      "a Stack dissolved into a Frame of a Fixed size",
+      "Sizes",
+      [change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target: inApp, x: 0, y: 0, width: 200, height: 40 }] } })],
+    ],
+    [
+      "a layer placed freely at a breakpoint, at its size",
+      "Sizes",
+      [style("absolute", { before: null, after: { x: 12, y: 40 }, breakpoint: { min: null, max: 768 }, style: { position: "absolute", left: "12px", top: "40px" } })],
+    ],
+    [
+      "a copy whose layer is a real Stack at a breakpoint",
+      "Make it a Stack",
+      [change("duplicate", { copiedBreakpoints: [{ change: 9, inside: null, breakpoint: { min: null, max: 768 }, property: "gap", value: 16, asStack: true }] })],
+    ],
+    [
+      "a Stack made of layers with margins",
+      "What sets the value now",
+      [
+        change("stack", {
+          before: null,
+          after: { ...settings, place: place(1), layers: [{ layer: "5", target: inApp, from: place(1), unmargined: true }] },
+          sources: [{ ...ruleSource(".mt-4", "utilities"), properties: ["margin-top"] }],
+        }),
+      ],
+    ],
+  ])("%s: the notes say how to write it (%s)", async (_, name, round) => {
+    saveRound(...round.map((c, i) => ({ ...c, id: i + 1 })));
+
+    const output = (await cli("claim")).output;
+
+    expect(names(output)).toContain(name);
+  });
+
+  test("a rule is said once, however many changes call for it; none a change of the round does not call for", async () => {
+    saveRound({ ...change("move"), id: 1 }, { ...change("move", { before: place(2), after: place(1) }), id: 2 }, { ...change("text", { before: "A", after: "B" }), id: 3 });
+
+    const all = names((await cli("claim")).output);
+
+    expect(all).toEqual(["Every change", "Moves", "Text", "How the page checks"]);
+  });
+
+  test("how the page checks says what it reads, and at which widths, for the kinds of change in this round only (ticket 65)", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const order = { signs: ["li A", "li B"], self: 1, others: [] };
+    saveRound(style("fill"), { ...style("radius", { before: 12, after: 4, breakpoint: PHONE }), id: 2 }, { ...change("move", { before: place(2), after: place(1), order }), id: 3 });
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance");
+    expect(checks).toContain("at the page's own width and at each of the designer's views' widths");
+    expect(checks).toContain("a change at a breakpoint in each part the project's breakpoints cut its range into");
+    expect(checks).toContain("a reorder by the order of its container's layers");
+    expect(checks).not.toContain("deletion");
+    expect(checks).not.toContain("Not checked");
+    expect(checks).toContain("Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks.");
+    // Said here, not in All breakpoints as well.
+    expect(rule((await cli("claim")).output, "All breakpoints")).not.toContain("`done`");
+  });
+
+  test("a rule that styles elements outside the scope too is left as it is and overridden for this layer: past a rule in no CSS layer, with the class's important form; a round with no such rule says nothing of it (ticket 65)", async () => {
+    saveRound(style("fill", { sources: [ruleSource("button", null)] }));
+
+    const notes = (await cli("claim")).output;
+
+    expect(rule(notes, "What sets the value now")).toContain("change it only when every element it styles is in the scope");
+    expect(rule(notes, "What sets the value now")).toContain("when it styles elements outside the scope too, leave it as it is and override it for this layer only");
+    expect(rule(notes, "A rule in no CSS layer")).toContain("important form (`bg-[#2563EB]!`, `rounded-lg!`)");
+    expect(notes).not.toContain("last resort");
+    expect(notes).not.toContain("narrow it");
+
+    saveRound(style("fill", { sources: [ruleSource(".bg-white", "utilities")] }));
+    expect((await cli("claim")).output).not.toContain("important form");
+  });
+
+  test("how the page checks says it reads a style change on the layer alone: an edit that changes elements outside the scope too is wrong, though done says it shows; a round with no style change says nothing of it (ticket 65)", async () => {
+    saveRound(style("fill"));
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("on the layer in every instance, whatever class or rule gives it, and on nothing else");
+    expect(checks).toContain("an edit that also changes elements outside the scope is wrong, though `done` says it shows");
+
+    saveRound(change("move", { before: place(2), after: place(1), order: { signs: ["li A", "li B"], self: 1, others: [] } }));
+    expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("outside the scope");
+  });
+
+  test("how the page checks names the kinds of change in this round it cannot check: done says so, and the report says what was done", async () => {
+    saveRound({ ...change("text", { before: "A", after: "B" }), id: 1 }, { ...change("brief", { before: null, after: "Bounce" }), id: 2 });
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("new words and a brief, not at all: `done` says Not checked, which is no error; say in the report what you did");
+    expect(checks).not.toContain("getComputedStyle");
+  });
+
+  describe("how the page checks says a change is checked exactly when the page checks it (`uncheckable` in check.ts)", () => {
+    const order = { signs: ["li A", "li B"], self: 1, others: [] };
+    const elsewhere = { ...container, loc: "src/App.tsx:30:7" };
+    const at = (x: number, y: number) => ({ x, y });
+    const placeIn = (target: object, nth: number, absolute: object | null = null) => ({ ...place(nth, { target }), absolute });
+    test.each([
+      ["a style change", style("fill")],
+      ["a style change to a layer made this round", style("fill", { target: { ...inApp, loc: null, made: "9" } })],
+      ["a style change to a layer with no source marker", style("fill", { target: { ...inApp, loc: null } })],
+      ["a style change to a run of text", style("fill", { target: { ...inApp, run: 0 } })],
+      ["a deletion", change("delete", { after: null })],
+      ["a deletion of a loop's instance", change("delete", { data: true, after: null })],
+      ["a reorder", change("move", { before: place(2), after: place(1), order })],
+      ["a reorder among loose text", change("move", { before: place(2), after: place(1) })],
+      ["a reorder wrapped", change("move", { before: place(2), after: place(1), order, wrap: true })],
+      ["a placement absolute in the same container", change("move", { before: place(2), after: { ...place(2), absolute: at(10, 20) } })],
+      ["a move into another container", change("move", { before: place(2), after: placeIn(elsewhere, 1), order })],
+      ["a move into a layout from a place of its own", change("move", { before: { ...place(2), absolute: at(10, 20) }, after: place(1), order })],
+      ["a reorder in a container made this round", change("move", { before: placeIn({ ...container, loc: null, made: "9" }, 2), after: placeIn({ ...container, loc: null, made: "9" }, 1), order })],
+      ["a placement absolute in a container with no source marker", change("move", { before: placeIn({ ...container, loc: null }, 2), after: placeIn({ ...container, loc: null }, 2, at(10, 20)) })],
+      ["new words", change("text", { before: "A", after: "B" })],
+      ["a brief", change("brief", { before: null, after: "Bounce" })],
+    ])("%s", async (_, round) => {
+      saveRound(round);
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      const checked = uncheckable(round as unknown as Change) === null;
+      expect(checks.includes("not at all")).toBe(!checked);
+      expect(checks.includes("Where it does not show")).toBe(checked);
+    });
+
+    test("a move in the same container, one the page has no marker for, is named as such: not as one into another container", async () => {
+      const made = { ...container, loc: null, made: "9" };
+      saveRound(change("move", { before: placeIn(made, 2), after: placeIn(made, 1), order }));
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toContain("a move in a container made this round, or one the page cannot find, not at all");
+      expect(checks).not.toContain("another container");
+    });
+  });
+
+  test("a layer placed absolute: how the page checks says its `left` and `top` are the X and Y given, its margins kept, not taken off; a round with none says nothing of margins (ticket 65)", async () => {
+    saveRound(style("y", { before: 368, after: 488, margins: { x: 0, y: 24 }, style: { top: "488px", bottom: "auto" } }));
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("its `left` and `top` the X and Y given, its margins kept, not taken off");
+    expect(checks).toContain("drawn at `left` and `top` plus its margins");
+
+    saveRound(style("fill"));
+    expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("margins");
+  });
+
+  test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
+    saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
+
+    const breakpoints = rule((await cli("claim")).output, "Breakpoints");
+
+    expect(breakpoints).not.toMatch(/grid-cols|max-sm:|md:max-lg:|max-md:/);
+    expect(breakpoints).toContain("Where the design intent gives the range part by part, the layer shows another value in each now");
+  });
+
+  test("the rule for breakpoints says which Tailwind class shows where several hold, as Tailwind orders them; a round with no breakpoint says nothing of it (ticket 65)", async () => {
+    saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
+
+    const breakpoints = rule((await cli("claim")).output, "Breakpoints");
+
+    expect(breakpoints).toContain("With Tailwind, of the classes for a property that hold at a width, the one latest in the stylesheet shows, whatever their order in `class`");
+    expect(breakpoints).toContain("those with no breakpoint variant come first, then the `max-*` ones from the widest, then `sm:`, `md:` and on up, each directly followed by the ranges that start there");
+
+    saveRound(style("columns", { before: 1, after: 2 }));
+    expect((await cli("claim")).output).not.toContain("latest in the stylesheet");
+  });
+
+  test("the notes of the last round, to undo it by, say none", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    await cli("finish");
+
+    expect((await cli("last")).output).not.toContain("How to write them");
+  });
+
+  test("a change made in the desktop view applies at every width: what the project writes for that property at its breakpoints is covered too", async () => {
+    saveRound(redFill);
+
+    const all = rule((await cli("claim")).output, "All breakpoints");
+
+    expect(all).toContain("applies at every width");
+    expect(all).toContain("a breakpoint variant such as `sm:` or `md:`");
+    expect(all).toContain("change those too");
+  });
+});
+
 describe("claim, breakpoints", () => {
   test("a change made in a narrower view says the widths it applies at, to be written with the project's own breakpoints; any other, all breakpoints", async () => {
     saveRound(redFill, { ...smallRadius, breakpoint: { min: null, max: 768 } }, { ...smallRadius, id: 3, breakpoint: { min: 768, max: 1280 } });
@@ -215,6 +514,92 @@ describe("claim, breakpoints", () => {
     expect(section(output, 3)).toContain(
       "The project writes these widths with its own media queries, whose edges these are: 600px, where `(max-width: 599px)` starts or stops holding, and 1000px, where `(min-width: 1000px)` starts or stops holding: make the change apply at these widths only that way",
     );
+  });
+
+  test("a change at a range the project's breakpoints cut into parts says, part by part, what the page shows there now and what it is to show (ticket 65)", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+    ];
+    const columns = { ...redFill, property: "columns", before: 1, after: 2, style: { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }, breakpoint: PHONE };
+    const sameEverywhere = [
+      { breakpoint: parts[0].breakpoint, before: 12 },
+      { breakpoint: parts[1].breakpoint, before: 12 },
+    ];
+    saveRound({ ...columns, parts }, { ...smallRadius, breakpoint: PHONE, parts: sameEverywhere });
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.\n",
+    );
+    expect(section(output, 1)).not.toContain("Its value before is what it showed at these widths.");
+    // The same value at every part: said once.
+    expect(section(output, 2)).toContain("- **Design intent:** Change the corner radius from 12px to 4px.\n");
+  });
+
+  describe("a change whose range's parts the page has yet to read (ticket 65)", () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+    ];
+    const columns = { ...redFill, property: "columns", before: 1, after: 2, style: { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }, breakpoint: PHONE };
+    const PART_BY_PART = "Change the number of columns at each part of these widths, as the page shows it now: below 640px (`max-sm:`), from 1 to 2; 640px to 767px (`sm:max-md:`), from 3 to 2.";
+
+    test("with a page open, claim waits till the page has read them and saved the round again, and gives them part by part; claimed only then", async () => {
+      saveRound({ ...columns, parts: null });
+      pageSaw({});
+      const claimedBefore: unknown[] = [];
+      const reads = setTimeout(() => {
+        claimedBefore.push(state());
+        saveRound({ ...columns, parts });
+      }, 300);
+      try {
+        const { output } = await cli("claim");
+
+        expect(section(output, 1)).toContain(PART_BY_PART);
+        expect(claimedBefore).toEqual([null]);
+        expect(state().status).toBe("claimed");
+      } finally {
+        clearTimeout(reads);
+      }
+    });
+
+    test("read as none (the page does not show the layer in one of them), the change is given as before", async () => {
+      saveRound({ ...columns, parts: null });
+      pageSaw({});
+      const reads = setTimeout(() => saveRound(columns), 100);
+      try {
+        const { output } = await cli("claim");
+
+        expect(section(output, 1)).toContain("- **Design intent:** Change the number of columns from 1 to 2.\n");
+      } finally {
+        clearTimeout(reads);
+      }
+    });
+
+    test("with no page open, claim waits for none, and gives the value the view showed", async () => {
+      saveRound({ ...columns, parts: null });
+      const started = Date.now();
+
+      const { output } = await cli("claim");
+
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(section(output, 1)).toContain("- **Design intent:** Change the number of columns from 1 to 2.\n");
+    });
+
+    test("with a page open that does not read them in time, claim waits no longer, and gives the value the view showed", async () => {
+      saveRound({ ...columns, parts: null });
+      pageSaw({});
+      const started = Date.now();
+
+      const { output } = await cli("claim");
+
+      expect(Date.now() - started).toBeGreaterThanOrEqual(5000);
+      expect(section(output, 1)).toContain("- **Design intent:** Change the number of columns from 1 to 2.\n");
+    }, 15_000);
   });
 
   test("a copy of a layer with values of its own at breakpoints lists them, for the copy to have them there too; a copy of one with none says nothing of it", async () => {
@@ -688,6 +1073,47 @@ describe("claim, Stacks made and dissolved", () => {
     expect(notes).toContain("- **Location:** **New:** the layer is made in change 1, and is not in the source yet. Apply that change first, then change it there.\n");
     expect(notes).toContain("- **Currently set by:** nothing yet: the layer is new\n");
   });
+
+  test("a change left to a layer made in a round before, its making applied then, says it is in the source now, to be found by its place on the page (ticket 68)", async () => {
+    const made = { ...board, loc: null, unlocated: false, made: "7", context: { path: ["Page", "App", "Frame", "Stack"], element: "<div>" } };
+    saveRound(
+      stack({ layer: "7", after: { ...settings, place: place(1), layers: [{ layer: "5", target: title, from: place(1) }] } }),
+      { ...smallRadius, layer: "7", target: made },
+    );
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Layer:** Stack, `<div>` (Page › App › Frame › Stack)\n");
+    expect(notes).toContain(
+      "- **Location:** **Made in a round before.** The layer was made by a change of an earlier round, applied then: it is in the source now, but the canvas has no source marker for it. Find it in the source from its place on the page, above.\n",
+    );
+    expect(notes).toContain("- **Currently set by:** unknown: the layer was made in a round before\n");
+    // The round archived holds its own changes alone: not what the round before applied.
+    await cli("finish");
+    expect(history()[1].changeSet).not.toHaveProperty("applied");
+  });
+
+  test("a change made since to a layer made in a round before, every change left of that one discarded, says the same", async () => {
+    const made = { ...board, loc: null, unlocated: false, made: "7", context: { path: ["Page", "App", "Frame", "Stack"], element: "<div>" } };
+    saveRound(
+      stack({ layer: "7", after: { ...settings, place: place(1), layers: [{ layer: "5", target: title, from: place(1) }] } }),
+      { ...smallRadius, layer: "7", target: made },
+    );
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+    // The change left discarded, then the layer edited again: nothing of this round is carried over.
+    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ lastId: 1, changes: [{ ...smallRadius, id: 1, layer: "7", target: made, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } }] }));
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Location:** **Made in a round before.** ");
+    expect(notes).not.toContain("not in the source yet");
+    expect(notes).toContain("- **Currently set by:** unknown: the layer was made in a round before\n");
+  });
 });
 
 describe("claim, new layers, words, deleting and copying", () => {
@@ -728,6 +1154,48 @@ describe("claim, new layers, words, deleting and copying", () => {
       "- **Design intent:** Add text that reads “Hello”, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.\n",
     );
     expect(section(output, 3)).not.toContain("Sketch");
+  });
+
+  /** What How to write them says of a new Frame with a brief. */
+  const briefRule = (notes: string) => /^- \*\*New Frame with a brief:\*\* (.*)$/m.exec(notes)?.[1] ?? "";
+  const sketched = change(2, "create", {
+    property: "new",
+    target: frameTarget,
+    after: { type: "text", place: place(1, { x: 10, y: 12 }, "11", frameTarget), width: 160, height: null, text: "Plans" },
+  });
+
+  test("a new Frame with a brief and nothing drawn in it: the notes say to lay it out within its size as the brief says, and name no sketch (ticket 65)", async () => {
+    saveRound(change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 360, height: 80, brief: "A row of three partner logos" } }));
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Brief:** “A row of three partner logos”. Make what it asks for in this Frame, from the project's own components and styles, laid out within its size as the brief says: the designer drew nothing in it.\n",
+    );
+    expect(briefRule(output)).toContain("laid out within the Frame's size as the brief says");
+    expect(output).not.toMatch(/sketch/i);
+  });
+
+  test("a new Frame with a brief and a sketch: the notes say to lay it out as the sketch shows, as before; with another Frame of the round drawn in, that one is laid out within its size (ticket 65)", async () => {
+    saveRound(change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }), sketched);
+
+    const rule = briefRule((await cli("claim")).output);
+
+    expect(rule).toBe(
+      "build what the brief asks for from the components and styles the project already has (its buttons, cards, type and colors), laid out as the sketch shows: the sketch is a guide to the layout, not words and boxes to copy. Say in the report what you made.",
+    );
+
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }),
+      sketched,
+      change(3, "create", { property: "new", after: { type: "frame", place: place(5), width: 360, height: 80, brief: "Logos" } }),
+    );
+    const mixed = (await cli("claim")).output;
+
+    expect(briefRule(mixed)).toContain("laid out as the sketch shows");
+    expect(briefRule(mixed)).toContain("A Frame with nothing drawn in it is laid out within its size as the brief says.");
+    expect(section(mixed, 1)).toContain("laid out as the sketch shows.\n");
+    expect(section(mixed, 3)).toContain("laid out within its size as the brief says: the designer drew nothing in it.\n");
   });
 
   test("the sketch is as the designer left it: moved or resized since, and moved or copied into the Frame", async () => {
@@ -816,6 +1284,23 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 3)).toContain("- **Reference style:** none: the copy is as the layer is\n");
     expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
     expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
+  });
+
+  test("a loop's instance copied, deleted or changed alone says which of the instances it is, and its words, as the page renders them (ticket 65)", async () => {
+    const instance = { nth: 1, words: "Freeze Turn the current page into a canvas." };
+    saveRound(
+      change(1, "delete", { property: "delete-1", before: place(2), after: null, target: cards, data: true, style: { display: "none" }, instance: { nth: 2, words: "Arrange Drag layers." } }),
+      change(2, "duplicate", { property: "copy", before: place(1), after: place(2), target: cards, data: true, instance }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Data change:** the layer is one of the 3 instances a loop renders, the 2nd of them, which reads “Arrange Drag layers.”: take its item out of the data the loop goes through.",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Data change:** the layer is one of the 3 instances a loop renders, the 1st of them, which reads “Freeze Turn the current page into a canvas.”: add an item to the data the loop goes through, a copy of this one's, at the place given.",
+    );
   });
 });
 
@@ -1000,7 +1485,7 @@ describe("done", () => {
 
     expect(code).toBe(0);
     expect(state()).toMatchObject({ status: "claimed", done: [2] });
-    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with Vernier Kit is open.\n");
+    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with Vernier Kit is open. That is no error: go on.\n");
   });
 
   test("refuses a number that is not a change of the round, or a round not claimed", async () => {
@@ -1027,9 +1512,11 @@ function history() {
 
 /**
  * Stands in for an open page: answers each check `done` asks for with
- * `answer(id)`, as the editor layer does through the local service.
+ * `answer(id)`, as the editor layer does through the local service. `saw`:
+ * what the page says it saw as the code changed, the moment an ask comes,
+ * before it answers (`answerAfter` ms later).
  */
-function openPage(answer: (id: number) => object | null, pages = 1) {
+function openPage(answer: (id: number) => object | null, pages = 1, { saw, answerAfter = 0 }: { saw?: (id: number) => object; answerAfter?: number } = {}) {
   const dir = join(project, ".vernier");
   // The local service runs in this very process, as far as the command line can tell.
   // Written whole, as the service writes it: `done` reads the file in several steps, and must never see half of it.
@@ -1039,16 +1526,49 @@ function openPage(answer: (id: number) => object | null, pages = 1) {
   };
   let results: Record<string, object> = {};
   write(results);
+  const heard = new Map<string, number>();
+  /** What was last written in answer to each ask, by its key and change id: written again only when it changes, as a page does. */
+  const given = new Map<string, string>();
   const timer = setInterval(() => {
-    const check = state()?.check;
-    const result = check && answer(check.id);
-    if (!result) return;
-    const next = { at: check.at, ...result };
-    if (JSON.stringify(results[check.id]) === JSON.stringify(next)) return;
-    results = { ...results, [check.id]: next };
-    write(results);
+    let round;
+    try {
+      round = state();
+    } catch {
+      return; // `finish` taking it away as it was read.
+    }
+    // What `claim` asks of a round carried over, `done` asks, and `finish` before it ends the round.
+    for (const check of [round?.opening, round?.check, round?.closing]) {
+      if (!check) continue;
+      if (!heard.has(check.key)) {
+        heard.set(check.key, performance.now() + answerAfter);
+        if (saw) {
+          results = { ...results, ...Object.fromEntries(check.ids.map((id: number) => [id, { at: new Date().toISOString(), ...saw(id) }])) };
+          write(results);
+        }
+      }
+      if (performance.now() < heard.get(check.key)!) continue;
+      for (const id of check.ids) {
+        const result = answer(id);
+        if (!result) continue;
+        // Not again and again, as `done` and `finish` both ask for the change: written after `finish` has archived the round, it would come back.
+        const answered = JSON.stringify(result);
+        if (given.get(`${check.key} ${id}`) === answered) continue;
+        given.set(`${check.key} ${id}`, answered);
+        results = { ...results, [id]: { at: new Date().toISOString(), answers: check.key, ...result } };
+        write(results);
+      }
+    }
   }, 20);
   return () => clearInterval(timer);
+}
+
+/** As the open page writes what it saw as the code changed, with no `done` asking: `results` by change id, checked now. */
+function pageSaw(results: Record<number, object>, pages = 1) {
+  const at = new Date().toISOString();
+  writeFileSync(
+    join(project, ".vernier/checks.json"),
+    JSON.stringify({ pages, service: process.pid, results: Object.fromEntries(Object.entries(results).map(([id, result]) => [id, { at, ...result }])) }),
+  );
 }
 
 describe("done, checked on the page", () => {
@@ -1076,9 +1596,10 @@ describe("done, checked on the page", () => {
     fixed = true;
     const again = await cli("done", "1");
 
+    // Done, but not shown: it does not count as applied.
     expect(first.output).toBe(
-      "Change 1 done: 1 of 2 changes applied.\n" +
-        "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity. " +
+      "Change 1 done: 0 of 2 changes applied.\n" +
+        "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity, as the browser computes `background-color` on the layer. " +
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 1` again.\n",
     );
     expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
@@ -1105,12 +1626,129 @@ describe("done, checked on the page", () => {
     expect((await cli("done", "3")).output).toContain("The layer is placed absolute, but not from its container: make the container its positioning reference (`position: relative`)");
   });
 
+  test("for a layer placed absolute, and its Y, the page drawing it off the canvas by its margins: says so, and what to keep", async () => {
+    const hero = { ...cards, loc: "src/App.tsx:19:7", instances: 1 };
+    const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: hero }, nth, slot: nth - 1, absolute });
+    saveRound(
+      { ...redFill, layer: "5", kind: "move", property: "move", before: place(2), after: place(2, { x: 0, y: 488 }), style: {}, margins: { x: 0, y: 24 } },
+      { ...redFill, id: 2, layer: "6", property: "y", before: 368, after: 488, style: { top: "488px" }, margins: { x: 0, y: 24 } },
+      { ...redFill, id: 3, layer: "7", kind: "move", property: "move", before: place(3), after: place(3, { x: 40, y: 12 }), style: {}, margins: { x: 2, y: 6 } },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({
+      outcome: "not shown",
+      actual: id === 1 ? { x: 0, y: 488, margins: { x: 0, y: 0 } } : id === 2 ? { value: 488, margin: 0 } : { x: 0, y: 0, margins: { x: 2, y: 6 } },
+    }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The layer is drawn at X 0px and Y 488px in its container (`left` 0px and `top` 488px, margins none), " +
+        "where the canvas draws it at X 0px and Y 512px (its X and Y are its `left` and `top`, 0px and 488px, and it keeps its margins, 24px top). " +
+        "Its `left` and `top` are right, but not its margins: keep the margins it has on the canvas (what sets them, such as `mt-6` or `margin-top`), or add them to `left` and `top`, and run `npx vernierkit done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. The Y position is drawn at 488px in its container (`top` 488px, top margin 0px), " +
+        "where the canvas draws it at 512px (its Y is its `top`, 488px, and it keeps its 24px top margin). " +
+        "Its `top` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mt-6` or `margin-top`), or add it to `top`, and run `npx vernierkit done 2` again.\n",
+    );
+    closePage();
+    closePage = openPage((id) => ({ outcome: "not shown", width: 390, actual: id === 2 ? { value: 470, margin: 0 } : { x: 0, y: 470, margins: { x: 0, y: 0 } } }));
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. At 390px wide, the layer is drawn at X 0px and Y 470px in its container (`left` 0px and `top` 470px, margins none), " +
+        "where the canvas places it at X 0px and Y 488px, its `left` and `top`, and keeps its margins (24px top in the desktop view; at this width, the margins the project's breakpoints give it). " +
+        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. At 390px wide, the Y position is drawn at 470px in its container (`top` 470px, top margin 0px), " +
+        "where the canvas places it at 488px, its `top`, and keeps its top margin (24px in the desktop view; at this width, the margin the project's breakpoints give it). " +
+        "Check its `position` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 2` again.\n",
+    );
+    closePage();
+    closePage = openPage((id) => ({ outcome: "not shown", actual: id === 1 ? { x: 0, y: 488, margins: { x: 0, y: 0 } } : id === 2 ? { value: 488, margin: 0 } : { x: 0, y: 0, margins: { x: 2, y: 6 } } }));
+    expect((await cli("done", "3")).output).toContain(
+      "The layer is drawn at X 2px and Y 6px in its container (`left` 0px and `top` 0px, margins 2px left and 6px top), " +
+        "where the canvas draws it at X 42px and Y 18px (its X and Y are its `left` and `top`, 40px and 12px, and it keeps its margins, 2px left and 6px top). " +
+        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 3` again.\n",
+    );
+  });
+
+  test("several changes at once: each marked done, each with how the page checked it", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage((id) => (id === 2 ? { outcome: "not shown", actual: 12 } : { outcome: "shown" }));
+
+    const { code, output } = await cli("done", "1", "2");
+
+    expect(code).toBe(0);
+    expect(state()).toMatchObject({ done: [1, 2] });
+    expect(output).toBe(
+      "Changes 1 and 2 done: 1 of 2 changes applied.\n" +
+        "Change 1: checked on the page: it shows the change.\n" +
+        "Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 4px, as the browser computes `border-radius` on the layer. " +
+        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 2` again.\n",
+    );
+  });
+
+  test("what the page saw as the code changed, in the very millisecond done asks, is no answer to it: done waits for the page's answer", async () => {
+    // One clock that never moves: the page's look and the ask, both at the same millisecond.
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-31T02:06:21.127Z") });
+    try {
+      saveRound(redFill, smallRadius);
+      await cli("claim");
+      closePage = openPage(() => ({ outcome: "shown" }), 1, { saw: () => ({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } }), answerAfter: 300 });
+
+      const { output } = await cli("done", "1");
+
+      expect(output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("with no page open now, a change a page showed this round, as the code changed, is shown", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    pageSaw({ 1: { outcome: "shown" } }, 0);
+
+    const started = Date.now();
+    const { output } = await cli("done", "1");
+
+    expect(output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  test("a change not shown at another width says at which, and what to look at", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "Checked on the page: it does not show the change. At 390px wide, the fill is #FFFFFF, not #FF0000 at 50% opacity, as the browser computes `background-color` on the layer. " +
+        "The change applies at every width: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
+    );
+  });
+
+  test("a change at a range in parts, not shown in one of them, says at which width, and that the change applies there too (ticket 65)", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
+    ];
+    saveRound({ ...redFill, property: "columns", before: 1, after: 2, style: { "grid-template-columns": "repeat(2, minmax(0, 1fr))" }, breakpoint: PHONE, parts });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: 3, width: 640 }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "Checked on the page: it does not show the change. At 640px wide, the number of columns is 3, not 2, as the browser computes `grid-template-columns` on the layer. " +
+        "The change applies below 768px only, at that width too: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
+    );
+  });
+
   test("says why when the page could not check it", async () => {
     saveRound(redFill);
     await cli("claim");
     closePage = openPage(() => ({ outcome: "unchecked", reason: "the layer is not on the page now" }));
 
-    expect((await cli("done", "1")).output).toContain("\nNot checked on the page: the layer is not on the page now.\n");
+    expect((await cli("done", "1")).output).toContain("\nNot checked on the page: the layer is not on the page now. That is no error: go on.\n");
   });
 
   test("of two pages, waits for the one that can check, while the other cannot", async () => {
@@ -1121,6 +1759,16 @@ describe("done, checked on the page", () => {
     closePage = openPage(() => (Date.now() - since > 300 ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" }), 2);
 
     expect((await cli("done", "1")).output).toContain("Checked on the page: it shows the change.");
+  });
+
+  test("of two pages, does not wait for the other when the change is one no page can check", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "unchecked", reason: "the layer is new this round, so the page has no marker to find it by", anyPage: true }), 2);
+
+    const started = Date.now();
+    expect((await cli("done", "1")).output).toContain("Not checked on the page: the layer is new this round");
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test("does not wait for pages of a local service that is no longer running", async () => {
@@ -1145,7 +1793,7 @@ describe("done, checked on the page", () => {
     );
     await cli("done", "1");
 
-    expect((await cli("finish")).output).toBe("Round finished: 1 of 1 change applied.\n");
+    expect(finished((await cli("finish")).output)).toBe("Round finished: 1 of 1 change applied.\n");
     expect(history()[0].result.checks).toEqual({});
   });
 
@@ -1158,15 +1806,53 @@ describe("done, checked on the page", () => {
 
     const { output } = await cli("finish");
 
-    expect(output).toBe(
-      "Round finished: 2 of 2 changes applied. The page did not show: 2. Report them as not applied 1:1, with why.\n",
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 2.\n",
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
-    expect(existsSync(join(project, ".vernier/checks.json"))).toBe(false);
+    // Change 2 is carried over to the next round (ticket 68): the open page is still counted, with none of this round's checks.
+    expect(JSON.parse(readFileSync(join(project, ".vernier/checks.json"), "utf8"))).toMatchObject({ pages: 1, results: {} });
+  });
+});
+
+describe("progress, as the page shows it", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+
+  test("a change the page shows counts as applied, done or not; one marked done that it does not show does not; one it cannot check counts once done", async () => {
+    const brief = { ...redFill, id: 3, kind: "brief", property: "brief", before: null, after: "Lift on hover", style: {} };
+    saveRound(redFill, smallRadius, brief);
+    await cli("claim");
+    await cli("done", "2", "3");
+    // The page that saw them is closed now: what it saw stands.
+    pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } }, 0);
+
+    const { output } = await cli("finish");
+
+    expect(finished(output)).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2.\n");
+    expect(history()[0].result).toMatchObject({ done: [2, 3], applied: [1, 3] });
+    expect(section((await cli("last")).output, 1)).toContain("- **Status:** Applied\n");
+    expect(section((await cli("last")).output, 2)).toContain("- **Status:** Not applied\n");
+  });
+
+  test("finish has the open page look at every change it can once more, and its answer is the round's result: a change undone by a later edit is not applied", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "shown" } });
+    let closing = false;
+    closePage = openPage((id) => (state()?.closing ? ((closing = true), id === 1 ? { outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } } : { outcome: "shown" }) : null));
+
+    const { output } = await cli("finish");
+
+    expect(closing).toBe(true);
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 1.\n");
+    expect(history()[0].result).toMatchObject({ applied: [2] });
   });
 });
 
 describe("finish", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+
   test("archives the round with what was done, and leaves no round behind, so the designer can start the next", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
@@ -1176,12 +1862,12 @@ describe("finish", () => {
     const { code, output } = await cli("finish");
 
     expect(code).toBe(0);
-    expect(output).toBe("Round finished: 2 of 2 changes applied.\n");
+    expect(finished(output)).toBe("Round finished: 2 of 2 changes applied.\n");
     expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
     expect(history()).toEqual([
       {
         changeSet: { lastId: 2, changes: [redFill, smallRadius] },
-        result: { ended: "finished", done: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {}, code: null },
+        result: { ended: "finished", done: [1, 2], applied: [1, 2], at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), checks: {}, code: null },
       },
     ]);
   });
@@ -1193,8 +1879,63 @@ describe("finish", () => {
 
     const { output } = await cli("finish");
 
-    expect(output).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1. Report why in your reply.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not marked done: 1.\n");
     expect(history()[0].result.done).toEqual([2]);
+  });
+
+  test("ends with the round's report laid out: each change under the heading the page's checks put it under, those under ⚠️ with why and instead (ticket 65)", async () => {
+    const words = { ...redFill, id: 3, kind: "text", property: "text", before: "Vernier Kit", after: "Vernier Studio", style: {}, target: { ...cards, instances: 1 } };
+    const brief = { ...redFill, id: 4, kind: "brief", property: "brief", before: null, after: "Bounce back harder", style: {} };
+    saveRound(redFill, smallRadius, words, brief);
+    await cli("claim");
+    closePage = openPage((id) => (id === 2 ? { outcome: "not shown", actual: 12, width: 390 } : id === 3 ? { outcome: "unchecked", reason: "the text has no element of its own on the page" } : { outcome: "shown" }));
+    await cli("done", "1", "2", "4");
+
+    const { output } = await cli("finish");
+
+    const [first, ...rest] = output.split("\n");
+    expect(first).toBe("Round finished: 2 of 4 changes applied. Not marked done: 3. The page does not show: 2.");
+    expect(rest.join("\n")).toBe(
+      "\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n" +
+        "```\n" +
+        "✓ Applied\n" +
+        "- 1. Fill: <the layer, and what you changed>\n" +
+        "- 4. Brief: <the layer, and what you changed>\n" +
+        "\n" +
+        "⚠️ Not applied 1:1\n" +
+        "- 2. Corner radius: <the layer>\n" +
+        "  Why: at 390px wide, the page shows the corner radius 12px, not 4px: <what keeps it so>\n" +
+        "  Instead: <what you did, or “left as it was”>\n" +
+        "- 3. Text: <the layer>\n" +
+        "  Why: <why it is not applied>\n" +
+        "  Instead: <what you did, or “left as it was”>\n" +
+        "```\n\n" +
+        "- 4 the page cannot check: keep it under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n" +
+        REPORT_RULES,
+    );
+  });
+
+  test("with every change shown on the page, the report has no ⚠️ section", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "shown" }));
+    await cli("done", "1");
+
+    const form = (await cli("finish")).output;
+
+    expect(form).toContain("```\n✓ Applied\n- 1. Fill: <the layer, and what you changed>\n```\n");
+    expect(form).not.toContain("⚠️ Not applied");
+  });
+
+  test("the Skill is the way through a round and the report only: a third as long as before ticket 65 at most (146 lines, 24935 characters)", () => {
+    const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
+
+    expect(skill.split("\n").length).toBeLessThanOrEqual(146 / 3);
+    expect(skill.length).toBeLessThanOrEqual(24935 / 3);
+  });
+
+  test("the Skill gives the report's rules in the very words finish does", () => {
+    expect(readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8")).toContain(REPORT_RULES);
   });
 
   test("refuses a round that is not claimed", async () => {
@@ -1240,19 +1981,232 @@ describe("last", () => {
   });
 });
 
-describe("claim, again", () => {
-  test("prints the notes once more, with the changes done so far, and keeps them done", async () => {
+describe("changes not applied, carried over to the next round on the same canvas (ticket 68)", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+  const halfOpacity = { ...redFill, id: 3, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
+  const changeSet = () => JSON.parse(readFileSync(join(project, ".vernier/changeset.json"), "utf8"));
+
+  test("finish with changes not applied keeps them, numbered from 1 in their order, and the canvas; the applied ones are archived and kept apart, for the canvas to take in", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "2");
+
+    const { output } = await cli("finish");
+
+    expect(finished(output)).toBe("Round finished: 1 of 3 changes applied. Not marked done: 1, 3.\n");
+    expect(readdirSync(join(project, ".vernier")).sort()).toEqual(["canvas.html", "changeset.json", "history"]);
+    // The archive keeps the whole round, as before: `last` is as it was.
+    expect(history()[0].changeSet).toEqual({ lastId: 3, changes: [redFill, smallRadius, halfOpacity] });
+    expect(changeSet()).toEqual({
+      lastId: 2,
+      changes: [
+        { ...redFill, id: 1, carried: true },
+        { ...halfOpacity, id: 2, carried: true },
+      ],
+      applied: [smallRadius],
+    });
+  });
+
+  test("with every change applied, nothing is kept and the canvas goes, as before", async () => {
     saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1", "2");
+    await cli("finish");
+    expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
+  });
+
+  /** A round that ended with changes 1 and 3 of three not applied; the designer then made one more, numbered after them. */
+  async function carriedRound() {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "2");
+    await cli("finish");
+    const next = changeSet();
+    const shadow = { ...redFill, id: 3, property: "blur", before: 0, after: 4, style: { filter: "blur(4px)" } };
+    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ ...next, lastId: 3, changes: [...next.changes, shadow] }));
+    return shadow;
+  }
+
+  test("the next claim gives the changes left and those made since, numbered on from 1, and says which were left, as claim run again says what is applied (ticket 67)", async () => {
+    const shadow = await carriedRound();
+
+    const { output } = await cli("claim");
+
+    expect(output).toMatch(/^# Design changes to apply\n\nThis round carries 2 changes over from the round before, not applied then \(1 and 2\), and none of its 3 changes are applied yet\. Left: 3 changes, made by the designer in Vernier Kit\. Apply them/);
+    expect(changeSections(output)).toBe(changeSections((await describeOnly({ ...redFill, id: 1 }, { ...halfOpacity, id: 2 }, shadow)).output));
+  });
+
+  test("with a page open, the claim asks it what it shows now: a change it shows is applied already, the others go from the value it shows now to theirs", async () => {
+    await carriedRound();
+    closePage = openPage((id) => (id === 2 ? { outcome: "shown" } : { outcome: "not shown", actual: { type: "solid", color: "#DC2626", opacity: 1 } }));
+
+    const { output } = await cli("claim");
+
+    expect(state().opening.ids).toEqual([1, 2]);
+    expect(output).toContain(
+      "This round carries 2 changes over from the round before, not applied then (1 and 2), and 1 of its 3 changes is applied already (2), as the designer's page shows it. Left: 2 changes, made by the designer in Vernier Kit.",
+    );
+    expect(section(output, 2)).toBe("");
+    expect(section(output, 1)).toContain("- **Design intent:** Change the fill from #DC2626 to #FF0000 at 50% opacity.\n");
+    // As read, it stays: claim run again, and `last` once the round is over, say the same.
+    expect(changeSet().changes[0].before).toEqual({ type: "solid", color: "#DC2626", opacity: 1 });
+    expect((await cli("done", "2")).output).toBe("Change 2 done: 1 of 3 changes applied.\nChecked on the page: it shows the change.\n");
+  });
+
+  /** A round of `changes` ended with change 1 applied alone: the others carried over, from 1. */
+  async function carriedOver(...changes: object[]) {
+    saveRound(...changes);
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+  }
+
+  test("an X carried over goes from the X the page shows now: its `left`, the margin kept apart", async () => {
+    const x = { ...redFill, id: 2, property: "x", before: 10, after: 40, style: { left: "40px", right: "auto" }, margins: { x: 8, y: 0 } };
+    const placed = { ...redFill, id: 3, property: "absolute", before: null, after: { x: 40, y: 50 }, style: { position: "absolute", left: "40px", top: "50px" }, margins: { x: 8, y: 0 } };
+    await carriedOver({ ...smallRadius, id: 1 }, x, placed);
+    closePage = openPage((id) => (id === 1 ? { outcome: "not shown", actual: { value: 32, margin: 8 } } : { outcome: "not shown", actual: { x: 5, y: 6, margins: { x: 8, y: 0 } } }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the X position from 32px to 40px.\n");
+    expect(output).not.toContain("[object Object]");
+    expect(changeSet().changes.map((change: { before: unknown }) => change.before)).toEqual([32, { x: 5, y: 6 }]);
+  });
+
+  test("an X the page does not place absolute now keeps the X it went from", async () => {
+    const x = { ...redFill, id: 2, property: "x", before: 10, after: 40, style: { left: "40px", right: "auto" }, margins: { x: 8, y: 0 } };
+    await carriedOver({ ...smallRadius, id: 1 }, x);
+    // In the layout: what the page reads is its `left` as CSS sets it, no X (null when \`auto\`).
+    closePage = openPage(() => ({ outcome: "not shown", actual: 0 }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the X position from 10px to 40px.\n");
+    // A round of one change says so.
+    expect(output).toContain("not applied then (1), and its 1 change is not applied yet. Left: 1 change");
+  });
+
+  test("a change at a range in parts carried over goes from what the page shows in them now, the same in every part too", async () => {
+    const PHONE = { min: null, max: 768, project: { tailwind: "max-md:" } };
+    const parts = (before: number) => [
+      { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before },
+      { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before },
+    ];
+    await carriedOver(redFill, { ...smallRadius, breakpoint: PHONE, parts: parts(12) });
+    // As the page read the parts again, the code as it is, before the claim.
+    const next = changeSet();
+    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ ...next, changes: [{ ...next.changes[0], parts: parts(8) }] }));
+    closePage = openPage(() => ({ outcome: "not shown", actual: 8 }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the corner radius from 8px to 4px.\n");
+    expect(changeSet().changes[0].before).toBe(8);
+  });
+
+  test("what sets a change's value carried over is read again from the page with the value, in the same ask; with no page open, it is as it was", async () => {
+    const was = { properties: ["border-top-left-radius"], kind: "rule", selector: ".rounded-xl", file: "src/index.css", layer: null, important: false, className: "rounded-xl", declaration: null };
+    const now = { ...was, selector: ".rounded-lg", className: "rounded-lg" };
+    await carriedOver(redFill, { ...smallRadius, sources: [was] });
+    expect(section((await describeClaimOf(changeSet())), 1)).toContain("class `rounded-xl`");
+    closePage = openPage(() => ({ outcome: "not shown", actual: 8, sources: [now] }));
+
+    const { output } = await cli("claim");
+
+    expect(state().opening.ids).toEqual([1]);
+    expect(section(output, 1)).toContain("class `rounded-lg`");
+    expect(section(output, 1)).not.toContain("class `rounded-xl`");
+    expect(changeSet().changes[0].sources).toEqual([now]);
+  });
+
+  test("with every change left shown on the page now, says to finish the round", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "2");
+    await cli("finish");
+    closePage = openPage(() => ({ outcome: "shown" }));
+
+    const { output } = await cli("claim");
+
+    expect(output).toBe(
+      "This round carries 1 change over from the round before, not applied then (1), and its 1 change is applied already, as the designer's page shows it: run `npx vernierkit finish` to end it.\n",
+    );
+  });
+});
+
+describe("claim, again", () => {
+  // The designer tells an Agent that stopped to go on (ticket 67): it gets what is left, as the page counts it (ADR 0013).
+  const halfOpacity = { ...redFill, id: 3, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
+
+  test("gives only the changes not applied yet: those neither shown on the page nor done; the round stays as it was", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "1");
+    pageSaw({ 2: { outcome: "shown" } });
+
+    const { code, output } = await cli("claim");
+
+    expect(code).toBe(0);
+    expect(state()).toMatchObject({ status: "claimed", done: [1] });
+    expect(changeSections(output)).toBe(changeSections((await describeOnly(halfOpacity)).output));
+    expect(output).toContain("This round is claimed already, and 2 of its 3 changes are applied (1 and 2), as the designer's page shows them or as you reported them done. Left: 1 change, made by the designer");
+    expect(output).not.toContain("**Status:**");
+  });
+
+  test("says of one change applied that it is", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
     await cli("claim");
     await cli("done", "1");
 
     const { output } = await cli("claim");
 
-    expect(state()).toMatchObject({ status: "claimed", done: [1] });
-    expect(section(output, 1)).toContain("- **Status:** Done\n");
-    expect(section(output, 2)).toContain("- **Status:** Not done yet\n");
+    expect(output).toContain("This round is claimed already, and 1 of its 3 changes is applied (1), as the designer's page shows them or as you reported them done. Left: 2 changes, made by the designer");
+  });
+
+  test("gives again a change done that the page does not show", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1");
+    pageSaw({ 1: { outcome: "not shown", actual: null } });
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).not.toBe("");
+    expect(section(output, 2)).not.toBe("");
+    expect(output).toContain("This round is claimed already, and none of its 2 changes are applied yet. Left: 2 changes, made by the designer");
+  });
+
+  test("with every change applied, says to finish the round", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1", "2");
+
+    const { code, output } = await cli("claim");
+
+    expect(code).toBe(0);
+    expect(output).toBe("This round is claimed already, and all 2 of its changes are applied, as the designer's page shows them or as you reported them done: run `npx vernierkit finish` to end it.\n");
   });
 });
+
+/** What `claim` gives for a round saved as `changeSet`, in another project, with no page open. */
+async function describeClaimOf(changeSet: { changes: object[] }) {
+  return (await describeOnly(...changeSet.changes)).output;
+}
+
+/** What `claim` gives for a round of these changes alone, in another project. */
+async function describeOnly(...changes: object[]) {
+  const other = project;
+  project = mkdtempSync(join(tmpdir(), "vernierkit-cli-"));
+  try {
+    saveRound(...changes);
+    return await cli("claim");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    project = other;
+  }
+}
 
 describe("a claimed state left without its round", () => {
   // As when `done` writes the state back just after the designer unlocked the round.
@@ -1298,6 +2252,19 @@ describe("undoing the last round, in a git repository", () => {
     expect(readFileSync(join(project, "Card.tsx"), "utf8")).toContain('className="bg-white"');
     expect(existsSync(join(project, "fill.css"))).toBe(false);
     expect([...readFileSync(join(project, "icon.png"))]).toEqual([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3]);
+  });
+
+  test("done tells the page when the code was last edited, so it waits for that edit to reach it", async () => {
+    git("init", "-q");
+    writeFileSync(join(project, "Card.tsx"), "export const Card = () => null;\n");
+    saveRound(redFill);
+    await cli("claim");
+    writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-red-500/50" />;\n');
+    const edited = Math.floor(statSync(join(project, "Card.tsx")).mtimeMs);
+
+    await cli("done", "1");
+
+    expect(state().check).toMatchObject({ ids: [1], codeAt: edited });
   });
 
   test("outside a git repository, last gives the notes only", async () => {
@@ -1382,7 +2349,7 @@ describe("claim, a round saved before the instances of a layer shared their edit
   /** Saved by the code of then (ticket 60): `saved-round.browser.test.ts`. */
   const FIXTURE = join(import.meta.dirname, "fixtures/round-before-60");
 
-  test("prints the change notes as it did then, word for word", async () => {
+  test("prints the notes of each change as it did then, word for word", async () => {
     mkdirSync(join(project, ".vernier"), { recursive: true });
     for (const file of ["canvas.html", "changeset.json", "off-canvas.json"]) writeFileSync(join(project, ".vernier", file), readFileSync(join(FIXTURE, file)));
 
@@ -1391,6 +2358,7 @@ describe("claim, a round saved before the instances of a layer shared their edit
     expect(code).toBe(0);
     // Written once, by the code of then: never over the one kept.
     if (process.env.VK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
-    expect(output).toBe(readFileSync(join(FIXTURE, "claim.md"), "utf8"));
+    // What goes around the changes, the way through the round and how to write them, is of the notes of now (ticket 65).
+    expect(changeSections(output)).toBe(changeSections(readFileSync(join(FIXTURE, "claim.md"), "utf8")));
   });
 });

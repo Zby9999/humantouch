@@ -39,6 +39,12 @@ export interface Target {
   };
 }
 
+/** A part of a change's breakpoint, between two of the project's breakpoints, and what the page showed there before the change. */
+export interface RangePart {
+  breakpoint: Breakpoint;
+  before: unknown;
+}
+
 /** Where a moved layer is: the container it is in, its place there, and its position when absolute. */
 export interface Place {
   /** The container: its id on the canvas, how the Agent finds it in the source, and whether it is a Grid, whose places are its cells. */
@@ -82,8 +88,19 @@ export interface Dissolved {
   /** The Frame's size, in px. */
   width: number;
   height: number;
-  /** Its layers, each where it was: `x` and `y` in px from the Frame's top left, its size, and the CSS that places it so. */
-  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string> })[];
+  /**
+   * Its layers, each where it was: `x` and `y` in px from the Frame's top
+   * left, its size, the CSS that places it so, and its margins, which it
+   * keeps (`Change.margins`): it is drawn past `x` and `y` by them. None in
+   * a round saved before the canvas recorded them.
+   */
+  layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins?: Margins })[];
+}
+
+/** A layer's left and top margins, in px. */
+export interface Margins {
+  x: number;
+  y: number;
 }
 
 /** A layer the designer made (the `after` of a `create` change): new text or a new Frame, and where it goes. */
@@ -178,6 +195,14 @@ export interface Change {
    * None: at every width, unless a breakpoint changes the property on its own.
    */
   breakpoint?: Breakpoint;
+  /**
+   * A style change at a breakpoint the project's own breakpoints cut into
+   * parts (ticket 65): each part, and the value the live page showed there,
+   * the code as it was, once the change was made. Null: the page has yet to
+   * be read, and `claim` waits for it. None: the range is one part, or the
+   * page could not be looked at.
+   */
+  parts?: RangePart[] | null;
   property: string;
   before: unknown;
   after: unknown;
@@ -205,6 +230,8 @@ export interface Change {
   offCanvas?: string;
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
+  /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1, as the page renders them, those deleted on the canvas too, and its words (ticket 65). */
+  instance?: { nth: number; words?: string };
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
@@ -220,6 +247,13 @@ export interface Change {
    */
   within?: string;
   /**
+   * A layer placed by its X and Y (an `x`, `y` or `absolute` style change, or
+   * a move absolute): its left and top margins on the canvas, in the view
+   * the change is made in. Its X and Y are its `left` and `top`, and it keeps
+   * its margins: the canvas draws it past its X and Y by them, and so must the page.
+   */
+  margins?: Margins;
+  /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
    * JSX); what the check measures the live page by. `self`: which of them the
@@ -227,6 +261,13 @@ export interface Change {
    * leaves out. Null: the page cannot tell their order, as text runs on among the layers.
    */
   order?: { signs: string[]; self: number; others: number[] } | null;
+  /**
+   * Left from a round before, which ended with it not applied (ticket 68):
+   * numbered anew, its layer on the same canvas still. Its `before` is the
+   * code as it was then: as the round is claimed, the page reads what it
+   * shows now.
+   */
+  carried?: true;
 }
 
 /**
@@ -247,7 +288,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "instance"
     > & {
       kind?: Change["kind"];
     },
@@ -271,6 +312,14 @@ export interface SavedChangeSet {
   /** The last id handed out, so a restored ChangeSet never hands it out again. */
   lastId: number;
   changes: Change[];
+  /**
+   * The changes of the rounds before that were applied, while those left
+   * were carried over to this one (ticket 68): still on the canvas, under
+   * what is left, and no change of this round's. The canvas takes them in as
+   * it is next opened or changed (`takeInApplied`), and they go: from then on
+   * the canvas has them as the page's own, which no undo takes back off.
+   */
+  applied?: Change[];
 }
 
 /** A new ChangeSet, or the one `saved` was saved from. */
@@ -292,6 +341,9 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
         // So do the Variables it is.
         if (change.variables) earlier.variables = change.variables;
         else delete earlier.variables;
+        // And where the canvas draws it, by the margins it has where it is now.
+        if (change.margins) earlier.margins = change.margins;
+        else delete earlier.margins;
       } else {
         const { breakpoint, ...rest } = change;
         changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...(breakpoint && { breakpoint: { ...breakpoint } }), ...rest });
@@ -311,6 +363,30 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
     list: () => [...changes.values()],
     save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
+}
+
+/**
+ * The round that comes after one that ended with changes not applied, on the
+ * same canvas (ticket 68): those changes, in their order, numbered from 1
+ * (the ChangeSet goes on from there), each marked `carried`; what was applied
+ * goes with them apart, for the canvas to take in as the page's own. What the
+ * page showed in each part of a change's range is read again, the code as it
+ * is now. Null with every change applied: no round is left.
+ */
+export function carryOver(changeSet: SavedChangeSet, applied: number[]): SavedChangeSet | null {
+  const left = changeSet.changes.filter((change) => !applied.includes(change.id));
+  if (!left.length) return null;
+  const ids = new Map(left.map((change, i) => [change.id, i + 1]));
+  const changes = left.map((change): Change => ({
+    ...change,
+    id: ids.get(change.id)!,
+    ...(change.parts && { parts: null }),
+    // A breakpoint a copy took over from a change applied: no change of this round's gives it (0, none).
+    ...(change.copiedBreakpoints && { copiedBreakpoints: change.copiedBreakpoints.map((copy) => ({ ...copy, change: ids.get(copy.change) ?? 0 })) }),
+    carried: true,
+  }));
+  const taken = [...(changeSet.applied ?? []), ...changeSet.changes.filter((change) => applied.includes(change.id))];
+  return { lastId: changes.length, changes, ...(taken.length && { applied: taken }) };
 }
 
 /**
@@ -380,6 +456,11 @@ export function placedAt(change: Change): Place | null {
   if (change.kind === "move" || change.kind === "duplicate") return change.after as Place;
   if (change.kind === "create" || change.kind === "stack" || change.kind === "putBack") return (change.after as Created | Composed | PutBack).place;
   return null;
+}
+
+/** The changes of `list` that put a layer in the layer `frame` (drawn, moved, put back or copied in), as a sketch in a new Frame: a Stack made there is none. */
+export function drawnIn(frame: string, list: Change[]): Change[] {
+  return list.filter((change) => change.kind !== "stack" && placedAt(change)?.container.layer === frame);
 }
 
 /** The layers whose place or layout a change changes. One of a loop's instances changed alone is told apart from the others. */

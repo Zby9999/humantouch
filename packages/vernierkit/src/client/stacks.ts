@@ -5,7 +5,7 @@
  * being edited and on a saved one.
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, relayOut, restoreStyle } from "./canvas-style";
-import type { Change, Composed, Dissolved, StackSettings } from "./changeset";
+import type { Change, Composed, Dissolved, Margins, StackSettings } from "./changeset";
 import type { Alignment } from "./property-table";
 import { MOVE_CSS, slotsOf } from "./moves";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -133,6 +133,12 @@ export function spotIn(el: Element, container: Element): { x: number; y: number 
   const r = el.getBoundingClientRect();
   const [top, , , left] = marginsOf(el);
   return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
+}
+
+/** An element's left and top margins, in px: how far past its X and Y an absolute layer is drawn. */
+export function marginsAt(el: Element): Margins {
+  const [top, , , left] = marginsOf(el);
+  return { x: left, y: top };
 }
 
 /** An element's margins, in px: top, right, bottom, left. */

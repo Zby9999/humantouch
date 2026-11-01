@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { startService, type Service } from "../src/service";
-import { OFF_CANVAS_PATH, ROUND_PATH, TOKEN_HEADER, type SavedOffCanvasLayer } from "../src/service-protocol";
-import { archiveRound, vernierFolder, writeState } from "../src/vernier-folder";
+import { CHECKS_PATH, EVENTS_PATH, OFF_CANVAS_PATH, ROUND_PATH, STATUS_PATH, TOKEN_HEADER, type SavedOffCanvasLayer } from "../src/service-protocol";
+import { archiveRound, roundStatus, vernierFolder, writeState } from "../src/vernier-folder";
 
 const APP = `export function App() {
   return (
@@ -95,5 +95,84 @@ describe("layers off the canvas, in the local service", () => {
 
     const changes = JSON.parse(readFileSync(join(root, ".vernier/changeset.json"), "utf8")).changes;
     expect(changes[0].after.layer.origin.snippet).toEqual({ loc: "src/App.tsx:4:7", code: '<h1 className="text-4xl">Hello</h1>' });
+  });
+});
+
+describe("the pages open on the round", () => {
+  test("a page that stops listening at once, as React's strict mode has it on mount, is not counted as open from then on", async () => {
+    await call("PUT", ROUND_PATH, { canvas: "<html></html>", changeSet: { lastId: 0, changes: [] } });
+    const folder = vernierFolder(root);
+    for (let i = 0; i < 40; i++) {
+      const stop = new AbortController();
+      const listening = fetch(`${service.url}${EVENTS_PATH}`, { headers: { [TOKEN_HEADER]: service.token }, signal: stop.signal }).catch(() => {});
+      setTimeout(() => stop.abort(), i % 4);
+      await listening;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(JSON.parse(readFileSync(folder.checks, "utf8")).pages).toBe(0);
+  });
+});
+
+describe("how the round stands, as the editor layer is told", () => {
+  test("which changes count as applied: those the page shows, done or not, and those done that it cannot check; not one done that it does not show", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 3, changes: [] }));
+    const claimedAt = new Date().toISOString();
+    await writeState(folder, { status: "claimed", done: [2, 3], claimedAt });
+    const at = new Date().toISOString();
+    for (const [id, result] of [[1, { outcome: "shown" }], [2, { outcome: "not shown", actual: 12 }], [3, { outcome: "unchecked", reason: "the layer is not on the page now" }]] as const) {
+      expect((await call("POST", CHECKS_PATH, { id, at, ...result })).status).toBe(204);
+    }
+
+    const events = await call("GET", EVENTS_PATH);
+    const reader = events.body!.pipeThrough(new TextDecoderStream()).getReader();
+    const { value } = await reader.read();
+    await reader.cancel();
+
+    expect(JSON.parse(value!.split("\n")[0])).toMatchObject({ status: "claimed", done: [2, 3], applied: [1, 3] });
+  });
+
+  test("a change shown, then not by a page behind the one that showed it, still counts; undone by a later edit, as the page that showed it says, it does not", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 1, changes: [] }));
+    await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString() });
+    const report = (result: object) => call("POST", CHECKS_PATH, { id: 1, at: new Date().toISOString(), ...result });
+    const applied = async () => ((await roundStatus(folder)) as { applied: number[] }).applied;
+
+    await report({ outcome: "shown" });
+    await report({ outcome: "not shown", actual: 12 });
+    expect(await applied()).toEqual([1]);
+
+    await report({ outcome: "not shown", actual: 12, undone: true });
+    expect(await applied()).toEqual([]);
+  });
+
+  test("a page behind the one that showed a change, saying unasked it does not show, in the very millisecond done asks, is not taken for an answer; the answer to the ask is", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 1, changes: [] }));
+    const at = "2026-10-31T02:06:21.127Z";
+    await writeState(folder, { status: "claimed", done: [1], claimedAt: "2026-10-31T02:06:20.000Z", check: { ids: [1], at, key: "ask-1" } });
+    const applied = async () => ((await roundStatus(folder)) as { applied: number[] }).applied;
+
+    await call("POST", CHECKS_PATH, { id: 1, at, outcome: "shown" });
+    await call("POST", CHECKS_PATH, { id: 1, at, outcome: "not shown", actual: 12 });
+    expect(await applied()).toEqual([1]);
+
+    await call("POST", CHECKS_PATH, { id: 1, at, answers: "ask-1", outcome: "not shown", actual: 12 });
+    expect(await applied()).toEqual([]);
+  });
+
+  test("asked now, the status is read afresh: claimed the moment the command line claims, before any page is told (ticket 66)", async () => {
+    const folder = vernierFolder(root);
+    mkdirSync(folder.dir, { recursive: true });
+    writeFileSync(folder.changeSet, JSON.stringify({ lastId: 1, changes: [] }));
+    expect(await (await call("GET", STATUS_PATH)).json()).toEqual({ status: "editing" });
+
+    await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString() });
+
+    expect(await (await call("GET", STATUS_PATH)).json()).toMatchObject({ status: "claimed", done: [], applied: [] });
   });
 });

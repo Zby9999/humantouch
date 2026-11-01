@@ -1,16 +1,23 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
+import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
-import type { ProjectBreakpoints } from "./breakpoints";
-import { putBackBy, withDependents, type Change } from "./changeset";
-import { checkChange, pageAt } from "./check";
-import { ENTER_MARK } from "./host";
+import { watchStall, type StallWatch } from "./agent-stall";
+import { CodeChangeNotice } from "./CodeChangeNotice";
+import { watchCodeChanges } from "./code-changes";
+import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
+import { putBackBy, withDependents, type Change, type RangePart } from "./changeset";
+import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
-import { revertSaved } from "./saved-round";
+import { watchPage, type PageChecks } from "./page-checks";
+import { whenLetGo } from "./pointer-held";
+import { createPartsReader } from "./range-parts";
+import { revertSaved, withPartsRead } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
+import { StalledNotice } from "./StalledNotice";
 import { Toggle } from "./Toggle";
+import { readViewWidths } from "./ViewLabels";
 
 /** `leaving`: back in preview mode, while the canvas grows back over the page. */
 type Mode = "preview" | "edit" | "leaving";
@@ -22,6 +29,9 @@ interface ListStep {
   offCanvasBefore: SavedOffCanvasLayer[];
   offCanvasAfter: SavedOffCanvasLayer[];
 }
+
+/** Where copies of the page at other widths go, for the check and for reading the parts of a change's range: apart from the page, so they never copy themselves. */
+const copiesIn = () => document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
 
 /**
  * The layers off the canvas once `changes` are taken back: but those they
@@ -39,11 +49,13 @@ function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): Sav
 /**
  * Preview mode shows only the toggle; edit mode adds the shell around the
  * canvas. A round with changes not yet applied keeps its canvas: edit mode
- * comes back to it, after a reload too. With none, edit mode freezes the page afresh.
+ * comes back to it, after a reload too, and after a round that ended with
+ * changes not applied, carried over to the next on it (ticket 68). With none,
+ * edit mode freezes the page afresh.
  * The page always shows the code as it is: the changes are seen on the canvas,
  * played at full size (ADR 0010). Once the Agent claims the round, the editor
- * folds into the toggle, locked until the round ends, and each change it
- * applies is checked on the page. The toggle's badge opens the change list, where changes
+ * folds into the toggle, locked until the round ends, while the page checks
+ * the changes as the code changes, its ring filling as they show (ADR 0013). The toggle's badge opens the change list, where changes
  * are undone one by one, or all discarded, in either mode.
  *
  * It loads after the toggle (`LazyEditorLayer`): `enter` when edit mode was
@@ -68,6 +80,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * they left: once anything else saves it, they are dropped.
    */
   const listSteps = useRef<{ past: ListStep[]; future: ListStep[] }>({ past: [], future: [] });
+  /** Editing is paused: the code changed in edit mode with no Agent claiming the round (ticket 66). */
+  const [paused, setPaused] = useState(false);
   /** The canvas, while edit mode is up: the change list works on it then. */
   const control = useRef<RoundControl | null>(null);
 
@@ -93,26 +107,69 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   }, []);
 
   const changes = round?.changeSet.changes ?? [];
+  /** The changes this page has seen show, before the local service says so to every page. */
+  const [seen, setSeen] = useState<number[]>([]);
+  /** Applied, as the page shows them (ADR 0013). */
+  const applied = claimed ? changes.filter((change) => claimed.applied.includes(change.id) || seen.includes(change.id)) : [];
   /** Not applied yet. */
-  const pending = claimed ? changes.filter((change) => !claimed.done.includes(change.id)) : changes;
+  const pending = claimed ? changes.filter((change) => !applied.includes(change)) : changes;
 
-  // A done change is checked on the page as it is.
-  // A layout effect: an effect would wait for a frame, which a background tab may not draw for a while.
-  const checked = useRef<string | null>(null);
-  const check = claimed?.check;
+  // While the round is claimed, the page checks it as the code changes, and answers what `done` asks.
+  // Layout effects: an effect would wait for a frame, which a background tab may not draw for a while.
+  const checks = useRef<PageChecks | null>(null);
+  const isClaimed = claimed !== null;
   useLayoutEffect(() => {
-    if (!check || !store || round === undefined || checked.current === check.at) return;
-    checked.current = check.at;
-    const change = round?.changeSet.changes.find((c) => c.id === check.id);
-    const result = change ? checkChange(document, change, pageAt(window), round!.changeSet.changes) : Promise.resolve({ outcome: "unchecked", reason: "the page does not have this round" } as const);
-    void result.then((result) => store.report({ ...check, ...result })).catch((error: unknown) => console.warn(error));
-  }, [check?.at, round]);
+    if (!isClaimed || !store || !round) return;
+    const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
+    const watcher = watchPage({
+      window,
+      changes: round.changeSet.changes,
+      report,
+      onShown: setSeen,
+      viewWidths: readViewWidths,
+      copiesIn,
+    });
+    checks.current = watcher;
+    return () => {
+      watcher.stop();
+      checks.current = null;
+      setSeen([]);
+    };
+  }, [isClaimed, round]);
+  // What `claim` asks of the changes carried over from the round before (ticket 68), `done` asks, and `finish` before it ends the round.
+  const answer = (ask: CheckAsk | undefined) => {
+    if (!ask || !store || round === undefined) return;
+    if (checks.current) checks.current.ask(ask);
+    else for (const id of ask.ids) store.report({ id, at: new Date().toISOString(), answers: ask.key, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
+  };
+  useLayoutEffect(() => answer(claimed?.opening), [claimed?.opening?.key, round]);
+  useLayoutEffect(() => answer(claimed?.check), [claimed?.check?.key, round]);
+  useLayoutEffect(() => answer(claimed?.closing), [claimed?.closing?.key, round]);
+
+  // Once claimed, till the round ends: nothing the page sees moving for a while, the Agent seems to have stopped (ticket 67).
+  // What moves: the code coming in (watched by `watchStall`), the ring, and each `done` and `finish` asking the page.
+  const [stalled, setStalled] = useState(false);
+  const stall = useRef<StallWatch | null>(null);
+  useEffect(() => {
+    if (!isClaimed) return;
+    const watch = watchStall(window, setStalled);
+    stall.current = watch;
+    return () => {
+      watch.stop();
+      stall.current = null;
+      setStalled(false);
+    };
+  }, [isClaimed]);
+  const moves = claimed && [applied.map((change) => change.id).join(), claimed.done.join(), claimed.check?.key, claimed.closing?.key].join("|");
+  useEffect(() => stall.current?.moved(), [moves]);
+  /** Ends a claimed round as it is: pressing and holding the toggle, or the notice that the Agent seems to have stopped. */
+  const endRound = () => store?.unlock().catch((error: unknown) => console.warn(error));
 
   const lastStatus = useRef(status);
   useEffect(
     () =>
       store?.watch((next) => {
-        // Claimed: the round is what the Agent got. Ended: what is left of it, nothing once archived.
+        // Claimed: the round is what the Agent got. Ended: what is left of it, carried over to the next round (ticket 68); nothing with all of it applied.
         if (lastStatus.current && lastStatus.current.status !== next.status) void load();
         lastStatus.current = next;
         setStatus(next);
@@ -129,12 +186,40 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     setMode(shellShown.current ? "leaving" : "preview");
   }, [claimed !== null, mode]);
 
+  /** The round as saved last: what a reading that ends after the canvas has gone is saved into. */
+  const roundNow = useRef(round);
+  roundNow.current = round;
   const save = (next: SavedRound | null) => {
     // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
     if (lastStatus.current?.status === "claimed") return;
+    roundNow.current = next;
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
   };
+
+  // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
+  // one change after another, whether edit mode is up, going, or over, or the page has been opened since. `claim`
+  // waits for it. Not once claimed: the code is the Agent's to change from then on.
+  const [partsReader] = useState(() => createPartsReader(document, copiesIn, () => lastStatus.current?.status !== "claimed"));
+  const partsRead = (id: number, parts: RangePart[] | null) => {
+    if (lastStatus.current?.status === "claimed") return;
+    if (control.current) return control.current.partsRead(id, parts);
+    const now = roundNow.current;
+    if (!now?.changeSet.changes.some((change) => change.id === id && change.parts === null)) return;
+    const next = withPartsRead(now, id, parts);
+    // The same round, read further: the undos made from the change list still hold.
+    for (const step of [...listSteps.current.past, ...listSteps.current.future]) {
+      if (step.before === now) step.before = next;
+      if (step.after === now) step.after = next;
+    }
+    save(next);
+  };
+  useEffect(() => {
+    // Not till the local service has said how the round stands: it may be claimed.
+    if (!round || !status || claimed || breakpoints === undefined) return;
+    const project = breakpoints ?? readMediaBreakpoints(document);
+    for (const change of round.changeSet.changes) if (change.parts === null) partsReader.read(change, project, (parts) => partsRead(change.id, parts));
+  }, [round, status?.status, breakpoints]);
   const saveOffCanvas = (layers: SavedOffCanvasLayer[]) => {
     setOffCanvas(layers);
     return (
@@ -212,6 +297,28 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   );
   // In edit mode, the way back and the changes so far sit beside the Design panel's title, in place of the toggle.
   const editing = mode === "edit" && shellShown.current;
+
+  // In edit mode, with the round not claimed, the code changing under the canvas pauses editing (ticket 66). A file the
+  // page does not use brings nothing in; a claim, as the Agent applies the round, folds edit mode away instead. The
+  // Agent may claim and edit at once, before the page hears of the claim: the local service is asked how the round stands.
+  const unclaimed = editing && !claimed;
+  useEffect(() => {
+    if (!unclaimed) return setPaused(false);
+    let watching = true;
+    const waits: (() => void)[] = [];
+    const stop = watchCodeChanges(window, () => {
+      const asked = store ? store.status().catch(() => lastStatus.current) : Promise.resolve(lastStatus.current);
+      void asked.then((status) => {
+        // A press under way ends first, as the designer meant it: what it does is an edit made before the pause.
+        if (watching && status?.status !== "claimed") waits.push(whenLetGo(() => setPaused(true)));
+      });
+    });
+    return () => {
+      watching = false;
+      stop();
+      for (const callOff of waits) callOff();
+    };
+  }, [unclaimed]);
   return (
     <>
       {shellShown.current && (
@@ -253,6 +360,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           onSaveOffCanvas={saveOffCanvas}
           onChanges={setLive}
           control={control}
+          paused={unclaimed && paused}
           leaving={mode === "leaving"}
           animate={animate}
           onLeft={() => {
@@ -261,18 +369,29 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           }}
         />
       )}
+      {unclaimed && paused && (
+        <CodeChangeNotice
+          onKeepEditing={() => setPaused(false)}
+          onBackToPreview={(animate) => {
+            setPaused(false);
+            switchMode(animate);
+          }}
+        />
+      )}
       {!editing && (
         <Toggle
           changeCount={listed.length}
           changesOpen={listOpen && listed.length > 0}
           onShowChanges={() => setListOpen(!listOpen)}
-          applying={claimed && { done: claimed.done.length, total: changes.length }}
-          onUnlock={() => store?.unlock().catch((error: unknown) => console.warn(error))}
+          applying={claimed && { done: applied.length, total: changes.length }}
+          onUnlock={endRound}
           onToggle={switchMode}
           // Edit mode has been asked for, and the canvas is not up yet: what it needs is still loading.
           busy={mode === "edit" && !ready}
         >
           {list}
+          {/* Not over the change list, opened from the badge to look at what is left. */}
+          {claimed && stalled && !list && <StalledNotice onKeepWaiting={() => stall.current?.moved()} onEndRound={endRound} />}
         </Toggle>
       )}
     </>

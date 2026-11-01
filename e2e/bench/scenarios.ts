@@ -11,6 +11,7 @@
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
 import type { Change } from "../../packages/vernierkit/src/client/changeset.ts";
+import { PLACING } from "../../packages/vernierkit/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 
 /** What a scenario's designer works with: the page, and the project behind it. */
@@ -33,6 +34,11 @@ export interface SavedChange {
   kind: Change["kind"];
   property?: string;
   after?: any;
+  /** A layer placed by its X and Y: the margins the canvas draws it past them by. */
+  margins?: { x: number; y: number };
+  /** A change at a breakpoint: its range, and the parts of it the page was read in. */
+  breakpoint?: object;
+  parts?: object[];
 }
 
 /**
@@ -132,6 +138,12 @@ async function moveOffTheCanvas(page: Page, name: string, onCanvas: Locator) {
 async function saved(desk: Desk, count: number) {
   for (let tries = 0; desk.changeSet()?.changes.length !== count; tries++) {
     if (tries > 100) throw new Error(`The round has ${desk.changeSet()?.changes.length ?? 0} changes saved, not ${count}`);
+    await desk.page.waitForTimeout(100);
+  }
+  // A style change at a breakpoint is saved again once the page is read in each part of its range (ticket 65): the example's ranges all have parts.
+  const unread = () => desk.changeSet()!.changes.filter((change) => change.kind === "style" && change.breakpoint && !(PLACING as readonly string[]).includes(change.property ?? "") && !change.parts);
+  for (let tries = 0; unread().length; tries++) {
+    if (tries > 100) throw new Error(`Changes ${unread().map((change) => change.id).join(", ")} are saved with no parts of their range read`);
     await desk.page.waitForTimeout(100);
   }
 }
@@ -572,7 +584,7 @@ export const SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "unstack",
-        expect: "The hero is no flex container; its header and intro paragraph are absolute, where they were.",
+        expect: "The hero is no flex container; its header and intro paragraph are absolute, where they were (as the canvas draws them: X and Y are their `left` and `top`, and they keep their margins, the paragraph's 16px top margin).",
         checkable: false,
         shows: ({ change }) => {
           const hero = document.querySelector('[data-testid="hero"]')!;
@@ -581,22 +593,26 @@ export const SCENARIOS: Scenario[] = [
             const r = el.getBoundingClientRect();
             return { x: r.left - box.left, y: r.top - box.top };
           };
+          // Where the canvas draws each: past its X and Y by the margins it keeps.
           const placed = (selector: string, nth: number) => {
             const el = hero.querySelector(selector);
             const where = change.after.layers[nth];
-            return !!el && getComputedStyle(el).position === "absolute" && Math.abs(at(el).x - where.x) <= 2 && Math.abs(at(el).y - where.y) <= 2;
+            const margins = where.margins ?? { x: 0, y: 0 };
+            return !!el && getComputedStyle(el).position === "absolute" && Math.abs(at(el).x - where.x - margins.x) <= 2 && Math.abs(at(el).y - where.y - margins.y) <= 2;
           };
           return getComputedStyle(hero).display !== "flex" && placed(":scope > header", 0) && placed(":scope > p", 1);
         },
       },
       {
         kind: "style",
-        expect: "The Get started button is absolute in the hero, 120px lower than it was (its Y from 368px to 488px).",
+        expect: "The Get started button is absolute in the hero, 120px lower than it was (its Y, its `top`, from 368px to 488px; drawn 24px lower still, by the top margin it keeps, as on the canvas).",
         checkable: true,
         shows: ({ change }) => {
           const hero = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect();
           const button = document.querySelector('[data-testid="hero"] button')!;
-          return getComputedStyle(button).position === "absolute" && Math.abs(button.getBoundingClientRect().top - hero.top - change.after) <= 2;
+          // Where the canvas draws it: past its Y by the top margin it keeps.
+          const margin = change.margins?.y ?? 0;
+          return getComputedStyle(button).position === "absolute" && Math.abs(button.getBoundingClientRect().top - hero.top - change.after - margin) <= 2;
         },
       },
       {

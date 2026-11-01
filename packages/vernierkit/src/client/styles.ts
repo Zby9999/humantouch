@@ -108,6 +108,40 @@ export const styles = /* css */ `
 .vk-button:focus-visible { outline: 2px solid #0d99ff; outline-offset: 1px; }
 .vk-button.is-danger { background: #f24822; }
 .vk-button.is-danger:hover { background: #dc3412; }
+.vk-button.is-primary { background: #0d99ff; color: #fff; }
+.vk-button.is-primary:hover { background: #007be5; }
+
+/* Editing paused (ticket 66): over the whole shell, which takes no pointer meanwhile, a notice dark like the change list. */
+.vk-paused {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.24);
+}
+.vk-notice {
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  padding: 4px 0;
+  border-radius: 12px;
+  background: #1e1e1e;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 8px 24px rgb(0 0 0 / 0.24);
+  color: #fff;
+  font: 400 11px/16px ${FONT_STACK};
+}
+.vk-notice-title { margin: 0; padding: 8px 12px 4px; font: inherit; font-weight: 600; }
+.vk-notice-text { margin: 0; padding: 0 12px 4px; color: rgb(255 255 255 / 0.7); }
+/* The Agent seems to have stopped (ticket 67): on the toggle, where its change list opens. */
+.vk-stalled { position: absolute; width: 300px; }
+.vk-dock[data-corner^="bottom"] .vk-stalled { bottom: calc(100% + 8px); }
+.vk-dock[data-corner^="top"] .vk-stalled { top: calc(100% + 8px); }
+.vk-dock[data-corner$="right"] .vk-stalled { right: 0; }
+.vk-dock[data-corner$="left"] .vk-stalled { left: 0; }
 
 /* Edit mode shell. Figma-like; follows the system light / dark setting. */
 .vk-shell {

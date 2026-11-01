@@ -42,13 +42,13 @@ import {
 } from "./changeset";
 import type { Destination, Editor } from "./edit-commands";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
-import { targetOf } from "./layer-target";
+import { instanceOf, targetOf } from "./layer-target";
 import { framedText, holdsLayers, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
+import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -410,8 +410,8 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     const layer = layerById(change.layer);
     if (!layer) return null;
     if (change.kind === "move") {
-      const { kind, target, scope, property, data, wrap, reference } = change;
-      const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(wrap && { wrap }), ...(reference && { reference }) };
+      const { kind, target, scope, property, data, instance, wrap, reference } = change;
+      const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(instance && { instance }), ...(wrap && { wrap }), ...(reference && { reference }) };
       const el = elementsOf(doc, change.layer).find((e) => e.getAttribute(MOVE_ATTR) === property) ?? layer.el;
       moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(el), record);
       return tree().layerOf(el);
@@ -506,6 +506,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   const moveTo = (id: string, from: Place, to: Place, style: Record<string, string>, record: MoveRecord) => {
     changes.record(id, { ...record, before: from, after: to, style });
     relocate(doc, id, record.property, from, to, style, changes.list());
+    // Placed absolute: drawn past its X and Y by the margins it has where it is now.
+    const moved = changes.find(id, record.property);
+    const el = elementsOf(doc, id)[0];
+    if (moved && to.absolute && el) changes.record(id, { ...moved, margins: marginsAt(el) });
     syncOrders(doc, changes);
     rebuild();
   };
@@ -576,7 +580,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         scope: "usage",
         property,
         sources: [],
-        ...(loop && { data: true }),
+        ...(loop && { data: true, instance: instanceOf(layer.el, onPage(layer)) }),
         ...(text && { wrap: true }),
         ...(reference && { reference: true }),
       };
@@ -866,7 +870,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         after: text,
         style: {},
         sources: [],
-        ...(property !== "text" && { data: true }),
+        ...(property !== "text" && { data: true, instance: instanceOf(own.el, onPage(own)) }),
       };
       structural([id], [id], words(id, record, text), words(id, record, now));
     },
@@ -915,7 +919,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         after: null,
         style: { display: "none" },
         sources: [],
-        ...(loop && { data: true }),
+        ...(loop && { data: true, instance: instanceOf(own.el, onPage(own)) }),
         ...(offCanvas && { offCanvas }),
       };
       const { make, bringBack } = deleting(id, record, loop ? [own.el] : instances.map((instance) => instance.el));
@@ -958,7 +962,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         after: place,
         style,
         sources: [],
-        ...(loop && { data: true }),
+        ...(loop && { data: true, instance: instanceOf(layer.el, onPage(layer)) }),
         ...(copied.length > 0 && { copiedBreakpoints: copied }),
         // A new Frame's copy is made by its brief too.
         ...(layer.el.getAttribute(NEW_ATTR) === "frame" && layer.el.hasAttribute(BRIEF_ATTR) && { brief: layer.el.getAttribute(BRIEF_ATTR)! }),
@@ -1025,7 +1029,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           const x = round(r.left - frame.left - (parseFloat(margins.marginLeft) || 0));
           const y = round(r.top - frame.top - (parseFloat(margins.marginTop) || 0));
           const style = { ...absoluteAt({ x, y }), ...sizeOf(child.el) };
-          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style };
+          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAt(child.el) };
         }),
       };
       const own = getComputedStyle(layer.el);

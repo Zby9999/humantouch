@@ -6,7 +6,9 @@
  *
  *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
  *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
+ *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
+ *                     [--claim-out <dir>]   and write what `claim` prints for each to <dir>/<scenario>.md, to compare two versions word for word
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
  * Runs go one after another, never side by side, so their times compare,
@@ -16,13 +18,27 @@
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, effortSeen, runAgent, type AgentRun } from "./agents.ts";
+import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
+
+/** Whether something answers on `port` of this machine, as a dev server there would. */
+function answers(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ port, host: "localhost" });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+  });
+}
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/agents/", import.meta.url));
 /** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. */
@@ -42,15 +58,34 @@ interface RawRun {
   date: string;
   version: string;
   commandLine: string;
+  /** False for a run in a project with no Skill (`--no-skill`); missing in runs before ticket 65, which all had it. */
+  skill?: boolean;
   /** The effort the command line sets, and, for Claude Code, the one its debug log shows the session ran at. */
   effort: { set: string; seen: string | null };
   exitCode: number | null;
   timedOut: boolean;
   startedAt: number;
   endedAt: number;
+  /** Cursor's: the headless shell its browser plugins were given, or null (then Chrome, headless). */
+  headlessShell?: string | null;
+  /** Browsers that came up under the Agent with a window. */
+  headedBrowsers: string[];
   changes: { id: number; kind: string; checkable: boolean; variable?: string[]; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
-  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, and each edit to the project's source. */
-  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[] };
+  /**
+   * How many times, from the Agent's start on, the designer's page showed the
+   * notice that the code is changing but no Agent has claimed the changes
+   * (ticket 66). Recorded only, never scored: before the claim it is the Agent
+   * editing unclaimed, after it a false one. Missing in runs before ticket 66.
+   */
+  unclaimedNotices?: number;
+  /**
+   * How many times, from the Agent's start on, the designer's toggle said the
+   * Agent seems to have stopped (ticket 67): with the Agent at work all along,
+   * each is a false one. Missing in runs before ticket 67.
+   */
+  stalledNotices?: number;
+  /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, each edit to the project's source, and each time either notice showed. */
+  times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[]; unclaimedNotices?: number[]; stalledNotices?: number[] };
   /** The page's last check of each change, as the round was archived (or left, unfinished). */
   checks: Record<string, { outcome: string }>;
 }
@@ -67,18 +102,21 @@ async function main(argv: string[]) {
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
   const dry = argv.includes("--dry");
+  const claimOut = option("claim-out");
+  const skill = !argv.includes("--no-skill");
+  const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
 
   const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
-  console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}. Raw results in ${out}`);
+  console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
 
   const versions: Partial<Record<AgentName, string>> = {};
   if (!dry) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
-    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each(commandLine) };
+    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each((agent) => commandLine(agent, prompt)), skill: each(() => skill) };
     // Runs added to a round of runs compare with it only on the same Agent and command line.
     const before = existsSync(join(out, "meta.json")) ? JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) : null;
     for (const agent of agents) {
@@ -90,14 +128,27 @@ async function main(argv: string[]) {
     writeFileSync(join(out, "meta.json"), `${JSON.stringify(merged, null, 2)}\n`);
   }
 
-  const { base, remove } = await prepareBase();
+  const { base, remove } = await prepareBase({ skill });
   const browser = await chromium.launch();
   let port = 0;
+  /**
+   * The next port of the bench's that nothing answers on: a dev server left
+   * running there (by a run stopped by hand, say) would answer for the run's
+   * own, and the run would measure the wrong project.
+   */
+  const nextPort = async () => {
+    for (let tries = 0; tries < PORTS; tries++) {
+      const candidate = FIRST_PORT + (port++ % PORTS);
+      if (!(await answers(candidate))) return candidate;
+      console.log(`Port ${candidate} is in use already: skipped`);
+    }
+    throw new Error(`Every port from ${FIRST_PORT} to ${FIRST_PORT + PORTS - 1} is in use`);
+  };
   const failures: string[] = [];
   try {
     if (dry) {
       for (const scenario of scenarios) {
-        const problems = await setUp(browser, base, FIRST_PORT + (port++ % PORTS), scenario);
+        const problems = await setUp(browser, base, await nextPort(), scenario, claimOut && join(claimOut, `${scenario.id}.md`));
         console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
         failures.push(...problems);
       }
@@ -113,7 +164,7 @@ async function main(argv: string[]) {
             mkdirSync(folder, { recursive: true });
             const started = Date.now();
             try {
-              await runOnce({ browser, base, port: FIRST_PORT + (port++ % PORTS), scenario, agent, run, version: versions[agent]!, folder });
+              await runOnce({ browser, base, port: await nextPort(), scenario, agent, run, version: versions[agent]!, folder, skill });
               agentRuns++;
               const measures = measureFolder(folder);
               console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${oneLine(measures)}`);
@@ -154,7 +205,7 @@ async function withScenario<T>(
   base: string,
   port: number,
   scenario: Scenario,
-  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page> }) => Promise<T>,
+  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page>; designer: Page }) => Promise<T>,
 ): Promise<T> {
   const project = await cloneBase(base);
   let server: Awaited<ReturnType<typeof startDevServer>> | null = null;
@@ -164,12 +215,13 @@ async function withScenario<T>(
     server = await startDevServer(project.dir, port);
     context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
     await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    await recordNotices(context);
     const page = await context.newPage();
     await page.goto(server.url);
     await page.locator("main").waitFor();
     observers = await openObservers(browser, scenario, server.url);
     await scenario.design({ page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
-    return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages });
+    return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages, designer: page });
   } finally {
     await observers?.close().catch(() => {});
     await context?.close().catch(() => {});
@@ -178,15 +230,26 @@ async function withScenario<T>(
   }
 }
 
-/** Sets a scenario up with no Agent; what is wrong with it: changes not as it names them, or shown on the page already. */
-async function setUp(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
+/**
+ * Sets a scenario up with no Agent; what is wrong with it: changes not as it
+ * names them, or shown on the page already. `claimTo`: then claims the round,
+ * and writes what `claim` prints there.
+ */
+async function setUp(browser: Browser, base: string, port: number, scenario: Scenario, claimTo?: string): Promise<string[]> {
   try {
-    return await withScenario(browser, base, port, scenario, async ({ saved, observers }) => {
+    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
       const problems: string[] = [];
+      // Designing touches no code with no claim: the editor layer has no cause to ask.
+      const notices = (await unclaimedNoticesShown(designer)).length;
+      if (notices) problems.push(`the notice that no Agent claimed the changes showed ${notices} times as it was set up`);
       const kinds = saved.map((change) => change.kind).join(", ");
       const named = scenario.changes.map((change) => change.kind).join(", ");
       if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
       (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
+      if (claimTo) {
+        mkdirSync(join(claimTo, ".."), { recursive: true });
+        writeFileSync(claimTo, await project.cli("claim"));
+      }
       return problems;
     });
   } catch (error) {
@@ -206,8 +269,29 @@ function lastEdited(dir: string): number {
 }
 
 /** One Agent run of one scenario, its raw results written to `folder`. */
-async function runOnce({ browser, base, port, scenario, agent, run, version, folder }: { browser: Browser; base: string; port: number; scenario: Scenario; agent: AgentName; run: number; version: string; folder: string }) {
-  await withScenario(browser, base, port, scenario, async ({ project, saved, observers }) => {
+async function runOnce({
+  browser,
+  base,
+  port,
+  scenario,
+  agent,
+  run,
+  version,
+  folder,
+  skill,
+}: {
+  browser: Browser;
+  base: string;
+  port: number;
+  scenario: Scenario;
+  agent: AgentName;
+  run: number;
+  version: string;
+  folder: string;
+  skill: boolean;
+}) {
+  const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
+  await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
     const head = await project.head();
     writeFileSync(join(folder, "changeset.json"), `${JSON.stringify({ changes: saved }, null, 2)}\n`);
     const before = await shown(observers, scenario, saved);
@@ -267,13 +351,15 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
     const pageTimer = setInterval(lookAtThePage, SHOWN_POLL_MS);
     let agentRun: AgentRun;
     try {
-      agentRun = await runAgent(agent, project.dir, folder, AGENT_TIMEOUT_MS);
+      agentRun = await runAgent(agent, project.dir, folder, AGENT_TIMEOUT_MS, prompt);
     } finally {
       clearInterval(fileTimer);
       clearInterval(pageTimer);
       await looking;
     }
     watchFiles();
+    times.unclaimedNotices = await unclaimedNoticesShown(designer, agentRun.startedAt);
+    times.stalledNotices = await stalledNoticesShown(designer, agentRun.startedAt);
 
     // The end: the dev server brings the last edits in, and the page is loaded afresh.
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -292,9 +378,12 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       run,
       date: new Date(agentRun.startedAt).toISOString(),
       version,
-      commandLine: commandLine(agent),
+      commandLine: commandLine(agent, prompt),
+      skill,
       effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
       ...agentRun,
+      unclaimedNotices: times.unclaimedNotices.length,
+      stalledNotices: times.stalledNotices.length,
       changes: scenario.changes.map((change, i) => ({
         id: saved[i].id,
         kind: change.kind,
@@ -307,6 +396,7 @@ async function runOnce({ browser, base, port, scenario, agent, run, version, fol
       checks: Object.fromEntries(Object.entries(checks).map(([id, check]) => [id, { outcome: (check as { outcome: string }).outcome }])),
     };
     writeFileSync(join(folder, "raw.json"), `${JSON.stringify(raw, null, 2)}\n`);
+    if (raw.headedBrowsers.length > 0) console.error(`Bench: ${agent} opened a browser with a window in ${folder}: see headedBrowsers in raw.json`);
   });
 }
 
@@ -345,6 +435,7 @@ export function measureFolder(folder: string) {
     run: raw.run,
     date: raw.date,
     version: raw.version,
+    skill: raw.skill ?? true,
     model: transcript.model,
     changes: count,
     exitCode: raw.exitCode,
@@ -357,6 +448,7 @@ export function measureFolder(folder: string) {
     toolCalls: stats.toolCalls,
     toolCallsPerChange: stats.toolCalls / count,
     repoWideSearches: stats.repoWideSearches,
+    packageReads: stats.packageReads,
     charsRead: stats.charsRead,
     permissionDenials: transcript.permissionDenials,
     subagents: transcript.subagents,
@@ -371,6 +463,11 @@ export function measureFolder(folder: string) {
     falseChecks: round?.falseChecks ?? [],
     maxProgressGapMs: round?.maxProgressGapMs ?? null,
     maxStillMs: round?.maxStillMs ?? null,
+    /** The editor layer's notices on the designer's page from the Agent's start (tickets 66, 67): how many, and when, in ms from the Agent's start; null in runs before. */
+    unclaimedNotices: raw.unclaimedNotices ?? null,
+    unclaimedNoticesAtMs: raw.times.unclaimedNotices?.map((at) => at - raw.startedAt) ?? null,
+    stalledNotices: raw.stalledNotices ?? null,
+    stalledNoticesAtMs: raw.times.stalledNotices?.map((at) => at - raw.startedAt) ?? null,
     reportCompliant: report.compliant,
     reportProblems: report.problems,
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
@@ -395,6 +492,7 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["Agent 总用时（秒）", (m) => m.agentMs / 1000],
   ["每条平均工具调用", (m) => m.toolCallsPerChange],
   ["全仓搜索次数", (m) => m.repoWideSearches],
+  ["读 node_modules/vernierkit（次）", (m) => m.packageReads],
   ["读入字数：Skill", (m) => m.charsRead.skill],
   ["读入字数：claim 输出", (m) => m.charsRead.claim],
   ["读入字数：全部工具输出", (m) => m.charsRead.total],
@@ -407,6 +505,8 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["设计变量使用率", (m) => m.variableUse],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
+  ["没认领就改代码的提示（次）", (m) => m.unclaimedNotices],
+  ["Agent 好像停了的提示（次）", (m) => m.stalledNotices],
   ["被权限拦下的工具调用", (m) => m.permissionDenials],
   ["子 Agent 调用", (m) => m.subagents.calls],
   ["API 重试", (m) => m.apiRetries],
@@ -433,7 +533,8 @@ function writeSummary(out: string) {
         const s = summarize(values);
         // A yes or no is summed up by how often it is yes.
         const share = name.endsWith("（比例）") && s.n ? values.reduce((total: number, value) => total + (value ?? 0), 0) / s.n : null;
-        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share) }];
+        const total = values.reduce((sum: number, value) => sum + (value ?? 0), 0);
+        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share), total: round(total) }];
       }),
     );
   const agents = [...new Set(measures.map((m) => m.agent))];
@@ -445,21 +546,31 @@ function writeSummary(out: string) {
       models: [...new Set(mine.map((m) => m.model))],
       subagentModels: [...new Set(mine.flatMap((m) => m.subagents.models))],
       efforts: [...new Set(mine.map((m) => (m.effort ? `${m.effort.set}${m.effort.seen ? `, seen ${m.effort.seen}` : ""}` : "?")))],
+      skill: mine.every((m) => m.skill) ? "yes" : mine.some((m) => m.skill) ? "mixed" : "no",
       runs: mine.length,
       dates: [...new Set(mine.map((m) => m.date.slice(0, 10)))],
       overall: sum(mine),
       scenarios: Object.fromEntries([...new Set(mine.map((m) => m.scenario))].map((scenario) => [scenario, sum(mine.filter((m) => m.scenario === scenario))])),
       brokenTests: mine.filter((m) => m.shownBefore.length).map((m) => `${m.scenario} #${m.run}: ${m.shownBefore.join(", ")}`),
+      /** Each run whose designer's page showed a notice, and when, in seconds from the Agent's start. */
+      notices: mine
+        .filter((m) => m.unclaimedNotices || m.stalledNotices)
+        .map((m) => {
+          const at = (times: number[] | null) => (times ?? []).map((ms) => `${Math.round(ms / 1000)}s`).join(", ");
+          return `${m.scenario} #${m.run}: ${[m.unclaimedNotices ? `没认领就改代码 ${at(m.unclaimedNoticesAtMs)}` : "", m.stalledNotices ? `Agent 好像停了 ${at(m.stalledNoticesAtMs)}` : ""].filter(Boolean).join("; ")}`;
+        }),
     };
   });
   writeFileSync(join(out, "measures.json"), `${JSON.stringify(measures, null, 2)}\n`);
   writeFileSync(join(out, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+  /** A count's total over the runs that have it; – when none does (runs before it was counted). */
+  const sumOf = (s: { n: number; total: number | null }) => (s.n ? s.total : "–");
   const cell = (s: { median: number | null; min: number | null; max: number | null; share: number | null }) =>
     s.share !== null ? `${Math.round(s.share * 100)}%` : s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`;
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
+        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
         "| 指标 | 中位数（范围） | 次数 |",
         "|---|---|---|",
@@ -469,6 +580,9 @@ function writeSummary(out: string) {
         `|---|${"---|".repeat(BY_SCENARIO.length)}`,
         ...Object.entries(agent.scenarios).map(([scenario, s]) => `| ${scenario} | ${BY_SCENARIO.map((name) => cell(s[name])).join(" | ")} |`),
         ...(agent.brokenTests.length ? ["", `场景的预期在 Agent 开始前就成立（测试有误）：${agent.brokenTests.join("; ")}`] : []),
+        // Counted from the Agent's start: the Agent at work, each is a false one (tickets 66, 67).
+        "",
+        `提示合计（从 Agent 开始算）：没认领就改代码 ${sumOf(agent.overall["没认领就改代码的提示（次）"])} 次，Agent 好像停了 ${sumOf(agent.overall["Agent 好像停了的提示（次）"])} 次${agent.notices.length ? `：${agent.notices.join("; ")}` : ""}`,
       ].join("\n"),
     )
     .join("\n\n");

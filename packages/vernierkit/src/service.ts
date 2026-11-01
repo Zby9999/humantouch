@@ -22,6 +22,7 @@ import {
   EVENTS_PATH,
   OFF_CANVAS_PATH,
   ROUND_PATH,
+  STATUS_PATH,
   TOKEN_HEADER,
   UNLOCK_PATH,
   VARIABLES_PATH,
@@ -38,6 +39,7 @@ import {
   readIfThere,
   readOffCanvas,
   readState,
+  roundStatus,
   vernierFolder,
   writeAtomically,
   writeChecks,
@@ -59,11 +61,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
   const files = vernierFolder(root);
   const token = randomBytes(32).toString("hex");
 
-  /** What the editor layer is told: the state file's status, without what only the command line needs. */
-  const status = async (): Promise<RoundStatus> => {
-    const state = await readState(files);
-    return state ? { status: state.status, done: state.done, ...(state.check && { check: state.check }) } : { status: "editing" };
-  };
+  /** What the editor layer is told: how the round stands, without what only the command line needs. */
+  const status = (): Promise<RoundStatus> => roundStatus(files);
 
   /** Answers to `GET /events`, kept open: each gets a line when the status changes. */
   const listeners = new Set<ServerResponse>();
@@ -131,9 +130,12 @@ export async function startService({ root }: { root: string }): Promise<Service>
         await rm(files.changeSet, { force: true });
         await rm(files.canvas, { force: true });
         return send(res, 204);
-      case `GET ${EVENTS_PATH}`:
+      case `GET ${EVENTS_PATH}`: {
         res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" });
-        res.write(`${JSON.stringify(await status())}\n`);
+        const now = await status();
+        // Gone while the status was read (React's strict mode stops listening right after it starts): no page open here.
+        if (res.destroyed) return;
+        res.write(`${JSON.stringify(now)}\n`);
         listeners.add(res);
         countPages();
         res.on("close", () => {
@@ -141,16 +143,26 @@ export async function startService({ root }: { root: string }): Promise<Service>
           countPages();
         });
         return;
+      }
+      case `GET ${STATUS_PATH}`:
+        return send(res, 200, JSON.stringify(await status()));
       case `POST ${CHECKS_PATH}`: {
-        if ((await status()).status !== "claimed") return send(res, 409);
-        const { id, ...result } = JSON.parse(body) as CheckReport;
-        if (typeof id !== "number" || typeof result.at !== "string") return send(res, 400);
+        const state = await readState(files);
+        if (!state) return send(res, 409);
+        const { id, undone, ...result } = JSON.parse(body) as CheckReport;
+        if (typeof id !== "number" || typeof result.at !== "string" || !["string", "undefined"].includes(typeof result.answers)) return send(res, 400);
+        // Asked by its key: what a page saw as the code changed carries none, though it may carry the ask's millisecond.
+        const asked = !!result.answers && [state.opening, state.check, state.closing].some((ask) => ask?.key === result.answers);
         await updateChecks((checks) => {
-          // Of two pages, the one that could check has the say.
           const earlier = checks.results[id];
-          if (earlier?.at === result.at && earlier.outcome !== "unchecked" && result.outcome === "unchecked") return;
+          // Of two pages answering the same ask, the one that could check has the say.
+          if (result.answers && earlier?.answers === result.answers && earlier.outcome !== "unchecked" && result.outcome === "unchecked") return;
+          // Shown, a change is not shown again only as the page that showed it says, a later edit undoing it: what another says of it, unasked, is behind.
+          if (earlier?.outcome === "shown" && result.outcome !== "shown" && !asked && !undone && (!state.claimedAt || earlier.at >= state.claimedAt)) return;
           checks.results[id] = result;
         });
+        // The progress may have changed with it.
+        broadcast();
         return send(res, 204);
       }
       case `GET ${BREAKPOINTS_PATH}`: {
@@ -180,7 +192,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 

@@ -1,5 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "../tests/fixtures";
 import { BIG_URL, HEADLESS, RUN } from "./playwright.config";
@@ -210,12 +212,16 @@ async function enterEditMode(page: Page) {
 const cardBody = (n: number) => `[data-testid=big-products] [data-testid=product]:nth-of-type(${n}) > div:nth-of-type(2)`;
 const card = (n: number) => `[data-testid=big-products] [data-testid=product]:nth-of-type(${n})`;
 
+/** Selects the deepest layer at a point just inside `box`: a click with ⌘ (Ctrl) held. */
+async function selectDeepestIn(page: Page, box: { x: number; y: number }) {
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(box.x + 3, box.y + 3);
+  await page.keyboard.up("ControlOrMeta");
+}
+
 /** Selects the deepest layer at a point in the body's padding, the body itself, in the desktop view; with `parent`, the card around it. */
 async function selectCard(page: Page, n: number, { parent = false } = {}) {
-  const body = (await canvas(page).locator(cardBody(n)).boundingBox())!;
-  await page.keyboard.down("ControlOrMeta");
-  await page.mouse.click(body.x + 3, body.y + 3);
-  await page.keyboard.up("ControlOrMeta");
+  await selectDeepestIn(page, (await canvas(page).locator(cardBody(n)).boundingBox())!);
   if (parent) await page.keyboard.press("Escape");
   await settle(page);
 }
@@ -1027,4 +1033,396 @@ test("dragging a layer's handle keeps 60fps", async ({ page }) => {
   keep("resize", { fps, frameIntervals: frames, dropped, frames: count, longTasks: long, pointerMovesPerSecond: moves });
   print(report(`Resizing a card by its corner, every instance with it, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows("resize"), [note]));
   verdict(met, "resizing by a handle keeps 60fps");
+});
+
+/** Long tasks, and the measures named `measure`, seen on the page since `armTasks`: stopped and taken by `takenTasks`. */
+interface Seen {
+  long: { start: number; duration: number }[];
+  measures: { start: number; duration: number }[];
+}
+function armTasks(measure: string) {
+  const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+  const seen: Seen = { long: [], measures: [] };
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (entry.entryType === "longtask") seen.long.push({ start: entry.startTime, duration: entry.duration });
+      else if (entry.name === measure) seen.measures.push({ start: entry.startTime, duration: entry.duration });
+    }
+  });
+  observer.observe({ type: "longtask" });
+  observer.observe({ type: "measure" });
+  w.vkSeen = seen;
+  w.vkStop = () => observer.disconnect();
+}
+function takenTasks(page: Page): Promise<Seen> {
+  return page.evaluate(() => {
+    const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+    w.vkStop();
+    return w.vkSeen;
+  });
+}
+
+/** The long tasks that are `own` work's: those that would not be long without the stretches of it in them. */
+function longTasksOf(long: Seen["long"], own: { start: number; end: number; duration: number }[]) {
+  return long.filter((task) => {
+    const inIt = own.filter((s) => s.start >= task.start && s.end <= task.start + task.duration + 1).reduce((sum, s) => sum + s.duration, 0);
+    return inIt > 0 && task.duration - inIt < 50;
+  });
+}
+
+/**
+ * docs/goals.md, Robust: while the Agent applies a round, the page checks the
+ * changes not shown yet each time the code changes (ticket 64), and that must
+ * never make a long task on a page of about 5000 elements. Three changes to
+ * the 96 product cards (two to the card, one to its body's Stack, every check
+ * reading all 96 of them, at the page's width and at the tablet's and the
+ * phone's on copies of the page), then four hot updates to the cards' code:
+ * one that applies none of them, then one per change. Each stretch of
+ * checking is a `vernierkit:check` measure; a long task is the check's when
+ * it would not be one without the checking in it. For reference, the same
+ * hot updates with no round claimed: the page's own long tasks. The claim is
+ * measured too: the page looks at every change, and makes its copies; and
+ * with the first hot update, `done` for all three, which the page answers as
+ * the code comes in.
+ */
+test.describe("a claimed round", () => {
+  test.use({ keepRoundInMemory: false });
+  const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
+  const PARTS = `${REACT18}src/big/parts.tsx`;
+  const VERNIER = `${REACT18}.vernier`;
+  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const original = readFileSync(PARTS, "utf8");
+  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
+  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.afterEach(async () => {
+    writeFileSync(PARTS, original);
+    rmSync(VERNIER, { recursive: true, force: true });
+    await expect.poll(served).toBe(true);
+  });
+
+  const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
+  /** Each hot update: the edit to the cards' code, and what the first card shows once it is in. */
+  const UPDATES = [
+    { name: "no change applied, done asked for all three", from: "Made in small batches", to: "Made in small lots", shows: () => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots") },
+    { name: "corner radius applied", from: CARD, to: CARD.replace("rounded-card", "rounded-[20px]"), shows: () => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius === "20px" },
+    { name: "fill applied", from: "border-brand-100 bg-white shadow-card", to: "border-brand-100 bg-[#fafafa] shadow-card", shows: () => getComputedStyle(document.querySelector("[data-testid=product]")!).backgroundColor === "rgb(250, 250, 250)" },
+    { name: "gap applied", from: "flex flex-1 flex-col gap-2 p-gutter", to: "flex flex-1 flex-col gap-[10px] p-gutter", shows: () => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px" },
+  ];
+
+  const CHECKS = "vernierkit:check";
+
+  /**
+   * Makes each hot update in turn, waits till the page shows it and has
+   * settled; what was seen meanwhile, per update. `asking`: with the first,
+   * the Agent runs `done` for every change, which the page answers as the code comes in.
+   */
+  async function hotUpdates(page: Page, asking?: () => Promise<unknown>) {
+    const per: { name: string; long: Seen["long"]; checks: Seen["measures"] }[] = [];
+    for (const [i, { name, from, to, shows }] of UPDATES.entries()) {
+      await page.evaluate(armTasks, CHECKS);
+      const text = readFileSync(PARTS, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(PARTS, text.replace(from, to));
+      const asked = i === 0 ? asking?.() : undefined;
+      await expect.poll(() => page.evaluate(shows), { timeout: 20_000 }).toBe(true);
+      await asked;
+      await settle(page, 2000);
+      const seen = await takenTasks(page);
+      per.push({ name, long: seen.long, checks: seen.measures.filter((entry) => entry.duration >= 0) });
+    }
+    return per;
+  }
+
+  /** Looks run back to back, one task each: a stretch of checking. */
+  function stretches(checks: Seen["measures"]) {
+    const sorted = [...checks].sort((a, b) => a.start - b.start);
+    const out: { start: number; end: number; checking: number }[] = [];
+    for (const { start, duration } of sorted) {
+      const last = out.at(-1);
+      if (last && start - last.end < 1) {
+        last.end = start + duration;
+        last.checking += duration;
+      } else out.push({ start, end: start + duration, checking: duration });
+    }
+    return out;
+  }
+
+  test("while a round is claimed, the page checks the changes on each hot update with no long task of its own", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectCard(page, 6, { parent: true });
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await selectCard(page, 6);
+    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    await gap.fill("10");
+    await gap.press("Enter");
+    await expect.poll(() => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
+    // The claim too: the page looks at every change once, and makes its copies at the views' widths.
+    await page.evaluate(armTasks, CHECKS);
+    await vernierkit("claim");
+    const ring = page.getByRole("progressbar", { name: "Applying design changes" });
+    await expect(ring).toHaveAttribute("aria-valuenow", "0");
+    await settle(page, 2000);
+    const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
+
+    let answered = "";
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await vernierkit("done", "1", "2", "3"))))];
+    // None applied by that first update: done waited for it, and says so for each.
+    expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
+    await expect(ring).toHaveAttribute("aria-valuenow", "3");
+    await vernierkit("finish");
+    await expect(ring).toHaveCount(0);
+
+    // The same hot updates with no round claimed: the page's own long tasks.
+    writeFileSync(PARTS, original);
+    await expect.poll(served).toBe(true);
+    await openBigPage(page);
+    const unclaimed = await hotUpdates(page);
+
+    const rows = claimed.map(({ name, long, checks }, i) => {
+      const own = stretches(checks);
+      // A long task the check makes: one that would not be long without the checking in it.
+      const ofCheck = longTasksOf(
+        long,
+        own.map((s) => ({ ...s, duration: s.checking })),
+      );
+      return {
+        name,
+        looks: checks.length,
+        stretches: own.length,
+        longestStretch: Math.max(0, ...own.map((s) => s.end - s.start)),
+        checking: own.reduce((sum, s) => sum + s.checking, 0),
+        longTasks: long.map((task) => task.duration),
+        longTasksOfCheck: ofCheck.map((task) => task.duration),
+        longTasksUnclaimed: i === 0 ? [] : unclaimed[i - 1].long.map((task) => task.duration),
+      };
+    });
+    const longest = Math.max(...rows.map((row) => row.longestStretch));
+    const ofCheck = rows.flatMap((row) => row.longTasksOfCheck);
+    const met = ofCheck.length === 0 && longest < 50;
+    keep("claimedChecks", { elements, rows });
+    print(
+      report(
+        `Checking a claimed round on hot updates, ${elements} elements, 3 changes to 96 cards, views 768 and 390 — ${mode}`,
+        [
+          { name: "longest stretch of checking", summary: summarize(rows.map((row) => row.longestStretch)), target: "< 50ms, no long task of its own", met },
+          { name: "checking per hot update", summary: summarize(rows.map((row) => row.checking)) },
+        ],
+        rows.map(
+          (row) =>
+            `${row.name}: ${row.looks} looks in ${row.stretches} stretches, the longest ${ms(row.longestStretch)}; long tasks ${row.longTasks.map((d) => d.toFixed(0)).join(", ") || "none"} (the check's: ${row.longTasksOfCheck.length}); with no round claimed: ${row.longTasksUnclaimed.map((d) => d.toFixed(0)).join(", ") || "none"}`,
+        ),
+      ),
+    );
+    verdict(met, `checking a claimed round: longest stretch ${longest.toFixed(1)}ms, ${ofCheck.length} long tasks of its own`);
+  });
+});
+
+/**
+ * docs/goals.md, Robust (ticket 65): a style change made in the tablet view,
+ * whose range (560–1119px, `sm:max-lg:`) the project's `md` breakpoint at
+ * 820px cuts in two, has the
+ * editor layer read what the page shows now in each part, on a copy of the
+ * page at a width in it, and save it with the change. On this page of about
+ * 5000 elements that must make no long task: not once the designer has
+ * stopped, nor when they leave edit mode at once, which has the reading
+ * finish after. Three changes to the hero made one after another in the
+ * tablet view, each read once the designer stops; then two each followed at
+ * once by going back to preview mode. Each step of reading is a
+ * `vernierkit:parts` measure. No long task may come from the reading's first
+ * step to its last, the reading's own or not: one the reading makes between
+ * its steps (the browser laying the copy out, say) is counted too.
+ */
+test.describe("a change at a breakpoint", () => {
+  test.use({ keepRoundInMemory: false });
+  const VERNIER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.vernier", import.meta.url));
+  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.afterEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+
+  const HERO = "[data-testid=big-hero]";
+  const HERO_PICTURE = `${HERO} img`;
+  const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
+  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes : []);
+
+  const PARTS_MEASURE = "vernierkit:parts";
+
+  /** Selects the deepest layer at a point just inside `selector`'s box in the tablet view: edits apply from 560px to 1119px. */
+  async function selectInTablet(page: Page, selector: string) {
+    await selectDeepestIn(page, (await tablet(page).locator(selector).boundingBox())!);
+    await settle(page);
+  }
+
+  /** Sets `field` to `value`; with `leave`, goes back to preview mode at once. Waits till change `id` is saved with the parts of its range read; what was seen meanwhile. */
+  async function changeAndRead(page: Page, id: number, field: string, value: string, leave = false) {
+    await page.evaluate(armTasks, PARTS_MEASURE);
+    const box = design(page).getByRole("textbox", { name: field, exact: true });
+    await box.fill(value);
+    await box.press("Enter");
+    if (leave) await page.getByRole("button", { name: EXIT_LABEL }).click();
+    const started = Date.now();
+    await expect.poll(() => changes().find((change) => change.id === id)?.parts?.length ?? 0, { timeout: 20_000 }).toBe(2);
+    const saved = Date.now() - started;
+    await settle(page, 1000);
+    const seen = await takenTasks(page);
+    const own = [...seen.measures].sort((a, b) => a.start - b.start).map((s) => ({ ...s, end: s.start + s.duration }));
+    // Every long task from the first step of the reading to its last, the reading's or not: none should come.
+    const whileReading = own.length ? seen.long.filter((task) => task.start + task.duration > own[0].start && task.start < own.at(-1)!.end) : [];
+    return {
+      name: `${field}${leave ? ", then back to preview mode at once" : ""}`,
+      saved,
+      steps: own.length,
+      longest: Math.max(0, ...own.map((s) => s.duration)),
+      reading: own.reduce((sum, s) => sum + s.duration, 0),
+      longTasks: seen.long.map((task) => task.duration),
+      longTasksOfReading: longTasksOf(seen.long, own).map((task) => task.duration),
+      longTasksWhileReading: whileReading.map((task) => task.duration),
+    };
+  }
+
+  test("reading what the page shows in each part of a change's range makes no long task, the designer stopped or gone back to preview mode", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectInTablet(page, HERO);
+    const rows = [];
+    rows.push(await changeAndRead(page, 1, "Corner radius", "20"));
+    rows.push(await changeAndRead(page, 2, "Fill color", "fafafa"));
+    rows.push(await changeAndRead(page, 3, "Gap", "10"));
+    rows.push(await changeAndRead(page, 4, "Opacity", "90", true));
+    await enterEditMode(page);
+    await selectInTablet(page, HERO_PICTURE);
+    rows.push(await changeAndRead(page, 5, "Corner radius", "12", true));
+
+    const longest = Math.max(...rows.map((row) => row.longest));
+    const ofReading = rows.flatMap((row) => row.longTasksOfReading);
+    const whileReading = rows.flatMap((row) => row.longTasksWhileReading);
+    // Read every time, a step at a time.
+    expect(rows.every((row) => row.steps > 0)).toBe(true);
+    const met = ofReading.length === 0 && whileReading.length === 0 && longest < 50;
+    keep("rangeParts", { elements, rows });
+    print(
+      report(
+        `Reading each part of a tablet-view change's range, ${elements} elements, 2 parts (560–819px, 820–1119px) — ${mode}`,
+        [
+          { name: "longest step of reading", summary: summarize(rows.map((row) => row.longest)), target: "< 50ms, no long task while reading", met },
+          { name: "reading per change", summary: summarize(rows.map((row) => row.reading)) },
+          { name: "edit to parts saved", summary: summarize(rows.map((row) => row.saved)) },
+        ],
+        rows.map(
+          (row) =>
+            `${row.name}: ${row.steps} steps, the longest ${ms(row.longest)}, ${ms(row.reading)} in all, saved ${row.saved}ms after; long tasks ${row.longTasks.map((d) => d.toFixed(0)).join(", ") || "none"} (the reading's: ${row.longTasksOfReading.length}; from its first step to its last: ${row.longTasksWhileReading.length})`,
+        ),
+      ),
+    );
+    verdict(met, `reading the parts of a change's range: longest stretch ${longest.toFixed(1)}ms, ${ofReading.length} long tasks of its own, ${whileReading.length} while it went on`);
+  });
+});
+
+/**
+ * Ticket 68: edit mode comes back to the same canvas, the round saved, and
+ * after a round that ended with changes not applied, carried over to the next
+ * on it, what was applied taken into it as it opens. On the large page, with
+ * three changes to the 96 product cards (two to the card, one to its body's
+ * Stack): entering edit mode on the round saved, not claimed (as before
+ * ticket 68); then, the Agent having applied the corners and finished, on
+ * the round carried over. Each run from a page loaded afresh, the saved
+ * canvas put back, and once more without a reload; the long tasks from the
+ * click to every view up are counted. The canvas is never saved meanwhile:
+ * each entry takes what was applied in afresh.
+ */
+test.describe("the same canvas again", () => {
+  test.use({ keepRoundInMemory: false });
+  const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
+  const PARTS = `${REACT18}src/big/parts.tsx`;
+  const VERNIER = `${REACT18}.vernier`;
+  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const original = readFileSync(PARTS, "utf8");
+  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("rounded-card border");
+  const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
+  const changesSaved = () => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")) : null);
+  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.afterEach(async () => {
+    writeFileSync(PARTS, original);
+    rmSync(VERNIER, { recursive: true, force: true });
+    await expect.poll(served).toBe(true);
+  });
+
+  /** Enters edit mode `ENTER_RUNS` times, each on a page loaded afresh then once more on the same page, after one to warm up: the times, and the long tasks of each. */
+  async function entries(page: Page) {
+    const times: number[] = [];
+    const long: number[][] = [];
+    for (let run = 0; run <= ENTER_RUNS; run++) {
+      await openBigPage(page);
+      for (const again of [false, true]) {
+        if (again) {
+          await page.getByRole("button", { name: EXIT_LABEL }).click();
+          await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+          await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+          await settle(page, 600);
+        }
+        await page.evaluate(armTasks, "none");
+        const entry = await enterAndMeasure(page, TOGGLE_LABEL);
+        await settle(page, 600);
+        const seen = await takenTasks(page);
+        if (run === 0) continue;
+        times.push(entry.desktopUp);
+        long.push(seen.long.map((task) => task.duration));
+      }
+    }
+    return { times, long };
+  }
+
+  test("entering edit mode on the same canvas, a round saved or carried over, takes at most 150ms", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectCard(page, 6, { parent: true });
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await selectCard(page, 6);
+    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    await gap.fill("10");
+    await gap.press("Enter");
+    await expect.poll(() => changesSaved()?.changes.length ?? 0).toBe(3);
+    await page.getByRole("button", { name: EXIT_LABEL }).click();
+    await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+
+    const saved = await entries(page);
+    expect(changesSaved()?.changes.length).toBe(3);
+
+    // The Agent applies the corners, and finishes: the fill and the gap are left (ticket 68).
+    await vernierkit("claim");
+    writeFileSync(PARTS, readFileSync(PARTS, "utf8").replace(CARD, CARD.replace("rounded-card", "rounded-[20px]")));
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius), { timeout: 20_000 }).toBe("20px");
+    await vernierkit("done", "1");
+    await vernierkit("finish");
+    const carriedOver = changesSaved();
+    const carried = carriedOver?.applied?.length ? await entries(page) : null;
+    if (carried) expect(changesSaved()).toEqual(carriedOver);
+
+    const rows = [
+      { name: "on the round saved", ...saved, summary: summarize(saved.times) },
+      ...(carried ? [{ name: "on the round carried over", ...carried, summary: summarize(carried.times) }] : []),
+    ];
+    const met = rows.every((row) => row.summary.median <= ENTER_TARGET_MS);
+    keep("sameCanvas", { elements, rows: rows.map(({ name, times, long, summary }) => ({ name, summary, samples: times, longTasks: long })) });
+    print(
+      report(
+        `Entering edit mode on the same canvas, ${elements} elements, ${VIEWS.length} views, 3 changes to 96 cards — ${mode}`,
+        rows.map(({ name, summary }) => ({ name, summary, target: `median ≤ ${ENTER_TARGET_MS}ms`, met: summary.median <= ENTER_TARGET_MS })),
+        [
+          ...rows.map(({ name, long }) => `${name}: long tasks per entry ${long.map((tasks) => tasks.length).join(", ")}; the longest ${Math.max(0, ...long.flat()).toFixed(0)}ms`),
+          carried ? "Carried over: 2 changes left, 1 applied, taken into the canvas at each entry." : "No round carried over: this code drops the canvas once the round ends.",
+        ],
+      ),
+    );
+    verdict(met, `entering edit mode on the same canvas: medians ${rows.map((row) => row.summary.median.toFixed(1)).join(", ")}ms, target ${ENTER_TARGET_MS}ms`);
+  });
 });
