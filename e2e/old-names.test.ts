@@ -13,9 +13,12 @@
  *   the time. Ticket 23's Guide drafts (its `>` lines) are still checked: 59
  *   publishes them, so ticket 70 renamed them.
  * - Ticket 70 itself, which describes the rename.
- * - `.scratch/<the old folder>/logs/`: a session's decisions log.
+ * - `logs/` beside the tickets: a session's decisions log.
  * - The path `.scratch/<the old folder>` wherever it is written: the tickets'
  *   folder keeps its name.
+ * Ticket numbers start again in each folder under `.scratch/`, so 23, 70 and
+ * `logs/` are let through in the old folder only. A file let through whole is
+ * let through with its path.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -29,7 +32,12 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const OLD = /[v]ernier|[V]ernier|[V]ERNIER|[v]k-|[V]K_/g;
 /** The tickets' folder, which keeps its name. */
 const TICKET_FOLDER = /\.scratch\/[v]ernierkit\b/g;
+/** A ticket in any folder under `.scratch/`, and its number. */
 const TICKET = /^\.scratch\/[^/]+\/issues\/(\d+)-[^/]+\.md$/;
+/** Ticket 70, the rename; ticket 23, whose Guide drafts ticket 70 renamed; and the logs: all in the tickets' folder. */
+const RENAME_TICKET = /^\.scratch\/[v]ernierkit\/issues\/70-[^/]+\.md$/;
+const GUIDE_DRAFTS_TICKET = /^\.scratch\/[v]ernierkit\/issues\/23-[^/]+\.md$/;
+const LOGS = /^\.scratch\/[v]ernierkit\/logs\//;
 
 /** Files git tracks, and the untracked ones it does not ignore (those it would add). */
 function files(): string[] {
@@ -41,31 +49,28 @@ function files(): string[] {
 const isDone = (text: string) => /^(done|resolved)\b/i.test(/^\**Status:?\**:?\s*(.*)$/m.exec(text)?.[1] ?? "");
 
 /** The lines of `text` to check, or none when the whole file is a record of the past. */
-export function linesToCheck(path: string, text: string): { line: number; text: string }[] {
+function linesToCheck(path: string, text: string): { line: number; text: string }[] {
   const lines = text.split("\n").map((text, i) => ({ line: i + 1, text }));
-  if (path.startsWith("docs/adr/")) return [];
-  if (/^\.scratch\/[^/]+\/logs\//.test(path)) return [];
-  const ticket = TICKET.exec(path)?.[1];
-  if (ticket === "70") return [];
-  if (ticket === "23") return lines.filter((l) => l.text.startsWith(">"));
-  if (ticket && isDone(text)) return [];
+  if (path.startsWith("docs/adr/") || LOGS.test(path) || RENAME_TICKET.test(path)) return [];
+  if (GUIDE_DRAFTS_TICKET.test(path)) return lines.filter((l) => l.text.startsWith(">"));
+  if (TICKET.test(path) && isDone(text)) return [];
   return lines;
 }
 
 /** The old names in `text`, leaving out the tickets' folder. */
-export const oldNames = (text: string) => text.replace(TICKET_FOLDER, "").match(OLD) ?? [];
+const oldNames = (text: string) => text.replace(TICKET_FOLDER, "").match(OLD) ?? [];
 
 const isBinary = (bytes: Buffer) => bytes.subarray(0, 8000).includes(0);
 
 test("no file or path in the repository uses the names before 03Kind (ticket 70)", () => {
   const found: string[] = [];
   for (const path of files()) {
-    for (const name of oldNames(path)) found.push(`${path}: path has ${name}`);
     const full = ROOT + path;
-    if (!existsSync(full) || !statSync(full).isFile()) continue;
-    const bytes = readFileSync(full);
-    if (isBinary(bytes)) continue;
-    for (const { line, text } of linesToCheck(path, bytes.toString("utf8"))) {
+    const bytes = existsSync(full) && statSync(full).isFile() ? readFileSync(full) : Buffer.alloc(0);
+    const lines = isBinary(bytes) ? [] : linesToCheck(path, bytes.toString("utf8"));
+    if (lines.length === 0 && !isBinary(bytes)) continue;
+    for (const name of oldNames(path)) found.push(`${path}: path has ${name}`);
+    for (const { line, text } of lines) {
       for (const name of oldNames(text)) found.push(`${path}:${line}: ${name}`);
     }
   }
@@ -82,17 +87,23 @@ test("the old names are caught in each form ticket 70 lists, and the tickets' fo
   assert.deepEqual(oldNames("03Kind, third-kind, --tk-accent, data-tk-loc, TK_E2E_PORT, Shift+1, Vk"), []);
 });
 
-test("only the records of the past are let through", () => {
+test("only the records of the past are let through, and 23, 70 and the logs only in the tickets' folder", () => {
   const old = `${"V"}ernier`;
+  const tickets = `.scratch/${"v"}ernierkit`;
   const done = `# 12: x\n\n**Status:** done\n\n${old}\n`;
   const open = `# 12: x\n\n**Status:** ready-for-agent\n\n${old}\n`;
   assert.deepEqual(linesToCheck("docs/adr/0001-x.md", old), []);
-  assert.deepEqual(linesToCheck(".scratch/f/logs/x.md", old), []);
-  assert.deepEqual(linesToCheck(".scratch/f/issues/70-rename-to-03kind.md", old), []);
-  assert.deepEqual(linesToCheck(".scratch/f/issues/12-x.md", done), []);
-  assert.deepEqual(linesToCheck(".scratch/f/issues/12-x.md", open)[4], { line: 5, text: old });
-  assert.deepEqual(linesToCheck(".scratch/f/issues/23-x.md", `**Status:** done\n${old}\n> Install ${old}\n`), [{ line: 3, text: `> Install ${old}` }]);
-  assert.equal(linesToCheck(".scratch/f/issues/12-x.md", `${open}**Status:** done\n`).length, 7);
+  assert.deepEqual(linesToCheck(`${tickets}/logs/x.md`, old), []);
+  assert.deepEqual(linesToCheck(`${tickets}/issues/70-rename-to-03kind.md`, old), []);
+  assert.deepEqual(linesToCheck(`${tickets}/issues/12-x.md`, done), []);
+  assert.deepEqual(linesToCheck(".scratch/sandbox/issues/12-x.md", done), []);
+  assert.deepEqual(linesToCheck(`${tickets}/issues/12-x.md`, open)[4], { line: 5, text: old });
+  assert.deepEqual(linesToCheck(`${tickets}/issues/23-x.md`, `**Status:** done\n${old}\n> Install ${old}\n`), [{ line: 3, text: `> Install ${old}` }]);
+  assert.equal(linesToCheck(`${tickets}/issues/12-x.md`, `${open}**Status:** done\n`).length, 7);
+  assert.equal(linesToCheck(".scratch/sandbox/logs/x.md", old).length, 1);
+  assert.equal(linesToCheck(".scratch/sandbox/issues/70-x.md", open).length, 6);
+  assert.equal(linesToCheck(".scratch/sandbox/issues/23-x.md", done).length, 0);
+  assert.equal(linesToCheck(".scratch/sandbox/issues/23-x.md", open).length, 6);
   assert.equal(linesToCheck("docs/goals.md", old).length, 1);
   assert.equal(linesToCheck("packages/x/adr/y.ts", old).length, 1);
 });
