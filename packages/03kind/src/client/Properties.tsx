@@ -5,6 +5,7 @@ import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
 import { Icon, type IconName } from "./icons";
 import { BreakpointMark, BreakpointMarksProvider, breakpointMarks } from "./BreakpointMark";
+import { SIDES, SIZE_AXIS } from "./checkable";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -400,7 +401,7 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
   return (
     <div class="tk-row tk-size-row tk-markable">
       {/* A layer placed from its right or bottom edge has that changed with its size (ticket 75): reset together. */}
-      <BreakpointMark properties={[axis, axis === "width" ? "right" : "bottom"]} />
+      <BreakpointMark properties={[axis, SIDES[SIZE_AXIS[axis]!].end]} />
       <VariableSlot label={label} slot={variable}>
         <NumberField
           label={label}

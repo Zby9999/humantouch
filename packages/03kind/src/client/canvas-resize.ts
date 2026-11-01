@@ -6,13 +6,13 @@
  * (ADR 0011). Read in the view dragged in, in its px, as the layer was laid
  * out once the pointer had moved far enough to begin.
  */
-import { anchorsOf, type Anchors } from "./anchors";
 import { DRAG_THRESHOLD, type At } from "./canvas-drag";
 import type { Editor, ResizeTo } from "./edit-commands";
 import type { Layer } from "./layers";
+import { placedFrom, type PlacedFrom } from "./placed-from";
 import { readValue, round } from "./property-table";
 import { marksOf, middlesOf, resizeBox, type Handle, type Limits, type Middles } from "./resize";
-import type { Box, Mark } from "./snap";
+import type { Axis, Box, Mark } from "./snap";
 import { insideBorder } from "./stacks";
 import type { Shown } from "./view-layout";
 
@@ -27,7 +27,7 @@ interface Begun {
    * `bottom`, and how it is placed each way (ticket 75), which it stays; null:
    * in its container's layout, which places it.
    */
-  place: { x: number; y: number; right: number; bottom: number; anchors: Anchors } | null;
+  place: { x: number; y: number; right: number; bottom: number; placedFrom: Record<Axis, PlacedFrom> } | null;
   limits: Limits;
   /** What its edges snap to: its container inside its border, and, placed freely, the layers beside it. */
   targets: Box[];
@@ -88,7 +88,7 @@ export function resizeStep(session: ResizeSession, editor: Editor, pointer: Resi
   const { box } = resized;
   const { place, box: was } = begun;
   // Placed freely, it moves as far as its top left does, or, placed from its right or bottom, as far as its bottom right does: the edges not dragged stay.
-  // Centred, it stays where it is placed, growing on both sides alike.
+  // Centered, it stays where it is placed, growing on both sides alike.
   const [right, bottom] = [box.x + box.width - (was.x + was.width), box.y + box.height - (was.y + was.height)];
   const now: Required<ResizeTo> = {
     width: box.width,
@@ -100,10 +100,10 @@ export function resizeStep(session: ResizeSession, editor: Editor, pointer: Resi
   };
   if (resized.width) session.set.add("width");
   if (resized.height) session.set.add("height");
-  if (place?.anchors.x === "start" && box.x !== was.x) session.set.add("x");
-  if (place?.anchors.y === "start" && box.y !== was.y) session.set.add("y");
-  if (place?.anchors.x === "end" && right) session.set.add("right");
-  if (place?.anchors.y === "end" && bottom) session.set.add("bottom");
+  if (place?.placedFrom.x === "start" && box.x !== was.x) session.set.add("x");
+  if (place?.placedFrom.y === "start" && box.y !== was.y) session.set.add("y");
+  if (place?.placedFrom.x === "end" && right) session.set.add("right");
+  if (place?.placedFrom.y === "end" && bottom) session.set.add("bottom");
   // Once set, each is set as the handle has it now: dragged back, or with ⌥ or ⇧ let go, it goes back too.
   const to: ResizeTo = Object.fromEntries([...session.set].map((key) => [key, now[key]]));
   return { to, box, marks: resized.marks };
@@ -112,7 +112,7 @@ export function resizeStep(session: ResizeSession, editor: Editor, pointer: Resi
 /**
  * The lines the edges dragged line up on, as the layer is laid out in the view
  * dragged in now that it is resized: where its container places it otherwise
- * than where it was dragged to (a Stack centring it, say), those it snapped to
+ * than where it was dragged to (a Stack centering it, say), those it snapped to
  * are not drawn where its edges are not. None, not snapping.
  */
 export function marksNow(session: ResizeSession): Mark[] {
@@ -122,9 +122,9 @@ export function marksNow(session: ResizeSession): Mark[] {
   return marksOf(box, handle, middlesOf(pointer.altKey, centeredOf(begun)), begun.targets);
 }
 
-/** The ways the layer is centred on where it is placed, and stays so as it is resized. */
+/** The ways the layer is centered on where it is placed, and stays so as it is resized. */
 function centeredOf({ place }: Begun): Middles {
-  return { x: place?.anchors.x === "center", y: place?.anchors.y === "center" };
+  return { x: place?.placedFrom.x === "center", y: place?.placedFrom.y === "center" };
 }
 
 /** What the resize begins from: the layer as the view dragged in lays it out now, and what the editor reads of it there. */
@@ -132,7 +132,7 @@ function begin({ layer, in: { view } }: ResizeSession, editor: Editor): Begun {
   const box = view.boxOf(layer) ?? new DOMRect();
   const free = editor.can(layer, "x");
   const el = view.elementOf(layer.el) ?? layer.el;
-  const place = free ? { x: editor.read(layer, "x"), y: editor.read(layer, "y"), right: editor.read(layer, "right"), bottom: editor.read(layer, "bottom"), anchors: anchorsOf(el) } : null;
+  const place = free ? { x: editor.read(layer, "x"), y: editor.read(layer, "y"), right: editor.read(layer, "right"), bottom: editor.read(layer, "bottom"), placedFrom: { x: placedFrom(el, "x"), y: placedFrom(el, "y") } } : null;
   const style = getComputedStyle(el);
   const px = (names: string[]) => names.reduce((sum, name) => sum + (parseFloat(style.getPropertyValue(name)) || 0), 0);
   /** A minimum or maximum as the layer has it in this view, a locked layer's from its own styles too; null: none. */

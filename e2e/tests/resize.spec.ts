@@ -433,8 +433,8 @@ test("pressed with ⌘ held, a handle selects the deepest layer under it, as any
   await expect(badge(page)).toHaveCount(0);
 });
 
-/** Ticket 75: layers placed from their container's right or bottom edge, or centred, stay placed so as they are resized. */
-test.describe("placed from the right or bottom, or centred (ticket 75)", () => {
+/** Ticket 75: layers placed from their container's right or bottom edge, or centered, stay placed so as they are resized. */
+test.describe("placed from the right or bottom, or centered (ticket 75)", () => {
   /** How far the right and bottom edges of what `selector` finds in a view are from its container's, in the view's px. */
   function gapsIn(view: Locator, selector: string) {
     return view
@@ -524,7 +524,7 @@ test.describe("placed from the right or bottom, or centred (ticket 75)", () => {
     for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#foot").then((gaps) => gaps.bottom)).toBe(55);
   });
 
-  test("centred by `translate: -50%`: an edge dragged follows the pointer, the one across as far the other way, so it stays centred; its width typed in the panel, it stays centred too", async ({ page }) => {
+  test("centered by `translate: -50%`: an edge dragged follows the pointer, the one across as far the other way, so it stays centered; its width typed in the panel, it stays centered too", async ({ page }) => {
     // As Tailwind v4 writes `-translate-x-1/2` (the property `translate`), and as v3 does (`transform`).
     await addBoard(page, { v4: [0, 20, 80, 40], v3: [0, 120, 80, 40] }, { v4: "left: 50%; translate: -50% 0", v3: "left: 50%; transform: translate(-50%, 0)" });
     await enterEditMode(page);

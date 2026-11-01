@@ -428,9 +428,9 @@ describe("claim, how to write the changes (ticket 65)", () => {
   test("a layer placed from its container's right or bottom edge, or centered, resized: its changes say it stays placed so, and which value changes; how to write and check them, only in such a round (ticket 75)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value });
     saveRound(
-      style("width", { before: fixed(30), after: fixed(50), anchor: "end", style: { width: "50px" } }),
+      style("width", { before: fixed(30), after: fixed(50), placedFrom: "end", style: { width: "50px" } }),
       { ...style("right", { before: 10, after: -10, style: { right: "-10px" }, margins: { x: 0, y: 0 } }), id: 2 },
-      { ...style("height", { before: fixed(20), after: fixed(30), anchor: "center", style: { height: "30px" } }), id: 3 },
+      { ...style("height", { before: fixed(20), after: fixed(30), placedFrom: "center", style: { height: "30px" } }), id: 3 },
     );
 
     const { output } = await cli("claim");

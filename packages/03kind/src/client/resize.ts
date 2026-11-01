@@ -33,8 +33,8 @@ export interface ResizeInput {
   /** ⌥: its middle stays where it is, the edge across from the one dragged moving as far the other way. */
   fromCenter: boolean;
   /**
-   * The ways it is centred on where it is placed (`translate: -50%`, ticket
-   * 75): that way its middle stays, ⌥ held or not, so it stays centred.
+   * The ways it is centered on where it is placed (`translate: -50%`, ticket
+   * 75): that way its middle stays, ⌥ held or not, so it stays centered.
    */
   centered?: Middles;
   limits: Limits;
@@ -111,7 +111,7 @@ export function resizeBox({ handle, start, by, keepRatio, fromCenter, centered, 
   return { box, width: sets.x, height: sets.y, marks };
 }
 
-/** The ways a layer's middle stays as it is resized: every way with ⌥ held (`fromCenter`), else those it is centred along. */
+/** The ways a layer's middle stays as it is resized: every way with ⌥ held (`fromCenter`), else those it is centered along. */
 export function middlesOf(fromCenter: boolean, centered: Middles = { x: false, y: false }): Middles {
   return { x: fromCenter || centered.x, y: fromCenter || centered.y };
 }

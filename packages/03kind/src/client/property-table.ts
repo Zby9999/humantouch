@@ -201,8 +201,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   backgroundBlur: { kinds: BOXES, ...blur("backdrop-filter") },
   x: position("left", "right", 0),
   y: position("top", "bottom", 1),
-  right: fromEnd("right"),
-  bottom: fromEnd("bottom"),
+  right: endOffset("right"),
+  bottom: endOffset("bottom"),
   absolute: {
     kinds: [],
     read: (el) => (absolute(el) ? { x: offsetOf(el, "left", 0), y: offsetOf(el, "top", 1) } : null),
@@ -513,10 +513,10 @@ function position(start: "left" | "top", end: "right" | "bottom", axis: 0 | 1): 
 }
 
 /**
- * An absolute layer's place from its parent's right or bottom edge, as CSS
+ * An absolute layer's offset from its parent's right or bottom edge, as CSS
  * sets it: written alone, so the layer stays placed from that edge.
  */
-function fromEnd(end: "right" | "bottom"): Definition<number> {
+function endOffset(end: "right" | "bottom"): Definition<number> {
   return {
     kinds: EVERY_KIND,
     applies: absolute,

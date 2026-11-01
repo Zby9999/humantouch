@@ -93,7 +93,7 @@ describe("resizing a layer by a handle", () => {
     expect(resizeBox(input("w", { x: -9, y: 0 }, { fromCenter: true, snap: { targets: [target], within: 5 } })).box).toEqual(box(-2, 20, 124, 50));
   });
 
-  test("centred one way (`translate: -50%`, ticket 75): that way it grows on both sides alike, as with ⌥; the other way as usual", () => {
+  test("centered one way (`translate: -50%`, ticket 75): that way it grows on both sides alike, as with ⌥; the other way as usual", () => {
     const centered = { x: true, y: false };
     expect(resizeBox(input("e", { x: 10, y: 0 }, { centered })).box).toEqual(box(0, 20, 120, 50));
     expect(resizeBox(input("w", { x: 10, y: 0 }, { centered })).box).toEqual(box(20, 20, 80, 50));

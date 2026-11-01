@@ -3982,7 +3982,7 @@ describe("changes to the structure are checked on the live page", () => {
     editor.resize(layer("tag"), { width: 40, right: 20 });
     const right = changes.list().find((change) => change.property === "right")!;
     (page.getElementById("tag") as HTMLElement).style.right = "20px";
-    // The page at a phone's width, where it places the layer from its left, as \`max-md:left-2 max-md:right-auto\` does.
+    // The page at a phone's width, where it places the layer from its left, as `max-md:left-2 max-md:right-auto` does.
     const phone = document.createElement("iframe");
     document.body.append(phone);
     phone.contentDocument!.open();
@@ -6078,26 +6078,26 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
 
 /**
  * Layers placed freely from their container's right or bottom edge, or
- * centred on where they are placed by `translate: -50%`, as Tailwind v3
+ * centered on where they are placed by `translate: -50%`, as Tailwind v3
  * (`transform`, through its variables) and v4 (`translate`) write
  * `-translate-x-1/2` (ticket 75).
  */
 const ANCHORED = `<!DOCTYPE html>
 <style>
   * { --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; }
-  .v3-centred { --tw-translate-x: -50%; --tw-translate-y: -50%; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y)); }
-  .v4-centred { --tw-translate-x: calc(calc(1/2 * 100%) * -1); translate: var(--tw-translate-x) var(--tw-translate-y); }
+  .v3-centered { --tw-translate-x: -50%; --tw-translate-y: -50%; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y)); }
+  .v4-centered { --tw-translate-x: calc(calc(1/2 * 100%) * -1); translate: var(--tw-translate-x) var(--tw-translate-y); }
 </style>
 <body style="margin: 0">
   <div id="board" ${at("40:5")} style="position: relative; width: 300px; height: 200px">
     <div id="right" ${at("41:7")} style="position: absolute; right: 10px; top: 8px; width: 30px; height: 20px"></div>
     <div id="bottom" ${at("42:7")} style="position: absolute; left: 12px; bottom: 6px; width: 30px; height: 20px"></div>
-    <div id="v3" class="v3-centred" ${at("43:7")} style="position: absolute; left: 50%; top: 50%; width: 40px; height: 20px"></div>
-    <div id="v4" class="v4-centred" ${at("44:7")} style="position: absolute; left: 50%; top: 40px; width: 40px; height: 20px"></div>
+    <div id="v3" class="v3-centered" ${at("43:7")} style="position: absolute; left: 50%; top: 50%; width: 40px; height: 20px"></div>
+    <div id="v4" class="v4-centered" ${at("44:7")} style="position: absolute; left: 50%; top: 40px; width: 40px; height: 20px"></div>
   </div>
 </body>`;
 
-describe("resizing a layer placed from its container's right or bottom edge, or centred (ticket 75)", () => {
+describe("resizing a layer placed from its container's right or bottom edge, or centered (ticket 75)", () => {
   const open = () => {
     const canvas = openCanvas(ANCHORED);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
@@ -6106,7 +6106,7 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
       const p = canvas.doc.getElementById(id)!.parentElement!.getBoundingClientRect();
       return [r.left - p.left, r.top - p.top, r.width, r.height];
     };
-    const recorded = () => canvas.changes.list().map((change) => [change.property, change.before, change.after, change.anchor]);
+    const recorded = () => canvas.changes.list().map((change) => [change.property, change.before, change.after, change.placedFrom]);
     return { ...canvas, layer, box, recorded };
   };
 
@@ -6149,7 +6149,7 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
     expect(recorded().map(([property]) => property)).toEqual(["width", "right"]);
   });
 
-  test("centred by `translate: -50%`, as Tailwind v3 and v4 write it: its width or height set, it stays centred, and nothing else changes", () => {
+  test("centered by `translate: -50%`, as Tailwind v3 and v4 write it: its width or height set, it stays centered, and nothing else changes", () => {
     const { editor, layer, box, recorded } = open();
 
     editor.set(layer("v3"), "width", { type: "fixed", value: 60 });
@@ -6161,7 +6161,7 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
     expect(recorded()).toEqual([
       ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 60 }, "center"],
       ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, "center"],
-      // Placed by its top down, centred across only.
+      // Placed by its top down, centered across only.
       ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 80 }, "center"],
     ]);
   });

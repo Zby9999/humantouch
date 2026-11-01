@@ -236,7 +236,7 @@ test("a layer centered by Tailwind v3's `-translate-x-1/2`, through `transform`,
     await expect.poll(() => savedChanges()?.length).toBe(1);
     // Wider, as far as it snapped to: the one change, its width.
     const [change] = savedChanges();
-    expect(change).toMatchObject({ property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed" }, anchor: "center" });
+    expect(change).toMatchObject({ property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed" }, placedFrom: "center" });
     expect(change.after.value).toBeGreaterThan(100);
     expect(await npx03kind("claim")).toContain("- **Placement:** the layer is centered across on where its `left` places it, by `translate: -50%` (Tailwind's `-translate-x-1/2`), and stays so");
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");

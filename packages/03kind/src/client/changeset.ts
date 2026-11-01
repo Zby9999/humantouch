@@ -97,7 +97,12 @@ export interface Dissolved {
   layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins?: Margins })[];
 }
 
-/** A layer's left and top margins, in px; for a `right` or `bottom` change, its right and bottom margins: those on the sides it is placed from. */
+/**
+ * A layer's margins on the sides it is placed from, in px, by the axis they
+ * are along: across (`x`), its left margin, or its right one for a change to
+ * its `right`; down (`y`), its top margin, or its bottom one for a change to
+ * its `bottom` (ticket 75). Named by axis, as rounds saved before have them.
+ */
 export interface Margins {
   x: number;
   y: number;
@@ -256,12 +261,12 @@ export interface Change {
   margins?: Margins;
   /**
    * A change to the width or height of a layer placed freely, which it is
-   * placed otherwise than from its container's left or top along (ticket 75):
-   * from the right or bottom edge (`end`), or centred on where it is placed
-   * by `translate: -50%` (`center`). It stays placed so: the notes say so. As
-   * it was placed when first changed.
+   * placed otherwise than from its container's left or top along (ticket 75,
+   * GLOSSARY: Placement): from the right or bottom edge (`end`), or centered
+   * on where it is placed by `translate: -50%` or `50%` (`center`). It stays
+   * placed so: the notes say so. As it was placed when first changed.
    */
-  anchor?: "end" | "center";
+  placedFrom?: "end" | "center";
   /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
@@ -297,7 +302,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "anchor" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "instance"
     > & {
       kind?: Change["kind"];
     },

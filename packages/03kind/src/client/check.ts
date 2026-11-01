@@ -10,12 +10,12 @@
  * is drawn on the page to compare where the code that writes it cannot be
  * read: on an element put in and taken out at once, before anything is painted.
  */
-import { anchorOf } from "./anchors";
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Margins, type Place } from "./changeset";
 import { openingTag } from "./layer-target";
-import { checkable, placesFromEnd, PLACING } from "./checkable";
+import { checkable, PLACED_BY, PLACING, SIDES, type Edge } from "./checkable";
+import { placedFrom } from "./placed-from";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -280,12 +280,11 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
  * breakpoints place it from its left, say) places nothing: not looked at.
  */
 function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins, own: boolean): [CheckResult, Element | null] {
-  const fromEnd = placesFromEnd(property);
-  const axis = property === "x" || property === "right" ? "x" : "y";
+  const { axis, edge } = PLACED_BY[property] ?? { axis: "x", edge: "start" };
   for (const el of els) {
     if (!absolute(el)) return [{ outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) }, el];
-    if (fromEnd && !own && anchorOf(el, axis) !== "end") return [{ outcome: "unchecked", reason: `at this width the page does not place the layer by its \`${property}\`` }, null];
-    const placed = placedOn(el, fromEnd);
+    if (edge === "end" && !own && placedFrom(el, axis) !== "end") return [{ outcome: "unchecked", reason: `at this width the page does not place the layer by its \`${property}\`` }, null];
+    const placed = placedOn(el, edge);
     if (typeof after !== "number") {
       if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
       continue;
@@ -316,11 +315,12 @@ type CanvasMargins = { margins: Margins; known: boolean };
 /** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px; from its container's right and bottom edges, its `right` and `bottom` and those margins. */
 export type PlacedOnPage = { x: number; y: number; margins: Margins };
 
-function placedOn(el: Element, fromEnd = false): PlacedOnPage {
+/** Where the page places an absolute layer, from its container's start edges (left, top) or `from` its end edges (right, bottom). */
+function placedOn(el: Element, from: Edge = "start"): PlacedOnPage {
   const style = getComputedStyle(el);
   const px = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100;
-  if (fromEnd) return { x: px(style.right), y: px(style.bottom), margins: { x: px(style.marginRight), y: px(style.marginBottom) } };
-  return { x: px(style.left), y: px(style.top), margins: { x: px(style.marginLeft), y: px(style.marginTop) } };
+  const [x, y] = [SIDES.x[from], SIDES.y[from]];
+  return { x: px(style.getPropertyValue(x)), y: px(style.getPropertyValue(y)), margins: { x: px(style.getPropertyValue(`margin-${x}`)), y: px(style.getPropertyValue(`margin-${y}`)) } };
 }
 
 /**

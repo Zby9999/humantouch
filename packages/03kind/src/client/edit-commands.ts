@@ -87,8 +87,8 @@ export interface Editor {
    * worked in, and records the change. It can be undone. Its width or height
    * changed, a layer placed freely keeps its left and top edges where they
    * are, as in Figma: one placed from its container's right or bottom edge
-   * has its `right` or `bottom` changed with it, one step; one centred on
-   * where it is placed stays centred (ticket 75).
+   * has its `right` or `bottom` changed with it, one step; one centered on
+   * where it is placed stays centered (ticket 75).
    */
   set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
   /** Makes the edits `edits` makes one step, undone and redone together: the same change to several layers. */

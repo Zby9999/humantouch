@@ -86,6 +86,10 @@ _Avoid_: 网格布局、表格
 图层不参与父容器的自动排列，而是按相对父容器的坐标摆放。
 _Avoid_: 绝对定位、自由摆放
 
+**定位方式 (Placement)**:
+自由定位的图层沿每个方向从哪里摆：父容器的左边或上边、右边或下边（`right`、`bottom`），或用 `translate(-50%)` 居中；改尺寸时保留（ticket 75），相当于 Figma 的 Left、Right、Center 等约束里的这几种。编辑层没有设约束的界面，父容器改尺寸时也不按约束移动子图层。
+_Avoid_: 锚点、Anchor、约束（Constraint）
+
 **Frame**:
 既不是 Stack 也不是 Grid 的容器图层，可以是页面原有的，也可以是设计师在画布上新建的。
 _Avoid_: 画板、Artboard、Div、Box、Container
