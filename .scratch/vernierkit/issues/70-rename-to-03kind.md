@@ -15,12 +15,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] 上面列出的名字全部改完；除 ADR、已完成 ticket 和 git 历史外，仓库里不再有 `vernier`、`Vernier`、`vk-`、`--vk-`、`data-vk-`、`VK_` 字样，用一条检查固定下来，防止以后写回旧名
-- [ ] 全量 typecheck、单测、e2e 通过，测试数量不少于改名前；设计师看到的行为、改动单的内容不变
-- [ ] 打包检查用新包名通过，包里的命令叫 `03kind`；切换按钮体积仍 ≤ 10KB
-- [ ] 在临时目录的全新 Vite 与 Next.js 项目里，用本地打的包走一遍 `init` → 开发服务器 → 切换按钮出现 → `doctor` 全部 ✓ → `remove` 后 git diff 为空
+- [x] 上面列出的名字全部改完；除 ADR、已完成 ticket 和 git 历史外，仓库里不再有 `vernier`、`Vernier`、`vk-`、`--vk-`、`data-vk-`、`VK_` 字样，用一条检查固定下来，防止以后写回旧名
+- [x] 全量 typecheck、单测、e2e 通过，测试数量不少于改名前；设计师看到的行为、改动单的内容不变
+- [x] 打包检查用新包名通过，包里的命令叫 `03kind`；切换按钮体积仍 ≤ 10KB
+- [x] 在临时目录的全新 Vite 与 Next.js 项目里，用本地打的包走一遍 `init` → 开发服务器 → 切换按钮出现 → `doctor` 全部 ✓ → `remove` 后 git diff 为空
 - [ ] Claude Code 与 Cursor CLI 都能认出名为 `03kind` 的 Skill；有一家不接受以数字开头的 Skill 名时，Skill 改叫 `third-kind`，并在 Comments 写明
-- [ ] 不改的部分写在 Comments：ADR 和已完成的 ticket 是历史记录，保留原名；`.scratch/vernierkit/` 是内部的 ticket 目录，不改名
+- [x] 不改的部分写在 Comments：ADR 和已完成的 ticket 是历史记录，保留原名；`.scratch/vernierkit/` 是内部的 ticket 目录，不改名
 
 ## 背景
 
@@ -165,3 +165,97 @@
 - e2e/bench 除环境变量之外的整理。
 - 防止写回旧名的检查。
 - 在临时目录的全新项目里走 init → doctor → remove。
+
+### 第三步：文档、测量台与检查（2026-11-01，分支 claude/stoic-bose-b2d970）
+
+70 分三步做，这是最后一步：文档、测量台、防止写回旧名的检查，以及在全新项目里走一遍。验收项除「Claude Code 与 Cursor CLI 都能认出名为 `03kind` 的 Skill」外都已勾上。那一项要跑真实 Agent，由用户另外安排，所以 Status 仍是 ready-for-agent。
+
+**做了什么**
+
+- 文档：GLOSSARY、AGENTS.md、`.scratch/vernierkit/spec.md`、`.scratch/sandbox/spec.md`、docs/goals.md 里的产品名改为 03Kind。具体是：
+  - 包名 `03kind`，文件夹 `.03kind/`，`VK_BENCH_STALL_REAL` 改为 `TK_BENCH_STALL_REAL`；
+  - goals 里的「Vernier Bench」改为「03Kind Bench」；
+  - GLOSSARY 开头加了一段：口头叫 Third Kind，中文叫「第三类」，以及为什么 JS 标识符和元素名写作 Third Kind；
+  - spec 的「包与模块」补了写进项目的 `thirdKind()`、`withThirdKind()`、`<ThirdKind />`。
+  
+  docs/roadmap.md、docs/agents/* 本来就没有旧名。
+- Guide 草稿：23 的 Comments 里有两份 Guide 草稿，都改了，只改以 `>` 开头的行：
+  - 产品名改为 03Kind；
+  - 命令改为 `npx -y 03kind@latest init`、`npx 03kind doctor`、`npx 03kind remove`；
+  - 文件夹改为 `.03kind/`；
+  - 按钮名改为「03Kind: enter edit mode」，已对过 Toggle.tsx。
+  
+  23 的其余部分没动。59 里没有 Guide 草稿。
+- 没做完的 ticket：Status 不是 done 的只有 24、59、74、75、76、77、78（70 除外）。不分大小写查了旧产品名、`vk`、`.vernier`，都没有旧名，在各自的 Comments 里写了「已查，无旧名」。
+- 测量台 e2e/bench：前两步已经改干净，这一步没有要改的。
+  - 临时目录前缀都是 `03kind-*`。
+  - 包名、Skill 路径（`.agents/skills/03kind`、`.claude/skills/03kind`）、放行命令表、AGENTS 行的正则都用新名字。
+  - `NO_SKILL_PROMPT` 是「运行 `npx 03kind claim`，照输出落地」。
+  - `pnpm bench:agents --dry`：10 个场景全 ✓。
+- 防止写回旧名的检查：`e2e/old-names.test.ts`，加在 `pnpm test` 里，跟在 `node --test 'e2e/bench/*.test.ts'` 后面。
+  - 查的范围：git 跟踪的文件，加上未跟踪也未被忽略的文件（还没 `git add` 的新文件也查），文件内容和路径都查。二进制文件只查路径。
+  - 查的写法：`vernier`、`Vernier`、`VERNIER`、`vk-`、`VK_`，区分大小写。`vk-` 已经包括 `--vk-` 和 `data-vk-`。检查文件自己用字符类写模式（如 `[v]ernier`），所以不用把自己列为例外。
+  - 例外只有下面这些，理由写在文件头：
+    - `docs/adr/`；
+    - Status（文件里第一条 Status 行）为 done 或 resolved 的 ticket，任何 `.scratch/<功能>/` 下都算；
+    - 旧目录下的 ticket 70；
+    - 旧目录下的 ticket 23，但它以 `>` 开头的行（Guide 草稿）照查；
+    - 旧目录下的 `logs/`；
+    - 文字里作为路径出现的 `.scratch/vernierkit`。
+  - 因为每个功能目录的 ticket 编号都从 01 开始，所以 23、70、`logs/` 只在旧目录下放行（这是代码评审提出的）。整份放行的文件，路径也放行。
+  - 证明检查有效：
+    - 在改名前的 198e218 上（临时 worktree，放进这份检查）跑，报 2896 行；
+    - 在第二步结束时的 a92fe37 上跑，报 6 个文件，正是这一步要改的文档和 23 的草稿；
+    - 临时往 `packages/03kind/src` 写一个 `data-vk-loc`，报出那一行，往 docs/ 写一个 `VK_E2E_PORT` 也报出；
+    - 现在通过。
+  - 另有两条单元测试：一条测每种旧写法都能查出、ticket 目录名和新名字不误报；一条测例外的范围。
+
+**改前、改后（同一台机器，e2e 用 TK_E2E_PORT=5900）**
+
+| | 改前（a92fe37，第二步结束） | 改后 |
+|---|---|---|
+| `pnpm build`、`pnpm typecheck` | 通过 | 通过 |
+| `pnpm test` 里的 vitest | 710 passed、1 skipped（31 个文件） | 710 passed、1 skipped（31 个文件） |
+| `pnpm test` 里的 node --test | 29 pass（e2e/bench） | 32 pass（e2e/bench 29 + 旧名检查 3） |
+| `pnpm test:e2e` | 349 passed、1 skipped | 349 passed、1 skipped |
+| 切换按钮体积，toggle-first.spec，已发布文件 gzip 后 | 9990 B | 9990 B |
+| 切换按钮体积，install.spec，从打的包安装、Vite 送出的样子 | 10154 B | 10152 B |
+| 体积上限 | 10240 B | 10240 B |
+| `pnpm bench:agents --dry` | 10 个场景全 ✓ | 10 个场景全 ✓ |
+
+- 体积读法和前两步一样：在两份尺寸测试里临时加 console.log，读完就还原了。这一步没改代码，install.spec 的 2 B 差别在同一份代码几次之间的浮动范围内。
+- package.spec（打包检查）用新包名通过，包里的 bin 是 `03kind`。
+- 第一次跑 e2e 时，breakpoints.spec 的「the change list says the breakpoint of each change made in a narrower view」等 Fill color 输入框超时，maxFailures 让其余 81 条没跑。当时机器负载约 11，全新 Next 项目正在 `npm install`。之后单独重跑这份 spec 通过，整套重跑 349 passed、1 skipped。
+
+**全新项目走一遍**
+
+两个项目都放在 session 的临时目录（scratchpad）里，都用官方脚手架建，`git init` 并提交初始状态。用的是第三步代码 `pnpm pack` 打出的 `03kind-0.0.0.tgz`（286 kB）。包还没发布到 npm，所以 `init` 用 `TK_INSTALL_FROM=<tgz> npx -y --package <tgz> 03kind init` 跑，`init` 装进项目的就是这个 tgz；`doctor`、`remove` 直接用 `npx 03kind`，取的是项目 node_modules 里的那份。页面用 Playwright 的 headless shell 打开（1280×800）。
+
+- Vite：`npm create vite@latest -- --template react-ts`（create-vite 9.3.3，Vite 8.3.5，React 19.3，npm）。
+  - `init`：约 3 秒。输出 `03Kind (Vite, npm):`，装了依赖，`vite.config.ts` 加了 `thirdKind()`，`src/main.tsx` 挂上 `<ThirdKind />`，Skill 放到 `.agents/skills/03kind` 和 `.claude/skills/03kind`，新建的 AGENTS.md 里写了以「03Kind:」开头的那一行，`.gitignore` 加了 `.03kind/`。最后提示 `npm run dev` 和 `npx 03kind doctor`。
+  - 开发服务器：`npm run dev -- --port 5930 --strictPort`。页面上有一个 `<third-kind>`，切换按钮「03Kind: enter edit mode」在右下角（1224, 744，40×40）。点开进得了编辑模式（出现「03Kind: back to preview mode」），控制台没有报错。
+  - `npx 03kind doctor`：8 项全 ✓（依赖、插件、挂载、两份 Skill、AGENTS.md、.gitignore、正式构建没有编辑层），最后是 "All good."
+  - 先停开发服务器，再 `npx 03kind remove`：约 2 秒，输出 `03Kind removed:`，撤回了插件、`<ThirdKind />`、Skill、AGENTS.md 和 .gitignore 里的行，删了 `.03kind/`，`npm uninstall 03kind`。之后 `git diff`、`git status` 都为空，被忽略的只有 `node_modules/`（package-lock.json 也还原了）。
+- Next.js：`npx create-next-app@latest --yes`（Next 16.4.3，App Router，Turbopack，Tailwind v4，npm，模板自带 AGENTS.md）。
+  - `init`：约 46 秒，大部分时间花在 `npm install`，当时 e2e 全量在同时跑。输出 `03Kind (Next.js, npm):`，`next.config.ts` 改为 `withThirdKind(nextConfig)`，`app/layout.tsx` 在 body 里挂上 `<ThirdKind />`，AGENTS.md 末尾加了「03Kind:」那一行，其余和 Vite 一样。
+  - 开发服务器：`npm run dev -- -p 5931`。`<third-kind>` 和切换按钮都在，按钮在右下角，进得了编辑模式，控制台没有报错。
+  - `npx 03kind doctor`：8 项全 ✓，"All good."
+  - 先停开发服务器，再 `npx 03kind remove`：约 2 秒。之后 `git diff`、`git status` 都为空，被忽略的只有 `.next/`、`next-env.d.ts`、`node_modules/`，这三项建项目时就有。
+- 用完关掉了两个开发服务器，删掉了两个项目和 tgz。
+
+**不改的部分**
+
+- ADR（`docs/adr/`）是历史记录，保留原名。
+- 已完成的 ticket（Status 为 done）是历史记录，保留原名。23 的 Guide 草稿是唯一的例外：59 要把它发布出去，所以改了。
+- `.scratch/vernierkit/` 是内部的 ticket 目录，不改名。文档里写到这个路径的地方也照旧。
+- `.scratch/vernierkit/logs/` 是历史记录，不改。
+- git 历史不改。
+
+**风险**
+
+- 检查也查未跟踪、未被忽略的文件。在仓库里留了写着旧名的草稿或日志，`pnpm test` 会失败，需要把它放进被忽略的位置。
+- 检查放在 `e2e/` 根目录（e2e 的 tsconfig 已经包含它，`pnpm typecheck` 会查到）。它查的是整个仓库，和 e2e 没关系，以后找它时要知道在这里。
+- Status 为 wontfix 的 ticket 不在例外里。现在没有这样的 ticket，以后出现、又写着旧名时，要决定它算不算历史记录。
+- 23 里只有 Guide 草稿用了新名字，周围的验证记录还写着 `vernierkit@latest`、`VERNIERKIT_INSTALL_FROM`。读的人要知道这是 70 有意改的，原因写在这里。
+- 全新项目只用 npm 走过（两个脚手架默认都用 npm）；pnpm 由 e2e 的 install.spec、next-install.spec 覆盖。
+- 23 和 59 指出的 Guide 第 3 步（「打不开浏览器就请设计师看一眼」）与 24 的「无需人工介入」冲突，这一步没动，仍留给 59。
