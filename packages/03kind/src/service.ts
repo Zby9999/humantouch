@@ -1,6 +1,6 @@
 /**
  * The local service: runs in the dev server process and keeps the round in
- * `.vernier/`. It tells the editor layer how the round stands as the Agent
+ * `.03kind/`. It tells the editor layer how the round stands as the Agent
  * claims and applies it, has open pages check each change the Agent reports
  * done, ends the round when the designer unlocks it, and reads the project's
  * Variables for the Design panel. It
@@ -40,12 +40,12 @@ import {
   readOffCanvas,
   readState,
   roundStatus,
-  vernierFolder,
+  thirdKindFolder,
   writeAtomically,
   writeChecks,
   writeOffCanvas,
   type Checks,
-} from "./vernier-folder";
+} from "./third-kind-folder";
 import { readVariables } from "./variables";
 
 /** A saved canvas carries the page's styles inline; this leaves plenty of room. */
@@ -58,7 +58,7 @@ export interface Service extends ServiceConfig {
 }
 
 export async function startService({ root }: { root: string }): Promise<Service> {
-  const files = vernierFolder(root);
+  const files = thirdKindFolder(root);
   const token = randomBytes(32).toString("hex");
 
   /** What the editor layer is told: how the round stands, without what only the command line needs. */

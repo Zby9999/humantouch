@@ -62,7 +62,7 @@ export default defineConfig([
     target: "es2022",
     external: ["react"],
     noExternal: ["preact"],
-    // So a Next.js server component, such as the root layout, can render <Vernier />.
+    // So a Next.js server component, such as the root layout, can render <ThirdKind />.
     banner: { js: '"use client";' },
     dts: { entry: { react: "src/react.ts" } },
   },

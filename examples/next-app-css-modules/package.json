@@ -14,10 +14,10 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "03kind": "workspace:*",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "typescript": "^6.0.3",
-    "vernierkit": "workspace:*"
+    "typescript": "^6.0.3"
   }
 }

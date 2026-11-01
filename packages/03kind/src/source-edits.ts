@@ -105,7 +105,7 @@ function importAfterLast(code: string, program: Node, names: string, from: strin
 export type FileEdit = { text: string; edits: Edit[] } | { reason: string };
 
 /**
- * Adds the Vite plugin to a Vite config: `vernier()` first in `plugins`, and
+ * Adds the Vite plugin to a Vite config: `thirdKind()` first in `plugins`, and
  * its import.
  */
 export function addVitePlugin(file: string, code: string): FileEdit {
@@ -118,21 +118,21 @@ export function addVitePlugin(file: string, code: string): FileEdit {
     const first: Node | undefined = config.properties[0];
     if (!first) return { reason: "its config object is empty" };
     const separator = onSameLine(code, config.start, first.start) ? " " : `\n${indentAt(code, first.start)}`;
-    insertion = { at: first.start, text: `plugins: [vernier()],${separator}` };
+    insertion = { at: first.start, text: `plugins: [thirdKind()],${separator}` };
   } else if (plugins.value.type === "ArrayExpression") {
     const array = plugins.value;
     const first: Node | null = array.elements[0];
-    if (!first) insertion = { at: array.start + 1, text: "vernier()" };
-    else if (onSameLine(code, array.start, first.start)) insertion = { at: first.start, text: "vernier(), " };
-    else insertion = { at: first.start, text: `vernier(),\n${indentAt(code, first.start)}` };
+    if (!first) insertion = { at: array.start + 1, text: "thirdKind()" };
+    else if (onSameLine(code, array.start, first.start)) insertion = { at: first.start, text: "thirdKind(), " };
+    else insertion = { at: first.start, text: `thirdKind(),\n${indentAt(code, first.start)}` };
   } else {
     return { reason: "its `plugins` is not a list" };
   }
-  return insert(file, code, [importAfterLast(code, program, "vernier", "vernierkit/vite"), insertion]);
+  return insert(file, code, [importAfterLast(code, program, "thirdKind", "03kind/vite"), insertion]);
 }
 
 /**
- * Wraps the config a Next.js config module exports with `withVernier()`, and
+ * Wraps the config a Next.js config module exports with `withThirdKind()`, and
  * imports it (or requires it, in CommonJS).
  */
 export function wrapNextConfig(file: string, code: string): FileEdit {
@@ -140,7 +140,7 @@ export function wrapNextConfig(file: string, code: string): FileEdit {
   if (!program) return { reason: "it could not be read" };
   const exported = program.body.find((node: Node) => node.type === "ExportDefaultDeclaration")?.declaration;
   if (exported && !/Declaration$/.test(exported.type)) {
-    return insert(file, code, [importAfterLast(code, program, "{ withVernier }", "vernierkit/next"), ...wrap(exported)]);
+    return insert(file, code, [importAfterLast(code, program, "{ withThirdKind }", "03kind/next"), ...wrap(exported)]);
   }
   const assigned = program.body.find(
     (node: Node) =>
@@ -153,7 +153,7 @@ export function wrapNextConfig(file: string, code: string): FileEdit {
   if (!assigned) return { reason: "its exported config could not be found" };
   const requires = program.body.filter((node: Node) => node.type === "VariableDeclaration" && node.declarations[0]?.init?.callee?.name === "require");
   const last: Node | undefined = requires.at(-1);
-  const line = 'const { withVernier } = require("vernierkit/next");';
+  const line = 'const { withThirdKind } = require("03kind/next");';
   return insert(file, code, [last ? { at: last.end, text: `\n${line}` } : { at: 0, text: `${line}\n` }, ...wrap(assigned)]);
 }
 
@@ -161,13 +161,13 @@ export function wrapNextConfig(file: string, code: string): FileEdit {
 function wrap(expression: Node): Insertion[][] {
   return [
     [
-      { at: expression.start, text: "withVernier(" },
+      { at: expression.start, text: "withThirdKind(" },
       { at: expression.end, text: ")" },
     ],
   ];
 }
 
-/** Mounts `<Vernier />` at the end of the `<body>` a Next.js root layout renders. */
+/** Mounts `<ThirdKind />` at the end of the `<body>` a Next.js root layout renders. */
 export function mountInLayout(file: string, code: string): FileEdit {
   const program = parseModule(code);
   let body: Node | null = null;
@@ -177,11 +177,11 @@ export function mountInLayout(file: string, code: string): FileEdit {
     });
   }
   if (!program || !body) return { reason: "it renders no <body>" };
-  return insert(file, code, [importAfterLast(code, program, "{ Vernier }", "vernierkit/react"), ...mountIn(code, body)]);
+  return insert(file, code, [importAfterLast(code, program, "{ ThirdKind }", "03kind/react"), ...mountIn(code, body)]);
 }
 
 /**
- * Mounts `<Vernier />` in the JSX a Vite entry renders: beside the root's
+ * Mounts `<ThirdKind />` in the JSX a Vite entry renders: beside the root's
  * children (`<StrictMode>`'s, say), or in a fragment with a lone root.
  */
 export function mountInEntry(file: string, code: string): FileEdit {
@@ -195,23 +195,23 @@ export function mountInEntry(file: string, code: string): FileEdit {
     });
   }
   if (!program || !tree) return { reason: "it renders no JSX with `render()`" };
-  return insert(file, code, [importAfterLast(code, program, "{ Vernier }", "vernierkit/react"), ...mountIn(code, tree)]);
+  return insert(file, code, [importAfterLast(code, program, "{ ThirdKind }", "03kind/react"), ...mountIn(code, tree)]);
 }
 
-/** `<Vernier />` after the last child of `element`, or beside it in a fragment when it has none. */
+/** `<ThirdKind />` after the last child of `element`, or beside it in a fragment when it has none. */
 function mountIn(code: string, element: Node): Insertion[] {
   if (element.type === "JSXElement" && !element.closingElement) {
     return [
       { at: element.start, text: "<>" },
-      { at: element.end, text: "<Vernier /></>" },
+      { at: element.end, text: "<ThirdKind /></>" },
     ];
   }
   const opening = element.type === "JSXElement" ? element.openingElement : element.openingFragment;
   const children = element.children.filter((child: Node) => child.type !== "JSXText" || child.value.trim());
   const last: Node | undefined = children.at(-1);
-  if (!last) return [{ at: opening.end, text: "<Vernier />" }];
-  if (onSameLine(code, opening.start, last.start)) return [{ at: last.end, text: "<Vernier />" }];
-  return [{ at: last.end, text: `\n${indentAt(code, last.start)}<Vernier />` }];
+  if (!last) return [{ at: opening.end, text: "<ThirdKind />" }];
+  if (onSameLine(code, opening.start, last.start)) return [{ at: last.end, text: "<ThirdKind />" }];
+  return [{ at: last.end, text: `\n${indentAt(code, last.start)}<ThirdKind />` }];
 }
 
 /** The object a config module exports: `export default defineConfig({ … })`, a function returning one, or a name for one. */

@@ -25,21 +25,21 @@ if (import.meta.hot) {
 /**
  * Vernier Kit for Vite. Development only: adds source markers so layers can be
  * traced back to code, and runs the local service that keeps the round in
- * `.vernier/`. Production builds are left untouched.
+ * `.03kind/`. Production builds are left untouched.
  */
-export default function vernier(): Plugin {
+export default function thirdKind(): Plugin {
   let root = process.cwd();
   let base = "/";
   let service: Promise<Service> | undefined;
 
   return {
-    name: "vernierkit",
+    name: "03kind",
     apply: "serve",
     enforce: "pre",
     config() {
       // Served as published: pre-bundled, the toggle would come again unminified, with a source map inlined in it,
       // more than the page is to load with it (docs/goals.md). The rest of the editor layer still loads only as needed.
-      return { optimizeDeps: { exclude: ["vernierkit"] } };
+      return { optimizeDeps: { exclude: ["03kind"] } };
     },
     configResolved(config) {
       root = config.root;

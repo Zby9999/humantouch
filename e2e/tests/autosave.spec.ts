@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearVernier, vernierkit } from "./project-files";
+import { clearThirdKind, npx03kind } from "./project-files";
 
-/** These tests save into the example project's `.vernier/` for real, so they go one at a time. */
+/** These tests save into the example project's `.03kind/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
-const VERNIER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.vernier/", import.meta.url));
-const CHANGESET = `${VERNIER}changeset.json`;
-const CANVAS = `${VERNIER}canvas.html`;
+const THIRD_KIND = fileURLToPath(new URL("../../examples/vite-react19-tw4/.03kind/", import.meta.url));
+const CHANGESET = `${THIRD_KIND}changeset.json`;
+const CANVAS = `${THIRD_KIND}canvas.html`;
 
-test.beforeEach(() => clearVernier(VERNIER));
-test.afterAll(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearThirdKind(THIRD_KIND));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -264,13 +264,13 @@ test.describe("a round saved before the instances of a layer shared their edit s
     writeBefore60("canvas.html", readFileSync(CANVAS, "utf8"));
     writeBefore60("changeset.json", readFileSync(CHANGESET, "utf8"));
     writeBefore60("styles.json", `${JSON.stringify(await viewStyles(page))}\n`);
-    writeBefore60("claim.md", await vernierkit("claim"));
+    writeBefore60("claim.md", await npx03kind("claim"));
   });
 });
 
 test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the notes of each change are as they were", async ({ page }) => {
-  mkdirSync(VERNIER, { recursive: true });
-  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${VERNIER}${file}`, readBefore60(file));
+  mkdirSync(THIRD_KIND, { recursive: true });
+  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${THIRD_KIND}${file}`, readBefore60(file));
   const before = JSON.parse(readBefore60("styles.json"));
   const changeSet = JSON.parse(readBefore60("changeset.json"));
 
@@ -291,7 +291,7 @@ test("a round saved before the instances of a layer shared their edit styles ope
   await expect.poll(() => viewStyles(page)).toEqual(before);
   await expect.poll(() => JSON.parse(readFileSync(CHANGESET, "utf8"))).toEqual(changeSet);
   // Each change's notes as they were; what goes around them, the way through the round and how to write them, is of the notes of now (ticket 65).
-  expect(changeSections(await vernierkit("claim"))).toBe(changeSections(readBefore60("claim.md")));
+  expect(changeSections(await npx03kind("claim"))).toBe(changeSections(readBefore60("claim.md")));
 });
 
 /** The change notes' sections of the changes, one after another: what is said around them left out. */

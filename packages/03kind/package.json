@@ -1,5 +1,5 @@
 {
-  "name": "vernierkit",
+  "name": "03kind",
   "version": "0.0.0",
   "description": "A Framer-style editor layer for your local dev server. Edit the page, hand the changes to your Agent.",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "skill"
   ],
   "bin": {
-    "vernierkit": "./dist/cli.js"
+    "03kind": "./dist/cli.js"
   },
   "exports": {
     "./vite": {

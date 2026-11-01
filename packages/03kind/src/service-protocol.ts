@@ -5,7 +5,7 @@ import type { StyleSource } from "./client/style-source";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__VERNIERKIT__";
-/** Next.js has no `index.html` for the global: `withVernier()` puts the same, as JSON, in the bundle's `process.env` under this name. */
+/** Next.js has no `index.html` for the global: `withThirdKind()` puts the same, as JSON, in the bundle's `process.env` under this name. */
 export const SERVICE_ENV = "VERNIERKIT_SERVICE";
 /** Header that carries the token. A request without the right one is turned away. */
 export const TOKEN_HEADER = "X-Vernier-Token";
@@ -147,7 +147,7 @@ export interface ServiceConfig {
 }
 
 /**
- * The round being edited, as saved in `.vernier/`: the canvas and the
+ * The round being edited, as saved in `.03kind/`: the canvas and the
  * ChangeSet. `GET /round` answers with it (204: no round), `PUT /round` saves
  * it, `DELETE /round` drops it. While the round is claimed it cannot be
  * saved or dropped (409).
@@ -159,7 +159,7 @@ export interface SavedRound {
 }
 
 /**
- * An Off-canvas Layer (ADR 0009) as saved in `.vernier/off-canvas.json`: where
+ * An Off-canvas Layer (ADR 0009) as saved in `.03kind/off-canvas.json`: where
  * it is in the workspace, how it looked, frozen, where it came from, and what
  * was done to it off the canvas.
  */

@@ -10,21 +10,21 @@
  * `bench-scenarios.spec.ts` checks they still make the changes they name.
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
-import type { Change } from "../../packages/vernierkit/src/client/changeset.ts";
-import { PLACING } from "../../packages/vernierkit/src/client/checkable.ts";
+import type { Change } from "../../packages/03kind/src/client/changeset.ts";
+import { PLACING } from "../../packages/03kind/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 
 /** What a scenario's designer works with: the page, and the project behind it. */
 export interface Desk {
   /** The page, at 1280 × 720, with the editor layer and its Layers panel shown. */
   page: Page;
-  /** Runs `npx vernierkit …` in the project, as an Agent would. */
+  /** Runs `npx 03kind …` in the project, as an Agent would. */
   cli(...args: string[]): Promise<string>;
   /** Replaces `from` with `to` in a file of the project (path from its root), as an Agent would; throws when `from` is not there. */
   edit(file: string, from: string, to: string): Promise<void>;
   /** Makes what is in the project now the code a round starts from (a commit, in the bench's copy). */
   settle(message: string): Promise<void>;
-  /** The round's ChangeSet as saved in `.vernier/`, or null. */
+  /** The round's ChangeSet as saved in `.03kind/`, or null. */
   changeSet(): { changes: SavedChange[] } | null;
 }
 

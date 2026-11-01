@@ -53,8 +53,8 @@ export function toApply(pageOpen: boolean): NotesOptions {
     intro: (count) =>
       `${count}, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. ` +
       (pageOpen ? PAGE_OPEN : "") +
-      "After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers: it says whether the designer's page shows each. " +
-      "Run it at least once before `npx vernierkit finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
+      "After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. " +
+      "Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
     end: writingRules,
   };
 }

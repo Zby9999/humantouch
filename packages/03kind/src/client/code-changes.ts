@@ -2,7 +2,7 @@
  * The project's code changing under the page, as the dev server brings it in
  * (Vite's HMR updates, which the Vite plugin keeps on the page as
  * `CodeUpdates`). A file the page does not use brings nothing in, so it is no
- * change; nor are the editor layer's own saves into `.vernier/`. With no word
+ * change; nor are the editor layer's own saves into `.03kind/`. With no word
  * from the dev server (Next.js), there is never a change to tell.
  */
 import { CODE_EVENT, CODE_GLOBAL, type CodeUpdates } from "../service-protocol";

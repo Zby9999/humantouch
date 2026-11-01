@@ -21,7 +21,7 @@ const execFileAsync = promisify(execFile);
 /** What the designer says to the Agent: the Skill's own trigger. */
 export const PROMPT = "落地我的设计改动";
 /** What the Agent is told in a project with no Skill (ticket 65): only to run `claim` and apply as it says. */
-export const NO_SKILL_PROMPT = "运行 `npx vernierkit claim`，照输出落地";
+export const NO_SKILL_PROMPT = "运行 `npx 03kind claim`，照输出落地";
 
 /** All the PATH the Agent's shell gets: Cursor's install, Node's (for `npx`), then the system's. */
 const PATH = [join(homedir(), ".local/bin"), dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -115,7 +115,7 @@ type BrowserPlugin = (typeof BROWSER_PLUGINS)[number];
 const pluginDir = (folder: string, name: string) => join(folder, "cursor-plugins", name);
 
 /** The shell commands an Agent may run: the command line, and reading the project. */
-const SHELL = ["npx vernierkit", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
+const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
 
 export interface AgentSpec {
   /** Where the Agent's binary is; an environment variable names another. */

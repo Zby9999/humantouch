@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, PROMPT } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "vernierkit-bench-agents-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** A file that stands in for a browser binary. */
@@ -98,7 +98,7 @@ test("of the processes under the Agent, the browsers that came up with a window 
 test("with no Skill, each Agent is asked only to run claim and apply as it says, by a command line of its own (ticket 65)", () => {
   for (const agent of ["claude", "cursor"] as const) {
     const args = AGENTS[agent].args("/run", NO_SKILL_PROMPT);
-    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx vernierkit claim`，照输出落地");
+    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx 03kind claim`，照输出落地");
     assert.equal(AGENTS[agent].args("/run")[1], PROMPT);
     assert.notEqual(commandLine(agent, NO_SKILL_PROMPT), commandLine(agent));
   }
@@ -120,11 +120,11 @@ test("Cursor runs on grok-4.7-high unless VK_BENCH_CURSOR_MODEL names another id
 
 test("a project with no Skill: init's Skill and its line in AGENTS.md are taken out, and nothing else (ticket 65)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
-  for (const folder of [".agents/skills/vernierkit", ".claude/skills/vernierkit", ".claude/skills/deploy"]) {
+  for (const folder of [".agents/skills/03kind", ".claude/skills/03kind", ".claude/skills/deploy"]) {
     mkdirSync(join(dir, folder), { recursive: true });
     writeFileSync(join(dir, folder, "SKILL.md"), "# Skill");
   }
-  const line = "Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.";
+  const line = "03Kind: to apply the designer's design changes, or undo the last round, follow `.agents/skills/03kind/SKILL.md`.";
   writeFileSync(join(dir, "AGENTS.md"), `# Project\n\nUse pnpm.\n${line}\n`);
 
   withoutSkill(dir);
@@ -141,18 +141,18 @@ test("a project with no Skill: init's Skill and its line in AGENTS.md are taken 
 
 test("a project with no Skill: init's record of its line in AGENTS.md is taken out too, its other edits kept (ticket 63)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
-  const line = "Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.";
+  const line = "03Kind: to apply the designer's design changes, or undo the last round, follow `.agents/skills/03kind/SKILL.md`.";
   writeFileSync(join(dir, "AGENTS.md"), `${line}\n`);
-  mkdirSync(join(dir, ".vernier"));
-  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [vernier(), " };
-  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".vernier/\n" }], created: ["AGENTS.md"] };
-  writeFileSync(join(dir, ".vernier/install.json"), JSON.stringify(record));
+  mkdirSync(join(dir, ".03kind"));
+  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [thirdKind(), " };
+  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".03kind/\n" }], created: ["AGENTS.md"] };
+  writeFileSync(join(dir, ".03kind/install.json"), JSON.stringify(record));
 
   withoutSkill(dir);
 
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".vernier/install.json"), "utf8")), {
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".03kind/install.json"), "utf8")), {
     dependency: true,
-    edits: [config, { file: ".gitignore", before: "", after: ".vernier/\n" }],
+    edits: [config, { file: ".gitignore", before: "", after: ".03kind/\n" }],
     created: [],
   });
 });

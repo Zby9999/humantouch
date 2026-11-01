@@ -11,7 +11,7 @@ import { REPORT_RULES } from "../src/report-form";
 let project: string;
 
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "vernierkit-cli-"));
+  project = mkdtempSync(join(tmpdir(), "03kind-cli-"));
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
@@ -53,13 +53,13 @@ const smallRadius = {
 
 /** Saves a round with these changes into the project, as the editor layer does. */
 function saveRound(...changes: object[]) {
-  mkdirSync(join(project, ".vernier"), { recursive: true });
-  writeFileSync(join(project, ".vernier/canvas.html"), "<!DOCTYPE html><html></html>");
-  writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ lastId: changes.length, changes }));
+  mkdirSync(join(project, ".03kind"), { recursive: true });
+  writeFileSync(join(project, ".03kind/canvas.html"), "<!DOCTYPE html><html></html>");
+  writeFileSync(join(project, ".03kind/changeset.json"), JSON.stringify({ lastId: changes.length, changes }));
 }
 
 function state() {
-  const file = join(project, ".vernier/state.json");
+  const file = join(project, ".03kind/state.json");
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
 }
 
@@ -95,7 +95,7 @@ describe("claim", () => {
 
     expect(code).toBe(0);
     expect(output).toMatch(/no design changes to apply/i);
-    expect(existsSync(join(project, ".vernier"))).toBe(false);
+    expect(existsSync(join(project, ".03kind"))).toBe(false);
   });
 
   test("claims the round and prints, for each change, its kind, location, scope, design intent and reference style", async () => {
@@ -190,8 +190,8 @@ describe("claim, the way through a round (ticket 65)", () => {
 
     const intro = output.split(/^## /m)[0];
     expect(intro).not.toMatch(/after each/);
-    expect(intro).toContain("After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers");
-    expect(intro).toContain("at least once before `npx vernierkit finish`");
+    expect(intro).toContain("After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers");
+    expect(intro).toContain("at least once before `npx 03kind finish`");
     expect(intro).toContain("report");
   });
 
@@ -1106,7 +1106,7 @@ describe("claim, Stacks made and dissolved", () => {
     await cli("done", "1");
     await cli("finish");
     // The change left discarded, then the layer edited again: nothing of this round is carried over.
-    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ lastId: 1, changes: [{ ...smallRadius, id: 1, layer: "7", target: made, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } }] }));
+    writeFileSync(join(project, ".03kind/changeset.json"), JSON.stringify({ lastId: 1, changes: [{ ...smallRadius, id: 1, layer: "7", target: made, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } }] }));
 
     const notes = section((await cli("claim")).output, 1);
 
@@ -1490,7 +1490,7 @@ describe("done", () => {
 
   test("refuses a number that is not a change of the round, or a round not claimed", async () => {
     saveRound(redFill);
-    expect(await cli("done", "1")).toEqual({ code: 1, output: "", errors: "The round is not claimed: run `npx vernierkit claim` first.\n" });
+    expect(await cli("done", "1")).toEqual({ code: 1, output: "", errors: "The round is not claimed: run `npx 03kind claim` first.\n" });
     await cli("claim");
 
     expect(await cli("done", "7")).toEqual({ code: 1, output: "", errors: "There is no change 7 in this round. Its changes are: 1.\n" });
@@ -1498,9 +1498,9 @@ describe("done", () => {
   });
 });
 
-/** The rounds archived in `.vernier/history/`, oldest first: their ChangeSets and how each ended. */
+/** The rounds archived in `.03kind/history/`, oldest first: their ChangeSets and how each ended. */
 function history() {
-  const dir = join(project, ".vernier/history");
+  const dir = join(project, ".03kind/history");
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .sort()
@@ -1517,7 +1517,7 @@ function history() {
  * before it answers (`answerAfter` ms later).
  */
 function openPage(answer: (id: number) => object | null, pages = 1, { saw, answerAfter = 0 }: { saw?: (id: number) => object; answerAfter?: number } = {}) {
-  const dir = join(project, ".vernier");
+  const dir = join(project, ".03kind");
   // The local service runs in this very process, as far as the command line can tell.
   // Written whole, as the service writes it: `done` reads the file in several steps, and must never see half of it.
   const write = (results: object) => {
@@ -1566,7 +1566,7 @@ function openPage(answer: (id: number) => object | null, pages = 1, { saw, answe
 function pageSaw(results: Record<number, object>, pages = 1) {
   const at = new Date().toISOString();
   writeFileSync(
-    join(project, ".vernier/checks.json"),
+    join(project, ".03kind/checks.json"),
     JSON.stringify({ pages, service: process.pid, results: Object.fromEntries(Object.entries(results).map(([id, result]) => [id, { at, ...result }])) }),
   );
 }
@@ -1600,7 +1600,7 @@ describe("done, checked on the page", () => {
     expect(first.output).toBe(
       "Change 1 done: 0 of 2 changes applied.\n" +
         "Checked on the page: it does not show the change. The fill is #DC2626, not #FF0000 at 50% opacity, as the browser computes `background-color` on the layer. " +
-        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 1` again.\n",
+        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx 03kind done 1` again.\n",
     );
     expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
   });
@@ -1617,9 +1617,9 @@ describe("done, checked on the page", () => {
     closePage = openPage((id) => ({ outcome: "not shown", actual: id === 3 ? { x: 0, y: 0 } : null }));
 
     expect((await cli("done", "1")).output).toContain(
-      "it does not show the change. The layer is still on the page: take it out of the code (for a data change, its item out of the data), and run `npx vernierkit done 1` again.\n",
+      "it does not show the change. The layer is still on the page: take it out of the code (for a data change, its item out of the data), and run `npx 03kind done 1` again.\n",
     );
-    expect((await cli("done", "2")).output).toContain("Its container's layers are in another order on the page: put it 1st, as the notes say, and run `npx vernierkit done 2` again.\n");
+    expect((await cli("done", "2")).output).toContain("Its container's layers are in another order on the page: put it 1st, as the notes say, and run `npx 03kind done 2` again.\n");
     expect((await cli("done", "3")).output).toContain("The layer is at X 0px and Y 0px, not absolute at X 40px and Y 12px: check its `position`, `left` and `top`");
     closePage();
     closePage = openPage(() => ({ outcome: "not shown", actual: "no reference" }));
@@ -1643,31 +1643,31 @@ describe("done, checked on the page", () => {
     expect((await cli("done", "1")).output).toContain(
       "it does not show the change. The layer is drawn at X 0px and Y 488px in its container (`left` 0px and `top` 488px, margins none), " +
         "where the canvas draws it at X 0px and Y 512px (its X and Y are its `left` and `top`, 0px and 488px, and it keeps its margins, 24px top). " +
-        "Its `left` and `top` are right, but not its margins: keep the margins it has on the canvas (what sets them, such as `mt-6` or `margin-top`), or add them to `left` and `top`, and run `npx vernierkit done 1` again.\n",
+        "Its `left` and `top` are right, but not its margins: keep the margins it has on the canvas (what sets them, such as `mt-6` or `margin-top`), or add them to `left` and `top`, and run `npx 03kind done 1` again.\n",
     );
     expect((await cli("done", "2")).output).toContain(
       "it does not show the change. The Y position is drawn at 488px in its container (`top` 488px, top margin 0px), " +
         "where the canvas draws it at 512px (its Y is its `top`, 488px, and it keeps its 24px top margin). " +
-        "Its `top` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mt-6` or `margin-top`), or add it to `top`, and run `npx vernierkit done 2` again.\n",
+        "Its `top` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mt-6` or `margin-top`), or add it to `top`, and run `npx 03kind done 2` again.\n",
     );
     closePage();
     closePage = openPage((id) => ({ outcome: "not shown", width: 390, actual: id === 2 ? { value: 470, margin: 0 } : { x: 0, y: 470, margins: { x: 0, y: 0 } } }));
     expect((await cli("done", "1")).output).toContain(
       "it does not show the change. At 390px wide, the layer is drawn at X 0px and Y 470px in its container (`left` 0px and `top` 470px, margins none), " +
         "where the canvas places it at X 0px and Y 488px, its `left` and `top`, and keeps its margins (24px top in the desktop view; at this width, the margins the project's breakpoints give it). " +
-        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 1` again.\n",
+        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx 03kind done 1` again.\n",
     );
     expect((await cli("done", "2")).output).toContain(
       "it does not show the change. At 390px wide, the Y position is drawn at 470px in its container (`top` 470px, top margin 0px), " +
         "where the canvas places it at 488px, its `top`, and keeps its top margin (24px in the desktop view; at this width, the margin the project's breakpoints give it). " +
-        "Check its `position` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 2` again.\n",
+        "Check its `position` and `top`, and that its container is its positioning reference, then run `npx 03kind done 2` again.\n",
     );
     closePage();
     closePage = openPage((id) => ({ outcome: "not shown", actual: id === 1 ? { x: 0, y: 488, margins: { x: 0, y: 0 } } : id === 2 ? { value: 488, margin: 0 } : { x: 0, y: 0, margins: { x: 2, y: 6 } } }));
     expect((await cli("done", "3")).output).toContain(
       "The layer is drawn at X 2px and Y 6px in its container (`left` 0px and `top` 0px, margins 2px left and 6px top), " +
         "where the canvas draws it at X 42px and Y 18px (its X and Y are its `left` and `top`, 40px and 12px, and it keeps its margins, 2px left and 6px top). " +
-        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx vernierkit done 3` again.\n",
+        "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx 03kind done 3` again.\n",
     );
   });
 
@@ -1684,7 +1684,7 @@ describe("done, checked on the page", () => {
       "Changes 1 and 2 done: 1 of 2 changes applied.\n" +
         "Change 1: checked on the page: it shows the change.\n" +
         "Change 2: checked on the page: it does not show the change. The corner radius is 12px, not 4px, as the browser computes `border-radius` on the layer. " +
-        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx vernierkit done 2` again.\n",
+        "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx 03kind done 2` again.\n",
     );
   });
 
@@ -1723,7 +1723,7 @@ describe("done, checked on the page", () => {
 
     expect((await cli("done", "1")).output).toContain(
       "Checked on the page: it does not show the change. At 390px wide, the fill is #FFFFFF, not #FF0000 at 50% opacity, as the browser computes `background-color` on the layer. " +
-        "The change applies at every width: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
+        "The change applies at every width: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx 03kind done 1` again.\n",
     );
   });
 
@@ -1739,7 +1739,7 @@ describe("done, checked on the page", () => {
 
     expect((await cli("done", "1")).output).toContain(
       "Checked on the page: it does not show the change. At 640px wide, the number of columns is 3, not 2, as the browser computes `grid-template-columns` on the layer. " +
-        "The change applies below 768px only, at that width too: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx vernierkit done 1` again.\n",
+        "The change applies below 768px only, at that width too: see what sets the value at that width (a breakpoint variant such as `sm:`, a media query), fix it, and run `npx 03kind done 1` again.\n",
     );
   });
 
@@ -1774,7 +1774,7 @@ describe("done, checked on the page", () => {
   test("does not wait for pages of a local service that is no longer running", async () => {
     saveRound(redFill);
     await cli("claim");
-    writeFileSync(join(project, ".vernier/checks.json"), JSON.stringify({ pages: 1, service: 999999, results: {} }));
+    writeFileSync(join(project, ".03kind/checks.json"), JSON.stringify({ pages: 1, service: 999999, results: {} }));
 
     const started = Date.now();
     const { output } = await cli("done", "1");
@@ -1788,7 +1788,7 @@ describe("done, checked on the page", () => {
     await cli("claim");
     // As if the service wrote it back just as the round before was archived.
     writeFileSync(
-      join(project, ".vernier/checks.json"),
+      join(project, ".03kind/checks.json"),
       JSON.stringify({ pages: 0, service: process.pid, results: { 1: { at: "2000-01-01T00:00:00.000Z", outcome: "not shown", actual: null } } }),
     );
     await cli("done", "1");
@@ -1810,7 +1810,7 @@ describe("done, checked on the page", () => {
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
     // Change 2 is carried over to the next round (ticket 68): the open page is still counted, with none of this round's checks.
-    expect(JSON.parse(readFileSync(join(project, ".vernier/checks.json"), "utf8"))).toMatchObject({ pages: 1, results: {} });
+    expect(JSON.parse(readFileSync(join(project, ".03kind/checks.json"), "utf8"))).toMatchObject({ pages: 1, results: {} });
   });
 });
 
@@ -1863,7 +1863,7 @@ describe("finish", () => {
 
     expect(code).toBe(0);
     expect(finished(output)).toBe("Round finished: 2 of 2 changes applied.\n");
-    expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
+    expect(readdirSync(join(project, ".03kind"))).toEqual(["history"]);
     expect(history()).toEqual([
       {
         changeSet: { lastId: 2, changes: [redFill, smallRadius] },
@@ -1941,7 +1941,7 @@ describe("finish", () => {
   test("refuses a round that is not claimed", async () => {
     saveRound(redFill);
 
-    expect(await cli("finish")).toEqual({ code: 1, output: "", errors: "The round is not claimed: run `npx vernierkit claim` first.\n" });
+    expect(await cli("finish")).toEqual({ code: 1, output: "", errors: "The round is not claimed: run `npx 03kind claim` first.\n" });
     expect(history()).toEqual([]);
   });
 });
@@ -1985,7 +1985,7 @@ describe("changes not applied, carried over to the next round on the same canvas
   let closePage = () => {};
   afterEach(() => closePage());
   const halfOpacity = { ...redFill, id: 3, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
-  const changeSet = () => JSON.parse(readFileSync(join(project, ".vernier/changeset.json"), "utf8"));
+  const changeSet = () => JSON.parse(readFileSync(join(project, ".03kind/changeset.json"), "utf8"));
 
   test("finish with changes not applied keeps them, numbered from 1 in their order, and the canvas; the applied ones are archived and kept apart, for the canvas to take in", async () => {
     saveRound(redFill, smallRadius, halfOpacity);
@@ -1995,7 +1995,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     const { output } = await cli("finish");
 
     expect(finished(output)).toBe("Round finished: 1 of 3 changes applied. Not marked done: 1, 3.\n");
-    expect(readdirSync(join(project, ".vernier")).sort()).toEqual(["canvas.html", "changeset.json", "history"]);
+    expect(readdirSync(join(project, ".03kind")).sort()).toEqual(["canvas.html", "changeset.json", "history"]);
     // The archive keeps the whole round, as before: `last` is as it was.
     expect(history()[0].changeSet).toEqual({ lastId: 3, changes: [redFill, smallRadius, halfOpacity] });
     expect(changeSet()).toEqual({
@@ -2013,7 +2013,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     await cli("claim");
     await cli("done", "1", "2");
     await cli("finish");
-    expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
+    expect(readdirSync(join(project, ".03kind"))).toEqual(["history"]);
   });
 
   /** A round that ended with changes 1 and 3 of three not applied; the designer then made one more, numbered after them. */
@@ -2024,7 +2024,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     await cli("finish");
     const next = changeSet();
     const shadow = { ...redFill, id: 3, property: "blur", before: 0, after: 4, style: { filter: "blur(4px)" } };
-    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ ...next, lastId: 3, changes: [...next.changes, shadow] }));
+    writeFileSync(join(project, ".03kind/changeset.json"), JSON.stringify({ ...next, lastId: 3, changes: [...next.changes, shadow] }));
     return shadow;
   }
 
@@ -2097,7 +2097,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     await carriedOver(redFill, { ...smallRadius, breakpoint: PHONE, parts: parts(12) });
     // As the page read the parts again, the code as it is, before the claim.
     const next = changeSet();
-    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ ...next, changes: [{ ...next.changes[0], parts: parts(8) }] }));
+    writeFileSync(join(project, ".03kind/changeset.json"), JSON.stringify({ ...next, changes: [{ ...next.changes[0], parts: parts(8) }] }));
     closePage = openPage(() => ({ outcome: "not shown", actual: 8 }));
 
     const { output } = await cli("claim");
@@ -2131,7 +2131,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     const { output } = await cli("claim");
 
     expect(output).toBe(
-      "This round carries 1 change over from the round before, not applied then (1), and its 1 change is applied already, as the designer's page shows it: run `npx vernierkit finish` to end it.\n",
+      "This round carries 1 change over from the round before, not applied then (1), and its 1 change is applied already, as the designer's page shows it: run `npx 03kind finish` to end it.\n",
     );
   });
 });
@@ -2186,7 +2186,7 @@ describe("claim, again", () => {
     const { code, output } = await cli("claim");
 
     expect(code).toBe(0);
-    expect(output).toBe("This round is claimed already, and all 2 of its changes are applied, as the designer's page shows them or as you reported them done: run `npx vernierkit finish` to end it.\n");
+    expect(output).toBe("This round is claimed already, and all 2 of its changes are applied, as the designer's page shows them or as you reported them done: run `npx 03kind finish` to end it.\n");
   });
 });
 
@@ -2198,7 +2198,7 @@ async function describeClaimOf(changeSet: { changes: object[] }) {
 /** What `claim` gives for a round of these changes alone, in another project. */
 async function describeOnly(...changes: object[]) {
   const other = project;
-  project = mkdtempSync(join(tmpdir(), "vernierkit-cli-"));
+  project = mkdtempSync(join(tmpdir(), "03kind-cli-"));
   try {
     saveRound(...changes);
     return await cli("claim");
@@ -2211,8 +2211,8 @@ async function describeOnly(...changes: object[]) {
 describe("a claimed state left without its round", () => {
   // As when `done` writes the state back just after the designer unlocked the round.
   test("does not keep the round claimed", async () => {
-    mkdirSync(join(project, ".vernier"), { recursive: true });
-    writeFileSync(join(project, ".vernier/state.json"), JSON.stringify({ status: "claimed", done: [1] }));
+    mkdirSync(join(project, ".03kind"), { recursive: true });
+    writeFileSync(join(project, ".03kind/state.json"), JSON.stringify({ status: "claimed", done: [1] }));
 
     expect((await cli("done", "1")).code).toBe(1);
     expect((await cli("claim")).output).toMatch(/^No design changes to apply/);
@@ -2227,7 +2227,7 @@ describe("undoing the last round, in a git repository", () => {
     git("init", "-q");
     git("config", "user.email", "test@example.com");
     git("config", "user.name", "Test");
-    // `.vernier/` is not ignored here, and a binary file changes too.
+    // `.03kind/` is not ignored here, and a binary file changes too.
     writeFileSync(join(project, "Card.tsx"), 'export const Card = () => <article className="bg-white" />;\n');
     writeFileSync(join(project, "icon.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3]));
     git("add", "-A");
@@ -2350,8 +2350,8 @@ describe("claim, a round saved before the instances of a layer shared their edit
   const FIXTURE = join(import.meta.dirname, "fixtures/round-before-60");
 
   test("prints the notes of each change as it did then, word for word", async () => {
-    mkdirSync(join(project, ".vernier"), { recursive: true });
-    for (const file of ["canvas.html", "changeset.json", "off-canvas.json"]) writeFileSync(join(project, ".vernier", file), readFileSync(join(FIXTURE, file)));
+    mkdirSync(join(project, ".03kind"), { recursive: true });
+    for (const file of ["canvas.html", "changeset.json", "off-canvas.json"]) writeFileSync(join(project, ".03kind", file), readFileSync(join(FIXTURE, file)));
 
     const { code, output } = await cli("claim");
 

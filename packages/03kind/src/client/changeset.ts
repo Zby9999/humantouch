@@ -307,7 +307,7 @@ export interface ChangeSet {
   save(): SavedChangeSet;
 }
 
-/** A ChangeSet as saved in `.vernier/changeset.json`. */
+/** A ChangeSet as saved in `.03kind/changeset.json`. */
 export interface SavedChangeSet {
   /** The last id handed out, so a restored ChangeSet never hands it out again. */
   lastId: number;

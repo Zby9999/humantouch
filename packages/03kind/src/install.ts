@@ -1,7 +1,7 @@
 /**
  * Installing Vernier Kit into a project, checking it, and taking it back
  * out: `init`, `doctor` and `remove`. What `init` changes is recorded in
- * `.vernier/install.json`, so `remove` can put back exactly what it found.
+ * `.03kind/install.json`, so `remove` can put back exactly what it found.
  */
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addVitePlugin, insert, mountInEntry, mountInLayout, undo, wrapNextConfig, type Edit, type FileEdit } from "./source-edits";
-import { readChangeSet, readIfThere, readOffCanvas, readState, vernierFolder, writeAtomically } from "./vernier-folder";
+import { readChangeSet, readIfThere, readOffCanvas, readState, thirdKindFolder, writeAtomically } from "./third-kind-folder";
 
 /** Runs a command in `cwd`; resolves with its exit code and what it printed. */
 export type Exec = (command: string, args: string[], options: { cwd: string }) => Promise<{ code: number; output: string }>;
@@ -31,12 +31,12 @@ interface InstallRecord {
   created: string[];
 }
 
-const SKILL_FOLDERS = [".agents/skills/vernierkit", ".claude/skills/vernierkit"];
+const SKILL_FOLDERS = [".agents/skills/03kind", ".claude/skills/03kind"];
 const SKILL_TEMPLATE = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
 /** The Skill that AGENTS.md points to. */
 const SKILL_FILE = `${SKILL_FOLDERS[0]}/SKILL.md`;
-const AGENTS_LINE = `Vernier Kit: to apply the designer's design changes, or undo the last round, follow \`${SKILL_FILE}\`.`;
-const IGNORE_LINE = ".vernier/";
+const AGENTS_LINE = `03Kind: to apply the designer's design changes, or undo the last round, follow \`${SKILL_FILE}\`.`;
+const IGNORE_LINE = ".03kind/";
 /** What only the editor layer brings: none of it may be in a production build. */
 const RESIDUE = ["vernier-kit", "data-vk-", "__VERNIERKIT__"];
 
@@ -115,7 +115,7 @@ function vite(root: string, packageManager: PackageManager): Framework {
   return {
     name: "Vite",
     config: VITE_CONFIGS.find((file) => existsSync(join(root, file))) ?? null,
-    hasPlugin: (code) => /["']vernierkit\/vite["']/.test(code) && /\bvernier\s*\(/.test(code),
+    hasPlugin: (code) => /["']03kind\/vite["']/.test(code) && /\bthirdKind\s*\(/.test(code),
     addPlugin: addVitePlugin,
     async mountFile() {
       const html = await readIfThere(join(root, "index.html"));
@@ -124,11 +124,11 @@ function vite(root: string, packageManager: PackageManager): Framework {
       return ["src/main.tsx", "src/main.jsx", "src/index.tsx", "src/index.jsx"].find((file) => existsSync(join(root, file))) ?? null;
     },
     mount: mountInEntry,
-    pluginSteps: 'In the Vite config, import the plugin and put it first in `plugins`:\n\n  import vernier from "vernierkit/vite";\n  …\n  plugins: [vernier(), …],',
-    mountSteps: 'In the entry module that renders the app, render the editor layer beside the app:\n\n  import { Vernier } from "vernierkit/react";\n  …\n  <Vernier />',
+    pluginSteps: 'In the Vite config, import the plugin and put it first in `plugins`:\n\n  import thirdKind from "03kind/vite";\n  …\n  plugins: [thirdKind(), …],',
+    mountSteps: 'In the entry module that renders the app, render the editor layer beside the app:\n\n  import { ThirdKind } from "03kind/react";\n  …\n  <ThirdKind />',
     async build() {
       // Not over the project's own build.
-      const dir = await mkdtemp(join(tmpdir(), "vernierkit-build-"));
+      const dir = await mkdtemp(join(tmpdir(), "03kind-build-"));
       return { command: command(packageManager, "bin", ["vite", "build", "--outDir", dir, "--emptyOutDir"]), dir, built: ["."], temporary: true, rewrites: [] };
     },
   };
@@ -141,12 +141,12 @@ function next(root: string, packageManager: PackageManager, pkg: Project["pkg"])
   return {
     name: "Next.js",
     config: NEXT_CONFIGS.find((file) => existsSync(join(root, file))) ?? null,
-    hasPlugin: (code) => /["']vernierkit\/next["']/.test(code) && /\bwithVernier\s*\(/.test(code),
+    hasPlugin: (code) => /["']03kind\/next["']/.test(code) && /\bwithThirdKind\s*\(/.test(code),
     addPlugin: wrapNextConfig,
     mountFile: async () => LAYOUTS.find((file) => existsSync(join(root, file))) ?? null,
     mount: mountInLayout,
-    pluginSteps: 'In the Next.js config, wrap the config it exports with `withVernier()`:\n\n  import { withVernier } from "vernierkit/next";\n  …\n  export default withVernier(nextConfig);',
-    mountSteps: 'In the root layout (`app/layout.tsx`), render the editor layer at the end of <body>:\n\n  import { Vernier } from "vernierkit/react";\n  …\n  <body>\n    {children}\n    <Vernier />\n  </body>',
+    pluginSteps: 'In the Next.js config, wrap the config it exports with `withThirdKind()`:\n\n  import { withThirdKind } from "03kind/next";\n  …\n  export default withThirdKind(nextConfig);',
+    mountSteps: 'In the root layout (`app/layout.tsx`), render the editor layer at the end of <body>:\n\n  import { ThirdKind } from "03kind/react";\n  …\n  <body>\n    {children}\n    <ThirdKind />\n  </body>',
     // Into `.next`, as `next build` always does: from Next.js 16, `next dev` keeps to `.next/dev`.
     build: async () => ({
       // With the bundler the project builds with.
@@ -218,7 +218,7 @@ async function readRecord(root: string): Promise<InstallRecord | null> {
 }
 
 function installRecordFile(root: string) {
-  return join(vernierFolder(root).dir, "install.json");
+  return join(thirdKindFolder(root).dir, "install.json");
 }
 
 /** Installs Vernier Kit into the project `cwd` is in. */
@@ -230,17 +230,17 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
   const done: string[] = [];
   const byHand: string[] = [];
 
-  if (hasDependency(pkg, "vernierkit")) {
-    done.push("vernierkit is a dependency already");
+  if (hasDependency(pkg, "03kind")) {
+    done.push("03kind is a dependency already");
   } else {
-    const install = command(packageManager, "install", [process.env.VERNIERKIT_INSTALL_FROM ?? "vernierkit"]);
+    const install = command(packageManager, "install", [process.env.VERNIERKIT_INSTALL_FROM ?? "03kind"]);
     const result = await io.exec(...install, { cwd: root });
     if (result.code !== 0) {
-      io.error(`${result.output}\nCould not install vernierkit (\`${show(install)}\` failed, above). Install it yourself, then run \`npx vernierkit init\` again.\n`);
+      io.error(`${result.output}\nCould not install 03kind (\`${show(install)}\` failed, above). Install it yourself, then run \`npx 03kind init\` again.\n`);
       return 1;
     }
     record.dependency = true;
-    done.push(`Installed vernierkit as a dev dependency (\`${show(install)}\`)`);
+    done.push(`Installed 03kind as a dev dependency (\`${show(install)}\`)`);
   }
 
   // The project's source: the build config, and where the editor layer is mounted.
@@ -254,7 +254,7 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
       done.push(`${file}: ${what} already`);
       return;
     }
-    const result = code.includes("vernierkit/") ? { reason: "it imports vernierkit but does not add the plugin" } : edit(file, code);
+    const result = code.includes("03kind/") ? { reason: "it imports 03kind but does not add the plugin" } : edit(file, code);
     if ("reason" in result) {
       byHand.push(`${steps}\n\n(${file}: ${result.reason}.)`);
       return;
@@ -277,18 +277,18 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
   done.push(`Skill: ${SKILL_FOLDERS.map((folder) => `${folder}/SKILL.md`).join(" and ")}`);
   await addLine(root, "AGENTS.md", AGENTS_LINE, (text) => text.includes(SKILL_FILE), record);
   done.push("AGENTS.md: points to the Skill");
-  await addLine(root, ".gitignore", IGNORE_LINE, ignoresVernier, record);
-  done.push(".gitignore: ignores .vernier/");
+  await addLine(root, ".gitignore", IGNORE_LINE, ignoresThirdKind, record);
+  done.push(".gitignore: ignores .03kind/");
 
-  await mkdir(vernierFolder(root).dir, { recursive: true });
+  await mkdir(thirdKindFolder(root).dir, { recursive: true });
   await writeAtomically(installRecordFile(root), `${JSON.stringify(record, null, 2)}\n`);
 
   io.write(`Vernier Kit (${framework.name}, ${packageManager}):\n${done.map((line) => `- ${line}\n`).join("")}`);
   if (byHand.length) {
-    io.write(`\nFinish by hand:\n\n${byHand.map((step, i) => `${i + 1}. ${step}\n`).join("\n")}\nThen run \`npx vernierkit doctor\`.\n`);
+    io.write(`\nFinish by hand:\n\n${byHand.map((step, i) => `${i + 1}. ${step}\n`).join("\n")}\nThen run \`npx 03kind doctor\`.\n`);
     return 1;
   }
-  io.write(`\nInstalled. Start the dev server (\`${COMMANDS[packageManager].script} dev\`) and open the page: the Vernier Kit toggle is at its bottom right. Then run \`npx vernierkit doctor\`.\n`);
+  io.write(`\nInstalled. Start the dev server (\`${COMMANDS[packageManager].script} dev\`) and open the page: the Vernier Kit toggle is at its bottom right. Then run \`npx 03kind doctor\`.\n`);
   return 0;
 }
 
@@ -306,15 +306,15 @@ async function addLine(root: string, file: string, line: string, has: (text: str
   record.edits.push(...result.edits);
 }
 
-function ignoresVernier(gitignore: string) {
-  return gitignore.split(/\r?\n/).some((line) => /^\/?\.vernier(\/(\*\*?)?)?$/.test(line.trim()));
+function ignoresThirdKind(gitignore: string) {
+  return gitignore.split(/\r?\n/).some((line) => /^\/?\.03kind(\/(\*\*?)?)?$/.test(line.trim()));
 }
 
 /** The project file that mounts the editor layer, if one does. */
 async function findMount(root: string): Promise<string | null> {
   for (const file of await sourceFiles(root)) {
     const code = await readFile(join(root, file), "utf8");
-    if (code.includes("vernierkit/react")) return file;
+    if (code.includes("03kind/react")) return file;
   }
   return null;
 }
@@ -338,25 +338,25 @@ async function sourceFiles(root: string): Promise<string[]> {
 
 /**
  * Takes Vernier Kit back out of the project `cwd` is in: undoes what `init`
- * did, line by line, deletes `.vernier/` and uninstalls the package. Not while
+ * did, line by line, deletes `.03kind/` and uninstalls the package. Not while
  * the designer has changes the Agent has not applied: they would be lost.
  */
 export async function remove(cwd: string, io: InstallIo): Promise<number> {
   const found = await findPackage(cwd);
   const root = found?.root ?? cwd;
-  const folder = vernierFolder(root);
+  const folder = thirdKindFolder(root);
   const record = await readRecord(root);
   if (!record) {
     const text = "Vernier Kit is not installed here: there is nothing to remove.";
-    io.write(found && hasDependency(found.pkg, "vernierkit") ? `${text} vernierkit is a dependency, but \`init\` did not install it: uninstall it, and take out its plugin and <Vernier /> by hand.\n` : `${text}\n`);
+    io.write(found && hasDependency(found.pkg, "03kind") ? `${text} 03kind is a dependency, but \`init\` did not install it: uninstall it, and take out its plugin and <ThirdKind /> by hand.\n` : `${text}\n`);
     return 0;
   }
   if (await readState(folder)) {
-    io.error("A round of design changes is being applied: finish it first (`npx vernierkit finish`), then run `npx vernierkit remove` again.\n");
+    io.error("A round of design changes is being applied: finish it first (`npx 03kind finish`), then run `npx 03kind remove` again.\n");
     return 1;
   }
   if ((await readChangeSet(folder))?.changes.length) {
-    io.error("The designer has design changes not applied yet, and removing Vernier Kit would lose them. Apply them first (`npx vernierkit claim`, as the Skill says), or have the designer discard them in the editor; then run `npx vernierkit remove` again.\n");
+    io.error("The designer has design changes not applied yet, and removing Vernier Kit would lose them. Apply them first (`npx 03kind claim`, as the Skill says), or have the designer discard them in the editor; then run `npx 03kind remove` again.\n");
     return 1;
   }
 
@@ -378,19 +378,19 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
     await rm(join(root, folder), { recursive: true, force: true });
     await removeIfEmpty(root, dirname(folder));
   }
-  // The layers off the canvas go too (ADR 0009): they are only ever in `.vernier/`.
+  // The layers off the canvas go too (ADR 0009): they are only ever in `.03kind/`.
   const offCanvas = (await readOffCanvas(folder)).length;
   await rm(folder.dir, { recursive: true, force: true });
 
   const done = [
-    byHand.length ? "Took back out what `init` added, but for the lines below" : "Took the plugin, <Vernier />, the Skill and its lines in AGENTS.md and .gitignore back out",
-    offCanvas ? `Deleted .vernier/, with the ${offCanvas === 1 ? "layer" : `${offCanvas} layers`} the designer had moved off the canvas` : "Deleted .vernier/",
+    byHand.length ? "Took back out what `init` added, but for the lines below" : "Took the plugin, <ThirdKind />, the Skill and its lines in AGENTS.md and .gitignore back out",
+    offCanvas ? `Deleted .03kind/, with the ${offCanvas === 1 ? "layer" : `${offCanvas} layers`} the designer had moved off the canvas` : "Deleted .03kind/",
   ];
   if (record.dependency) {
-    const uninstall = command(packageManagerOf(root, found?.pkg ?? {}), "uninstall", ["vernierkit"]);
+    const uninstall = command(packageManagerOf(root, found?.pkg ?? {}), "uninstall", ["03kind"]);
     const result = await io.exec(...uninstall, { cwd: root });
-    if (result.code === 0) done.push(`Uninstalled vernierkit (\`${show(uninstall)}\`)`);
-    else byHand.push(`Uninstall vernierkit: \`${show(uninstall)}\` failed:\n\n${indent(result.output.trim())}`);
+    if (result.code === 0) done.push(`Uninstalled 03kind (\`${show(uninstall)}\`)`);
+    else byHand.push(`Uninstall 03kind: \`${show(uninstall)}\` failed:\n\n${indent(result.output.trim())}`);
   }
 
   io.write(`Vernier Kit removed:\n${done.map((line) => `- ${line}\n`).join("")}`);
@@ -422,7 +422,7 @@ export async function doctor(cwd: string, io: InstallIo): Promise<number> {
   const checks: [boolean, string][] = [];
   const check = (ok: boolean, good: string, bad: string) => checks.push([ok, ok ? good : bad]);
 
-  check(hasDependency(pkg, "vernierkit"), "vernierkit is a dependency", `vernierkit is not a dependency: run \`${show(command(packageManager, "install", ["vernierkit"]))}\``);
+  check(hasDependency(pkg, "03kind"), "03kind is a dependency", `03kind is not a dependency: run \`${show(command(packageManager, "install", ["03kind"]))}\``);
   const config = framework.config && (await readIfThere(join(root, framework.config)));
   check(Boolean(config && framework.hasPlugin(config)), `${framework.config}: adds the plugin`, `The build config does not add the plugin. ${framework.pluginSteps}`);
   const mount = await findMount(root);
@@ -430,12 +430,12 @@ export async function doctor(cwd: string, io: InstallIo): Promise<number> {
   const skill = await readFile(SKILL_TEMPLATE, "utf8");
   for (const folder of SKILL_FOLDERS) {
     const there = await readIfThere(join(root, folder, "SKILL.md"));
-    check(there === skill, `${folder}/SKILL.md`, there === null ? `${folder}/SKILL.md is missing: run \`npx vernierkit init\`` : `${folder}/SKILL.md is out of date: run \`npx vernierkit init\` to update it`);
+    check(there === skill, `${folder}/SKILL.md`, there === null ? `${folder}/SKILL.md is missing: run \`npx 03kind init\`` : `${folder}/SKILL.md is out of date: run \`npx 03kind init\` to update it`);
   }
   const agents = await readIfThere(join(root, "AGENTS.md"));
-  check(Boolean(agents?.includes(SKILL_FILE)), "AGENTS.md points to the Skill", "AGENTS.md does not point to the Skill: run `npx vernierkit init`");
+  check(Boolean(agents?.includes(SKILL_FILE)), "AGENTS.md points to the Skill", "AGENTS.md does not point to the Skill: run `npx 03kind init`");
   const gitignore = await readIfThere(join(root, ".gitignore"));
-  check(Boolean(gitignore && ignoresVernier(gitignore)), ".gitignore ignores .vernier/", ".gitignore does not ignore .vernier/: add a line `.vernier/` to it");
+  check(Boolean(gitignore && ignoresThirdKind(gitignore)), ".gitignore ignores .03kind/", ".gitignore does not ignore .03kind/: add a line `.03kind/` to it");
 
   const build = await framework.build();
   const rewritten = await Promise.all(build.rewrites.map((file) => readIfThere(join(root, file))));

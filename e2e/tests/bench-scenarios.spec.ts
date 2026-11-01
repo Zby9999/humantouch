@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
 import { DEV_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
-import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
 
 /**
  * The applying bench's standard scenarios (`e2e/bench/scenarios.ts`) still
@@ -11,19 +11,19 @@ import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./proje
  * scenario, not the Agent.
  */
 
-/** These tests save into the example project's `.vernier/` for real; one scenario edits the source, as a round before it. */
+/** These tests save into the example project's `.03kind/` for real; one scenario edits the source, as a round before it. */
 test.use({ keepRoundInMemory: false });
 test.setTimeout(90_000);
 
 const APP = `${EXAMPLE}src/App.tsx`;
 const original = readFileSync(APP, "utf8");
 
-test.beforeEach(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKind(THIRD_KIND));
 test.afterEach(async () => {
   if (readFileSync(APP, "utf8") !== original) writeFileSync(APP, original);
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("font-display text-4xl")).toBe(true);
 });
-test.afterAll(() => clearVernier(VERNIER));
+test.afterAll(() => clearThirdKind(THIRD_KIND));
 
 for (const scenario of SCENARIOS) {
   test(`scenario ${scenario.id} makes the changes it names, none shown on the page yet`, async ({ page, browser }) => {
@@ -31,7 +31,7 @@ for (const scenario of SCENARIOS) {
     await page.locator("main").waitFor();
     await scenario.design({
       page,
-      cli: vernierkit,
+      cli: npx03kind,
       edit: async (file, from, to) => {
         const text = readFileSync(`${EXAMPLE}${file}`, "utf8");
         expect(text).toContain(from);
@@ -39,9 +39,9 @@ for (const scenario of SCENARIOS) {
       },
       // The example's code is no commit of its own: the round before is taken back out after the test.
       settle: async () => {},
-      changeSet: () => readVernier("changeset.json"),
+      changeSet: () => readThirdKind("changeset.json"),
     });
-    const saved = readVernier("changeset.json").changes;
+    const saved = readThirdKind("changeset.json").changes;
     expect(saved.map((change: { kind: string }) => change.kind)).toEqual(scenario.changes.map((change) => change.kind));
 
     // Pages of their own, kept from the local service as the bench keeps them.

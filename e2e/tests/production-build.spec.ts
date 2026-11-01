@@ -37,7 +37,7 @@ test("the production build output contains no editor layer code", () => {
 });
 
 test("a build in development mode contains no editor layer code either", () => {
-  const outDir = mkdtempSync(path.join(tmpdir(), "vernierkit-build-"));
+  const outDir = mkdtempSync(path.join(tmpdir(), "03kind-build-"));
   execFileSync("pnpm", ["exec", "vite", "build", "--mode", "development", "--outDir", outDir], {
     cwd: example,
     stdio: "pipe",

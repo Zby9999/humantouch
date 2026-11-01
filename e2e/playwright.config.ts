@@ -25,7 +25,7 @@ export const REACT18_URL = `http://localhost:${PORT + 5}`;
 export const TOGGLE_LABEL = "Vernier Kit: enter edit mode";
 export const EXIT_LABEL = "Vernier Kit: back to preview mode";
 
-/** Tests that work with the example project's real `.vernier/` folder: one at a time, across files too. */
+/** Tests that work with the example project's real `.03kind/` folder: one at a time, across files too. */
 const PROJECT_FILES = /(autosave|claim|round|applying-bench|bench-scenarios|code-changes)\.spec\.ts$/;
 
 export default defineConfig({

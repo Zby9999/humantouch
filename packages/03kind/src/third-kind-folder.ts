@@ -1,5 +1,5 @@
 /**
- * The `.vernier/` folder in the project: the round being edited (canvas and
+ * The `.03kind/` folder in the project: the round being edited (canvas and
  * ChangeSet), its state while the Agent applies it, the rounds before it, and
  * the layers off the canvas, which belong to no round (ADR 0009).
  * The local service and the command line both work through this module.
@@ -13,9 +13,9 @@ import { promisify } from "node:util";
 import { carryOver, type SavedChangeSet } from "./client/changeset";
 import type { CheckAsk, CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 
-export const VERNIER_DIR = ".vernier";
+export const THIRD_KIND_DIR = ".03kind";
 
-export interface VernierFolder {
+export interface ThirdKindFolder {
   dir: string;
   canvas: string;
   changeSet: string;
@@ -73,7 +73,7 @@ export function appliedOf(state: RoundState, results: Checks["results"] = {}): n
 }
 
 /** How the round stands, as the editor layer is told. */
-export async function roundStatus(folder: VernierFolder): Promise<RoundStatus> {
+export async function roundStatus(folder: ThirdKindFolder): Promise<RoundStatus> {
   const state = await readState(folder);
   if (!state) return { status: "editing" };
   const applied = appliedOf(state, (await readChecks(folder))?.results);
@@ -87,21 +87,21 @@ export async function roundStatus(folder: VernierFolder): Promise<RoundStatus> {
   };
 }
 
-export function vernierFolder(root: string): VernierFolder {
-  const dir = join(root, VERNIER_DIR);
+export function thirdKindFolder(root: string): ThirdKindFolder {
+  const dir = join(root, THIRD_KIND_DIR);
   return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json") };
 }
 
-/** The project a command runs for: the nearest folder up from `cwd` with a `.vernier/`, else `cwd` itself. */
+/** The project a command runs for: the nearest folder up from `cwd` with a `.03kind/`, else `cwd` itself. */
 export function findProject(cwd: string): string {
   for (let dir = cwd; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, VERNIER_DIR))) return dir;
+    if (existsSync(join(dir, THIRD_KIND_DIR))) return dir;
     if (dirname(dir) === dir) return cwd;
   }
 }
 
 /** The ChangeSet of the round, or null when there is no round. */
-export async function readChangeSet(folder: VernierFolder): Promise<SavedChangeSet | null> {
+export async function readChangeSet(folder: ThirdKindFolder): Promise<SavedChangeSet | null> {
   const text = await readIfThere(folder.changeSet);
   return text === null ? null : (JSON.parse(text) as SavedChangeSet);
 }
@@ -111,7 +111,7 @@ export async function readChangeSet(folder: VernierFolder): Promise<SavedChangeS
  * round that is gone (`done` writing it back just after an unlock, say) is
  * cleared: it would keep the designer locked out for good.
  */
-export async function readState(folder: VernierFolder): Promise<RoundState | null> {
+export async function readState(folder: ThirdKindFolder): Promise<RoundState | null> {
   const text = await readIfThere(folder.state);
   if (text === null) return null;
   if (!existsSync(folder.changeSet)) {
@@ -121,7 +121,7 @@ export async function readState(folder: VernierFolder): Promise<RoundState | nul
   return JSON.parse(text) as RoundState;
 }
 
-export async function writeState(folder: VernierFolder, state: RoundState) {
+export async function writeState(folder: ThirdKindFolder, state: RoundState) {
   await writeAtomically(folder.state, `${JSON.stringify(state)}\n`);
 }
 
@@ -148,7 +148,7 @@ export interface RoundResult {
  * are carried over (ticket 68): the canvas stays, and the round is those
  * changes (`carryOver`). Null when no round is claimed.
  */
-export async function archiveRound(folder: VernierFolder, ended: RoundResult["ended"]): Promise<RoundResult | null> {
+export async function archiveRound(folder: ThirdKindFolder, ended: RoundResult["ended"]): Promise<RoundResult | null> {
   const [state, changeSet] = await Promise.all([readState(folder), readIfThere(folder.changeSet)]);
   if (!state || changeSet === null) return null;
   const after = state.code && (await snapshotCode(dirname(folder.dir)));
@@ -181,29 +181,29 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
 }
 
 /** The layers off the canvas; none when there are none. */
-export async function readOffCanvas(folder: VernierFolder): Promise<SavedOffCanvasLayer[]> {
+export async function readOffCanvas(folder: ThirdKindFolder): Promise<SavedOffCanvasLayer[]> {
   const text = await readIfThere(folder.offCanvas);
   return text === null ? [] : (JSON.parse(text) as { layers: SavedOffCanvasLayer[] }).layers;
 }
 
 /** Keeps the layers off the canvas; with none, nothing is kept. */
-export async function writeOffCanvas(folder: VernierFolder, layers: SavedOffCanvasLayer[]) {
+export async function writeOffCanvas(folder: ThirdKindFolder, layers: SavedOffCanvasLayer[]) {
   if (!layers.length) return rm(folder.offCanvas, { force: true });
   await mkdir(folder.dir, { recursive: true });
   await writeAtomically(folder.offCanvas, `${JSON.stringify({ layers }, null, 2)}\n`);
 }
 
-export async function readChecks(folder: VernierFolder): Promise<Checks | null> {
+export async function readChecks(folder: ThirdKindFolder): Promise<Checks | null> {
   const text = await readIfThere(folder.checks);
   return text === null ? null : (JSON.parse(text) as Checks);
 }
 
-export async function writeChecks(folder: VernierFolder, checks: Checks) {
+export async function writeChecks(folder: ThirdKindFolder, checks: Checks) {
   await writeAtomically(folder.checks, `${JSON.stringify(checks, null, 2)}\n`);
 }
 
 /** The round that ended last, as archived; null when none has. */
-export async function readLastRound(folder: VernierFolder): Promise<{ changeSet: SavedChangeSet; result: RoundResult } | null> {
+export async function readLastRound(folder: ThirdKindFolder): Promise<{ changeSet: SavedChangeSet; result: RoundResult } | null> {
   const rounds = await readdir(folder.history).catch(() => []);
   const last = rounds.sort().at(-1);
   if (!last) return null;
@@ -217,7 +217,7 @@ export async function readLastRound(folder: VernierFolder): Promise<{ changeSet:
  * what is staged stays as it is.
  */
 export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
-  const index = join(tmpdir(), `vernierkit-index-${process.pid}-${Date.now()}`);
+  const index = join(tmpdir(), `03kind-index-${process.pid}-${Date.now()}`);
   const git = (args: string[], env?: NodeJS.ProcessEnv) => promisify(execFile)("git", args, { cwd: root, env: { ...process.env, ...env } });
   try {
     const { stdout: top } = await git(["rev-parse", "--show-toplevel"]);
@@ -225,8 +225,8 @@ export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
     // Starting from the real index, git rehashes only the files that changed.
     await copyFile(resolve(root, realIndex.trim()), index).catch(() => {});
     const own = { GIT_INDEX_FILE: index };
-    // `.vernier/` itself is no code of the round, ignored or not.
-    await git(["-C", top.trim(), "add", "--all", "--", ".", ":(exclude,glob)**/.vernier/**"], own);
+    // `.03kind/` itself is no code of the round, ignored or not.
+    await git(["-C", top.trim(), "add", "--all", "--", ".", ":(exclude,glob)**/.03kind/**"], own);
     const { stdout: tree } = await git(["write-tree"], own);
     return { repository: top.trim(), tree: tree.trim() };
   } catch {
@@ -238,7 +238,7 @@ export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
 
 /**
  * When the project's code was last edited, as ms since the epoch: the latest
- * of the times the files git sees changed were written (`.vernier/` aside).
+ * of the times the files git sees changed were written (`.03kind/` aside).
  * Null outside a git repository, or with no file changed.
  */
 export async function lastEdited(root: string): Promise<number | null> {
@@ -258,7 +258,7 @@ export async function lastEdited(root: string): Promise<number | null> {
     }
     const times = await Promise.all(
       paths
-        .filter((path) => !/(^|\/)\.vernier\//.test(path))
+        .filter((path) => !/(^|\/)\.03kind\//.test(path))
         .map((path) => stat(join(top.trim(), path)).then((info) => info.mtimeMs, () => stat(join(root, path)).then((info) => info.mtimeMs, () => 0))),
     );
     const latest = Math.max(0, ...times);

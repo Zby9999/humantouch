@@ -1,13 +1,13 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
 
-/** These tests save into the example project's `.vernier/` for real. */
+/** These tests save into the example project's `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => clearVernier(VERNIER));
-test.afterAll(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearThirdKind(THIRD_KIND));
 
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const originalCard = readFileSync(CARD, "utf8");
@@ -50,7 +50,7 @@ async function changeTheCards(page: Page) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await setField(page, "Fill color", "ff0000");
   await setField(page, "Corner radius", "2");
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
 }
 
 /** The local service's round, as the page loads and saves it. */
@@ -61,7 +61,7 @@ const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/
 
 /** How each archived round ended. */
 function results() {
-  const history = `${VERNIER}history/`;
+  const history = `${THIRD_KIND}history/`;
   return readdirSync(history)
     .sort()
     .map((round) => JSON.parse(readFileSync(`${history}${round}/result.json`, "utf8")));
@@ -71,7 +71,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await page.goto(DEV_URL);
   await changeTheCards(page);
 
-  await vernierkit("claim");
+  await npx03kind("claim");
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
@@ -83,7 +83,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
   // Done before the code has it: the page does not show it, and it does not count.
-  expect(await vernierkit("done", "1")).toContain("Change 1 done: 0 of 2 changes applied.");
+  expect(await npx03kind("done", "1")).toContain("Change 1 done: 0 of 2 changes applied.");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
   await applyToCard(page, "fill");
@@ -94,7 +94,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "2");
   await expect(badge(page)).toHaveCount(0);
 
-  expect(await vernierkit("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report\. Each change is under the heading/);
+  expect(await npx03kind("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report\. Each change is under the heading/);
   await expect(progress(page)).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "finished", done: [1], applied: [1, 2], checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" } } }]);
 });
@@ -102,7 +102,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
 test("a change the page shows, undone by a later edit before any done: the ring goes back down", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await applyToCard(page, "fill");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
@@ -112,7 +112,7 @@ test("a change the page shows, undone by a later edit before any done: the ring 
 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(badge(page)).toHaveText("2");
-  expect(await vernierkit("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2.\n\nEnd your reply with this report\. Each change is under the heading/);
+  expect(await npx03kind("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2.\n\nEnd your reply with this report\. Each change is under the heading/);
 });
 
 /** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */
@@ -146,7 +146,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
     if (request.method() === "POST" && new URL(request.url()).pathname === "/checks" && request.postDataJSON()?.id === 1) fillLooks.push(Date.now());
   });
 
-  await vernierkit("claim");
+  await npx03kind("claim");
   writeFileSync(CARD, readFileSync(CARD, "utf8").replace(...CARD_EDITS.fill));
   // The Card's module and the stylesheet with its new class are both in; React has not drawn it yet.
   await expect.poll(async () => ((c) => c.at > codeAt && c.updating === 0)(await code())).toBe(true);
@@ -170,11 +170,11 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
 test("done for several changes at once: each with how the page checked it, those the page shows already at once", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await applyToCard(page, "fill");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
-  const output = await vernierkit("done", "1", "2");
+  const output = await npx03kind("done", "1", "2");
 
   expect(output).toContain("Changes 1 and 2 done: 1 of 2 changes applied.\n");
   expect(output).toContain("Change 1: checked on the page: it shows the change.\n");
@@ -200,18 +200,18 @@ test("an edit not yet saved when the Agent claims stays out of the round", async
   );
   await setField(page, "Corner radius", "6");
   await saveSent;
-  await vernierkit("claim");
+  await npx03kind("claim");
   claimed();
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
-  expect(readVernier("changeset.json").changes[1].after).toBe(2);
+  expect(readThirdKind("changeset.json").changes[1].after).toBe(2);
 });
 
 test("while the round is being applied, the change list only shows what is left to do", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await applyToCard(page, "fill");
   await expect(badge(page)).toHaveText("1");
 
@@ -226,7 +226,7 @@ test("while the round is being applied, the change list only shows what is left 
 test("a page loaded while the round is being applied shows it locked, with what the page shows so far", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await applyToCard(page, "radius");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
@@ -239,7 +239,7 @@ test("a page loaded while the round is being applied shows it locked, with what 
 test("pressing and holding the locked toggle unlocks it: changes the page shows are archived as applied, the others recorded and left for the next round, on the same canvas (ticket 68)", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await applyToCard(page, "fill");
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
@@ -255,10 +255,10 @@ test("pressing and holding the locked toggle unlocks it: changes the page shows 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "unlocked", done: [], applied: [1] }]);
   // The corners, not applied, are left, numbered 1; the fill applied goes with them apart, for the canvas to take in.
-  expect(readVernier("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
-  expect(readdirSync(VERNIER).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
+  expect(readThirdKind("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
+  expect(readdirSync(THIRD_KIND).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
   await expect(badge(page)).toHaveText("1");
-  const last = await vernierkit("last");
+  const last = await npx03kind("last");
   expect(last.split(/^## /m)[1]).toContain("- **Status:** Applied\n");
   expect(last.split(/^## /m)[2]).toContain("- **Status:** Not applied\n");
 });
@@ -266,13 +266,13 @@ test("pressing and holding the locked toggle unlocks it: changes the page shows 
 test("a short press on the locked toggle does nothing", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
 
   await toggle.click({ force: true });
 
   await expect(toggle).toHaveAttribute("aria-disabled", "true");
-  expect(readVernier("state.json")).toMatchObject({ status: "claimed", done: [] });
+  expect(readThirdKind("state.json")).toMatchObject({ status: "claimed", done: [] });
 });
 
 /** A computed style of every card on the live page, in page order. */
@@ -287,10 +287,10 @@ test("the page shows the code all along: before the claim, while the round is ap
   await changeTheCards(page);
   expect(await cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
 
-  await vernierkit("claim");
-  await vernierkit("done", "1");
+  await npx03kind("claim");
+  await npx03kind("done", "1");
   expect(await cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
-  await vernierkit("finish");
+  await npx03kind("finish");
   expect(await cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
 });
 
@@ -336,20 +336,20 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // A utility class: the example's own `button` rule, in no CSS layer, beats it.
     editSource(APP, 'className="mt-6 flex items-center gap-2 self-start px-4 py-2 text-white"', 'className="mt-6 flex items-center gap-2 self-start bg-[#2563eb] px-4 py-2 text-white"');
-    const overridden = await vernierkit("done", "1");
+    const overridden = await npx03kind("done", "1");
     expect(overridden).toContain("Checked on the page: it does not show the change. The fill is #DC2626, not #2563EB, as the browser computes");
 
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
-    const fixed = await vernierkit("done", "1");
+    const fixed = await npx03kind("done", "1");
     expect(fixed).toContain("Checked on the page: it shows the change.");
 
-    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
+    expect(await npx03kind("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
 
@@ -358,21 +358,21 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
     await setField(page, "Stroke weight", "1.5");
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // The code is not edited yet: its 1px draws as 1.5px would on this 1x screen, and is not 1.5px all the same.
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
 
     const drawn = () => page.locator("article").first().evaluate((card) => getComputedStyle(card).borderTopWidth);
     editSource(CARD, "rounded-xl border border-stone-200", "rounded-xl border-[3px] border-stone-200");
     await expect.poll(drawn).toBe("3px");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
 
     editSource(CARD, "border-[3px]", "border-[1.5px]");
     await expect.poll(drawn).toBe("1px");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a stroke's color changed alone leaves the weight to the code: the reference style has none", async ({ page }) => {
@@ -380,12 +380,12 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
     await setField(page, "Stroke color", "ff0000");
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
-    expect(readVernier("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    expect(readThirdKind("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
+    await npx03kind("claim");
 
     editSource(CARD, "border border-stone-200", "border border-[#ff0000]");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layout change is checked in design language: the button fills its Stack once the code stretches it", async ({ page }) => {
@@ -393,13 +393,13 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     editSource(APP, "flex items-center gap-2 self-start px-4", "flex items-center gap-2 self-stretch px-4");
 
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a size dragged on the canvas by a handle is a change of size, as the Width field makes it, and checked on the page once the code has it", async ({ page }) => {
@@ -411,16 +411,16 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width / 2 + 12, edge.y + edge.height / 2, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
-    const [change] = readVernier("changeset.json").changes;
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKind("changeset.json").changes;
     expect(change).toMatchObject({ kind: "style", property: "width", before: { type: "hug" }, after: { type: "fixed" } });
     const width: number = change.after.value;
-    await vernierkit("claim");
+    await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "flex items-center gap-2 self-start px-4", `flex w-[${width}px] items-center gap-2 self-start px-4`);
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layer placed freely, dragged by its top left corner: its X, Y, width and height are changes as the fields make them, each checked on the page once the code has it", async ({ page }) => {
@@ -449,8 +449,8 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.down();
     await page.mouse.move(corner.x + corner.width / 2 - 10 * zoom, corner.y + corner.height / 2 - 10 * zoom, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(4);
-    const changes: { id: number; property: string }[] = readVernier("changeset.json").changes;
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string }[] = readThirdKind("changeset.json").changes;
     expect(changes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "style", property: "x", before: 40, after: 30 }),
@@ -459,12 +459,12 @@ test.describe("done checks the change on the page", () => {
         expect.objectContaining({ kind: "style", property: "height", before: { type: "fixed", value: 40 }, after: { type: "fixed", value: 50 } }),
       ]),
     );
-    await vernierkit("claim");
+    await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "4");
 
-    for (const { id } of changes) expect(await vernierkit("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "top-[30px] left-[40px] h-[40px] w-[80px]", "top-[20px] left-[30px] h-[50px] w-[90px]");
-    for (const { id } of changes) expect(await vernierkit("done", String(id))).toContain("Checked on the page: it shows the change.");
+    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
   });
 
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
@@ -477,20 +477,20 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.click(box.x + 4, box.y + 4);
     await page.keyboard.up("Meta");
     await setField(page, "Fill color", "ff0000");
-    await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
+    await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
     // Saved again once the page is read in each part of the range, below 640px and from 640px (ticket 65).
-    await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts?.length).toBe(2);
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.parts?.length).toBe(2);
+    await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // Not applied yet: the cards are white at the phone's width too, the first part's looked at first.
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. At 639px wide, the fill is #FFFFFF, not #FF0000, as the browser computes");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. At 639px wide, the fill is #FFFFFF, not #FF0000, as the browser computes");
     // Applied below `md` only, as the notes say: the window, 1280px wide, still shows them white.
     editSource(CARD, "bg-white p-5", "bg-white p-5 max-md:bg-[#ff0000]");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
     // The copy of the page at the phone's width is kept while the round is claimed, and goes with it.
-    await vernierkit("finish");
+    await npx03kind("finish");
     await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toHaveCount(0);
     await expect(page.locator("iframe[data-vk-check]")).toHaveCount(0);
   });
@@ -500,16 +500,16 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true }).click();
     await setField(page, "Columns", "2");
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await npx03kind("claim");
 
     // As both Agents did on the bench (ticket 63): the phone still has one column.
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
   });
 
@@ -522,13 +522,13 @@ test.describe("done checks the change on the page", () => {
     await setField(page, "Fill color", "e8f0ff");
     await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
-    await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
-    await vernierkit("claim");
+    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
+    await npx03kind("claim");
 
     // Applying the button's fill, the Agent adds a line at the top of App.tsx: every marker below moves.
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
     editSource(APP, 'import { Badge, Surface } from "acme-ui";', '// Buttons are blue now.\nimport { Badge, Surface } from "acme-ui";');
 
-    expect(await vernierkit("done", "2")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "2")).toContain("Checked on the page: it shows the change.");
   });
 });

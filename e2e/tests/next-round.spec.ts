@@ -4,27 +4,27 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { EXIT_LABEL, NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearVernier } from "./project-files";
+import { clearThirdKind } from "./project-files";
 
-/** A round on the Next.js example, saved into its `.vernier/` for real. */
+/** A round on the Next.js example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/next-app-css-modules/", import.meta.url));
-const VERNIER = `${EXAMPLE}.vernier/`;
-const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+const THIRD_KIND = `${EXAMPLE}.03kind/`;
+const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 const CARD_CSS = `${EXAMPLE}components/Card.module.css`;
 
-test.beforeEach(() => clearVernier(VERNIER));
-test.afterAll(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearThirdKind(THIRD_KIND));
 
-async function vernierkit(...args: string[]) {
+async function npx03kind(...args: string[]) {
   const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: EXAMPLE });
   return stdout;
 }
 
 function savedChanges() {
-  const file = `${VERNIER}changeset.json`;
+  const file = `${THIRD_KIND}changeset.json`;
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).changes : null;
 }
 
@@ -81,7 +81,7 @@ test("after a client-side navigation in preview mode, edit mode comes back to th
 test("claim tells where each change is: a server component's usage in the page, and the page itself when no usage is known", async ({ page }) => {
   await changeCardsAndHeading(page);
 
-  const [, card, hero] = (await vernierkit("claim")).split(/^## /m);
+  const [, card, hero] = (await npx03kind("claim")).split(/^## /m);
 
   expect(card).toMatch(/- \*\*Location:\*\* `components\/Card\.tsx:\d+:\d+`\n/);
   expect(card).toMatch(/- \*\*Scope:\*\* This usage only: Card used at `app\/page\.tsx:\d+:\d+`, inside Home used at an undetermined place\. It renders 3 instances/);
@@ -94,7 +94,7 @@ test("claim tells where each change is: a server component's usage in the page, 
 
 test("claim locks the editor; done checks the change on the page once the CSS Module has it and fills the ring; finish ends the round", async ({ page }) => {
   await changeCardsAndHeading(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   const progress = page.getByRole("progressbar", { name: "Applying design changes" });
   await expect(page.getByRole("button", { name: /^Vernier Kit: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
   await expect(progress).toHaveAttribute("aria-valuemax", "2");
@@ -102,10 +102,10 @@ test("claim locks the editor; done checks the change on the page once the CSS Mo
   try {
     writeFileSync(CARD_CSS, original.replace("background: rgb(255, 255, 255);", "background: rgb(255, 0, 0);"));
 
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");
     // The heading was never applied: the page itself saw it not shown, done or not.
-    expect(await vernierkit("finish")).toContain("Round finished: 1 of 2 changes applied. The page does not show: 2.");
+    expect(await npx03kind("finish")).toContain("Round finished: 1 of 2 changes applied. The page does not show: 2.");
   } finally {
     writeFileSync(CARD_CSS, original);
   }
@@ -124,6 +124,6 @@ test("a change made in the phone view is at the range of the page's own media qu
   // The page's CSS Module has its grid one column wide up to 767px, two up to 1023px.
   await expect.poll(() => savedChanges()?.[0]?.breakpoint).toEqual({ min: null, max: 768, project: { queries: ["(max-width: 767px)"] } });
 
-  const notes = await vernierkit("claim");
+  const notes = await npx03kind("claim");
   expect(notes).toContain("The project writes these widths with its own media queries, whose edges these are: 768px, where `(max-width: 767px)` starts or stops holding");
 });

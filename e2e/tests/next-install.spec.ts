@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_LABEL, NEXT_INSTALL_PORT, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test } from "./fixtures";
-import { CLI, copyWithoutVernier, gitStatus, pack, replaceIn, sh, startServer } from "./install-copy";
+import { CLI, copyWithoutThirdKind, gitStatus, pack, replaceIn, sh, startServer } from "./install-copy";
 import { scripts, settle } from "./loading";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/next-app-css-modules/", import.meta.url));
@@ -18,12 +18,12 @@ let project: string;
 
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  packed = await pack(mkdtempSync(join(tmpdir(), "vernierkit-pack-")));
-  project = await copyWithoutVernier(EXAMPLE, (dir) => {
-    replaceIn(dir, "next.config.ts", 'import { withVernier } from "vernierkit/next";\n');
-    replaceIn(dir, "next.config.ts", "withVernier(nextConfig)", "nextConfig");
-    replaceIn(dir, "app/layout.tsx", 'import { Vernier } from "vernierkit/react";\n');
-    replaceIn(dir, "app/layout.tsx", "        <Vernier />\n");
+  packed = await pack(mkdtempSync(join(tmpdir(), "03kind-pack-")));
+  project = await copyWithoutThirdKind(EXAMPLE, (dir) => {
+    replaceIn(dir, "next.config.ts", 'import { withThirdKind } from "03kind/next";\n');
+    replaceIn(dir, "next.config.ts", "withThirdKind(nextConfig)", "nextConfig");
+    replaceIn(dir, "app/layout.tsx", 'import { ThirdKind } from "03kind/react";\n');
+    replaceIn(dir, "app/layout.tsx", "        <ThirdKind />\n");
   });
 });
 
@@ -32,7 +32,7 @@ test.afterAll(() => {
   if (packed) rmSync(join(packed, ".."), { recursive: true, force: true });
 });
 
-const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/vernierkit/dist/cli.js"), ...args], project);
+const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/03kind/dist/cli.js"), ...args], project);
 
 test("init installs Vernier Kit into a Next.js project: with webpack, the toggle is on the page and the markers in it; the rest of the editor layer loads as edit mode is first entered", async ({ page }) => {
   const output = await sh(process.execPath, [CLI, "init"], project, { VERNIERKIT_INSTALL_FROM: packed });
@@ -61,7 +61,7 @@ test("init installs Vernier Kit into a Next.js project: with webpack, the toggle
 
 test("init changes two places in the project's source: the config and the root layout", async () => {
   const changed = (await gitStatus(project)).split("\n").filter(Boolean).map((line) => line.slice(3));
-  const notSource = /^(package\.json|pnpm-lock\.yaml|AGENTS\.md|\.gitignore|\.agents\/skills\/vernierkit\/SKILL\.md|\.claude\/skills\/vernierkit\/SKILL\.md)$/;
+  const notSource = /^(package\.json|pnpm-lock\.yaml|AGENTS\.md|\.gitignore|\.agents\/skills\/03kind\/SKILL\.md|\.claude\/skills\/03kind\/SKILL\.md)$/;
 
   expect(changed.filter((file) => !notSource.test(file)).sort()).toEqual(["app/layout.tsx", "next.config.ts"]);
 });

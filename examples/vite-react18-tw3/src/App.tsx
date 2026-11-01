@@ -1,5 +1,5 @@
 import { Badge, Surface } from "acme-ui";
-import { Vernier } from "vernierkit/react";
+import { ThirdKind } from "03kind/react";
 import { Card } from "./components/Card";
 
 const features = [
@@ -29,7 +29,7 @@ export function App() {
         ))}
         <Card title="Your turn" body="Open the editor and try it." />
       </Surface>
-      <Vernier />
+      <ThirdKind />
     </main>
   );
 }

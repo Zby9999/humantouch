@@ -12,7 +12,7 @@ const TAILWIND_3 = join(EXAMPLES, "vite-react18-tw3/node_modules/tailwindcss");
 
 let project: string;
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "vernierkit-breakpoints-"));
+  project = mkdtempSync(join(tmpdir(), "03kind-breakpoints-"));
   writeFileSync(join(project, "package.json"), "{}");
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));

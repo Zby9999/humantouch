@@ -1,12 +1,12 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearVernier, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearThirdKind, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
 
-/** These tests save into the example project's `.vernier/` for real. */
+/** These tests save into the example project's `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => clearVernier(VERNIER));
-test.afterAll(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearThirdKind(THIRD_KIND));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -31,11 +31,11 @@ test("claim takes the designer's changes and prints change notes for the Agent",
   await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
   await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
   await setField(page, "Fill color", "2563eb");
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(4);
+  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(4);
 
-  const notes = await vernierkit("claim");
+  const notes = await npx03kind("claim");
 
-  expect(readVernier("state.json")).toMatchObject({ status: "claimed", done: [] });
+  expect(readThirdKind("state.json")).toMatchObject({ status: "claimed", done: [] });
   const [, fill, radius, root, button] = notes.split(/^## /m);
   expect(fill).toMatch(/^1\. Fill\n/);
   expect(fill).toContain("- **Kind:** Style\n");
@@ -62,9 +62,9 @@ test("layout changes are told in design language; a plain flow given a gap is to
   await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await setField(page, "Gap", "8");
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
 
-  const [, width, gap] = (await vernierkit("claim")).split(/^## /m);
+  const [, width, gap] = (await npx03kind("claim")).split(/^## /m);
 
   expect(width).toMatch(/^1\. Width\n/);
   expect(width).toContain("- **Design intent:** Change the width from Hug to Fill.\n");
@@ -106,9 +106,9 @@ test("a reorder and an absolute placement are told apart, with where each goes; 
     const board = (await canvas(page).locator("#board").boundingBox())!;
     return { x: board.x + board.width / 2, y: board.y + board.height / 2 };
   });
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
 
-  const [, reorder, absolute] = (await vernierkit("claim")).split(/^## /m);
+  const [, reorder, absolute] = (await npx03kind("claim")).split(/^## /m);
 
   expect(reorder).toMatch(/^1\. Reorder\n/);
   expect(reorder).toMatch(/- \*\*Design intent:\*\* Move it from 1st to 2nd place among the layers of its container, Stack \(`<section class="flex h-screen flex-col justify-center">`, at `src\/App\.tsx:\d+:\d+`\)\.\n/);
@@ -116,8 +116,8 @@ test("a reorder and an absolute placement are told apart, with where each goes; 
   expect(absolute).toContain("place it absolute in Frame (`<div id=\"board\">`, not located");
   expect(absolute).toContain("- **Reference style:** `position: absolute`");
   // Not applied: the page has the header first still.
-  expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change. Its container's layers are in another order on the page: put it 2nd");
-  expect(await vernierkit("done", "2")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
+  expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. Its container's layers are in another order on the page: put it 2nd");
+  expect(await npx03kind("done", "2")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
 });
 
 test("a card of the loop deleted and another copied are data changes; a Stack made of two layers lists them in order", async ({ page }) => {
@@ -132,9 +132,9 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
   await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
   await layers.getByRole("treeitem", { name: "Badge", exact: true }).click({ modifiers: ["Shift"] });
   await page.keyboard.press("Shift+A");
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(3);
+  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(3);
 
-  const [, deleted, copied, stack] = (await vernierkit("claim")).split(/^## /m);
+  const [, deleted, copied, stack] = (await npx03kind("claim")).split(/^## /m);
 
   expect(deleted).toMatch(/^1\. Delete\n/);
   expect(deleted).toContain("- **Data change:** the layer is one of the 3 instances a loop renders, the 2nd of them, which reads “Arrange Drag layers, build Stacks, tune spacing.”: take its item out of the data the loop goes through.");
@@ -143,12 +143,12 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
   expect(stack).toMatch(/^3\. Make Stack\n/);
   expect(stack).toMatch(/Wrap these 2 layers, in this order, in a new Stack: horizontal, with a gap of 12px, no padding, aligned center left\. Put it in the layout of Header/);
   expect(stack).toMatch(/\n {2}1\. Vernier Kit \(`<h1 class="[^"]*">`, at `src\/App\.tsx:\d+:\d+`\)\n {2}2\. Badge/);
-  expect(await vernierkit("done", "3")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
+  expect(await npx03kind("done", "3")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
 });
 
 test("with no changes, claim says so and leaves the round as it is", async () => {
-  expect(await vernierkit("claim")).toMatch(/^No design changes to apply/);
-  expect(readVernier("state.json")).toBeNull();
+  expect(await npx03kind("claim")).toMatch(/^No design changes to apply/);
+  expect(readThirdKind("state.json")).toBeNull();
 });
 
 test("a change made in the phone view is noted with the widths it applies at, for the project's own breakpoints", async ({ page }) => {
@@ -162,9 +162,9 @@ test("a change made in the phone view is noted with the widths it applies at, fo
   await page.keyboard.up("Meta");
   await setField(page, "Fill color", "ff0000");
   // The example keeps Tailwind's own breakpoints: the phone view reaches up to the tablet view's range, `md` at 768px.
-  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 768, project: { tailwind: "max-md:" } });
+  await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 768, project: { tailwind: "max-md:" } });
 
-  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  const [, fill] = (await npx03kind("claim")).split(/^## /m);
 
   expect(fill).toContain("- **Breakpoint:** below 768px only (`@media (width < 768px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `max-md:`");
   expect(fill).toContain("- **Design intent:** Change the fill from #FFFFFF to #FF0000.\n");
@@ -191,12 +191,12 @@ const COLUMNS_PART_BY_PART =
 test("the Grid's columns changed in the phone view: what the page shows in each part of the range is saved with it, and the notes give it part by part (ticket 65)", async ({ page }) => {
   await twoColumnsInPhone(page);
   // `grid-cols-1 sm:grid-cols-3`: one column below 640px, three from 640px up.
-  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toEqual([
+  await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.parts).toEqual([
     { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
     { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
   ]);
 
-  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+  const [, columns] = (await npx03kind("claim")).split(/^## /m);
 
   expect(columns).toContain(COLUMNS_PART_BY_PART);
 });
@@ -206,9 +206,9 @@ test("back in preview mode at once after a change in the phone view, the page is
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
   // Saved as edit mode ended, the parts not read yet.
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(1);
+  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
 
-  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+  const [, columns] = (await npx03kind("claim")).split(/^## /m);
 
   expect(columns).toContain(COLUMNS_PART_BY_PART);
 });
@@ -224,9 +224,9 @@ test("claimed the moment a change in the phone view is saved, claim waits for th
   );
   await twoColumnsInPhone(page);
   // Saved, the parts yet to be read.
-  await expect.poll(() => readVernier("changeset.json")?.changes[0]?.parts).toBeNull();
+  await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.parts).toBeNull();
 
-  const [, columns] = (await vernierkit("claim")).split(/^## /m);
+  const [, columns] = (await npx03kind("claim")).split(/^## /m);
 
   expect(columns).toContain(COLUMNS_PART_BY_PART);
 });

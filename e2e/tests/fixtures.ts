@@ -4,7 +4,7 @@ export { expect } from "@playwright/test";
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
 
 /**
- * Tests share one dev server, and so one `.vernier/` folder. Unless a test
+ * Tests share one dev server, and so one `.03kind/` folder. Unless a test
  * opts out with `keepRoundInMemory: false`, the round it saves stays in its
  * own browser context, so tests running side by side never see each other's.
  *

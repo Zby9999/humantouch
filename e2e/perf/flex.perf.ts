@@ -1089,15 +1089,15 @@ test.describe("a claimed round", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const VERNIER = `${REACT18}.vernier`;
-  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const THIRD_KIND = `${REACT18}.03kind`;
+  const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
-  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
-  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.beforeEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(VERNIER, { recursive: true, force: true });
+    rmSync(THIRD_KIND, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1161,21 +1161,21 @@ test.describe("a claimed round", () => {
     const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
     await gap.fill("10");
     await gap.press("Enter");
-    await expect.poll(() => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
+    await expect.poll(() => (existsSync(`${THIRD_KIND}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
     // The claim too: the page looks at every change once, and makes its copies at the views' widths.
     await page.evaluate(armTasks, CHECKS);
-    await vernierkit("claim");
+    await npx03kind("claim");
     const ring = page.getByRole("progressbar", { name: "Applying design changes" });
     await expect(ring).toHaveAttribute("aria-valuenow", "0");
     await settle(page, 2000);
     const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
 
     let answered = "";
-    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await vernierkit("done", "1", "2", "3"))))];
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
     // None applied by that first update: done waited for it, and says so for each.
     expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
     await expect(ring).toHaveAttribute("aria-valuenow", "3");
-    await vernierkit("finish");
+    await npx03kind("finish");
     await expect(ring).toHaveCount(0);
 
     // The same hot updates with no round claimed: the page's own long tasks.
@@ -1240,14 +1240,14 @@ test.describe("a claimed round", () => {
  */
 test.describe("a change at a breakpoint", () => {
   test.use({ keepRoundInMemory: false });
-  const VERNIER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.vernier", import.meta.url));
-  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-  test.afterEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  const THIRD_KIND = fileURLToPath(new URL("../../examples/vite-react18-tw3/.03kind", import.meta.url));
+  test.beforeEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
+  test.afterEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
 
   const HERO = "[data-testid=big-hero]";
   const HERO_PICTURE = `${HERO} img`;
   const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
-  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes : []);
+  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${THIRD_KIND}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND}/changeset.json`, "utf8")).changes : []);
 
   const PARTS_MEASURE = "vernierkit:parts";
 
@@ -1338,17 +1338,17 @@ test.describe("the same canvas again", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const VERNIER = `${REACT18}.vernier`;
-  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const THIRD_KIND = `${REACT18}.03kind`;
+  const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
-  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("rounded-card border");
   const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
-  const changesSaved = () => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")) : null);
-  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  const changesSaved = () => (existsSync(`${THIRD_KIND}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND}/changeset.json`, "utf8")) : null);
+  test.beforeEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(VERNIER, { recursive: true, force: true });
+    rmSync(THIRD_KIND, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1398,11 +1398,11 @@ test.describe("the same canvas again", () => {
     expect(changesSaved()?.changes.length).toBe(3);
 
     // The Agent applies the corners, and finishes: the fill and the gap are left (ticket 68).
-    await vernierkit("claim");
+    await npx03kind("claim");
     writeFileSync(PARTS, readFileSync(PARTS, "utf8").replace(CARD, CARD.replace("rounded-card", "rounded-[20px]")));
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius), { timeout: 20_000 }).toBe("20px");
-    await vernierkit("done", "1");
-    await vernierkit("finish");
+    await npx03kind("done", "1");
+    await npx03kind("finish");
     const carriedOver = changesSaved();
     const carried = carriedOver?.applied?.length ? await entries(page) : null;
     if (carried) expect(changesSaved()).toEqual(carriedOver);

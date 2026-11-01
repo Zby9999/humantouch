@@ -2,7 +2,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { recordNotices, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Page } from "./fixtures";
-import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
 
 /**
  * The code changing while the designer is in edit mode, with no Agent having
@@ -11,7 +11,7 @@ import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./proje
  * an Agent applying a claimed round never ask.
  */
 
-/** These tests save into the example project's `.vernier/` for real, and edit its source. */
+/** These tests save into the example project's `.03kind/` for real, and edit its source. */
 test.use({ keepRoundInMemory: false });
 
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
@@ -19,19 +19,19 @@ const original = readFileSync(CARD, "utf8");
 /** Files the page does not use, put in the project and taken out again. */
 const UNUSED = [`${EXAMPLE}notes.md`, `${EXAMPLE}src/unused.ts`];
 
-test.beforeEach(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKind(THIRD_KIND));
 test.afterEach(async () => {
   for (const file of UNUSED) rmSync(file, { force: true });
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was.
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
 });
-test.afterAll(() => clearVernier(VERNIER));
+test.afterAll(() => clearThirdKind(THIRD_KIND));
 
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const layer = (page: Page, name: string) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).first();
-const savedChanges = () => readVernier("changeset.json")?.changes.length ?? 0;
+const savedChanges = () => readThirdKind("changeset.json")?.changes.length ?? 0;
 /** The first card's corner radius on the canvas. */
 const cardRadius = (page: Page) => canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).borderTopLeftRadius);
 /** The live page's first card fill, as the code has it now. */
@@ -168,7 +168,7 @@ test("no notice as the editor layer saves the round, the layers off the canvas, 
     await page.waitForTimeout(700);
   }
   await expect.poll(savedChanges).toBe(3);
-  // Off the canvas: saved apart, in `.vernier/off-canvas.json`.
+  // Off the canvas: saved apart, in `.03kind/off-canvas.json`.
   const view = (await page.locator('iframe[title="Canvas"]').boundingBox())!;
   const title = (await canvas(page).locator("h1").boundingBox())!;
   await layer(page, "Vernier Kit").click();
@@ -177,7 +177,7 @@ test("no notice as the editor layer saves the round, the layers off the canvas, 
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
   await page.mouse.up();
   await expect.poll(savedChanges).toBe(4);
-  await expect.poll(() => readVernier("off-canvas.json")?.layers.length).toBe(1);
+  await expect.poll(() => readThirdKind("off-canvas.json")?.layers.length).toBe(1);
   // Back to preview mode saves the canvas at once; in again, the round comes back.
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
@@ -194,11 +194,11 @@ test("no notice as the Agent claims the round and edits the code at once, before
   await page.goto(DEV_URL);
   await designARound(page);
 
-  await vernierkit("claim");
+  await npx03kind("claim");
   writeFileSync(CARD, original.replace("rounded-xl", "rounded-[4px]"));
-  expect(await vernierkit("done", "1")).toContain("it shows the change");
+  expect(await npx03kind("done", "1")).toContain("it shows the change");
   await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toHaveAttribute("aria-valuenow", "1");
-  await vernierkit("finish");
+  await npx03kind("finish");
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
 
   expect(await unclaimedNoticesShown(page)).toEqual([]);
@@ -223,7 +223,7 @@ test("a press held as the code changes ends first, as the designer meant it; the
   await expect(notice).toBeVisible();
   // The drag was an edit, made before the pause: what was pressed is off the canvas, a deletion on the page.
   await expect.poll(savedChanges).toBe(2);
-  expect(readVernier("changeset.json").changes.map((change: { kind: string }) => change.kind)).toEqual(["style", "delete"]);
+  expect(readThirdKind("changeset.json").changes.map((change: { kind: string }) => change.kind)).toEqual(["style", "delete"]);
 });
 
 test("a value typed, not yet set, is set as the notice takes the focus: no change is lost", async ({ page }) => {
@@ -245,12 +245,12 @@ test("the Agent claiming once the notice is up: edit mode folds away as for any 
   const notice = unclaimedNotice(page);
   await expect(notice).toBeVisible();
 
-  await vernierkit("claim");
+  await npx03kind("claim");
 
   await expect(notice).toHaveCount(0);
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toBeVisible();
-  await vernierkit("finish");
+  await npx03kind("finish");
 });
 
 test("no notice as the Agent claims and edits at once, even with the page never told of the claim: it asks the local service", async ({ page }) => {
@@ -269,14 +269,14 @@ test("no notice as the Agent claims and edits at once, even with the page never 
   await page.goto(DEV_URL);
   await designARound(page);
 
-  await vernierkit("claim");
+  await npx03kind("claim");
   await changeTheCard(page);
   await page.waitForTimeout(2500);
 
   expect(await unclaimedNoticesShown(page)).toEqual([]);
   await expect(page.locator('iframe[title="Canvas"]')).toBeVisible();
   await page.unroute((url) => url.hostname === "127.0.0.1" && url.pathname === "/events");
-  await vernierkit("finish");
+  await npx03kind("finish");
 });
 
 test("words typed in a text layer on the canvas are set as the notice takes the focus: no change is lost", async ({ page }) => {

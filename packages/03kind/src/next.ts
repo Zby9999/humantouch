@@ -12,14 +12,14 @@ type WebpackConfig = { module?: { rules?: unknown[] } };
 type ConfigFunction<Config> = (phase: string, context: { defaultConfig: Config }) => Config | Promise<Config>;
 
 const DEVELOPMENT_SERVER = "phase-development-server";
-const LOADER = "vernierkit/next-loader";
+const LOADER = "03kind/next-loader";
 
 let service: Promise<Service> | undefined;
 
 /**
  * Vernier Kit for Next.js: wrap the config with it. Development only: adds
  * source markers (with Turbopack or webpack) so layers can be traced back to
- * code, and runs the local service that keeps the round in `.vernier/`.
+ * code, and runs the local service that keeps the round in `.03kind/`.
  * Production builds are left untouched.
  */
 /**
@@ -32,7 +32,7 @@ function asRules(rule: unknown): unknown[] {
   return rule.every(isRule) ? rule : [{ loaders: rule }];
 }
 
-export function withVernier<Config extends object>(config: Config | ConfigFunction<Config>): (phase: string, context: { defaultConfig: Config }) => Promise<Config> {
+export function withThirdKind<Config extends object>(config: Config | ConfigFunction<Config>): (phase: string, context: { defaultConfig: Config }) => Promise<Config> {
   return async (phase, context) => {
     const given = typeof config === "function" ? await config(phase, context) : config;
     if (phase !== DEVELOPMENT_SERVER) return given;

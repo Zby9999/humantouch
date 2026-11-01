@@ -25,12 +25,12 @@ import {
   readLastRound,
   readState,
   snapshotCode,
-  vernierFolder,
+  thirdKindFolder,
   writeAtomically,
   writeState,
   type RoundState,
-  type VernierFolder,
-} from "./vernier-folder";
+  type ThirdKindFolder,
+} from "./third-kind-folder";
 
 export interface Io {
   cwd: string;
@@ -51,7 +51,7 @@ export async function run(args: string[], io: Io): Promise<number> {
   if (command === "doctor") return doctor(io.cwd, installIo);
   if (command === "remove") return remove(io.cwd, installIo);
   const root = findProject(io.cwd);
-  const folder = vernierFolder(root);
+  const folder = thirdKindFolder(root);
   switch (command) {
     case "claim":
       return claim(folder, root, io);
@@ -67,7 +67,7 @@ export async function run(args: string[], io: Io): Promise<number> {
   }
 }
 
-async function claim(folder: VernierFolder, root: string, io: Io): Promise<number> {
+async function claim(folder: ThirdKindFolder, root: string, io: Io): Promise<number> {
   // Claimed already: the Agent stopped, or lost the notes. What is applied so far stays applied; it gets the rest (ticket 67).
   const state = await readState(folder);
   // Not claimed yet: the open page may still be reading what it shows in each part of a change's range, the code as it is.
@@ -118,7 +118,7 @@ function claimedAgain(
   const single = alone && all === 1;
   if (applied.length === all) {
     const these = single ? "its 1 change is" : `all ${all} of its changes are`;
-    return `${opening}, and ${these} applied${already}, ${how(single)}: run \`npx vernierkit finish\` to end it.\n`;
+    return `${opening}, and ${these} applied${already}, ${how(single)}: run \`npx 03kind finish\` to end it.\n`;
   }
   const one = applied.length === 1;
   const none = single ? "its 1 change is not applied yet" : `none of its ${all} changes are applied yet`;
@@ -135,7 +135,7 @@ function claimedAgain(
  * are set by what sets it now (`readAgain`). Those values are kept in the
  * change, for claim run again and `last`.
  */
-async function claimCarried(folder: VernierFolder, root: string, io: Io, claimed: RoundState, changeSet: SavedChangeSet, notes: NotesOptions, pageOpen: boolean): Promise<number> {
+async function claimCarried(folder: ThirdKindFolder, root: string, io: Io, claimed: RoundState, changeSet: SavedChangeSet, notes: NotesOptions, pageOpen: boolean): Promise<number> {
   const carried = changeSet.changes.filter((change) => change.carried).map((change) => change.id);
   let applied: number[] = [];
   let results = new Map<number, CheckResult>();
@@ -216,7 +216,7 @@ function beforeOf(change: Change, actual: unknown): unknown {
  * and waits for their answers. Returns the state as asked, and the answers.
  * `opening` asks what sets the value a style change shows instead, too.
  */
-async function askPages(folder: VernierFolder, state: RoundState, field: "opening" | "check" | "closing", ids: number[]): Promise<{ asked: RoundState; results: Map<number, CheckResult> }> {
+async function askPages(folder: ThirdKindFolder, state: RoundState, field: "opening" | "check" | "closing", ids: number[]): Promise<{ asked: RoundState; results: Map<number, CheckResult> }> {
   const ask = await newAsk(folder, ids, field === "opening");
   const asked = { ...state, [field]: ask };
   await writeState(folder, asked);
@@ -233,7 +233,7 @@ const PARTS_WAIT_MS = 5000;
  * saved it again; as it is, with no page open to read them, or once a while
  * has gone by. Read before the round is claimed: from then on the code changes.
  */
-async function waitForPartsRead(folder: VernierFolder) {
+async function waitForPartsRead(folder: ThirdKindFolder) {
   const until = Date.now() + PARTS_WAIT_MS;
   for (;;) {
     const changeSet = await readChangeSet(folder);
@@ -244,9 +244,9 @@ async function waitForPartsRead(folder: VernierFolder) {
   }
 }
 
-const NOT_CLAIMED = "The round is not claimed: run `npx vernierkit claim` first.\n";
+const NOT_CLAIMED = "The round is not claimed: run `npx 03kind claim` first.\n";
 
-async function done(folder: VernierFolder, args: string[], io: Io): Promise<number> {
+async function done(folder: ThirdKindFolder, args: string[], io: Io): Promise<number> {
   const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
   if (!state || !changeSet) {
     io.error(NOT_CLAIMED);
@@ -255,7 +255,7 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
   const ids = changeSet.changes.map((change) => change.id);
   const wrong = args.find((arg) => !ids.includes(Number(arg)));
   if (!args.length || wrong !== undefined) {
-    const which = !args.length ? "Give the numbers of the changes you applied: `npx vernierkit done <number> …`." : `There is no change ${wrong} in this round.`;
+    const which = !args.length ? "Give the numbers of the changes you applied: `npx 03kind done <number> …`." : `There is no change ${wrong} in this round.`;
     io.error(`${which} Its changes are: ${ids.join(", ")}.\n`);
     return 1;
   }
@@ -274,7 +274,7 @@ async function done(folder: VernierFolder, args: string[], io: Io): Promise<numb
 }
 
 /** An ask for the open pages to check changes `ids`, under a key of its own that their answers carry: it goes out with the state. */
-async function newAsk(folder: VernierFolder, ids: number[], sources: boolean): Promise<CheckAsk> {
+async function newAsk(folder: ThirdKindFolder, ids: number[], sources: boolean): Promise<CheckAsk> {
   return { ids, at: new Date().toISOString(), key: randomUUID(), codeAt: await lastEdited(dirname(folder.dir)), ...(sources && { sources: true as const }) };
 }
 
@@ -294,7 +294,7 @@ function checkLine(change: Change, result: CheckResult | undefined): string {
 
 /** What the page shows instead of change `id`, `width` px wide when not as wide as its window, what to look at, and to check again. */
 function notShown(change: Change, actual: unknown, width?: number): string {
-  const again = `run \`npx vernierkit done ${change.id}\` again`;
+  const again = `run \`npx 03kind done ${change.id}\` again`;
   if (change.kind === "delete") {
     if (width) return `At ${width}px wide, the layer is still on the page: take it out at every width, and ${again}.`;
     return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
@@ -377,7 +377,7 @@ const CHECK_POLL_MS = 50;
  * to ask, what one saw this round stands. With several pages, one that cannot
  * check (it does not show the layer) does not stand in for one that can and is still at it.
  */
-async function waitForChecks(folder: VernierFolder, check: CheckAsk, claimedAt: string | undefined): Promise<Map<number, CheckResult>> {
+async function waitForChecks(folder: ThirdKindFolder, check: CheckAsk, claimedAt: string | undefined): Promise<Map<number, CheckResult>> {
   const until = Date.now() + CHECK_WAIT_MS;
   const answers = new Map<number, CheckResult>();
   const unchecked = new Map<number, CheckResult>();
@@ -417,7 +417,7 @@ function isRunning(pid: number | undefined): boolean {
   }
 }
 
-async function finish(folder: VernierFolder, io: Io): Promise<number> {
+async function finish(folder: ThirdKindFolder, io: Io): Promise<number> {
   const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
   // The round's result is the page's (ADR 0013): it looks at every change it can once more, once the last edit has reached it.
   if (state && changeSet) {
@@ -439,7 +439,7 @@ async function finish(folder: VernierFolder, io: Io): Promise<number> {
   return 0;
 }
 
-async function last(folder: VernierFolder, root: string, io: Io): Promise<number> {
+async function last(folder: ThirdKindFolder, root: string, io: Io): Promise<number> {
   const round = await readLastRound(folder);
   if (!round) {
     io.write("No earlier round of design changes to undo.\n");
