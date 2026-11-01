@@ -2386,12 +2386,15 @@ describe("claim and done, layers made this round found on the page (ticket 76)",
   /** The text of a rule of the notes' **How to write them**. */
   const rule = (notes: string, name: string) => new RegExp(`^- \\*\\*${name}:\\*\\* (.*)$`, "m").exec(notes)?.[1] ?? "";
 
-  test("how the page checks says a new layer, and the changes to it, are found where its section puts it, by its tag and new text's words: not that they are not checked", async () => {
+  test("how the page checks says a new layer, and the changes to it, are found where its section puts it, of whatever element, new text by its words: not that they are not checked", async () => {
     saveRound(create({ type: "frame", place: place(2), width: 200, height: 120 }), { ...smallRadius, layer: "11", target: frameTarget });
 
     const checks = rule((await cli("claim")).output, "How the page checks");
 
-    expect(checks).toContain("a new layer, and so the changes to it, by finding it where its section puts it: a `<div>` for a Frame, a `<p>` with its words for text, as that layer of its container, or, placed absolute, placed absolute in it at the X and Y given");
+    expect(checks).toContain(
+      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, one the container did not have before, new text with its words, or, placed absolute, one placed absolute in the container at the X and Y given",
+    );
+    expect(checks).not.toMatch(/<div>|<p>/);
     expect(checks).not.toContain("not at all");
   });
 
@@ -2417,13 +2420,13 @@ describe("claim and done, layers made this round found on the page (ticket 76)",
   test("done says what is at a new layer's place when the page does not find it there, and what it looked for", async () => {
     saveRound(create({ type: "text", text: "Works with any Agent.", place: place(3), width: null, height: null }));
     await cli("claim");
-    closePage = openPage(() => ({ outcome: "not shown", actual: { tag: "p", words: "Works with any Agent.", nth: [3, 4], there: '<button class="mt-6"> reading “Get started”' } }));
+    closePage = openPage(() => ({ outcome: "not shown", actual: { type: "text", words: "Works with any Agent.", nth: [3, 4], there: '<button class="mt-6"> reading “Get started”' } }));
 
     const { output } = await cli("done", "1");
 
     expect(output).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. The page has no `<p>` reading “Works with any Agent.” as the 3rd or 4th layer of Stack (`<ul class=\"flex flex-col\">`): " +
+        "Checked on the page: it does not show the change. The page does not have the new text, reading “Works with any Agent.”, as the 3rd or 4th layer of Stack (`<ul class=\"flex flex-col\">`): " +
         "it has <button class=\"mt-6\"> reading “Get started” there. Write the new layer there, as the notes say, and run `npx 03kind done 1` again.\n",
     );
   });
@@ -2431,7 +2434,7 @@ describe("claim and done, layers made this round found on the page (ticket 76)",
   test("finish puts a new layer the page does not find under ⚠️, saying so in words", async () => {
     saveRound(create({ type: "frame", place: place(2, { x: 40, y: 60 }), width: 360, height: 80 }));
     await cli("claim");
-    closePage = openPage(() => ({ outcome: "not shown", actual: { tag: "div", nth: null, there: null } }));
+    closePage = openPage(() => ({ outcome: "not shown", actual: { type: "frame", nth: null, there: null } }));
 
     const { output } = await cli("finish");
 

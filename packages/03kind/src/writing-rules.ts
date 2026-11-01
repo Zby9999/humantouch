@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, makerOf, NEW_TAGS, PLACING } from "./client/checkable";
+import { checkable, makerOf, PLACING } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 
@@ -221,8 +221,8 @@ const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "create",
     text:
-      `a new layer, and so the changes to it, by finding it where its section puts it: a \`<${NEW_TAGS.frame}>\` for a Frame, a \`<${NEW_TAGS.text}>\` with its words for text, ` +
-      "as that layer of its container, or, placed absolute, placed absolute in it at the X and Y given; found written at more than one place in the source, it is not checked",
+      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, one the container did not have before, new text with its words, " +
+      "or, placed absolute, one placed absolute in the container at the X and Y given; found written at more than one place in the source, it is not checked",
   },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },

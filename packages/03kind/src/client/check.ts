@@ -14,7 +14,7 @@ import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place, type Target } from "./changeset";
 import { openingTag } from "./layer-target";
-import { checkable, madeLayer, makerOf, NEW_TAGS, placeOfMade, PLACING } from "./checkable";
+import { checkable, madeLayer, makerOf, placeOfMade, PLACING } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -116,8 +116,8 @@ function containerUnfound(target: Target, round: Change[]): string {
 
 /** What the page shows where a layer made this round is to be, and is not (ticket 76). */
 export interface MadeMissing {
-  /** Its element's tag, and new text's words, as the page looks for it. */
-  tag: string;
+  /** What it is, and new text's words, as the page looks for it: of any tag (the canvas's `<div>` or `<p>` is the editor's, not the designer's). */
+  type: Created["type"];
   words?: string;
   /** Which of its container's layers it is to be, from 1; a range, as the page may still have layers the round takes out, or not yet those it puts in. Null: placed absolute. */
   nth: [number, number] | null;
@@ -131,9 +131,10 @@ type Found = { els: Element[] } | { missing: MadeMissing } | { unchecked: string
 /**
  * The elements of a layer made this round (ticket 76), on the live page:
  * where its change says, in its container (found by its marker, or made
- * this round as well, found so), of its tag, new text with its words. In
- * a container's layout, among the layers the canvas has before it; placed
- * absolute, any of the container's layers placed absolute. In every instance
+ * this round as well, found so), an element the container did not have
+ * before, of any tag, new text with its words. In a container's layout,
+ * among the layers the canvas has before it; placed absolute, any of the
+ * container's layers placed absolute. In every instance
  * of the container. Found at more than one place in the source, which one is
  * the layer cannot be told: the page does not guess.
  */
@@ -146,7 +147,6 @@ function findMade(doc: Document, id: string, round: Change[]): Found {
   const outer: Found = target.made ? findMade(doc, target.made, round) : { els: elementsOf(doc, target) };
   if ("unchecked" in outer) return outer;
   if ("missing" in outer || !outer.els.length) return { unchecked: "its container is not on the page now" };
-  const tag = NEW_TAGS[created.type];
   const written = round.filter((change) => change.kind === "text" && change.layer === id).at(-1)?.after as string | undefined;
   const words = created.type === "text" ? spaced(written ?? created.text ?? "") : undefined;
   const among = maker.among;
@@ -158,11 +158,11 @@ function findMade(doc: Document, id: string, round: Change[]): Found {
     const counts = new Map<string, number>();
     for (const el of layers) counts.set(signOf(el), (counts.get(signOf(el)) ?? 0) + 1);
     for (const sign of among?.signs ?? []) counts.set(sign, (counts.get(sign) ?? 0) - 1);
-    const matches = (el: Element) => el.localName === tag && (words === undefined || spaced(el.textContent ?? "") === words) && counts.get(signOf(el))! > 0;
+    const matches = (el: Element) => (words === undefined || spaced(el.textContent ?? "") === words) && counts.get(signOf(el))! > 0;
     const here = range ? layers.slice(range[0], range[1] + 1).filter(matches) : layers.filter((el) => matches(el) && /^(absolute|fixed)$/.test(getComputedStyle(el).position));
     if (!here.length) {
       const there = range ? layers[range[0]] : undefined;
-      return { missing: { tag, ...(words !== undefined && { words }), nth: range && [range[0] + 1, range[1] + 1], there: there ? described(there) : null } };
+      return { missing: { type: created.type, ...(words !== undefined && { words }), nth: range && [range[0] + 1, range[1] + 1], there: there ? described(there) : null } };
     }
     els.push(...here);
   }
@@ -367,8 +367,8 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
 
 /**
  * The layer a `create` change makes (ticket 76), found where it puts it:
- * of its tag, new text with its words, its container's layer the canvas has
- * it as, or, placed absolute, placed where the canvas has it (its X and Y as
+ * new text with its words, its container's layer the canvas has it as, or,
+ * placed absolute, placed where the canvas has it (its X and Y as
  * the designer last set them). `actual`, not found: what is there instead
  * (`MadeMissing`); placed elsewhere, as for a move placed absolute.
  */

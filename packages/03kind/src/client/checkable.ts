@@ -14,7 +14,7 @@ import type { Property } from "./property-table";
 /** The properties that place a layer by its X and Y: its `left` and `top`, past which its margins draw it (`Change.margins`). */
 export const PLACING: readonly Property[] = ["x", "y", "absolute"];
 
-/** The element the editor makes a new layer of, by its type, as the Agent is told it is found by (ticket 76). */
+/** The element the editor makes a new layer of on the canvas, by its type: the editor's, not the designer's, so the page finds the layer the Agent writes of any (ticket 76). */
 export const NEW_TAGS: Record<Created["type"], string> = { text: "p", frame: "div" };
 
 /**

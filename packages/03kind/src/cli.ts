@@ -334,14 +334,14 @@ function notShown(change: Change, actual: unknown, width?: number): string {
 function madeNotShown(change: Change, actual: unknown, again: string, width?: number): string {
   const { place } = change.after as Created;
   const container = `${place.container.target.context.path.at(-1)} (\`${place.container.target.context.element}\`)`;
-  if (actual && typeof actual === "object" && "tag" in actual) {
-    const { tag, words, nth, there } = actual as MadeMissing;
-    const what = `\`<${tag}>\`${words === undefined ? "" : ` reading \u201c${words}\u201d`}`;
-    if (!nth) return `The page has no ${what} placed absolute in ${container}: write the new layer there, as the notes say, and ${again}.`;
+  if (actual && typeof actual === "object" && "type" in actual) {
+    const { type, words, nth, there } = actual as MadeMissing;
+    const what = type === "text" ? `the new text, reading \u201c${words}\u201d,` : "the new Frame";
+    if (!nth) return `The page does not have ${what} placed absolute in ${container}: write the new layer there, as the notes say, and ${again}.`;
     // A range: the page may have layers there the round takes out, or not yet those it puts in.
     const which = nth[0] === nth[1] ? ordinal(nth[0]) : `${ordinal(nth[0])} ${nth[1] - nth[0] === 1 ? "or" : "to"} ${ordinal(nth[1])}`;
     const instead = there ? `it has ${there} there` : "it has no layer there";
-    return `The page has no ${what} as the ${which} layer of ${container}: ${instead}. Write the new layer there, as the notes say, and ${again}.`;
+    return `The page does not have ${what} as the ${which} layer of ${container}: ${instead}. Write the new layer there, as the notes say, and ${again}.`;
   }
   const at = width ? `At ${width}px wide, the` : "The";
   if (actual === "no reference") return `${at} new layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;

@@ -38,7 +38,6 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
   const containers = elementsOf(doc, created.place.container.layer);
   const made: Element[] = [];
   for (const container of containers) {
-    // Of the tag the page finds it by, once the Agent has written it (ticket 76).
     const el = doc.createElement(NEW_TAGS[created.type]);
     el.setAttribute(LAYER_ID_ATTR, id);
     el.setAttribute(MADE_ATTR, id);

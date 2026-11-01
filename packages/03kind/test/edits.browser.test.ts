@@ -6067,17 +6067,32 @@ describe("layers made this round are found on the live page at their place, and 
     expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
   });
 
-  test("written at another place, or of another tag, the new Frame is not shown, with what is at its place instead; the changes to it are not checked", () => {
+  test("written at another place, the new Frame is not shown, with what is at its place instead, a layer the container had; the changes to it are not checked", () => {
     const { changes } = frameInTheList();
     const round = changes.list();
     const elsewhere = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")} style="height: 20px">C</div>`, `<div id="c" ${loc("8:7")} style="height: 20px">C</div><div ${loc("9:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
 
-    expect(checkChange(elsewhere, round[0], round)).toEqual({ outcome: "not shown", actual: { tag: "div", nth: [2, 2], there: '<div id="b"> reading \u201cB\u201d' } });
+    expect(checkChange(elsewhere, round[0], round)).toEqual({ outcome: "not shown", actual: { type: "frame", nth: [2, 2], there: '<div id="b"> reading \u201cB\u201d' } });
     expect(checkChange(elsewhere, round[1], round)).toEqual({ outcome: "unchecked", reason: "the layer is new this round, and not at its place on the page (change 1)" });
+  });
 
-    live?.remove();
-    const section = livePage(writtenAfterA(`<section ${loc("7:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></section>`));
-    expect(checkChange(section, round[0], round)).toMatchObject({ outcome: "not shown", actual: { tag: "div", there: "<section>" } });
+  test("of whatever element the Agent writes it: a Frame as a <ul> or a <section>, text as an <h2> or a <span>; the canvas's <div> and <p> are the editor's", () => {
+    for (const tag of ["ul", "section"]) {
+      const { changes } = frameInTheList();
+      const page = livePage(writtenAfterA(`<${tag} ${loc("7:7")} style="display: block; margin: 0; padding: 0; width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></${tag}>`));
+      expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+      live?.remove();
+      iframe?.remove();
+    }
+    for (const tag of ["h2", "span"]) {
+      const { editor, changes, layer } = open();
+      const text = editor.create("text", { parent: layer("list"), index: 1 });
+      editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+      const page = livePage(writtenAfterA(`<${tag} ${loc("7:7")} style="display: block; margin: 0; font-size: 20px">Text</${tag}>`));
+      expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+      live?.remove();
+      iframe?.remove();
+    }
   });
 
   test("new text is found at its place by its words too", () => {
@@ -6090,7 +6105,7 @@ describe("layers made this round are found on the live page at their place, and 
     expect(round.map((change) => checkChange(right, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
     live?.remove();
     const wrong = livePage(writtenAfterA(`<p ${loc("7:7")} style="margin: 0; font-size: 20px">Other words</p>`));
-    expect(checkChange(wrong, round[0], round)).toEqual({ outcome: "not shown", actual: { tag: "p", words: "Text", nth: [2, 2], there: '<p> reading \u201cOther words\u201d' } });
+    expect(checkChange(wrong, round[0], round)).toEqual({ outcome: "not shown", actual: { type: "text", words: "Text", nth: [2, 2], there: '<p> reading \u201cOther words\u201d' } });
   });
 
   test("a layer before it deleted this round: found there with the layer still on the page, and once it is gone", () => {
