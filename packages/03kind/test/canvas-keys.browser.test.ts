@@ -117,12 +117,12 @@ describe("undo and redo by their keys", () => {
   });
 
   test("a field keeps ⌘Z while something typed in it is not applied yet, held down or not; a Design panel field otherwise, or a slider, passes it on", () => {
-    const typing = Object.assign(document.createElement("input"), { className: "vk-input" });
-    typing.setAttribute("data-vk-typing", "");
+    const typing = Object.assign(document.createElement("input"), { className: "tk-input" });
+    typing.setAttribute("data-tk-typing", "");
     expect(historyPress({ key: "z", metaKey: true }, false, typing)).toBeNull();
     expect(historyPress({ key: "z", metaKey: true }, true, typing)).toBeNull();
     expect(historyPress({ key: "z", metaKey: true }, false, document.createElement("textarea"))).toBeNull();
-    expect(historyPress({ key: "z", metaKey: true }, false, Object.assign(document.createElement("input"), { className: "vk-input" }))).toBe("undo");
+    expect(historyPress({ key: "z", metaKey: true }, false, Object.assign(document.createElement("input"), { className: "tk-input" }))).toBe("undo");
     const slider = document.createElement("div");
     slider.setAttribute("role", "slider");
     expect(historyPress({ key: "Z", metaKey: true, shiftKey: true }, false, slider)).toBe("redo");
@@ -170,7 +170,7 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
     expect(heldPress({ key: "v" })).toBe("ignored");
     expect(heldPress({ key: "Enter" }, { on: document.createElement("button") })).toBe("ignored");
     // Out of a field, Tab would apply what was typed in it.
-    expect(heldPress({ key: "Tab" }, { on: Object.assign(document.createElement("input"), { className: "vk-input" }) })).toBe("ignored");
+    expect(heldPress({ key: "Tab" }, { on: Object.assign(document.createElement("input"), { className: "tk-input" }) })).toBe("ignored");
     expect(heldPress({ key: "Tab", shiftKey: true })).toBe("ignored");
   });
 
@@ -212,7 +212,7 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
   });
 
   test("in a field that takes text, a key types as ever but the field does no more with it; Esc goes on; a stop's handle, a checkbox or a list takes nothing", () => {
-    const text = Object.assign(document.createElement("input"), { className: "vk-input" });
+    const text = Object.assign(document.createElement("input"), { className: "tk-input" });
     expect(heldPress({ key: "Enter" }, { on: text })).toBe("text");
     expect(heldPress({ key: "ArrowUp" }, { on: text })).toBe("text");
     expect(heldPress({ key: "5" }, { on: text })).toBe("text");

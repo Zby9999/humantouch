@@ -36,31 +36,31 @@ import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER } from "./style-marks";
 import { ORIGINAL_STYLE_ATTR, pinOffsetOf } from "./style-source";
 
 /** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
-export const LAYER_ID_ATTR = "data-vk-layer";
+export const LAYER_ID_ATTR = "data-tk-layer";
 /** On a plain top-to-bottom flow an edit has made a real Stack. */
-export const AS_STACK_ATTR = "data-vk-as-stack";
+export const AS_STACK_ATTR = "data-tk-as-stack";
 /** On a Frame a move made the positioning reference of a layer placed absolute in it. */
-export const REFERENCE_ATTR = "data-vk-reference";
+export const REFERENCE_ATTR = "data-tk-reference";
 /** On moved elements: the change (its property) they move under. */
-export const MOVE_ATTR = "data-vk-move";
+export const MOVE_ATTR = "data-tk-move";
 /** On elements this round made (a Stack around layers, new text or a Frame, a copy and all in it): the id of the layer made. */
-export const MADE_ATTR = "data-vk-made";
+export const MADE_ATTR = "data-tk-made";
 /** On new text or a new Frame: `text` or `frame`. */
-export const NEW_ATTR = "data-vk-new";
+export const NEW_ATTR = "data-tk-new";
 /** On a new Frame: its brief, shown in its place on the canvas. */
-export const BRIEF_ATTR = "data-vk-brief";
+export const BRIEF_ATTR = "data-tk-brief";
 /** On deleted elements: the change (its property) they are deleted under. They are no layers any more. */
-export const DELETED_ATTR = "data-vk-deleted";
+export const DELETED_ATTR = "data-tk-deleted";
 /** On elements whose words changed: the change (its property) they changed under. */
-export const TEXT_ATTR = "data-vk-text";
+export const TEXT_ATTR = "data-tk-text";
 /** Before the first change to an element's words: what was in it, to go back to. */
-export const ORIGINAL_TEXT_ATTR = "data-vk-original-text";
+export const ORIGINAL_TEXT_ATTR = "data-tk-original-text";
 /**
  * On the element loose text was given to move or edit it: which run of text of
  * its container it was, from 0. It carries the container's markers, as the
  * text is written there.
  */
-export const WRAP_ATTR = "data-vk-wrap";
+export const WRAP_ATTR = "data-tk-wrap";
 
 /** The canvas elements of the layer with id `id`, in page order: one per instance. */
 export function elementsOf(doc: Document, id: string): Element[] {
@@ -73,15 +73,15 @@ export function keepOriginal(el: Element) {
 }
 
 /** On a canvas element edits have given styles: the key its rules go by in the edit styles, which instances of its layer with the same rules share. */
-export const STYLE_KEY_ATTR = "data-vk-style";
+export const STYLE_KEY_ATTR = "data-tk-style";
 /** On a style element of a group's rules: the group's key. */
-const RULES_FOR_ATTR = "data-vk-rules-for";
+const RULES_FOR_ATTR = "data-tk-rules-for";
 /** On a style element of a group's rules: the rules, as JSON, which its CSS is written from. */
-const RULES_ATTR = "data-vk-rules";
+const RULES_ATTR = "data-tk-rules";
 /** On an element read as if shown: its edits that hide it do not apply meanwhile. */
-const SHOWN_ATTR = "data-vk-shown";
+const SHOWN_ATTR = "data-tk-shown";
 /** The CSS layer the edit styles are in: declared before any other, so its important declarations win over all of the page's. */
-const EDIT_LAYER = "vernierkit-edits";
+const EDIT_LAYER = "third-kind-edits";
 
 /** What edits declare on an element, at every width or at one breakpoint: CSS, and whether it is hidden. */
 interface RuleBlock {
@@ -330,7 +330,7 @@ export function lookRules(el: Element, style: Record<string, string>) {
 }
 
 /**
- * Brings a canvas saved by an earlier Vernier Kit up to how edits are kept
+ * Brings a canvas saved by an earlier 03Kind up to how edits are kept
  * now: those in the style attribute move into the edit styles
  * (`moveInlineEdits`), and the instances of a layer with the same rules, each
  * with a style element of its own then, share one (`shareEditStyles`). It
@@ -422,7 +422,7 @@ export function orderEditStyles(doc: Document) {
 }
 
 /** On the style element that shows the `::before` and `::after` of a layer put back from off the canvas: its id. */
-export const PUT_BACK_ATTR = "data-vk-put-back";
+export const PUT_BACK_ATTR = "data-tk-put-back";
 
 /** Leaves out of `root`, a saved canvas, the rules of elements no longer on it. */
 export function dropUnusedRules(root: Element) {

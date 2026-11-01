@@ -414,7 +414,7 @@ export function createEditor(
       return (here ?? everywhere.find(own) ?? everywhere[0])?.variables;
     },
     set(layer, property, value, { continues = false, step = false, variables } = {}) {
-      if (!editor.can(layer, property, value)) throw new Error(`Vernier Kit: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
+      if (!editor.can(layer, property, value)) throw new Error(`03Kind: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
       // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
       views.lagBeside(working.beside, step || stepping, () => {
         // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.

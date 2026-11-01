@@ -286,7 +286,7 @@ describe("freezing what the designer had scrolled", () => {
       const el = canvas.document.getElementById(id)!;
       expect([el.scrollLeft, el.scrollTop], id).toEqual(shown[id]);
     }
-    expect(canvas.document.querySelectorAll("[data-vk-scroll]")).toHaveLength(Object.keys(scroll).length);
+    expect(canvas.document.querySelectorAll("[data-tk-scroll]")).toHaveLength(Object.keys(scroll).length);
   });
 });
 

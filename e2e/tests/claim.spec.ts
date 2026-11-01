@@ -129,7 +129,7 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
   await page.keyboard.press("Delete");
   await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await page.keyboard.press("ControlOrMeta+d");
-  await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layers.getByRole("treeitem", { name: "03Kind", exact: true }).click();
   await layers.getByRole("treeitem", { name: "Badge", exact: true }).click({ modifiers: ["Shift"] });
   await page.keyboard.press("Shift+A");
   await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(3);
@@ -142,7 +142,7 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
   expect(copied).toContain("- **Data change:** the layer is one of the 3 instances a loop renders, the 1st of them, which reads “Freeze Turn the current page into a canvas.”: add an item to the data the loop goes through");
   expect(stack).toMatch(/^3\. Make Stack\n/);
   expect(stack).toMatch(/Wrap these 2 layers, in this order, in a new Stack: horizontal, with a gap of 12px, no padding, aligned center left\. Put it in the layout of Header/);
-  expect(stack).toMatch(/\n {2}1\. Vernier Kit \(`<h1 class="[^"]*">`, at `src\/App\.tsx:\d+:\d+`\)\n {2}2\. Badge/);
+  expect(stack).toMatch(/\n {2}1\. 03Kind \(`<h1 class="[^"]*">`, at `src\/App\.tsx:\d+:\d+`\)\n {2}2\. Badge/);
   expect(await npx03kind("done", "3")).toContain("Not checked on the page: of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked");
 });
 

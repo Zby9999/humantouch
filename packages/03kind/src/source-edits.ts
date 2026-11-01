@@ -101,7 +101,7 @@ function importAfterLast(code: string, program: Node, names: string, from: strin
   return last ? { at: last.end, text: `\n${line}` } : { at: 0, text: `${line}\n` };
 }
 
-/** What adding Vernier Kit to one file came to: the new text, or why it could not be done. */
+/** What adding 03Kind to one file came to: the new text, or why it could not be done. */
 export type FileEdit = { text: string; edits: Edit[] } | { reason: string };
 
 /**

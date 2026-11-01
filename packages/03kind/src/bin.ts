@@ -9,7 +9,7 @@ run(process.argv.slice(2), {
     process.exitCode = code;
   },
   (error: unknown) => {
-    console.error("Vernier Kit:", error);
+    console.error("03Kind:", error);
     process.exitCode = 1;
   },
 );

@@ -92,7 +92,7 @@ async function cli(exec: Exec, ...args: string[]) {
 }
 
 describe("init, on a Vite project", () => {
-  test("installs Vernier Kit as a dev dependency with the project's package manager", async () => {
+  test("installs 03Kind as a dev dependency with the project's package manager", async () => {
     viteProject("pnpm-lock.yaml");
     const { exec, commands } = fakeExec();
 
@@ -341,7 +341,7 @@ describe("doctor", () => {
 
   test("a production build with editor layer code in it fails", async () => {
     viteProject();
-    const { exec } = fakeExec(builtPage(`customElements.define("vernier-kit",class{})`));
+    const { exec } = fakeExec(builtPage(`customElements.define("third-kind",class{})`));
     await cli(exec, "init");
 
     const { code, output } = await cli(exec, "doctor");
@@ -659,7 +659,7 @@ describe("doctor, on a Next.js project", () => {
     const { exec } = fakeExec();
     await cli(exec, "init");
     const building: Exec = async (command, args, options) => {
-      if (args.includes("build")) write(".next/static/chunks/app/page.js", `e("main",{"data-vk-loc":"app/page.tsx:2:10"})`);
+      if (args.includes("build")) write(".next/static/chunks/app/page.js", `e("main",{"data-tk-loc":"app/page.tsx:2:10"})`);
       return exec(command, args, options);
     };
 

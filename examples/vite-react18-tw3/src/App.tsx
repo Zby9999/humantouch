@@ -13,7 +13,7 @@ export function App() {
     <main className="mx-auto max-w-4xl px-gutter md:px-section">
       <section className="flex flex-col gap-4 py-section md:items-center md:text-center" data-testid="hero">
         <header className="flex items-center gap-3 md:justify-center">
-          <h1 className="text-display font-bold text-ink">Vernier Kit</h1>
+          <h1 className="text-display font-bold text-ink">03Kind</h1>
           <Badge>Beta</Badge>
         </header>
         <p className="text-lead text-muted">

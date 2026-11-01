@@ -27,7 +27,7 @@ const briefField = (page: Page) => briefSection(page).getByRole("textbox", { nam
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
 const changeList = (page: Page) => page.getByRole("dialog", { name: "Changes" });
 /** The marks of layers with a brief, over the views: `view` names one. */
-const marks = (page: Page, view?: string) => page.locator(view ? `.vk-brief-mark[data-view="${view}"]` : ".vk-brief-mark");
+const marks = (page: Page, view?: string) => page.locator(view ? `.tk-brief-mark[data-view="${view}"]` : ".tk-brief-mark");
 
 /** Writes a brief on the layer selected, from the Design panel: typed, then ⌘Enter. */
 async function writeBrief(page: Page, text: string) {
@@ -52,10 +52,10 @@ test("a brief written on a layer from the Design panel marks it on the canvas, i
   // Set on ⌘Enter, and left: ⌘Z is the canvas's again.
   await expect(briefField(page)).not.toBeFocused();
   await expect(briefField(page)).toHaveValue("Bounce back harder when pressed");
-  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-vk-brief", "Bounce back harder when pressed");
+  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-tk-brief", "Bounce back harder when pressed");
   // Three cards of the loop take it, in each of the three views; the fourth card is another usage.
   for (const view of ["Desktop", "Tablet", "Phone"]) await expect(marks(page, view)).toHaveCount(3);
-  await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().locator(".vk-tree-brief")).toHaveAttribute(
+  await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().locator(".tk-tree-brief")).toHaveAttribute(
     "title",
     "Brief: Bounce back harder when pressed",
   );
@@ -73,8 +73,8 @@ test("a copy of a layer with a brief has none: the brief stays with the layer it
 
   const buttons = canvas(page).getByRole("button", { name: "Get started" });
   await expect(buttons).toHaveCount(2);
-  await expect(buttons.nth(0)).toHaveAttribute("data-vk-brief", "Press in a little");
-  await expect(buttons.nth(1)).not.toHaveAttribute("data-vk-brief");
+  await expect(buttons.nth(0)).toHaveAttribute("data-tk-brief", "Press in a little");
+  await expect(buttons.nth(1)).not.toHaveAttribute("data-tk-brief");
   await expect(marks(page, "Desktop")).toHaveCount(1);
   await expect(briefField(page)).toHaveCount(0);
   await expect(briefSection(page).getByRole("button", { name: "Add brief" })).toBeVisible();
@@ -91,7 +91,7 @@ test("the brief is changed when left, taken off with Remove brief, and each is a
 
   await briefField(page).fill("Press in a little, and spring back");
   await design(page).getByRole("heading", { name: "Brief" }).click();
-  await expect(canvas(page).getByRole("button", { name: "Get started" })).toHaveAttribute("data-vk-brief", "Press in a little, and spring back");
+  await expect(canvas(page).getByRole("button", { name: "Get started" })).toHaveAttribute("data-tk-brief", "Press in a little, and spring back");
   await expect(badge(page)).toHaveText("1");
 
   await briefSection(page).getByRole("button", { name: "Remove brief" }).click();
@@ -122,7 +122,7 @@ test("typed, then another layer clicked on the canvas: the brief is set on the l
 
   // What a click there selects (the outermost layer under it), not the Card again.
   await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveText("Stack");
-  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-vk-brief", "Bounce back harder when pressed");
+  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-tk-brief", "Bounce back harder when pressed");
   await expect(badge(page)).toHaveText("1");
 });
 
@@ -147,11 +147,11 @@ test("taken back one by one from the change list, in edit mode and in preview mo
   await badge(page).click();
   await changeList(page).getByRole("button", { name: "Undo the brief of Card" }).click();
   await expect(marks(page)).toHaveCount(3);
-  await expect(canvas(page).locator("article[data-vk-brief]")).toHaveCount(0);
+  await expect(canvas(page).locator("article[data-tk-brief]")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // In preview mode: the saved round.
-  await page.getByRole("button", { name: "Vernier Kit: back to preview mode" }).click();
+  await page.getByRole("button", { name: "03Kind: back to preview mode" }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await badge(page).click();
   await changeList(page).getByRole("button", { name: "Undo the brief of Button" }).click();
@@ -167,6 +167,6 @@ test("taken back one by one from the change list, in edit mode and in preview mo
   await changeList(page).getByRole("button", { name: "Discard", exact: true }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await enterEditMode(page);
-  await expect(canvas(page).locator("[data-vk-brief]")).toHaveCount(0);
+  await expect(canvas(page).locator("[data-tk-brief]")).toHaveCount(0);
   await expect(marks(page)).toHaveCount(0);
 });

@@ -46,12 +46,12 @@ export interface NotesOptions {
 /** The sentence that says the designer's page is up, and checks the edits: no dev server to start, no browser to open (ticket 65). */
 const PAGE_OPEN = "The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. ";
 
-/** For a round to apply; `pageOpen`: a page with Vernier Kit is open now, to check it. */
+/** For a round to apply; `pageOpen`: a page with 03Kind is open now, to check it. */
 export function toApply(pageOpen: boolean): NotesOptions {
   return {
     heading: "Design changes to apply",
     intro: (count) =>
-      `${count}, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. ` +
+      `${count}, made by the designer in 03Kind. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. ` +
       (pageOpen ? PAGE_OPEN : "") +
       "After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. " +
       "Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
@@ -301,7 +301,7 @@ function putBackFrom({ layer }: PutBack): string[] {
       ? `**Source:** not kept: it could not be read at \`${layer.origin.written}\` when the layer was moved off the canvas. Write it from its look, below, as the project writes markup and styles.`
       : "**Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.";
   const look =
-    "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-vk-class`). " +
+    "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-tk-class`). " +
     "Where its classes no longer give it this look, their rules gone with its code, give it the styles that do, as the project writes styles:\n\n" +
     fenced(lookOf(layer.look), "html");
   const edits = layer.edits.changes.map((edit) => `\n  - ${changeTitle(edit)} of ${layerName(edit)} (\`${edit.target.context.element}\`): ${intent(edit, layer.edits.changes)}`);
@@ -541,7 +541,7 @@ function scope({ chain, instances, locked, context }: Target): string {
     return `Change it where it is written, at Location. ${own.component}, which writes it, is used at \`${own.usage}\`, outside any other component.${instances > 1 ? ` It renders ${instances} instances, which change together.` : ""}`;
   }
   if (own.usage === null && !own.thirdParty) {
-    return `**Usage not determined.** ${own.component} is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page${context.page ? ` at \`${context.page}\`` : ""} (Layer, above), and leave the other usages of ${own.component} as they are.`;
+    return `**Usage not determined.** ${own.component} is used from code 03Kind could not locate. Change only the usage the layer is in, found from its place on the page${context.page ? ` at \`${context.page}\`` : ""} (Layer, above), and leave the other usages of ${own.component} as they are.`;
   }
   const where = chain.map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`);
   let text = `This usage only: ${where[0]}${outer.length ? `, inside ${where.slice(1).join(", inside ")}` : ""}.`;

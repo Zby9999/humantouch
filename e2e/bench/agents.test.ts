@@ -17,20 +17,20 @@ function fakeBinary(path: string): string {
 }
 
 /**
- * The browser plugins Cursor's run is given, with VK_BENCH_HEADLESS_SHELL set
+ * The browser plugins Cursor's run is given, with TK_BENCH_HEADLESS_SHELL set
  * to `shell`: each `--plugin-dir` of its command line, by the plugin's name,
  * with the MCP servers it declares.
  */
 function cursorPlugins(shell: string): Record<string, unknown> {
   const dir = mkdtempSync(join(scratch, "project-"));
   const folder = mkdtempSync(join(scratch, "run-"));
-  const saved = process.env.VK_BENCH_HEADLESS_SHELL;
-  process.env.VK_BENCH_HEADLESS_SHELL = shell;
+  const saved = process.env.TK_BENCH_HEADLESS_SHELL;
+  process.env.TK_BENCH_HEADLESS_SHELL = shell;
   try {
     AGENTS.cursor.prepare!(dir, folder);
   } finally {
-    if (saved === undefined) delete process.env.VK_BENCH_HEADLESS_SHELL;
-    else process.env.VK_BENCH_HEADLESS_SHELL = saved;
+    if (saved === undefined) delete process.env.TK_BENCH_HEADLESS_SHELL;
+    else process.env.TK_BENCH_HEADLESS_SHELL = saved;
   }
   const args = AGENTS.cursor.args(folder);
   const plugins = args.flatMap((arg, i) => (arg === "--plugin-dir" ? [args[i + 1]] : []));
@@ -104,17 +104,17 @@ test("with no Skill, each Agent is asked only to run claim and apply as it says,
   }
 });
 
-test("Cursor runs on grok-4.7-high unless VK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
-  const saved = process.env.VK_BENCH_CURSOR_MODEL;
+test("Cursor runs on grok-4.7-high unless TK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
+  const saved = process.env.TK_BENCH_CURSOR_MODEL;
   try {
-    delete process.env.VK_BENCH_CURSOR_MODEL;
+    delete process.env.TK_BENCH_CURSOR_MODEL;
     assert.match(commandLine("cursor"), / --model grok-4\.7-high /);
-    process.env.VK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
+    process.env.TK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
     assert.match(commandLine("cursor"), / --model 'grok-4\.7\[context=256k,reasoning_effort=high,fast=false\]' /);
     assert.doesNotMatch(commandLine("cursor"), /grok-4\.7-high/);
   } finally {
-    if (saved === undefined) delete process.env.VK_BENCH_CURSOR_MODEL;
-    else process.env.VK_BENCH_CURSOR_MODEL = saved;
+    if (saved === undefined) delete process.env.TK_BENCH_CURSOR_MODEL;
+    else process.env.TK_BENCH_CURSOR_MODEL = saved;
   }
 });
 

@@ -39,7 +39,7 @@ export async function readProjectBreakpoints(root: string): Promise<ProjectBreak
     const list = Number(version.split(".")[0]) >= 4 ? await fromTheme(root, require) : fromConfig(root, require);
     return list.length ? { from: "tailwind", list } : null;
   } catch (error) {
-    console.warn("Vernier Kit: could not read the project's Tailwind breakpoints:", error);
+    console.warn("03Kind: could not read the project's Tailwind breakpoints:", error);
     return null;
   }
 }

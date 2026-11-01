@@ -10,7 +10,7 @@ import { createOffCanvas, type OffCanvasLayer } from "../src/client/off-canvas";
 import { revertSaved } from "../src/client/saved-round";
 import { createViews } from "../src/client/views";
 
-const CHAIN = `data-vk-chain='[{"component":"Card","usage":"src/App.tsx:6:9","thirdParty":false}]'`;
+const CHAIN = `data-tk-chain='[{"component":"Card","usage":"src/App.tsx:6:9","thirdParty":false}]'`;
 
 /** A card styled by classes, its words by what they inherit, its title by a web font, its badge by a `::before`. */
 const PAGE = `<!DOCTYPE html>
@@ -27,11 +27,11 @@ const PAGE = `<!DOCTYPE html>
 </style>
 <body>
   <main class="grid">
-    <article class="card" data-vk-loc="src/Card.tsx:3:5" ${CHAIN} data-vk-layer="4" data-vk-style="2" style="opacity: 0.9">
-      <h3 data-vk-loc="src/Card.tsx:4:7" ${CHAIN}>Freeze it</h3>
-      <p class="badge" data-vk-loc="src/Card.tsx:5:7" ${CHAIN}>Words that run on and on, so they wrap within the card as it is laid out on the page</p>
-      <div class="wide" data-vk-loc="src/Card.tsx:6:7" ${CHAIN}></div>
-      <div data-vk-deleted="delete" style="display: none">Gone</div>
+    <article class="card" data-tk-loc="src/Card.tsx:3:5" ${CHAIN} data-tk-layer="4" data-tk-style="2" style="opacity: 0.9">
+      <h3 data-tk-loc="src/Card.tsx:4:7" ${CHAIN}>Freeze it</h3>
+      <p class="badge" data-tk-loc="src/Card.tsx:5:7" ${CHAIN}>Words that run on and on, so they wrap within the card as it is laid out on the page</p>
+      <div class="wide" data-tk-loc="src/Card.tsx:6:7" ${CHAIN}></div>
+      <div data-tk-deleted="delete" style="display: none">Gone</div>
     </article>
     <div></div>
   </main>
@@ -79,7 +79,7 @@ describe("a layer's look, frozen", () => {
       [card, frozen],
       [card.querySelector("h3")!, frozen.querySelector("h3")!],
       [card.querySelector("p")!, frozen.querySelector("p")!],
-      [card.querySelector(".wide")!, frozen.querySelector('[data-vk-class="wide"]')!],
+      [card.querySelector(".wide")!, frozen.querySelector('[data-tk-class="wide"]')!],
     ];
     for (const [from, to] of pairs) {
       expect(css(to, ...LOOK)).toEqual(css(from, ...LOOK));
@@ -99,16 +99,16 @@ describe("a layer's look, frozen", () => {
     freezeLook(doc.querySelector("article")!, into);
 
     const frozen = into.contentDocument!.querySelector("article")!;
-    expect(frozen.getAttribute("data-vk-loc")).toBe("src/Card.tsx:3:5");
-    expect(JSON.parse(frozen.getAttribute("data-vk-chain")!)[0].component).toBe("Card");
-    expect(frozen.hasAttribute("data-vk-layer")).toBe(false);
+    expect(frozen.getAttribute("data-tk-loc")).toBe("src/Card.tsx:3:5");
+    expect(JSON.parse(frozen.getAttribute("data-tk-chain")!)[0].component).toBe("Card");
+    expect(frozen.hasAttribute("data-tk-layer")).toBe(false);
     expect(frozen.hasAttribute("style")).toBe(false);
     // Its classes are kept to tell it by, where no rule can match them.
     expect(frozen.hasAttribute("class")).toBe(false);
-    expect(frozen.getAttribute("data-vk-class")).toBe("card");
+    expect(frozen.getAttribute("data-tk-class")).toBe("card");
     expect(frozen.textContent).not.toContain("Gone");
     // Its container's usage chain is the document's, so it is an instance as it was on the page, or not.
-    expect(into.contentDocument!.body.hasAttribute("data-vk-chain")).toBe(false);
+    expect(into.contentDocument!.body.hasAttribute("data-tk-chain")).toBe(false);
   });
 
   test("its size is as the layer's own; what follows its content still does", () => {
@@ -122,7 +122,7 @@ describe("a layer's look, frozen", () => {
 
     expect(look.querySelector("article")!.getBoundingClientRect().width).toBe(300);
     expect(title.getBoundingClientRect().height).toBeGreaterThan(40);
-    expect(look.querySelector('[data-vk-class="wide"]')!.getBoundingClientRect().width).toBe(120);
+    expect(look.querySelector('[data-tk-class="wide"]')!.getBoundingClientRect().width).toBe(120);
   });
 
   test("saved and written back, looks the same", () => {
@@ -136,7 +136,7 @@ describe("a layer's look, frozen", () => {
     again.close();
 
     expect(css(again.querySelector("h3")!, ...LOOK)).toEqual(css(doc.querySelector("h3")!, ...LOOK));
-    expect(again.querySelectorAll("style[data-vk-canvas-styles]")).toHaveLength(0);
+    expect(again.querySelectorAll("style[data-tk-canvas-styles]")).toHaveLength(0);
   });
 });
 
@@ -379,7 +379,7 @@ describe("putting a layer off the canvas back", () => {
       { kind: "delete", offCanvas: outside.id },
       {
         kind: "putBack",
-        layer: back.el.getAttribute("data-vk-layer"),
+        layer: back.el.getAttribute("data-tk-layer"),
         target: { loc: "src/Card.tsx:3:5" },
         after: {
           place: { container: { layer: "4" }, nth: 1, absolute: null },
@@ -392,7 +392,7 @@ describe("putting a layer off the canvas back", () => {
     expect(back.el).not.toBe(title);
     expect(back.el.parentElement).toBe(card);
     expect(back.el.nextElementSibling).toBe(card.querySelector("p"));
-    expect(back.made).toBe(back.el.getAttribute("data-vk-layer"));
+    expect(back.made).toBe(back.el.getAttribute("data-tk-layer"));
     expect(getComputedStyle(title).display).toBe("none");
     expect(css(back.el, ...LOOK)).toEqual(shown);
     expect(offCanvas.list()).toEqual([]);
@@ -427,9 +427,9 @@ describe("putting a layer off the canvas back", () => {
 
     // Taken off again, what showed its `::before` goes once the canvas is saved.
     editor.undo();
-    expect(doc.querySelectorAll("style[data-vk-put-back]")).toHaveLength(1);
+    expect(doc.querySelectorAll("style[data-tk-put-back]")).toHaveLength(1);
     dropUnusedRules(doc.documentElement);
-    expect(doc.querySelectorAll("style[data-vk-put-back]")).toHaveLength(0);
+    expect(doc.querySelectorAll("style[data-tk-put-back]")).toHaveLength(0);
   });
 
   test("an insertion goes with the deletion it put back: taking back the deletion takes it too, on the canvas and on a saved one; taken back alone, the deletion stays", () => {

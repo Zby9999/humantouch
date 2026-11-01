@@ -8,7 +8,7 @@ import { markSource } from "./source-marker";
  * is bringing some in now, as `CodeUpdates`: from Vite's own HMR events. The
  * page's code is as new as it loaded, until an update.
  */
-const CODE_MODULE = "virtual:vernierkit/code-updates";
+const CODE_MODULE = "virtual:03kind/code-updates";
 const RESOLVED_CODE_MODULE = `\0${CODE_MODULE}`;
 const CODE_UPDATES = `const code = (window.${CODE_GLOBAL} = { at: Date.now(), updating: 0 });
 const changed = () => dispatchEvent(new Event(${JSON.stringify(CODE_EVENT)}));
@@ -23,7 +23,7 @@ if (import.meta.hot) {
 }`;
 
 /**
- * Vernier Kit for Vite. Development only: adds source markers so layers can be
+ * 03Kind for Vite. Development only: adds source markers so layers can be
  * traced back to code, and runs the local service that keeps the round in
  * `.03kind/`. Production builds are left untouched.
  */

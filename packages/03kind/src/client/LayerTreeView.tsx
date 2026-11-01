@@ -60,13 +60,13 @@ export function LayerTreeView({ tree, offCanvas, selected, onSelect }: Props) {
   };
 
   return (
-    <div ref={list} class="vk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
+    <div ref={list} class="tk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
       {rows.map(({ layer, level, outside }, i) => {
         const open = layer.children.length ? !collapsed.has(layer) : undefined;
         return (
           <div
             key={i}
-            class={`vk-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}${i === canvasStart && i > 0 ? " is-first-on-canvas" : ""}`}
+            class={`tk-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}${i === canvasStart && i > 0 ? " is-first-on-canvas" : ""}`}
             role="treeitem"
             aria-level={level}
             aria-selected={selected.includes(layer)}
@@ -79,7 +79,7 @@ export function LayerTreeView({ tree, offCanvas, selected, onSelect }: Props) {
             }}
           >
             <span
-              class="vk-tree-chevron"
+              class="tk-tree-chevron"
               aria-hidden="true"
               data-open={open}
               onPointerDown={(event) => {
@@ -89,10 +89,10 @@ export function LayerTreeView({ tree, offCanvas, selected, onSelect }: Props) {
               }}
             />
             <LayerIcon layer={layer} />
-            <span class="vk-tree-name">{layer.name}</span>
+            <span class="tk-tree-name">{layer.name}</span>
             {/* A layer the designer wrote a brief for: what the Agent is to achieve in it, or make in a new Frame. */}
             {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
-              <span class="vk-tree-brief" title={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
+              <span class="tk-tree-brief" title={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
                 <Icon name="brief" />
               </span>
             )}

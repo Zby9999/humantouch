@@ -86,7 +86,7 @@ test("claim tells where each change is: a server component's usage in the page, 
   expect(card).toMatch(/- \*\*Location:\*\* `components\/Card\.tsx:\d+:\d+`\n/);
   expect(card).toMatch(/- \*\*Scope:\*\* This usage only: Card used at `app\/page\.tsx:\d+:\d+`, inside Home used at an undetermined place\. It renders 3 instances/);
   expect(hero).toMatch(/- \*\*Location:\*\* `app\/page\.tsx:\d+:\d+`\n/);
-  expect(hero).toContain("- **Scope:** **Usage not determined.** Home is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page at `/` (Layer, above)");
+  expect(hero).toContain("- **Scope:** **Usage not determined.** Home is used from code 03Kind could not locate. Change only the usage the layer is in, found from its place on the page at `/` (Layer, above)");
   expect(hero).toMatch(/- \*\*Layer:\*\* Stack, `<section class="[^"]*hero[^"]*">` \(Page › .*Stack › Stack\)/);
   // CSS Modules: the class as the page has it, and the rule that sets the value.
   expect(card).toMatch(/- \*\*Currently set by:\*\* class `[^`]*card[^`]*`: rule `\.[^`]*card[^`]*` in no CSS layer/);
@@ -96,7 +96,7 @@ test("claim locks the editor; done checks the change on the page once the CSS Mo
   await changeCardsAndHeading(page);
   await npx03kind("claim");
   const progress = page.getByRole("progressbar", { name: "Applying design changes" });
-  await expect(page.getByRole("button", { name: /^Vernier Kit: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByRole("button", { name: /^03Kind: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
   await expect(progress).toHaveAttribute("aria-valuemax", "2");
   const original = readFileSync(CARD_CSS, "utf8");
   try {

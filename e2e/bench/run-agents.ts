@@ -214,7 +214,7 @@ async function withScenario<T>(
   try {
     server = await startDevServer(project.dir, port);
     context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
-    await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
     await recordNotices(context);
     const page = await context.newPage();
     await page.goto(server.url);

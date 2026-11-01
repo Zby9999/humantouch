@@ -54,16 +54,16 @@ function BriefField({ brief, onChange }: { brief: string; onChange(brief: string
     if (typed.current !== null) set(typed.current);
   }, []);
   return (
-    <section class="vk-section" role="group" aria-label="Brief">
-      <div class="vk-section-header">
-        <h3 class="vk-section-title">Brief</h3>
+    <section class="tk-section" role="group" aria-label="Brief">
+      <div class="tk-section-header">
+        <h3 class="tk-section-title">Brief</h3>
         {brief ? (
-          <button type="button" class="vk-icon-button" aria-label="Remove brief" onClick={() => onChange("")}>
+          <button type="button" class="tk-icon-button" aria-label="Remove brief" onClick={() => onChange("")}>
             <Icon name="minus" />
           </button>
         ) : (
           !adding && (
-            <button type="button" class="vk-icon-button" aria-label="Add brief" title="What the Design panel cannot set, for the Agent to achieve" onClick={() => setAdding(true)}>
+            <button type="button" class="tk-icon-button" aria-label="Add brief" title="What the Design panel cannot set, for the Agent to achieve" onClick={() => setAdding(true)}>
               <Icon name="plus" />
             </button>
           )
@@ -71,7 +71,7 @@ function BriefField({ brief, onChange }: { brief: string; onChange(brief: string
       </div>
       {(brief || adding) && (
         <textarea
-          class="vk-textarea"
+          class="tk-textarea"
           aria-label="Brief"
           placeholder="What should the Agent achieve here?"
           defaultValue={brief}

@@ -53,7 +53,7 @@ function cards(page: Page) {
 }
 
 async function changeRows(page: Page) {
-  await page.locator("[data-vk-changes-opener]").click();
+  await page.locator("[data-tk-changes-opener]").click();
   return page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
 }
 
@@ -125,7 +125,7 @@ test("a card dragged between the cells of the Grid takes that cell, in every vie
   // Just inside Freeze's left edge: before it, not into it.
   const target = (await freeze.boundingBox())!;
   await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
-  await expect(page.locator(".vk-drop-line")).toBeVisible();
+  await expect(page.locator(".tk-drop-line")).toBeVisible();
   // Only shifted while it moves: Freeze steps into the next cell, the structure is as it was.
   await expect(freeze).not.toHaveCSS("translate", "none");
   expect((await cards(page))[0]).toEqual(ORDER);
@@ -133,7 +133,7 @@ test("a card dragged between the cells of the Grid takes that cell, in every vie
 
   const moved = ["Your turn", "Freeze", "Arrange", "Apply"];
   await expect.poll(() => cards(page)).toEqual([moved, moved, moved]);
-  await expect(page.locator(".vk-drop-line")).toHaveCount(0);
+  await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   await expect(freeze).toHaveCSS("translate", "none");
   await expect(await changeRows(page)).toHaveText([/Reorder.*Card.*4th → 1st/]);
   await page.keyboard.press("Escape");
@@ -171,7 +171,7 @@ test("a layer dragged into the Grid from a Stack takes the cell it is let go at"
   await page.mouse.down();
   const target = (await arrange.boundingBox())!;
   await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
-  await expect(page.locator(".vk-drop-line")).toBeVisible();
+  await expect(page.locator(".tk-drop-line")).toBeVisible();
   await page.mouse.up();
 
   const children = () => desktop(page).contentFrame().locator(GRID).evaluate((el) => [...el.children].map((child) => child.querySelector("h3")?.textContent ?? child.localName));
@@ -192,12 +192,12 @@ test("in a Grid one of whose cards is placed by order, a card dragged or nudged 
   await page.mouse.down();
   const target = (await arrange.boundingBox())!;
   await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
-  await expect(page.locator(".vk-drop-line")).toHaveCount(0);
+  await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowUp");
   expect(await cards(page)).toEqual([ORDER, ORDER, ORDER]);
-  await expect(page.locator("[data-vk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
 
   await layers(page).getByRole("treeitem", { name: "Button", exact: true }).click();
   const button = desktop(page).contentFrame().locator('[data-testid="hero"] > button');

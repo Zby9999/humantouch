@@ -41,7 +41,7 @@ export async function loadVariables(): Promise<Variable[]> {
     const response = await serviceRequest(config)("GET", { path: VARIABLES_PATH });
     return (await response.json()) as Variable[];
   } catch (error) {
-    console.warn("Vernier Kit: could not load the project's Variables:", error);
+    console.warn("03Kind: could not load the project's Variables:", error);
     return [];
   }
 }

@@ -8,7 +8,7 @@ import { Icon } from "./icons";
  * phone unless the designer has changed them. Kept in the page's storage, so
  * they stay as set for the project across reloads.
  */
-const VIEWS_KEY = "vernierkit:views";
+const VIEWS_KEY = "03kind:views";
 const TABLET = 768;
 const PHONE = 390;
 const DEFAULT_WIDTHS = [TABLET, PHONE];
@@ -55,25 +55,25 @@ export function ViewLabel(props: { name: string; width: number; breakpoint: Brea
   const tailwind = tailwindOf(breakpoint);
   return (
     <div
-      class="vk-view-label"
+      class="tk-view-label"
       role="group"
       aria-label={`${name} view`}
       style={{ left: `${left}px`, top: `${top}px`, width: `${size}px` }}
       onPointerDown={(event) => event.stopPropagation()}
       onDblClick={(event) => event.stopPropagation()}
     >
-      <span class="vk-view-name">{name}</span>
-      <span class="vk-view-width">{width}</span>
+      <span class="tk-view-name">{name}</span>
+      <span class="tk-view-width">{width}</span>
       {tailwind && (
-        <span class="vk-view-breakpoint" title="The project's breakpoint this view stands for: its changes are written with it">
+        <span class="tk-view-breakpoint" title="The project's breakpoint this view stands for: its changes are written with it">
           {tailwind}
         </span>
       )}
-      <span class="vk-view-note" title="Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.">
+      <span class="tk-view-note" title="Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.">
         CSS responsive only
       </span>
       {onDelete && (
-        <button type="button" class="vk-icon-button vk-view-delete" aria-label={`Delete ${name} view`} title="Delete view" onClick={onDelete}>
+        <button type="button" class="tk-icon-button tk-view-delete" aria-label={`Delete ${name} view`} title="Delete view" onClick={onDelete}>
           <Icon name="close" />
         </button>
       )}
@@ -92,14 +92,14 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
   };
   return (
     <div
-      class="vk-add-view"
+      class="tk-add-view"
       style={{ left: `${left}px`, top: `${top}px` }}
       onPointerDown={(event) => event.stopPropagation()}
       onDblClick={(event) => event.stopPropagation()}
     >
       {open ? (
         <input
-          class="vk-add-view-width"
+          class="tk-add-view-width"
           type="number"
           inputMode="numeric"
           min={MIN_WIDTH}
@@ -124,7 +124,7 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
           }}
         />
       ) : (
-        <button type="button" class="vk-icon-button" aria-label="Add view" title="Add a view of another width" onClick={() => setOpen(true)}>
+        <button type="button" class="tk-icon-button" aria-label="Add view" title="Add a view of another width" onClick={() => setOpen(true)}>
           <Icon name="plus" />
         </button>
       )}

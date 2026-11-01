@@ -4,11 +4,11 @@ import type { Snippet } from "./source-snippet";
 import type { StyleSource } from "./client/style-source";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
-export const SERVICE_GLOBAL = "__VERNIERKIT__";
+export const SERVICE_GLOBAL = "__THIRD_KIND__";
 /** Next.js has no `index.html` for the global: `withThirdKind()` puts the same, as JSON, in the bundle's `process.env` under this name. */
-export const SERVICE_ENV = "VERNIERKIT_SERVICE";
+export const SERVICE_ENV = "TK_SERVICE";
 /** Header that carries the token. A request without the right one is turned away. */
-export const TOKEN_HEADER = "X-Vernier-Token";
+export const TOKEN_HEADER = "X-03Kind-Token";
 /** Where the round is, on the local service. */
 export const ROUND_PATH = "/round";
 /**
@@ -102,8 +102,8 @@ export const CHECK_ARRIVE_MS = 20_000;
  * the epoch, the dev server's clock); `updating`, updates under way. A
  * `CODE_EVENT` on the window follows each change.
  */
-export const CODE_GLOBAL = "__VERNIERKIT_CODE__";
-export const CODE_EVENT = "vernierkit:code";
+export const CODE_GLOBAL = "__THIRD_KIND_CODE__";
+export const CODE_EVENT = "03kind:code";
 export interface CodeUpdates {
   at: number;
   updating: number;

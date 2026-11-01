@@ -223,11 +223,11 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
   const textColor = shown("textColor");
   return (
     <BreakpointMarksProvider value={breakpointMarks(editor, layers, onEdit)}>
-      {locked && <p class="vk-layer-note vk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
+      {locked && <p class="tk-layer-note tk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
       {x !== undefined && y !== undefined && (
-        <section class="vk-section" aria-labelledby="vk-position">
-          <h3 id="vk-position" class="vk-section-title">Position</h3>
-          <div class="vk-grid-2 vk-markable">
+        <section class="tk-section" aria-labelledby="tk-position">
+          <h3 id="tk-position" class="tk-section-title">Position</h3>
+          <div class="tk-grid-2 tk-markable">
             {/* Placed freely at the breakpoint (ADR 0008): its X and Y there are that placement. */}
             <BreakpointMark properties={["x", "y", "absolute"]} />
             <NumberField label="X" glyph="X" value={number(x)} onChange={set("x")} />
@@ -236,14 +236,14 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         </section>
       )}
       {(width !== undefined || height !== undefined) && (
-        <section class="vk-section" aria-labelledby="vk-size">
-          <h3 id="vk-size" class="vk-section-title">Size</h3>
+        <section class="tk-section" aria-labelledby="tk-size">
+          <h3 id="tk-size" class="tk-section-title">Size</h3>
           {width !== undefined && <SizeRow axis="width" size={width} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("width")} />}
           {height !== undefined && <SizeRow axis="height" size={height} layers={layers} offers={offers} measure={editor.measure} update={update} variable={variable("height")} />}
           {offers("minWidth") && (
             // Width on the left, height on the right; minimum above maximum, each a row of its own.
             LIMIT_ROWS.map((row) => (
-              <div key={row[0]} class="vk-grid-2 vk-markable">
+              <div key={row[0]} class="tk-grid-2 tk-markable">
                 <BreakpointMark properties={row} />
                 {row.map((property) => {
                   const label = LIMIT_LABELS[property];
@@ -259,10 +259,10 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         </section>
       )}
       {direction === undefined && (layers.length > 1 || layers[0].kind === "frame") && editor.canStack(layers) && (
-        <section class="vk-section" role="group" aria-label="Stack">
-          <div class="vk-section-header">
-            <h3 class="vk-section-title">Stack</h3>
-            <button type="button" class="vk-icon-button" aria-label="Make Stack" title="Make Stack (⇧A)" onClick={onStack}>
+        <section class="tk-section" role="group" aria-label="Stack">
+          <div class="tk-section-header">
+            <h3 class="tk-section-title">Stack</h3>
+            <button type="button" class="tk-icon-button" aria-label="Make Stack" title="Make Stack (⇧A)" onClick={onStack}>
               <Icon name="plus" />
             </button>
           </div>
@@ -283,8 +283,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
       )}
       {padding !== undefined && layers.some((layer) => layer.kind === "frame" && layer.framesText) && (
         // A Frame around its text alone, as a button is: the room around the text.
-        <section class="vk-section" aria-labelledby="vk-padding">
-          <h3 id="vk-padding" class="vk-section-title">Padding</h3>
+        <section class="tk-section" aria-labelledby="tk-padding">
+          <h3 id="tk-padding" class="tk-section-title">Padding</h3>
           <PaddingFields padding={padding} update={update} variable={variable} />
         </section>
       )}
@@ -319,11 +319,11 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
       )}
       {textColor !== undefined && (
         // Text is filled with its color, as in Figma.
-        <section class="vk-section" role="group" aria-label="Fill">
-          <h3 class="vk-section-title">Fill</h3>
-          <div class="vk-markable">
+        <section class="tk-section" role="group" aria-label="Fill">
+          <h3 class="tk-section-title">Fill</h3>
+          <div class="tk-markable">
             <BreakpointMark properties={["textColor"]} />
-            {textColor === MIXED ? <span class="vk-field vk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
+            {textColor === MIXED ? <span class="tk-field tk-mixed">Mixed</span> : <ColorField name="Fill" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
           </div>
         </section>
       )}
@@ -398,7 +398,7 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
   const sizes = layers.map((layer) => Math.round(measure(layer)[axis] * 100) / 100);
   const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   return (
-    <div class="vk-row vk-size-row vk-markable">
+    <div class="tk-row tk-size-row tk-markable">
       <BreakpointMark properties={[axis]} />
       <VariableSlot label={label} slot={variable}>
         <NumberField
@@ -410,7 +410,7 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
         />
       </VariableSlot>
       <select
-        class="vk-select"
+        class="tk-select"
         aria-label={`${label} sizing`}
         value={size === MIXED ? "" : size.type}
         onChange={(event) => {
@@ -451,24 +451,24 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
   variable: SlotOf;
 }) {
   return (
-    <section class="vk-section" aria-labelledby="vk-stack">
-      <div class="vk-section-header">
-        <h3 id="vk-stack" class="vk-section-title">Stack</h3>
+    <section class="tk-section" aria-labelledby="tk-stack">
+      <div class="tk-section-header">
+        <h3 id="tk-stack" class="tk-section-title">Stack</h3>
         {dissolve && (
-          <button type="button" class="vk-icon-button" aria-label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve}>
+          <button type="button" class="tk-icon-button" aria-label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve}>
             <Icon name="minus" />
           </button>
         )}
       </div>
-      <div class="vk-row vk-markable">
+      <div class="tk-row tk-markable">
         <BreakpointMark properties={["direction", "gap"]} />
-        <div class="vk-segmented-field" role="radiogroup" aria-label="Direction">
+        <div class="tk-segmented-field" role="radiogroup" aria-label="Direction">
           {(["horizontal", "vertical"] as const).map((d) => (
             <button
               key={d}
               type="button"
               role="radio"
-              class="vk-icon-button"
+              class="tk-icon-button"
               aria-checked={direction === d}
               aria-label={d === "horizontal" ? "Horizontal" : "Vertical"}
               onClick={() => set("direction")(d)}
@@ -481,9 +481,9 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           <NumberField label="Gap" icon="gap" value={number(gap)} min={0} onChange={set("gap")} />
         </VariableSlot>
       </div>
-      <div class="vk-row vk-align-row vk-markable">
+      <div class="tk-row tk-align-row tk-markable">
         <BreakpointMark properties={["align", "wrap"]} />
-        <div class="vk-align" role="radiogroup" aria-label="Alignment">
+        <div class="tk-align" role="radiogroup" aria-label="Alignment">
           {ALIGNMENTS.map((y) =>
             ALIGNMENTS.map((x) => {
               const name = y === "center" && x === "center" ? "Center" : `${ROWS[y]} ${COLUMNS[x]}`;
@@ -493,7 +493,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
                   key={name}
                   type="button"
                   role="radio"
-                  class="vk-align-point"
+                  class="tk-align-point"
                   aria-checked={checked}
                   aria-label={name}
                   onClick={() => update("align", (current) => ({ ...current, x, y }))}
@@ -502,7 +502,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
             }),
           )}
         </div>
-        <div class="vk-align-options">
+        <div class="tk-align-options">
           <Check
             label="Distribute evenly"
             checked={align === MIXED ? MIXED : align.distribute}
@@ -522,7 +522,7 @@ function PaddingFields({ padding, update, variable }: { padding: Shown<Padding>;
   const setSide = (i: number) => (value: number, continues?: boolean) =>
     update("padding", (current) => current.map((p, j) => (i === j ? value : p)) as Padding, continues);
   return (
-    <div class="vk-grid-2 vk-markable" role="group" aria-label="Padding">
+    <div class="tk-grid-2 tk-markable" role="group" aria-label="Padding">
       <BreakpointMark properties={["padding"]} />
       {["Top", "Right", "Bottom", "Left"].map((name, i) => (
         <VariableSlot key={name} label={`Padding ${name.toLowerCase()}`} slot={variable("padding", name.toLowerCase())}>
@@ -536,7 +536,7 @@ function PaddingFields({ padding, update, variable }: { padding: Shown<Padding>;
 /** A checkbox; Mixed shows as neither checked nor not. */
 function Check({ label, checked, onChange }: { label: string; checked: Shown<boolean>; onChange(checked: boolean): void }) {
   return (
-    <label class="vk-check">
+    <label class="tk-check">
       <input
         type="checkbox"
         checked={checked === true}
@@ -551,8 +551,8 @@ function Check({ label, checked, onChange }: { label: string; checked: Shown<boo
 /** A minimum or maximum: a size, or none when left empty. */
 function LimitField({ label, glyph, value, onChange }: { label: string; glyph: string; value: Shown<number | null>; onChange(value: number | null): void }) {
   return (
-    <label class="vk-field" title={label}>
-      <span class="vk-glyph" aria-hidden="true">
+    <label class="tk-field" title={label}>
+      <span class="tk-glyph" aria-hidden="true">
         {label.startsWith("Min") ? `↓${glyph}` : `↑${glyph}`}
       </span>
       <TextField
@@ -574,7 +574,7 @@ function PercentField({ label, icon, value, onChange }: {
   onChange(value: number, continues?: boolean): void;
 }) {
   return (
-    <label class="vk-field" title={label}>
+    <label class="tk-field" title={label}>
       <Scrub
         icon={icon}
         value={value === null ? null : Math.round(value * 100)}
@@ -645,19 +645,19 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
   };
   const uniform = radii && radii.every((radius) => typeof radius === "number" && radius === radii[0]) ? (radii[0] as number) : null;
   return (
-    <section class="vk-section" aria-labelledby="vk-appearance">
-      <h3 id="vk-appearance" class="vk-section-title">Appearance</h3>
-      <div class="vk-grid-2 vk-markable">
+    <section class="tk-section" aria-labelledby="tk-appearance">
+      <h3 id="tk-appearance" class="tk-section-title">Appearance</h3>
+      <div class="tk-grid-2 tk-markable">
         <BreakpointMark properties={["opacity", "radius"]} />
         {opacity !== undefined && <PercentField label="Opacity" icon="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
         {radii && (
-          <div class="vk-row">
+          <div class="tk-row">
             <VariableSlot label="Corner radius" slot={variable("radius")}>
               <NumberField label="Corner radius" icon="radius" value={uniform} min={0} onChange={set("radius")} />
             </VariableSlot>
             <button
               type="button"
-              class="vk-icon-button"
+              class="tk-icon-button"
               aria-label="Independent corners"
               title="Independent corners"
               aria-pressed={independent}
@@ -669,7 +669,7 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
         )}
       </div>
       {radii && independent && (
-        <div class="vk-grid-2" role="group" aria-label="Radius per corner">
+        <div class="tk-grid-2" role="group" aria-label="Radius per corner">
           {CORNER_GRID.map((i) => (
             <VariableSlot key={i} label={`${CORNER_NAMES[i]} radius`} slot={variable("radius", CORNER_NAMES[i].toLowerCase().replace(" ", "-"))}>
             <NumberField
@@ -687,14 +687,14 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
         </div>
       )}
       {visible !== undefined && (
-        <div class="vk-markable">
+        <div class="tk-markable">
           {/* Hidden at the breakpoint: shown again where it inherits. */}
           <BreakpointMark properties={["visible"]} />
           <Check label="Visible" checked={visible} onChange={set("visible")} />
         </div>
       )}
       {clip !== undefined && (
-        <div class="vk-markable">
+        <div class="tk-markable">
           <BreakpointMark properties={["clip"]} />
           <Check label="Clip content" checked={clip} onChange={set("clip")} />
         </div>
@@ -761,19 +761,19 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
     });
   };
   return (
-    <section class="vk-section" role="group" aria-label="Text">
-      <h3 class="vk-section-title">Text</h3>
-      <div class="vk-markable">
+    <section class="tk-section" role="group" aria-label="Text">
+      <h3 class="tk-section-title">Text</h3>
+      <div class="tk-markable">
         <BreakpointMark properties={["fontFamily"]} />
         <Choice
           label="Font"
-          class="vk-font"
+          class="tk-font"
           value={family === MIXED ? null : family}
           options={names.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name, disabled: !fonts.some((font) => font.family === name) }))}
           onChange={changeFont}
         />
       </div>
-      <div class="vk-grid-2 vk-markable">
+      <div class="tk-grid-2 tk-markable">
         <BreakpointMark properties={["fontWeight", "fontSize"]} />
         <Choice
           label="Font weight"
@@ -785,22 +785,22 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           <NumberField label="Font size" glyph="Aa" value={number(size)} min={1} onChange={set("fontSize")} />
         </VariableSlot>
       </div>
-      <div class="vk-grid-2 vk-markable">
+      <div class="tk-grid-2 tk-markable">
         <BreakpointMark properties={["lineHeight", "letterSpacing"]} />
         {/* Auto is about 1.2 times the font size: a drag from it starts there. */}
         <TextLengthField label="Line height" glyph="↕" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
         <TextLengthField label="Letter spacing" glyph="↔" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
       </div>
-      <div class="vk-markable">
+      <div class="tk-markable">
         <BreakpointMark properties={["textAlign"]} />
         <Segmented label="Text alignment" value={align} options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))} onChange={set("textAlign")} />
       </div>
-      <div class="vk-row vk-markable">
+      <div class="tk-row tk-markable">
         <BreakpointMark properties={["textCase", "textDecoration"]} />
         <Segmented
           label="Case"
           value={textCase}
-          options={TEXT_CASES.map(({ textCase, label, glyph }) => ({ value: textCase, label, content: <span class="vk-text-glyph">{glyph}</span> }))}
+          options={TEXT_CASES.map(({ textCase, label, glyph }) => ({ value: textCase, label, content: <span class="tk-text-glyph">{glyph}</span> }))}
           onChange={set("textCase")}
         />
         <Segmented
@@ -809,7 +809,7 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           options={DECORATIONS.map(({ decoration, label, glyph }) => ({
             value: decoration,
             label,
-            content: <span class={`vk-text-glyph vk-${decoration}`}>{glyph}</span>,
+            content: <span class={`tk-text-glyph tk-${decoration}`}>{glyph}</span>,
           }))}
           onChange={set("textDecoration")}
         />
@@ -827,7 +827,7 @@ function Choice({ label, class: className, value, options, onChange }: {
   onChange(value: string): void;
 }) {
   return (
-    <select class={`vk-select${className ? ` ${className}` : ""}`} aria-label={label} value={value ?? ""} onChange={(event) => onChange(event.currentTarget.value)}>
+    <select class={`tk-select${className ? ` ${className}` : ""}`} aria-label={label} value={value ?? ""} onChange={(event) => onChange(event.currentTarget.value)}>
       {value === null && (
         <option value="" disabled>
           Mixed
@@ -850,13 +850,13 @@ function Segmented<T extends string>({ label, value, options, onChange }: {
   onChange(value: T): void;
 }) {
   return (
-    <div class="vk-segmented-field" role="radiogroup" aria-label={label}>
+    <div class="tk-segmented-field" role="radiogroup" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           role="radio"
-          class="vk-icon-button"
+          class="tk-icon-button"
           aria-checked={value === option.value}
           aria-label={option.label}
           title={option.label}
@@ -887,7 +887,7 @@ function TextLengthField({ label, glyph, value, min = -Infinity, auto, onChange 
   const unit = length?.unit ?? "px";
   const change = (n: number, continues?: boolean) => onChange({ value: Math.max(min, Math.round(n * 100) / 100), unit }, continues);
   return (
-    <label class="vk-field" title={label}>
+    <label class="tk-field" title={label}>
       <Scrub glyph={glyph} value={length?.value ?? (value === "auto" ? auto! : null)} min={min} onChange={change} />
       <TextField
         label={label}
@@ -927,19 +927,19 @@ function FillSection({ fill, box, conic, onChange, update, variable }: {
   variable: SlotOf;
 }) {
   return (
-    <section class="vk-section" role="group" aria-label="Fill">
-      <div class="vk-section-header vk-markable">
+    <section class="tk-section" role="group" aria-label="Fill">
+      <div class="tk-section-header tk-markable">
         <BreakpointMark properties={["fill"]} />
-        <h3 class="vk-section-title">Fill</h3>
+        <h3 class="tk-section-title">Fill</h3>
         {!fill ? (
-          <button type="button" class="vk-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
+          <button type="button" class="tk-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
             <Icon name="plus" />
           </button>
         ) : (
           !conic && (
-            <div class="vk-row">
+            <div class="tk-row">
               <select
-                class="vk-select"
+                class="tk-select"
                 aria-label="Fill type"
                 value={fill === MIXED ? "" : fill.type}
                 onChange={(event) => update("fill", (current) => fillAs(current, event.currentTarget.value as (typeof FILL_TYPES)[number]["type"]))}
@@ -955,7 +955,7 @@ function FillSection({ fill, box, conic, onChange, update, variable }: {
                   </option>
                 ))}
               </select>
-              <button type="button" class="vk-icon-button" aria-label="Remove fill" onClick={() => onChange(null)}>
+              <button type="button" class="tk-icon-button" aria-label="Remove fill" onClick={() => onChange(null)}>
                 <Icon name="minus" />
               </button>
             </div>
@@ -963,16 +963,16 @@ function FillSection({ fill, box, conic, onChange, update, variable }: {
         )}
       </div>
       {fill === MIXED ? (
-        <span class="vk-field vk-mixed">Mixed</span>
+        <span class="tk-field tk-mixed">Mixed</span>
       ) : fill?.type === "solid" ? (
         <ColorField name="Fill" color={fill} onChange={(color, continues) => onChange({ type: "solid", ...color }, continues)} variable={variable("fill", "color")} />
       ) : fill?.type === "conic" ? (
         <>
-          <div class="vk-row">
-            <span class="vk-gradient-swatch" style={{ backgroundImage: fill.css }} aria-hidden="true" />
-            <span class="vk-field vk-read-only">Conic gradient</span>
+          <div class="tk-row">
+            <span class="tk-gradient-swatch" style={{ backgroundImage: fill.css }} aria-hidden="true" />
+            <span class="tk-field tk-read-only">Conic gradient</span>
           </div>
-          <p class="vk-layer-note">A conic gradient is shown here, not edited.</p>
+          <p class="tk-layer-note">A conic gradient is shown here, not edited.</p>
         </>
       ) : (
         fill && (
@@ -1010,7 +1010,7 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
   const change = (next: (current: RadialGradient, value: number, box: PaintArea) => RadialGradient) => (value: number, continues?: boolean) =>
     update("fill", (current, layer) => (current?.type === "radial" && "center" in current ? next(current, value, paintArea(layer.el)) : current), continues);
   return (
-    <div class="vk-grid-2">
+    <div class="tk-grid-2">
       {(["x", "y"] as const).map((axis) => (
         <NumberField
           key={axis}
@@ -1078,10 +1078,10 @@ function GradientStops({ gradient, length, onChange, variable }: {
     <>
       <div
         ref={bar}
-        class="vk-gradient-bar"
+        class="tk-gradient-bar"
         role="group"
         aria-label="Gradient stops"
-        style={{ "--vk-gradient": preview }}
+        style={{ "--tk-gradient": preview }}
         onPointerDown={(event) => {
           if (event.button !== 0 || event.target !== event.currentTarget) return;
           add(Math.round(along(event.clientX)));
@@ -1090,7 +1090,7 @@ function GradientStops({ gradient, length, onChange, variable }: {
         {stops.map((s, index) => (
           <span
             key={index}
-            class="vk-stop-handle"
+            class="tk-stop-handle"
             role="slider"
             tabIndex={0}
             aria-label={`Stop ${index + 1} position`}
@@ -1098,7 +1098,7 @@ function GradientStops({ gradient, length, onChange, variable }: {
             aria-valuemax={s.unit === "%" ? 100 : Math.round(length)}
             aria-valuenow={s.position}
             aria-valuetext={`${s.position}${s.unit}`}
-            style={{ left: `${shownAt(s)}%`, "--vk-stop": cssColor(s) }}
+            style={{ left: `${shownAt(s)}%`, "--tk-stop": cssColor(s) }}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
@@ -1134,15 +1134,15 @@ function GradientStops({ gradient, length, onChange, variable }: {
           />
         ))}
       </div>
-      <div class="vk-section-header">
-        <h4 class="vk-section-title vk-subtitle">Stops</h4>
-        <button type="button" class="vk-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops, length))}>
+      <div class="tk-section-header">
+        <h4 class="tk-section-title tk-subtitle">Stops</h4>
+        <button type="button" class="tk-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops, length))}>
           <Icon name="plus" />
         </button>
       </div>
       {stops.map((s, index) => (
-        <div class="vk-row" key={index} role="group" aria-label={`Stop ${index + 1}`}>
-          <label class="vk-field vk-stop-position" title="Position">
+        <div class="tk-row" key={index} role="group" aria-label={`Stop ${index + 1}`}>
+          <label class="tk-field tk-stop-position" title="Position">
             <TextField
               label={`Stop ${index + 1} at`}
               value={`${s.position}${s.unit}`}
@@ -1157,7 +1157,7 @@ function GradientStops({ gradient, length, onChange, variable }: {
             onChange={(color, continues) => onChange(stops.map((other, i) => (i === index ? stop(color, s.position, s.unit) : other)), continues)}
             variable={variable(index)}
           />
-          <button type="button" class="vk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
+          <button type="button" class="tk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
             <Icon name="minus" />
           </button>
         </div>
@@ -1212,20 +1212,20 @@ function StrokeSection({ stroke, onChange, update, variable }: {
   };
   const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
   return (
-    <section class="vk-section" role="group" aria-label="Stroke">
-      <div class="vk-section-header vk-markable">
+    <section class="tk-section" role="group" aria-label="Stroke">
+      <div class="tk-section-header tk-markable">
         <BreakpointMark properties={["stroke"]} />
-        <h3 class="vk-section-title">Stroke</h3>
+        <h3 class="tk-section-title">Stroke</h3>
         {!stroke && (
-          <button type="button" class="vk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
+          <button type="button" class="tk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
             <Icon name="plus" />
           </button>
         )}
       </div>
       {stroke && (
-        <div class="vk-row">
+        <div class="tk-row">
           {stroke === MIXED ? (
-            <span class="vk-field vk-mixed">Mixed</span>
+            <span class="tk-field tk-mixed">Mixed</span>
           ) : (
             <ColorField
               name="Stroke"
@@ -1234,13 +1234,13 @@ function StrokeSection({ stroke, onChange, update, variable }: {
               variable={variable}
             />
           )}
-          <button type="button" class="vk-icon-button" aria-label="Remove stroke" onClick={() => onChange(null)}>
+          <button type="button" class="tk-icon-button" aria-label="Remove stroke" onClick={() => onChange(null)}>
             <Icon name="minus" />
           </button>
         </div>
       )}
       {stroke && stroke !== MIXED && (
-        <div class="vk-row">
+        <div class="tk-row">
           {sides !== "custom" && (
             <NumberField
               label="Stroke weight"
@@ -1253,7 +1253,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
             />
           )}
           <select
-            class="vk-select"
+            class="tk-select"
             aria-label="Stroke style"
             value={stroke.style}
             onChange={(event) => onChange({ ...stroke, style: event.currentTarget.value as Stroke["style"] })}
@@ -1262,7 +1262,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
             <option value="dashed">Dashed</option>
           </select>
           <select
-            class="vk-select"
+            class="tk-select"
             aria-label="Stroke sides"
             value={String(sides)}
             onChange={(event) => {
@@ -1288,7 +1288,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
         </div>
       )}
       {stroke && stroke !== MIXED && sides === "custom" && (
-        <div class="vk-grid-2" role="group" aria-label="Stroke weight per side">
+        <div class="tk-grid-2" role="group" aria-label="Stroke weight per side">
           {SIDE_NAMES.map((name, i) => {
             const weights = typeof stroke.weight === "number" ? [stroke.weight, stroke.weight, stroke.weight, stroke.weight] : stroke.weight;
             return (
@@ -1372,7 +1372,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
       return { [from]: null, [type]: value };
     });
   const typeSelect = (label: string, from: EffectType, onChange: (type: EffectType) => void) => (
-    <select class="vk-select vk-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
+    <select class="tk-select tk-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
       {/* Text draws drop shadows only. */}
       {EFFECT_TYPES.filter(({ type }) => !withText || type === "drop" || type === from).map(({ type, label }) => (
         <option key={type} value={type} disabled={!canBecome(type, from)}>
@@ -1382,14 +1382,14 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     </select>
   );
   return (
-    <section class="vk-section" role="group" aria-label="Effects">
-      <div class="vk-section-header vk-markable">
+    <section class="tk-section" role="group" aria-label="Effects">
+      <div class="tk-section-header tk-markable">
         {/* The shadows, text's among them, and the blurs: a blur taken off at the breakpoint has no row of its own there. */}
         <BreakpointMark properties={["shadows", "textShadows", "layerBlur", "backgroundBlur"]} />
-        <h3 class="vk-section-title">Effects</h3>
-        <div class="vk-row">
+        <h3 class="tk-section-title">Effects</h3>
+        <div class="tk-row">
           {!variable?.bound && <VariableSlot label="Shadow" slot={variable}>{null}</VariableSlot>}
-          <button type="button" class="vk-icon-button" aria-label="Add effect" onClick={() => update("shadows", (current) => (shadows === MIXED ? [NEW_SHADOW] : [...current, NEW_SHADOW]))}>
+          <button type="button" class="tk-icon-button" aria-label="Add effect" onClick={() => update("shadows", (current) => (shadows === MIXED ? [NEW_SHADOW] : [...current, NEW_SHADOW]))}>
             <Icon name="plus" />
           </button>
         </div>
@@ -1398,9 +1398,9 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
         // A shadow Variable stands for the shadows, as an effect style does in Figma.
         <VariableSlot label="Shadow" slot={variable}>{null}</VariableSlot>
       ) : shadows === MIXED ? (
-        <div class="vk-row">
-          <span class="vk-field vk-mixed">Mixed shadows</span>
-          <button type="button" class="vk-icon-button" aria-label="Remove shadows" onClick={() => set("shadows")([])}>
+        <div class="tk-row">
+          <span class="tk-field tk-mixed">Mixed shadows</span>
+          <button type="button" class="tk-icon-button" aria-label="Remove shadows" onClick={() => set("shadows")([])}>
             <Icon name="minus" />
           </button>
         </div>
@@ -1418,14 +1418,14 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
           );
           return (
             // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
-            <div class="vk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
-              <div class="vk-row">
+            <div class="tk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
+              <div class="tk-row">
                 {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
-                <button type="button" class="vk-icon-button" aria-label={`Remove shadow ${i + 1}`} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))}>
+                <button type="button" class="tk-icon-button" aria-label={`Remove shadow ${i + 1}`} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))}>
                   <Icon name="minus" />
                 </button>
               </div>
-              <div class="vk-grid-2">
+              <div class="tk-grid-2">
                 {lengthField("x", "X", "X")}
                 {lengthField("y", "Y", "Y")}
                 {lengthField("blur", "blur", "B", 0)}
@@ -1441,10 +1441,10 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
         if (value === undefined || value === null) return null;
         const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
         return (
-          <div class="vk-effect" key={property} role="group" aria-label={label}>
-            <div class="vk-row">
+          <div class="tk-effect" key={property} role="group" aria-label={label}>
+            <div class="tk-row">
               {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
-              <button type="button" class="vk-icon-button" aria-label={`Remove ${label.toLowerCase()}`} onClick={() => set(property)(null)}>
+              <button type="button" class="tk-icon-button" aria-label={`Remove ${label.toLowerCase()}`} onClick={() => set(property)(null)}>
                 <Icon name="minus" />
               </button>
             </div>
@@ -1473,7 +1473,7 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
   const system = (
     <input
       type="color"
-      class="vk-swatch"
+      class="tk-swatch"
       aria-label={`Pick ${lower} color`}
       value={color.color.toLowerCase()}
       onInput={(event) => {
@@ -1506,7 +1506,7 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
       )}
       <TextField
         label={`${name} opacity`}
-        class="vk-opacity"
+        class="tk-opacity"
         value={`${Math.round(color.opacity * 100)}%`}
         parse={(text) => {
           const percent = parseNumber(text, 0, 100);
@@ -1518,7 +1518,7 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
   );
   if (!offered) {
     return (
-      <div class="vk-field vk-color-field">
+      <div class="tk-field tk-color-field">
         {system}
         {typed}
       </div>
@@ -1526,21 +1526,21 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
   }
   const toggle = (event: { currentTarget: HTMLElement }) => setOpen(open ? null : event.currentTarget);
   return (
-    <div class="vk-field vk-color-field">
+    <div class="tk-field tk-color-field">
       <button
         type="button"
-        class="vk-swatch vk-swatch-button"
+        class="tk-swatch tk-swatch-button"
         aria-label={`${name} color picker`}
         aria-haspopup="dialog"
-        style={{ "--vk-swatch": cssColor(color) }}
+        style={{ "--tk-swatch": cssColor(color) }}
         onClick={toggle}
       />
       {offered.bound ? (
         <>
-          <button type="button" class="vk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" title={`${offered.bound.name}: ${offered.bound.value}`} onClick={toggle}>
+          <button type="button" class="tk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" title={`${offered.bound.name}: ${offered.bound.value}`} onClick={toggle}>
             {offered.bound.name}
           </button>
-          <button type="button" class="vk-icon-button" aria-label={`Detach ${lower} color variable`} title="Detach variable" onClick={() => offered.onPick(null)}>
+          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} color variable`} title="Detach variable" onClick={() => offered.onPick(null)}>
             <Icon name="detach" />
           </button>
         </>
@@ -1553,9 +1553,9 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
           anchor={open}
           slot={offered}
           custom={
-            <label class="vk-field">
+            <label class="tk-field">
               {system}
-              <span class="vk-read-only">{color.color}</span>
+              <span class="tk-read-only">{color.color}</span>
             </label>
           }
           onClose={() => setOpen(null)}
@@ -1596,7 +1596,7 @@ interface NumberFieldProps {
 /** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
 export function NumberField({ label, icon, glyph, value, unit = "", min = -Infinity, onChange }: NumberFieldProps) {
   return (
-    <label class="vk-field" title={label}>
+    <label class="tk-field" title={label}>
       <Scrub icon={icon} glyph={glyph} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}
@@ -1659,7 +1659,7 @@ function Scrub({ icon, glyph, value, min, max = Infinity, onChange }: {
 
   return (
     <span
-      class="vk-scrub"
+      class="tk-scrub"
       aria-hidden="true"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -1668,7 +1668,7 @@ function Scrub({ icon, glyph, value, min, max = Infinity, onChange }: {
       // A click on the icon is not a click on the field's label: it does not start typing.
       onClick={(event) => event.preventDefault()}
     >
-      {icon ? <Icon name={icon} /> : <span class="vk-glyph">{glyph}</span>}
+      {icon ? <Icon name={icon} /> : <span class="tk-glyph">{glyph}</span>}
     </span>
   );
 }
@@ -1737,11 +1737,11 @@ function TextField<T>({ label, class: className, value, placeholder, parse, step
     <input
       ref={input}
       type="text"
-      class={`vk-input${className ? ` ${className}` : ""}`}
+      class={`tk-input${className ? ` ${className}` : ""}`}
       aria-label={label}
       {...typeahead.input}
       // Something typed, not yet applied: ⌘Z is the field's own until then.
-      data-vk-typing={draft !== null && draft !== value ? "" : undefined}
+      data-tk-typing={draft !== null && draft !== value ? "" : undefined}
       placeholder={placeholder}
       spellcheck={false}
       autocomplete="off"

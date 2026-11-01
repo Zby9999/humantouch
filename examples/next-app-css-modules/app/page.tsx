@@ -14,7 +14,7 @@ export default function Home() {
   return (
     <main className={styles.main}>
       <section className={styles.hero} data-testid="hero">
-        <h1 className={styles.title}>Vernier Kit</h1>
+        <h1 className={styles.title}>03Kind</h1>
         <p className={styles.lead}>
           A Framer-style editor layer for <strong>any</strong> page.
         </p>

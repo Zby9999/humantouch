@@ -177,7 +177,7 @@ describe("claim", () => {
 
     expect(notes).toContain("- **Layer:** Heading, `<h1 class=\"page-module__title\">` (Page › Pricing › Heading)");
     expect(notes).toContain(
-      "- **Scope:** **Usage not determined.** Pricing is used from code Vernier Kit could not locate. Change only the usage the layer is in, found from its place on the page at `/pricing?plan=team` (Layer, above), and leave the other usages of Pricing as they are.\n",
+      "- **Scope:** **Usage not determined.** Pricing is used from code 03Kind could not locate. Change only the usage the layer is in, found from its place on the page at `/pricing?plan=team` (Layer, above), and leave the other usages of Pricing as they are.\n",
     );
   });
 });
@@ -266,7 +266,7 @@ describe("claim, how to write the changes (ticket 65)", () => {
     ["a size", "Sizes", [style("width", { before: { type: "hug" }, after: { type: "fill" } })]],
     ["a new Frame with a brief", "New Frame with a brief", [change("create", { before: null, after: { type: "frame", place: place(2), width: 200, height: 120, brief: "A pricing table" } })]],
     ["a brief", "Brief", [change("brief", { before: null, after: "Bounce back harder when pressed" })]],
-    ["new words", "Text", [change("text", { before: "Vernier Kit", after: "Vernier Studio" })]],
+    ["new words", "Text", [change("text", { before: "03Kind", after: "Third Kind Studio" })]],
     [
       "a copy with values of its own at breakpoints",
       "Copies",
@@ -1370,12 +1370,12 @@ describe("claim, layers off the canvas put back", () => {
   const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
   const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });
   const title = { ...list, loc: "src/App.tsx:21:9", context: { path: ["Page", "App", "Stack", "Title"], element: '<h1 class="text-4xl font-bold">' } };
-  const snippet = { loc: "src/App.tsx:21:9", code: '<h1 className="text-4xl font-bold">\n  Vernier Kit\n</h1>' };
+  const snippet = { loc: "src/App.tsx:21:9", code: '<h1 className="text-4xl font-bold">\n  03Kind\n</h1>' };
   const look =
-    '<!DOCTYPE html><html><head><style data-vk-edit-styles="order">@layer vernierkit-edits;</style><style data-vk-look-styles="base">html,body{margin:0}</style>' +
-    '<style data-vk-look-styles="">@import url("http://localhost:5173/src/index.css") layer(page);@font-face{font-family:"Inter";src:url("data:font/woff2;base64,AAAA")}' +
-    '@font-face { font-family: "Space Grotesk"; src: url("http://localhost:5173/space-grotesk.woff2") format("woff2"); }[data-vk-look="0"]{font-size:36px;font-weight:700}</style></head>' +
-    '<body><h1 data-vk-loc="src/App.tsx:21:9" data-vk-class="text-4xl font-bold" data-vk-look="0">Vernier Kit</h1></body></html>';
+    '<!DOCTYPE html><html><head><style data-tk-edit-styles="order">@layer third-kind-edits;</style><style data-tk-look-styles="base">html,body{margin:0}</style>' +
+    '<style data-tk-look-styles="">@import url("http://localhost:5173/src/index.css") layer(page);@font-face{font-family:"Inter";src:url("data:font/woff2;base64,AAAA")}' +
+    '@font-face { font-family: "Space Grotesk"; src: url("http://localhost:5173/space-grotesk.woff2") format("woff2"); }[data-tk-look="0"]{font-size:36px;font-weight:700}</style></head>' +
+    '<body><h1 data-tk-loc="src/App.tsx:21:9" data-tk-class="text-4xl font-bold" data-tk-look="0">03Kind</h1></body></html>';
   const opacity = { ...redFill, id: 1, layer: "1", target: { ...title, context: { path: ["Title"], element: '<h1 class="text-4xl font-bold">' } }, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
   const kept = (more: object = {}) => ({
     id: "a1",
@@ -1398,11 +1398,11 @@ describe("claim, layers off the canvas put back", () => {
     expect(output).toContain(
       "- **Design intent:** Put this layer back, moved off the canvas in an earlier round and deleted from the code then: write it as its source below has it, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 3rd layer. Keep the source as it is; adjust it only where the code around it has changed (its props, what it imports).\n",
     );
-    expect(output).toContain("- **Source**, as written at `src/App.tsx:21:9` when it was moved off the canvas:\n\n  ```tsx\n  <h1 className=\"text-4xl font-bold\">\n    Vernier Kit\n  </h1>\n  ```\n");
+    expect(output).toContain("- **Source**, as written at `src/App.tsx:21:9` when it was moved off the canvas:\n\n  ```tsx\n  <h1 className=\"text-4xl font-bold\">\n    03Kind\n  </h1>\n  ```\n");
     expect(output).toContain("- **Look**, as it was off the canvas, every style it had written onto it");
-    expect(output).toContain('[data-vk-look="0"]{font-size:36px;font-weight:700}');
+    expect(output).toContain('[data-tk-look="0"]{font-size:36px;font-weight:700}');
     // Not the page's stylesheets and fonts, which it only loaded from.
-    expect(output).not.toMatch(/@import|@font-face|base64|vernierkit-edits;|margin:0/);
+    expect(output).not.toMatch(/@import|@font-face|base64|third-kind-edits;|margin:0/);
     expect(output).toContain("- **Reference style:** none: it is to look as its look shows\n");
     expect(output).toContain("- **Edited off the canvas:** give it these too, as the designer made them there:\n  - Opacity of Title (`<h1 class=\"text-4xl font-bold\">`): Change the opacity from 100% to 50%.\n");
   });
@@ -1485,7 +1485,7 @@ describe("done", () => {
 
     expect(code).toBe(0);
     expect(state()).toMatchObject({ status: "claimed", done: [2] });
-    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with Vernier Kit is open. That is no error: go on.\n");
+    expect(output).toBe("Change 2 done: 1 of 2 changes applied.\nNot checked on the page: no page with 03Kind is open. That is no error: go on.\n");
   });
 
   test("refuses a number that is not a change of the round, or a round not claimed", async () => {
@@ -1779,7 +1779,7 @@ describe("done, checked on the page", () => {
     const started = Date.now();
     const { output } = await cli("done", "1");
 
-    expect(output).toContain("Not checked on the page: no page with Vernier Kit is open.");
+    expect(output).toContain("Not checked on the page: no page with 03Kind is open.");
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
@@ -1884,7 +1884,7 @@ describe("finish", () => {
   });
 
   test("ends with the round's report laid out: each change under the heading the page's checks put it under, those under ⚠️ with why and instead (ticket 65)", async () => {
-    const words = { ...redFill, id: 3, kind: "text", property: "text", before: "Vernier Kit", after: "Vernier Studio", style: {}, target: { ...cards, instances: 1 } };
+    const words = { ...redFill, id: 3, kind: "text", property: "text", before: "03Kind", after: "Third Kind Studio", style: {}, target: { ...cards, instances: 1 } };
     const brief = { ...redFill, id: 4, kind: "brief", property: "brief", before: null, after: "Bounce back harder", style: {} };
     saveRound(redFill, smallRadius, words, brief);
     await cli("claim");
@@ -2033,7 +2033,7 @@ describe("changes not applied, carried over to the next round on the same canvas
 
     const { output } = await cli("claim");
 
-    expect(output).toMatch(/^# Design changes to apply\n\nThis round carries 2 changes over from the round before, not applied then \(1 and 2\), and none of its 3 changes are applied yet\. Left: 3 changes, made by the designer in Vernier Kit\. Apply them/);
+    expect(output).toMatch(/^# Design changes to apply\n\nThis round carries 2 changes over from the round before, not applied then \(1 and 2\), and none of its 3 changes are applied yet\. Left: 3 changes, made by the designer in 03Kind\. Apply them/);
     expect(changeSections(output)).toBe(changeSections((await describeOnly({ ...redFill, id: 1 }, { ...halfOpacity, id: 2 }, shadow)).output));
   });
 
@@ -2045,7 +2045,7 @@ describe("changes not applied, carried over to the next round on the same canvas
 
     expect(state().opening.ids).toEqual([1, 2]);
     expect(output).toContain(
-      "This round carries 2 changes over from the round before, not applied then (1 and 2), and 1 of its 3 changes is applied already (2), as the designer's page shows it. Left: 2 changes, made by the designer in Vernier Kit.",
+      "This round carries 2 changes over from the round before, not applied then (1 and 2), and 1 of its 3 changes is applied already (2), as the designer's page shows it. Left: 2 changes, made by the designer in 03Kind.",
     );
     expect(section(output, 2)).toBe("");
     expect(section(output, 1)).toContain("- **Design intent:** Change the fill from #DC2626 to #FF0000 at 50% opacity.\n");
@@ -2357,7 +2357,7 @@ describe("claim, a round saved before the instances of a layer shared their edit
 
     expect(code).toBe(0);
     // Written once, by the code of then: never over the one kept.
-    if (process.env.VK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
+    if (process.env.TK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
     // What goes around the changes, the way through the round and how to write them, is of the notes of now (ticket 65).
     expect(changeSections(output)).toBe(changeSections(readFileSync(join(FIXTURE, "claim.md"), "utf8")));
   });

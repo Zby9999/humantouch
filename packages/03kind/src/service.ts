@@ -75,7 +75,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
       if (line === lastSent) return;
       lastSent = line;
       for (const res of listeners) res.write(line);
-    }).catch((error) => console.error("Vernier Kit:", error));
+    }).catch((error) => console.error("03Kind:", error));
   };
   // The service never keeps a process alive by itself: it lives as long as its dev server.
   watchFile(files.state, { interval: WATCH_MS }, broadcast).unref();
@@ -90,7 +90,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
     await writeChecks(files, checks);
   };
   const countPages = () => {
-    queue = queue.then(() => updateChecks()).catch((error) => console.error("Vernier Kit:", error));
+    queue = queue.then(() => updateChecks()).catch((error) => console.error("03Kind:", error));
   };
 
   /** `body`: read in full before the request takes its turn, so a slow one holds up no other. */
@@ -205,7 +205,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
     if (!hasToken(req, token)) return send(res, 401);
     const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     const fail = (error: unknown) => {
-      console.error("Vernier Kit:", error);
+      console.error("03Kind:", error);
       if (!res.headersSent) send(res, 500);
     };
     // Reading the Variables touches no round: it waits for no save, nor holds one up. Read afresh each time edit mode asks.
@@ -274,7 +274,7 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_BODY) {
-        reject(new Error("Vernier Kit: the round is too large to save"));
+        reject(new Error("03Kind: the round is too large to save"));
         req.destroy();
         return;
       }

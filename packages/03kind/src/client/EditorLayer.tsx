@@ -330,8 +330,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
                 {listed.length > 0 && (
                   <button
                     type="button"
-                    class="vk-count"
-                    data-vk-changes-opener=""
+                    class="tk-count"
+                    data-tk-changes-opener=""
                     aria-label={`${listed.length} ${listed.length === 1 ? "change" : "changes"} not applied yet`}
                     aria-haspopup="dialog"
                     aria-expanded={listOpen}
@@ -342,8 +342,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
                 )}
                 <button
                   type="button"
-                  class="vk-icon-button"
-                  aria-label="Vernier Kit: back to preview mode"
+                  class="tk-icon-button"
+                  aria-label="03Kind: back to preview mode"
                   title="Back to preview mode"
                   onClick={(event) => switchMode(event.detail > 0)}
                 >

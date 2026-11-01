@@ -81,7 +81,7 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
   const { x, y } = (await icon.boundingBox())!;
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
@@ -106,7 +106,7 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
   await expect(radius).toHaveValue("12");
   // The focus stays in the field as its icon is dragged.
   await radius.focus();
-  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
   const { x, y } = (await icon.boundingBox())!;
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
@@ -179,7 +179,7 @@ test("several layers edited together go back together with ⌘Z, the focus still
 test("in edit mode, an X beside the Design title goes back to preview mode, and the change count beside it opens the change list", async ({ page }) => {
   await makeThreeChanges(page);
   // No toggle floats over the canvas meanwhile.
-  await expect(page.locator(".vk-dock")).toHaveCount(0);
+  await expect(page.locator(".tk-dock")).toHaveCount(0);
 
   const count = design(page).getByRole("button", { name: "3 changes not applied yet" });
   await expect(count).toHaveText("3");
@@ -200,9 +200,9 @@ test("the change list has the keys as soon as it is on the page: Esc pressed bef
 
   // In the page, so no frame passes between the press on the count and Esc. The key goes where a real one would: to what has focus.
   const closed = await page.evaluate(async () => {
-    const root = document.querySelector("vernier-kit")!.shadowRoot!;
+    const root = document.querySelector("third-kind")!.shadowRoot!;
     const settle = () => new Promise((resolve) => setTimeout(resolve));
-    root.querySelector<HTMLElement>(".vk-count")!.click();
+    root.querySelector<HTMLElement>(".tk-count")!.click();
     await settle();
     if (!root.querySelector('[role="dialog"]')) throw new Error("The change list did not open");
     (root.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));

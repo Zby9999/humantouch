@@ -53,7 +53,7 @@ export async function readVariables(root: string): Promise<Variable[]> {
   try {
     return await read(root);
   } catch (error) {
-    console.warn("Vernier Kit: could not read the project's Variables:", error);
+    console.warn("03Kind: could not read the project's Variables:", error);
     return [];
   }
 }

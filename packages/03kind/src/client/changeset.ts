@@ -179,7 +179,7 @@ export interface Change {
    * at every width (a new Frame's brief is in its `create` change instead).
    */
   kind: "style" | "move" | "stack" | "unstack" | "create" | "text" | "delete" | "duplicate" | "putBack" | "brief";
-  /** Id of the layer on the canvas (`data-vk-layer`). */
+  /** Id of the layer on the canvas (`data-tk-layer`). */
   layer: string;
   target: Target;
   /**

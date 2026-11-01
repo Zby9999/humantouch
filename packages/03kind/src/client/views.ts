@@ -285,7 +285,7 @@ export function createViews(canvas: Canvas): Views {
     list: () => [...views],
     add(iframe, width) {
       const doc = iframe.contentDocument;
-      if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
+      if (!doc) return Promise.reject(new Error("03Kind: the view's iframe is not in the document"));
       const laidOut = copyCanvas(canvas, iframe, width);
       // What is typed in this view is in every other view at once, as it is on the canvas.
       const follower = follow(
@@ -305,7 +305,7 @@ export function createViews(canvas: Canvas): Views {
       });
     },
     remove(view) {
-      if (view === views[0]) throw new Error("Vernier Kit: the desktop view shows the canvas itself, and stays");
+      if (view === views[0]) throw new Error("03Kind: the desktop view shows the canvas itself, and stays");
       followers.get(view)?.stop();
       followers.delete(view);
       fittings.get(view)?.observer.disconnect();
@@ -539,7 +539,7 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
       doneTyping();
       catchUp();
       const at = inCopy.get(el) as Element | undefined;
-      if (!at) throw new Error("Vernier Kit: the view shows no such element");
+      if (!at) throw new Error("03Kind: the view shows no such element");
       const observer = new MutationObserver((records) => {
         takeIn(records, up);
         typed();

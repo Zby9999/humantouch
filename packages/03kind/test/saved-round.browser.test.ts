@@ -15,7 +15,7 @@ import type { SavedOffCanvasLayer } from "../src/service-protocol";
 /**
  * A round saved before the instances of a layer shared their edit styles
  * (ticket 60): `fixtures/round-before-60/`, written once by the code of then,
- * when `VITE_VK_WRITE_FIXTURE` is set, and kept since. A round saved then
+ * when `VITE_TK_WRITE_FIXTURE` is set, and kept since. A round saved then
  * opens as it was, edits go on and are undone, and the same edits made now
  * record the same ChangeSet, and look the same, as they did then.
  */
@@ -28,12 +28,12 @@ const buttonIn = (usage: string) => [{ component: "Button", usage: "src/Card.tsx
 const HEADER_BUTTON = [{ component: "Button", usage: "src/App.tsx:3:7", thirdParty: false }, ...APP];
 const CHIP = [{ component: "Chip", usage: "src/App.tsx:11:9", thirdParty: false }, ...APP];
 const TAG = [{ component: "Tag", usage: "src/App.tsx:15:9", thirdParty: false }, ...APP];
-const chain = (levels: object[]) => `data-vk-chain='${JSON.stringify(levels)}'`;
+const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
 
 const card = (usage: string, title: string, style = "") => `
-    <article data-vk-loc="src/Card.tsx:3:5" ${chain(cardAt(usage))} style="height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px; padding: 4px;${style}">
-      <h3 data-vk-loc="src/Card.tsx:4:7" ${chain(cardAt(usage))} style="margin: 0">${title}</h3>
-      <button data-vk-loc="src/Button.tsx:2:3" ${chain(buttonIn(usage))} style="background-color: rgb(200, 200, 200)">Open</button>
+    <article data-tk-loc="src/Card.tsx:3:5" ${chain(cardAt(usage))} style="height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px; padding: 4px;${style}">
+      <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(cardAt(usage))} style="margin: 0">${title}</h3>
+      <button data-tk-loc="src/Button.tsx:2:3" ${chain(buttonIn(usage))} style="background-color: rgb(200, 200, 200)">Open</button>
     </article>`;
 
 /**
@@ -44,17 +44,17 @@ const card = (usage: string, title: string, style = "") => `
  */
 const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-vk-loc="src/App.tsx:2:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(3, 150px); gap: 8px">
-    <button data-vk-loc="src/Button.tsx:2:3" ${chain(HEADER_BUTTON)} style="background-color: rgb(200, 200, 200)">Menu</button>
+  <main data-tk-loc="src/App.tsx:2:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(3, 150px); gap: 8px">
+    <button data-tk-loc="src/Button.tsx:2:3" ${chain(HEADER_BUTTON)} style="background-color: rgb(200, 200, 200)">Menu</button>
     ${card("src/App.tsx:6:9", "Card 1", " opacity: 0.9 !important")}
     ${[2, 3, 4].map((n) => card("src/App.tsx:6:9", `Card ${n}`)).join("")}
     ${card("src/App.tsx:8:7", "Your turn")}
   </main>
-  <aside data-vk-loc="src/App.tsx:10:5" ${chain(APP)} style="display: flex; gap: 4px">
-    ${[1, 2, 3].map((n) => `<span data-vk-loc="src/Chip.tsx:2:3" ${chain(CHIP)} style="padding: 2px; background-color: rgb(230, 230, 230)">Chip ${n}</span>`).join("")}
+  <aside data-tk-loc="src/App.tsx:10:5" ${chain(APP)} style="display: flex; gap: 4px">
+    ${[1, 2, 3].map((n) => `<span data-tk-loc="src/Chip.tsx:2:3" ${chain(CHIP)} style="padding: 2px; background-color: rgb(230, 230, 230)">Chip ${n}</span>`).join("")}
   </aside>
-  <section data-vk-loc="src/App.tsx:14:5" ${chain(APP)}>
-    ${[1, 2].map((n) => `<em data-vk-loc="src/Tag.tsx:2:3" ${chain(TAG)} style="display: inline-block; background-color: rgb(240, 240, 240)">Tag ${n}</em>`).join("")}
+  <section data-tk-loc="src/App.tsx:14:5" ${chain(APP)}>
+    ${[1, 2].map((n) => `<em data-tk-loc="src/Tag.tsx:2:3" ${chain(TAG)} style="display: inline-block; background-color: rgb(240, 240, 240)">Tag ${n}</em>`).join("")}
   </section>
 </body>`;
 
@@ -236,7 +236,7 @@ function revertedOf(saved: { canvas: string; changeSet: SavedChangeSet }): Recor
   );
 }
 
-const editSheets = (doc: Document) => doc.querySelectorAll("style[data-vk-rules]").length;
+const editSheets = (doc: Document) => doc.querySelectorAll("style[data-tk-rules]").length;
 
 async function readFixture(): Promise<Fixture> {
   const read = async (file: string) => commands.readFile(`${FIXTURE}${file}`);
@@ -248,14 +248,14 @@ async function readFixture(): Promise<Fixture> {
   };
 }
 
-describe.runIf((import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_VK_WRITE_FIXTURE)("the fixture", () => {
+describe.runIf((import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_TK_WRITE_FIXTURE)("the fixture", () => {
   test("is written by the code of now", async () => {
     // Written once, by the code of then (before ticket 60): never over the one kept.
     const kept = await commands.readFile(`${FIXTURE}canvas.html`).then(
       () => true,
       () => false,
     );
-    if (kept) throw new Error(`Vernier Kit: the fixture in ${FIXTURE} is kept as the code of then wrote it`);
+    if (kept) throw new Error(`03Kind: the fixture in ${FIXTURE} is kept as the code of then wrote it`);
     const { canvas, changes, offCanvas, styles } = await makeRound();
     const saved = { canvas: serializeCanvas(canvas), changeSet: changes.save() };
     const looks = { styles: styles(), reverted: revertedOf(saved), sheets: editSheets(canvas.document) };
@@ -273,7 +273,7 @@ describe("a round saved before the instances of a layer shared their edit styles
     return { ...(await open(canvas, fixture)), canvas };
   };
   /** The loop of Cards, by an instance of it neither moved nor deleted alone. */
-  const loopOf = (doc: Document) => doc.querySelector('article[data-vk-layer="1"]:not([data-vk-move]):not([data-vk-deleted])')!;
+  const loopOf = (doc: Document) => doc.querySelector('article[data-tk-layer="1"]:not([data-tk-move]):not([data-tk-deleted])')!;
 
   test("opens as it was, in every view, its ChangeSet and the layers off the canvas as they were; edits go on, are undone, and saved again open as they were", async () => {
     const fixture = await readFixture();
@@ -283,9 +283,9 @@ describe("a round saved before the instances of a layer shared their edit styles
     expect(JSON.stringify(changes.save())).toBe(JSON.stringify(fixture.changeSet));
     expect(JSON.stringify(offCanvas.save())).toBe(JSON.stringify(fixture.offCanvas));
     // The Cards of the loop neither moved nor deleted alone, the one the page gives an opacity of its own aside, share one style element now.
-    const alike = [...doc.querySelectorAll('article[data-vk-layer="1"]:not([data-vk-move]):not([data-vk-deleted])')].slice(1);
+    const alike = [...doc.querySelectorAll('article[data-tk-layer="1"]:not([data-tk-move]):not([data-tk-deleted])')].slice(1);
     expect(alike.length).toBeGreaterThan(0);
-    expect(new Set(alike.map((card) => card.getAttribute("data-vk-style"))).size).toBe(1);
+    expect(new Set(alike.map((card) => card.getAttribute("data-tk-style"))).size).toBe(1);
     expect(editSheets(doc)).toBeLessThan(fixture.sheets);
 
     // A value stepped on the loop changes the style elements of its instances' groups alone: the one the page gives an opacity, the one moved alone and the others (the one deleted is no layer).
@@ -301,7 +301,7 @@ describe("a round saved before the instances of a layer shared their edit styles
     editor.set(layerOf(loopOf(doc)), "radius", 30);
     const radii = (el: Element) => getComputedStyle(el).borderTopLeftRadius;
     // Every instance at every width, the one moved alone too; the one deleted alone is not shown.
-    expect([...doc.querySelectorAll('article[data-vk-layer="1"]:not([data-vk-deleted])')].map(radii)).toEqual(["30px", "30px", "30px"]);
+    expect([...doc.querySelectorAll('article[data-tk-layer="1"]:not([data-tk-deleted])')].map(radii)).toEqual(["30px", "30px", "30px"]);
     expect(changes.list().find((change) => change.property === "radius" && change.layer === "1" && !change.breakpoint)).toMatchObject({ before: 12, after: 30 });
     editor.undo();
     editor.undo();
@@ -328,8 +328,8 @@ describe("a round saved before the instances of a layer shared their edit styles
     const { look } = (changes.list().at(-1)!.after as PutBack).layer;
     const looked = new DOMParser().parseFromString(look, "text/html");
     const tags = [...looked.querySelectorAll("em")];
-    expect(tags.map((tag) => tag.getAttribute("data-vk-style"))).toEqual(["1", "2"]);
-    expect([...looked.querySelectorAll("style[data-vk-rules-for]")].map((sheet) => sheet.getAttribute("data-vk-rules-for"))).toEqual(["1", "2", "3"]);
+    expect(tags.map((tag) => tag.getAttribute("data-tk-style"))).toEqual(["1", "2"]);
+    expect([...looked.querySelectorAll("style[data-tk-rules-for]")].map((sheet) => sheet.getAttribute("data-tk-rules-for"))).toEqual(["1", "2", "3"]);
     expect([...doc.querySelectorAll("main em")].map((tag) => getComputedStyle(tag).borderTopLeftRadius)).toEqual(["8px", "8px"]);
   });
 

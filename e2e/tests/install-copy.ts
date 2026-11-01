@@ -28,7 +28,7 @@ export async function pack(dir: string): Promise<string> {
 }
 
 /**
- * A copy of an example project in a temporary folder, with Vernier Kit taken
+ * A copy of an example project in a temporary folder, with 03Kind taken
  * out by `uninstall`, its dependencies installed, and committed to a git
  * repository of its own: what a project looks like before `init`.
  */
@@ -45,7 +45,7 @@ export async function copyWithoutThirdKind(example: string, uninstall: (dir: str
   await sh("pnpm", ["install", "--prefer-offline"], dir);
   await sh("git", ["init", "-q"], dir);
   await sh("git", ["add", "-A"], dir);
-  await sh("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "Before Vernier Kit"], dir);
+  await sh("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "Before 03Kind"], dir);
   return dir;
 }
 

@@ -31,7 +31,7 @@ import { loadVariables } from "./service";
 import { bind, bindRecorded, resolveVariables, type Catalog } from "./variables";
 import { CatalogProvider } from "./VariablePicker";
 
-const LAYERS_KEY = "vernierkit:layers-panel";
+const LAYERS_KEY = "03kind:layers-panel";
 
 /** What the change list does to the round while edit mode is up: on the canvas, as edits. */
 export interface RoundControl {
@@ -503,12 +503,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   return (
-    <div class={`vk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`} inert={paused}>
+    <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`} inert={paused}>
       {layersShown ? (
-        <aside class="vk-panel is-layers" aria-label="Layers">
-          <div class="vk-panel-header">
-            <h2 class="vk-panel-title">Layers</h2>
-            <button ref={layersToggle} type="button" class="vk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
+        <aside class="tk-panel is-layers" aria-label="Layers">
+          <div class="tk-panel-header">
+            <h2 class="tk-panel-title">Layers</h2>
+            <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
           </div>
@@ -522,7 +522,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           )}
         </aside>
       ) : (
-        <button ref={layersToggle} type="button" class="vk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+        <button ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
       )}
@@ -678,11 +678,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       />
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
-      <aside class="vk-panel is-design" aria-label="Design">
-        <div class="vk-panel-header">
-          <h2 class="vk-panel-title">Design</h2>
+      <aside class="tk-panel is-design" aria-label="Design">
+        <div class="tk-panel-header">
+          <h2 class="tk-panel-title">Design</h2>
           {tree && (
-            <button ref={playButton} type="button" class="vk-icon-button vk-play" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
+            <button ref={playButton} type="button" class="tk-icon-button tk-play" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
               <Icon name="play" />
             </button>
           )}
@@ -703,11 +703,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             {selected.length === 1 && !outsideOf(selected[0]) && <BriefSection editor={editor} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />}
           </>
         ) : (
-          <p class="vk-panel-empty">Select a layer to see its properties.</p>
+          <p class="tk-panel-empty">Select a layer to see its properties.</p>
         )}
       </aside>
       {playing && (
-        <button type="button" class="vk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={() => play(false)}>
+        <button type="button" class="tk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={() => play(false)}>
           <Icon name="close" />
         </button>
       )}
@@ -729,9 +729,9 @@ interface ToolsProps {
 /** At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. */
 function Tools({ tool, onTool }: ToolsProps) {
   return (
-    <div class="vk-tools" role="toolbar" aria-label="Tools">
+    <div class="tk-tools" role="toolbar" aria-label="Tools">
       {TOOLS.map((t) => (
-        <button key={t.label} type="button" class="vk-icon-button" aria-label={t.label} aria-pressed={tool === t.tool} title={`${t.label} (${t.key})`} onClick={() => onTool(t.tool)}>
+        <button key={t.label} type="button" class="tk-icon-button" aria-label={t.label} aria-pressed={tool === t.tool} title={`${t.label} (${t.key})`} onClick={() => onTool(t.tool)}>
           <Icon name={t.icon} />
         </button>
       ))}

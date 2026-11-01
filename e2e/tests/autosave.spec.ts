@@ -38,7 +38,7 @@ function savedChanges() {
 
 /** Where the editor layer reaches the local service, as the dev server hands it to the page. */
 function service(page: Page): Promise<{ url: string; token: string }> {
-  return page.evaluate(() => (window as unknown as { __VERNIERKIT__: { url: string; token: string } }).__VERNIERKIT__);
+  return page.evaluate(() => (window as unknown as { __THIRD_KIND__: { url: string; token: string } }).__THIRD_KIND__);
 }
 
 test("the local service listens on 127.0.0.1 only, and turns away requests without its token", async ({ page, request }) => {
@@ -48,12 +48,12 @@ test("the local service listens on 127.0.0.1 only, and turns away requests witho
 
   expect(new URL(url).hostname).toBe("127.0.0.1");
   expect((await request.get(round)).status()).toBe(401);
-  expect((await request.get(round, { headers: { "X-Vernier-Token": "not-the-token" } })).status()).toBe(401);
+  expect((await request.get(round, { headers: { "X-03Kind-Token": "not-the-token" } })).status()).toBe(401);
   expect((await request.put(round, { data: { canvas: "<html></html>", changeSet: { lastId: 0, changes: [] } } })).status()).toBe(401);
   expect((await request.delete(round)).status()).toBe(401);
-  expect((await request.get(round, { headers: { "X-Vernier-Token": token } })).ok()).toBe(true);
+  expect((await request.get(round, { headers: { "X-03Kind-Token": token } })).ok()).toBe(true);
   // Not on any other address of this machine.
-  await expect(request.get(`http://[::1]:${new URL(url).port}/round`, { headers: { "X-Vernier-Token": token } })).rejects.toThrow();
+  await expect(request.get(`http://[::1]:${new URL(url).port}/round`, { headers: { "X-03Kind-Token": token } })).rejects.toThrow();
 });
 
 test("edits are saved into the project about half a second after the designer stops, with no save action", async ({ page }) => {
@@ -72,7 +72,7 @@ test("edits are saved into the project about half a second after the designer st
   expect(waited).toBeLessThan(1500);
   // The saved canvas, edits included: the frozen page with red cards.
   const saved = readFileSync(CANVAS, "utf8");
-  expect(saved).toContain("Vernier Kit</h1>");
+  expect(saved).toContain("03Kind</h1>");
   // In the canvas's edit styles, over the page's.
   expect(saved).toMatch(/background-color:rgb\(255 0 0 \/ 1\)!important/);
 });
@@ -185,7 +185,7 @@ test("a badge on the toggle counts the changes not yet applied", async ({ page }
 /**
  * A round saved before the instances of a layer shared their edit styles
  * (ticket 60): `e2e/fixtures/round-before-60/`, written once by the code of
- * then, with `VK_WRITE_FIXTURE` set, and kept since.
+ * then, with `TK_WRITE_FIXTURE` set, and kept since.
  *
  * A saved round names files by where they are on disk: the source a style
  * comes from, and the fonts the canvas loads through Vite's `/@fs/`. The
@@ -242,7 +242,7 @@ async function enterEveryView(page: Page) {
 }
 
 test.describe("a round saved before the instances of a layer shared their edit styles", () => {
-  test.skip(!process.env.VK_WRITE_FIXTURE, "writes the fixture, with the code of then");
+  test.skip(!process.env.TK_WRITE_FIXTURE, "writes the fixture, with the code of then");
   // Written once, by the code of then: never over the one kept.
   test.skip(existsSync(BEFORE_60), "the fixture is kept: written by the code of then");
   test("is written", async ({ page }) => {

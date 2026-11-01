@@ -13,13 +13,13 @@ export const toggleStyles = /* css */ `
   /* Cut off everything the page could pass down by inheritance. */
   all: initial !important;
   /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
-  --vk-icon-size: 14px;
-  --vk-icon-stroke: 1px;
+  --tk-icon-size: 14px;
+  --tk-icon-stroke: 1px;
 }
 
-.vk-dock {
-  --vk-gap: 16px;
-  --vk-hold: ${UNLOCK_HOLD_MS}ms;
+.tk-dock {
+  --tk-gap: 16px;
+  --tk-hold: ${UNLOCK_HOLD_MS}ms;
   position: fixed;
   z-index: 2147483647;
   display: flex;
@@ -30,13 +30,13 @@ export const toggleStyles = /* css */ `
   color: #fff;
   transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.vk-dock[data-corner="top-left"] { top: var(--vk-gap); left: var(--vk-gap); }
-.vk-dock[data-corner="top-right"] { top: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
-.vk-dock[data-corner="bottom-left"] { bottom: var(--vk-gap); left: var(--vk-gap); }
-.vk-dock[data-corner="bottom-right"] { bottom: var(--vk-gap); right: var(--vk-gap); flex-direction: row-reverse; }
-.vk-dock.is-dragging { transition: none; }
+.tk-dock[data-corner="top-left"] { top: var(--tk-gap); left: var(--tk-gap); }
+.tk-dock[data-corner="top-right"] { top: var(--tk-gap); right: var(--tk-gap); flex-direction: row-reverse; }
+.tk-dock[data-corner="bottom-left"] { bottom: var(--tk-gap); left: var(--tk-gap); }
+.tk-dock[data-corner="bottom-right"] { bottom: var(--tk-gap); right: var(--tk-gap); flex-direction: row-reverse; }
+.tk-dock.is-dragging { transition: none; }
 
-.vk-toggle {
+.tk-toggle {
   all: unset;
   box-sizing: border-box;
   display: grid;
@@ -56,18 +56,18 @@ export const toggleStyles = /* css */ `
   -webkit-user-select: none;
   transition: background-color 120ms ease, scale 120ms ease;
 }
-.vk-toggle:hover { background: #2c2c2c; }
-.vk-toggle:active { scale: 0.96; }
-.vk-dock.is-dragging .vk-toggle { cursor: grabbing; scale: 1.04; }
-.vk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
+.tk-toggle:hover { background: #2c2c2c; }
+.tk-toggle:active { scale: 0.96; }
+.tk-dock.is-dragging .tk-toggle { cursor: grabbing; scale: 1.04; }
+.tk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
 
-.vk-toggle-wrap { position: relative; }
+.tk-toggle-wrap { position: relative; }
 
 /* Locked while the Agent applies the round; dimmed the same while edit mode is on its way. */
-.vk-toggle:is([aria-disabled="true"], [aria-busy="true"]) { cursor: progress; color: rgb(255 255 255 / 0.5); }
-.vk-toggle:is([aria-disabled="true"], [aria-busy="true"]):hover { background: #1e1e1e; }
+.tk-toggle:is([aria-disabled="true"], [aria-busy="true"]) { cursor: progress; color: rgb(255 255 255 / 0.5); }
+.tk-toggle:is([aria-disabled="true"], [aria-busy="true"]):hover { background: #1e1e1e; }
 
 @media (prefers-reduced-motion: reduce) {
-  .vk-dock, .vk-toggle { transition: none; }
+  .tk-dock, .tk-toggle { transition: none; }
 }
 `;

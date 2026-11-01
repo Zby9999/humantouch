@@ -35,9 +35,9 @@ test.afterAll(() => {
 /** `npx 03kind …` once the project has it: its own copy, as installed. */
 const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/03kind/dist/cli.js"), ...args], project);
 
-test("init installs Vernier Kit: once the dev server starts, the toggle is on the page, within 60 seconds", async ({ page }) => {
+test("init installs 03Kind: once the dev server starts, the toggle is on the page, within 60 seconds", async ({ page }) => {
   const start = Date.now();
-  const output = await sh(process.execPath, [CLI, "init"], project, { VERNIERKIT_INSTALL_FROM: packed });
+  const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
   expect(output).toContain("Installed.");
 
   const server = startServer(process.execPath, ["node_modules/vite/bin/vite.js", "--port", String(INSTALL_PORT), "--strictPort"], project);
@@ -112,7 +112,7 @@ test("doctor reports every part installed, and a production build with none of t
 test("remove takes it all back out: git sees no change at all", async () => {
   const output = await installed("remove");
 
-  expect(output).toContain("Vernier Kit removed");
+  expect(output).toContain("03Kind removed");
   expect(await gitStatus(project)).toBe("");
 });
 

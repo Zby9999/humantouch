@@ -39,19 +39,19 @@ export function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
   if (!r) return null;
   return (
     <div
-      class="vk-brief"
+      class="tk-brief"
       style={{ left: `${camera.x + r.right * camera.zoom + 8}px`, top: `${camera.y + r.top * camera.zoom}px` }}
       // A press here is not on the canvas.
       onPointerDown={(event) => event.stopPropagation()}
       onDblClick={(event) => event.stopPropagation()}
     >
-      <button type="button" class="vk-brief-button" aria-expanded={open} title={brief || undefined} onClick={() => setOpen(!open)}>
+      <button type="button" class="tk-brief-button" aria-expanded={open} title={brief || undefined} onClick={() => setOpen(!open)}>
         <Icon name="brief" />
         {brief ? "Brief" : "Add brief"}
       </button>
       {open && (
         <textarea
-          class="vk-textarea vk-brief-text"
+          class="tk-textarea tk-brief-text"
           aria-label="Brief"
           placeholder="What should the Agent make here?"
           defaultValue={brief}
@@ -95,7 +95,7 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote }: Se
   const component = layer.chain[0]?.component;
   return (
     <div
-      class="vk-selection-toolbar"
+      class="tk-selection-toolbar"
       role="toolbar"
       aria-label="Selection"
       style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}
@@ -104,7 +104,7 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote }: Se
       onDblClick={(event) => event.stopPropagation()}
     >
       {/* States (second version, ADR 0007): first in the row, for a component. */}
-      <button type="button" class="vk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
+      <button type="button" class="tk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
         <Icon name="promote" />
         Promote
       </button>
@@ -127,7 +127,7 @@ interface MarksProps {
 export function Marks({ marks, view, camera }: MarksProps) {
   const at = (x: number, y: number) => ({ x: camera.x + x * camera.zoom, y: camera.y + y * camera.zoom });
   return (
-    <div class="vk-marks" data-view={view} aria-hidden="true">
+    <div class="tk-marks" data-view={view} aria-hidden="true">
       {marks.map((mark, i) => {
         const a = at(mark.x1, mark.y1);
         const b = at(mark.x2, mark.y2);
@@ -137,8 +137,8 @@ export function Marks({ marks, view, camera }: MarksProps) {
           : { left: `${a.x}px`, top: `${a.y}px`, height: `${b.y - a.y}px` };
         const size = mark.type === "gap" || mark.type === "distance" ? mark.size : null;
         return (
-          <div key={i} class="vk-mark" data-type={mark.type} data-across={across || undefined} style={style}>
-            {size !== null && <span class="vk-mark-label">{formatPx(size)}</span>}
+          <div key={i} class="tk-mark" data-type={mark.type} data-across={across || undefined} style={style}>
+            {size !== null && <span class="tk-mark-label">{formatPx(size)}</span>}
           </div>
         );
       })}
@@ -175,7 +175,7 @@ export function Outline({ layer, view, name, camera, hover, hidden, typing }: Ou
   const kind = typing ? "typing" : role(layer);
   return (
     <div
-      class={hover ? "vk-hover" : "vk-selection"}
+      class={hover ? "tk-hover" : "tk-selection"}
       data-kind={kind}
       data-view={name}
       data-hidden={hidden || undefined}
@@ -188,7 +188,7 @@ export function Outline({ layer, view, name, camera, hover, hidden, typing }: Ou
       }}
     >
       {kind === "locked" && !hover && (
-        <span class="vk-selection-lock">
+        <span class="tk-selection-lock">
           <Icon name="lock" />
         </span>
       )}
@@ -259,13 +259,13 @@ export function Handles({ layer, view, name, camera, onPress }: HandlesProps) {
       : { left: `${from}px`, top: `${along}px`, width: `${EDGE_REACH + inward}px`, height: `${length}px`, ...over };
   };
   return (
-    <div class="vk-handles" data-kind={role(layer)} data-view={name} data-small={Math.min(width, height) < SMALL || undefined} aria-hidden="true">
+    <div class="tk-handles" data-kind={role(layer)} data-view={name} data-small={Math.min(width, height) < SMALL || undefined} aria-hidden="true">
       {/* The edges' first, under the corners'. */}
       {[...HANDLES].reverse().map((handle) => {
         return (
           <div
             key={handle}
-            class="vk-handle"
+            class="tk-handle"
             data-handle={handle}
             data-corner={(sides(handle).x && sides(handle).y) || undefined}
             style={{ ...zoneOf(handle), cursor: CURSORS[handle] }}
@@ -287,7 +287,7 @@ export function SizeLabel({ layer, view, name, camera }: { layer: Layer; view: V
   if (!r) return null;
   return (
     <div
-      class="vk-size-label"
+      class="tk-size-label"
       data-view={name}
       aria-hidden="true"
       style={{ left: `${camera.x + (r.left + r.width / 2) * camera.zoom}px`, top: `${camera.y + r.bottom * camera.zoom + 8}px` }}

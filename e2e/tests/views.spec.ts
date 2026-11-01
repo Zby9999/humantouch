@@ -28,7 +28,7 @@ async function pointOn(view: Locator, selector: string) {
 
 /** Where the selection box is drawn, in page coordinates, one per view. */
 function selectionBoxes(page: Page) {
-  return page.locator(".vk-selection").evaluateAll((boxes) =>
+  return page.locator(".tk-selection").evaluateAll((boxes) =>
     boxes.map((box) => {
       const r = box.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
@@ -175,7 +175,7 @@ test("a value set once in the Design panel shows in the views beside the frame a
   await radius.press("ArrowUp");
   expect((await shown()).ms).toBeGreaterThanOrEqual(100);
   // Dragged on the icon: so is each px.
-  const { x, y } = (await page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub').boundingBox())!;
+  const { x, y } = (await page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub').boundingBox())!;
   shown = await watchTablet(page, "border-radius", "9px", "pointermove");
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
@@ -197,7 +197,7 @@ test("⌘Z and ⇧⌘Z right after steps of a value, while the views beside wait
   await page.evaluate(() => {
     const w = window as unknown as { framesAfter: string[][] };
     w.framesAfter = [];
-    const frames = [...document.querySelectorAll("vernier-kit")].flatMap((host) => [...(host.shadowRoot ?? host).querySelectorAll("iframe")]);
+    const frames = [...document.querySelectorAll("third-kind")].flatMap((host) => [...(host.shadowRoot ?? host).querySelectorAll("iframe")]);
     addEventListener(
       "keydown",
       (event) => {
@@ -241,7 +241,7 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();
   // What each view shows as the paragraph first makes room: read as the move of the pointer that made it is handled.
-  await page.locator("iframe.vk-canvas").evaluateAll((frames: HTMLIFrameElement[], hero) => {
+  await page.locator("iframe.tk-canvas").evaluateAll((frames: HTMLIFrameElement[], hero) => {
     const shifted = (frame: HTMLIFrameElement) => getComputedStyle(frame.contentDocument!.querySelector(`${hero} > p`)!).translate;
     const phone = frames.find((frame) => frame.title === "Phone 390")!;
     const onMove = () => {
@@ -254,7 +254,7 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   const p = (await paragraph.boundingBox())!;
   await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
   // The line where it would go is drawn in the phone view.
-  const line = (await page.locator(".vk-drop-line").boundingBox())!;
+  const line = (await page.locator(".tk-drop-line").boundingBox())!;
   expect(line.x).toBeGreaterThanOrEqual(p.x - 1);
   expect(line.x + line.width).toBeLessThanOrEqual(p.x + p.width + 1);
   // The paragraph makes room in the phone view at once; the desktop and tablet views do not follow the pointer as it moves.
@@ -282,7 +282,7 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
   const tree = page.getByRole("tree", { name: "Layers" });
   const badge = page.getByRole("button", { name: /not applied yet/ });
   // Something to undo, the title deleted, and something to redo, the Beta badge deleted and that undone.
-  await tree.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await tree.getByRole("treeitem", { name: "03Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await tree.getByRole("treeitem", { name: "Badge", exact: true }).click();
   await page.keyboard.press("Delete");
@@ -384,7 +384,7 @@ test("a view of another width can be added and the tablet view deleted; the view
   await enterEditMode(page);
   await expect(custom).toHaveCSS("width", "1024px");
   await expect(tablet(page)).toHaveCount(0);
-  const order = await page.locator("iframe.vk-canvas").evaluateAll((frames) => frames.map((frame) => frame.getAttribute("title")));
+  const order = await page.locator("iframe.tk-canvas").evaluateAll((frames) => frames.map((frame) => frame.getAttribute("title")));
   expect(order).toEqual(["Canvas", "Custom 1024", "Phone 390"]);
 });
 
@@ -409,18 +409,18 @@ test("a dialog open when the page was frozen is open in every view, laid out at 
 test("the camera moved while typing in a view, and then at rest, the words go on where the caret was; once typing ends nothing shown changes", async ({ page }) => {
   await enterEditMode(page);
   const layers = page.getByRole("tree", { name: "Layers" });
-  await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layers.getByRole("treeitem", { name: "03Kind", exact: true }).click();
   const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
   const title = phone(page).contentFrame().locator("h1");
   const point = await pointOn(phone(page), "h1");
   await page.mouse.dblclick(point.x, point.y);
-  await page.keyboard.type("Vernier ");
+  await page.keyboard.type("Third ");
   const caret = () =>
     title.evaluate((el) => {
       const doc = el.ownerDocument;
       return doc.hasFocus() && doc.activeElement === el ? doc.getSelection()!.anchorOffset : null;
     });
-  await expect.poll(caret).toBe("Vernier ".length);
+  await expect.poll(caret).toBe("Third ".length);
 
   // Panned and zoomed by the wheel, then left at rest well past the 100ms the stage waits for.
   await page.mouse.wheel(0, 40);
@@ -428,15 +428,15 @@ test("the camera moved while typing in a view, and then at rest, the words go on
   await page.mouse.wheel(0, -20);
   await page.keyboard.up("ControlOrMeta");
   await page.waitForTimeout(400);
-  expect(await caret()).toBe("Vernier ".length);
+  expect(await caret()).toBe("Third ".length);
   await page.keyboard.type("Edit");
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier Edit");
+  for (const h1 of titles) await expect(h1).toHaveText("Third Edit");
 
   await page.keyboard.press("Escape");
   const boxes = await selectionBoxes(page);
   await page.waitForTimeout(400);
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier Edit");
-  await expect(layers.getByRole("treeitem", { selected: true })).toHaveText("Vernier Edit");
+  for (const h1 of titles) await expect(h1).toHaveText("Third Edit");
+  await expect(layers.getByRole("treeitem", { selected: true })).toHaveText("Third Edit");
   expect(await selectionBoxes(page)).toEqual(boxes);
 });
 
@@ -444,11 +444,11 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   // The stage in place, its animation into edit mode over, and drawn again at its end.
-  await expect.poll(() => page.locator(".vk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
+  await expect.poll(() => page.locator(".tk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
   // And at rest well past the 100ms it waits for, whatever moved the camera as the views were laid out.
   await page.waitForTimeout(400);
   // Each time the stage is drawn only as far as it shows (`drawOnlyWhatShows`), it is taken out of the layout for a moment.
-  await page.locator(".vk-stage").evaluate((stage) => {
+  await page.locator(".tk-stage").evaluate((stage) => {
     const w = window as unknown as { redrawn: number };
     w.redrawn = 0;
     new MutationObserver((records) => {
@@ -456,7 +456,7 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
     }).observe(stage, { attributes: true, attributeFilter: ["style"], attributeOldValue: true });
   });
   const redrawn = () => page.evaluate(() => (window as unknown as { redrawn: number }).redrawn);
-  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
   const onIcon = async () => {
     const box = (await icon.boundingBox())!;
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -481,9 +481,9 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
  * for a moment. Once edit mode is up and the stage at rest well past the 100ms it waits for.
  */
 async function countRedraws(page: Page) {
-  await expect.poll(() => page.locator(".vk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
+  await expect.poll(() => page.locator(".tk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
   await page.waitForTimeout(400);
-  await page.locator(".vk-stage").evaluate((stage) => {
+  await page.locator(".tk-stage").evaluate((stage) => {
     const w = window as unknown as { redrawn: number };
     w.redrawn = 0;
     new MutationObserver((records) => {
@@ -497,11 +497,11 @@ async function countRedraws(page: Page) {
 function viewEdges(page: Page) {
   return viewportArea(page).evaluate((area) => {
     const box = area.getBoundingClientRect();
-    const views = [...area.querySelectorAll<HTMLIFrameElement>(".vk-stage iframe.vk-canvas")].map((frame) => {
+    const views = [...area.querySelectorAll<HTMLIFrameElement>(".tk-stage iframe.tk-canvas")].map((frame) => {
       const r = frame.getBoundingClientRect();
       return { title: frame.title, bottom: r.bottom, right: r.right };
     });
-    return { top: box.top, bottom: box.bottom, right: box.right, views, transform: area.querySelector<HTMLElement>(".vk-stage")!.style.transform };
+    return { top: box.top, bottom: box.bottom, right: box.right, views, transform: area.querySelector<HTMLElement>(".tk-stage")!.style.transform };
   });
 }
 
@@ -572,7 +572,7 @@ test("a view deleted, the others then showing whole, and added back: each time, 
 
 test("a double click on text in the phone view types in it there, the caret in that view; the words show in every view as they are typed", async ({ page }) => {
   await enterEditMode(page);
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "03Kind", exact: true }).click();
   const titles = [desktop(page), tablet(page), phone(page)].map((view) => view.contentFrame().locator("h1"));
   const title = phone(page).contentFrame().locator("h1");
   const point = await pointOn(phone(page), "h1");
@@ -589,34 +589,34 @@ test("a double click on text in the phone view types in it there, the caret in t
   expect(await caretIn(titles[0])).toBe(false);
   expect(await caretIn(titles[1])).toBe(false);
 
-  await page.keyboard.type("Vernier ");
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier ");
+  await page.keyboard.type("Third ");
+  for (const h1 of titles) await expect(h1).toHaveText("Third ");
   // Words composed with an input method show as they are composed, and stay composed in the phone view.
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Input.imeSetComposition", { text: "ji", selectionStart: 2, selectionEnd: 2 });
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier ji");
+  for (const h1 of titles) await expect(h1).toHaveText("Third ji");
   await cdp.send("Input.insertText", { text: "基" });
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier 基");
+  for (const h1 of titles) await expect(h1).toHaveText("Third 基");
   expect(await caretIn(title)).toBe(true);
-  expect(await title.evaluate((el) => el.ownerDocument.getSelection()!.anchorOffset)).toBe("Vernier 基".length);
+  expect(await title.evaluate((el) => el.ownerDocument.getSelection()!.anchorOffset)).toBe("Third 基".length);
 
   // Esc ends it, as in the desktop view.
   await page.keyboard.press("Escape");
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier 基");
+  for (const h1 of titles) await expect(h1).toHaveText("Third 基");
   expect(await caretIn(title)).toBe(false);
-  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier 基", exact: true })).toBeVisible();
+  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third 基", exact: true })).toBeVisible();
   // The same change as typed in the desktop view: words for every width.
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“Vernier Kit” → “Vernier 基”/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“03Kind” → “Third 基”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier Kit");
+  for (const h1 of titles) await expect(h1).toHaveText("03Kind");
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  for (const h1 of titles) await expect(h1).toHaveText("Vernier 基");
+  for (const h1 of titles) await expect(h1).toHaveText("Third 基");
 
   // Typed in the tablet view, a click outside it ends it there.
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier 基", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third 基", exact: true }).click();
   const there = await pointOn(tablet(page), "h1");
   await page.mouse.dblclick(there.x, there.y);
   await expect.poll(() => caretIn(titles[1])).toBe(true);
@@ -675,9 +675,9 @@ test("every view grows with what it shows and shrinks back, nothing cut off; the
   expect(boxes[2].height).toBeCloseTo(lastCard.height, 0);
   // Pointed at, the bottom of the phone view is found there: the view takes the pointer all the way down.
   await page.mouse.click(area.x + 4, area.y + area.height - 4);
-  await expect(page.locator(".vk-selection")).toHaveCount(0);
+  await expect(page.locator(".tk-selection")).toHaveCount(0);
   await page.mouse.move(lastCard.x + lastCard.width / 2, lastCard.y + lastCard.height - 2);
-  await expect(page.locator('.vk-hover[data-view="Phone"]')).toHaveCount(1);
+  await expect(page.locator('.tk-hover[data-view="Phone"]')).toHaveCount(1);
 
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).last().click();
   for (let i = 0; i < 6; i++) await page.keyboard.press("ControlOrMeta+z");

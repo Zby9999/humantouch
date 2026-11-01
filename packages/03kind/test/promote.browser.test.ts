@@ -21,12 +21,12 @@ const buttonIn = (usage: string) => [{ component: "Button", usage: "src/Card.tsx
 const HEADER_BUTTON = [{ component: "Button", usage: "src/App.tsx:3:7", thirdParty: false }, ...APP];
 /** A badge a dependency draws, used in the Card used at `src/App.tsx:8:7`: a locked layer. */
 const BADGE = [{ component: "Badge", usage: "src/Card.tsx:6:7", thirdParty: true }, ...cardAt("src/App.tsx:8:7")];
-const chain = (levels: object[]) => `data-vk-chain='${JSON.stringify(levels)}'`;
+const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
 
 const card = (usage: string, title: string) => `
-  <article data-vk-loc="src/Card.tsx:3:5" ${chain(cardAt(usage))} style="height: 80px; background-color: rgb(255, 255, 255); padding: 4px">
-    <h3 data-vk-loc="src/Card.tsx:4:7" ${chain(cardAt(usage))} style="margin: 0; color: rgb(0, 0, 0)">${title}</h3>
-    <button data-vk-loc="src/Button.tsx:2:3" ${chain(buttonIn(usage))} style="background-color: rgb(200, 200, 200)">Open</button>
+  <article data-tk-loc="src/Card.tsx:3:5" ${chain(cardAt(usage))} style="height: 80px; background-color: rgb(255, 255, 255); padding: 4px">
+    <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(cardAt(usage))} style="margin: 0; color: rgb(0, 0, 0)">${title}</h3>
+    <button data-tk-loc="src/Button.tsx:2:3" ${chain(buttonIn(usage))} style="background-color: rgb(200, 200, 200)">Open</button>
   </article>`;
 
 /**
@@ -36,9 +36,9 @@ const card = (usage: string, title: string) => `
  */
 const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-vk-loc="src/App.tsx:2:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(4, 150px); gap: 8px">
-    <button data-vk-loc="src/Button.tsx:2:3" ${chain(HEADER_BUTTON)} style="background-color: rgb(200, 200, 200)">Menu</button>
-    <h1 data-vk-loc="src/App.tsx:4:7" ${chain(APP)} style="margin: 0">Title</h1>
+  <main data-tk-loc="src/App.tsx:2:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(4, 150px); gap: 8px">
+    <button data-tk-loc="src/Button.tsx:2:3" ${chain(HEADER_BUTTON)} style="background-color: rgb(200, 200, 200)">Menu</button>
+    <h1 data-tk-loc="src/App.tsx:4:7" ${chain(APP)} style="margin: 0">Title</h1>
     ${[1, 2, 3].map((n) => card("src/App.tsx:6:9", `Card ${n}`)).join("")}
     ${card("src/App.tsx:8:7", "Your turn")}
   </main>
@@ -288,20 +288,20 @@ describe("promote", () => {
     expect(editor.canPromote(layerOf(cards[0]))).toBe(true);
     editor.promote(layerOf(cards[0]));
 
-    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual(Array(4).fill("Lift on hover"));
+    expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual(Array(4).fill("Lift on hover"));
     expect(changes.list()).toMatchObject([{ kind: "brief", scope: "component", before: null, after: "Lift on hover" }]);
     expect(editor.brief(layerOf(cards[3]))).toBe("Lift on hover");
 
     // Written anew on one usage: its own, in place of the Card's, there only.
     editor.setBrief(layerOf(cards[3]), "Lift higher");
-    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual(["Lift on hover", "Lift on hover", "Lift on hover", "Lift higher"]);
+    expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual(["Lift on hover", "Lift on hover", "Lift on hover", "Lift higher"]);
     expect(changes.list()[1]).toMatchObject({ kind: "brief", scope: "usage", before: "Lift on hover", after: "Lift higher" });
     // Taken back: the Card's again.
     editor.undo();
-    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual(Array(4).fill("Lift on hover"));
+    expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual(Array(4).fill("Lift on hover"));
 
     editor.undo();
-    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual(["Lift on hover", "Lift on hover", "Lift on hover", null]);
+    expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual(["Lift on hover", "Lift on hover", "Lift on hover", null]);
     expect(changes.list()).toMatchObject([{ kind: "brief", scope: "usage" }]);
   });
 
@@ -331,11 +331,11 @@ describe("promote", () => {
     const once = revertSaved(saved, fill.id)!;
     let shown = [...showSaved(once.canvas).querySelectorAll("article")];
     expect(shown.map(background)).toEqual(Array(4).fill("rgb(255, 255, 255)"));
-    expect(shown.map((el) => el.getAttribute("data-vk-brief"))).toEqual(["Lift on hover", "Lift on hover", "Lift on hover", "Lift higher"]);
+    expect(shown.map((el) => el.getAttribute("data-tk-brief"))).toEqual(["Lift on hover", "Lift on hover", "Lift on hover", "Lift higher"]);
 
     const twice = revertSaved(once, brief.id)!;
     shown = [...showSaved(twice.canvas).querySelectorAll("article")];
-    expect(shown.map((el) => el.getAttribute("data-vk-brief"))).toEqual([null, null, null, "Lift higher"]);
+    expect(shown.map((el) => el.getAttribute("data-tk-brief"))).toEqual([null, null, null, "Lift higher"]);
     expect(twice.changeSet.changes).toMatchObject([{ kind: "brief", scope: "usage" }]);
   });
 
@@ -359,7 +359,7 @@ describe("promote", () => {
     const liveCards = [...page.querySelectorAll("article")];
     liveCards.forEach((el, i) => {
       const usage = i < 3 ? "src/App.tsx:6:9" : "src/App.tsx:8:7";
-      Object.assign(el, { __reactFiber$promote: { _debugOwner: { type: Card, memoizedProps: { "data-vk-usage": usage }, _debugOwner: app } } });
+      Object.assign(el, { __reactFiber$promote: { _debugOwner: { type: Card, memoizedProps: { "data-tk-usage": usage }, _debugOwner: app } } });
       (el as HTMLElement).style.backgroundColor = i < 3 ? "rgb(255, 0, 0)" : "rgb(0, 0, 255)";
     });
 
@@ -374,11 +374,11 @@ describe("promote", () => {
     editor.promote(layerOf(cards[0]));
     editor.setBrief(layerOf(cards[3]), "Lift higher");
     editor.revert(1);
-    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual([null, null, null, "Lift higher"]);
+    expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual([null, null, null, "Lift higher"]);
 
     editor.promote(layerOf(cards[3]));
 
     expect(changes.list()).toMatchObject([{ kind: "brief", scope: "component", before: null, after: "Lift higher" }]);
-    expect(cards.map((el) => el.getAttribute("data-vk-brief"))).toEqual(Array(4).fill("Lift higher"));
+    expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual(Array(4).fill("Lift higher"));
   });
 });

@@ -87,7 +87,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   await tools.getByRole("button", { name: "Text" }).click();
   const board = await boxOf(canvas(page).locator("#board"));
   await drawFrom(page, { x: board.x + 20, y: board.y + 20 }, { x: board.x + 20, y: board.y + 20 });
-  const box = page.locator('.vk-selection[data-kind="typing"][data-view="Desktop"]');
+  const box = page.locator('.tk-selection[data-kind="typing"][data-view="Desktop"]');
   await expect(box).toHaveCSS("border-color", "rgb(13, 153, 255)");
   await expect(box).toHaveCSS("border-top-width", "1px");
   const narrow = (await boxOf(box)).width;
@@ -128,14 +128,14 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await expect(page.getByRole("button", { name: "Brief", exact: true })).toBeVisible();
   // No outline of its own on the canvas: a stroke will say that.
   expect(await frame.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
-  await expect(frame).toHaveAttribute("data-vk-brief", "A pricing table with three plans");
+  await expect(frame).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   expect(await frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
-  await expect(page.locator('.vk-tree-row[aria-selected="true"] .vk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
   // Marked on the canvas in the other views; in the one worked in, its button stands for the mark.
-  await expect(page.locator('.vk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
-  await expect(page.locator('.vk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
-  await expect(page.locator('.vk-brief-mark[data-view="Phone"]')).toHaveCount(1);
+  await expect(page.locator('.tk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
+  await expect(page.locator('.tk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
+  await expect(page.locator('.tk-brief-mark[data-view="Phone"]')).toHaveCount(1);
   await expect(await changeRows(page)).toHaveText([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
   await page.keyboard.press("Escape");
 
@@ -143,9 +143,9 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await layerTree(page).getByRole("treeitem", { name: "Frame", description: "Frame · Absolute" }).click();
   await page.keyboard.press("ControlOrMeta+d");
   const copy = canvas(page).locator("#board > div").nth(1);
-  await expect(copy).toHaveAttribute("data-vk-brief", "A pricing table with three plans");
-  await expect(page.locator('.vk-tree-row[aria-selected="true"] .vk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
-  for (const view of ["Desktop", "Tablet", "Phone"]) await expect(page.locator(`.vk-brief-mark[data-view="${view}"]`)).toHaveCount(2);
+  await expect(copy).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
+  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  for (const view of ["Desktop", "Tablet", "Phone"]) await expect(page.locator(`.tk-brief-mark[data-view="${view}"]`)).toHaveCount(2);
   await expect(design(page).getByRole("group", { name: "Brief" }).getByRole("textbox", { name: "Brief" })).toHaveValue("A pricing table with three plans");
 });
 
@@ -155,7 +155,7 @@ test("while a Frame is drawn with F, ⌘Z, ⇧⌘Z, Delete and the tool keys do 
   const badge = page.getByRole("button", { name: /not applied yet/ });
   const frameTool = page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Frame" });
   // Something to undo, the title deleted, and something to redo, the paragraph deleted and that undone.
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await layerTree(page).getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
   await page.keyboard.press("Delete");
@@ -204,7 +204,7 @@ test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys
   const badge = page.getByRole("button", { name: /not applied yet/ });
   const textTool = page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Text" });
   // Something to undo, the title deleted, and something to redo, the button deleted and that undone.
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await layerTree(page).getByRole("treeitem", { name: "Get started", exact: true }).click();
   await page.keyboard.press("Delete");
@@ -250,19 +250,19 @@ test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys
 
 test("a double click on the selected text types in it; the words change as an edit", async ({ page }) => {
   await enterEditMode(page);
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
 
   await canvas(page).locator("h1").dblclick();
-  await page.keyboard.type("Vernier");
+  await page.keyboard.type("Third");
   await page.keyboard.press("Enter");
 
-  await expect(canvas(page).locator("h1")).toHaveText("Vernier");
-  await expect(layerTree(page).getByRole("treeitem", { name: "Vernier", exact: true })).toBeVisible();
-  await expect(await changeRows(page)).toHaveText([/Text.*“Vernier Kit” → “Vernier”/]);
+  await expect(canvas(page).locator("h1")).toHaveText("Third");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third", exact: true })).toBeVisible();
+  await expect(await changeRows(page)).toHaveText([/Text.*“03Kind” → “Third”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(canvas(page).locator("h1")).toHaveText("Vernier Kit");
+  await expect(canvas(page).locator("h1")).toHaveText("03Kind");
 });
 
 test("Delete deletes the selected layer; ⌘D copies a card of the loop beside it", async ({ page }) => {

@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import { STALL_MS } from "./agent-stall";
 
-/** What the bench and the tests find this notice by (`data-vk-notice`), whatever its words. */
+/** What the bench and the tests find this notice by (`data-tk-notice`), whatever its words. */
 export const STALLED_NOTICE = "stalled";
 
 interface Props {
@@ -18,19 +18,19 @@ interface Props {
  */
 export function StalledNotice({ onKeepWaiting, onEndRound }: Props) {
   return (
-    <div class="vk-notice vk-stalled" role="alert" data-vk-notice={STALLED_NOTICE} aria-labelledby="vk-stalled-title" aria-describedby="vk-stalled-text">
-      <h2 id="vk-stalled-title" class="vk-notice-title">
+    <div class="tk-notice tk-stalled" role="alert" data-tk-notice={STALLED_NOTICE} aria-labelledby="tk-stalled-title" aria-describedby="tk-stalled-text">
+      <h2 id="tk-stalled-title" class="tk-notice-title">
         Your Agent seems to have stopped
       </h2>
-      <p id="vk-stalled-text" class="vk-notice-text">
+      <p id="tk-stalled-text" class="tk-notice-text">
         For {Math.floor(STALL_MS / 60_000)} minutes, no change has shown on the page, no change was marked done, and the code has not changed. If your Agent has stopped, tell it
         “Continue applying my design changes”: it gets only those not applied yet. Or end this round as it is, as pressing and holding the toggle does.
       </p>
-      <div class="vk-changes-actions">
-        <button type="button" class="vk-button" onClick={onEndRound}>
+      <div class="tk-changes-actions">
+        <button type="button" class="tk-button" onClick={onEndRound}>
           End this round
         </button>
-        <button type="button" class="vk-button is-primary" onClick={onKeepWaiting}>
+        <button type="button" class="tk-button is-primary" onClick={onKeepWaiting}>
           Keep waiting
         </button>
       </div>

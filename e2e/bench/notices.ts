@@ -5,7 +5,7 @@
 import type { BrowserContext, Page } from "@playwright/test";
 
 /**
- * Each notice by what the editor layer marks it with (`data-vk-notice`: in
+ * Each notice by what the editor layer marks it with (`data-tk-notice`: in
  * `CodeChangeNotice.tsx` and `StalledNotice.tsx`, which cannot be imported
  * here: they run on a page), not by its words, which may change; and where
  * the page keeps when it showed: on its window, and in its session's storage,
@@ -13,9 +13,9 @@ import type { BrowserContext, Page } from "@playwright/test";
  */
 const NOTICES = {
   /** In edit mode: the code is changing, but no Agent has claimed the changes (ticket 66). */
-  unclaimed: { selector: '[role="alertdialog"][data-vk-notice="unclaimed"]', key: "__vkBenchUnclaimedNotices" },
+  unclaimed: { selector: '[role="alertdialog"][data-tk-notice="unclaimed"]', key: "__tkBenchUnclaimedNotices" },
   /** On the locked toggle: the Agent seems to have stopped (ticket 67). */
-  stalled: { selector: '[role="alert"][data-vk-notice="stalled"]', key: "__vkBenchStalledNotices" },
+  stalled: { selector: '[role="alert"][data-tk-notice="stalled"]', key: "__tkBenchStalledNotices" },
 };
 
 export const unclaimedNotice = (page: Page) => page.locator(NOTICES.unclaimed.selector);
@@ -31,7 +31,7 @@ export const stalledNotice = (page: Page) => page.locator(NOTICES.stalled.select
 export async function recordNotices(on: Page | BrowserContext) {
   await on.addInitScript((notices) => {
     // Asked for again on the same page (a playbook that designs a second round): once is enough.
-    const recording = "__vkBenchNoticesRecorded";
+    const recording = "__tkBenchNoticesRecorded";
     if (window.top !== window || recording in window) return;
     (window as unknown as Record<string, boolean>)[recording] = true;
     const looks = notices.map(({ key, selector }) => {
@@ -55,7 +55,7 @@ export async function recordNotices(on: Page | BrowserContext) {
     const look = (root: ShadowRoot) => looks.forEach((one) => one(root));
     // The editor layer's host comes once the page's code mounts it: then its Shadow DOM is watched.
     const findHost = new MutationObserver(() => {
-      const root = document.querySelector("vernier-kit")?.shadowRoot;
+      const root = document.querySelector("third-kind")?.shadowRoot;
       if (!root) return;
       findHost.disconnect();
       new MutationObserver(() => look(root)).observe(root, { childList: true, subtree: true });

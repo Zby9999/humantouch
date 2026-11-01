@@ -3,7 +3,7 @@
  * round to apply and prints the change notes, `done <number> …` reports changes
  * applied and gives how the page checked them, `finish` ends the round, and
  * `last` prints the round before, to undo it by. `init`, `doctor` and
- * `remove` install Vernier Kit, check it, and take it back out.
+ * `remove` install 03Kind, check it, and take it back out.
  */
 import { changes as changesWord, describeChanges, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
@@ -73,7 +73,7 @@ async function claim(folder: ThirdKindFolder, root: string, io: Io): Promise<num
   // Not claimed yet: the open page may still be reading what it shows in each part of a change's range, the code as it is.
   const changeSet = state ? await readChangeSet(folder) : await waitForPartsRead(folder);
   if (!changeSet?.changes.length) {
-    io.write("No design changes to apply: the designer has not changed anything in Vernier Kit since the last round.\n");
+    io.write("No design changes to apply: the designer has not changed anything in 03Kind since the last round.\n");
     return 0;
   }
   // The code as it was before the Agent changed anything, to undo the round by.
@@ -396,7 +396,7 @@ async function waitForChecks(folder: ThirdKindFolder, check: CheckAsk, claimedAt
     const left = check.ids.filter((id) => !answers.has(id));
     if (!left.length) return answers;
     if (!open) {
-      for (const id of left) answers.set(id, { outcome: "unchecked", reason: "no page with Vernier Kit is open" });
+      for (const id of left) answers.set(id, { outcome: "unchecked", reason: "no page with 03Kind is open" });
       return answers;
     }
     if (Date.now() > until) {

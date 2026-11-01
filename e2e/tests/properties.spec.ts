@@ -497,7 +497,7 @@ test("a shadow dragged until it draws nothing is taken off, and the rest of the 
   const y = effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true });
   await y.fill("0");
   await y.press("Enter"); // shadow-sm's first shadow, now 0 0 3px 0
-  const icon = page.locator('.vk-field:has([aria-label="Shadow 1 blur"]) .vk-scrub');
+  const icon = page.locator('.tk-field:has([aria-label="Shadow 1 blur"]) .tk-scrub');
   await icon.scrollIntoViewIfNeeded();
   const box = (await icon.boundingBox())!;
   const at = { x: box.x + 4, y: box.y + 4 };
@@ -752,7 +752,7 @@ test("text and other layers selected together take drop shadows each its own way
 
 test("the selection box steps aside while a value changes, so the change can be seen, and comes back after", async ({ page }) => {
   await selectRow(page, "Card");
-  const box = page.locator('.vk-selection[data-view="Desktop"]');
+  const box = page.locator('.tk-selection[data-view="Desktop"]');
   await expect(box).toBeVisible();
   // It is gone only briefly, so watch for it rather than poll.
   await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => {
@@ -770,7 +770,7 @@ test("the selection box steps aside while a value changes, so the change can be 
 test("dragging left and right on a number's icon changes it, 1 per px and 10 with Shift", async ({ page }) => {
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const icon = page.locator('.vk-field:has([aria-label="Corner radius"]) .vk-scrub');
+  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
   const { x, y } = (await icon.boundingBox())!;
   const drag = async (dx: number) => {
     await page.mouse.move(x + 4, y + 4);

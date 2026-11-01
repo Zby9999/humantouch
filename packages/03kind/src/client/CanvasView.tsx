@@ -961,7 +961,7 @@ export function CanvasView(props: Props) {
   return (
     <div
       ref={viewport}
-      class={`vk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
+      class={`tk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
       style={resize ? { cursor: handleCursor(resize.handle) } : undefined}
       role="region"
       aria-label="Canvas viewport"
@@ -984,7 +984,7 @@ export function CanvasView(props: Props) {
     >
       <div
         ref={stage}
-        class="vk-stage"
+        class="tk-stage"
         style={{
           transform: transformOf(camera),
           visibility: canvas ? "visible" : "hidden",
@@ -995,7 +995,7 @@ export function CanvasView(props: Props) {
           (`CANVAS_STYLES`). `scrolling="no"` tells the browser so: as a frame that could scroll, a view redrawn
           had the whole editor around it redrawn too, a large page's frame slower by some 5ms (ticket 22).
         */}
-        <iframe ref={iframe} class="vk-canvas" title="Canvas" sandbox="allow-same-origin" scrolling="no" />
+        <iframe ref={iframe} class="tk-canvas" title="Canvas" sandbox="allow-same-origin" scrolling="no" />
         {canvas &&
           placed
             .filter((p) => !p.desktop)
@@ -1006,7 +1006,7 @@ export function CanvasView(props: Props) {
                   if (el) frames.current.set(p.width, el);
                   else frames.current.delete(p.width);
                 }}
-                class="vk-canvas is-beside"
+                class="tk-canvas is-beside"
                 title={`${p.name} ${p.width}`}
                 sandbox="allow-same-origin"
                 scrolling="no"
@@ -1015,7 +1015,7 @@ export function CanvasView(props: Props) {
               />
             ))}
         {/* The layers off the canvas, drawn over the views; each an iframe of its own, put there by `off-canvas.ts`. Only the canvas is played. */}
-        <div ref={workspace} class="vk-off-canvas-layers" style={{ visibility: playing || travelling ? "hidden" : undefined }} />
+        <div ref={workspace} class="tk-off-canvas-layers" style={{ visibility: playing || travelling ? "hidden" : undefined }} />
       </div>
       {/* In every view alike: the layer pointed at, the selection, the text being typed in. */}
       {!travelling &&
@@ -1040,7 +1040,7 @@ export function CanvasView(props: Props) {
         })}
       {newFrame && (
         <Brief
-          key={newFrame.layer.el.getAttribute("data-vk-layer")}
+          key={newFrame.layer.el.getAttribute("data-tk-layer")}
           layer={newFrame.layer}
           view={newFrame.in.view}
           brief={newFrame.brief}
@@ -1050,7 +1050,7 @@ export function CanvasView(props: Props) {
       )}
       {toolbar && (
         <SelectionToolbar
-          key={toolbar.layer.el.getAttribute("data-vk-layer") ?? undefined}
+          key={toolbar.layer.el.getAttribute("data-tk-layer") ?? undefined}
           layer={toolbar.layer}
           view={toolbar.in.view}
           camera={cameraIn(camera, toolbar.in)}
@@ -1078,7 +1078,7 @@ export function CanvasView(props: Props) {
       {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, resize.in)} />}
       {resize && resize.marks.length > 0 && <Marks marks={resize.marks} view={resize.in.name} camera={cameraIn(camera, resize.in)} />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={drag.in.view} name={drag.in.name} camera={cameraIn(camera, drag.in)} hover />}
-      {drag?.drop?.line && <div class="vk-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
+      {drag?.drop?.line && <div class="tk-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
       {drag?.drop && drag.drop.marks.length > 0 && <Marks marks={drag.drop.marks} view={drag.in.name} camera={cameraIn(camera, drag.in)} />}
       {measured && (
         <>
@@ -1086,9 +1086,9 @@ export function CanvasView(props: Props) {
           <Marks marks={measured.marks} view={measured.in.name} camera={cameraIn(camera, measured.in)} />
         </>
       )}
-      {(drag?.layer.text || drag?.out) && <div class="vk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
-      {drawn && <div class="vk-drag-ghost" aria-hidden="true" style={place(drawn.box, cameraIn(camera, drawn.in))} />}
-      {failed && <p class="vk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
+      {(drag?.layer.text || drag?.out) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
+      {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, cameraIn(camera, drawn.in))} />}
+      {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
 }

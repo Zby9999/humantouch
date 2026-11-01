@@ -36,21 +36,21 @@ export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
   // Reset as its row resets it.
   const inherit = (property: Property) => breakpointMarks(editor, layers, onEdit).reset([property]);
   return (
-    <section class="vk-section vk-breakpoint" aria-labelledby="vk-breakpoint">
-      <div class="vk-section-header">
-        <h3 id="vk-breakpoint" class="vk-section-title">
+    <section class="tk-section tk-breakpoint" aria-labelledby="tk-breakpoint">
+      <div class="tk-section-header">
+        <h3 id="tk-breakpoint" class="tk-section-title">
           {view} breakpoint
         </h3>
-        <span class="vk-breakpoint-range">{breakpointName(breakpoint)}</span>
+        <span class="tk-breakpoint-range">{breakpointName(breakpoint)}</span>
       </div>
-      <p class="vk-layer-note">
+      <p class="tk-layer-note">
         {breakpoint ? (
           <>
             Style and layout changed here apply {breakpointName(breakpoint)} only
             {tailwind && (
               <>
                 {" "}
-                (<code class="vk-breakpoint-code">{tailwind}</code>)
+                (<code class="tk-breakpoint-code">{tailwind}</code>)
               </>
             )}
             .
@@ -60,14 +60,14 @@ export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
         )}
       </p>
       {changed.length > 0 && (
-        <ul class="vk-breakpoint-changes" aria-label={`Changed at the ${view.toLowerCase()} breakpoint`}>
+        <ul class="tk-breakpoint-changes" aria-label={`Changed at the ${view.toLowerCase()} breakpoint`}>
           {changed.map((property) => (
-            <li key={property} class="vk-breakpoint-change" data-vk-property={property}>
-              <span class="vk-breakpoint-mark" aria-hidden="true" />
-              <span class="vk-breakpoint-name">{propertyTitle(property)}</span>
+            <li key={property} class="tk-breakpoint-change" data-tk-property={property}>
+              <span class="tk-breakpoint-mark" aria-hidden="true" />
+              <span class="tk-breakpoint-name">{propertyTitle(property)}</span>
               <button
                 type="button"
-                class="vk-icon-button"
+                class="tk-icon-button"
                 aria-label={`Reset ${propertyTitle(property)} to inherit`}
                 title="Reset to inherit from every width"
                 onClick={() => inherit(property)}

@@ -59,14 +59,14 @@ test("dragged within a Stack, a layer takes another place; the others make room 
     return { x: p.x + p.width / 2, y: p.y + 2 };
   }, { drop: false });
   // Only shifted while it moves: the paragraph steps down, the structure is as it was.
-  await expect(page.locator(".vk-drop-line")).toBeVisible();
+  await expect(page.locator(".tk-drop-line")).toBeVisible();
   await expect(paragraph).not.toHaveCSS("translate", "none");
   expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await page.mouse.up();
 
   expect(await childTags(page, HERO)).toEqual(["header", "button", "p"]);
   await expect(paragraph).toHaveCSS("translate", "none");
-  await expect(page.locator(".vk-drop-line")).toHaveCount(0);
+  await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   const rows = await layerTree(page).getByRole("treeitem").allTextContents();
   expect(rows.indexOf("Button")).toBeLessThan(rows.indexOf("A Framer-style editor layer for any page."));
   await expect(layerTree(page).getByRole("treeitem", { name: "Button", exact: true })).toHaveAttribute("aria-selected", "true");
@@ -78,11 +78,13 @@ test("dragged within a Stack, a layer takes another place; the others make room 
 test("dragged into another Stack, it goes in where it is let go, beside a locked layer rather than into it", async ({ page }) => {
   await enterEditMode(page);
   await selectButton(page);
-  const button = canvas(page).locator(`${HERO} > button`);
+  // In the phone view: there the badge is in the middle half of the title's row, which is entered from its middle only.
+  const phone = page.locator('iframe[title="Phone 390"]').contentFrame();
+  const button = phone.locator(`${HERO} > button`);
 
   // Let go over the Beta badge, which comes from a dependency.
   await drag(page, button, async () => {
-    const badge = await boxOf(canvas(page).getByTestId("acme-badge"));
+    const badge = await boxOf(phone.getByTestId("acme-badge"));
     return { x: badge.x + badge.width / 2 + 1, y: badge.y + badge.height / 2 };
   });
 
@@ -165,7 +167,7 @@ async function aboveParagraph(page: Page) {
 
 /** The title deleted, from the Layers panel: an edit to undo. */
 async function deleteTitle(page: Page) {
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "03Kind", exact: true }).click();
   await page.keyboard.press("Delete");
   await expect(canvas(page).locator("h1")).toBeHidden();
 }
@@ -194,7 +196,7 @@ test("while dragging, ⌘Z and ⇧⌘Z do nothing: the changes, the canvas and t
     expect(await layerTree(page).getByRole("treeitem").allTextContents()).toEqual(rows);
     // Still dragging, the paragraph still making room.
     await expect(paragraph).not.toHaveCSS("translate", "none");
-    await expect(page.locator(".vk-drop-line")).toBeVisible();
+    await expect(page.locator(".tk-drop-line")).toBeVisible();
   }
   await page.mouse.up();
 
@@ -275,7 +277,7 @@ test("while dragging, none of the keys that edit does anything, nor T picks a to
     expect(await layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
     // Still dragging, the paragraph still making room.
     await expect(paragraph, key).not.toHaveCSS("translate", "none");
-    await expect(page.locator(".vk-drop-line"), key).toBeVisible();
+    await expect(page.locator(".tk-drop-line"), key).toBeVisible();
   }
   await expect(page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
   await page.mouse.up();
@@ -348,7 +350,7 @@ test("while dragging, the keys that move about the canvas go on: Space readies a
   await page.keyboard.press("Shift+Digit1");
   await expect.poll(async () => Math.round((await boxOf(view)).width)).toBe(Math.round(fitted));
   await page.keyboard.press("Escape");
-  await expect(page.locator(".vk-drop-line")).toHaveCount(0);
+  await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   await page.mouse.up();
 
   expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);

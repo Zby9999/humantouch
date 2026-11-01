@@ -27,7 +27,7 @@ function holdKeys(event: KeyboardEvent) {
 }
 window.addEventListener("keydown", holdKeys, true);
 
-/** What the bench and the tests find this notice by (`data-vk-notice`), whatever its words. */
+/** What the bench and the tests find this notice by (`data-tk-notice`), whatever its words. */
 export const UNCLAIMED_NOTICE = "unclaimed";
 
 interface Props {
@@ -62,20 +62,20 @@ export function CodeChangeNotice({ onKeepEditing, onBackToPreview }: Props) {
     };
   }, []);
   return (
-    <div class="vk-paused">
-      <div ref={notice} class="vk-notice" role="alertdialog" data-vk-notice={UNCLAIMED_NOTICE} aria-modal="true" aria-labelledby="vk-notice-title" aria-describedby="vk-notice-text">
-        <h2 id="vk-notice-title" class="vk-notice-title">
+    <div class="tk-paused">
+      <div ref={notice} class="tk-notice" role="alertdialog" data-tk-notice={UNCLAIMED_NOTICE} aria-modal="true" aria-labelledby="tk-notice-title" aria-describedby="tk-notice-text">
+        <h2 id="tk-notice-title" class="tk-notice-title">
           The code is changing, but no Agent has claimed your changes
         </h2>
-        <p id="vk-notice-text" class="vk-notice-text">
+        <p id="tk-notice-text" class="tk-notice-text">
           Editing is paused: the canvas may no longer match the code. Keep editing if this change has nothing to do with yours. Or go back to preview mode: your
           changes are kept, and edit mode comes back to this canvas.
         </p>
-        <div class="vk-changes-actions">
-          <button type="button" class="vk-button" onClick={(event) => onBackToPreview(event.detail > 0)}>
+        <div class="tk-changes-actions">
+          <button type="button" class="tk-button" onClick={(event) => onBackToPreview(event.detail > 0)}>
             Back to preview mode
           </button>
-          <button ref={keep} type="button" class="vk-button is-primary" onClick={onKeepEditing}>
+          <button ref={keep} type="button" class="tk-button is-primary" onClick={onKeepEditing}>
             Keep editing
           </button>
         </div>

@@ -171,7 +171,7 @@ test("no notice as the editor layer saves the round, the layers off the canvas, 
   // Off the canvas: saved apart, in `.03kind/off-canvas.json`.
   const view = (await page.locator('iframe[title="Canvas"]').boundingBox())!;
   const title = (await canvas(page).locator("h1").boundingBox())!;
-  await layer(page, "Vernier Kit").click();
+  await layer(page, "03Kind").click();
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
   await page.mouse.down();
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
@@ -261,7 +261,7 @@ test("no notice as the Agent claims and edits at once, even with the page never 
     (route) =>
       route.fulfill({
         status: 200,
-        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-Vernier-Token, Content-Type" },
+        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type" },
         contentType: "application/x-ndjson",
         body: `${JSON.stringify({ status: "editing" })}\n`,
       }),
@@ -282,13 +282,13 @@ test("no notice as the Agent claims and edits at once, even with the page never 
 test("words typed in a text layer on the canvas are set as the notice takes the focus: no change is lost", async ({ page }) => {
   await page.goto(DEV_URL);
   await designARound(page);
-  await layer(page, "Vernier Kit").click();
+  await layer(page, "03Kind").click();
   await canvas(page).locator("h1").dblclick();
-  await page.keyboard.type("Vernier");
+  await page.keyboard.type("Third");
 
   await changeTheCard(page);
 
   await expect(unclaimedNotice(page)).toBeVisible();
-  await expect(canvas(page).locator("h1")).toHaveText("Vernier");
+  await expect(canvas(page).locator("h1")).toHaveText("Third");
   await expect.poll(savedChanges).toBe(2);
 });

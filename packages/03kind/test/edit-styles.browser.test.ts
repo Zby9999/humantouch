@@ -15,16 +15,16 @@ import { createViews } from "../src/client/views";
 
 const APP = [{ component: "App", usage: null, thirdParty: false }];
 const LOOP = [{ component: "Card", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP];
-const chain = (levels: object[]) => `data-vk-chain='${JSON.stringify(levels)}'`;
+const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
 
 /** A loop of six Cards, a title in each; with `lifted`, the last one has an important opacity of the page's own on its style attribute. */
 const pageWith = (lifted: boolean) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-vk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(3, 120px); gap: 8px">
+  <main data-tk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(3, 120px); gap: 8px">
     ${[1, 2, 3, 4, 5, 6]
       .map(
-        (n) => `<article data-vk-loc="src/Card.tsx:3:5" ${chain(LOOP)} style="height: 60px; background-color: rgb(255, 255, 255); border-radius: 12px${lifted && n === 6 ? "; opacity: 0.5 !important" : ""}">
-          <h3 data-vk-loc="src/Card.tsx:4:7" ${chain(LOOP)} style="margin: 0">Card ${n}</h3>
+        (n) => `<article data-tk-loc="src/Card.tsx:3:5" ${chain(LOOP)} style="height: 60px; background-color: rgb(255, 255, 255); border-radius: 12px${lifted && n === 6 ? "; opacity: 0.5 !important" : ""}">
+          <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(LOOP)} style="margin: 0">Card ${n}</h3>
         </article>`,
       )
       .join("")}
@@ -74,8 +74,8 @@ async function open(page = PAGE) {
   return { doc, canvas, views, phone, changes, editor, cards, layerOf, inPhone };
 }
 
-const sheets = (doc: Document) => [...doc.querySelectorAll("style[data-vk-rules]")];
-const keys = (els: Element[]) => new Set(els.map((el) => el.getAttribute("data-vk-style")));
+const sheets = (doc: Document) => [...doc.querySelectorAll("style[data-tk-rules]")];
+const keys = (els: Element[]) => new Set(els.map((el) => el.getAttribute("data-tk-style")));
 const radius = (el: Element) => getComputedStyle(el).borderTopLeftRadius;
 
 describe("the instances of a layer share their edit styles", () => {
@@ -147,7 +147,7 @@ describe("the instances of a layer share their edit styles", () => {
   });
 
   test("instances the freezer pinned, shifted apart, each have a style element of their own, shifted as they are", async () => {
-    const doc = write(`<!DOCTYPE html><body>${[0, 0, 30].map((shift) => `<nav data-vk-layer="1" data-vk-pin-offset="0 ${shift}" style="position: absolute !important; top: ${shift}px !important"></nav>`).join("")}</body>`);
+    const doc = write(`<!DOCTYPE html><body>${[0, 0, 30].map((shift) => `<nav data-tk-layer="1" data-tk-pin-offset="0 ${shift}" style="position: absolute !important; top: ${shift}px !important"></nav>`).join("")}</body>`);
     const navs = [...doc.querySelectorAll("nav")];
 
     declare(navs, { top: "10px" });

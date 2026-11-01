@@ -34,9 +34,9 @@ test.afterAll(() => {
 
 const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/03kind/dist/cli.js"), ...args], project);
 
-test("init installs Vernier Kit into a Next.js project: with webpack, the toggle is on the page and the markers in it; the rest of the editor layer loads as edit mode is first entered", async ({ page }) => {
-  const output = await sh(process.execPath, [CLI, "init"], project, { VERNIERKIT_INSTALL_FROM: packed });
-  expect(output).toContain("Vernier Kit (Next.js, pnpm)");
+test("init installs 03Kind into a Next.js project: with webpack, the toggle is on the page and the markers in it; the rest of the editor layer loads as edit mode is first entered", async ({ page }) => {
+  const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
+  expect(output).toContain("03Kind (Next.js, pnpm)");
   expect(output).toContain("Installed.");
 
   const server = startServer(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--webpack", "--port", String(NEXT_INSTALL_PORT)], project);
@@ -47,7 +47,7 @@ test("init installs Vernier Kit into a Next.js project: with webpack, the toggle
     }).toPass({ timeout: 60_000 });
     const toggle = page.getByRole("button", { name: TOGGLE_LABEL });
     await expect(toggle).toBeVisible();
-    await expect(page.locator("article").first()).toHaveAttribute("data-vk-loc", /^components\/Card\.tsx:\d+:\d+$/);
+    await expect(page.locator("article").first()).toHaveAttribute("data-tk-loc", /^components\/Card\.tsx:\d+:\d+$/);
 
     await settle(page);
     expect(await loaded.has(EXIT_LABEL)).toBe(false);

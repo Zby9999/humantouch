@@ -252,7 +252,7 @@ test("the Skill read from the package's own copy, as an Agent with none in the p
   assert.equal(toolCallStats(calls).charsRead.skill, 17);
 });
 
-test("calls that read the Vernier Kit package itself are counted, not those that run its command line (ticket 65)", () => {
+test("calls that read the 03Kind package itself are counted, not those that run its command line (ticket 65)", () => {
   const calls: ToolCall[] = [
     { name: "read", path: "/t/run/node_modules/03kind/dist/cli.js", output: "x" },
     { name: "grep", path: "/t/run/node_modules/.pnpm/03kind@file+..+pack/node_modules/03kind/dist", output: "" },

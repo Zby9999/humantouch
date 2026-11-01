@@ -27,21 +27,21 @@ test("the toggle appears on a Next.js page", async ({ page }) => {
 });
 
 test("elements server components write carry their element location, under Turbopack", async ({ page }) => {
-  await expect(page.locator("body")).toHaveAttribute("data-vk-loc", locate("app/layout.tsx", "<body"));
-  await expect(page.locator("main")).toHaveAttribute("data-vk-loc", locate("app/page.tsx", "<main"));
+  await expect(page.locator("body")).toHaveAttribute("data-tk-loc", locate("app/layout.tsx", "<body"));
+  await expect(page.locator("main")).toHaveAttribute("data-tk-loc", locate("app/page.tsx", "<main"));
   for (const card of await page.locator("article").all()) {
-    await expect(card).toHaveAttribute("data-vk-loc", locate("components/Card.tsx", "<article"));
+    await expect(card).toHaveAttribute("data-tk-loc", locate("components/Card.tsx", "<article"));
   }
   // A client component's element.
-  await expect(page.getByRole("button", { name: "Get started" })).toHaveAttribute("data-vk-loc", locate("components/GetStarted.tsx", "<button"));
+  await expect(page.getByRole("button", { name: "Get started" })).toHaveAttribute("data-tk-loc", locate("components/GetStarted.tsx", "<button"));
 });
 
 test("code from Next.js itself is not marked: the link next/link writes has no element location", async ({ page }) => {
   const link = page.getByRole("link", { name: "About" });
 
-  expect(await link.getAttribute("data-vk-loc")).toBeNull();
+  expect(await link.getAttribute("data-tk-loc")).toBeNull();
   // Its usage is project source: Link passes the marker on to the element.
-  await expect(link).toHaveAttribute("data-vk-usage", locate("app/page.tsx", "<Link"));
+  await expect(link).toHaveAttribute("data-tk-usage", locate("app/page.tsx", "<Link"));
 });
 
 test("the usage chain reaches through server components: the cards are Card used in the page", async ({ page }) => {
@@ -49,7 +49,7 @@ test("the usage chain reaches through server components: the cards are Card used
   const card = canvas(page).locator("article").first();
   await expect(card).toBeVisible();
 
-  const chain = JSON.parse((await card.getAttribute("data-vk-chain"))!);
+  const chain = JSON.parse((await card.getAttribute("data-tk-chain"))!);
 
   // The page itself is rendered by Next.js, from no JSX of the project's.
   expect(chain).toEqual([

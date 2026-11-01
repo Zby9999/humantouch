@@ -41,15 +41,15 @@ export function GridSection({ editor, layers, onEdit, variable }: Props) {
     onEdit();
   };
   return (
-    <section class="vk-section" aria-labelledby="vk-grid">
-      <h3 id="vk-grid" class="vk-section-title">
+    <section class="tk-section" aria-labelledby="tk-grid">
+      <h3 id="tk-grid" class="tk-section-title">
         Grid
       </h3>
-      <div class="vk-grid-2 vk-markable">
+      <div class="tk-grid-2 tk-markable">
         <BreakpointMark properties={["columns"]} />
         <NumberField label="Columns" icon="grid" value={shown("columns")} min={1} onChange={set("columns")} />
       </div>
-      <div class="vk-grid-2 vk-markable">
+      <div class="tk-grid-2 tk-markable">
         <BreakpointMark properties={["rowGap", "columnGap"]} />
         <VariableSlot label="Row gap" slot={variable("rowGap")}>
           <NumberField label="Row gap" glyph="↕" value={shown("rowGap")} min={0} onChange={set("rowGap")} />

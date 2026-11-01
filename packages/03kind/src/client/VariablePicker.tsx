@@ -64,7 +64,7 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
   return (
     <div
       ref={box}
-      class="vk-popover"
+      class="tk-popover"
       role="dialog"
       aria-label={label}
       // A click on it keeps its keys in it: Esc closes it, not the selection.
@@ -76,9 +76,9 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
         close();
       }}
     >
-      <div class="vk-popover-header">
-        <h3 class="vk-section-title">{label}</h3>
-        <button type="button" class="vk-icon-button" aria-label="Close" onClick={close}>
+      <div class="tk-popover-header">
+        <h3 class="tk-section-title">{label}</h3>
+        <button type="button" class="tk-icon-button" aria-label="Close" onClick={close}>
           <Icon name="close" />
         </button>
       </div>
@@ -98,9 +98,9 @@ function valueText(drawn: Drawn): string {
 function Preview({ drawn }: { drawn: Drawn }) {
   if (typeof drawn === "number") return null;
   if (Array.isArray(drawn)) {
-    return <span class="vk-variable-preview is-shadow" style={{ boxShadow: writeShadows(drawn as Shadow[])["box-shadow"] }} aria-hidden="true" />;
+    return <span class="tk-variable-preview is-shadow" style={{ boxShadow: writeShadows(drawn as Shadow[])["box-shadow"] }} aria-hidden="true" />;
   }
-  return <span class="vk-variable-preview" style={{ "--vk-swatch": cssColor(drawn as Color) }} aria-hidden="true" />;
+  return <span class="tk-variable-preview" style={{ "--tk-swatch": cssColor(drawn as Color) }} aria-hidden="true" />;
 }
 
 /** Which heading a Variable is listed under: the project's own apart from Tailwind's, and a color with its family (`brand-500` under brand). */
@@ -136,15 +136,15 @@ function Option({ as, id, entry, selected, onChoose, onPick }: {
       })}
       id={id}
       role="option"
-      class="vk-variable-option"
+      class="tk-variable-option"
       aria-selected={selected}
       aria-label={variable.name}
       title={`${variable.name}: ${variable.value}`}
       onClick={() => onPick(entry)}
     >
       <Preview drawn={drawn} />
-      <span class="vk-variable-name">{variable.name}</span>
-      <span class="vk-variable-value">{valueText(drawn)}</span>
+      <span class="tk-variable-name">{variable.name}</span>
+      <span class="tk-variable-value">{valueText(drawn)}</span>
     </Tag>
   );
 }
@@ -165,7 +165,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
       <input
         ref={search}
         type="search"
-        class="vk-input vk-variable-search"
+        class="tk-input tk-variable-search"
         aria-label="Search variables"
         placeholder="Search"
         spellcheck={false}
@@ -173,11 +173,11 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
         value={query}
         onInput={(event) => setQuery(event.currentTarget.value)}
       />
-      <div class="vk-variable-list" role="listbox" aria-label="Variables">
-        {!found.length && <p class="vk-layer-note">No variables match.</p>}
+      <div class="tk-variable-list" role="listbox" aria-label="Variables">
+        {!found.length && <p class="tk-layer-note">No variables match.</p>}
         {headings.map((heading) => (
           <div key={heading} role="group" aria-label={heading}>
-            <h4 class="vk-section-title vk-subtitle">{heading}</h4>
+            <h4 class="tk-section-title tk-subtitle">{heading}</h4>
             {found
               .filter(({ variable }) => headingOf(variable) === heading)
               .map((entry) => {
@@ -210,13 +210,13 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
   const lower = label.toLowerCase();
   const typing: Typing = { group, selection: slot.selection, read: readLength, naming: namesLength, onPick: pick };
   return (
-    <div class="vk-variable-slot">
+    <div class="tk-variable-slot">
       {bound ? (
-        <div class="vk-field vk-variable-chip">
+        <div class="tk-field tk-variable-chip">
           <Icon name="variable" />
           <button
             type="button"
-            class="vk-variable-chip-name"
+            class="tk-variable-chip-name"
             aria-label={`${label} variable`}
             aria-haspopup="dialog"
             title={`${bound.name}: ${bound.value}`}
@@ -224,7 +224,7 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
           >
             {bound.name}
           </button>
-          <button type="button" class="vk-icon-button" aria-label={`Detach ${lower} variable`} title="Detach variable" onClick={() => pick(null)}>
+          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} title="Detach variable" onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
         </div>
@@ -233,7 +233,7 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
           <TypingProvider value={typing}>{children}</TypingProvider>
           <button
             type="button"
-            class="vk-icon-button vk-variable-button"
+            class="tk-icon-button tk-variable-button"
             aria-label={`${label} variables`}
             aria-haspopup="dialog"
             title="Apply variable"
@@ -271,9 +271,9 @@ export function ColorPicker({ label, anchor, slot, custom, onClose }: {
   ] as const;
   return (
     <Popover label={`${label} color`} anchor={anchor} onClose={onClose}>
-      <div class="vk-tabs" role="tablist" aria-label="Color">
+      <div class="tk-tabs" role="tablist" aria-label="Color">
         {tabs.map(({ id, label }) => (
-          <button key={id} type="button" role="tab" class="vk-tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+          <button key={id} type="button" role="tab" class="tk-tab" aria-selected={tab === id} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
@@ -403,7 +403,7 @@ export function useTypeahead({ text, value, input, reset }: { text: string | nul
         {near && (
           <button
             type="button"
-            class="vk-variable-hint"
+            class="tk-variable-hint"
             aria-label={`Use variable ${near.variable.name}`}
             title={`Close to ${near.variable.name} (${valueText(near.drawn)}): use it`}
             // A press keeps the field typed into: what is typed is not applied on the way.
@@ -434,7 +434,7 @@ function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
   const list = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number; width: number } | null>(null);
   useLayoutEffect(() => {
-    const at = (anchor.closest(".vk-field") ?? anchor).getBoundingClientRect();
+    const at = (anchor.closest(".tk-field") ?? anchor).getBoundingClientRect();
     const width = Math.max(at.width, MATCHES_WIDTH);
     const height = list.current!.offsetHeight;
     const below = at.bottom + 4;
@@ -451,7 +451,7 @@ function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
     <div
       ref={list}
       id={id}
-      class="vk-matches"
+      class="tk-matches"
       role="listbox"
       aria-label="Matching variables"
       style={{ width: `${place?.width ?? MATCHES_WIDTH}px`, left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden" }}

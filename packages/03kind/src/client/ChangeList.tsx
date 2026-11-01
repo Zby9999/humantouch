@@ -38,7 +38,7 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
     // A press anywhere else closes it; what opened it (the badge, or the count in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
-      if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.hasAttribute("data-vk-changes-opener"))) {
+      if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.hasAttribute("data-tk-changes-opener"))) {
         latestOnClose.current();
       }
     };
@@ -64,35 +64,35 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
       setConfirming(false);
       return;
     }
-    const opener = (event.currentTarget.getRootNode() as ShadowRoot).querySelector<HTMLElement>("[data-vk-changes-opener]");
+    const opener = (event.currentTarget.getRootNode() as ShadowRoot).querySelector<HTMLElement>("[data-tk-changes-opener]");
     onClose();
     opener?.focus();
   };
 
   const count = changes.length === 1 ? "1 change" : `${changes.length} changes`;
   return (
-    <div ref={dialog} class="vk-changes" role="dialog" aria-label="Changes" tabIndex={-1} onKeyDown={onKeyDown}>
-      <h2 class="vk-changes-title">{count} not applied yet</h2>
-      {readOnly && <p class="vk-changes-note">The Agent is applying these changes.</p>}
-      {!changes.length && <p class="vk-changes-note">No changes left.</p>}
-      <ul class="vk-changes-list">
+    <div ref={dialog} class="tk-changes" role="dialog" aria-label="Changes" tabIndex={-1} onKeyDown={onKeyDown}>
+      <h2 class="tk-changes-title">{count} not applied yet</h2>
+      {readOnly && <p class="tk-changes-note">The Agent is applying these changes.</p>}
+      {!changes.length && <p class="tk-changes-note">No changes left.</p>}
+      <ul class="tk-changes-list">
         {changes.map((change) => (
-          <li key={change.id} class="vk-change">
-            <span class="vk-change-text">
-              <span class="vk-change-name">
+          <li key={change.id} class="tk-change">
+            <span class="tk-change-text">
+              <span class="tk-change-name">
                 {changeTitle(change)} · {layerName(change)}
               </span>
-              <span class="vk-change-values">
+              <span class="tk-change-values">
                 {changeValues(change)}
                 {change.scope === "component" && <span> · {change.target.component} itself</span>}
-                {change.breakpoint && <span class="vk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
-                {!!change.copiedBreakpoints?.length && <span class="vk-change-breakpoint"> · with copied breakpoints</span>}
+                {change.breakpoint && <span class="tk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+                {!!change.copiedBreakpoints?.length && <span class="tk-change-breakpoint"> · with copied breakpoints</span>}
               </span>
             </span>
             {!readOnly && (
               <button
                 type="button"
-                class="vk-icon-button"
+                class="tk-icon-button"
                 aria-label={`Undo the ${changeTitle(change).toLowerCase()} of ${layerName(change)}`}
                 title="Undo this change"
                 onClick={() => {
@@ -110,20 +110,20 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
       {!readOnly &&
         changes.length > 0 &&
         (confirming ? (
-          <div class="vk-changes-confirm">
+          <div class="tk-changes-confirm">
             <p>Discard all {count}? The canvas goes with them: edit mode freezes the page afresh.</p>
-            <div class="vk-changes-actions">
-              <button ref={cancel} type="button" class="vk-button" onClick={() => setConfirming(false)}>
+            <div class="tk-changes-actions">
+              <button ref={cancel} type="button" class="tk-button" onClick={() => setConfirming(false)}>
                 Cancel
               </button>
-              <button type="button" class="vk-button is-danger" onClick={onDiscard}>
+              <button type="button" class="tk-button is-danger" onClick={onDiscard}>
                 Discard
               </button>
             </div>
           </div>
         ) : (
-          <div class="vk-changes-actions">
-            <button type="button" class="vk-button" onClick={() => setConfirming(true)}>
+          <div class="tk-changes-actions">
+            <button type="button" class="tk-button" onClick={() => setConfirming(true)}>
               Discard all
             </button>
           </div>

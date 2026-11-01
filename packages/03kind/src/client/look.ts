@@ -15,11 +15,11 @@ import { LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./style-marks";
 import { CHAIN_ATTR } from "./usage-chain";
 
 /** On each element of a frozen look: the key its frozen style goes by. */
-export const LOOK_ATTR = "data-vk-look";
+export const LOOK_ATTR = "data-tk-look";
 /** What of an element's marks a frozen copy keeps: where it is written, its usage chain, and that it is a still. */
 const KEPT = new Set([LOC_ATTR, USAGE_ATTR, CHAIN_ATTR, FROZEN]);
 /** On a frozen copy: the classes it had, kept to tell it by, where no rule of the page's can match them. */
-export const CLASS_ATTR = "data-vk-class";
+export const CLASS_ATTR = "data-tk-class";
 /** Elements that are no part of a look. */
 const DROPPED = new Set(["script", "noscript", "style", "link", "meta", "template", "title", "source", "head"]);
 /**
@@ -39,7 +39,7 @@ const BASE = "html,body{margin:0;padding:0;background:transparent}body{width:max
 export function freezeLook(el: Element, into: HTMLIFrameElement) {
   const from = el.ownerDocument;
   const doc = into.contentDocument;
-  if (!doc) throw new Error("Vernier Kit: the iframe to freeze a look into is not in the document");
+  if (!doc) throw new Error("03Kind: the iframe to freeze a look into is not in the document");
   doc.open();
   doc.write(`${doctypeOf(from)}<html><head><style ${LOOK_STYLES_ATTR}="${LOOK_STYLES_BASE}">${BASE}</style></head><body></body></html>`);
   doc.close();
@@ -86,7 +86,7 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
       if (/^(none|normal)$/.test(shown.content)) continue;
       rules.push(rule(`[${LOOK_ATTR}="${key}"]::${pseudo}`, differing(valuesOf(shown), known[pseudo], own)));
     }
-    for (const attr of [...to.attributes]) if (attr.name === "style" || (attr.name.startsWith("data-vk-") && !KEPT.has(attr.name))) to.removeAttribute(attr.name);
+    for (const attr of [...to.attributes]) if (attr.name === "style" || (attr.name.startsWith("data-tk-") && !KEPT.has(attr.name))) to.removeAttribute(attr.name);
     // No rule of the page's that could still load (from another origin) reaches it by its classes.
     const classes = to.getAttribute("class");
     if (classes !== null) {
@@ -132,7 +132,7 @@ export function copyLook(source: Element, doc: Document): { copy: Element; pairs
       to.remove();
       return;
     }
-    for (const attr of [...to.attributes]) if (attr.name === "style" || (attr.name.startsWith("data-vk-") && !KEPT.has(attr.name) && attr.name !== CLASS_ATTR)) to.removeAttribute(attr.name);
+    for (const attr of [...to.attributes]) if (attr.name === "style" || (attr.name.startsWith("data-tk-") && !KEPT.has(attr.name) && attr.name !== CLASS_ATTR)) to.removeAttribute(attr.name);
     to.setAttribute(LOOK_ATTR, String(pairs.length));
     pairs.push([sources[i], to]);
   });

@@ -167,7 +167,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
    */
   const newAt = (to: Destination) => {
     const container = to.parent;
-    if (!editor().canHold(container)) throw new Error(`Vernier Kit: nothing can go into ${container.name}`);
+    if (!editor().canHold(container)) throw new Error(`03Kind: nothing can go into ${container.name}`);
     const count = tree().acrossInstances(container).length;
     const containerId = idOf(container, tree().acrossInstances(container));
     const place = placeNew(to);
@@ -524,7 +524,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       return tree().acrossInstances(container).length === tree().acrossInstances(layer.parent!).length;
     },
     move(layer, to) {
-      if (!editor().canDrop(layer, to.parent)) throw new Error(`Vernier Kit: ${layer.name} cannot go into ${to.parent.name}`);
+      if (!editor().canDrop(layer, to.parent)) throw new Error(`03Kind: ${layer.name} cannot go into ${to.parent.name}`);
       // Absolute as the page has it, and staying in its container: only its position changes, as X and Y do.
       // At a breakpoint, so does that of any absolute layer: where it is placed there is its X and Y there.
       const moved = !layer.text && layer.el.hasAttribute(MOVE_ATTR);
@@ -665,7 +665,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       return !!id && inComponent(layer) && promotable(changes.list(), id).some((change) => ofLayer(layer, change));
     },
     promote(layer) {
-      if (!editor().canPromote(layer)) throw new Error(`Vernier Kit: ${layer.name} has no changes to promote to its component`);
+      if (!editor().canPromote(layer)) throw new Error(`03Kind: ${layer.name} has no changes to promote to its component`);
       const id = layer.el.getAttribute(LAYER_ID_ATTR)!;
       const loc = layer.loc!;
       const component = componentKey(loc);
@@ -687,7 +687,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       return !!parent && layers.every((layer) => layer.parent === parent && placeable(layer) && repeatsWith(layer, parent));
     },
     stack(layers) {
-      if (!editor().canStack(layers)) throw new Error(`Vernier Kit: ${layers.map((layer) => layer.name).join(", ")} cannot be made a Stack`);
+      if (!editor().canStack(layers)) throw new Error(`03Kind: ${layers.map((layer) => layer.name).join(", ")} cannot be made a Stack`);
       const frame = layers.length === 1 && isFrameOfLayers(layers[0]) ? layers[0] : null;
       const members = frame ? frame.children : layers;
       const container = frame ?? layers[0].parent!;
@@ -748,7 +748,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       layer.children.length > 0 &&
       layer.children.every((child) => placeable(child) && editor().canDrop(child, layer.parent!)),
     ungroup(layer) {
-      if (!editor().canUngroup(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be ungrouped`);
+      if (!editor().canUngroup(layer)) throw new Error(`03Kind: ${layer.name} cannot be ungrouped`);
       const els = layer.children.map((child) => child.el);
       const found = () => els.map((el) => tree().layerOf(el)).filter((l) => l !== null);
       const maker = makerOf(idOf(layer, tree().acrossInstances(layer)));
@@ -889,7 +889,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       };
     },
     remove(layer, { offCanvas } = {}) {
-      if (!editor().canRemove(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be deleted`);
+      if (!editor().canRemove(layer)) throw new Error(`03Kind: ${layer.name} cannot be deleted`);
       const own = editor().ownElement(layer);
       const instances = tree().acrossInstances(own);
       const id = idOf(own, instances);
@@ -927,7 +927,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     },
     canDuplicate: (layer) => layer.parent !== null && !layer.text,
     duplicate(layer, to) {
-      if (!editor().canDuplicate(layer) || (to && !editor().canDrop(layer, to.parent))) throw new Error(`Vernier Kit: ${layer.name} cannot be copied there`);
+      if (!editor().canDuplicate(layer) || (to && !editor().canDrop(layer, to.parent))) throw new Error(`03Kind: ${layer.name} cannot be copied there`);
       const instances = tree().acrossInstances(layer);
       const loop = inLoop(layer);
       const parent = to?.parent ?? layer.parent!;
@@ -1009,7 +1009,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       return tree().layerOf(elementsOf(doc, id).find((el) => el.parentElement === container.el) ?? elementsOf(doc, id)[0])!;
     },
     unstack(layer) {
-      if (!editor().canUnstack(layer)) throw new Error(`Vernier Kit: ${layer.name} cannot be dissolved`);
+      if (!editor().canUnstack(layer)) throw new Error(`03Kind: ${layer.name} cannot be dissolved`);
       const count = tree().acrossInstances(layer).length;
       const id = idOf(layer, tree().acrossInstances(layer));
       const before: StackSettings = {

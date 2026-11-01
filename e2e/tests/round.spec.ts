@@ -27,7 +27,7 @@ async function applyToCard(page: Page, which: keyof typeof CARD_EDITS) {
   await expect.poll(() => page.locator("article").first().evaluate((card, name) => getComputedStyle(card)[name], property)).toBe(value);
 }
 
-const LOCKED_LABEL = /^Vernier Kit: applying design changes/;
+const LOCKED_LABEL = /^03Kind: applying design changes/;
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -117,8 +117,8 @@ test("a change the page shows, undone by a later edit before any done: the ring 
 
 /** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */
 interface HeldDrawing {
-  __vkDraw: Promise<void>;
-  __vkLetDraw(): void;
+  __tkDraw: Promise<void>;
+  __tkLetDraw(): void;
   __registerBeforePerformReactRefresh(hold: () => Promise<void>): void;
 }
 
@@ -128,10 +128,10 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   // React draws the Card anew only once the test lets it: after the dev server has brought the code in, and the page has looked.
   await page.evaluate(() => {
     const win = window as unknown as HeldDrawing;
-    win.__vkDraw = new Promise((resolve) => (win.__vkLetDraw = resolve));
-    win.__registerBeforePerformReactRefresh(() => win.__vkDraw);
+    win.__tkDraw = new Promise((resolve) => (win.__tkLetDraw = resolve));
+    win.__registerBeforePerformReactRefresh(() => win.__tkDraw);
   });
-  const code = () => page.evaluate(() => (window as unknown as { __VERNIERKIT_CODE__: { at: number; updating: number } }).__VERNIERKIT_CODE__);
+  const code = () => page.evaluate(() => (window as unknown as { __THIRD_KIND_CODE__: { at: number; updating: number } }).__THIRD_KIND_CODE__);
   const codeAt = (await code()).at;
   // The round the page reads again as it hears of the claim: held till the dev server has brought the edit in.
   let letRound!: () => void;
@@ -160,7 +160,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   expect(await page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
-  await page.evaluate(() => (window as unknown as HeldDrawing).__vkLetDraw());
+  await page.evaluate(() => (window as unknown as HeldDrawing).__tkLetDraw());
 
   await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 0, 0)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
@@ -406,7 +406,7 @@ test.describe("done checks the change on the page", () => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
-    const edge = (await page.locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="e"]').boundingBox())!;
+    const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
     await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width / 2 + 12, edge.y + edge.height / 2, { steps: 6 });
@@ -444,7 +444,7 @@ test.describe("done checks the change on the page", () => {
     await page.keyboard.up("Meta");
 
     // Its top left corner 10 px out each way: the edges across stay.
-    const corner = (await page.locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="nw"]').boundingBox())!;
+    const corner = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="nw"]').boundingBox())!;
     await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
     await page.mouse.down();
     await page.mouse.move(corner.x + corner.width / 2 - 10 * zoom, corner.y + corner.height / 2 - 10 * zoom, { steps: 6 });
@@ -492,7 +492,7 @@ test.describe("done checks the change on the page", () => {
     // The copy of the page at the phone's width is kept while the round is claimed, and goes with it.
     await npx03kind("finish");
     await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toHaveCount(0);
-    await expect(page.locator("iframe[data-vk-check]")).toHaveCount(0);
+    await expect(page.locator("iframe[data-tk-check]")).toHaveCount(0);
   });
 
   test("a change made in the desktop view is checked at every view's width too: the Grid's columns changed for `sm:` only do not show at the phone's", async ({ page }) => {

@@ -41,7 +41,7 @@ export function breakpointMarks(editor: Editor, layers: Layer[], onEdit: () => v
  * On a row of the Design panel, in its left margin: a mark when the row's
  * properties are changed on their own at the breakpoint worked in, as in
  * Framer. Clicked, they inherit again, as the breakpoint's list resets them
- * (`BreakpointSection`). The row is `vk-markable`, for the mark to sit beside it.
+ * (`BreakpointSection`). The row is `tk-markable`, for the mark to sit beside it.
  */
 export function BreakpointMark({ properties }: { properties: Property[] }) {
   const marks = useContext(BreakpointMarksContext);
@@ -51,7 +51,7 @@ export function BreakpointMark({ properties }: { properties: Property[] }) {
   return (
     <button
       type="button"
-      class="vk-row-mark"
+      class="tk-row-mark"
       aria-label={`Reset ${names} to inherit`}
       title={`${names}: changed at this breakpoint. Click to reset to inherit from every width`}
       onClick={() => marks!.reset(changed)}

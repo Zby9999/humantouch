@@ -42,19 +42,19 @@ html { scrollbar-width: none !important; }
 `;
 
 /** Marks what the canvas shows in place of content it cannot copy: `video`, `iframe`. */
-export const FROZEN = "data-vk-frozen";
+export const FROZEN = "data-tk-frozen";
 /** On the canvas's own style element: added to every canvas, never saved with it. */
-const CANVAS_STYLES_ATTR = "data-vk-canvas-styles";
+const CANVAS_STYLES_ATTR = "data-tk-canvas-styles";
 /** An element scrolled when the page was frozen: `left top`. */
-const SCROLL_ATTR = "data-vk-scroll";
+const SCROLL_ATTR = "data-tk-scroll";
 /** An element in the top layer when the page was frozen: `modal` or `popover`. */
-const TOP_LAYER_ATTR = "data-vk-top-layer";
+const TOP_LAYER_ATTR = "data-tk-top-layer";
 /** On a saved canvas: its pixels, as a data URL. */
-const PIXELS_ATTR = "data-vk-pixels";
+const PIXELS_ATTR = "data-tk-pixels";
 /** On a saved canvas's root: its size and scroll, as JSON. */
-const LAYOUT_ATTR = "data-vk-layout";
+const LAYOUT_ATTR = "data-tk-layout";
 /** On the canvas's root: the address of the page it was frozen from, its path and query. */
-export const PAGE_ATTR = "data-vk-page";
+export const PAGE_ATTR = "data-tk-page";
 
 /** How long to wait at most for the copy's fonts and cross-origin stylesheets. */
 const SETTLE_TIMEOUT_MS = 500;
@@ -131,7 +131,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   if (Math.abs(rootHeight - root.clientHeight) < 1) setImportant(copy, "height", `${rootHeight}px`);
 
   const doc = iframe.contentDocument;
-  if (!doc) return Promise.reject(new Error("Vernier Kit: the canvas iframe is not in the document"));
+  if (!doc) return Promise.reject(new Error("03Kind: the canvas iframe is not in the document"));
   // Writing a doctype puts the copy in the same rendering mode as the page.
   doc.open();
   doc.write(doctypeOf(live));
@@ -208,17 +208,17 @@ export function doctypeOf(doc: Document): string {
 /** Puts a canvas saved by `serializeCanvas` back into `iframe`, as `freeze` would; `takeIn`, on it before it is laid out. */
 export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: Document) => void): Promise<Canvas> {
   const doc = iframe.contentDocument;
-  if (!doc) return Promise.reject(new Error("Vernier Kit: the canvas iframe is not in the document"));
+  if (!doc) return Promise.reject(new Error("03Kind: the canvas iframe is not in the document"));
   doc.open();
   doc.write(html);
   doc.close();
   const root = doc.documentElement;
   const saved = JSON.parse(root.getAttribute(LAYOUT_ATTR) ?? "null") as (Omit<Layout, "windowHeight"> & Partial<Layout>) | null;
-  if (!saved) return Promise.reject(new Error("Vernier Kit: the saved canvas has no layout"));
+  if (!saved) return Promise.reject(new Error("03Kind: the saved canvas has no layout"));
   // Saved before the window's height was: no view shorter than the canvas was then.
   const layout: Layout = { ...saved, windowHeight: saved.windowHeight ?? saved.height };
   root.removeAttribute(LAYOUT_ATTR);
-  // Saved by an earlier Vernier Kit: as edits are kept now, looking as it did.
+  // Saved by an earlier 03Kind: as edits are kept now, looking as it did.
   upgradeEditStyles(doc);
   // A round carried over from one that ended with changes not applied (ticket 68): what was applied taken in, before it is laid out.
   takeIn?.(doc);
@@ -268,7 +268,7 @@ export function serializeEditable(doc: Document): string {
 export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: number): Promise<Canvas> {
   const from = canvas.document;
   const doc = iframe.contentDocument;
-  if (!doc) return Promise.reject(new Error("Vernier Kit: the view's iframe is not in the document"));
+  if (!doc) return Promise.reject(new Error("03Kind: the view's iframe is not in the document"));
   doc.open();
   doc.write(doctypeOf(from));
   doc.close();

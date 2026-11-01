@@ -45,7 +45,7 @@ async function movedOffAndApplied(page: Page, APP: string, original: string) {
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await page.mouse.wheel(-400, 0);
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "03Kind", exact: true }).click();
   const title = (await desktop(page).contentFrame().locator("h1").boundingBox())!;
   const view = (await desktop(page).boundingBox())!;
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
@@ -59,7 +59,7 @@ async function movedOffAndApplied(page: Page, APP: string, original: string) {
   await expect.poll(() => readFolderFile("off-canvas.json")?.layers.length).toBe(1);
   const [kept] = readFolderFile("off-canvas.json").layers;
   expect(kept.origin).toMatchObject({ written: expect.stringMatching(/^src\/App\.tsx:\d+:\d+$/), target: { component: "App" }, place: { nth: 1 } });
-  expect(kept.origin.snippet.code).toBe('<h1 className="font-display text-4xl font-bold text-stone-900">Vernier Kit</h1>');
+  expect(kept.origin.snippet.code).toBe('<h1 className="font-display text-4xl font-bold text-stone-900">03Kind</h1>');
   await expect(promisify(execFile)("git", ["check-ignore", "-q", `${THIRD_KIND_FOLDER}off-canvas.json`], { cwd: EXAMPLE })).resolves.toBeDefined();
   await expect.poll(() => readFolderFile("changeset.json")?.changes).toMatchObject([{ kind: "delete", offCanvas: kept.id }]);
 
@@ -75,7 +75,7 @@ async function movedOffAndApplied(page: Page, APP: string, original: string) {
   // A new round, a canvas frozen afresh: the layer is off it still, where it was.
   await enterEditMode(page);
   await expect(offCanvas(page)).toHaveCount(1);
-  await expect(offCanvas(page).contentFrame().locator("h1")).toHaveText("Vernier Kit");
+  await expect(offCanvas(page).contentFrame().locator("h1")).toHaveText("03Kind");
   expect(await placeOff(page)).toEqual(where);
   // Off the canvas, it is no part of the round.
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
@@ -84,14 +84,14 @@ async function movedOffAndApplied(page: Page, APP: string, original: string) {
 test("a layer the Agent deleted in an earlier round, put back in the next, is written back by the Agent from its source as it was kept", async ({ page }) => {
   const APP = `${EXAMPLE}src/App.tsx`;
   const original = readFileSync(APP, "utf8");
-  const TITLE = '<h1 className="font-display text-4xl font-bold text-stone-900">Vernier Kit</h1>';
+  const TITLE = '<h1 className="font-display text-4xl font-bold text-stone-900">03Kind</h1>';
   try {
     await page.goto(DEV_URL);
     await enterEditMode(page);
     const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
     await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
     await page.mouse.wheel(-400, 0);
-    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "03Kind", exact: true }).click();
     const title = (await desktop(page).contentFrame().locator("h1").boundingBox())!;
     const view = (await desktop(page).boundingBox())!;
     await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
@@ -121,7 +121,7 @@ test("a layer the Agent deleted in an earlier round, put back in the next, is wr
     await page.mouse.move(beta.x + 3, beta.y + beta.height / 2, { steps: 10 });
     await page.mouse.up();
     await expect(offCanvas(page)).toHaveCount(0);
-    await expect(desktop(page).contentFrame().locator("header > h1")).toHaveText("Vernier Kit");
+    await expect(desktop(page).contentFrame().locator("header > h1")).toHaveText("03Kind");
     await expect.poll(() => readFolderFile("changeset.json")?.changes.map((change: { kind: string }) => change.kind)).toEqual(["putBack"]);
     await expect.poll(() => readFolderFile("off-canvas.json")).toBeNull();
 
@@ -132,12 +132,12 @@ test("a layer the Agent deleted in an earlier round, put back in the next, is wr
     expect(notes).toContain("as its 1st layer");
     expect(notes).toContain(`  ${TITLE}\n`);
     writeFileSync(APP, original);
-    await expect(page.locator("header > h1")).toHaveText("Vernier Kit");
+    await expect(page.locator("header > h1")).toHaveText("03Kind");
     await npx03kind("done", "1");
     await npx03kind("finish");
     expect(readFolderFile("changeset.json")).toBeNull();
     await enterEditMode(page);
-    await expect(desktop(page).contentFrame().locator("header > h1")).toHaveText("Vernier Kit");
+    await expect(desktop(page).contentFrame().locator("header > h1")).toHaveText("03Kind");
     await expect(offCanvas(page)).toHaveCount(0);
   } finally {
     writeFileSync(APP, original);

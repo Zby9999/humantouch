@@ -16,7 +16,7 @@ export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolea
   showLayers: [true, { option: true }],
   context: async ({ context, keepRoundInMemory, showLayers }, use) => {
     if (keepRoundInMemory) await keepRoundIn(context);
-    if (showLayers) await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    if (showLayers) await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
     await use(context);
   },
 });
@@ -33,7 +33,7 @@ async function keepRoundIn(context: BrowserContext) {
       const headers = {
         "Access-Control-Allow-Origin": request.headers().origin ?? "*",
         "Access-Control-Allow-Methods": "GET, PUT, DELETE, POST",
-        "Access-Control-Allow-Headers": "X-Vernier-Token, Content-Type",
+        "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type",
       };
       const { pathname } = new URL(request.url());
       if (pathname === "/off-canvas") {

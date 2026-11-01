@@ -1,7 +1,7 @@
 import { SERVICE_ENV, type ServiceConfig } from "./service-protocol";
 import { startService, type Service } from "./service";
 
-/** The parts of Next.js's config that Vernier Kit adds to; the rest passes through as it is. */
+/** The parts of Next.js's config that 03Kind adds to; the rest passes through as it is. */
 type NextConfig = {
   env?: Record<string, string | undefined>;
   turbopack?: { rules?: Record<string, unknown> };
@@ -17,7 +17,7 @@ const LOADER = "03kind/next-loader";
 let service: Promise<Service> | undefined;
 
 /**
- * Vernier Kit for Next.js: wrap the config with it. Development only: adds
+ * 03Kind for Next.js: wrap the config with it. Development only: adds
  * source markers (with Turbopack or webpack) so layers can be traced back to
  * code, and runs the local service that keeps the round in `.03kind/`.
  * Production builds are left untouched.

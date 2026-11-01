@@ -23,7 +23,7 @@ import type { Property } from "./property-table";
  * change's range, which must never make a long task. Here, not with the other
  * entries' names in `host.ts`: those go in the code the toggle loads with the page.
  */
-export const PARTS_MEASURE = "vernierkit:parts";
+export const PARTS_MEASURE = "03kind:parts";
 
 /** A style change at a breakpoint, not a placement, whose range the project's breakpoints cut into parts: what the page shows in each is to be read. */
 export function hasPartsToRead(change: Change, project: ProjectBreakpoints | null): boolean {

@@ -227,11 +227,11 @@ export const SCENARIOS: Scenario[] = [
     async design(desk) {
       const { page } = desk;
       await enterEditMode(page);
-      await layer(page, "Vernier Kit").click();
+      await layer(page, "03Kind").click();
       await setField(page, "Font size", "48");
       await pick(page, desktop(page), `${HERO} > p`);
       await setField(page, "Fill color", "1c1917");
-      await layer(page, "Vernier Kit").click();
+      await layer(page, "03Kind").click();
       await layer(page, "Badge").click({ modifiers: ["Shift"] });
       await page.keyboard.press("Shift+A");
       await saved(desk, 3);
@@ -374,8 +374,10 @@ export const SCENARIOS: Scenario[] = [
       });
       await saved(desk, 1);
       await layer(page, "Button").click();
-      await drag(page, hero.locator("button").first(), async () => {
-        const badge = await boxOf(hero.getByTestId("acme-badge"));
+      // In the phone view: there the badge is in the middle half of the header, which is entered from its middle only.
+      const phoneHero = phone(page).contentFrame().getByTestId("hero");
+      await drag(page, phoneHero.locator("button").first(), async () => {
+        const badge = await boxOf(phoneHero.getByTestId("acme-badge"));
         return { x: badge.x + badge.width / 2 + 1, y: badge.y + badge.height / 2 };
       });
       await saved(desk, 2);
@@ -406,7 +408,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: "data-and-text",
-    title: "The Arrange card deleted, the Freeze card copied beside it (both from the features data), and the title's words changed to “Vernier Studio”.",
+    title: "The Arrange card deleted, the Freeze card copied beside it (both from the features data), and the title's words changed to “Third Kind Studio”.",
     async design(desk) {
       const { page } = desk;
       await enterEditMode(page);
@@ -414,9 +416,9 @@ export const SCENARIOS: Scenario[] = [
       await page.keyboard.press("Delete");
       await layer(page, "Card", 0).click();
       await page.keyboard.press("ControlOrMeta+d");
-      await layer(page, "Vernier Kit").click();
+      await layer(page, "03Kind").click();
       await desktop(page).contentFrame().locator("h1").dblclick();
-      await page.keyboard.type("Vernier Studio");
+      await page.keyboard.type("Third Kind Studio");
       await page.keyboard.press("Enter");
       await saved(desk, 3);
     },
@@ -436,9 +438,9 @@ export const SCENARIOS: Scenario[] = [
       },
       {
         kind: "text",
-        expect: "The title reads “Vernier Studio”.",
+        expect: "The title reads “Third Kind Studio”.",
         checkable: false,
-        shows: () => document.querySelector("h1")?.textContent === "Vernier Studio",
+        shows: () => document.querySelector("h1")?.textContent === "Third Kind Studio",
       },
     ],
   },
@@ -451,10 +453,10 @@ export const SCENARIOS: Scenario[] = [
       // The round before, applied as the Skill says: the title moved off the canvas, deleted from the code.
       await enterEditMode(page);
       await roomOnTheLeft(page);
-      await moveOffTheCanvas(page, "Vernier Kit", desktop(page).contentFrame().locator("h1"));
+      await moveOffTheCanvas(page, "03Kind", desktop(page).contentFrame().locator("h1"));
       await saved(desk, 1);
       await desk.cli("claim");
-      await desk.edit("src/App.tsx", '          <h1 className="font-display text-4xl font-bold text-stone-900">Vernier Kit</h1>\n', "");
+      await desk.edit("src/App.tsx", '          <h1 className="font-display text-4xl font-bold text-stone-900">03Kind</h1>\n', "");
       await page.locator("h1").waitFor({ state: "detached" });
       await desk.cli("done", "1");
       await desk.cli("finish");
@@ -486,11 +488,11 @@ export const SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "putBack",
-        expect: "The header starts with the title, “Vernier Kit”, as it was written before.",
+        expect: "The header starts with the title, “03Kind”, as it was written before.",
         checkable: false,
         shows: () => {
           const first = document.querySelector('[data-testid="hero"] header')?.firstElementChild;
-          return first?.localName === "h1" && first.textContent === "Vernier Kit";
+          return first?.localName === "h1" && first.textContent === "03Kind";
         },
       },
       {

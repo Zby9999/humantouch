@@ -152,7 +152,7 @@ export interface ToolCallStats {
   dones: number;
   /** Whether it ran `finish`. */
   finished: boolean;
-  /** Calls that read the Vernier Kit package itself, in `node_modules` (its built code, its own Skill), rather than run its command line (ticket 65). */
+  /** Calls that read the 03Kind package itself, in `node_modules` (its built code, its own Skill), rather than run its command line (ticket 65). */
   packageReads: number;
   /**
    * Characters the Agent read: of the Skill (loaded, or read as a file), of

@@ -1,6 +1,6 @@
 /**
  * The project an Agent applies a round in: a copy of the Vite + React 19 +
- * Tailwind v4 example in the system's temporary folder, with Vernier Kit
+ * Tailwind v4 example in the system's temporary folder, with 03Kind
  * installed by `init` from the package as it would be published, and
  * committed. Each run gets a clone of it of its own, so no run sees another's
  * code, and the Agent never works in this repository.
@@ -48,7 +48,7 @@ export function withoutSkill(dir: string) {
 
 /**
  * The project every run starts from, in a folder of its own beside the
- * package it installs: Vernier Kit installed by `init`, committed. With
+ * package it installs: 03Kind installed by `init`, committed. With
  * `skill: false`, the Skill is taken out before the commit, so it is in none
  * of the project's history either.
  */
@@ -60,10 +60,10 @@ export async function prepareBase({ skill = true } = {}): Promise<{ base: string
     replaceIn(dir, "src/App.tsx", 'import { ThirdKind } from "03kind/react";\n');
     replaceIn(dir, "src/App.tsx", "      <ThirdKind />\n");
   });
-  await sh(process.execPath, [CLI, "init"], base, { VERNIERKIT_INSTALL_FROM: packed });
+  await sh(process.execPath, [CLI, "init"], base, { TK_INSTALL_FROM: packed });
   if (!skill) withoutSkill(base);
   await sh("git", ["add", "-A"], base);
-  await sh("git", [...COMMIT, "With Vernier Kit"], base);
+  await sh("git", [...COMMIT, "With 03Kind"], base);
   return {
     base,
     remove() {

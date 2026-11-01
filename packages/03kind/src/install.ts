@@ -1,5 +1,5 @@
 /**
- * Installing Vernier Kit into a project, checking it, and taking it back
+ * Installing 03Kind into a project, checking it, and taking it back
  * out: `init`, `doctor` and `remove`. What `init` changes is recorded in
  * `.03kind/install.json`, so `remove` can put back exactly what it found.
  */
@@ -38,7 +38,7 @@ const SKILL_FILE = `${SKILL_FOLDERS[0]}/SKILL.md`;
 const AGENTS_LINE = `03Kind: to apply the designer's design changes, or undo the last round, follow \`${SKILL_FILE}\`.`;
 const IGNORE_LINE = ".03kind/";
 /** What only the editor layer brings: none of it may be in a production build. */
-const RESIDUE = ["vernier-kit", "data-vk-", "__VERNIERKIT__"];
+const RESIDUE = ["third-kind", "data-tk-", "__THIRD_KIND__"];
 
 type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 
@@ -192,7 +192,7 @@ async function findProjectToInstall(cwd: string, io: InstallIo): Promise<Project
   const { root, pkg } = found;
   const packageManager = packageManagerOf(root, pkg);
   if (!hasDependency(pkg, "react")) {
-    io.error("Vernier Kit works with React projects, and this one does not depend on react.\n");
+    io.error("03Kind works with React projects, and this one does not depend on react.\n");
     return null;
   }
   // A Next.js project may have Vite too, for Vitest.
@@ -200,13 +200,13 @@ async function findProjectToInstall(cwd: string, io: InstallIo): Promise<Project
     // `latest`, `canary` and the like give no number: let them through.
     const major = Number(/\d+/.exec(pkg.dependencies?.next ?? pkg.devDependencies?.next ?? "")?.[0]);
     if (major < 16) {
-      io.error("Vernier Kit works with Next.js 16 or later, and this project has an earlier one.\n");
+      io.error("03Kind works with Next.js 16 or later, and this project has an earlier one.\n");
       return null;
     }
     return { root, pkg, packageManager, framework: next(root, packageManager, pkg) };
   }
   if (!hasDependency(pkg, "vite") && !VITE_CONFIGS.some((file) => existsSync(join(root, file)))) {
-    io.error("Vernier Kit works with Vite and Next.js projects, and this one uses neither.\n");
+    io.error("03Kind works with Vite and Next.js projects, and this one uses neither.\n");
     return null;
   }
   return { root, pkg, packageManager, framework: vite(root, packageManager) };
@@ -221,7 +221,7 @@ function installRecordFile(root: string) {
   return join(thirdKindFolder(root).dir, "install.json");
 }
 
-/** Installs Vernier Kit into the project `cwd` is in. */
+/** Installs 03Kind into the project `cwd` is in. */
 export async function init(cwd: string, io: InstallIo): Promise<number> {
   const project = await findProjectToInstall(cwd, io);
   if (!project) return 1;
@@ -233,7 +233,7 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
   if (hasDependency(pkg, "03kind")) {
     done.push("03kind is a dependency already");
   } else {
-    const install = command(packageManager, "install", [process.env.VERNIERKIT_INSTALL_FROM ?? "03kind"]);
+    const install = command(packageManager, "install", [process.env.TK_INSTALL_FROM ?? "03kind"]);
     const result = await io.exec(...install, { cwd: root });
     if (result.code !== 0) {
       io.error(`${result.output}\nCould not install 03kind (\`${show(install)}\` failed, above). Install it yourself, then run \`npx 03kind init\` again.\n`);
@@ -283,12 +283,12 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
   await mkdir(thirdKindFolder(root).dir, { recursive: true });
   await writeAtomically(installRecordFile(root), `${JSON.stringify(record, null, 2)}\n`);
 
-  io.write(`Vernier Kit (${framework.name}, ${packageManager}):\n${done.map((line) => `- ${line}\n`).join("")}`);
+  io.write(`03Kind (${framework.name}, ${packageManager}):\n${done.map((line) => `- ${line}\n`).join("")}`);
   if (byHand.length) {
     io.write(`\nFinish by hand:\n\n${byHand.map((step, i) => `${i + 1}. ${step}\n`).join("\n")}\nThen run \`npx 03kind doctor\`.\n`);
     return 1;
   }
-  io.write(`\nInstalled. Start the dev server (\`${COMMANDS[packageManager].script} dev\`) and open the page: the Vernier Kit toggle is at its bottom right. Then run \`npx 03kind doctor\`.\n`);
+  io.write(`\nInstalled. Start the dev server (\`${COMMANDS[packageManager].script} dev\`) and open the page: the 03Kind toggle is at its bottom right. Then run \`npx 03kind doctor\`.\n`);
   return 0;
 }
 
@@ -337,7 +337,7 @@ async function sourceFiles(root: string): Promise<string[]> {
 }
 
 /**
- * Takes Vernier Kit back out of the project `cwd` is in: undoes what `init`
+ * Takes 03Kind back out of the project `cwd` is in: undoes what `init`
  * did, line by line, deletes `.03kind/` and uninstalls the package. Not while
  * the designer has changes the Agent has not applied: they would be lost.
  */
@@ -347,7 +347,7 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
   const folder = thirdKindFolder(root);
   const record = await readRecord(root);
   if (!record) {
-    const text = "Vernier Kit is not installed here: there is nothing to remove.";
+    const text = "03Kind is not installed here: there is nothing to remove.";
     io.write(found && hasDependency(found.pkg, "03kind") ? `${text} 03kind is a dependency, but \`init\` did not install it: uninstall it, and take out its plugin and <ThirdKind /> by hand.\n` : `${text}\n`);
     return 0;
   }
@@ -356,7 +356,7 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
     return 1;
   }
   if ((await readChangeSet(folder))?.changes.length) {
-    io.error("The designer has design changes not applied yet, and removing Vernier Kit would lose them. Apply them first (`npx 03kind claim`, as the Skill says), or have the designer discard them in the editor; then run `npx 03kind remove` again.\n");
+    io.error("The designer has design changes not applied yet, and removing 03Kind would lose them. Apply them first (`npx 03kind claim`, as the Skill says), or have the designer discard them in the editor; then run `npx 03kind remove` again.\n");
     return 1;
   }
 
@@ -366,7 +366,7 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
     if (!texts.has(edit.file)) texts.set(edit.file, await readIfThere(join(root, edit.file)));
     const text = texts.get(edit.file);
     const undone = text == null ? null : undo(text, edit);
-    if (undone === null) byHand.push(`In ${edit.file}, take out what Vernier Kit added. Those lines changed since \`init\`, so they are left as they are; \`init\` made\n\n${indent(edit.before)}\n\n  into\n\n${indent(edit.after)}`);
+    if (undone === null) byHand.push(`In ${edit.file}, take out what 03Kind added. Those lines changed since \`init\`, so they are left as they are; \`init\` made\n\n${indent(edit.before)}\n\n  into\n\n${indent(edit.after)}`);
     else texts.set(edit.file, undone);
   }
   for (const [file, text] of texts) {
@@ -393,7 +393,7 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
     else byHand.push(`Uninstall 03kind: \`${show(uninstall)}\` failed:\n\n${indent(result.output.trim())}`);
   }
 
-  io.write(`Vernier Kit removed:\n${done.map((line) => `- ${line}\n`).join("")}`);
+  io.write(`03Kind removed:\n${done.map((line) => `- ${line}\n`).join("")}`);
   if (byHand.length) {
     io.write(`\nFinish by hand:\n\n${byHand.map((step, i) => `${i + 1}. ${step}\n`).join("\n")}`);
     return 1;
@@ -455,7 +455,7 @@ export async function doctor(cwd: string, io: InstallIo): Promise<number> {
     }
   }
 
-  io.write(`Vernier Kit doctor (${framework.name}, ${packageManager}):\n${checks.map(([ok, text]) => `${ok ? "✓" : "✗"} ${text}\n`).join("")}`);
+  io.write(`03Kind doctor (${framework.name}, ${packageManager}):\n${checks.map(([ok, text]) => `${ok ? "✓" : "✗"} ${text}\n`).join("")}`);
   const failed = checks.filter(([ok]) => !ok).length;
   io.write(failed ? `\n${failed} to fix.\n` : "\nAll good.\n");
   return failed ? 1 : 0;

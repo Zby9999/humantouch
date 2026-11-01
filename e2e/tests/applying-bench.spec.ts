@@ -23,16 +23,16 @@ test.setTimeout(120_000);
  * The toggle says the Agent seems to have stopped once nothing has moved for
  * `STALL_MS` (ticket 67), about 9 minutes. The playbooks run the page's clock
  * on past most of it (Playwright's clock: nothing in the editor layer is set
- * apart for tests); `VK_BENCH_STALL_REAL=1` has the playbook of an Agent that
+ * apart for tests); `TK_BENCH_STALL_REAL=1` has the playbook of an Agent that
  * stops halfway wait it out in real time instead.
  */
-const STALL_REAL = process.env.VK_BENCH_STALL_REAL === "1";
+const STALL_REAL = process.env.TK_BENCH_STALL_REAL === "1";
 /** How late the notice may show, past the threshold (docs/goals.md, Robust). */
 const NOTICE_LATE_MS = 5000;
 /** How much longer than that a playbook watches for it, so a notice too late is measured rather than missed. */
 const WATCH_PAST_MS = 5000;
 /** How long the editor layer is watched for noticing code changed with no claim. */
-const UNCLAIMED_WATCH_MS = Number(process.env.VK_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
+const UNCLAIMED_WATCH_MS = Number(process.env.TK_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/playbooks/", import.meta.url));
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
@@ -284,7 +284,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
 
 /** The designer ends the round by hand: pressing and holding the locked toggle. */
 async function pressAndHold(page: Page) {
-  await page.getByRole("button", { name: /^Vernier Kit: applying design changes/ }).hover();
+  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
   await page.mouse.down();
   await page.waitForTimeout(1200);
   await page.mouse.up();
@@ -491,7 +491,7 @@ async function designTheRoundAcrossViews(page: Page) {
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await page.mouse.wheel(-400, 0);
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "03Kind", exact: true }).click();
   const title = (await desktop.contentFrame().locator("h1").boundingBox())!;
   const view = (await desktop.boundingBox())!;
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
@@ -522,7 +522,7 @@ async function enterAgain(page: Page) {
 const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readFolderFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
-const frozenAfresh = (page: Page) => canvas(page).locator("[data-vk-layer], [data-vk-style]").count().then((n) => n === 0);
+const frozenAfresh = (page: Page) => canvas(page).locator("[data-tk-layer], [data-tk-style]").count().then((n) => n === 0);
 
 test("playbook: the Agent stops halfway; the designer ends the round, and edits again on the same canvas, the changes not applied there still (ticket 68)", async ({ page }) => {
   await designTheRoundAcrossViews(page);
@@ -618,7 +618,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   expect(afterListUndo).toEqual(["rgb(255, 0, 0)", "12px"]);
   expect(newEdit).toMatchObject({ id: 5, before: { type: "solid", color: "#FF0000" } });
   expect(sections).toEqual([1, 2, 3, 4, 5]);
-  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
+  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in 03Kind. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
   expect(last.startsWith("# Last round of design changes") && last.includes("- **Status:** Applied")).toBe(true);
   expect(leftAgain).toEqual([1, 2, 3, 4, 5]);
   expect(refrozen).toBe(true);

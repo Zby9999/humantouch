@@ -21,7 +21,7 @@ export function ThirdKind(): null {
  */
 function serviceFromBundle(): string | undefined {
   try {
-    return process.env.VERNIERKIT_SERVICE;
+    return process.env.TK_SERVICE;
   } catch {
     return undefined;
   }

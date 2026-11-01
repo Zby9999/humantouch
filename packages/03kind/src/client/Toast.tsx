@@ -57,11 +57,11 @@ export function Toast({ message }: { message: ToastMessage | null }) {
   useEffect(() => stay, []);
 
   return (
-    <div class="vk-toasts" role="status">
+    <div class="tk-toasts" role="status">
       {shown && (
         // One toast at a time: a new one shows its words in the same place, without coming in again.
         <p
-          class={`vk-toast${fading ? " is-fading" : ""}`}
+          class={`tk-toast${fading ? " is-fading" : ""}`}
           onPointerEnter={() => {
             hovered.current = true;
             stay();

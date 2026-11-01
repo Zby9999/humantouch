@@ -5,7 +5,7 @@ import { UNLOCK_HOLD_MS } from "./motion";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
-const CORNER_KEY = "vernierkit:toggle-corner";
+const CORNER_KEY = "03kind:toggle-corner";
 const CORNERS: Corner[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
 /** Pointer travel (px) before a press counts as a drag instead of a click. */
 const DRAG_THRESHOLD = 4;
@@ -161,14 +161,14 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
     endHold();
   };
 
-  const label = applying ? "Vernier Kit: applying design changes. Press and hold to unlock." : "Vernier Kit: enter edit mode";
+  const label = applying ? "03Kind: applying design changes. Press and hold to unlock." : "03Kind: enter edit mode";
 
   return (
-    <div ref={dock} class={dragging ? "vk-dock is-dragging" : "vk-dock"} data-corner={corner}>
-      <div class={holding ? "vk-toggle-wrap is-holding" : "vk-toggle-wrap"}>
+    <div ref={dock} class={dragging ? "tk-dock is-dragging" : "tk-dock"} data-corner={corner}>
+      <div class={holding ? "tk-toggle-wrap is-holding" : "tk-toggle-wrap"}>
         <button
           type="button"
-          class="vk-toggle"
+          class="tk-toggle"
           aria-label={label}
           title={applying ? "Applying design changes. Press and hold to unlock." : undefined}
           aria-disabled={applying ? "true" : undefined}
@@ -201,8 +201,8 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
         {changeCount > 0 && (
           <button
             type="button"
-            class="vk-badge"
-            data-vk-changes-opener=""
+            class="tk-badge"
+            data-tk-changes-opener=""
             aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}
             aria-haspopup="dialog"
             aria-expanded={changesOpen}
@@ -221,7 +221,7 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
 function ProgressRing({ done, total }: { done: number; total: number }) {
   return (
     <svg
-      class="vk-progress"
+      class="tk-progress"
       viewBox="0 0 48 48"
       role="progressbar"
       aria-label="Applying design changes"
@@ -229,9 +229,9 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={done}
     >
-      <circle class="vk-progress-track" cx="24" cy="24" r="22" pathLength={1} />
-      <circle class="vk-progress-done" cx="24" cy="24" r="22" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
-      <circle class="vk-progress-hold" cx="24" cy="24" r="22" pathLength={1} />
+      <circle class="tk-progress-track" cx="24" cy="24" r="22" pathLength={1} />
+      <circle class="tk-progress-done" cx="24" cy="24" r="22" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
+      <circle class="tk-progress-hold" cx="24" cy="24" r="22" pathLength={1} />
     </svg>
   );
 }

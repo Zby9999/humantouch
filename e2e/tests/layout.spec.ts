@@ -212,7 +212,7 @@ test("dragging left and right on the opacity icon changes it, 1% per px", async 
   await enterEditMode(page);
   await rows(page, "Card").first().click();
   const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
-  const icon = page.locator('.vk-field:has([aria-label="Opacity"]) .vk-scrub');
+  const icon = page.locator('.tk-field:has([aria-label="Opacity"]) .tk-scrub');
   const { x, y } = (await icon.boundingBox())!;
 
   await page.mouse.move(x + 4, y + 4);

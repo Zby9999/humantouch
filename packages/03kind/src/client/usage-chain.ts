@@ -17,7 +17,7 @@ export interface UsageLevel {
 }
 
 /** Where the freezer writes the chain on the canvas copy, as JSON. */
-export const CHAIN_ATTR = "data-vk-chain";
+export const CHAIN_ATTR = "data-tk-chain";
 
 type Fiber = {
   tag?: number;

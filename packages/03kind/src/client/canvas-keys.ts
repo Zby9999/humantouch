@@ -91,7 +91,7 @@ export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): H
   // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
   const field =
     target instanceof HTMLElement &&
-    ((target.classList.contains("vk-input") && !target.hasAttribute("data-vk-typing")) || target.getAttribute("role") === "slider");
+    ((target.classList.contains("tk-input") && !target.hasAttribute("data-tk-typing")) || target.getAttribute("role") === "slider");
   if (isEditable(target) && !field) return null;
   const command = editorCommand(event);
   if (command !== "undo" && command !== "redo") return null;

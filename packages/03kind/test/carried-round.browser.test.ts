@@ -19,18 +19,18 @@ import { createViews } from "../src/client/views";
 const APP = [{ component: "App", usage: null, thirdParty: false }];
 const cardAt = [{ component: "Card", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP];
 const buttonIn = [{ component: "Button", usage: "src/Card.tsx:5:7", thirdParty: false }, ...cardAt];
-const chain = (levels: object[]) => `data-vk-chain='${JSON.stringify(levels)}'`;
+const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
 
 /** Three Cards from one usage (a loop), each with a title and a Button. */
 const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-vk-loc="src/App.tsx:2:5" ${chain(APP)} style="display: flex; gap: 8px; padding: 4px">
+  <main data-tk-loc="src/App.tsx:2:5" ${chain(APP)} style="display: flex; gap: 8px; padding: 4px">
     ${[1, 2, 3]
       .map(
         (n) => `
-    <article data-vk-loc="src/Card.tsx:3:5" ${chain(cardAt)} style="width: 150px; height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px; opacity: 1">
-      <h3 data-vk-loc="src/Card.tsx:4:7" ${chain(cardAt)} style="margin: 0">Card ${n}</h3>
-      <button data-vk-loc="src/Button.tsx:2:3" ${chain(buttonIn)} style="background-color: rgb(200, 200, 200)">Open</button>
+    <article data-tk-loc="src/Card.tsx:3:5" ${chain(cardAt)} style="width: 150px; height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px; opacity: 1">
+      <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(cardAt)} style="margin: 0">Card ${n}</h3>
+      <button data-tk-loc="src/Button.tsx:2:3" ${chain(buttonIn)} style="background-color: rgb(200, 200, 200)">Open</button>
     </article>`,
       )
       .join("")}

@@ -66,7 +66,7 @@ export interface OffCanvas {
 }
 
 /** On the iframe that shows a layer off the canvas: its id. */
-export const OFF_CANVAS_ATTR = "data-vk-off-canvas";
+export const OFF_CANVAS_ATTR = "data-tk-off-canvas";
 
 /** The layers off the canvas, shown in `host`, an element of the workspace, starting with those `saved`. */
 export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[], history: History): OffCanvas {
@@ -79,7 +79,7 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
   /** Shows a layer off the canvas: `write` puts its look into the iframe made for it. */
   const show = (id: string, x: number, y: number, origin: OffCanvasOrigin, edits: SavedOffCanvasLayer["edits"] | null, write: (iframe: HTMLIFrameElement) => void): Shown => {
     const iframe = host.ownerDocument.createElement("iframe");
-    iframe.className = "vk-off-canvas";
+    iframe.className = "tk-off-canvas";
     iframe.title = "Off canvas";
     iframe.setAttribute(OFF_CANVAS_ATTR, id);
     iframe.setAttribute("sandbox", "allow-same-origin");

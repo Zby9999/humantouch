@@ -61,7 +61,7 @@ export function LazyEditorLayer({ onStyles }: { onStyles(css: string): void }) {
     if (loaded) show(loaded);
     else
       loadEditor().then(show, (error: unknown) => {
-        console.error("Vernier Kit: could not load the editor layer:", error);
+        console.error("03Kind: could not load the editor layer:", error);
         setWanted(null);
       });
   };

@@ -24,7 +24,7 @@ export function BriefMark({ layer, view, name, camera }: Props) {
   // Not drawn (hidden): nowhere to mark.
   if (!r || (!r.width && !r.height)) return null;
   return (
-    <span class="vk-brief-mark" data-view={name} aria-hidden="true" style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}>
+    <span class="tk-brief-mark" data-view={name} aria-hidden="true" style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}>
       <Icon name="brief" />
     </span>
   );

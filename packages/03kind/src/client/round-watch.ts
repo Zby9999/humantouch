@@ -28,7 +28,7 @@ export function serviceRequest(config: ServiceConfig): ServiceRequest {
     const headers: Record<string, string> = { [TOKEN_HEADER]: config.token };
     if (body) headers["Content-Type"] = "application/json";
     const response = await fetch(`${config.url}${path}`, { method, headers, body, signal });
-    if (!response.ok) throw new Error(`Vernier Kit: the local service answered ${response.status} to ${method} ${path}`);
+    if (!response.ok) throw new Error(`03Kind: the local service answered ${response.status} to ${method} ${path}`);
     return response;
   };
 }

@@ -91,7 +91,7 @@ test("on React 18, the usage chain is read as on React 19: App's own elements, t
   await page.goto(REACT18_URL);
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-vk-chain"))!);
+  const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-tk-chain"))!);
   const app = { component: "App", usage: locate("src/main.tsx", "<App"), thirdParty: false };
 
   expect(await chainOf("h1")).toEqual([app]);
@@ -161,7 +161,7 @@ test("a whole round: claim locks the editor, done checks the fill on the page on
   await fillTheCards(page);
   await npx03kind("claim");
   const progress = page.getByRole("progressbar", { name: "Applying design changes" });
-  await expect(page.getByRole("button", { name: /^Vernier Kit: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByRole("button", { name: /^03Kind: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
   await expect(progress).toHaveAttribute("aria-valuemax", "1");
   const original = readFileSync(CARD, "utf8");
   try {
