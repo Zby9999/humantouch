@@ -986,3 +986,238 @@ test("playbook: changes left over and under what was applied: a change to the Ca
   // The page's own: the loop's padding applied; the Card of its own as the page was frozen.
   expect(paddingsOnceComponentUndone).toEqual(["24px", "24px", "24px", "20px"]);
 });
+
+/**
+ * Ticket 76: layers made this round (New Frame, New text), found on the live
+ * page by the place their change records, and checked there, as are the
+ * changes made to them since. The scripted Agent writes each into `App.tsx`
+ * (or the Card), as the notes ask, and runs `done` after each. Measured
+ * first on the code before 76, with these assertions left out: no check.
+ */
+
+const APP = `${EXAMPLE}src/App.tsx`;
+const originalApp = readFileSync(APP, "utf8");
+/** The intro paragraph's end in `App.tsx`: a layer drawn below the intro goes after it. */
+const INTRO_END = "        </p>\n";
+/** The end of the body text in the Card: a layer drawn below it goes after it. */
+const CARD_BODY_END = '<p className="mt-2 text-sm text-stone-600">{body}</p>\n';
+
+test.afterEach(async () => {
+  // The Card is put back by the hook above; the next page must open on it as it was, with no new text in it.
+  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("Fresh")).toBe(false);
+  if (readFileSync(APP, "utf8") === originalApp) return;
+  writeFileSync(APP, originalApp);
+  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("-[")).toBe(false);
+});
+
+/** The round's checks: from its archive once it has ended, else so far. */
+function roundChecks(): Record<string, { outcome: string; reason?: string }> {
+  const history = `${THIRD_KIND_FOLDER}history/`;
+  try {
+    const last = readdirSync(history).sort().at(-1);
+    if (last) return JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).checks;
+  } catch {
+    // Not ended.
+  }
+  return readThirdKindFile("checks.json")?.results ?? {};
+}
+
+/** What the round's checks say of changes `ids`: how many have a result (shown or not), how many shown, and each one's outcome and reason. */
+function checksOf(ids: number[]) {
+  const checks = roundChecks();
+  const outcomes = Object.fromEntries(ids.map((id) => [id, checks[id] ? `${checks[id].outcome}${checks[id].reason ? `: ${checks[id].reason}` : ""}` : "none"]));
+  return {
+    checkCoverage: ids.filter((id) => ["shown", "not shown"].includes(checks[id]?.outcome)).length / ids.length,
+    shownByChecks: ids.filter((id) => checks[id]?.outcome === "shown").length / ids.length,
+    outcomes,
+  };
+}
+
+/** The applied changes of the round's archive. */
+function appliedInArchive(): number[] {
+  const history = `${THIRD_KIND_FOLDER}history/`;
+  const last = readdirSync(history).sort().at(-1)!;
+  return JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).applied;
+}
+
+/** The changes `finish` lists under ✓ in the report it lays out. */
+function tickedIn(finished: string): number[] {
+  const ticked = /✓ Applied\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "";
+  return [...ticked.matchAll(/^- (\d+)\. /gm)].map((match) => Number(match[1]));
+}
+
+const zoomOf = (page: Page) => page.locator('iframe[title="Canvas"]').evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+
+/** Draws with the tool `key` (F, T) from `from`, `size` canvas px down and to the right. */
+async function drawWith(page: Page, key: "f" | "t", from: { x: number; y: number }, size: { width: number; height: number }) {
+  const zoom = await zoomOf(page);
+  await page.keyboard.press(key);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + size.width * zoom, from.y + size.height * zoom, { steps: 6 });
+  await page.mouse.up();
+}
+
+/** In edit mode, a Frame drawn in the hero's layout, below the intro: 360 × 80px. Its change, once saved. */
+async function drawAFrameBelowTheIntro(page: Page, size = { width: 360, height: 80 }) {
+  await recordNotices(page);
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const intro = (await canvas(page).locator('[data-testid="hero"] > p').boundingBox())!;
+  await drawWith(page, "f", { x: intro.x + 20, y: intro.y + intro.height - 2 }, size);
+  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+  return readThirdKindFile("changeset.json").changes[0];
+}
+
+/** `html` written into the hero below the intro, as the Agent writes a new layer; once the page has it. */
+async function writeBelowTheIntro(page: Page, html: string) {
+  const text = readFileSync(APP, "utf8");
+  expect(text).toContain(INTRO_END);
+  writeFileSync(APP, text.replace(INTRO_END, `${INTRO_END}${html}`));
+  await expect(page.locator('[data-testid="hero"] > p + *')).not.toHaveText(/Get started/);
+}
+
+/** `from` replaced with `to` in `App.tsx`, as the Agent edits; `shows`, once the page shows it. */
+async function editApp(from: string, to: string, shows: () => Promise<boolean>) {
+  const text = readFileSync(APP, "utf8");
+  expect(text).toContain(from);
+  writeFileSync(APP, text.replace(from, to));
+  await expect.poll(shows).toBe(true);
+}
+
+/** The layer selected, a new Frame with no fill, filled red. */
+async function fillRed(page: Page) {
+  await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
+  await setField(page, "Fill color", "ff0000");
+}
+
+/** The element right after the intro on the live page, as the browser computes `property` for it. */
+const belowTheIntro = (page: Page, property: string) => page.locator('[data-testid="hero"] > p + div').evaluate((el, name) => getComputedStyle(el)[name as "color"], property);
+
+/**
+ * A Frame drawn below the intro (1), filled red (2), with 4px corners (3).
+ * Each applied as the Agent writes it, `done` run after each: `radius`, the
+ * class it writes for the corners.
+ */
+async function makeAFrameFilledAndRounded(page: Page, radius = "rounded-[4px]") {
+  const made = await drawAFrameBelowTheIntro(page);
+  await fillRed(page);
+  await setField(page, "Corner radius", "4");
+  await expect.poll(() => changesNow().map((change) => [change.id, change.kind, change.property])).toEqual([
+    [1, "create", made.property],
+    [2, "style", "fill"],
+    [3, "style", "radius"],
+  ]);
+  const { width, height } = made.after;
+  await leaveEditMode(page);
+  await npx03kind("claim");
+  const dones: string[] = [];
+  await writeBelowTheIntro(page, `        <div className="h-[${height}px] w-[${width}px]" />\n`);
+  dones.push(await npx03kind("done", "1"));
+  await editApp(`w-[${width}px]"`, `w-[${width}px] bg-[#ff0000]"`, async () => (await belowTheIntro(page, "backgroundColor")) === "rgb(255, 0, 0)");
+  dones.push(await npx03kind("done", "2"));
+  await editApp(`bg-[#ff0000]"`, `bg-[#ff0000] ${radius}"`, async () => (await belowTheIntro(page, "borderTopLeftRadius")) !== "0px");
+  dones.push(await npx03kind("done", "3"));
+  const finished = await npx03kind("finish");
+  return { dones, finished, size: { width, height }, radius: await belowTheIntro(page, "borderTopLeftRadius") };
+}
+
+test("playbook: the designer draws a Frame, fills it and rounds its corners; the Agent applies all three, done after each (ticket 76)", async ({ page }) => {
+  const { dones, finished, size } = await makeAFrameFilledAndRounded(page);
+  const checks = checksOf([1, 2, 3]);
+  record("makes-a-frame", {
+    ...checks,
+    applied: appliedInArchive(),
+    ticked: tickedIn(finished),
+    size,
+    done: dones.map((output) => output.split("\n").slice(0, 2).join(" ")),
+    finished: finished.split("\n")[0],
+    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
+  });
+});
+
+test("playbook: the same, the Agent writing 8px corners rather than 4px; the report it is given lists what it ticks (ticket 76)", async ({ page }) => {
+  const { dones, finished, radius } = await makeAFrameFilledAndRounded(page, "rounded-[8px]");
+  const checks = checksOf([1, 2, 3]);
+  const ticked = tickedIn(finished);
+  // Change 3 is not shown on the page (8px, not 4px): ticked, it is a false ✓.
+  record("makes-a-frame-off", {
+    ...checks,
+    applied: appliedInArchive(),
+    ticked,
+    falseTicks: ticked.filter((id) => id === 3).length,
+    radiusOnThePage: radius,
+    done: dones.map((output) => output.split("\n").slice(0, 2).join(" ")),
+    finished: finished.split("\n")[0],
+  });
+});
+
+test("playbook: a Frame drawn in a new Frame, filled; the Agent writes one in the other (ticket 76)", async ({ page }) => {
+  const outer = await drawAFrameBelowTheIntro(page, { width: 300, height: 120 });
+  const box = (await canvas(page).locator('[data-testid="hero"] > p + div').boundingBox())!;
+  const zoom = await zoomOf(page);
+  await page.keyboard.press("Escape");
+  await drawWith(page, "f", { x: box.x + 20 * zoom, y: box.y + 20 * zoom }, { width: 100, height: 40 });
+  await expect.poll(() => changesNow().length).toBe(2);
+  await fillRed(page);
+  await expect.poll(() => changesNow().map((change) => [change.id, change.kind])).toEqual([
+    [1, "create"],
+    [2, "create"],
+    [3, "style"],
+  ]);
+  const inner = changesNow()[1] as unknown as { after: { width: number; height: number; place: { absolute: { x: number; y: number } } } };
+  const { x, y } = inner.after.place.absolute;
+  await leaveEditMode(page);
+  await npx03kind("claim");
+  await writeBelowTheIntro(
+    page,
+    `        <div className="relative h-[${outer.after.height}px] w-[${outer.after.width}px]">\n` +
+      `          <div className="absolute left-[${x}px] top-[${y}px] h-[${inner.after.height}px] w-[${inner.after.width}px] bg-[#ff0000]" />\n` +
+      "        </div>\n",
+  );
+  await expect(page.locator('[data-testid="hero"] > p + div > div')).toHaveCSS("background-color", "rgb(255, 0, 0)");
+  const done = await npx03kind("done", "1", "2", "3");
+  await npx03kind("finish");
+  const checks = checksOf([1, 2, 3]);
+  record("makes-a-frame-in-a-frame", { ...checks, applied: appliedInArchive(), inner: { x, y }, done: done.split("\n") });
+});
+
+/** In edit mode, text drawn in the first Card of the loop, below its body text, reading “Fresh”: in each of the loop's three cards. */
+async function drawTextInTheCards(page: Page) {
+  await recordNotices(page);
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const body = (await canvas(page).locator("article p").first().boundingBox())!;
+  await drawWith(page, "t", { x: body.x + 10, y: body.y + body.height - 2 }, { width: 120, height: 12 });
+  await page.keyboard.type("Fresh");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(["create"]);
+}
+
+test("playbook: text drawn in a Card of the loop; the Agent writes it in the Card once, the page renders it in every card (ticket 76)", async ({ page }) => {
+  await drawTextInTheCards(page);
+  await leaveEditMode(page);
+  await npx03kind("claim");
+  writeFileSync(CARD, original.replace(CARD_BODY_END, `${CARD_BODY_END}      <p className="mt-2 text-sm">Fresh</p>\n`));
+  await expect(page.locator("article").first().getByText("Fresh")).toBeVisible();
+  const done = await npx03kind("done", "1");
+  await npx03kind("finish");
+  const checks = checksOf([1]);
+  record("made-in-a-loop", { ...checks, applied: appliedInArchive(), done: done.split("\n") });
+});
+
+test("playbook: text drawn in a Card of the loop; the Agent writes it in two places of the Card, one for the first card and one for the rest (ticket 76)", async ({ page }) => {
+  await drawTextInTheCards(page);
+  await leaveEditMode(page);
+  await npx03kind("claim");
+  const twice = `{title === "Freeze" ? (\n        <p className="mt-2 text-sm">Fresh</p>\n      ) : (\n        <p className="mt-2 text-sm">Fresh</p>\n      )}\n`;
+  writeFileSync(CARD, original.replace(CARD_BODY_END, `${CARD_BODY_END}      ${twice}`));
+  await expect(page.locator("article").first().getByText("Fresh")).toBeVisible();
+  const done = await npx03kind("done", "1");
+  await npx03kind("finish");
+  const checks = checksOf([1]);
+  record("made-in-two-places", { ...checks, applied: appliedInArchive(), done: done.split("\n") });
+});

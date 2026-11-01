@@ -1117,9 +1117,9 @@ test.describe("a claimed round", () => {
    * settled; what was seen meanwhile, per update. `asking`: with the first,
    * the Agent runs `done` for every change, which the page answers as the code comes in.
    */
-  async function hotUpdates(page: Page, asking?: () => Promise<unknown>) {
+  async function hotUpdates(page: Page, asking?: () => Promise<unknown>, updates: typeof UPDATES = UPDATES) {
     const per: { name: string; long: Seen["long"]; checks: Seen["measures"] }[] = [];
-    for (const [i, { name, from, to, shows }] of UPDATES.entries()) {
+    for (const [i, { name, from, to, shows }] of updates.entries()) {
       await page.evaluate(armTasks, CHECKS);
       const text = readFileSync(PARTS, "utf8");
       expect(text).toContain(from);
@@ -1183,7 +1183,58 @@ test.describe("a claimed round", () => {
     await expect.poll(served).toBe(true);
     await openBigPage(page);
     const unclaimed = await hotUpdates(page);
+    reportChecks(claimed, unclaimed, elements, "claimedChecks", "3 changes to 96 cards");
+  });
 
+  /**
+   * Ticket 76: text drawn in the body of a card, so in each of the 96 cards,
+   * its size then changed. Each check finds the new text where its change puts
+   * it, in all 96 bodies, before it reads its size. Hot updates: the cards'
+   * words (neither applied), the text written into the cards' code, its size.
+   */
+  test("while a round with a layer made in it is claimed, the page finds the layer on each hot update with no long task of its own", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    const body = (await canvas(page).locator(`${cardBody(6)} > p`).boundingBox())!;
+    await page.keyboard.press("t");
+    await page.mouse.move(body.x + 10, body.y + body.height - 2);
+    await page.mouse.down();
+    await page.mouse.move(body.x + 120, body.y + body.height + 8, { steps: 6 });
+    await page.mouse.up();
+    await page.keyboard.type("Ships in a day");
+    await page.keyboard.press("Enter");
+    // The new text, selected.
+    const size = design(page).getByRole("textbox", { name: "Font size", exact: true });
+    await size.fill("20");
+    await size.press("Enter");
+    const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+    await expect.poll(() => saved().map((change: { kind: string; property: string }) => `${change.kind} ${change.property}`)).toEqual(["create new", "style fontSize"]);
+    await page.evaluate(armTasks, CHECKS);
+    await npx03kind("claim");
+    const ring = page.getByRole("progressbar", { name: "Applying design changes" });
+    await expect(ring).toHaveAttribute("aria-valuenow", "0");
+    await settle(page, 2000);
+    const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
+    const PARAGRAPH = '<p className="text-caption text-muted">Made in small batches, finished by hand, and shipped in recycled packaging.</p>';
+    const updates: typeof UPDATES = [
+      { name: "neither applied", from: "Made in small batches", to: "Made in small lots", shows: () => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots") },
+      { name: "the text written in every card", from: PARAGRAPH.replace("batches", "lots"), to: `${PARAGRAPH.replace("batches", "lots")}\n        <p className="text-caption">Ships in a day</p>`, shows: () => [...document.querySelectorAll("[data-testid=product] p + p")].length === 96 },
+      { name: "its size applied", from: '<p className="text-caption">Ships in a day</p>', to: '<p className="text-[20px]">Ships in a day</p>', shows: () => [...document.querySelectorAll("[data-testid=product] p + p")].every((p) => getComputedStyle(p).fontSize === "20px") },
+    ];
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, undefined, updates))];
+    await expect(ring).toHaveAttribute("aria-valuenow", "2");
+    await npx03kind("finish");
+    await expect(ring).toHaveCount(0);
+
+    writeFileSync(PARTS, original);
+    await expect.poll(served).toBe(true);
+    await openBigPage(page);
+    const unclaimed = await hotUpdates(page, undefined, updates);
+    reportChecks(claimed, unclaimed, elements, "claimedChecksMade", "new text in the 96 cards, and its size");
+  });
+
+  /** Prints and keeps what was seen of the checks of a claimed round, and says whether no long task was the check's. */
+  function reportChecks(claimed: { name: string; long: Seen["long"]; checks: Seen["measures"] }[], unclaimed: { long: Seen["long"] }[], elements: number, kept: string, what: string) {
     const rows = claimed.map(({ name, long, checks }, i) => {
       const own = stretches(checks);
       // A long task the check makes: one that would not be long without the checking in it.
@@ -1205,10 +1256,10 @@ test.describe("a claimed round", () => {
     const longest = Math.max(...rows.map((row) => row.longestStretch));
     const ofCheck = rows.flatMap((row) => row.longTasksOfCheck);
     const met = ofCheck.length === 0 && longest < 50;
-    keep("claimedChecks", { elements, rows });
+    keep(kept, { elements, rows });
     print(
       report(
-        `Checking a claimed round on hot updates, ${elements} elements, 3 changes to 96 cards, views 768 and 390 — ${mode}`,
+        `Checking a claimed round on hot updates, ${elements} elements, ${what}, views 768 and 390 — ${mode}`,
         [
           { name: "longest stretch of checking", summary: summarize(rows.map((row) => row.longestStretch)), target: "< 50ms, no long task of its own", met },
           { name: "checking per hot update", summary: summarize(rows.map((row) => row.checking)) },
@@ -1219,8 +1270,8 @@ test.describe("a claimed round", () => {
         ),
       ),
     );
-    verdict(met, `checking a claimed round: longest stretch ${longest.toFixed(1)}ms, ${ofCheck.length} long tasks of its own`);
-  });
+    verdict(met, `checking a claimed round (${what}): longest stretch ${longest.toFixed(1)}ms, ${ofCheck.length} long tasks of its own`);
+  }
 });
 
 /**
