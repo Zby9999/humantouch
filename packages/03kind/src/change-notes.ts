@@ -37,8 +37,8 @@ export interface NotesOptions {
   intro(count: string): string;
   /** A status line for each change, when there is one to give. */
   status?(change: Change): string;
-  /** What the notes end with, after the last change. */
-  end?(list: Change[]): string;
+  /** What the notes end with, after the last change, of the changes given (`list`) of the round (`round`). */
+  end?(list: Change[], round: Change[]): string;
   /** The changes to give, when not all of the round: the others are only referred to (a layer one of them made, say). */
   only?: Change[];
 }
@@ -69,7 +69,7 @@ export function describeChanges(list: Change[], root: string, options: NotesOpti
   const given = options.only ?? list;
   let notes = `# ${options.heading}\n\n${options.intro(changes(given.length))}\n\n`;
   for (const change of given) notes += section(change, list, root, options.status?.(change));
-  return notes + (options.end?.(given) ?? "");
+  return notes + (options.end?.(given, list) ?? "");
 }
 
 function section(change: Change, list: Change[], root: string, status: string | undefined): string {
@@ -357,7 +357,11 @@ function cell(place: Place): string {
 function placement(place: Place): string {
   if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer${cell(place)}`;
   const { x, y } = place.absolute;
-  return `absolute in ${container(place)}, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), which is to be its positioning reference (\`position: relative\`)`;
+  // The container is the positioning reference, not the layer: "which is to be" read as the layer was taken for both (ticket 76).
+  return (
+    `absolute in ${container(place)}, at X ${x}px and Y ${y}px from the container's top left (CSS \`left\` and \`top\`); ` +
+    "the container, not this layer, is the positioning reference: give the container `position: relative` if it has none"
+  );
 }
 
 /**

@@ -6030,3 +6030,137 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     expect([at("close").kind, at("close").children.map((child) => child.kind)]).toEqual(["frame", ["text"]]);
   });
 });
+
+describe("layers made this round are found on the live page at their place, and checked there (ticket 76)", () => {
+  const open = (page = STRUCTURE) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    return { ...canvas, layer };
+  };
+  /** The live page: `page` as the Agent has written it. */
+  const livePage = (page: string) => {
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(page);
+    doc.close();
+    return doc;
+  };
+  const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  /** A Frame drawn in the list's layout, 2nd, filled red with 4px corners. */
+  const frameInTheList = () => {
+    const canvas = open();
+    const frame = canvas.editor.create("frame", { parent: canvas.layer("list"), index: 1 }, { width: 120, height: 40 });
+    canvas.editor.set(canvas.editor.tree().layerOf(frame.el)!, "fill", RED);
+    canvas.editor.set(canvas.editor.tree().layerOf(frame.el)!, "radius", 4);
+    return canvas;
+  };
+  /** STRUCTURE, with `html` written in the list after A, the lines below one down. */
+  const writtenAfterA = (html: string) => STRUCTURE.replace(`<div id="b" ${loc("7:7")}`, `${html}<div id="b" ${loc("8:7")}`).replace(`<div id="c" ${loc("8:7")}`, `<div id="c" ${loc("9:7")}`);
+
+  test("a new Frame and the changes to it show where the Agent writes it: the 2nd layer of its container, a <div>", () => {
+    const { changes } = frameInTheList();
+    const page = livePage(writtenAfterA(`<div ${loc("7:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
+
+    expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+  });
+
+  test("written at another place, or of another tag, the new Frame is not shown, with what is at its place instead; the changes to it are not checked", () => {
+    const { changes } = frameInTheList();
+    const round = changes.list();
+    const elsewhere = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")} style="height: 20px">C</div>`, `<div id="c" ${loc("8:7")} style="height: 20px">C</div><div ${loc("9:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
+
+    expect(checkChange(elsewhere, round[0], round)).toEqual({ outcome: "not shown", actual: { tag: "div", nth: [2, 2], there: '<div id="b"> reading \u201cB\u201d' } });
+    expect(checkChange(elsewhere, round[1], round)).toEqual({ outcome: "unchecked", reason: "the layer is new this round, and not at its place on the page (change 1)" });
+
+    live?.remove();
+    const section = livePage(writtenAfterA(`<section ${loc("7:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></section>`));
+    expect(checkChange(section, round[0], round)).toMatchObject({ outcome: "not shown", actual: { tag: "div", there: "<section>" } });
+  });
+
+  test("new text is found at its place by its words too", () => {
+    const { editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 1 });
+    editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+    const round = changes.list();
+
+    const right = livePage(writtenAfterA(`<p ${loc("7:7")} style="margin: 0; font-size: 20px">Text</p>`));
+    expect(round.map((change) => checkChange(right, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+    live?.remove();
+    const wrong = livePage(writtenAfterA(`<p ${loc("7:7")} style="margin: 0; font-size: 20px">Other words</p>`));
+    expect(checkChange(wrong, round[0], round)).toEqual({ outcome: "not shown", actual: { tag: "p", words: "Text", nth: [2, 2], there: '<p> reading \u201cOther words\u201d' } });
+  });
+
+  test("a layer before it deleted this round: found there with the layer still on the page, and once it is gone", () => {
+    const { editor, changes, layer } = open();
+    editor.create("frame", { parent: layer("list"), index: 2 }, { width: 120, height: 40 });
+    editor.remove(layer("a"));
+    const round = changes.list();
+    expect(round[0].among).toMatchObject({ before: 1, maybe: 1 });
+
+    const frame = `<div ${loc("8:7")} style="width: 120px; height: 40px"></div>`;
+    const kept = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")}`, `${frame}<div id="c" ${loc("9:7")}`));
+    expect(checkChange(kept, round[0], round)).toEqual({ outcome: "shown" });
+    live?.remove();
+    const gone = livePage(STRUCTURE.replace(`<div id="a" ${loc("6:7")} style="height: 20px">A</div>`, "").replace(`<div id="c" ${loc("8:7")}`, `${frame}<div id="c" ${loc("9:7")}`));
+    expect(checkChange(gone, round[0], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("a Frame placed absolute in a Frame is found placed absolute in it, wherever among its layers it is written, at the X and Y the designer last gave it; text in it, in turn", () => {
+    const { editor, changes, layer } = open();
+    const frame = editor.create("frame", { parent: layer("board"), x: 30, y: 20 }, { width: 120, height: 80 });
+    editor.set(editor.tree().layerOf(frame.el)!, "x", 40);
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 10 });
+    editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+    const round = changes.list();
+    expect(round.map((change) => change.kind)).toEqual(["create", "style", "create", "style"]);
+
+    const written = (left: number) =>
+      STRUCTURE.replace(
+        `<div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>`,
+        `<div id="board" ${loc("13:5")} style="position: relative; width: 300px; height: 100px"><div ${loc("14:7")} style="position: absolute; left: ${left}px; top: 20px; width: 120px; height: 80px"><p ${loc("15:9")} style="position: absolute; left: 10px; top: 10px; margin: 0; font-size: 20px">Text</p></div><span id="tag" ${loc("17:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>`,
+      );
+    const page = livePage(written(40));
+    expect(round.map((change) => checkChange(page, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+    live?.remove();
+    const off = livePage(written(30));
+    expect(checkChange(off, round[0], round)).toEqual({ outcome: "not shown", actual: { x: 30, y: 20, margins: { x: 0, y: 0 } } });
+    expect(checkChange(off, round[2], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("written in a loop's instances from one place in the source, it is one layer, checked in each; from two places, it is not checked, and they are named", () => {
+    const card = (n: number, inner: string) => `<article ${loc("30:9")} style="display: flex; flex-direction: column"><h3 ${loc("31:11")}>Card ${n}</h3>${inner}</article>`;
+    const cards = (inner: (n: number) => string) => `<!DOCTYPE html><body style="margin: 0"><main ${loc("29:7")}>${[1, 2, 3].map((n) => card(n, inner(n))).join("")}</main></body>`;
+    const { doc, editor, changes } = openCanvas(cards(() => ""));
+    const article = find(editor.tree().root, (l) => l.el === doc.querySelector("article"))!;
+    const text = editor.create("text", { parent: article, index: 1 });
+    editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+    const round = changes.list();
+
+    const once = livePage(cards(() => `<p ${loc("32:11")} style="font-size: 20px">Text</p>`));
+    expect(round.map((change) => checkChange(once, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+    live?.remove();
+    const smaller = livePage(cards((n) => `<p ${loc("32:11")} style="font-size: ${n === 3 ? 14 : 20}px">Text</p>`));
+    expect(checkChange(smaller, round[1], round)).toEqual({ outcome: "not shown", actual: 14 });
+    live?.remove();
+    const twice = livePage(cards((n) => `<p ${loc(n === 1 ? "33:13" : "35:13")} style="font-size: 20px">Text</p>`));
+    const reason = "3 elements at its place match it, written at 2 places in the source (`src/App.tsx:33:13`, `src/App.tsx:35:13`): the page does not guess which is the layer";
+    expect(round.map((change) => checkChange(twice, change, round))).toEqual([
+      { outcome: "unchecked", reason },
+      { outcome: "unchecked", reason },
+    ]);
+  });
+
+  test("a layer copied this round is not looked for; one made in a round before is not either, and the check says so", () => {
+    const { editor, changes, layer } = open();
+    const copy = editor.duplicate(layer("a"));
+    editor.set(editor.tree().layerOf(copy.el)!, "fontSize", 20);
+    const round = changes.list();
+    const page = livePage(STRUCTURE);
+
+    expect(checkChange(page, round[1], round)).toEqual({ outcome: "unchecked", reason: "the layer is new this round, so the page has no marker to find it by" });
+    expect(checkChange(page, round[1], [round[1]])).toEqual({ outcome: "unchecked", reason: "the layer was made in a round before, and the page cannot find it: the canvas has no source marker for it" });
+  });
+});

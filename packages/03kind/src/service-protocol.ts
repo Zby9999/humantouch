@@ -130,7 +130,7 @@ export type CheckResult =
    * the page, read where `actual` is, as `claim` asks (ticket 68).
    */
   | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[] }
-  /** `anyPage`: no page could check it either (a brief, a layer new this round): not worth waiting for another. */
+  /** `anyPage`: no page could check it either (a brief, a copy made this round): not worth waiting for another. */
   | { outcome: "unchecked"; reason: string; anyPage?: true };
 
 /**

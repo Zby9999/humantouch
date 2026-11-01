@@ -261,7 +261,7 @@ export function checkReport(text: string, ids: number[]): ReportCheck {
 /** A change of the scenario, as the run left it. */
 export interface ChangeOutcome {
   id: number;
-  /** Whether the editor layer's page check can tell this kind of change (the Skill's list: not a new layer, a brief, …). */
+  /** Whether the editor layer's page check can tell this kind of change (the notes' list: not a brief, a copy, …). */
   checkable: boolean;
   /** Whether the page shows it at the end, by the scenario's own expectation; null when the scenario has none (a brief). */
   shown: boolean | null;

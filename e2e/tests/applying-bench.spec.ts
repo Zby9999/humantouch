@@ -1135,6 +1135,10 @@ test("playbook: the designer draws a Frame, fills it and rounds its corners; the
     finished: finished.split("\n")[0],
     unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
   });
+  // Ticket 76: the new Frame, its fill and its corners each get a check, and the page shows all three.
+  expect(checks.checkCoverage).toBe(1);
+  expect(checks.shownByChecks).toBe(1);
+  expect(appliedInArchive()).toEqual([1, 2, 3]);
 });
 
 test("playbook: the same, the Agent writing 8px corners rather than 4px; the report it is given lists what it ticks (ticket 76)", async ({ page }) => {
@@ -1151,6 +1155,10 @@ test("playbook: the same, the Agent writing 8px corners rather than 4px; the rep
     done: dones.map((output) => output.split("\n").slice(0, 2).join(" ")),
     finished: finished.split("\n")[0],
   });
+  // Ticket 76: the page sees the corners are not as asked; the report puts them under ⚠️, not ✓.
+  expect(checks.outcomes[3]).toBe("not shown");
+  expect(ticked).toEqual([1, 2]);
+  expect(appliedInArchive()).toEqual([1, 2]);
 });
 
 test("playbook: a Frame drawn in a new Frame, filled; the Agent writes one in the other (ticket 76)", async ({ page }) => {
@@ -1181,6 +1189,8 @@ test("playbook: a Frame drawn in a new Frame, filled; the Agent writes one in th
   await npx03kind("finish");
   const checks = checksOf([1, 2, 3]);
   record("makes-a-frame-in-a-frame", { ...checks, applied: appliedInArchive(), inner: { x, y }, done: done.split("\n") });
+  // Ticket 76: found a level in, too.
+  expect(checks.shownByChecks).toBe(1);
 });
 
 /** In edit mode, text drawn in the first Card of the loop, below its body text, reading “Fresh”: in each of the loop's three cards. */
@@ -1207,6 +1217,8 @@ test("playbook: text drawn in a Card of the loop; the Agent writes it in the Car
   await npx03kind("finish");
   const checks = checksOf([1]);
   record("made-in-a-loop", { ...checks, applied: appliedInArchive(), done: done.split("\n") });
+  // Ticket 76: three elements from one place in the source are one layer.
+  expect(checks.outcomes[1]).toBe("shown");
 });
 
 test("playbook: text drawn in a Card of the loop; the Agent writes it in two places of the Card, one for the first card and one for the rest (ticket 76)", async ({ page }) => {
@@ -1220,4 +1232,6 @@ test("playbook: text drawn in a Card of the loop; the Agent writes it in two pla
   await npx03kind("finish");
   const checks = checksOf([1]);
   record("made-in-two-places", { ...checks, applied: appliedInArchive(), done: done.split("\n") });
+  // Ticket 76: from two places, the page does not guess, and names them.
+  expect(checks.outcomes[1]).toMatch(/^unchecked: 3 elements at its place match it, written at 2 places in the source \(`src\/components\/Card\.tsx:\d+:\d+`, `src\/components\/Card\.tsx:\d+:\d+`\)/);
 });

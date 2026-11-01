@@ -51,7 +51,7 @@ const QUIET_MS = 500;
 
 /**
  * Checks the round on `window`'s page till stopped. A change the page cannot
- * check at all (a brief, a layer new this round) it never looks at by itself:
+ * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
 export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn }: Options): PageChecks {
@@ -60,7 +60,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const shown = new Set<number>();
   /** What was last said of each change as the code changed, to say it again only when it changes. */
   const said = new Map<number, string>();
-  const checkable = changes.filter((change) => !uncheckable(change));
+  const checkable = changes.filter((change) => !uncheckable(change, changes));
   const copies = new Map<number, PageCopy>();
   /** The copies laid out as they are since they last changed. */
   const laidOut = new Set<number>();
@@ -340,7 +340,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
         });
       for (const id of ask.ids) {
         const change = changes.find((c) => c.id === id);
-        const reason = change ? uncheckable(change) : "the page does not have this round";
+        const reason = change ? uncheckable(change, changes) : "the page does not have this round";
         if (!change || reason) answer(id, { outcome: "unchecked", reason: reason!, ...(change && { anyPage: true as const }) });
         // Shown already: looked at again, at once, as a later edit may have undone it.
         else if (shown.has(id))

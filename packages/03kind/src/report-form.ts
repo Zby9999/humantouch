@@ -52,6 +52,8 @@ function pageShows(change: Change, check: CheckResult): string {
   const at = check.width ? `at ${check.width}px wide, ` : "";
   if (change.kind === "delete") return `${at}the layer is still on the page`;
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;
+  // A new layer, not found where its change puts it, or found placed elsewhere (ticket 76).
+  if (change.kind === "create") return `${at}the page does not have it where the change puts it`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
 }

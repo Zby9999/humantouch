@@ -375,9 +375,19 @@ describe("claim, how to write the changes (ticket 65)", () => {
     const elsewhere = { ...container, loc: "src/App.tsx:30:7" };
     const at = (x: number, y: number) => ({ x, y });
     const placeIn = (target: object, nth: number, absolute: object | null = null) => ({ ...place(nth, { target }), absolute });
+    // Layers made this round (ticket 76): new text or a Frame is found at its place, a copy is not; one made in a round before is not looked for.
+    const madeAs = (layer: string) => ({ ...inApp, loc: null, made: layer, context: { path: ["Page", "App", "Stack", "Frame"], element: "<div>" } });
+    const frame = (layer: string, at: object) => ({ ...redFill, id: 1, kind: "create", layer, property: "new", target: container, before: null, after: { type: "frame", place: at, width: 40, height: 20 }, style: {} });
+    const copy = (layer: string) => change("duplicate", { id: 1, layer, property: "copy", before: place(1), after: place(2) });
+    const onMade = (layer: string) => style("fill", { id: 2, layer, target: madeAs(layer) });
     test.each([
       ["a style change", style("fill")],
-      ["a style change to a layer made this round", style("fill", { target: { ...inApp, loc: null, made: "9" } })],
+      ["a new Frame in a container with a source marker", frame("9", place(2))],
+      ["a style change to a new Frame, with the change that makes it", [frame("9", place(2)), onMade("9")]],
+      ["a new Frame in a new Frame", [frame("8", place(2)), { ...frame("9", placeIn(madeAs("8"), 1, at(10, 20))), id: 2 }]],
+      ["a style change to a copy made this round, with the change that makes it", [copy("9"), onMade("9")]],
+      ["a new Frame in a copy made this round", [copy("8"), { ...frame("9", placeIn(madeAs("8"), 1, at(10, 20))), id: 2 }]],
+      ["a style change to a layer made in a round before", style("fill", { target: { ...inApp, loc: null, made: "9" } })],
       ["a style change to a layer with no source marker", style("fill", { target: { ...inApp, loc: null } })],
       ["a style change to a run of text", style("fill", { target: { ...inApp, run: 0 } })],
       ["a deletion", change("delete", { after: null })],
@@ -392,12 +402,15 @@ describe("claim, how to write the changes (ticket 65)", () => {
       ["a placement absolute in a container with no source marker", change("move", { before: placeIn({ ...container, loc: null }, 2), after: placeIn({ ...container, loc: null }, 2, at(10, 20)) })],
       ["new words", change("text", { before: "A", after: "B" })],
       ["a brief", change("brief", { before: null, after: "Bounce" })],
-    ])("%s", async (_, round) => {
-      saveRound(round);
+    ])("%s", async (_, changes) => {
+      // Every change of a round of several the page checks, or none.
+      const round = [changes].flat() as unknown as Change[];
+      saveRound(...round);
 
       const checks = rule((await cli("claim")).output, "How the page checks");
 
-      const checked = uncheckable(round as unknown as Change) === null;
+      const checked = round.every((change) => uncheckable(change, round) === null);
+      expect(round.every((change) => (uncheckable(change, round) === null) === checked)).toBe(true);
       expect(checks.includes("not at all")).toBe(!checked);
       expect(checks.includes("Where it does not show")).toBe(checked);
     });
@@ -1282,7 +1295,7 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 3)).toMatch(/^3\. Duplicate\n/);
     expect(section(output, 3)).toContain("- **Design intent:** Copy this layer, with all in it, and put the copy in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer.\n");
     expect(section(output, 3)).toContain("- **Reference style:** none: the copy is as the layer is\n");
-    expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from its top left");
+    expect(section(output, 4)).toContain("and place the copy absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 12px and Y 8px from the container's top left");
     expect(section(output, 5)).toContain("- **Data change:** the layer is one of the 3 instances a loop renders: add an item to the data the loop goes through, a copy of this one's, at the place given.");
   });
 
@@ -2360,5 +2373,68 @@ describe("claim, a round saved before the instances of a layer shared their edit
     if (process.env.TK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
     // What goes around the changes, the way through the round and how to write them, is of the notes of now (ticket 65).
     expect(changeSections(output)).toBe(changeSections(readFileSync(join(FIXTURE, "claim.md"), "utf8")));
+  });
+});
+
+describe("claim and done, layers made this round found on the page (ticket 76)", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, absolute: object | null = null) => ({ container: { layer: "4", target: list }, nth, slot: nth - 1, absolute });
+  const create = (after: object) => ({ ...redFill, id: 1, kind: "create", layer: "11", target: list, property: "new", before: null, after, style: {}, sources: [] });
+  const frameTarget = { ...list, loc: null, made: "11", context: { path: ["Page", "App", "Stack", "Frame"], element: "<div>" } };
+  /** The text of a rule of the notes' **How to write them**. */
+  const rule = (notes: string, name: string) => new RegExp(`^- \\*\\*${name}:\\*\\* (.*)$`, "m").exec(notes)?.[1] ?? "";
+
+  test("how the page checks says a new layer, and the changes to it, are found where its section puts it, by its tag and new text's words: not that they are not checked", async () => {
+    saveRound(create({ type: "frame", place: place(2), width: 200, height: 120 }), { ...smallRadius, layer: "11", target: frameTarget });
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("a new layer, and so the changes to it, by finding it where its section puts it: a `<div>` for a Frame, a `<p>` with its words for text, as that layer of its container, or, placed absolute, placed absolute in it at the X and Y given");
+    expect(checks).not.toContain("not at all");
+  });
+
+  test("a change to a layer made in a round before is named as such among those not checked", async () => {
+    saveRound({ ...smallRadius, id: 1, layer: "11", target: frameTarget });
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("a change to a layer made in a round before, not at all");
+  });
+
+  test("a new layer placed absolute is placed by its container, not by itself: the container is its positioning reference", async () => {
+    saveRound(create({ type: "frame", place: place(2, { x: 40, y: 60 }), width: 360, height: 80 }));
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain(
+      "- **Design intent:** Add a Frame, Fixed 360 × 80px, with no fill, absolute in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), at X 40px and Y 60px from the container's top left (CSS `left` and `top`); " +
+        "the container, not this layer, is the positioning reference: give the container `position: relative` if it has none.\n",
+    );
+  });
+
+  test("done says what is at a new layer's place when the page does not find it there, and what it looked for", async () => {
+    saveRound(create({ type: "text", text: "Works with any Agent.", place: place(3), width: null, height: null }));
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { tag: "p", words: "Works with any Agent.", nth: [3, 4], there: '<button class="mt-6"> reading “Get started”' } }));
+
+    const { output } = await cli("done", "1");
+
+    expect(output).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. The page has no `<p>` reading “Works with any Agent.” as the 3rd or 4th layer of Stack (`<ul class=\"flex flex-col\">`): " +
+        "it has <button class=\"mt-6\"> reading “Get started” there. Write the new layer there, as the notes say, and run `npx 03kind done 1` again.\n",
+    );
+  });
+
+  test("finish puts a new layer the page does not find under ⚠️, saying so in words", async () => {
+    saveRound(create({ type: "frame", place: place(2, { x: 40, y: 60 }), width: 360, height: 80 }));
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { tag: "div", nth: null, there: null } }));
+
+    const { output } = await cli("finish");
+
+    expect(output).toContain("⚠️ Not applied 1:1\n- 1. New Frame: <the layer>\n  Why: the page does not have it where the change puts it: <what keeps it so>\n");
   });
 });

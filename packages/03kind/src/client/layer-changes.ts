@@ -26,6 +26,7 @@ import {
 import { layerName } from "../design-values";
 import { breakpointKey } from "./breakpoints";
 import type { Change, CopiedBreakpoint, Created, Place } from "./changeset";
+import { NEW_TAGS } from "./checkable";
 import { wrappedTextOf } from "./layers";
 import { copyLook, matchLook } from "./look";
 import { holdAbsolute, releaseAbsolute, slotsOf } from "./moves";
@@ -37,7 +38,8 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
   const containers = elementsOf(doc, created.place.container.layer);
   const made: Element[] = [];
   for (const container of containers) {
-    const el = doc.createElement(created.type === "text" ? "p" : "div");
+    // Of the tag the page finds it by, once the Agent has written it (ticket 76).
+    const el = doc.createElement(NEW_TAGS[created.type]);
     el.setAttribute(LAYER_ID_ATTR, id);
     el.setAttribute(MADE_ATTR, id);
     el.setAttribute(NEW_ATTR, created.type);

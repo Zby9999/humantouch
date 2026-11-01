@@ -8,8 +8,8 @@
 import { changes as changesWord, describeChanges, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
 import { listed, ordinal, propertyName, value } from "./design-values";
-import type { PlacedOnPage } from "./client/check";
-import type { Change, Margins, Place, SavedChangeSet } from "./client/changeset";
+import type { MadeMissing, PlacedOnPage } from "./client/check";
+import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
@@ -299,6 +299,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     if (width) return `At ${width}px wide, the layer is still on the page: take it out at every width, and ${again}.`;
     return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
   }
+  if (change.kind === "create") return madeNotShown(change, actual, again, width);
   if (change.kind === "move") {
     const { absolute, nth } = change.after as Place;
     if (!absolute) return `Its container's layers are in another order on the page: put it ${ordinal(nth)}, as the notes say, and ${again}.`;
@@ -324,6 +325,29 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     return `At ${width}px wide, the ${instead} The change applies ${applies}: see what sets the value at that width (a breakpoint variant such as \`sm:\`, a media query), fix it, and ${again}.`;
   }
   return `The ${instead} Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and ${again}.`;
+}
+
+/**
+ * A new layer the page does not find at its place (ticket 76), or finds,
+ * placed absolute, drawn elsewhere: what it looked for and what is there.
+ */
+function madeNotShown(change: Change, actual: unknown, again: string, width?: number): string {
+  const { place } = change.after as Created;
+  const container = `${place.container.target.context.path.at(-1)} (\`${place.container.target.context.element}\`)`;
+  if (actual && typeof actual === "object" && "tag" in actual) {
+    const { tag, words, nth, there } = actual as MadeMissing;
+    const what = `\`<${tag}>\`${words === undefined ? "" : ` reading \u201c${words}\u201d`}`;
+    if (!nth) return `The page has no ${what} placed absolute in ${container}: write the new layer there, as the notes say, and ${again}.`;
+    // A range: the page may have layers there the round takes out, or not yet those it puts in.
+    const which = nth[0] === nth[1] ? ordinal(nth[0]) : `${ordinal(nth[0])} ${nth[1] - nth[0] === 1 ? "or" : "to"} ${ordinal(nth[1])}`;
+    const instead = there ? `it has ${there} there` : "it has no layer there";
+    return `The page has no ${what} as the ${which} layer of ${container}: ${instead}. Write the new layer there, as the notes say, and ${again}.`;
+  }
+  const at = width ? `At ${width}px wide, the` : "The";
+  if (actual === "no reference") return `${at} new layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
+  const placed = actual as PlacedOnPage | null;
+  const where = placed ? `at X ${placed.x}px and Y ${placed.y}px` : "not placed absolute";
+  return `${at} new layer is ${where}, not where the notes place it: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
 }
 
 /** Margins in words: `2px left and 6px top`, `24px top`, `none`. */

@@ -3,7 +3,7 @@
  * to the canvas being edited and to a saved one. A layer goes in each instance
  * of its container's usage; a layer one of several a loop renders goes alone.
  */
-import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
+import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
 
@@ -48,9 +48,16 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
 
 /**
  * Puts the order of each reordered container's layers, as the canvas has them
- * now, into its reorders: what the check measures the live page by.
+ * now, into its reorders, and the place of each new layer among its
+ * container's, into its `create` change (ticket 76): what the check measures
+ * the live page by.
  */
 export function syncOrders(doc: Document, changes: ChangeSet) {
+  for (const change of changes.list()) {
+    if (change.kind !== "create") continue;
+    const among = amongOf(doc, change.layer, changes.list());
+    if (JSON.stringify(among) !== JSON.stringify(change.among)) changes.record(change.layer, { ...change, among });
+  }
   const reorders = changes.list().filter(isReorder);
   for (const change of reorders) {
     const id = (change.after as Place).container.layer;
@@ -63,6 +70,31 @@ export function syncOrders(doc: Document, changes: ChangeSet) {
     };
     if (JSON.stringify(order) !== JSON.stringify(change.order)) changes.record(change.layer, { ...change, order });
   }
+}
+
+/**
+ * Where the new layer with id `id` is among its container's layers on the
+ * canvas (`Change.among`): how many come before it that the live page has
+ * too, and how many the page may have there or not, as the round is applied
+ * so far: deleted, moved or made this round, or moved out of the container
+ * (wherever they were in it). Null when it is in no container.
+ */
+function amongOf(doc: Document, id: string, changes: Change[]): NonNullable<Change["among"]> | null {
+  const el = elementsOf(doc, id).find((e) => e.getAttribute(MADE_ATTR) === id);
+  const container = el?.parentElement;
+  if (!el || !container) return null;
+  const layers = [...container.children].filter((child) => !NOT_DRAWN.has(child.localName));
+  let before = 0;
+  let maybe = 0;
+  for (const layer of layers.slice(0, layers.indexOf(el))) {
+    if ([DELETED_ATTR, MADE_ATTR, MOVE_ATTR, WRAP_ATTR].some((attr) => layer.hasAttribute(attr))) maybe++;
+    else before++;
+  }
+  const own = container.getAttribute(LAYER_ID_ATTR);
+  const out = changes.filter((change) => change.kind === "move" && (change.before as Place).container.layer === own && (change.after as Place).container.layer !== own);
+  const outside = out.flatMap((move) => elementsOf(doc, move.layer).slice(0, 1));
+  const signs = [...layers.filter((layer) => !layer.hasAttribute(MADE_ATTR)), ...outside].map(signOf);
+  return { before, maybe: maybe + out.length, signs };
 }
 
 /**
