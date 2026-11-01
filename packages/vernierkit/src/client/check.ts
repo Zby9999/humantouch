@@ -14,7 +14,8 @@ import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Margins, type Place } from "./changeset";
 import { openingTag } from "./layer-target";
-import { absolute, PLACING, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
+import { checkable, PLACING } from "./checkable";
+import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import { colorReader } from "./paint";
@@ -34,33 +35,16 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
   },
 };
 
-/** Why a change cannot be checked, when it cannot: the page must be able to find the layer, and tell what the change does there. */
+/** Why a change cannot be checked, when it cannot (`checkable`): the page must be able to find the layer, and tell what the change does there. */
 export function uncheckable(change: Change): string | null {
+  if (checkable(change)) return null;
   if (change.kind === "brief") return BRIEF_UNCHECKED;
   if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
-  if (checkable(change)) return null;
   if (change.kind === "style") return "the layer's container cannot be found on the page";
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
-}
-
-/**
- * Of the changes to the structure, those the page can be measured for: a
- * reorder in the same container (unless text runs on among its layers), a
- * placement absolute in the same container, a deletion; not when one of a
- * loop's instances is changed alone, which the page cannot tell apart.
- */
-function checkable(change: Change): boolean {
-  if (change.kind === "style") return true;
-  if (change.data) return false;
-  if (change.kind === "delete") return true;
-  if (change.kind !== "move" || change.wrap) return false;
-  const [before, after] = [change.before, change.after] as Place[];
-  const container = after.container.target;
-  if (before.container.layer !== after.container.layer || !container.loc || container.made) return false;
-  return after.absolute ? true : !before.absolute && !!change.order;
 }
 
 /**

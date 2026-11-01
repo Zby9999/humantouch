@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { run } from "../src/cli";
+import type { Change } from "../src/client/changeset";
+import { uncheckable } from "../src/client/check";
 import { REPORT_RULES } from "../src/report-form";
 
 let project: string;
@@ -339,6 +341,49 @@ describe("claim, how to write the changes (ticket 65)", () => {
 
     expect(checks).toContain("new words and a brief, not at all: `done` says Not checked, which is no error; say in the report what you did");
     expect(checks).not.toContain("getComputedStyle");
+  });
+
+  describe("how the page checks says a change is checked exactly when the page checks it (`uncheckable` in check.ts)", () => {
+    const order = { signs: ["li A", "li B"], self: 1, others: [] };
+    const elsewhere = { ...container, loc: "src/App.tsx:30:7" };
+    const at = (x: number, y: number) => ({ x, y });
+    const placeIn = (target: object, nth: number, absolute: object | null = null) => ({ ...place(nth, { target }), absolute });
+    test.each([
+      ["a style change", style("fill")],
+      ["a style change to a layer made this round", style("fill", { target: { ...inApp, loc: null, made: "9" } })],
+      ["a style change to a layer with no source marker", style("fill", { target: { ...inApp, loc: null } })],
+      ["a style change to a run of text", style("fill", { target: { ...inApp, run: 0 } })],
+      ["a deletion", change("delete", { after: null })],
+      ["a deletion of a loop's instance", change("delete", { data: true, after: null })],
+      ["a reorder", change("move", { before: place(2), after: place(1), order })],
+      ["a reorder among loose text", change("move", { before: place(2), after: place(1) })],
+      ["a reorder wrapped", change("move", { before: place(2), after: place(1), order, wrap: true })],
+      ["a placement absolute in the same container", change("move", { before: place(2), after: { ...place(2), absolute: at(10, 20) } })],
+      ["a move into another container", change("move", { before: place(2), after: placeIn(elsewhere, 1), order })],
+      ["a move into a layout from a place of its own", change("move", { before: { ...place(2), absolute: at(10, 20) }, after: place(1), order })],
+      ["a reorder in a container made this round", change("move", { before: placeIn({ ...container, loc: null, made: "9" }, 2), after: placeIn({ ...container, loc: null, made: "9" }, 1), order })],
+      ["a placement absolute in a container with no source marker", change("move", { before: placeIn({ ...container, loc: null }, 2), after: placeIn({ ...container, loc: null }, 2, at(10, 20)) })],
+      ["new words", change("text", { before: "A", after: "B" })],
+      ["a brief", change("brief", { before: null, after: "Bounce" })],
+    ])("%s", async (_, round) => {
+      saveRound(round);
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      const checked = uncheckable(round as unknown as Change) === null;
+      expect(checks.includes("not at all")).toBe(!checked);
+      expect(checks.includes("Where it does not show")).toBe(checked);
+    });
+
+    test("a move in the same container, one the page has no marker for, is named as such: not as one into another container", async () => {
+      const made = { ...container, loc: null, made: "9" };
+      saveRound(change("move", { before: placeIn(made, 2), after: placeIn(made, 1), order }));
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toContain("a move in a container made this round, or one the page cannot find, not at all");
+      expect(checks).not.toContain("another container");
+    });
   });
 
   test("a layer placed absolute: how the page checks says its `left` and `top` are the X and Y given, its margins kept, not taken off; a round with none says nothing of margins (ticket 65)", async () => {
@@ -1082,6 +1127,48 @@ describe("claim, new layers, words, deleting and copying", () => {
       "- **Design intent:** Add text that reads “Hello”, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.\n",
     );
     expect(section(output, 3)).not.toContain("Sketch");
+  });
+
+  /** What How to write them says of a new Frame with a brief. */
+  const briefRule = (notes: string) => /^- \*\*New Frame with a brief:\*\* (.*)$/m.exec(notes)?.[1] ?? "";
+  const sketched = change(2, "create", {
+    property: "new",
+    target: frameTarget,
+    after: { type: "text", place: place(1, { x: 10, y: 12 }, "11", frameTarget), width: 160, height: null, text: "Plans" },
+  });
+
+  test("a new Frame with a brief and nothing drawn in it: the notes say to lay it out within its size as the brief says, and name no sketch (ticket 65)", async () => {
+    saveRound(change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 360, height: 80, brief: "A row of three partner logos" } }));
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "- **Brief:** “A row of three partner logos”. Make what it asks for in this Frame, from the project's own components and styles, laid out within its size as the brief says: the designer drew nothing in it.\n",
+    );
+    expect(briefRule(output)).toContain("laid out within the Frame's size as the brief says");
+    expect(output).not.toMatch(/sketch/i);
+  });
+
+  test("a new Frame with a brief and a sketch: the notes say to lay it out as the sketch shows, as before; with another Frame of the round drawn in, that one is laid out within its size (ticket 65)", async () => {
+    saveRound(change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }), sketched);
+
+    const rule = briefRule((await cli("claim")).output);
+
+    expect(rule).toBe(
+      "build what the brief asks for from the components and styles the project already has (its buttons, cards, type and colors), laid out as the sketch shows: the sketch is a guide to the layout, not words and boxes to copy. Say in the report what you made.",
+    );
+
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }),
+      sketched,
+      change(3, "create", { property: "new", after: { type: "frame", place: place(5), width: 360, height: 80, brief: "Logos" } }),
+    );
+    const mixed = (await cli("claim")).output;
+
+    expect(briefRule(mixed)).toContain("laid out as the sketch shows");
+    expect(briefRule(mixed)).toContain("A Frame with nothing drawn in it is laid out within its size as the brief says.");
+    expect(section(mixed, 1)).toContain("laid out as the sketch shows.\n");
+    expect(section(mixed, 3)).toContain("laid out within its size as the brief says: the designer drew nothing in it.\n");
   });
 
   test("the sketch is as the designer left it: moved or resized since, and moved or copied into the Frame", async () => {

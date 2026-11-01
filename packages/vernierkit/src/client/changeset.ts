@@ -458,6 +458,11 @@ export function placedAt(change: Change): Place | null {
   return null;
 }
 
+/** The changes of `list` that put a layer in the layer `frame` (drawn, moved, put back or copied in), as a sketch in a new Frame: a Stack made there is none. */
+export function drawnIn(frame: string, list: Change[]): Change[] {
+  return list.filter((change) => change.kind !== "stack" && placedAt(change)?.container.layer === frame);
+}
+
 /** The layers whose place or layout a change changes. One of a loop's instances changed alone is told apart from the others. */
 function placed(change: Change): string[] {
   if (change.kind === "move" || change.kind === "delete") return [change.data ? `${change.layer} ${change.property}` : change.layer];

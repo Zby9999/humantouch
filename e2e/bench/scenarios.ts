@@ -11,6 +11,7 @@
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
 import type { Change } from "../../packages/vernierkit/src/client/changeset.ts";
+import { PLACING } from "../../packages/vernierkit/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 
 /** What a scenario's designer works with: the page, and the project behind it. */
@@ -140,7 +141,7 @@ async function saved(desk: Desk, count: number) {
     await desk.page.waitForTimeout(100);
   }
   // A style change at a breakpoint is saved again once the page is read in each part of its range (ticket 65): the example's ranges all have parts.
-  const unread = () => desk.changeSet()!.changes.filter((change) => change.kind === "style" && change.breakpoint && !["x", "y", "absolute"].includes(change.property ?? "") && !change.parts);
+  const unread = () => desk.changeSet()!.changes.filter((change) => change.kind === "style" && change.breakpoint && !(PLACING as readonly string[]).includes(change.property ?? "") && !change.parts);
   for (let tries = 0; unread().length; tries++) {
     if (tries > 100) throw new Error(`Changes ${unread().map((change) => change.id).join(", ")} are saved with no parts of their range read`);
     await desk.page.waitForTimeout(100);

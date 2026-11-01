@@ -312,9 +312,6 @@ export function readAsShown<P extends Property>(el: Element, property: P, colors
   return property === "visible" ? PROPERTIES[property].read(el, colors) : asShown(el, () => PROPERTIES[property].read(el, colors));
 }
 
-/** The properties that place a layer by its X and Y: its `left` and `top`, past which its margins draw it (`Change.margins`). */
-export const PLACING: readonly Property[] = ["x", "y", "absolute"];
-
 /** The CSS that places a layer absolute at `x` and `y`, in px, from its container's top left. */
 export function absoluteAt({ x, y }: { x: number; y: number }): Record<string, string> {
   return { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" };

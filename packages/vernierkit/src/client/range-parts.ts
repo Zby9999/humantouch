@@ -15,7 +15,8 @@ import { partsOf, widthIn, type ProjectBreakpoints } from "./breakpoints";
 import type { Change, RangePart } from "./changeset";
 import { valueOn } from "./check";
 import { copyPage, type PageCopy } from "./page-copy";
-import { PLACING, type Property } from "./property-table";
+import { PLACING } from "./checkable";
+import type { Property } from "./property-table";
 
 /**
  * Performance entries: a measure for each step of reading the parts of a

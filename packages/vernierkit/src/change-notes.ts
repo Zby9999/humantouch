@@ -6,6 +6,7 @@
  */
 import { isAbsolute, relative } from "node:path";
 import {
+  drawnIn,
   madeBy,
   movedOffBy,
   placedAt,
@@ -373,9 +374,8 @@ function sketch(change: Change, list: Change[]): string[] {
   // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
   const latest = <T>(layer: string, property: string, then: T) =>
     (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property && !c.breakpoint)?.after as T) ?? then;
-  const items = list.flatMap((c) => {
-    const place = placedAt(c);
-    if (c.kind === "stack" || place?.container.layer !== change.layer) return [];
+  const items = drawnIn(change.layer, list).map((c) => {
+    const place = placedAt(c)!;
     const made = c.kind === "create" ? (c.after as Created) : null;
     const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
     let where = `${ordinal(place.nth)} in its layout`;
@@ -384,10 +384,12 @@ function sketch(change: Change, list: Change[]): string[] {
     const width = fixed(latest<Size | undefined>(c.layer, "width", undefined)) ?? made?.width ?? null;
     const height = fixed(latest<Size | undefined>(c.layer, "height", undefined)) ?? made?.height ?? null;
     const size = width === null ? "" : height === null ? `, ${width}px wide` : `, ${width} × ${height}px`;
-    return [`\n  - ${what}: ${where}${size} (change ${c.id})`];
+    return `\n  - ${what}: ${where}${size} (change ${c.id})`;
   });
+  // With nothing drawn in the Frame, no sketch is named: an Agent told of one went looking for it (ticket 65).
+  const layout = items.length ? "laid out as the sketch shows." : "laid out within its size as the brief says: the designer drew nothing in it.";
   return [
-    `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.`,
+    `**Brief:** ${quoted(created.brief)}. Make what it asks for in this Frame, from the project's own components and styles, ${layout}`,
     ...(items.length ? [`**Sketch:** what the designer drew in the Frame, from its top left, shows the layout they have in mind:${items.join("")}`] : []),
   ];
 }

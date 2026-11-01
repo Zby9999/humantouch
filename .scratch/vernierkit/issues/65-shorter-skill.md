@@ -10,7 +10,7 @@
 
 - [x] Skill 只剩流程与报告格式，长度不超过现在的三分之一（146 → 40 行，25,106 → 3,673 字节）
 - [x] `claim` 的输出只包含这一轮出现过的改动种类的写法，每种只出现一次
-- [x] 真实 Agent（与 63 同一 Agent、同一模型）：每轮读入的字数比 63 的基线少；整轮用时、每条平均工具调用次数不高于基线；1:1 落地率、设计变量使用率、虚假的 ✓ 不变差；前后数字记在 Comments。Claude 每项都达到，比的是基线 B。Cursor 比的是基线 B'（10/31 设计师决定重测，见 63「基线 B'（Cursor）」），在最终代码 9623bd4 上每项都达到：整轮用时中位数 66.45 → 60.06 秒，每条 23.79 → 20.02 秒，每条工具调用 5.33 → 4.67，全部读入 51,292 → 25,368 字，1:1 74 → 81 / 81，虚假的 ✓ 7 → 0，设计变量 1 → 1。用时的差别不显著（p ≈ 0.36）。见 Comments「Cursor 最终数字：和基线 B' 比」。这之前和基线 B 比，Cursor 的整轮用时没达到（61.52 → 76.21 秒）。**11/1 注**：在之后的最终代码 e5b2877（含补修三、67、68）上又测了 30 次，整轮用时中位数 69.11 秒、每条 24.91 秒，都高于 B'（高 4%、5%，p ≈ 0.19 / 0.16），按中位数这两项没达到。合计少 26%，按场景几何平均 0.76；高出来的是 button-over-rule 一个场景的模型思考。其余各项都达到。见 Comments「Cursor 在最终代码上：e5b2877」
+- [x] 真实 Agent（与 63 同一 Agent、同一模型）：每轮读入的字数比 63 的基线少；整轮用时、每条平均工具调用次数不高于基线；1:1 落地率、设计变量使用率、虚假的 ✓ 不变差；前后数字记在 Comments。Claude 每项都达到，比的是基线 B。Cursor 比的是基线 B'（10/31 设计师决定重测，见 63「基线 B'（Cursor）」），在最终代码 9623bd4 上每项都达到：整轮用时中位数 66.45 → 60.06 秒，每条 23.79 → 20.02 秒，每条工具调用 5.33 → 4.67，全部读入 51,292 → 25,368 字，1:1 74 → 81 / 81，虚假的 ✓ 7 → 0，设计变量 1 → 1。用时的差别不显著（p ≈ 0.36）。见 Comments「Cursor 最终数字：和基线 B' 比」。这之前和基线 B 比，Cursor 的整轮用时没达到（61.52 → 76.21 秒）。**11/1 注**：在之后的最终代码 e5b2877（含补修三、67、68）上又测了 30 次，整轮用时中位数 69.11 秒、每条 24.91 秒，都高于 B'（高 4%、5%，p ≈ 0.19 / 0.16），按中位数这两项没达到。合计少 26%，按场景几何平均 0.76；高出来的是 button-over-rule 一个场景的模型思考。其余各项都达到。见 Comments「Cursor 在最终代码上：e5b2877」。**放行**：最终代码上中位数比 B' 高 4–5%（p ≈ 0.19），设计师 2026-11-01 按整体更快（合计 −26%，按场景几何平均 0.76）放行，所以这一项仍勾着
 - [x] 不加载 Skill 的场景：只对 Agent 说「运行 `npx vernierkit claim`，照输出落地」，真实 Agent 能走完一轮，报告格式合规。Claude 达到，见下一项。Cursor 在最终代码 9623bd4 上补跑了 10 次：10 / 10 都走完一轮，报告 10 / 10 合规，1:1 27 / 27。其中 3 次自己在 node_modules 里找到并读了包里自带的 Skill。见 Comments「Cursor 最终数字：和基线 B' 比」
 - [x] 不加载 Skill 的场景，Claude：10 次都走完一轮，报告合规比 65 的 8 / 10 好。10/31 补修加入、补修后达到：10 / 10（见 Comments「补修：页面怎么核对、断点逐段、`finish` 排好报告」）
 - [x] spec 中 Skill 的内容随之更新
@@ -1000,3 +1000,105 @@ Cursor：没跑成。
 - 读包仍比 B' 多 2 次：外边距那一处降到 1 次运行；新出来的一处是没有草图时也说「as the sketch shows」。
 - 模型 id 仍是 `grok-4.7-high`。B' 前 24 次用的是 256K 那个 id，这一点和 9623bd4 那批一样。
 - 开跑前 load 5.6，比 B'（2.9–4.2）高。快的场景比 9623bd4 还快，看不出负载拖慢了；不过 button-over-rule 主要是模型那边的时间，和本机负载无关。
+
+**补修四（11/01 最终审查后，起点 a1a0deb）**
+
+起因：最终审查和上面 e5b2877 那批 Cursor 运行查出的三处 `claim` 说明问题，外加验收清单的放行注明。
+
+改了什么：
+
+1. 没有草图时不再说「as the sketch shows」。
+   - 改动单里怎么区分：新建 Frame（`create`，带 `brief`）里有没有图层，看这一轮有没有改动把图层放进这个 Frame（新建、移入、拖回、复制；合成 Stack 不算），和原来 `change-notes.ts` 打 **Sketch:** 那一行的判断相同。这个判断抽成 `changeset.ts` 的 `drawnIn`，两处共用。
+   - 没有草图时，Brief 那行改成「…laid out within its size as the brief says: the designer drew nothing in it.」；「New Frame with a brief」那条改成「…laid out within the Frame's size as the brief says.」。都不提草图。Frame 的尺寸在 Design intent 里已经写着（Fixed 360 × 80px）。
+   - 有草图时，两处说法逐字不变。
+   - 一轮里有的 Frame 有草图、有的没有时，那条说明照旧说「as the sketch shows」，后面加一句「A Frame with nothing drawn in it is laid out within its size as the brief says.」；每个 Frame 自己的 Brief 行各说各的。
+2. 「How the page checks」和页面用同一个判断。
+   - 新模块 `packages/vernierkit/src/client/checkable.ts`：`checkable(change)`（页面能不能核对）和 `PLACING`。`check.ts` 的 `uncheckable` 先问 `checkable`，能核对就返回 null，不能时给的理由和原来逐字相同；`writing-rules.ts` 删掉手抄的 `checked` 和 `sameContainer`，直接用 `checkable`。
+   - 原来漂移的那种：同一容器里的移动，容器是这一轮新建的，或者没有源码标记。页面答不核对，说明却说按位置核对。现在说明把它列进「not at all」，名字是「a move in a container made this round, or one the page cannot find」，不再归到「a move into another container…」。
+   - `checkable.ts` 只有 `import type`，测量台（Node 自己剥类型跑）也能 import。`PLACING` 原来有三份：`writing-rules.ts`、`property-table.ts` 的两份合成 `checkable.ts` 这一份（`edits.ts`、`range-parts.ts`、`check.ts` 改从这里 import），`e2e/bench/scenarios.ts` 也改成 import。
+3. 验收清单 Cursor 那项补了放行注明，仍勾着。
+4. spec 里两条转述跟着补上（生成说明一条、「How the page checks」一条）。
+
+**button-over-rule 为什么从 64 起变慢（只读对话记录，没改）**
+
+读的是 B' 3 次（`bench-results/agents/2026-10-31T08-31-09-baselineBprime-067d737/`；B' 的第二个文件夹里没有这个场景）、9623bd4 3 次、e5b2877 3 次。
+
+- Agent 读到的改动部分逐字相同：B' 的 `claim` 输出里两节（Fill、Corner radius）和现在一字不差，Scope 都是「Change it where it is written, at Location」，Variables 都给了 `bg-[#2563EB]`、`rounded-lg`。
+- 不同在两处：
+  - 写法在哪、旁边是什么。B' 先读 24,653 字的 Skill，两句写法在第 76–77 行，夹在约 20 条里，第 90 行还有「Change exactly the scope given, no more and no less」。现在是 `claim` 末尾 5 条里的两条，紧挨着改动。两边的说法几乎一样：B'「change that rule, narrow it, or use the class's important form (`bg-blue-600!`) as a last resort」；现在「Change that rule, narrow it, or, as a last resort, use the class's important form (`bg-blue-600!`)」。
+  - 现在多了「How the page checks」：「the page reads a style change by the value the browser computes … whatever class or rule gives it」。B' 的 Skill 里没有这句。
+- 最后写的代码不一样：
+  - B' 3 次都在按钮上加 `rounded-lg! bg-[#2563EB]!`，没动 CSS。
+  - 9623bd4：1 次把 `button` 规则挪进 `@layer base`，1 次改成 `[role="dialog"] button`，1 次 `:not([data-testid="hero"]) > button`，都在按钮上加普通类。
+  - e5b2877：2 次 `button:not(section[data-testid="hero"] > button)`，1 次 `button:not(.rounded-lg)`，都在按钮上加普通类。
+  - 9 次都 1:1。
+- 时间都花在同一个来回上：认领后最长一段思考 B' 17、28、20 秒，9623bd4 48、42、41 秒，e5b2877 72、66（后面又有 36、37、39）、55 秒。
+- 原话：
+  - B' #3 选了 `!`：「若要通过 `button:not(.xxx)` 缩小规则范围，必须为其添加新类并修改共享 CSS 规则，这与不改动全局样式的目标相冲突」；B' #2：「通过修改选择器来排除该按钮的做法过于脆弱」。
+  - 现在把「last resort」当成先后：e5b2877 #1「按优先级，首选修改或收窄该规则；仅在最后手段时才使用 `!` 强制覆盖」，#3「收窄选择器比 `!important` 更优先」，9623bd4 #2「技能将 `!important` 视为最后手段，因此仍坚持收紧选择器的方案」。
+  - 读到核对方式后又多出一条路：e5b2877 #1「页面检测的是 App 按钮层的计算样式。若修改全局 `button` 规则，App 按钮同样会显示变更，这反而能通过检测」，#2「页面检查只看计算样式，因此两种方式都能通过」。
+  - 9 次里提到「最后手段 / last resort」的次数：B' 0、1、2；9623bd4 2、3、2；e5b2877 5、6、0。提到「计算样式」：B' 0、0、0；之后 6 次里 4 次有。
+- 结论：查不出一句说不清的话。同一句「last resort」，在 Skill 里被大量别的写法冲淡，Cursor 选了 `!`；在 `claim` 末尾紧挨着改动，就被当成要先试收窄。加上核对只看计算样式，它还会权衡要不要干脆改全局规则。要缩短这段思考，就得在写法之间选一种，改的是 Agent 写出的代码。按交代，这是设计问题，没改。
+- 可选的写法和后果（都要两家复测）：
+  1. **用 `!`**：规则还管着范围外的元素时，在这个图层上用类的 important 形式（`bg-[#2563EB]!`），不动那条规则。B' 就是这样写的，最快。代价：`!important` 留在代码里；同一属性以后再改，也只能继续用 `!`。
+  2. **收窄规则**：把规则改成不管这个图层，再在图层上写普通类。现在 6 次都这样写。代价：Agent 得自己找选择器的钩子，写出来的 `:not(.rounded-lg)`、`section[data-testid="hero"] > button` 都靠类名或测试属性，不稳；还要动全局 CSS。
+  3. **把规则挪进 `@layer base`**：工具类从此都能盖过它，是 Tailwind v4 本来的写法。代价：影响整个项目，所有元素上和这条规则冲突的类都会突然生效；这个场景里对话框按钮没有这类类，看不出差别，别的项目可能有。
+  4. **不改**：三种都可以，1:1 一直 100%，代价是这个场景每次多 30–60 秒思考。
+  - 不管选哪种，「How the page checks」那句「whatever class or rule gives it」可以考虑只在样式改动之外说，或者不提「rule」，免得 Agent 想到改全局规则也能通过。这也要和上面的选择一起定。
+
+**测试**
+
+- 新加的单测（`test/cli.test.ts`，经 `claim` 的输出），都先失败、再改代码：
+  - 新建 Frame 带生成说明、里面没画东西：Brief 行和说明都说按 Frame 的尺寸、照生成说明排，整份输出里没有「sketch」。
+  - 有草图时说明逐字和原来一样；一轮里有的 Frame 有草图、有的没有时，说明加那一句，两个 Frame 的 Brief 行各说各的。
+  - 「How the page checks」和 `check.ts` 绑住：16 种只有一条改动的一轮（样式、新建图层上的样式、没有标记、文字片段、删除、循环里的删除、重排、散文字间的重排、包起来的重排、同一容器里的自由定位、换容器、从自由定位回到布局、在这一轮新建的容器里重排、在没有标记的容器里自由定位、改文字、生成说明），每种都要求说明里「not at all」出现，当且仅当 `uncheckable` 不为 null；「Where it does not show」出现，当且仅当它为 null。改动前（说明用手抄的判断）跑，「在这一轮新建的容器里重排」「在没有标记的容器里自由定位」这两种失败，其余 14 种通过；以后两边再分开写、判断不同，对应的那种会失败。
+  - 在这一轮新建的容器里重排：说明点名「a move in a container made this round, or one the page cannot find」，不说「another container」。
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 675 个通过、1 个跳过；测量台的 node 测试 29 个通过。
+- `VK_E2E_PORT=5600 pnpm test:e2e`：328 个通过、1 个跳过（4.6 分钟）。a1a0deb 最后一版没跑全量，这次一并补上。跑前把 `bench-results/playbooks/` 备份到 scratchpad，跑完原样恢复，`diff -r` 无差别。
+
+**claim 输出逐字比较（`pnpm bench:agents --dry --claim-out`，10 个标准场景）**
+
+改前在 a1a0deb 上跑，和上面 e5b2877 的那份逐个相同。改后在这次的代码上跑。字数是字符串长度。
+
+| 场景 | 改前 | 改后 | 差 | 逐字 |
+|---|---|---|---|---|
+| button-over-rule | 4,566 | 4,566 | 0 | 相同 |
+| cards-style | 6,227 | 6,227 | 0 | 相同 |
+| data-and-text | 4,929 | 4,929 | 0 | 相同 |
+| dissolve-place-frame | 6,650 | 6,653 | +3 | 只有两行变了：Brief 行 157 → 204，「New Frame with a brief」282 → 238 |
+| fill-gap-brief | 6,600 | 6,600 | 0 | 相同 |
+| phone-breakpoints | 7,758 | 7,758 | 0 | 相同 |
+| promote-and-grid | 6,173 | 6,173 | 0 | 相同 |
+| put-back-and-new-text | 6,377 | 6,377 | 0 | 相同 |
+| reorder-and-move | 3,419 | 3,419 | 0 | 相同 |
+| type-and-stack | 5,883 | 5,883 | 0 | 相同 |
+
+- 变的只有 dissolve-place-frame：只有它有新建 Frame 带生成说明，而 Frame 里没画东西。fill-gap-brief 的生成说明在已有图层上，不受影响。
+- 10 个场景里没有「在新建或找不到的容器里移动」，所以「How the page checks」都没变。
+- `done`、`finish` 不受影响：`uncheckable` 判断能不能核对的结果、给的理由都和原来相同，只是判断挪到了 `checkable.ts`。草图那两句只在 `claim` 的输出里。
+- 两次 `--dry` 都是 10 个场景全部设得起来。
+
+**Skill、切换按钮体积**
+
+- Skill 没改：3,688 字（41 行）。
+- 切换按钮：9,998 B（`react.dev.js` 818 + 共用 chunk 9,180），gzip，限额 10,240 B，没变。在 scratchpad 里另建了 a1a0deb 的构建对照，`react.dev.js` 除 chunk 文件名外逐字相同，共用 chunk 逐字节相同。
+
+**code-review（两路，a1a0deb 到这次的代码）**
+
+修了的：
+- `checkable.ts` 的开头注释补上为什么 `PLACING` 也在这里。
+
+没改的：
+- 不能核对的理由仍分两处写：页面的 `uncheckable` 和说明的 `UNCHECKED`。能不能核对已经同出一处，理由的字是给不同读者的（`done` 的输出、说明）。对在新建或找不到的容器里重排的改动，页面仍给笼统的那句「of the changes to the structure, only reorders…」；改它会改 `done` 的输出，这次不动。
+- `uncheckable` 里 `style` 那一行（「the layer's container cannot be found on the page」）在改前就走不到，原样留着。
+- 只有复制带生成说明的 Frame、原 Frame 不在这一轮时，说明按没有草图说，复制那条自己说「as in that Frame」。两句不冲突，没另加处理。
+- Frame 里又画了一个带生成说明的 Frame：里面那个算没有草图，说明会多那一句。没见过这样的轮，没处理。
+- `Properties.tsx` 里 Position 那一行的 `<BreakpointMark properties={["x", "y", "absolute"]} />`，是面板上这一行管的属性，和 `PLACING` 同值但不是同一个概念，类型也是可变数组，没合。
+- 绑定测试的预期值取自 `uncheckable` 本身：这正是要绑的（两边一致），`checkable` 本身对不对由原有的页面核对测试管。
+
+**没做到的、有风险的**
+
+- 没跑真实 Agent。下一步单派复测：Cursor 30 次、Claude 30 次。
+- button-over-rule 没改，要设计师在上面四种写法里定。
+- 没有草图的新说法只在 dissolve-place-frame 一个场景里出现，效果要复测才知道。
