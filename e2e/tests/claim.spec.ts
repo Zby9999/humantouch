@@ -1,12 +1,12 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKind, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
+import { clearFolder, readFolderFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -31,11 +31,11 @@ test("claim takes the designer's changes and prints change notes for the Agent",
   await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
   await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
   await setField(page, "Fill color", "2563eb");
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(4);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(4);
 
   const notes = await npx03kind("claim");
 
-  expect(readThirdKind("state.json")).toMatchObject({ status: "claimed", done: [] });
+  expect(readFolderFile("state.json")).toMatchObject({ status: "claimed", done: [] });
   const [, fill, radius, root, button] = notes.split(/^## /m);
   expect(fill).toMatch(/^1\. Fill\n/);
   expect(fill).toContain("- **Kind:** Style\n");
@@ -62,7 +62,7 @@ test("layout changes are told in design language; a plain flow given a gap is to
   await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await setField(page, "Gap", "8");
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(2);
 
   const [, width, gap] = (await npx03kind("claim")).split(/^## /m);
 
@@ -106,7 +106,7 @@ test("a reorder and an absolute placement are told apart, with where each goes; 
     const board = (await canvas(page).locator("#board").boundingBox())!;
     return { x: board.x + board.width / 2, y: board.y + board.height / 2 };
   });
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(2);
 
   const [, reorder, absolute] = (await npx03kind("claim")).split(/^## /m);
 
@@ -132,7 +132,7 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
   await layers.getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
   await layers.getByRole("treeitem", { name: "Badge", exact: true }).click({ modifiers: ["Shift"] });
   await page.keyboard.press("Shift+A");
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(3);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(3);
 
   const [, deleted, copied, stack] = (await npx03kind("claim")).split(/^## /m);
 
@@ -148,7 +148,7 @@ test("a card of the loop deleted and another copied are data changes; a Stack ma
 
 test("with no changes, claim says so and leaves the round as it is", async () => {
   expect(await npx03kind("claim")).toMatch(/^No design changes to apply/);
-  expect(readThirdKind("state.json")).toBeNull();
+  expect(readFolderFile("state.json")).toBeNull();
 });
 
 test("a change made in the phone view is noted with the widths it applies at, for the project's own breakpoints", async ({ page }) => {
@@ -162,7 +162,7 @@ test("a change made in the phone view is noted with the widths it applies at, fo
   await page.keyboard.up("Meta");
   await setField(page, "Fill color", "ff0000");
   // The example keeps Tailwind's own breakpoints: the phone view reaches up to the tablet view's range, `md` at 768px.
-  await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 768, project: { tailwind: "max-md:" } });
+  await expect.poll(() => readFolderFile("changeset.json")?.changes[0]?.breakpoint).toEqual({ min: null, max: 768, project: { tailwind: "max-md:" } });
 
   const [, fill] = (await npx03kind("claim")).split(/^## /m);
 
@@ -191,7 +191,7 @@ const COLUMNS_PART_BY_PART =
 test("the Grid's columns changed in the phone view: what the page shows in each part of the range is saved with it, and the notes give it part by part (ticket 65)", async ({ page }) => {
   await twoColumnsInPhone(page);
   // `grid-cols-1 sm:grid-cols-3`: one column below 640px, three from 640px up.
-  await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.parts).toEqual([
+  await expect.poll(() => readFolderFile("changeset.json")?.changes[0]?.parts).toEqual([
     { breakpoint: { min: null, max: 640, project: { tailwind: "max-sm:" } }, before: 1 },
     { breakpoint: { min: 640, max: 768, project: { tailwind: "sm:max-md:" } }, before: 3 },
   ]);
@@ -206,7 +206,7 @@ test("back in preview mode at once after a change in the phone view, the page is
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
   // Saved as edit mode ended, the parts not read yet.
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
 
   const [, columns] = (await npx03kind("claim")).split(/^## /m);
 
@@ -224,7 +224,7 @@ test("claimed the moment a change in the phone view is saved, claim waits for th
   );
   await twoColumnsInPhone(page);
   // Saved, the parts yet to be read.
-  await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.parts).toBeNull();
+  await expect.poll(() => readFolderFile("changeset.json")?.changes[0]?.parts).toBeNull();
 
   const [, columns] = (await npx03kind("claim")).split(/^## /m);
 

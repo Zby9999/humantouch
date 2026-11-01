@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 /** The example project, which the dev server serves. */
 export const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
-export const THIRD_KIND = `${EXAMPLE}.03kind/`;
+export const THIRD_KIND_FOLDER = `${EXAMPLE}.03kind/`;
 const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 
 /**
@@ -14,7 +14,7 @@ const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.me
  * `checks.json`, and a file put in while the folder is being emptied fails the
  * removal (ENOTEMPTY). Node tries the removal again for that.
  */
-export function clearThirdKind(folder: string) {
+export function clearFolder(folder: string) {
   rmSync(folder, { recursive: true, force: true, maxRetries: 5 });
 }
 
@@ -25,7 +25,7 @@ export async function npx03kind(...args: string[]): Promise<string> {
 }
 
 /** A JSON file in `.03kind/`, or null when it is not there. */
-export function readThirdKind(file: string) {
-  const path = `${THIRD_KIND}${file}`;
+export function readFolderFile(file: string) {
+  const path = `${THIRD_KIND_FOLDER}${file}`;
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 }

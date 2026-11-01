@@ -1089,15 +1089,15 @@ test.describe("a claimed round", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const THIRD_KIND = `${REACT18}.03kind`;
+  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
   const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
   const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
-  test.beforeEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(THIRD_KIND, { recursive: true, force: true });
+    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1161,7 +1161,7 @@ test.describe("a claimed round", () => {
     const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
     await gap.fill("10");
     await gap.press("Enter");
-    await expect.poll(() => (existsSync(`${THIRD_KIND}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
+    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
     // The claim too: the page looks at every change once, and makes its copies at the views' widths.
     await page.evaluate(armTasks, CHECKS);
     await npx03kind("claim");
@@ -1240,14 +1240,14 @@ test.describe("a claimed round", () => {
  */
 test.describe("a change at a breakpoint", () => {
   test.use({ keepRoundInMemory: false });
-  const THIRD_KIND = fileURLToPath(new URL("../../examples/vite-react18-tw3/.03kind", import.meta.url));
-  test.beforeEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
-  test.afterEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
+  const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.03kind", import.meta.url));
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  test.afterEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
 
   const HERO = "[data-testid=big-hero]";
   const HERO_PICTURE = `${HERO} img`;
   const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
-  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${THIRD_KIND}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND}/changeset.json`, "utf8")).changes : []);
+  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
 
   const PARTS_MEASURE = "vernierkit:parts";
 
@@ -1338,17 +1338,17 @@ test.describe("the same canvas again", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const THIRD_KIND = `${REACT18}.03kind`;
+  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
   const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
   const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("rounded-card border");
   const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
-  const changesSaved = () => (existsSync(`${THIRD_KIND}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND}/changeset.json`, "utf8")) : null);
-  test.beforeEach(() => rmSync(THIRD_KIND, { recursive: true, force: true }));
+  const changesSaved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")) : null);
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(THIRD_KIND, { recursive: true, force: true });
+    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 

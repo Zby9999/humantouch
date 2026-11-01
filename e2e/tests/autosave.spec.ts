@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearThirdKind, npx03kind } from "./project-files";
+import { clearFolder, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
-const THIRD_KIND = fileURLToPath(new URL("../../examples/vite-react19-tw4/.03kind/", import.meta.url));
-const CHANGESET = `${THIRD_KIND}changeset.json`;
-const CANVAS = `${THIRD_KIND}canvas.html`;
+const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.03kind/", import.meta.url));
+const CHANGESET = `${THIRD_KIND_FOLDER}changeset.json`;
+const CANVAS = `${THIRD_KIND_FOLDER}canvas.html`;
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -269,8 +269,8 @@ test.describe("a round saved before the instances of a layer shared their edit s
 });
 
 test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the notes of each change are as they were", async ({ page }) => {
-  mkdirSync(THIRD_KIND, { recursive: true });
-  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${THIRD_KIND}${file}`, readBefore60(file));
+  mkdirSync(THIRD_KIND_FOLDER, { recursive: true });
+  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${THIRD_KIND_FOLDER}${file}`, readBefore60(file));
   const before = JSON.parse(readBefore60("styles.json"));
   const changeSet = JSON.parse(readBefore60("changeset.json"));
 

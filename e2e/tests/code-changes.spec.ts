@@ -2,7 +2,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { recordNotices, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
+import { clearFolder, EXAMPLE, readFolderFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /**
  * The code changing while the designer is in edit mode, with no Agent having
@@ -19,19 +19,19 @@ const original = readFileSync(CARD, "utf8");
 /** Files the page does not use, put in the project and taken out again. */
 const UNUSED = [`${EXAMPLE}notes.md`, `${EXAMPLE}src/unused.ts`];
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   for (const file of UNUSED) rmSync(file, { force: true });
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was.
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
 });
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const layer = (page: Page, name: string) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).first();
-const savedChanges = () => readThirdKind("changeset.json")?.changes.length ?? 0;
+const savedChanges = () => readFolderFile("changeset.json")?.changes.length ?? 0;
 /** The first card's corner radius on the canvas. */
 const cardRadius = (page: Page) => canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).borderTopLeftRadius);
 /** The live page's first card fill, as the code has it now. */
@@ -177,7 +177,7 @@ test("no notice as the editor layer saves the round, the layers off the canvas, 
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
   await page.mouse.up();
   await expect.poll(savedChanges).toBe(4);
-  await expect.poll(() => readThirdKind("off-canvas.json")?.layers.length).toBe(1);
+  await expect.poll(() => readFolderFile("off-canvas.json")?.layers.length).toBe(1);
   // Back to preview mode saves the canvas at once; in again, the round comes back.
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
@@ -223,7 +223,7 @@ test("a press held as the code changes ends first, as the designer meant it; the
   await expect(notice).toBeVisible();
   // The drag was an edit, made before the pause: what was pressed is off the canvas, a deletion on the page.
   await expect.poll(savedChanges).toBe(2);
-  expect(readThirdKind("changeset.json").changes.map((change: { kind: string }) => change.kind)).toEqual(["style", "delete"]);
+  expect(readFolderFile("changeset.json").changes.map((change: { kind: string }) => change.kind)).toEqual(["style", "delete"]);
 });
 
 test("a value typed, not yet set, is set as the notice takes the focus: no change is lost", async ({ page }) => {

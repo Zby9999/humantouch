@@ -4,7 +4,7 @@ import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
+import { clearFolder, EXAMPLE, readFolderFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /**
  * The applying bench, scripted (docs/goals.md, Robust): a script plays the
@@ -47,13 +47,13 @@ const CHANGES = [
 const IDS = [1, 2, 3];
 
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was: wait for the dev server to serve it so.
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
 });
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const ring = (page: Page) => page.getByRole("progressbar", { name: "Applying design changes" });
@@ -70,7 +70,7 @@ async function designTheRound(page: Page) {
     await box.fill(value);
     await box.press("Enter");
   }
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(CHANGES.length);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(CHANGES.length);
 }
 
 /** The scripted Agent writes change `id` into the code; the dev server brings it into the page. */
@@ -98,8 +98,8 @@ async function progressGap(page: Page) {
 
 /** Of the changes the page can check (all three), how many have a check result, shown or not. The round's archive when it ended, else its checks so far. */
 function checkCoverage() {
-  const history = `${THIRD_KIND}history/`;
-  let results: Record<string, { outcome: string }> = readThirdKind("checks.json")?.results ?? {};
+  const history = `${THIRD_KIND_FOLDER}history/`;
+  let results: Record<string, { outcome: string }> = readFolderFile("checks.json")?.results ?? {};
   try {
     const last = readdirSync(history).sort().at(-1);
     if (last) results = JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).checks;
@@ -241,7 +241,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   test.setTimeout(STALL_REAL ? STALL_MS + 120_000 : 120_000);
   if (!STALL_REAL) await page.clock.install();
   const stoppedAt = await stopHalfway(page);
-  const properties: { id: number; property: string }[] = readThirdKind("changeset.json").changes;
+  const properties: { id: number; property: string }[] = readFolderFile("changeset.json").changes;
   const unapplied = properties.filter((change) => change.id !== 1).map((change) => change.property);
   const applied = properties.find((change) => change.id === 1)!.property;
   // The Agent is gone. The toggle is to say so, the stopping threshold (ticket 67) + 5 seconds after.
@@ -256,7 +256,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   // Edit mode again: the two changes never applied are to be in the round still (ticket 68).
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const nextRound: { property: string }[] = readThirdKind("changeset.json")?.changes ?? [];
+  const nextRound: { property: string }[] = readFolderFile("changeset.json")?.changes ?? [];
   const kept = nextRound.filter((change) => unapplied.includes(change.property)).length;
   record(STALL_REAL ? "stops-halfway-real-time" : "stops-halfway", {
     stalledNoticeAfterMs,
@@ -293,17 +293,17 @@ async function pressAndHold(page: Page) {
 /** How a round ended by hand left things: its archive, the project's `.03kind/`, the toggle and what edit mode opens on next; dates and code left out. */
 async function endedRound(page: Page) {
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-  const history = `${THIRD_KIND}history/`;
+  const history = `${THIRD_KIND_FOLDER}history/`;
   await expect.poll(() => existsSync(history) && readdirSync(history).some((round) => existsSync(`${history}${round}/result.json`))).toBe(true);
   const last = readdirSync(history).sort().at(-1)!;
   const { ended, done, applied, checks } = JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8"));
   const outcomes = Object.fromEntries(Object.entries(checks as Record<string, { outcome: string }>).map(([id, check]) => [id, check.outcome]));
-  const files = readdirSync(THIRD_KIND).filter((name) => name !== "history" && name !== "checks.json").sort();
+  const files = readdirSync(THIRD_KIND_FOLDER).filter((name) => name !== "history" && name !== "checks.json").sort();
   const badge = await page.getByRole("button", { name: /not applied yet$/ }).count();
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
   const firstCardFill = await canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor);
-  return { ended, done, applied, outcomes, files, badge, nextRound: readThirdKind("changeset.json")?.changes.length ?? 0, firstCardFill, notices: await stalledNotice(page).count() };
+  return { ended, done, applied, outcomes, files, badge, nextRound: readFolderFile("changeset.json")?.changes.length ?? 0, firstCardFill, notices: await stalledNotice(page).count() };
 }
 
 test("ending the round from the notice that the Agent seems to have stopped does what pressing and holding the toggle does; keep waiting has it go till the threshold has passed again", async ({ page }) => {
@@ -323,7 +323,7 @@ test("ending the round from the notice that the Agent seems to have stopped does
   // The same round again, on the code as it was, ended by pressing and holding the toggle.
   writeFileSync(CARD, original);
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
-  clearThirdKind(THIRD_KIND);
+  clearFolder(THIRD_KIND_FOLDER);
   await stopHalfway(page);
   await pressAndHold(page);
   const byHolding = await endedRound(page);
@@ -350,7 +350,7 @@ test("playbook: the Agent changes the code with no claim, while the designer is 
     // Not pressed: something else takes the press. Any other failure is the test's.
     if (!String(error).includes("intercepts pointer events")) throw error;
   }
-  const changesKept = (readThirdKind("changeset.json")?.changes.length ?? 0) / CHANGES.length;
+  const changesKept = (readFolderFile("changeset.json")?.changes.length ?? 0) / CHANGES.length;
   record("changes-code-unclaimed", {
     detected: noticeAfterMs !== null,
     noticeAfterMs,
@@ -499,7 +499,7 @@ async function designTheRoundAcrossViews(page: Page) {
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
   await page.mouse.up();
   await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
     "style", "style", "style", "style at a breakpoint", "delete",
   ]);
 }
@@ -519,7 +519,7 @@ async function enterAgain(page: Page) {
 }
 
 /** The round's changes now, by their numbers and properties. */
-const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readThirdKind("changeset.json")?.changes ?? [];
+const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readFolderFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
 const frozenAfresh = (page: Page) => canvas(page).locator("[data-vk-layer], [data-vk-style]").count().then((n) => n === 0);
@@ -583,7 +583,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   await page.getByRole("button", { name: /not applied yet$/ }).click();
   await changeList.getByRole("button", { name: "Discard all" }).click();
   await changeList.getByRole("button", { name: "Discard", exact: true }).click();
-  await expect.poll(() => readThirdKind("changeset.json")).toBeNull();
+  await expect.poll(() => readFolderFile("changeset.json")).toBeNull();
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
 
@@ -647,7 +647,7 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   await apply(page, 3);
   await npx03kind("done", "1", "2");
   await npx03kind("finish");
-  const leftAtLast = readThirdKind("changeset.json");
+  const leftAtLast = readFolderFile("changeset.json");
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
   const lastRound = await npx03kind("last");

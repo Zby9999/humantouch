@@ -4,24 +4,24 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKind } from "./project-files";
+import { clearFolder } from "./project-files";
 
 /** A round on the React 18 + Tailwind v3 example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
-const THIRD_KIND = `${EXAMPLE}.03kind/`;
+const THIRD_KIND_FOLDER = `${EXAMPLE}.03kind/`;
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 
 test.beforeEach(async () => {
-  clearThirdKind(THIRD_KIND);
+  clearFolder(THIRD_KIND_FOLDER);
   // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
   // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
   await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
 });
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
 function locate(file: string, snippet: string) {
@@ -37,7 +37,7 @@ async function npx03kind(...args: string[]) {
 }
 
 function savedChanges() {
-  const file = `${THIRD_KIND}changeset.json`;
+  const file = `${THIRD_KIND_FOLDER}changeset.json`;
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).changes : null;
 }
 

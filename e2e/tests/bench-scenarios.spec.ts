@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
 import { DEV_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
-import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
+import { clearFolder, EXAMPLE, readFolderFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /**
  * The applying bench's standard scenarios (`e2e/bench/scenarios.ts`) still
@@ -18,12 +18,12 @@ test.setTimeout(90_000);
 const APP = `${EXAMPLE}src/App.tsx`;
 const original = readFileSync(APP, "utf8");
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   if (readFileSync(APP, "utf8") !== original) writeFileSync(APP, original);
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("font-display text-4xl")).toBe(true);
 });
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 for (const scenario of SCENARIOS) {
   test(`scenario ${scenario.id} makes the changes it names, none shown on the page yet`, async ({ page, browser }) => {
@@ -39,9 +39,9 @@ for (const scenario of SCENARIOS) {
       },
       // The example's code is no commit of its own: the round before is taken back out after the test.
       settle: async () => {},
-      changeSet: () => readThirdKind("changeset.json"),
+      changeSet: () => readFolderFile("changeset.json"),
     });
-    const saved = readThirdKind("changeset.json").changes;
+    const saved = readFolderFile("changeset.json").changes;
     expect(saved.map((change: { kind: string }) => change.kind)).toEqual(scenario.changes.map((change) => change.kind));
 
     // Pages of their own, kept from the local service as the bench keeps them.

@@ -4,19 +4,19 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { EXIT_LABEL, NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKind } from "./project-files";
+import { clearFolder } from "./project-files";
 
 /** A round on the Next.js example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/next-app-css-modules/", import.meta.url));
-const THIRD_KIND = `${EXAMPLE}.03kind/`;
+const THIRD_KIND_FOLDER = `${EXAMPLE}.03kind/`;
 const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 const CARD_CSS = `${EXAMPLE}components/Card.module.css`;
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 async function npx03kind(...args: string[]) {
   const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: EXAMPLE });
@@ -24,7 +24,7 @@ async function npx03kind(...args: string[]) {
 }
 
 function savedChanges() {
-  const file = `${THIRD_KIND}changeset.json`;
+  const file = `${THIRD_KIND_FOLDER}changeset.json`;
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).changes : null;
 }
 

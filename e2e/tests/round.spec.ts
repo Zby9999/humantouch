@@ -1,13 +1,13 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKind, EXAMPLE, readThirdKind, THIRD_KIND, npx03kind } from "./project-files";
+import { clearFolder, EXAMPLE, readFolderFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => clearThirdKind(THIRD_KIND));
-test.afterAll(() => clearThirdKind(THIRD_KIND));
+test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
 
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const originalCard = readFileSync(CARD, "utf8");
@@ -50,7 +50,7 @@ async function changeTheCards(page: Page) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await setField(page, "Fill color", "ff0000");
   await setField(page, "Corner radius", "2");
-  await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(2);
 }
 
 /** The local service's round, as the page loads and saves it. */
@@ -61,7 +61,7 @@ const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/
 
 /** How each archived round ended. */
 function results() {
-  const history = `${THIRD_KIND}history/`;
+  const history = `${THIRD_KIND_FOLDER}history/`;
   return readdirSync(history)
     .sort()
     .map((round) => JSON.parse(readFileSync(`${history}${round}/result.json`, "utf8")));
@@ -205,7 +205,7 @@ test("an edit not yet saved when the Agent claims stays out of the round", async
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
-  expect(readThirdKind("changeset.json").changes[1].after).toBe(2);
+  expect(readFolderFile("changeset.json").changes[1].after).toBe(2);
 });
 
 test("while the round is being applied, the change list only shows what is left to do", async ({ page }) => {
@@ -255,8 +255,8 @@ test("pressing and holding the locked toggle unlocks it: changes the page shows 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "unlocked", done: [], applied: [1] }]);
   // The corners, not applied, are left, numbered 1; the fill applied goes with them apart, for the canvas to take in.
-  expect(readThirdKind("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
-  expect(readdirSync(THIRD_KIND).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
+  expect(readFolderFile("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
+  expect(readdirSync(THIRD_KIND_FOLDER).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
   await expect(badge(page)).toHaveText("1");
   const last = await npx03kind("last");
   expect(last.split(/^## /m)[1]).toContain("- **Status:** Applied\n");
@@ -272,7 +272,7 @@ test("a short press on the locked toggle does nothing", async ({ page }) => {
   await toggle.click({ force: true });
 
   await expect(toggle).toHaveAttribute("aria-disabled", "true");
-  expect(readThirdKind("state.json")).toMatchObject({ status: "claimed", done: [] });
+  expect(readFolderFile("state.json")).toMatchObject({ status: "claimed", done: [] });
 });
 
 /** A computed style of every card on the live page, in page order. */
@@ -336,7 +336,7 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
     await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
@@ -358,7 +358,7 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
     await setField(page, "Stroke weight", "1.5");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
     await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
@@ -380,8 +380,8 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
     await setField(page, "Stroke color", "ff0000");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
-    expect(readThirdKind("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
+    expect(readFolderFile("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
     await npx03kind("claim");
 
     editSource(CARD, "border border-stone-200", "border border-[#ff0000]");
@@ -393,7 +393,7 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
     await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
@@ -411,8 +411,8 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width / 2 + 12, edge.y + edge.height / 2, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKind("changeset.json").changes;
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readFolderFile("changeset.json").changes;
     expect(change).toMatchObject({ kind: "style", property: "width", before: { type: "hug" }, after: { type: "fixed" } });
     const width: number = change.after.value;
     await npx03kind("claim");
@@ -449,8 +449,8 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.down();
     await page.mouse.move(corner.x + corner.width / 2 - 10 * zoom, corner.y + corner.height / 2 - 10 * zoom, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(4);
-    const changes: { id: number; property: string }[] = readThirdKind("changeset.json").changes;
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string }[] = readFolderFile("changeset.json").changes;
     expect(changes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "style", property: "x", before: 40, after: 30 }),
@@ -477,9 +477,9 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.click(box.x + 4, box.y + 4);
     await page.keyboard.up("Meta");
     await setField(page, "Fill color", "ff0000");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
     // Saved again once the page is read in each part of the range, below 640px and from 640px (ticket 65).
-    await expect.poll(() => readThirdKind("changeset.json")?.changes[0]?.parts?.length).toBe(2);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes[0]?.parts?.length).toBe(2);
     await npx03kind("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
@@ -500,7 +500,7 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true }).click();
     await setField(page, "Columns", "2");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(1);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(1);
     await npx03kind("claim");
 
     // As both Agents did on the bench (ticket 63): the phone still has one column.
@@ -522,7 +522,7 @@ test.describe("done checks the change on the page", () => {
     await setField(page, "Fill color", "e8f0ff");
     await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
-    await expect.poll(() => readThirdKind("changeset.json")?.changes.length).toBe(2);
+    await expect.poll(() => readFolderFile("changeset.json")?.changes.length).toBe(2);
     await npx03kind("claim");
 
     // Applying the button's fill, the Agent adds a line at the top of App.tsx: every marker below moves.
