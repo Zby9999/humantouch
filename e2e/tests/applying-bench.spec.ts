@@ -1235,3 +1235,52 @@ test("playbook: text drawn in a Card of the loop; the Agent writes it in two pla
   // Ticket 76: from two places, the page does not guess, and names them.
   expect(checks.outcomes[1]).toMatch(/^unchecked: 3 elements at its place match it, written at 2 places in the source \(`src\/components\/Card\.tsx:\d+:\d+`, `src\/components\/Card\.tsx:\d+:\d+`\)/);
 });
+
+test("a page opened only once the round is claimed, in a browser of its own, finds new text below the intro, the intro moved off the canvas after it: before and after the intro goes (ticket 76)", async ({ page, browser }) => {
+  await recordNotices(page);
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  const intro = (await canvas(page).locator('[data-testid="hero"] > p').boundingBox())!;
+  await drawWith(page, "t", { x: intro.x + 20, y: intro.y + intro.height - 2 }, { width: 120, height: 12 });
+  await page.keyboard.type("Fresh line");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.mouse.wheel(-400, 0);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
+  const paragraph = (await canvas(page).locator('[data-testid="hero"] > p').first().boundingBox())!;
+  const view = (await page.locator('iframe[title="Canvas"]').boundingBox())!;
+  await page.mouse.move(paragraph.x + paragraph.width / 2, paragraph.y + paragraph.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(view.x - 200, paragraph.y, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(["create", "delete"]);
+  await leaveEditMode(page);
+  await npx03kind("claim");
+  // The designer's page goes; another opens, in a browser context of its own, the round claimed already.
+  await page.close();
+  const context = await browser.newContext();
+  try {
+    const other = await context.newPage();
+    await other.goto(DEV_URL);
+    await expect(other.getByRole("progressbar", { name: "Applying design changes" })).toBeVisible();
+    writeFileSync(APP, readFileSync(APP, "utf8").replace(INTRO_END, `${INTRO_END}        <p className="mt-4">Fresh line</p>\n`));
+    await expect(other.getByText("Fresh line")).toBeVisible();
+    const whileThere = await npx03kind("done", "1");
+    const text = readFileSync(APP, "utf8");
+    const INTRO = '        <p className="mt-4 text-stone-600">\n          A Framer-style editor layer for <strong>any</strong> page.\n        </p>\n';
+    expect(text).toContain(INTRO);
+    writeFileSync(APP, text.replace(INTRO, ""));
+    await expect(other.getByText("A Framer-style editor layer for")).toHaveCount(0);
+    const once = await npx03kind("done", "1", "2");
+    await npx03kind("finish");
+    const checks = checksOf([1, 2]);
+    record("made-found-by-a-page-opened-later", { ...checks, done: [whileThere.split("\n")[1], ...once.split("\n").slice(1, 3)] });
+    expect(whileThere).toContain("Checked on the page: it shows the change.");
+    expect(checks.outcomes).toEqual({ 1: "shown", 2: "shown" });
+  } finally {
+    await context.close();
+  }
+});

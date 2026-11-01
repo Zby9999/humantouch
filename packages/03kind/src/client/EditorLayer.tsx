@@ -122,6 +122,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     const watcher = watchPage({
       window,
       changes: round.changeSet.changes,
+      canvas: round.canvas,
       report,
       onShown: setSeen,
       viewWidths: readViewWidths,

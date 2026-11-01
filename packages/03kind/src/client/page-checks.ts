@@ -16,6 +16,7 @@ import type { Change } from "./changeset";
 import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
 import { codeUpdates, sliced } from "./code-changes";
 import { CHECK_MEASURE } from "./host";
+import { placedOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
 
 export interface PageChecks {
@@ -26,8 +27,9 @@ export interface PageChecks {
 
 interface Options {
   window: Window;
-  /** The claimed round's changes. */
+  /** The claimed round's changes, and its canvas, as saved: where its new layers are (ticket 76). */
   changes: Change[];
+  canvas?: string;
   /** Says what the page saw of a change: as the code changed, or in answer to an ask. */
   report(report: CheckReport): void;
   /** The changes the page shows now, at every width each is to: each time they change. */
@@ -54,8 +56,9 @@ const QUIET_MS = 500;
  * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn }: Options): PageChecks {
+export function watchPage({ window: win, changes: given, canvas, report, onShown, viewWidths, copiesIn }: Options): PageChecks {
   const doc = win.document;
+  const changes = placedOnCanvas(given, canvas);
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
   /** What was last said of each change as the code changed, to say it again only when it changes. */

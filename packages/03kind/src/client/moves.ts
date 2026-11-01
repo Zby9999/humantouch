@@ -48,16 +48,9 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
 
 /**
  * Puts the order of each reordered container's layers, as the canvas has them
- * now, into its reorders, and the place of each new layer among its
- * container's, into its `create` change (ticket 76): what the check measures
- * the live page by.
+ * now, into its reorders: what the check measures the live page by.
  */
 export function syncOrders(doc: Document, changes: ChangeSet) {
-  for (const change of changes.list()) {
-    if (change.kind !== "create") continue;
-    const among = amongOf(doc, change.layer, changes.list());
-    if (JSON.stringify(among) !== JSON.stringify(change.among)) changes.record(change.layer, { ...change, among });
-  }
   const reorders = changes.list().filter(isReorder);
   for (const change of reorders) {
     const id = (change.after as Place).container.layer;
@@ -70,6 +63,20 @@ export function syncOrders(doc: Document, changes: ChangeSet) {
     };
     if (JSON.stringify(order) !== JSON.stringify(change.order)) changes.record(change.layer, { ...change, order });
   }
+}
+
+/**
+ * The changes of a round, each new layer's with where it is among its
+ * container's layers on the round's canvas, `canvas` as saved (`Change.among`,
+ * ticket 76): what the page finds it by. Read from the canvas by the page as
+ * it checks, never saved with the ChangeSet, which the Agent may read: an
+ * Agent that did went looking in the package for what it was. A round with
+ * no new layer is as it is, its canvas not read.
+ */
+export function placedOnCanvas(changes: Change[], canvas: string | undefined): Change[] {
+  if (!canvas || !changes.some((change) => change.kind === "create")) return changes;
+  const doc = new DOMParser().parseFromString(canvas, "text/html");
+  return changes.map((change) => (change.kind === "create" ? { ...change, among: amongOf(doc, change.layer, changes) } : change));
 }
 
 /**

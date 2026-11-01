@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
-import { createChangeSet, type Place } from "../src/client/changeset";
+import { createChangeSet, type Change, type Place } from "../src/client/changeset";
+import { placedOnCanvas } from "../src/client/moves";
 import { checkAcross, checkChange, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
@@ -6032,10 +6033,13 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
 });
 
 describe("layers made this round are found on the live page at their place, and checked there (ticket 76)", () => {
+  /** The round as the page checks it: its changes, as saved, each new layer's with where it is on the canvas as saved. */
+  const savedOf = (doc: Document, changes: { save(): { changes: Change[] } }) =>
+    placedOnCanvas(JSON.parse(JSON.stringify(changes.save().changes)), serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }));
   const open = (page = STRUCTURE) => {
     const canvas = openCanvas(page);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
-    return { ...canvas, layer };
+    return { ...canvas, layer, saved: () => savedOf(canvas.doc, canvas.changes) };
   };
   /** The live page: `page` as the Agent has written it. */
   const livePage = (page: string) => {
@@ -6061,15 +6065,15 @@ describe("layers made this round are found on the live page at their place, and 
   const writtenAfterA = (html: string) => STRUCTURE.replace(`<div id="b" ${loc("7:7")}`, `${html}<div id="b" ${loc("8:7")}`).replace(`<div id="c" ${loc("8:7")}`, `<div id="c" ${loc("9:7")}`);
 
   test("a new Frame and the changes to it show where the Agent writes it: the 2nd layer of its container, a <div>", () => {
-    const { changes } = frameInTheList();
+    const { saved } = frameInTheList();
     const page = livePage(writtenAfterA(`<div ${loc("7:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
 
-    expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+    expect(saved().map((change) => checkChange(page, change, saved()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
   });
 
   test("written at another place, the new Frame is not shown, with what is at its place instead, a layer the container had; the changes to it are not checked", () => {
-    const { changes } = frameInTheList();
-    const round = changes.list();
+    const { saved } = frameInTheList();
+    const round = saved();
     const elsewhere = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")} style="height: 20px">C</div>`, `<div id="c" ${loc("8:7")} style="height: 20px">C</div><div ${loc("9:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
 
     expect(checkChange(elsewhere, round[0], round)).toEqual({ outcome: "not shown", actual: { type: "frame", nth: [2, 2], there: '<div id="b"> reading \u201cB\u201d' } });
@@ -6078,28 +6082,28 @@ describe("layers made this round are found on the live page at their place, and 
 
   test("of whatever element the Agent writes it: a Frame as a <ul> or a <section>, text as an <h2> or a <span>; the canvas's <div> and <p> are the editor's", () => {
     for (const tag of ["ul", "section"]) {
-      const { changes } = frameInTheList();
+      const { saved } = frameInTheList();
       const page = livePage(writtenAfterA(`<${tag} ${loc("7:7")} style="display: block; margin: 0; padding: 0; width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></${tag}>`));
-      expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+      expect(saved().map((change) => checkChange(page, change, saved()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
       live?.remove();
       iframe?.remove();
     }
     for (const tag of ["h2", "span"]) {
-      const { editor, changes, layer } = open();
+      const { editor, saved, layer } = open();
       const text = editor.create("text", { parent: layer("list"), index: 1 });
       editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
       const page = livePage(writtenAfterA(`<${tag} ${loc("7:7")} style="display: block; margin: 0; font-size: 20px">Text</${tag}>`));
-      expect(changes.list().map((change) => checkChange(page, change, changes.list()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+      expect(saved().map((change) => checkChange(page, change, saved()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
       live?.remove();
       iframe?.remove();
     }
   });
 
   test("new text is found at its place by its words too", () => {
-    const { editor, changes, layer } = open();
+    const { editor, saved, layer } = open();
     const text = editor.create("text", { parent: layer("list"), index: 1 });
     editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
-    const round = changes.list();
+    const round = saved();
 
     const right = livePage(writtenAfterA(`<p ${loc("7:7")} style="margin: 0; font-size: 20px">Text</p>`));
     expect(round.map((change) => checkChange(right, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
@@ -6109,11 +6113,13 @@ describe("layers made this round are found on the live page at their place, and 
   });
 
   test("a layer before it deleted this round: found there with the layer still on the page, and once it is gone", () => {
-    const { editor, changes, layer } = open();
+    const { editor, changes, saved, layer } = open();
     editor.create("frame", { parent: layer("list"), index: 2 }, { width: 120, height: 40 });
     editor.remove(layer("a"));
-    const round = changes.list();
+    const round = saved();
     expect(round[0].among).toMatchObject({ before: 1, maybe: 1 });
+    // Read from the canvas by the page, never saved with the ChangeSet, which the Agent may read.
+    expect(JSON.stringify(changes.save())).not.toContain("among");
 
     const frame = `<div ${loc("8:7")} style="width: 120px; height: 40px"></div>`;
     const kept = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")}`, `${frame}<div id="c" ${loc("9:7")}`));
@@ -6124,12 +6130,12 @@ describe("layers made this round are found on the live page at their place, and 
   });
 
   test("a Frame placed absolute in a Frame is found placed absolute in it, wherever among its layers it is written, at the X and Y the designer last gave it; text in it, in turn", () => {
-    const { editor, changes, layer } = open();
+    const { editor, saved, layer } = open();
     const frame = editor.create("frame", { parent: layer("board"), x: 30, y: 20 }, { width: 120, height: 80 });
     editor.set(editor.tree().layerOf(frame.el)!, "x", 40);
     const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 10 });
     editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
-    const round = changes.list();
+    const round = saved();
     expect(round.map((change) => change.kind)).toEqual(["create", "style", "create", "style"]);
 
     const written = (left: number) =>
@@ -6149,10 +6155,11 @@ describe("layers made this round are found on the live page at their place, and 
     const card = (n: number, inner: string) => `<article ${loc("30:9")} style="display: flex; flex-direction: column"><h3 ${loc("31:11")}>Card ${n}</h3>${inner}</article>`;
     const cards = (inner: (n: number) => string) => `<!DOCTYPE html><body style="margin: 0"><main ${loc("29:7")}>${[1, 2, 3].map((n) => card(n, inner(n))).join("")}</main></body>`;
     const { doc, editor, changes } = openCanvas(cards(() => ""));
+    const saved = () => savedOf(doc, changes);
     const article = find(editor.tree().root, (l) => l.el === doc.querySelector("article"))!;
     const text = editor.create("text", { parent: article, index: 1 });
     editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
-    const round = changes.list();
+    const round = saved();
 
     const once = livePage(cards(() => `<p ${loc("32:11")} style="font-size: 20px">Text</p>`));
     expect(round.map((change) => checkChange(once, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
@@ -6169,10 +6176,10 @@ describe("layers made this round are found on the live page at their place, and 
   });
 
   test("a layer copied this round is not looked for; one made in a round before is not either, and the check says so", () => {
-    const { editor, changes, layer } = open();
+    const { editor, saved, layer } = open();
     const copy = editor.duplicate(layer("a"));
     editor.set(editor.tree().layerOf(copy.el)!, "fontSize", 20);
-    const round = changes.list();
+    const round = saved();
     const page = livePage(STRUCTURE);
 
     expect(checkChange(page, round[1], round)).toEqual({ outcome: "unchecked", reason: "the layer is new this round, so the page has no marker to find it by" });

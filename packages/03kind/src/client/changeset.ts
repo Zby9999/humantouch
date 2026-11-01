@@ -270,8 +270,9 @@ export interface Change {
    * container's layers that are not new this round look like (tag and words,
    * as `order` has them), those moved out of it too: of the elements of its
    * tag at its place, those are not it. What the page finds a new layer by,
-   * in a layout or placed absolute (ticket 76). Null: the canvas has it in no
-   * container. None in a round saved before: its place's `nth` alone.
+   * in a layout or placed absolute (ticket 76), read from the round's canvas
+   * as it checks (`placedOnCanvas`): never saved. Null: the canvas has it in
+   * no container. None: its place's `nth` alone.
    */
   among?: { before: number; maybe: number; signs: string[] } | null;
   /**
@@ -301,7 +302,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "among" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "instance"
     > & {
       kind?: Change["kind"];
     },
@@ -347,7 +348,7 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
       // Back where it started, or never left: nothing for the Agent to do.
       if (same(before, change.after)) changes.delete(key);
       else if (earlier) {
-        Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order }, change.among !== undefined && { among: change.among });
+        Object.assign(earlier, { after: change.after, style: change.style }, change.order !== undefined && { order: change.order });
         // Which fragments keep their own value depends on the value now.
         if (change.keeps) earlier.keeps = change.keeps;
         else delete earlier.keeps;
