@@ -287,6 +287,50 @@ test("dragged back where it was in the same round, a layer off the canvas is in 
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 });
 
+test("dragged back as it was in the same round, a layer is listed open and closed as before it went off the canvas, whatever was opened off it", async ({ page }) => {
+  const rows = () => layerTree(page).getByRole("treeitem").evaluateAll((items) => items.map((row) => `${row.getAttribute("aria-level")} ${row.textContent!.trim()}`));
+  await enterEditMode(page);
+  await pan(page, 400);
+  // The header closed by hand, then moved off the canvas.
+  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".tk-tree-chevron").click();
+  const before = await rows();
+  expect(before).not.toContain("5 Third Kind");
+  const view = (await desktop(page).boundingBox())!;
+  await select(page, "Header");
+  await dragTo(page, desktop(page).contentFrame().locator("header"), { x: view.x - 300, y: view.y + 100 });
+  await expect(offCanvas(page)).toHaveCount(1);
+  // Opened off the canvas: that does not count.
+  await layerTree(page).locator('[data-off-canvas="true"][aria-expanded="false"]').locator(".tk-tree-chevron").click();
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind" })).toHaveCount(1);
+
+  // Let go in its Stack: its deletion taken back, it is moved there, not put back new.
+  const text = (await desktop(page).contentFrame().getByText("A Framer-style editor layer").boundingBox())!;
+  await dragOffTo(page, { x: text.x, y: text.y + 3 });
+  await expect(offCanvas(page)).toHaveCount(0);
+  expect(await changeNames(page)).toEqual(["Reorder · Header"]);
+  expect((await rows()).sort()).toEqual(before.sort());
+});
+
+test("edited off the canvas and dragged back, a layer is put back new: listed open, as any layer new to the list", async ({ page }) => {
+  await enterEditMode(page);
+  await pan(page, 400);
+  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".tk-tree-chevron").click();
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind" })).toHaveCount(0);
+  const view = (await desktop(page).boundingBox())!;
+  await select(page, "Header");
+  await dragTo(page, desktop(page).contentFrame().locator("header"), { x: view.x - 300, y: view.y + 100 });
+  await expect(offCanvas(page)).toHaveCount(1);
+  const opacity = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Opacity", exact: true });
+  await opacity.fill("50");
+  await opacity.press("Enter");
+
+  const text = (await desktop(page).contentFrame().getByText("A Framer-style editor layer").boundingBox())!;
+  await dragOffTo(page, { x: text.x, y: text.y + 3 });
+  await expect(offCanvas(page)).toHaveCount(0);
+  expect(await changeNames(page)).toEqual(["Delete · Header", "Put back · Header"]);
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind" })).toHaveCount(1);
+});
+
 test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc leaves it where it was, and let go elsewhere, one ⌘Z takes it back there", async ({ page }) => {
   await moveTitleOff(page);
   // Something to redo: the Get started button deleted, and that undone.

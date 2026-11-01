@@ -432,3 +432,141 @@ test("pressed with ⌘ held, a handle selects the deepest layer under it, as any
   await expect(design(page).getByRole("textbox", { name: "X", exact: true })).toHaveValue("0");
   await expect(badge(page)).toHaveCount(0);
 });
+
+/** Ticket 75: layers placed from their container's right or bottom edge, or centered, stay placed so as they are resized. */
+test.describe("placed from the right or bottom, or centered (ticket 75)", () => {
+  /** How far the right and bottom edges of what `selector` finds in a view are from its container's, in the view's px. */
+  function gapsIn(view: Locator, selector: string) {
+    return view
+      .contentFrame()
+      .locator(selector)
+      .first()
+      .evaluate((el) => {
+        const [r, p] = [el.getBoundingClientRect(), el.parentElement!.getBoundingClientRect()];
+        return { left: Math.round(r.left - p.left), right: Math.round(p.right - r.right), bottom: Math.round(p.bottom - r.bottom) };
+      });
+  }
+  const everyView = (page: Page) => [desktop(page), tablet(page), phone(page)];
+
+  test("placed from the right: its right edge dragged follows the pointer and its left stays, as its left edge dragged leaves the right; it keeps to the right edge in every view", async ({ page }) => {
+    await addBoard(page, { tag: [0, 60, 80, 40] }, { tag: "left: auto; right: 40px" });
+    await enterEditMode(page);
+    await pick(page, desktop(page), "#tag");
+    const before = await boxIn(desktop(page), "#tag");
+    await expect(field(page, "X")).toHaveValue(String(before.x));
+
+    await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
+    // The edge across stays: before, 20 px of it moved left instead.
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, width: 100 });
+    await expect(field(page, "X")).toHaveValue(String(before.x));
+    await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
+    for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#tag").then((gaps) => gaps.right)).toBe(20);
+
+    await dragHandle(page, handle(page, "w"), { x: -40, y: 0 });
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 40, width: 140 });
+    await expect(field(page, "X")).toHaveValue(String(before.x - 40));
+    for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#tag").then((gaps) => gaps.right)).toBe(20);
+
+    // ⌥: both edges, from the middle; Esc midway takes it back.
+    await page.keyboard.down("Alt");
+    await dragHandle(page, handle(page, "e"), { x: -20, y: 0 }, { drop: false });
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 20, width: 100 });
+    expect((await gapsIn(desktop(page), "#tag")).right).toBe(40);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 40, width: 140 });
+
+    // Each drag one step to undo.
+    await page.keyboard.press("ControlOrMeta+z");
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, width: 100 });
+    await page.keyboard.press("ControlOrMeta+z");
+    expect(await boxIn(desktop(page), "#tag")).toEqual(before);
+    await expect(badge(page)).toHaveCount(0);
+  });
+
+  test("placed from the right or the bottom, its width or height typed in the panel: its left and top stay, as in Figma, and its far edge moves", async ({ page }) => {
+    await addBoard(page, { tag: [0, 60, 80, 40], foot: [100, 0, 80, 40] }, { tag: "left: auto; right: 40px", foot: "top: auto; bottom: 30px" });
+    await enterEditMode(page);
+
+    await pick(page, desktop(page), "#tag");
+    const tag = await boxIn(desktop(page), "#tag");
+    await field(page, "Width").fill("120");
+    await field(page, "Width").press("Enter");
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...tag, width: 120 });
+    await expect(field(page, "X")).toHaveValue(String(tag.x));
+    expect((await gapsIn(desktop(page), "#tag")).right).toBe(0);
+
+    await pick(page, desktop(page), "#foot");
+    const foot = await boxIn(desktop(page), "#foot");
+    await field(page, "Height").fill("60");
+    await field(page, "Height").press("Enter");
+    expect(await boxIn(desktop(page), "#foot")).toEqual({ ...foot, height: 60 });
+    await expect(field(page, "Y")).toHaveValue(String(foot.y));
+    // Width, right, height, bottom.
+    await expect(badge(page)).toHaveAccessibleName("4 changes not applied yet");
+    // One step each.
+    await page.keyboard.press("ControlOrMeta+z");
+    expect(await boxIn(desktop(page), "#foot")).toEqual(foot);
+    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...tag, width: 120 });
+  });
+
+  test("placed from the bottom: its bottom edge dragged follows the pointer and its top stays", async ({ page }) => {
+    await addBoard(page, { foot: [100, 0, 80, 40] }, { foot: "top: auto; bottom: 80px" });
+    await enterEditMode(page);
+    await pick(page, desktop(page), "#foot");
+    const before = await boxIn(desktop(page), "#foot");
+
+    await dragHandle(page, handle(page, "s"), { x: 0, y: 25 });
+
+    expect(await boxIn(desktop(page), "#foot")).toEqual({ ...before, height: 65 });
+    await expect(field(page, "Y")).toHaveValue(String(before.y));
+    for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#foot").then((gaps) => gaps.bottom)).toBe(55);
+  });
+
+  test("centered by `translate: -50%`: an edge dragged follows the pointer, the one across as far the other way, so it stays centered; its width typed in the panel, it stays centered too", async ({ page }) => {
+    // As Tailwind v4 writes `-translate-x-1/2` (the property `translate`), and as v3 does (`transform`).
+    await addBoard(page, { v4: [0, 20, 80, 40], v3: [0, 120, 80, 40] }, { v4: "left: 50%; translate: -50% 0", v3: "left: 50%; transform: translate(-50%, 0)" });
+    await enterEditMode(page);
+    const middle = (box: { x: number; width: number }) => box.x + box.width / 2;
+
+    for (const id of ["#v4", "#v3"]) {
+      await pick(page, desktop(page), id);
+      const before = await boxIn(desktop(page), id);
+
+      await dragHandle(page, handle(page, "e"), { x: 30, y: 0 });
+      const dragged = await boxIn(desktop(page), id);
+      expect(dragged).toMatchObject({ x: before.x - 30, y: before.y, width: 140, height: 40 });
+      expect(middle(dragged)).toBe(middle(before));
+
+      await field(page, "Width").fill("60");
+      await field(page, "Width").press("Enter");
+      const typed = await boxIn(desktop(page), id);
+      expect(typed).toMatchObject({ x: before.x + 10, width: 60 });
+      expect(middle(typed)).toBe(middle(before));
+    }
+    // Only their widths: how they are placed stays as it was.
+    await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
+  });
+
+  test("placed from the right on the desktop and from the left on a phone: dragged in the desktop view, its `right` changes at every width; the phone view, which places it by its left, keeps its left edge", async ({ page }) => {
+    await page.evaluate(() => {
+      const style = document.createElement("style");
+      style.textContent = "#tag { right: 40px; } @media (max-width: 767px) { #tag { left: 8px; right: auto; } }";
+      document.head.append(style);
+    });
+    await addBoard(page, { tag: [0, 60, 80, 40] });
+    // Placed by the rules above alone.
+    await page.locator("#tag").evaluate((el: HTMLElement) => el.style.removeProperty("left"));
+    await enterEditMode(page);
+    await pick(page, desktop(page), "#tag");
+
+    await dragHandle(page, handle(page, "e"), { x: -30, y: 0 });
+
+    await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
+    expect(await gapsIn(desktop(page), "#tag")).toMatchObject({ right: 70 });
+    await expect.poll(() => gapsIn(tablet(page), "#tag").then((gaps) => gaps.right)).toBe(70);
+    await expect.poll(() => gapsIn(phone(page), "#tag").then((gaps) => gaps.left)).toBe(8);
+    expect((await boxIn(phone(page), "#tag")).width).toBe(50);
+  });
+});

@@ -6,6 +6,7 @@
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, relayOut, restoreStyle } from "./canvas-style";
 import type { Change, Composed, Dissolved, Margins, StackSettings } from "./changeset";
+import type { Edge } from "./checkable";
 import type { Alignment } from "./property-table";
 import { MOVE_CSS, slotsOf } from "./moves";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -135,10 +136,15 @@ export function spotIn(el: Element, container: Element): { x: number; y: number 
   return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
 }
 
-/** An element's left and top margins, in px: how far past its X and Y an absolute layer is drawn. */
-export function marginsAt(el: Element): Margins {
-  const [top, , , left] = marginsOf(el);
-  return { x: left, y: top };
+/**
+ * An element's margins on the sides it is placed from, in px (`Margins`): its
+ * left and top ones, how far past its X and Y an absolute layer is drawn; from
+ * its container's `end` edges, its right and bottom ones, past its `right`
+ * and `bottom` (ticket 75).
+ */
+export function marginsAt(el: Element, from: Edge = "start"): Margins {
+  const [top, right, bottom, left] = marginsOf(el);
+  return from === "end" ? { x: right, y: bottom } : { x: left, y: top };
 }
 
 /** An element's margins, in px: top, right, bottom, left. */

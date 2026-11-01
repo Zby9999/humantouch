@@ -5,6 +5,7 @@
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
+import type { PlacedFrom } from "./checkable";
 import type { Align, Padding } from "./property-table";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -97,7 +98,12 @@ export interface Dissolved {
   layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins?: Margins })[];
 }
 
-/** A layer's left and top margins, in px. */
+/**
+ * A layer's margins on the sides it is placed from, in px, by the axis they
+ * are along: across (`x`), its left margin, or its right one for a change to
+ * its `right`; down (`y`), its top margin, or its bottom one for a change to
+ * its `bottom` (ticket 75). Named by axis, as rounds saved before have them.
+ */
 export interface Margins {
   x: number;
   y: number;
@@ -251,8 +257,26 @@ export interface Change {
    * a move absolute): its left and top margins on the canvas, in the view
    * the change is made in. Its X and Y are its `left` and `top`, and it keeps
    * its margins: the canvas draws it past its X and Y by them, and so must the page.
+   * Placed by its `right` or `bottom` (a change to either), its right and bottom margins, the same way.
    */
   margins?: Margins;
+  /**
+   * A change to the width or height of a layer placed freely, which it is
+   * placed otherwise than from its container's left or top along (ticket 75,
+   * GLOSSARY: Placement): from the right or bottom edge, or centered on where
+   * its `left` or `top`, or its `right` or `bottom`, places it. It stays
+   * placed so: the notes say so. As it was placed when first changed.
+   */
+  placedFrom?: PlacedFrom;
+  /**
+   * A change to the `right` or `bottom` of a layer at every width (ticket 75,
+   * line review): the ranges of the views where the canvas places the layer
+   * otherwise, by its `left` or `top` (as the page's breakpoints may have
+   * it) or in its container's layout. Its `right` or `bottom` places nothing
+   * there, so the check does not look at those widths, whatever the page does
+   * once the Agent has changed it. Read as the change is first made.
+   */
+  placedOtherwiseAt?: Breakpoint[];
   /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
@@ -288,7 +312,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "placedOtherwiseAt" | "instance"
     > & {
       kind?: Change["kind"];
     },

@@ -32,9 +32,20 @@ export interface ResizeInput {
   keepRatio: boolean;
   /** ⌥: its middle stays where it is, the edge across from the one dragged moving as far the other way. */
   fromCenter: boolean;
+  /**
+   * The ways it is centered on where it is placed (`translate: -50%`, ticket
+   * 75): that way its middle stays, ⌥ held or not, so it stays centered.
+   */
+  centered?: Middles;
   limits: Limits;
   /** Snapping, the edges dragged line up with the edges and middles of `targets` within `within` px; null: not at all. */
   snap: { targets: Box[]; within: number } | null;
+}
+
+/** Along each axis, whether a layer's middle stays where it is as it is resized. */
+export interface Middles {
+  x: boolean;
+  y: boolean;
 }
 
 /** Where a layer resized by a handle goes, and what is set of it. */
@@ -60,22 +71,23 @@ export function sides(handle: Handle): { x: -1 | 0 | 1; y: -1 | 0 | 1 } {
  * Where the layer goes as `input` has it resized. Its sizes are whole px, but
  * where an edge snaps: exactly where it lines up, to the hundredth of a px.
  */
-export function resizeBox({ handle, start, by, keepRatio, fromCenter, limits, snap }: ResizeInput): Resized {
+export function resizeBox({ handle, start, by, keepRatio, fromCenter, centered, limits, snap }: ResizeInput): Resized {
   const side = sides(handle);
+  const middles = middlesOf(fromCenter, centered);
   const snapped = { x: false, y: false };
   const travel = { ...by };
   if (snap) {
     for (const axis of ["x", "y"] as const) {
-      const offset = side[axis] && snapOffset(start, axis, side[axis], travel[axis], fromCenter, snap.targets, snap.within);
+      const offset = side[axis] && snapOffset(start, axis, side[axis], travel[axis], middles[axis], snap.targets, snap.within);
       if (offset === null || !side[axis]) continue;
       travel[axis] += offset;
       snapped[axis] = true;
     }
   }
   // From the middle, the edge across moves as far: the size changes twice as much.
-  const twice = fromCenter ? 2 : 1;
-  let width = start.width + side.x * travel.x * twice;
-  let height = start.height + side.y * travel.y * twice;
+  const twice = (axis: Axis) => (middles[axis] ? 2 : 1);
+  let width = start.width + side.x * travel.x * twice("x");
+  let height = start.height + side.y * travel.y * twice("y");
   if (keepRatio && start.width > 0 && start.height > 0) {
     // By the size changed most, as a share of what it was; an edge's, the only one it changes.
     const [sx, sy] = [width / start.width, height / start.height];
@@ -94,20 +106,25 @@ export function resizeBox({ handle, start, by, keepRatio, fromCenter, limits, sn
   // Kept in proportion, the size it follows is set too, unless there was none to keep.
   const ratio = keepRatio && start.width > 0 && start.height > 0;
   const sets = { x: side.x !== 0 || (ratio && side.y !== 0), y: side.y !== 0 || (ratio && side.x !== 0) };
-  const box = { x: placed(start.x, start.width, width, side.x, fromCenter), y: placed(start.y, start.height, height, side.y, fromCenter), width, height };
-  const marks = snap ? marksOf(box, handle, fromCenter, snap.targets) : [];
+  const box = { x: placed(start.x, start.width, width, side.x, middles.x), y: placed(start.y, start.height, height, side.y, middles.y), width, height };
+  const marks = snap ? marksOf(box, handle, middles, snap.targets) : [];
   return { box, width: sets.x, height: sets.y, marks };
+}
+
+/** The ways a layer's middle stays as it is resized: every way with ⌥ held (`fromCenter`), else those it is centered along. */
+export function middlesOf(fromCenter: boolean, centered: Middles = { x: false, y: false }): Middles {
+  return { x: fromCenter || centered.x, y: fromCenter || centered.y };
 }
 
 /**
  * The lines the edges of `box` dragged by `handle` (from the middle, both
- * edges that way) line up on, among the edges and middles of `targets`: as
- * the layer is laid out, which its container may place otherwise than where
- * it was dragged to.
+ * edges that way, along those `middles` says) line up on, among the edges and
+ * middles of `targets`: as the layer is laid out, which its container may
+ * place otherwise than where it was dragged to.
  */
-export function marksOf(box: Box, handle: Handle, fromCenter: boolean, targets: Box[]): Mark[] {
+export function marksOf(box: Box, handle: Handle, middles: Middles, targets: Box[]): Mark[] {
   const side = sides(handle);
-  return (["x", "y"] as const).flatMap((axis) => (side[axis] ? linesOn(box, axis, side[axis], fromCenter, targets) : []));
+  return (["x", "y"] as const).flatMap((axis) => (side[axis] ? linesOn(box, axis, side[axis], middles[axis], targets) : []));
 }
 
 /** The edges of `box` dragged along `axis`: the one on `side`, and from the middle the one across too. */

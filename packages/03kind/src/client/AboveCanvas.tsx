@@ -202,7 +202,7 @@ const CURSORS: Record<Handle, string> = { n: "ns-resize", s: "ns-resize", e: "ew
 /** The cursor while a handle is pressed or dragged, wherever the pointer goes. */
 export const handleCursor = (handle: Handle) => CURSORS[handle];
 
-/** A corner's handle, on screen px: its square, centred on the corner. */
+/** A corner's handle, on screen px: its square, centered on the corner. */
 const CORNER = 8;
 /**
  * On screen px: a layer smaller than this either way has its corners' handles
