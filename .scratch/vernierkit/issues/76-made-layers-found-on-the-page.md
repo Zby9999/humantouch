@@ -28,7 +28,8 @@
   - 页面核对的理由改为说它是上一轮新建的、页面找不到它，不再说「the layer is new this round」。
 - [ ] 核对覆盖率：先加一个脚本剧本，内容是新建一个 Frame、再给它填色、改圆角；量出这类改动（包括新建本身）拿到核对结果的比例，改前应为 0%，改后要到 100%。
 - [ ] 1:1 落地率和虚假 ✓：用脚本剧本前后各量一次。真实 Agent 只跑有新建图层的两个场景（dissolve-place-frame、put-back-and-new-text），跑之前先问设计师。
-- [ ] 没有新建图层的场景，`claim`、`done`、`finish` 的输出逐字不变；有新建图层的场景，输出的变化逐条列在 Comments。
+- [ ] 改写说明里写自由定位的那句。现在是「absolute in …, at X …px and Y …px from its top left (CSS `left` and `top`), which is to be its positioning reference (`position: relative`)」，"which" 指谁不清楚。改为写明容器是定位参照、`position: relative` 加在容器上，这个图层本身不加，例如「…from the Frame's top left; the Frame, not this layer, is the positioning reference: give the Frame `position: relative` if it has none」。用 dissolve-place-frame 的真实 Agent 前后对比，一并看 Claude 的报告格式合规：最终代码上是 28 / 30，两次不合规都出在新建 Frame 那条，其中一次就是因为这句歧义。
+- [ ] 没有新建图层、也没有自由定位的场景，`claim`、`done`、`finish` 的输出逐字不变；其余场景输出的变化逐条列在 Comments。
 - [ ] 认领期间页面核对不出现 long task（约 5000 个元素的页面，每次热更新）；切换按钮不超过 10,240 B。
 - [ ] 前后数字记在 Comments（docs/goals.md「度量」）；spec 的核对一节随之更新。
 
@@ -46,3 +47,4 @@
 - **不记住找到的源码位置。** 改动单和画布都不存，每次核对重新找。
 - **新建本身也核对。** 在给的位置找到它，就是在核对它。
 - **找到好几个对得上的：** 出自源码同一处的算一个；出自不同地方的不猜。
+- **自由定位那句并进本 ticket。** 起因是落地线遗留的 Claude 报告合规 28 / 30：dissolve-place-frame #1 把那句读成图层自己要同时是 absolute 和 relative。不单开 ticket，也不单独花额度复测，因为本 ticket 本来就要用真实 Agent 前后跑 dissolve-place-frame。另一句「the designer drew nothing in it」不动：只有 #3 一次可能和它有关，判断不了；而且它是 65 补修四专门加的，加之前两家 Agent 会去找根本不存在的草图（有一批绕路 274 秒），删掉可能把这个问题带回来。
