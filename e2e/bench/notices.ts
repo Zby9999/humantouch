@@ -6,19 +6,25 @@ import type { BrowserContext, Page } from "@playwright/test";
 
 /**
  * Each notice by what the editor layer marks it with (`data-tk-notice`: in
- * `CodeChangeNotice.tsx` and `StalledNotice.tsx`, which cannot be imported
- * here: they run on a page), not by its words, which may change; and where
+ * `PageToast.tsx` and `StalledNotice.tsx`, which cannot be imported here:
+ * they run on a page), not by its words, which may change; and where
  * the page keeps when it showed: on its window, and in its session's storage,
  * so a reload keeps it.
  */
 const NOTICES = {
-  /** In edit mode: the code is changing, but no Agent has claimed the changes (ticket 66). */
+  /** In edit mode: the code is changing, but no Agent has claimed the changes (ticket 66; gone since ticket 78, kept to measure the code before it). */
   unclaimed: { selector: '[role="alertdialog"][data-tk-notice="unclaimed"]', key: "__tkBenchUnclaimedNotices" },
+  /** In edit mode, at the canvas's bottom left: the page changed and the canvas, with no changes on it, was frozen afresh (ticket 78). */
+  canvasUpdated: { selector: '[data-tk-notice="canvas-updated"]', key: "__tkBenchCanvasUpdatedNotices" },
+  /** In edit mode, at the canvas's bottom left: the page changed since the canvas, with changes on it, was frozen (ticket 78). */
+  pageChanged: { selector: '[data-tk-notice="page-changed"]', key: "__tkBenchPageChangedNotices" },
   /** On the locked toggle: the Agent seems to have stopped (ticket 67). */
   stalled: { selector: '[role="alert"][data-tk-notice="stalled"]', key: "__tkBenchStalledNotices" },
 };
 
 export const unclaimedNotice = (page: Page) => page.locator(NOTICES.unclaimed.selector);
+export const canvasUpdatedNotice = (page: Page) => page.locator(NOTICES.canvasUpdated.selector);
+export const pageChangedNotice = (page: Page) => page.locator(NOTICES.pageChanged.selector);
 export const stalledNotice = (page: Page) => page.locator(NOTICES.stalled.selector);
 
 /**
@@ -73,5 +79,9 @@ async function shownTimes(page: Page, key: string, since: number): Promise<numbe
 
 /** When the notice that no Agent claimed the changes showed. */
 export const unclaimedNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.unclaimed.key, since);
+/** When the toast that the canvas was frozen afresh showed. */
+export const canvasUpdatedNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.canvasUpdated.key, since);
+/** When the toast that the page changed since the canvas was frozen showed. */
+export const pageChangedNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.pageChanged.key, since);
 /** When the notice that the Agent seems to have stopped showed. */
 export const stalledNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.stalled.key, since);

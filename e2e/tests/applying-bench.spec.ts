@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
-import { recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
+import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Locator, type Page } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
@@ -11,7 +11,7 @@ import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, np
  * Agent, the way real ones do or fail to, through a round of three changes to
  * the cards of the loop. Each playbook records the numbers of the mechanism it
  * tries, in `bench-results/playbooks/` and in the output; it asserts none of
- * them. Tickets 64–68 each add the assertion of their own goal; ticket 68's
+ * them. Tickets 64–68 and 78 each add the assertion of their own goal; ticket 68's
  * own playbooks also measure the canvas edit mode comes back to.
  */
 
@@ -129,9 +129,10 @@ function record(id: string, metrics: Record<string, unknown>) {
   console.log(`bench ${id}: ${JSON.stringify(metrics)}`);
 }
 
-/** Whether either notice shows now: while the Agent works as it should, each one that does is a false one. */
+/** Whether either notice shows now: while the Agent works as it should, each one that does is a false one. `unclaimed`: ticket 66's notice, or since ticket 78 either toast of the code changing. */
 async function falseNotices(page: Page) {
-  return { stalled: (await stalledNotice(page).count()) > 0, unclaimed: (await unclaimedNotice(page).count()) > 0 };
+  const unclaimed = (await unclaimedNotice(page).count()) + (await canvasUpdatedNotice(page).count()) + (await pageChangedNotice(page).count());
+  return { stalled: (await stalledNotice(page).count()) > 0, unclaimed: unclaimed > 0 };
 }
 
 test("playbook: the Agent follows the workflow, done after each change, then finish", async ({ page }) => {
@@ -333,36 +334,237 @@ test("ending the round from the notice that the Agent seems to have stopped does
   expect(fromNotice.ended).toBe("unlocked");
 });
 
-test("playbook: the Agent changes the code with no claim, while the designer is in edit mode", async ({ page }) => {
-  await designTheRound(page);
-  // Not claimed: the Agent goes by the chat, not the Skill.
-  writeFileSync(CARD, original.replace(CHANGES[0].from, CHANGES[0].to));
-  const noticeAfterMs = await watchFor(unclaimedNotice(page), UNCLAIMED_WATCH_MS);
-  // Can the designer still edit, on a canvas the code has moved on from? Asked as the notice shows. Paused, nothing behind it takes the press.
+/**
+ * Ticket 78: the code changing while the designer is in edit mode, with no
+ * claim, does what the page shows it does. The Agent landing the designer's
+ * changes unclaimed has the round claimed; code that leaves the page as it
+ * was asks nothing; a page that changed has a canvas with no changes frozen
+ * afresh, and one with changes says so at the canvas's bottom left. Each
+ * playbook also counts ticket 66's notice, which pauses editing, so the
+ * code before 78 is measured by the same playbook.
+ */
+
+/** Each notice that may show as the code changes in edit mode, how many times it has so far. */
+async function noticesSoFar(page: Page) {
+  return {
+    unclaimed: (await unclaimedNoticesShown(page)).length,
+    canvasUpdated: (await canvasUpdatedNoticesShown(page)).length,
+    pageChanged: (await pageChangedNoticesShown(page)).length,
+  };
+}
+
+/** Whether the designer can still edit: select the Button and find its corner radius field to type in, within 2 seconds. A notice over the shell takes the press. */
+async function stillEditable(page: Page) {
   const button = page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true });
   await expect(button).toHaveCount(1);
-  let editable = false;
   try {
     await button.click({ timeout: 2000 });
     const field = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Corner radius", exact: true });
-    editable = (await field.count()) > 0 && (await field.isEditable());
+    return (await field.count()) > 0 && (await field.isEditable());
   } catch (error) {
     // Not pressed: something else takes the press. Any other failure is the test's.
     if (!String(error).includes("intercepts pointer events")) throw error;
+    return false;
   }
-  const changesKept = (readThirdKindFile("changeset.json")?.changes.length ?? 0) / CHANGES.length;
+}
+
+/** Where the camera has the canvas: the stage's transform. */
+const cameraOf = (page: Page) => page.locator(".tk-stage").evaluate((stage) => (stage as HTMLElement).style.transform);
+
+/** Pans the canvas a little, as the designer would, so a camera left where it was is told from one put back where edit mode starts. */
+async function panCanvas(page: Page) {
+  const before = await cameraOf(page);
+  const box = (await page.locator(".tk-viewport").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(40, 120);
+  await expect.poll(() => cameraOf(page)).not.toBe(before);
+  // Out of the way of what the playbook does next.
+  await page.mouse.move(box.x + box.width / 2, box.y + 10);
+}
+
+/** Polls `test` every 100ms for up to `ms`: how long it took to hold, or null if it never did. */
+async function within(ms: number, test: () => Promise<boolean>): Promise<number | null> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (await test()) return Date.now() - start;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
+}
+
+/** The Card's code with its props typed apart and one of them renamed, its JSX two lines down: the page draws the same. */
+const typedApart = (text: string) =>
+  text
+    .replace("export function Card({ title, body }: { title: string; body: string }) {", "type CardProps = { title: string; body: string };\n\nexport function Card({ title, body: text }: CardProps) {")
+    .replace("{body}</p>", "{text}</p>");
+/** The card titles a size up, and then their text: changes the page draws, none of them the designer's. */
+const TITLE = { from: "text-lg font-semibold", to: "text-xl font-semibold", shows: "20px", was: "18px" };
+const TEXT = { from: "mt-2 text-sm", to: "mt-2 text-base", shows: "16px", was: "14px" };
+/** The first card's title and text size on the canvas, and its fill. */
+const canvasCard = (page: Page) =>
+  canvas(page)
+    .locator("article")
+    .first()
+    .evaluate((card) => ({ title: getComputedStyle(card.querySelector("h3")!).fontSize, text: getComputedStyle(card.querySelector("p")!).fontSize, fill: getComputedStyle(card).backgroundColor }));
+
+test("playbook: the Agent lands the designer's changes with no claim, while the designer is in edit mode", async ({ page }) => {
+  await designTheRound(page);
+  const changesBefore = readThirdKindFile("changeset.json").changes.map((change: { id: number }) => change.id);
+  // Not claimed: the Agent goes by the chat, not the Skill.
+  writeFileSync(CARD, original.replace(CHANGES[0].from, CHANGES[0].to));
+  const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
+  const autoClaimed = claimedAfterMs !== null;
+  const atClaim = await noticesSoFar(page);
+  const changesKept = (readThirdKindFile("changeset.json")?.changes ?? []).filter((change: { id: number }) => changesBefore.includes(change.id)).length / CHANGES.length;
+  // As if it had claimed: the ring fills as the page shows each change, `done` and `finish` work, and the round ends with all three applied.
+  let ringAtEnd: number | null = null;
+  let doneSays: string | null = null;
+  let appliedAtFinish: number[] | null = null;
+  if (autoClaimed) {
+    await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
+    for (const id of [2, 3]) await apply(page, id);
+    await expect(ring(page)).toHaveAttribute("aria-valuenow", "3");
+    ringAtEnd = Number(await ring(page).getAttribute("aria-valuenow"));
+    doneSays = (await npx03kind("done", "1", "2", "3")).split("\n")[0];
+    await npx03kind("finish");
+    await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
+    const history = `${THIRD_KIND_FOLDER}history/`;
+    appliedAtFinish = JSON.parse(readFileSync(`${history}${readdirSync(history).sort().at(-1)}/result.json`, "utf8")).applied;
+  }
+  const notices = await noticesSoFar(page);
   record("changes-code-unclaimed", {
-    detected: noticeAfterMs !== null,
-    noticeAfterMs,
+    autoClaimed,
+    claimedAfterMs,
     watchedMs: UNCLAIMED_WATCH_MS,
-    editingPaused: !editable,
+    noticesAtClaim: atClaim,
+    notices,
+    prompts: notices.unclaimed + notices.canvasUpdated + notices.pageChanged,
     changesKept,
-    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
+    ringAtEnd,
+    doneSays,
+    appliedAtFinish,
   });
-  // Ticket 66: found, with editing paused as the notice shows, and not a change of the canvas's lost.
-  expect(noticeAfterMs).not.toBeNull();
-  expect(editable).toBe(false);
+  // Ticket 78: claimed as the page shows a change, with no notice; not a change lost; then as any claimed round.
+  expect(autoClaimed).toBe(true);
+  expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
   expect(changesKept).toBe(1);
+  expect(ringAtEnd).toBe(3);
+  expect(appliedAtFinish).toEqual([1, 2, 3]);
+});
+
+test("playbook: the code of a component the page uses changes, and the page draws the same", async ({ page }) => {
+  await designTheRound(page);
+  const canvasBefore = await canvasCard(page);
+  const locBefore = await page.locator("article").first().getAttribute("data-tk-loc");
+  writeFileSync(CARD, typedApart(original));
+  // In: the card's JSX two lines down, as its source marker says.
+  await expect.poll(() => page.locator("article").first().getAttribute("data-tk-loc")).not.toBe(locBefore);
+  // Past the second the code is to rest, and some.
+  await page.waitForTimeout(3000);
+  const notices = await noticesSoFar(page);
+  const editable = await stillEditable(page);
+  if (editable) await setField(page, "Corner radius", "6");
+  const changesAfter = editable ? await within(3000, async () => (readThirdKindFile("changeset.json")?.changes.length ?? 0) === CHANGES.length + 1) : null;
+  const canvasAfter = await canvasCard(page);
+  record("code-changes-page-same", {
+    notices,
+    prompts: notices.unclaimed + notices.canvasUpdated + notices.pageChanged,
+    editable,
+    anotherEditSaved: changesAfter !== null,
+    canvasKept: JSON.stringify(canvasAfter) === JSON.stringify(canvasBefore),
+    claimed: existsSync(`${THIRD_KIND_FOLDER}state.json`),
+  });
+  // Ticket 78: nothing at all; editing goes on, on the same canvas.
+  expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
+  expect(editable).toBe(true);
+  expect(changesAfter).not.toBeNull();
+  expect(canvasAfter).toEqual(canvasBefore);
+});
+
+test("playbook: the page changes as the code does, with no changes on the canvas", async ({ page }) => {
+  await recordNotices(page);
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  await panCanvas(page);
+  const cameraBefore = await cameraOf(page);
+  const before = await canvasCard(page);
+  writeFileSync(CARD, original.replace(TITLE.from, TITLE.to));
+  const refrozenAfterMs = await within(6000, async () => (await canvasCard(page)).title === TITLE.shows);
+  const toastAt = refrozenAfterMs === null ? null : await within(2000, async () => (await canvasUpdatedNotice(page).count()) > 0);
+  const cameraAfter = await cameraOf(page);
+  // The toast goes on its own: about 3 seconds, then its fade.
+  const toastGoneAfterMs = toastAt === null ? null : await within(6000, async () => (await canvasUpdatedNotice(page).count()) === 0);
+  const notices = await noticesSoFar(page);
+  const editable = await stillEditable(page);
+  record("page-changes-no-changes", {
+    refrozen: refrozenAfterMs !== null,
+    refrozenAfterMs,
+    canvasBefore: before,
+    canvasAfter: await canvasCard(page),
+    cameraKept: cameraAfter === cameraBefore,
+    toastShownForMs: toastGoneAfterMs,
+    notices,
+    otherPrompts: notices.unclaimed + notices.pageChanged,
+    editable,
+  });
+  // Ticket 78: frozen afresh, the camera where it was, told once at the bottom left, and gone on its own.
+  expect(refrozenAfterMs).not.toBeNull();
+  expect(cameraAfter).toBe(cameraBefore);
+  expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 1, pageChanged: 0 });
+  expect(toastGoneAfterMs).not.toBeNull();
+  expect(editable).toBe(true);
+});
+
+test("playbook: the page changes as the code does, with changes on the canvas", async ({ page }) => {
+  await designTheRound(page);
+  await panCanvas(page);
+  const cameraBefore = await cameraOf(page);
+  const before = await canvasCard(page);
+  writeFileSync(CARD, original.replace(TITLE.from, TITLE.to));
+  const toast = pageChangedNotice(page);
+  const toastAfterMs = await within(6000, async () => (await toast.count()) > 0);
+  let result: Record<string, unknown> = { toldAfterMs: toastAfterMs };
+  if (toastAfterMs !== null) {
+    // The pointer on it, it stays.
+    await toast.hover();
+    const kept = await canvasCard(page);
+    // The page changes again: the same staleness, told once.
+    writeFileSync(CARD, original.replace(TITLE.from, TITLE.to).replace(TEXT.from, TEXT.to));
+    await expect.poll(() => page.locator("article p").first().evaluate((p) => getComputedStyle(p).fontSize)).toBe(TEXT.shows);
+    await page.waitForTimeout(3000);
+    const toldAgain = (await pageChangedNoticesShown(page)).length - 1;
+    await toast.getByRole("button", { name: "Update canvas" }).click();
+    const asks = (await toast.textContent()) ?? "";
+    await toast.getByRole("button", { name: "Cancel" }).click();
+    const afterCancel = { canvas: await canvasCard(page), changes: readThirdKindFile("changeset.json")?.changes.length ?? 0, confirming: await toast.getByRole("button", { name: "Discard and update" }).count() };
+    await toast.getByRole("button", { name: "Update canvas" }).click();
+    await toast.getByRole("button", { name: "Discard and update" }).click();
+    const updatedAfterMs = await within(6000, async () => (await canvasCard(page)).title === TITLE.shows);
+    await expect.poll(() => readThirdKindFile("changeset.json")).toBeNull();
+    result = {
+      ...result,
+      canvasKeptWhenTold: JSON.stringify(kept) === JSON.stringify(before),
+      changesWhenTold: CHANGES.length,
+      toldAgain,
+      asks,
+      afterCancel,
+      updatedAfterMs,
+      canvasAfterUpdate: await canvasCard(page),
+      changesAfterUpdate: readThirdKindFile("changeset.json")?.changes.length ?? 0,
+      cameraKept: (await cameraOf(page)) === cameraBefore,
+    };
+  }
+  const notices = await noticesSoFar(page);
+  record("page-changes-with-changes", { ...result, notices, editable: await stillEditable(page) });
+  // Ticket 78: told once, at the bottom left, the canvas left as it was; on the designer's say, the changes discarded and the canvas frozen afresh.
+  expect(toastAfterMs).not.toBeNull();
+  expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 1 });
+  expect(result.canvasKeptWhenTold).toBe(true);
+  expect(result.asks).toContain("Discard your 3 changes and update?");
+  expect(result.afterCancel).toEqual({ canvas: before, changes: CHANGES.length, confirming: 0 });
+  expect(result.updatedAfterMs).not.toBeNull();
+  expect(result.cameraKept).toBe(true);
 });
 
 test("playbook: the Agent sits still a long time between two changes, then goes on to finish", async ({ page }) => {

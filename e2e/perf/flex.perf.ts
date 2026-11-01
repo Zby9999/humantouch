@@ -1224,6 +1224,102 @@ test.describe("a claimed round", () => {
 });
 
 /**
+ * docs/goals.md, Robust (ticket 78): in edit mode, with the round not claimed,
+ * each time the code changes the page tells whether it changed, once the code
+ * has rested about a second: whether a change of the canvas now shows (the
+ * Agent landing it unclaimed), then whether anything the page draws changed
+ * (elements put in or taken out, attributes, text, stylesheets). That must
+ * never make a long task on a page of about 5000 elements. Two changes on
+ * the canvas, so the page changing is told in a toast and nothing is frozen
+ * afresh; three hot updates to the cards' code: one that leaves the page as
+ * it was (a type added at the top, every source marker in the file a line
+ * down), one to the words of the 96 cards, and one to a class on them, new to
+ * the stylesheet. Each stretch of telling is a `03kind:page-changed`
+ * measure; a long task is its own when it would not be one without it.
+ */
+test.describe("the code changing in edit mode, with no claim", () => {
+  test.use({ keepRoundInMemory: false });
+  const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
+  const PARTS = `${REACT18}src/big/parts.tsx`;
+  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
+  const original = readFileSync(PARTS, "utf8");
+  const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  test.afterEach(async () => {
+    writeFileSync(PARTS, original);
+    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
+    await expect.poll(served).toBe(true);
+  });
+
+  const IMPORT = 'import { avatar, picture } from "./images";';
+  const MEASURE = "03kind:page-changed";
+  const productLoc = () => document.querySelector("[data-testid=product]")!.getAttribute("data-tk-loc");
+
+  test("in edit mode with no claim, the page tells whether it changed on each hot update with no long task of its own", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectCard(page, 6, { parent: true });
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(2);
+    await settle(page, 1000);
+    const locAtStart = await page.evaluate(productLoc);
+    const updates = [
+      { name: "the page the same, every marker a line down", from: IMPORT, to: `${IMPORT}\ntype Unused = string;`, shows: async () => (await page.evaluate(productLoc)) !== locAtStart },
+      { name: "the words of 96 cards", from: "Made in small batches", to: "Made in small lots", shows: () => page.evaluate(() => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots")) },
+      {
+        name: "a class on 96 cards, new to the stylesheet",
+        from: "flex flex-1 flex-col gap-2 p-gutter",
+        to: "flex flex-1 flex-col gap-[10px] p-gutter",
+        shows: () => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px"),
+      },
+    ];
+    const rows: { name: string; looks: number; longestStretch: number; telling: number; longTasks: number[]; longTasksOfTelling: number[]; told: number }[] = [];
+    for (const { name, from, to, shows } of updates) {
+      await page.evaluate(armTasks, MEASURE);
+      const text = readFileSync(PARTS, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(PARTS, text.replace(from, to));
+      await expect.poll(shows, { timeout: 20_000 }).toBe(true);
+      // The code at rest for a second, then told: and some.
+      await settle(page, 3000);
+      const seen = await takenTasks(page);
+      const own = seen.measures.filter((entry) => entry.duration >= 0);
+      rows.push({
+        name,
+        looks: own.length,
+        longestStretch: Math.max(0, ...own.map((entry) => entry.duration)),
+        telling: own.reduce((sum, entry) => sum + entry.duration, 0),
+        longTasks: seen.long.map((task) => task.duration),
+        longTasksOfTelling: longTasksOf(seen.long, own.map((entry) => ({ start: entry.start, end: entry.start + entry.duration, duration: entry.duration }))).map((task) => task.duration),
+        told: await host(page).locator('[data-tk-notice="page-changed"]').count(),
+      });
+    }
+    const longest = Math.max(...rows.map((row) => row.longestStretch));
+    const ofTelling = rows.flatMap((row) => row.longTasksOfTelling);
+    const met = ofTelling.length === 0 && longest < 50;
+    keep("unclaimedCodeChanges", { elements, rows });
+    print(
+      report(
+        `Telling whether the page changed on hot updates in edit mode, no claim, ${elements} elements, 2 changes to 96 cards — ${mode}`,
+        [
+          { name: "longest stretch of telling", summary: summarize(rows.map((row) => row.longestStretch)), target: "< 50ms, no long task of its own", met },
+          { name: "telling per hot update", summary: summarize(rows.map((row) => row.telling)) },
+        ],
+        rows.map(
+          (row) =>
+            `${row.name}: ${row.looks} slices, the longest ${ms(row.longestStretch)}, ${ms(row.telling)} in all; long tasks ${row.longTasks.map((d) => d.toFixed(0)).join(", ") || "none"} (its own: ${row.longTasksOfTelling.length}); page-changed toast up: ${row.told}`,
+        ),
+      ),
+    );
+    verdict(met, `telling whether the page changed: longest slice ${longest.toFixed(1)}ms, ${ofTelling.length} long tasks of its own`);
+  });
+});
+
+/**
  * docs/goals.md, Robust (ticket 65): a style change made in the tablet view,
  * whose range (560–1119px, `sm:max-lg:`) the project's `md` breakpoint at
  * 820px cuts in two, has the
