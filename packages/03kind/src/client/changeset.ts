@@ -268,6 +268,15 @@ export interface Change {
    */
   placedFrom?: "end" | "center";
   /**
+   * A change to the `right` or `bottom` of a layer at every width (ticket 75,
+   * line review): the ranges of the views where the canvas places the layer
+   * otherwise, by its `left` or `top` (as the page's breakpoints may have
+   * it) or in its container's layout. Its `right` or `bottom` places nothing
+   * there, so the check does not look at those widths, whatever the page does
+   * once the Agent has changed it. Read as the change is first made.
+   */
+  placedOtherwiseAt?: Breakpoint[];
+  /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
    * JSX); what the check measures the live page by. `self`: which of them the
@@ -302,7 +311,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "placedOtherwiseAt" | "instance"
     > & {
       kind?: Change["kind"];
     },

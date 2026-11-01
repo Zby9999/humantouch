@@ -16,14 +16,15 @@ import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { PLACED_BY, PLACING, SIDES, SIZE_AXIS } from "./checkable";
+import { isEndOffset, PLACED_BY, PLACING, SIDES, SIZE_AXIS } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { placedFrom } from "./placed-from";
+import { endOffsetPlaces, placedFrom } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
 import { createHistory, createSteps, type History } from "./undo-steps";
 import { pickedIn } from "./variables";
+import type { Axis } from "./snap";
 import type { Views } from "./views";
 
 export interface EditorOptions {
@@ -195,6 +196,8 @@ export function createEditor(
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
     const along = SIZE_AXIS[property];
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
+    // Its `right` or `bottom` changed at every width: where the canvas places it otherwise, its `right` or `bottom` places nothing.
+    const placedOtherwiseAt = !earlier && !breakpoint && isEndOffset(property) ? viewsPlacingOtherwise(layer, PLACED_BY[property]!.axis) : [];
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
@@ -213,6 +216,7 @@ export function createEditor(
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
       ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, PLACED_BY[property]?.edge) }),
       ...(from && from !== "start" && { placedFrom: from }),
+      ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
     });
@@ -242,6 +246,28 @@ export function createEditor(
       declare(els, { position: "relative" }, breakpoint);
     } else restoreStyle(els, ["position"], others, breakpoint);
   };
+
+  /**
+   * The ranges of the views, but the one worked in, where the canvas places
+   * the layer otherwise than by its offset from its container's end edge
+   * along `axis` (`right`, `bottom`), that offset given a value at every
+   * width: in its container's layout there, or by its `left` or `top` too, as
+   * the page's breakpoints may have it (ticket 75). Read as each view shows
+   * the layer now, from its computed `position` and what is declared: no view
+   * is brought up to date or laid out (ADR 0011), as what places the layer
+   * there is not what the change changes. A view in the desktop view's range
+   * is the desktop view's, where the change is made.
+   */
+  const viewsPlacingOtherwise = (layer: Layer, axis: Axis): Breakpoint[] =>
+    views
+      .list()
+      .slice(1)
+      .filter((view) => view !== working.beside())
+      .flatMap((view) => {
+        const el = view.elementOf(layer.el);
+        const range = working.breakpointAt(view.width);
+        return el && range && !endOffsetPlaces(el, axis) ? [range] : [];
+      });
 
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);

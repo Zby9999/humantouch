@@ -467,6 +467,24 @@ test.describe("done checks the change on the page", () => {
     for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
   });
 
+  /** Selects the layer of the element with test id `id` on the canvas, deepest first. */
+  async function pickOnCanvas(page: Page, id: string) {
+    const box = (await canvas(page).getByTestId(id).boundingBox())!;
+    await page.keyboard.down("Meta");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.keyboard.up("Meta");
+  }
+
+  /** Drags the right edge of the layer selected `by` px in the desktop view, in its px. */
+  async function dragRightEdgeOf(page: Page, by: number) {
+    const zoom = await page.locator('iframe[title="Canvas"]').evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+    const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
+    await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(edge.x + edge.width / 2 + by * zoom, edge.y + edge.height / 2, { steps: 6 });
+    await page.mouse.up();
+  }
+
   test("layers placed from the right, from the bottom and centered, resized by a handle or in the panel: they stay placed so, the notes say which value changes, and each change is checked on the page once the code has it (ticket 75)", async ({ page }) => {
     // In the code, three layers placed freely in the hero: from its right, from its bottom, and centered across.
     editSource(
@@ -482,21 +500,8 @@ test.describe("done checks the change on the page", () => {
       await expect(page.getByTestId("centered")).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 20000 });
     await enterEditMode(page);
-    const view = page.locator('iframe[title="Canvas"]');
-    const zoom = await view.evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
-    const pick = async (id: string) => {
-      const box = (await canvas(page).getByTestId(id).boundingBox())!;
-      await page.keyboard.down("Meta");
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      await page.keyboard.up("Meta");
-    };
-    const dragRightEdge = async (by: number) => {
-      const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
-      await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(edge.x + edge.width / 2 + by * zoom, edge.y + edge.height / 2, { steps: 6 });
-      await page.mouse.up();
-    };
+    const pick = (id: string) => pickOnCanvas(page, id);
+    const dragRightEdge = (by: number) => dragRightEdgeOf(page, by);
 
     // Its right edge 30 px in: the layer stays placed from the right, 70 px from it, its left edge where it was.
     await pick("from-right");
@@ -533,6 +538,51 @@ test.describe("done checks the change on the page", () => {
     // Where the canvas drew them: the page places them so, at its own width as at the views'.
     const right = await page.getByTestId("from-right").evaluate((el) => el.parentElement!.getBoundingClientRect().right - el.getBoundingClientRect().right);
     expect(right).toBe(70);
+  });
+
+  test("a layer the canvas places from the right is checked by its `right` at every view's width: placed by its left instead, it shows only as wide as the window, and is not shown; one the project's breakpoints place by its left at the phone's width is not looked at there (ticket 75, line review)", async ({ page }) => {
+    // In the code, two layers placed freely in the hero from its right: one at every width, one by its left below `md`.
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="from-right" className="absolute top-[30px] right-10 h-[40px] w-20 bg-stone-300" />\n' +
+        '        <div data-testid="left-on-phones" className="absolute top-[90px] right-[100px] h-[40px] w-[80px] bg-stone-300 max-md:left-2 max-md:right-auto" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("left-on-phones")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    const hero = await page.getByTestId("hero").evaluate((el) => el.clientWidth);
+    await enterEditMode(page);
+
+    // The first's right edge 20 px out, the second's 40 px in, past the first's left edge, which it would snap to, in the desktop view.
+    await pickOnCanvas(page, "from-right");
+    await dragRightEdgeOf(page, 20);
+    await pickOnCanvas(page, "left-on-phones");
+    await dragRightEdgeOf(page, -40);
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string; before: unknown; after: unknown; placedOtherwiseAt?: { min: number | null; max: number | null }[] }[] = readThirdKindFile("changeset.json").changes;
+    expect(changes.map(({ property, before, after, placedOtherwiseAt }) => [property, before, after, placedOtherwiseAt?.map(({ min, max }) => [min, max])])).toEqual([
+      ["width", { type: "fixed", value: 80 }, { type: "fixed", value: 100 }, undefined],
+      ["right", 40, 20, undefined],
+      ["width", { type: "fixed", value: 80 }, { type: "fixed", value: 40 }, undefined],
+      // On the canvas, the phone view places it by its left: its `right` places nothing below 768px.
+      ["right", 100, 140, [[null, 768]]],
+    ]);
+    const [width, right, otherWidth, otherRight] = changes.map(({ id }) => String(id));
+    await npx03kind("claim");
+
+    // Not as the notes say: placed by its left, where the canvas draws it as wide as the window. The other, as they say.
+    editSource(APP, "top-[30px] right-10 h-[40px] w-20", `top-[30px] left-[${hero - 20 - 100}px] right-auto h-[40px] w-[100px]`);
+    editSource(APP, "right-[100px] h-[40px] w-[80px]", "right-[140px] h-[40px] w-[40px]");
+    expect(await npx03kind("done", width)).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", right)).toContain("Checked on the page: it does not show the change. At 768px wide, the right position is drawn at");
+    for (const id of [otherWidth, otherRight]) expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
+
+    // As the notes say: shown at every width.
+    editSource(APP, `left-[${hero - 20 - 100}px] right-auto`, "right-[20px]");
+    expect(await npx03kind("done", right)).toContain("Checked on the page: it shows the change.");
   });
 
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {

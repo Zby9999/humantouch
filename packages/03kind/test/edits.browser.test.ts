@@ -3,7 +3,7 @@ import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUp
 import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Place } from "../src/client/changeset";
-import { checkAcross, checkChange, type PageWidth } from "../src/client/check";
+import { checkAcross, checkChange, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
 import { watchPage } from "../src/client/page-checks";
@@ -3973,27 +3973,68 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkChange(page, right)).toEqual({ outcome: "shown" });
   });
 
-  test("at a view's width where the page places the layer from its left edge instead, its `right` places nothing there: not looked at there (ticket 75)", () => {
-    const html = STRUCTURE.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace(
-      `id="tag" ${loc("14:7")} style="`,
-      `id="tag" ${loc("14:7")} style="position: absolute; right: 12px; top: 8px; `,
-    ).replace("display: inline-block;", "");
-    const { page, editor, changes, layer } = open(html);
+  /**
+   * The board as wide as the page, its tag placed from its right edge (ticket
+   * 75); `phone`: CSS of the page's own at a phone's width, below 500px.
+   */
+  const fromTheRight = (phone = "") => `<!DOCTYPE html>
+<body style="margin: 0">
+  <style>
+    #board { position: relative; height: 100px }
+    #tag { position: absolute; right: 12px; top: 8px; width: 50px; height: 20px }
+    @media (max-width: 500px) { #tag { ${phone} } }
+  </style>
+  <div id="board" ${loc("13:5")}><span id="tag" ${loc("14:7")}>Tag</span></div>
+</body>`;
+  const copies: HTMLIFrameElement[] = [];
+  afterEach(() => copies.splice(0).forEach((frame) => frame.remove()));
+  /** `html` shown `width` px wide, as the check shows the page at a view's width. */
+  const pageAt = (html: string, width: number): PageWidth => {
+    const frame = document.createElement("iframe");
+    frame.style.width = `${width}px`;
+    document.body.append(frame);
+    copies.push(frame);
+    const doc = frame.contentDocument!;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    return { width, doc, own: false, of: (el) => doc.getElementById(el.id) };
+  };
+
+  test("a layer the canvas places from its right edge at every width: its `right` is looked at at every view's width, though the page places it by its left instead and is right as wide as its window (ticket 75, line review)", () => {
+    const { page, editor, changes, layer } = open(fromTheRight());
     editor.resize(layer("tag"), { width: 40, right: 20 });
     const right = changes.list().find((change) => change.property === "right")!;
-    (page.getElementById("tag") as HTMLElement).style.right = "20px";
-    // The page at a phone's width, where it places the layer from its left, as `max-md:left-2 max-md:right-auto` does.
-    const phone = document.createElement("iframe");
-    document.body.append(phone);
-    phone.contentDocument!.open();
-    phone.contentDocument!.write(html.replace("right: 12px;", "left: 8px; right: auto;"));
-    phone.contentDocument!.close();
-    const narrow = (width: number): PageWidth => ({ width, doc: phone.contentDocument!, own: false, of: (el) => phone.contentDocument!.getElementById(el.id) });
-    try {
-      expect(checkAcross(page, right, changes.list(), [390], narrow)).toEqual({ outcome: "shown" });
-    } finally {
-      phone.remove();
-    }
+    expect(right).toMatchObject({ property: "right", before: 12, after: 20 });
+    expect(right.placedOtherwiseAt).toBeUndefined();
+
+    // Not as the notes say: placed by its left, where the canvas draws it as wide as the window, 800px.
+    const byLeft = "left: 740px; right: auto; width: 40px";
+    (page.getElementById("tag") as HTMLElement).style.cssText = byLeft;
+    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    // At the phone's width, the canvas has it 20px from the right; the page, 390px off it.
+    const phone = pageAt(fromTheRight().replace("</style>", `#tag { ${byLeft} }</style>`), 390);
+    expect(checkAcross(page, right, changes.list(), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: -390, margin: 0 }, width: 390 });
+  });
+
+  test("a layer the canvas places from its left edge in a view, as the page's breakpoints say: its `right` places nothing there, and is not looked at in the view's range, the page's window there or not (ticket 75)", async () => {
+    const html = fromTheRight("left: 8px; right: auto");
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.resize(layer("tag"), { width: 40, right: 20 });
+    const right = changes.list().find((change) => change.property === "right")!;
+    // The phone's range, beside the desktop view's.
+    expect(right.placedOtherwiseAt).toEqual([{ min: null, max: 800 }]);
+
+    // As the notes say, at every width; the page's own CSS places it by its left below 500px still.
+    page.getElementById("tag")!.setAttribute("style", "right: 20px; width: 40px");
+    const phone = pageAt(html.replace("</style>", "#tag { right: 20px; width: 40px } @media (max-width: 500px) { #tag { left: 8px; right: auto } }</style>"), 390);
+    expect(checkAcross(page, right, changes.list(), [390], () => phone)).toEqual({ outcome: "shown" });
+    // Looked at as wide as the page's window only.
+    expect(widthsOf(right, changes.list(), 800, [390])).toEqual({ own: true, others: [] });
+    expect(widthsOf(right, changes.list(), 390, [390])).toEqual({ own: false, others: [] });
   });
 
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {

@@ -33,6 +33,18 @@ export function placedFrom(el: Element, axis: Axis): PlacedFrom {
   return edge;
 }
 
+/**
+ * Whether a value given to `el`'s offset from its container's end edge along
+ * `axis` (`right`, `bottom`) places it, as its document lays it out: placed
+ * freely there, and not by its `left` or `top` too, which the browser goes by
+ * then, nor pinned so by the freezer. Read from its computed `position` and
+ * what is declared, with nothing laid out.
+ */
+export function endOffsetPlaces(el: Element, axis: Axis): boolean {
+  const { start } = SIDES[axis];
+  return absolute(el) && !pinnedOf(el).includes(start) && !declared(el, start);
+}
+
 /** Whether the page or an edit gives `el` a value for `property` other than `auto`. */
 const declared = (el: Element, property: string) => !/^(auto)?$/.test(declaredValue(el, property));
 
