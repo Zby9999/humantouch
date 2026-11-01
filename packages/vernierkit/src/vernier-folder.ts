@@ -10,7 +10,7 @@ import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import type { SavedChangeSet } from "./client/changeset";
+import { carryOver, type SavedChangeSet } from "./client/changeset";
 import type { CheckAsk, CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 
 export const VERNIER_DIR = ".vernier";
@@ -47,6 +47,8 @@ export interface Checks {
 export interface RoundState {
   status: "claimed";
   done: number[];
+  /** What `claim` asks the page of the changes carried over from the round before (ticket 68): what it shows now. */
+  opening?: CheckAsk;
   check?: CheckAsk;
   /** What `finish` asks the page before it ends the round: apart from `done`'s, which tells the Agent's progress. */
   closing?: CheckAsk;
@@ -75,7 +77,14 @@ export async function roundStatus(folder: VernierFolder): Promise<RoundStatus> {
   const state = await readState(folder);
   if (!state) return { status: "editing" };
   const applied = appliedOf(state, (await readChecks(folder))?.results);
-  return { status: "claimed", done: state.done, applied, ...(state.check && { check: state.check }), ...(state.closing && { closing: state.closing }) };
+  return {
+    status: "claimed",
+    done: state.done,
+    applied,
+    ...(state.opening && { opening: state.opening }),
+    ...(state.check && { check: state.check }),
+    ...(state.closing && { closing: state.closing }),
+  };
 }
 
 export function vernierFolder(root: string): VernierFolder {
@@ -133,9 +142,11 @@ export interface RoundResult {
 }
 
 /**
- * Ends the claimed round: its ChangeSet and result go to the history, the
- * canvas is dropped, and the folder is left with no round. Null when no round
- * is claimed.
+ * Ends the claimed round: its ChangeSet and result go to the history. With
+ * every change applied, the canvas is dropped and the folder is left with no
+ * round: edit mode freezes the page afresh. With changes not applied, they
+ * are carried over (ticket 68): the canvas stays, and the round is those
+ * changes (`carryOver`). Null when no round is claimed.
  */
 export async function archiveRound(folder: VernierFolder, ended: RoundResult["ended"]): Promise<RoundResult | null> {
   const [state, changeSet] = await Promise.all([readState(folder), readIfThere(folder.changeSet)]);
@@ -148,12 +159,23 @@ export async function archiveRound(folder: VernierFolder, ended: RoundResult["en
   const result: RoundResult = { ended, done: state.done, applied: appliedOf(state, checks), at: new Date().toISOString(), checks, code };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
-  await writeFile(join(archive, "changeset.json"), changeSet);
+  // The round's own changes: what the rounds before applied, carried along with it for the canvas, is theirs.
+  const saved = JSON.parse(changeSet) as SavedChangeSet;
+  const { applied: _before, ...own } = saved;
+  await writeFile(join(archive, "changeset.json"), saved.applied ? `${JSON.stringify(own, null, 2)}\n` : changeSet);
   await writeFile(join(archive, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
   // The state goes last: once it is gone, the round is over for whoever watches it.
-  await rm(folder.changeSet, { force: true });
-  await rm(folder.canvas, { force: true });
-  await rm(folder.checks, { force: true });
+  const next = carryOver(saved, result.applied!);
+  if (next) {
+    await writeAtomically(folder.changeSet, `${JSON.stringify(next, null, 2)}\n`);
+    // The pages open still, with no checks: the next claim asks them what they show of what is left.
+    const open = await readChecks(folder);
+    if (open) await writeChecks(folder, { ...open, results: {} });
+  } else {
+    await rm(folder.changeSet, { force: true });
+    await rm(folder.canvas, { force: true });
+    await rm(folder.checks, { force: true });
+  }
   await rm(folder.state, { force: true });
   return result;
 }

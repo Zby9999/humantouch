@@ -261,6 +261,13 @@ export interface Change {
    * leaves out. Null: the page cannot tell their order, as text runs on among the layers.
    */
   order?: { signs: string[]; self: number; others: number[] } | null;
+  /**
+   * Left from a round before, which ended with it not applied (ticket 68):
+   * numbered anew, its layer on the same canvas still. Its `before` is the
+   * code as it was then: as the round is claimed, the page reads what it
+   * shows now.
+   */
+  carried?: true;
 }
 
 /**
@@ -305,6 +312,14 @@ export interface SavedChangeSet {
   /** The last id handed out, so a restored ChangeSet never hands it out again. */
   lastId: number;
   changes: Change[];
+  /**
+   * The changes of the rounds before that were applied, while those left
+   * were carried over to this one (ticket 68): still on the canvas, under
+   * what is left, and no change of this round's. The canvas takes them in as
+   * it is next opened or changed (`takeInApplied`), and they go: from then on
+   * the canvas has them as the page's own, which no undo takes back off.
+   */
+  applied?: Change[];
 }
 
 /** A new ChangeSet, or the one `saved` was saved from. */
@@ -348,6 +363,30 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
     list: () => [...changes.values()],
     save: () => structuredClone({ lastId, changes: [...changes.values()] }),
   };
+}
+
+/**
+ * The round that comes after one that ended with changes not applied, on the
+ * same canvas (ticket 68): those changes, in their order, numbered from 1
+ * (the ChangeSet goes on from there), each marked `carried`; what was applied
+ * goes with them apart, for the canvas to take in as the page's own. What the
+ * page showed in each part of a change's range is read again, the code as it
+ * is now. Null with every change applied: no round is left.
+ */
+export function carryOver(changeSet: SavedChangeSet, applied: number[]): SavedChangeSet | null {
+  const left = changeSet.changes.filter((change) => !applied.includes(change.id));
+  if (!left.length) return null;
+  const ids = new Map(left.map((change, i) => [change.id, i + 1]));
+  const changes = left.map((change): Change => ({
+    ...change,
+    id: ids.get(change.id)!,
+    ...(change.parts && { parts: null }),
+    // A breakpoint a copy took over from a change applied: no change of this round's gives it (0, none).
+    ...(change.copiedBreakpoints && { copiedBreakpoints: change.copiedBreakpoints.map((copy) => ({ ...copy, change: ids.get(copy.change) ?? 0 })) }),
+    carried: true,
+  }));
+  const taken = [...(changeSet.applied ?? []), ...changeSet.changes.filter((change) => applied.includes(change.id))];
+  return { lastId: changes.length, changes, ...(taken.length && { applied: taken }) };
 }
 
 /**

@@ -13,6 +13,7 @@ import { createEditor } from "./edits";
 import { createHistory } from "./undo-steps";
 import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
+import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { LayerTreeView } from "./LayerTreeView";
@@ -527,6 +528,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
+        // A round carried over (ticket 68): what was applied in the rounds before stays on the canvas, under what is left, as the page's own.
+        takeIn={restoreFrom?.changeSet.applied?.length ? (doc) => takeInApplied(doc, restoreFrom.changeSet) : undefined}
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
           // A round saved before opens as it was: changes in it the page has yet to be read for are read by the editor layer as it is.

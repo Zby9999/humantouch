@@ -28,6 +28,18 @@ async function placeOff(page: Page) {
 }
 
 test("a layer moved off the canvas is deleted in the round the Agent applies, and stays off the canvas, where it was, once the page is frozen afresh", async ({ page }) => {
+  const APP = `${EXAMPLE}src/App.tsx`;
+  const original = readFileSync(APP, "utf8");
+  try {
+    await movedOffAndApplied(page, APP, original);
+  } finally {
+    writeFileSync(APP, original);
+    // The next test's page must open on the title as it was: wait for the dev server to serve it so.
+    await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("font-display text-4xl font-bold text-stone-900")).toBe(true);
+  }
+});
+
+async function movedOffAndApplied(page: Page, APP: string, original: string) {
   await page.goto(DEV_URL);
   await enterEditMode(page);
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
@@ -51,9 +63,11 @@ test("a layer moved off the canvas is deleted in the round the Agent applies, an
   await expect(promisify(execFile)("git", ["check-ignore", "-q", `${VERNIER}off-canvas.json`], { cwd: EXAMPLE })).resolves.toBeDefined();
   await expect.poll(() => readVernier("changeset.json")?.changes).toMatchObject([{ kind: "delete", offCanvas: kept.id }]);
 
-  // The Agent applies the round: the notes say to delete it.
+  // The Agent applies the round: the notes say to delete it, and it does; the page shows it gone (ticket 68: else the deletion is left for the next round).
   const notes = await vernierkit("claim");
   expect(notes).toContain("Delete this layer");
+  writeFileSync(APP, original.replace(`          ${kept.origin.snippet.code}\n`, ""));
+  await expect(page.locator("h1")).toHaveCount(0);
   await vernierkit("done", "1");
   await vernierkit("finish");
   expect(readVernier("changeset.json")).toBeNull();
@@ -65,7 +79,7 @@ test("a layer moved off the canvas is deleted in the round the Agent applies, an
   expect(await placeOff(page)).toEqual(where);
   // Off the canvas, it is no part of the round.
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
-});
+}
 
 test("a layer the Agent deleted in an earlier round, put back in the next, is written back by the Agent from its source as it was kept", async ({ page }) => {
   const APP = `${EXAMPLE}src/App.tsx`;

@@ -236,7 +236,7 @@ test("a page loaded while the round is being applied shows it locked, with what 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 });
 
-test("pressing and holding the locked toggle unlocks it: changes the page shows are archived as applied, the others recorded, the canvas dropped", async ({ page }) => {
+test("pressing and holding the locked toggle unlocks it: changes the page shows are archived as applied, the others recorded and left for the next round, on the same canvas (ticket 68)", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
   await vernierkit("claim");
@@ -254,8 +254,10 @@ test("pressing and holding the locked toggle unlocks it: changes the page shows 
   // Letting go was not a click on the toggle.
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "unlocked", done: [], applied: [1] }]);
-  expect(readVernier("changeset.json")).toBeNull();
-  expect(readdirSync(VERNIER)).toEqual(["history"]);
+  // The corners, not applied, are left, numbered 1; the fill applied goes with them apart, for the canvas to take in.
+  expect(readVernier("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
+  expect(readdirSync(VERNIER).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
+  await expect(badge(page)).toHaveText("1");
   const last = await vernierkit("last");
   expect(last.split(/^## /m)[1]).toContain("- **Status:** Applied\n");
   expect(last.split(/^## /m)[2]).toContain("- **Status:** Not applied\n");

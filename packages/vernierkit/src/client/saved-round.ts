@@ -3,12 +3,12 @@
  * reload. The saved canvas is parsed, changed and written back as it is.
  */
 import type { SavedRound } from "../service-protocol";
-import { createChangeSet, withDependents, type Composed, type Created, type Dissolved, type Place, type PutBack, type RangePart } from "./changeset";
-import { BRIEF_ATTR, changesOn, elementsOf, restoreStyle, upgradeEditStyles } from "./canvas-style";
+import { createChangeSet, withDependents, type Change, type SavedChangeSet, type Composed, type Created, type Dissolved, type Place, type PutBack, type RangePart } from "./changeset";
+import { BRIEF_ATTR, changesOn, DELETED_ATTR, elementsOf, LAYER_ID_ATTR, MOVE_ATTR, ORIGINAL_TEXT_ATTR, restoreStyle, takeInEdits, TEXT_ATTR, upgradeEditStyles } from "./canvas-style";
 import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
-import { componentBrief, showComponent } from "./promote";
+import { componentBrief, componentElements, showComponent } from "./promote";
 import { decompose, undissolve } from "./stacks";
 
 /** The round with what the page shows in each part of change `id`'s range, read (ticket 65); null: it could not be, and the change is as one with no parts. */
@@ -32,6 +32,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   if (!taken.length) return round;
   const doc = new DOMParser().parseFromString(round.canvas, "text/html");
   upgradeEditStyles(doc);
+  takeInApplied(doc, round.changeSet);
   for (const change of taken) {
     changes.remove(change.id);
     const rest = changes.list();
@@ -63,4 +64,50 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   if (!changes.list().length) return null;
   const doctype = /^<!DOCTYPE html>/i.test(round.canvas) ? "<!DOCTYPE html>" : "";
   return { canvas: doctype + doc.documentElement.outerHTML, changeSet: changes.save() };
+}
+
+/**
+ * Takes into a saved canvas, put back in `doc`, the changes of the rounds
+ * before that were applied (`changeSet.applied`, ticket 68), while the
+ * changes left were carried over: their edits go under those left, as the
+ * page's own, which no undo takes back off (`takeInEdits`); the words
+ * applied are the words the page has, which new words go from. It looks as
+ * it did. A ChangeSet with none applied changes nothing. The ChangeSet
+ * saved from then on has none: the canvas has them.
+ */
+export function takeInApplied(doc: Document, changeSet: SavedChangeSet) {
+  const applied = changeSet.applied ?? [];
+  if (!applied.length) return;
+  const left = changeSet.changes;
+  // A move or a deletion of one of a loop's instances alone is not on the others: those elements are marked with it.
+  const on = (changes: Change[]) => (el: Element) => {
+    const id = el.getAttribute(LAYER_ID_ATTR);
+    return (id ? changesOn(id, changes) : []).filter((change) => {
+      const mark = change.kind === "move" ? MOVE_ATTR : change.kind === "delete" ? DELETED_ATTR : null;
+      return !change.data || !mark || el.getAttribute(mark) === change.property;
+    });
+  };
+  // The elements each component's changes are written on, those applied and those left.
+  const written = new Map<Element, { applied: Change[]; left: Change[] }>();
+  for (const [changes, which] of [[applied, "applied"], [left, "left"]] as const) {
+    for (const change of changes) {
+      if (change.scope !== "component" || change.kind !== "style" || !change.target.loc) continue;
+      for (const el of componentElements(doc, change.target.loc)) {
+        const both = written.get(el) ?? { applied: [], left: [] };
+        both[which].push(change);
+        written.set(el, both);
+      }
+    }
+  }
+  const appliedOn = on(applied);
+  const touched = new Set([...doc.querySelectorAll(`[${LAYER_ID_ATTR}]`)].filter((el) => appliedOn(el).length || written.get(el)?.applied.length));
+  takeInEdits(touched, appliedOn, on(left), (el) => written.get(el) ?? { applied: [], left: [] });
+  for (const change of applied) {
+    if (change.kind !== "text") continue;
+    for (const el of elementsOf(doc, change.layer)) {
+      if (el.getAttribute(TEXT_ATTR) !== change.property) continue;
+      el.removeAttribute(TEXT_ATTR);
+      el.removeAttribute(ORIGINAL_TEXT_ATTR);
+    }
+  }
 }

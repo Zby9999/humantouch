@@ -205,8 +205,8 @@ export function doctypeOf(doc: Document): string {
   return doc.compatMode === "CSS1Compat" ? "<!DOCTYPE html>" : "";
 }
 
-/** Puts a canvas saved by `serializeCanvas` back into `iframe`, as `freeze` would. */
-export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas> {
+/** Puts a canvas saved by `serializeCanvas` back into `iframe`, as `freeze` would; `takeIn`, on it before it is laid out. */
+export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: Document) => void): Promise<Canvas> {
   const doc = iframe.contentDocument;
   if (!doc) return Promise.reject(new Error("Vernier Kit: the canvas iframe is not in the document"));
   doc.open();
@@ -220,6 +220,8 @@ export function restore(html: string, iframe: HTMLIFrameElement): Promise<Canvas
   root.removeAttribute(LAYOUT_ATTR);
   // Saved by an earlier Vernier Kit: as edits are kept now, looking as it did.
   upgradeEditStyles(doc);
+  // A round carried over from one that ended with changes not applied (ticket 68): what was applied taken in, before it is laid out.
+  takeIn?.(doc);
   const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
     const image = new Image();
     image.src = still.getAttribute(PIXELS_ATTR)!;

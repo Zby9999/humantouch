@@ -79,10 +79,11 @@ export interface CheckAsk {
 /**
  * Edited by the designer, or claimed and being applied by the Agent: with the
  * ids of the changes the Agent reported done, those that count as applied (as
- * the page shows them, ADR 0013), the check the last `done` asks for, and
- * the one `finish` asks for before it ends the round.
+ * the page shows them, ADR 0013), the check `claim` asks for of the changes
+ * carried over from the round before (ticket 68), the check the last `done`
+ * asks for, and the one `finish` asks for before it ends the round.
  */
-export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; applied: number[]; check?: CheckAsk; closing?: CheckAsk };
+export type RoundStatus = { status: "editing" } | { status: "claimed"; done: number[]; applied: number[]; opening?: CheckAsk; check?: CheckAsk; closing?: CheckAsk };
 
 /** How long a page waits for the dev server to bring an edit in before it says a change does not show, when it cannot tell whether one is on its way. */
 export const CHECK_SETTLE_MS = 3000;

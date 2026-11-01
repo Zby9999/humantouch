@@ -1001,6 +1001,28 @@ describe("claim, Stacks made and dissolved", () => {
     expect(notes).toContain("- **Location:** **New:** the layer is made in change 1, and is not in the source yet. Apply that change first, then change it there.\n");
     expect(notes).toContain("- **Currently set by:** nothing yet: the layer is new\n");
   });
+
+  test("a change left to a layer made in a round before, its making applied then, says it is in the source now, to be found by its place on the page (ticket 68)", async () => {
+    const made = { ...board, loc: null, unlocated: false, made: "7", context: { path: ["Page", "App", "Frame", "Stack"], element: "<div>" } };
+    saveRound(
+      stack({ layer: "7", after: { ...settings, place: place(1), layers: [{ layer: "5", target: title, from: place(1) }] } }),
+      { ...smallRadius, layer: "7", target: made },
+    );
+    await cli("claim");
+    await cli("done", "1");
+    await cli("finish");
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("- **Layer:** Stack, `<div>` (Page › App › Frame › Stack)\n");
+    expect(notes).toContain(
+      "- **Location:** **Made in a round before.** The layer was made by a change of an earlier round, applied then: it is in the source now, but the canvas has no source marker for it. Find it in the source from its place on the page, above.\n",
+    );
+    expect(notes).toContain("- **Currently set by:** unknown: the layer was made in a round before\n");
+    // The round archived holds its own changes alone: not what the round before applied.
+    await cli("finish");
+    expect(history()[1].changeSet).not.toHaveProperty("applied");
+  });
 });
 
 describe("claim, new layers, words, deleting and copying", () => {
@@ -1380,8 +1402,8 @@ function openPage(answer: (id: number) => object | null, pages = 1, { saw, answe
     } catch {
       return; // `finish` taking it away as it was read.
     }
-    // What `done` asks, and `finish` before it ends the round.
-    for (const check of [round?.check, round?.closing]) {
+    // What `claim` asks of a round carried over, `done` asks, and `finish` before it ends the round.
+    for (const check of [round?.opening, round?.check, round?.closing]) {
       if (!check) continue;
       if (!heard.has(check.key)) {
         heard.set(check.key, performance.now() + answerAfter);
@@ -1653,7 +1675,8 @@ describe("done, checked on the page", () => {
     expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 2.\n",
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
-    expect(existsSync(join(project, ".vernier/checks.json"))).toBe(false);
+    // Change 2 is carried over to the next round (ticket 68): the open page is still counted, with none of this round's checks.
+    expect(JSON.parse(readFileSync(join(project, ".vernier/checks.json"), "utf8"))).toMatchObject({ pages: 1, results: {} });
   });
 });
 
@@ -1821,6 +1844,94 @@ describe("last", () => {
 
   test("with no round before, says so", async () => {
     expect(await cli("last")).toEqual({ code: 0, output: "No earlier round of design changes to undo.\n", errors: "" });
+  });
+});
+
+describe("changes not applied, carried over to the next round on the same canvas (ticket 68)", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+  const halfOpacity = { ...redFill, id: 3, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
+  const changeSet = () => JSON.parse(readFileSync(join(project, ".vernier/changeset.json"), "utf8"));
+
+  test("finish with changes not applied keeps them, numbered from 1 in their order, and the canvas; the applied ones are archived and kept apart, for the canvas to take in", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "2");
+
+    const { output } = await cli("finish");
+
+    expect(finished(output)).toBe("Round finished: 1 of 3 changes applied. Not marked done: 1, 3.\n");
+    expect(readdirSync(join(project, ".vernier")).sort()).toEqual(["canvas.html", "changeset.json", "history"]);
+    // The archive keeps the whole round, as before: `last` is as it was.
+    expect(history()[0].changeSet).toEqual({ lastId: 3, changes: [redFill, smallRadius, halfOpacity] });
+    expect(changeSet()).toEqual({
+      lastId: 2,
+      changes: [
+        { ...redFill, id: 1, carried: true },
+        { ...halfOpacity, id: 2, carried: true },
+      ],
+      applied: [smallRadius],
+    });
+  });
+
+  test("with every change applied, nothing is kept and the canvas goes, as before", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "1", "2");
+    await cli("finish");
+    expect(readdirSync(join(project, ".vernier"))).toEqual(["history"]);
+  });
+
+  /** A round that ended with changes 1 and 3 of three not applied; the designer then made one more, numbered after them. */
+  async function carriedRound() {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "2");
+    await cli("finish");
+    const next = changeSet();
+    const shadow = { ...redFill, id: 3, property: "blur", before: 0, after: 4, style: { filter: "blur(4px)" } };
+    writeFileSync(join(project, ".vernier/changeset.json"), JSON.stringify({ ...next, lastId: 3, changes: [...next.changes, shadow] }));
+    return shadow;
+  }
+
+  test("the next claim gives the changes left and those made since, numbered on from 1, and says which were left, as claim run again says what is applied (ticket 67)", async () => {
+    const shadow = await carriedRound();
+
+    const { output } = await cli("claim");
+
+    expect(output).toMatch(/^# Design changes to apply\n\nThis round carries 2 changes over from the round before, not applied then \(1 and 2\), and none of its 3 changes are applied yet\. Left: 3 changes, made by the designer in Vernier Kit\. Apply them/);
+    expect(changeSections(output)).toBe(changeSections((await describeOnly({ ...redFill, id: 1 }, { ...halfOpacity, id: 2 }, shadow)).output));
+  });
+
+  test("with a page open, the claim asks it what it shows now: a change it shows is applied already, the others go from the value it shows now to theirs", async () => {
+    await carriedRound();
+    closePage = openPage((id) => (id === 2 ? { outcome: "shown" } : { outcome: "not shown", actual: { type: "solid", color: "#DC2626", opacity: 1 } }));
+
+    const { output } = await cli("claim");
+
+    expect(state().opening.ids).toEqual([1, 2]);
+    expect(output).toContain(
+      "This round carries 2 changes over from the round before, not applied then (1 and 2), and 1 of its 3 changes is applied already (2), as the designer's page shows it. Left: 2 changes, made by the designer in Vernier Kit.",
+    );
+    expect(section(output, 2)).toBe("");
+    expect(section(output, 1)).toContain("- **Design intent:** Change the fill from #DC2626 to #FF0000 at 50% opacity.\n");
+    // As read, it stays: claim run again, and `last` once the round is over, say the same.
+    expect(changeSet().changes[0].before).toEqual({ type: "solid", color: "#DC2626", opacity: 1 });
+    expect((await cli("done", "2")).output).toBe("Change 2 done: 1 of 3 changes applied.\nChecked on the page: it shows the change.\n");
+  });
+
+  test("with every change left shown on the page now, says to finish the round", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    await cli("done", "2");
+    await cli("finish");
+    closePage = openPage(() => ({ outcome: "shown" }));
+
+    const { output } = await cli("claim");
+
+    expect(output).toBe(
+      "This round carries 1 change over from the round before, not applied then (1), and all 1 of its changes are applied already, as the designer's page shows them: run `npx vernierkit finish` to end it.\n",
+    );
   });
 });
 

@@ -197,6 +197,42 @@ export function restoreStyle(els: Elements, names: string[], others: Change[], b
   );
 }
 
+/**
+ * Takes what changes applied in a round before declare on canvas elements
+ * under their edits, as the page's own (ticket 68): as a copy's look is, in
+ * `copied`, which no undo takes back off, and the look the page has from
+ * then on (`asPage`). What the changes left of each element declare stays in
+ * its edits, alone; of the changes to the component itself the element
+ * writes (`component`), those left stay as they are. The elements look as they did.
+ */
+export function takeInEdits(els: Elements, applied: (el: Element) => Change[], left: (el: Element) => Change[], component: (el: Element) => { applied: Change[]; left: Change[] }) {
+  editRules(
+    els,
+    (el, rules) => {
+      const own = left(el);
+      // What the edits declare but what the changes left do: the applied ones', and what goes with them.
+      const kept: RuleBlocks = structuredClone(rules.edits);
+      for (const change of own) {
+        const block = blockOf(kept, change.breakpoint ?? null, false);
+        if (!block) continue;
+        for (const name in change.style) delete block.style[name];
+        if ("display" in change.style) delete block.hidden;
+      }
+      for (const change of applied(el)) put(el, kept, change.style, change.breakpoint ?? null);
+      const promoted = (changes: Change[]) => {
+        const blocks: RuleBlocks = { base: { style: {} }, at: [] };
+        for (const change of changes) put(el, blocks, change.style, change.breakpoint ?? null);
+        return blocks;
+      };
+      const written = component(el);
+      rules.copied = effective({ lifted: {}, copied: rules.copied, promoted: promoted(written.applied), edits: kept });
+      rules.promoted = promoted(written.left);
+      rules.edits = promoted(own);
+    },
+    { ruledOnly: true },
+  );
+}
+
 /** Runs `look` on an element as if shown: what the edits hide is read and measured as it is laid out when shown. Nothing of it is painted meanwhile. */
 export function asShown<T>(el: Element, look: () => T): T {
   if (!hiddenByEdit(el)) return look();

@@ -49,7 +49,9 @@ function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): Sav
 /**
  * Preview mode shows only the toggle; edit mode adds the shell around the
  * canvas. A round with changes not yet applied keeps its canvas: edit mode
- * comes back to it, after a reload too. With none, edit mode freezes the page afresh.
+ * comes back to it, after a reload too, and after a round that ended with
+ * changes not applied, carried over to the next on it (ticket 68). With none,
+ * edit mode freezes the page afresh.
  * The page always shows the code as it is: the changes are seen on the canvas,
  * played at full size (ADR 0010). Once the Agent claims the round, the editor
  * folds into the toggle, locked until the round ends, while the page checks
@@ -134,12 +136,13 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       setSeen([]);
     };
   }, [isClaimed, round]);
-  // What `done` asks, and `finish` before it ends the round.
+  // What `claim` asks of the changes carried over from the round before (ticket 68), `done` asks, and `finish` before it ends the round.
   const answer = (ask: CheckAsk | undefined) => {
     if (!ask || !store || round === undefined) return;
     if (checks.current) checks.current.ask(ask);
     else for (const id of ask.ids) store.report({ id, at: new Date().toISOString(), answers: ask.key, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
   };
+  useLayoutEffect(() => answer(claimed?.opening), [claimed?.opening?.key, round]);
   useLayoutEffect(() => answer(claimed?.check), [claimed?.check?.key, round]);
   useLayoutEffect(() => answer(claimed?.closing), [claimed?.closing?.key, round]);
 
@@ -166,7 +169,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   useEffect(
     () =>
       store?.watch((next) => {
-        // Claimed: the round is what the Agent got. Ended: what is left of it, nothing once archived.
+        // Claimed: the round is what the Agent got. Ended: what is left of it, carried over to the next round (ticket 68); nothing with all of it applied.
         if (lastStatus.current && lastStatus.current.status !== next.status) void load();
         lastStatus.current = next;
         setStatus(next);

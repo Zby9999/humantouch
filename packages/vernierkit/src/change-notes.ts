@@ -78,7 +78,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(status ? [`**Status:** ${status}`] : []),
     `**Kind:** ${kindTitle(change)}`,
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
-    `**Location:** ${target.made ? newLayer(target.made, list) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
+    `**Location:** ${target.made ? (madeBefore(target, list) ? MADE_BEFORE : newLayer(target.made, list)) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
     `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list)}`,
@@ -97,7 +97,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
-    ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
+    ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${madeBefore(target, list) ? "unknown: the layer was made in a round before" : target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
     ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
@@ -437,6 +437,18 @@ function unstackIntent(before: StackSettings, { width, height, layers }: Dissolv
 function member(target: Target): string {
   return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${target.loc ? `at \`${target.loc}\`` : "not located"})`;
 }
+
+/**
+ * A layer made by no change of this round, in a round changes were carried
+ * over to (ticket 68): by one of a round before, applied then. The code has
+ * it now; the canvas has no marker of the source for it.
+ */
+function madeBefore(target: Target, list: Change[]): boolean {
+  return !!target.made && list.some((change) => change.carried) && !list.some((change) => madeBy(change) === target.made);
+}
+
+const MADE_BEFORE =
+  "**Made in a round before.** The layer was made by a change of an earlier round, applied then: it is in the source now, but the canvas has no source marker for it. Find it in the source from its place on the page, above.";
 
 /** Where a layer made this round is: in the change that makes it. */
 function newLayer(made: string, list: Change[]): string {

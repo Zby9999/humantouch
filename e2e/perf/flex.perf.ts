@@ -996,3 +996,108 @@ test.describe("a change at a breakpoint", () => {
     verdict(met, `reading the parts of a change's range: longest stretch ${longest.toFixed(1)}ms, ${ofReading.length} long tasks of its own, ${whileReading.length} while it went on`);
   });
 });
+
+/**
+ * Ticket 68: edit mode comes back to the same canvas, the round saved, and
+ * after a round that ended with changes not applied, carried over to the next
+ * on it, what was applied taken into it as it opens. On the large page, with
+ * three changes to the 96 product cards (two to the card, one to its body's
+ * Stack): entering edit mode on the round saved, not claimed (as before
+ * ticket 68); then, the Agent having applied the corners and finished, on
+ * the round carried over. Each run from a page loaded afresh, the saved
+ * canvas put back, and once more without a reload; the long tasks from the
+ * click to every view up are counted. The canvas is never saved meanwhile:
+ * each entry takes what was applied in afresh.
+ */
+test.describe("the same canvas again", () => {
+  test.use({ keepRoundInMemory: false });
+  const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
+  const PARTS = `${REACT18}src/big/parts.tsx`;
+  const VERNIER = `${REACT18}.vernier`;
+  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const original = readFileSync(PARTS, "utf8");
+  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("rounded-card border");
+  const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
+  const changesSaved = () => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")) : null);
+  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.afterEach(async () => {
+    writeFileSync(PARTS, original);
+    rmSync(VERNIER, { recursive: true, force: true });
+    await expect.poll(served).toBe(true);
+  });
+
+  /** Enters edit mode `ENTER_RUNS` times, each on a page loaded afresh then once more on the same page, after one to warm up: the times, and the long tasks of each. */
+  async function entries(page: Page) {
+    const times: number[] = [];
+    const long: number[][] = [];
+    for (let run = 0; run <= ENTER_RUNS; run++) {
+      await openBigPage(page);
+      for (const again of [false, true]) {
+        if (again) {
+          await page.getByRole("button", { name: EXIT_LABEL }).click();
+          await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+          await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+          await settle(page, 600);
+        }
+        await page.evaluate(armTasks, "none");
+        const entry = await enterAndMeasure(page, TOGGLE_LABEL);
+        await settle(page, 600);
+        const seen = await takenTasks(page);
+        if (run === 0) continue;
+        times.push(entry.desktopUp);
+        long.push(seen.long.map((task) => task.duration));
+      }
+    }
+    return { times, long };
+  }
+
+  test("entering edit mode on the same canvas, a round saved or carried over, takes at most 150ms", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectCard(page, 6, { parent: true });
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await selectCard(page, 6);
+    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    await gap.fill("10");
+    await gap.press("Enter");
+    await expect.poll(() => changesSaved()?.changes.length ?? 0).toBe(3);
+    await page.getByRole("button", { name: EXIT_LABEL }).click();
+    await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+
+    const saved = await entries(page);
+    expect(changesSaved()?.changes.length).toBe(3);
+
+    // The Agent applies the corners, and finishes: the fill and the gap are left (ticket 68).
+    await vernierkit("claim");
+    writeFileSync(PARTS, readFileSync(PARTS, "utf8").replace(CARD, CARD.replace("rounded-card", "rounded-[20px]")));
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius), { timeout: 20_000 }).toBe("20px");
+    await vernierkit("done", "1");
+    await vernierkit("finish");
+    const carriedOver = changesSaved();
+    const carried = carriedOver?.applied?.length ? await entries(page) : null;
+    if (carried) expect(changesSaved()).toEqual(carriedOver);
+
+    const rows = [
+      { name: "on the round saved", ...saved, summary: summarize(saved.times) },
+      ...(carried ? [{ name: "on the round carried over", ...carried, summary: summarize(carried.times) }] : []),
+    ];
+    const met = rows.every((row) => row.summary.median <= ENTER_TARGET_MS);
+    keep("sameCanvas", { elements, rows: rows.map(({ name, times, long, summary }) => ({ name, summary, samples: times, longTasks: long })) });
+    print(
+      report(
+        `Entering edit mode on the same canvas, ${elements} elements, ${VIEWS.length} views, 3 changes to 96 cards — ${mode}`,
+        rows.map(({ name, summary }) => ({ name, summary, target: `median ≤ ${ENTER_TARGET_MS}ms`, met: summary.median <= ENTER_TARGET_MS })),
+        [
+          ...rows.map(({ name, long }) => `${name}: long tasks per entry ${long.map((tasks) => tasks.length).join(", ")}; the longest ${Math.max(0, ...long.flat()).toFixed(0)}ms`),
+          carried ? "Carried over: 2 changes left, 1 applied, taken into the canvas at each entry." : "No round carried over: this code drops the canvas once the round ends.",
+        ],
+      ),
+    );
+    verdict(met, `entering edit mode on the same canvas: medians ${rows.map((row) => row.summary.median.toFixed(1)).join(", ")}ms, target ${ENTER_TARGET_MS}ms`);
+  });
+});

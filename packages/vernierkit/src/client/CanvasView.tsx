@@ -29,6 +29,8 @@ export type { Tool } from "./canvas-keys";
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
   restoreFrom: string | null;
+  /** Done on the saved canvas put back, before it is laid out: what was applied in a round before taken in (ticket 68). */
+  takeIn?(doc: Document): void;
   /** Called once the page is frozen, or the saved canvas restored, and laid out: with the views that show it, and where in the workspace to show the layers off it. */
   onCanvas(views: Views, workspace: HTMLElement): void;
   /** The layers off the canvas, shown in the workspace beside the views. */
@@ -82,7 +84,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -213,7 +215,7 @@ export function CanvasView(props: Props) {
     // The shell around the canvas. It stays see-through until there is a canvas, so the page shows until it can turn into one.
     const shell = viewport.current!.parentElement!;
     shell.style.opacity = "0";
-    const frozen = restoreFrom === null ? freeze(window, iframe.current!) : restore(restoreFrom, iframe.current!);
+    const frozen = restoreFrom === null ? freeze(window, iframe.current!) : restore(restoreFrom, iframe.current!, takeIn);
     // Pause the page underneath, now that it has been copied: no focus, no clicks.
     const body = document.body;
     const wasInert = body.inert;

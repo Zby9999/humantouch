@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
+import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/vernierkit/src/client/agent-stall";
 import { recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
-import { expect, test, type Page } from "./fixtures";
+import { expect, test, type Locator, type Page } from "./fixtures";
 import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
 
 /**
@@ -11,7 +11,8 @@ import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./proje
  * Agent, the way real ones do or fail to, through a round of three changes to
  * the cards of the loop. Each playbook records the numbers of the mechanism it
  * tries, in `bench-results/playbooks/` and in the output; it asserts none of
- * them. Tickets 64–68 each add the assertion of their own goal.
+ * them. Tickets 64–68 each add the assertion of their own goal; ticket 68's
+ * own playbooks also measure the canvas edit mode comes back to.
  */
 
 /** These tests save into the example project's `.vernier/` for real, and edit its source. */
@@ -274,6 +275,9 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   expect(stalledNoticeAfterMs!).toBeLessThanOrEqual(STALL_MS + NOTICE_LATE_MS);
   expect(stalledNoticeAfterMs!).toBeGreaterThanOrEqual(STALL_MS - NOTICE_LATE_MS);
   expect(noticeLeftAfterEnding).toBe(0);
+  // Ticket 68: the two changes not applied are in the round still, the one applied is not.
+  expect(kept / unapplied.length).toBe(1);
+  expect(nextRound.some((change) => change.property === applied)).toBe(false);
   // Ticket 66: the code the Agent changed while it had the round claimed asks nothing once the designer edits again.
   expect((await unclaimedNoticesShown(page)).length).toBe(0);
 });
@@ -404,4 +408,268 @@ test("playbook: the Agent sits still a long time between two changes, then goes 
   expect((await stalledNoticesShown(page)).length).toBe(1);
   // Ticket 66: an Agent that sits still and goes on, claimed all along, never has the designer told the code changes unclaimed.
   expect((await unclaimedNoticesShown(page)).length).toBe(0);
+});
+
+/** The views of the canvas, and the layers off it, by their iframes' titles. */
+const VIEW_TITLES = ["Canvas", "Tablet 768", "Phone 390"];
+/** What is compared of each element of the canvas, in each view and off it: where it is drawn, and how. */
+const LOOKED_AT = [
+  "display", "position", "left", "top", "width", "height", "margin-top", "margin-left", "padding-top", "padding-left",
+  "background-color", "border-top-color", "border-top-width", "border-top-left-radius", "opacity", "color", "font-size",
+  "font-weight", "flex-direction", "row-gap", "column-gap", "transform", "visibility",
+];
+
+/**
+ * Every element of the canvas, in each view and in each layer off it, as it
+ * is drawn: its box in its document and `LOOKED_AT`, by view, in page order.
+ */
+async function canvasLooks(page: Page): Promise<Record<string, string[]>> {
+  const frames: [string, Locator][] = [
+    ...VIEW_TITLES.map((title): [string, Locator] => [title, page.locator(`iframe[title="${title}"]`)]),
+    ...(await page.locator('iframe[title="Off canvas"]:visible').all()).map((frame, i): [string, Locator] => [`Off canvas ${i + 1}`, frame]),
+  ];
+  const looks: Record<string, string[]> = {};
+  for (const [title, frame] of frames) {
+    looks[title] = await frame.contentFrame().locator("body").evaluate((body, names) => {
+      const doc = body.ownerDocument;
+      const view = doc.defaultView!;
+      return [...body.querySelectorAll("*")].map((el) => {
+        const box = el.getBoundingClientRect();
+        const style = view.getComputedStyle(el);
+        const at = [box.x + view.scrollX, box.y + view.scrollY, box.width, box.height].map((n) => n.toFixed(1)).join(" ");
+        return [el.localName, at, ...names.map((name) => style.getPropertyValue(name))].join("|");
+      });
+    }, LOOKED_AT);
+  }
+  return looks;
+}
+
+/** Of two looks of the canvas, how many elements were compared, how many differ, and how many differ in the phone view and off the canvas. */
+function compareLooks(before: Record<string, string[]>, after: Record<string, string[]>) {
+  const views = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  let compared = 0;
+  let differing = 0;
+  const differingIn: Record<string, number> = {};
+  for (const view of views) {
+    const [a, b] = [before[view] ?? [], after[view] ?? []];
+    const n = Math.max(a.length, b.length);
+    const off = Array.from({ length: n }, (_, i) => a[i] !== b[i]).filter(Boolean).length;
+    compared += n;
+    differing += off;
+    differingIn[view] = off;
+  }
+  return { views, compared, differing, differingIn };
+}
+
+/** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */
+async function pickIn(page: Page, view: string, selector: string) {
+  const box = (await page.locator(`iframe[title="${view}"]`).contentFrame().locator(selector).first().boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+}
+
+async function setField(page: Page, name: string, value: string) {
+  const box = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+  await box.fill(value);
+  await box.press("Enter");
+}
+
+/**
+ * The round of `designTheRound`, and two more changes: the cards' opacity in
+ * the phone view, at its breakpoint only (4), and the title moved off the
+ * canvas (5, a deletion). Still in edit mode.
+ */
+async function designTheRoundAcrossViews(page: Page) {
+  await designTheRound(page);
+  await pickIn(page, "Phone 390", "article");
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Opacity", "50");
+  // Back to the desktop view.
+  await pickIn(page, "Canvas", "article");
+  const desktop = page.locator('iframe[title="Canvas"]');
+  const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.mouse.wheel(-400, 0);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  const title = (await desktop.contentFrame().locator("h1").boundingBox())!;
+  const view = (await desktop.boundingBox())!;
+  await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(view.x - 200, title.y, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
+  await expect.poll(() => readVernier("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
+    "style", "style", "style", "style at a breakpoint", "delete",
+  ]);
+}
+
+/** Back to preview mode, the canvas gone: pressed while it grows back over the page, the toggle would turn back to it. */
+async function leaveEditMode(page: Page) {
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+}
+
+async function enterAgain(page: Page) {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("article").first()).toBeVisible();
+  // Every view, and the layers off the canvas, up.
+  for (const title of VIEW_TITLES) await expect(page.locator(`iframe[title="${title}"]`).contentFrame().locator("article").first()).toBeVisible();
+}
+
+/** The round's changes now, by their numbers and properties. */
+const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readVernier("changeset.json")?.changes ?? [];
+
+/** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
+const frozenAfresh = (page: Page) => canvas(page).locator("[data-vk-layer], [data-vk-style]").count().then((n) => n === 0);
+
+test("playbook: the Agent stops halfway; the designer ends the round, and edits again on the same canvas, the changes not applied there still (ticket 68)", async ({ page }) => {
+  await designTheRoundAcrossViews(page);
+  const before = await canvasLooks(page);
+  const designed = changesNow();
+  await leaveEditMode(page);
+  await vernierkit("claim");
+  await apply(page, 1);
+  await vernierkit("done", "1");
+  await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
+  // The Agent is gone; the designer ends the round, as the notice that it seems to have stopped would (ticket 67).
+  await pressAndHold(page);
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
+
+  // Between two rounds: the toggle counts what is left.
+  const unapplied = designed.filter((change) => change.id !== 1).map((change) => change.property);
+  await expect(page.getByRole("button", { name: /not applied yet$/ })).toHaveText(String(unapplied.length));
+  const left = changesNow();
+  const kept = left.filter((change) => unapplied.includes(change.property)).length;
+  const appliedBack = left.some((change) => change.property === designed[0].property && !change.carried);
+
+  // Edit mode again: the same canvas, as it was when the round was designed.
+  await enterAgain(page);
+  const after = await canvasLooks(page);
+  const same = compareLooks(before, after);
+  // ⌘Z has nothing of this edit mode to undo: what was applied stays.
+  await page.getByRole("region", { name: "Canvas viewport" }).focus();
+  await page.keyboard.press("Meta+z");
+  const afterUndo = compareLooks(before, await canvasLooks(page));
+  // A new edit: to the fill applied, from the red the code has now.
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField(page, "Fill color", "0000ff");
+  await expect.poll(() => changesNow().length).toBe(unapplied.length + 1);
+  const newEdit = changesNow().at(-1)!;
+  await leaveEditMode(page);
+
+  // The next claim: the changes left, numbered from 1, then the new one.
+  const notes = await vernierkit("claim");
+  const sections = [...notes.matchAll(/^## (\d+)\. /gm)].map((match) => Number(match[1]));
+  const opening = notes.split("\n")[2];
+  const last = await vernierkit("last");
+  // Ended by hand again, nothing applied: all of it is left.
+  await pressAndHold(page);
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
+  const leftAgain = changesNow().map((change) => change.id);
+  // Undone from the list with no canvas up: the corners, and the new fill. What was applied stays: the red fill.
+  await page.getByRole("button", { name: /not applied yet$/ }).click();
+  const changeList = page.getByRole("dialog", { name: "Changes" });
+  const listed = await changeList.getByRole("listitem").count();
+  await changeList.getByRole("button", { name: "Undo the corner radius of Card" }).click();
+  await changeList.getByRole("button", { name: "Undo the fill of Card" }).click();
+  await expect.poll(() => changesNow().length).toBe(leftAgain.length - 2);
+  await page.keyboard.press("Escape");
+  await enterAgain(page);
+  const afterListUndo = await canvas(page).locator("article").first().evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).borderTopLeftRadius]);
+  await leaveEditMode(page);
+  // Then the rest discarded: edit mode freezes the page afresh.
+  await page.getByRole("button", { name: /not applied yet$/ }).click();
+  await changeList.getByRole("button", { name: "Discard all" }).click();
+  await changeList.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect.poll(() => readVernier("changeset.json")).toBeNull();
+  await enterAgain(page);
+  const refrozen = await frozenAfresh(page);
+
+  record("carries-over-what-is-left", {
+    unappliedKeptForNextRound: kept / unapplied.length,
+    appliedBackInNextRound: appliedBack,
+    numberedFrom1: left.map((change) => change.id),
+    canvasElementsCompared: same.compared,
+    canvasElementsDiffering: same.differing,
+    differingByView: same.differingIn,
+    breakpointChangeKept: left.some((change) => change.property === "opacity"),
+    offCanvasKept: left.some((change) => change.kind === "delete"),
+    differingAfterUndoKey: afterUndo.differing,
+    listed,
+    afterListUndo,
+    newEdit: { id: newEdit.id, before: newEdit.before },
+    nextClaimSections: sections,
+    nextClaimOpening: opening,
+    lastHasTheRound: last.startsWith("# Last round of design changes") && last.includes("- **Status:** Applied"),
+    leftWhenEndedAgain: leftAgain,
+    frozenAfreshOnceDiscarded: refrozen,
+    unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
+  });
+  // Ticket 68: every change not applied is left, in its place on the same canvas, numbered from 1; none applied.
+  expect(kept / unapplied.length).toBe(1);
+  expect(appliedBack).toBe(false);
+  expect(left.map((change) => change.id)).toEqual([1, 2, 3, 4]);
+  expect(same.views).toEqual([...VIEW_TITLES, "Off canvas 1"]);
+  expect(same.differing).toBe(0);
+  expect(afterUndo.differing).toBe(0);
+  expect(listed).toBe(5);
+  expect(afterListUndo).toEqual(["rgb(255, 0, 0)", "12px"]);
+  expect(newEdit).toMatchObject({ id: 5, before: { type: "solid", color: "#FF0000" } });
+  expect(sections).toEqual([1, 2, 3, 4, 5]);
+  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx vernierkit finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
+  expect(last.startsWith("# Last round of design changes") && last.includes("- **Status:** Applied")).toBe(true);
+  expect(leftAgain).toEqual([1, 2, 3, 4, 5]);
+  expect(refrozen).toBe(true);
+  expect((await unclaimedNoticesShown(page)).length).toBe(0);
+});
+
+test("playbook: the Agent finishes with changes not applied (⚠️); they are left for the next round on the same canvas, and once all are applied, edit mode freezes the page afresh (ticket 68)", async ({ page }) => {
+  await designTheRound(page);
+  const before = await canvasLooks(page);
+  await leaveEditMode(page);
+  await vernierkit("claim");
+  await apply(page, 1);
+  await vernierkit("done", "1");
+  const finished = (await vernierkit("finish")).split("\n")[0];
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
+  const left = changesNow();
+  const unapplied = CHANGES.slice(1).length;
+
+  await enterAgain(page);
+  const same = compareLooks(before, await canvasLooks(page));
+  await leaveEditMode(page);
+
+  // The rest applied in the next round: then no change is left, and edit mode freezes the page afresh.
+  const notes = await vernierkit("claim");
+  await apply(page, 2);
+  await apply(page, 3);
+  await vernierkit("done", "1", "2");
+  await vernierkit("finish");
+  const leftAtLast = readVernier("changeset.json");
+  await enterAgain(page);
+  const refrozen = await frozenAfresh(page);
+  const lastRound = await vernierkit("last");
+
+  record("finishes-with-changes-left", {
+    finished,
+    unappliedKeptForNextRound: left.filter((change) => change.property !== "fill").length / unapplied,
+    appliedBackInNextRound: left.some((change) => change.property === "fill"),
+    numberedFrom1: left.map((change) => change.id),
+    canvasElementsCompared: same.compared,
+    canvasElementsDiffering: same.differing,
+    nextClaimOpening: notes.split("\n")[2],
+    leftOnceAllApplied: leftAtLast?.changes.length ?? 0,
+    frozenAfreshOnceAllApplied: refrozen,
+    lastIsTheNextRound: lastRound.includes("## 1. Corner radius") && !lastRound.includes("## 3."),
+  });
+  expect(finished).toBe("Round finished: 1 of 3 changes applied. The page does not show: 2, 3.");
+  expect(left.map((change) => [change.id, change.property])).toEqual([
+    [1, "radius"],
+    [2, "stroke"],
+  ]);
+  expect(same.differing).toBe(0);
+  expect(leftAtLast).toBeNull();
+  expect(refrozen).toBe(true);
 });

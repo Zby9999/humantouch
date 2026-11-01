@@ -5,11 +5,11 @@
  * `last` prints the round before, to undo it by. `init`, `doctor` and
  * `remove` install Vernier Kit, check it, and take it back out.
  */
-import { changes as changesWord, describeChanges, toApply } from "./change-notes";
+import { changes as changesWord, describeChanges, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
 import { listed, ordinal, propertyName, value } from "./design-values";
 import type { PlacedOnPage } from "./client/check";
-import type { Change, Margins, Place } from "./client/changeset";
+import type { Change, Margins, Place, SavedChangeSet } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
@@ -26,7 +26,9 @@ import {
   readState,
   snapshotCode,
   vernierFolder,
+  writeAtomically,
   writeState,
+  type RoundState,
   type VernierFolder,
 } from "./vernier-folder";
 
@@ -75,9 +77,12 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
     return 0;
   }
   // The code as it was before the Agent changed anything, to undo the round by.
-  if (!state) await writeState(folder, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) });
+  const claimed: RoundState | null = state ? null : { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) };
+  if (claimed) await writeState(folder, claimed);
   const checks = await readChecks(folder);
-  const notes = toApply(!!checks?.pages && isRunning(checks.service));
+  const pageOpen = !!checks?.pages && isRunning(checks.service);
+  const notes = toApply(pageOpen);
+  if (claimed && changeSet.changes.some((change) => change.carried)) return claimCarried(folder, root, io, claimed, changeSet, notes, pageOpen);
   if (!state) {
     io.write(describeChanges(changeSet.changes, root, notes));
     return 0;
@@ -94,6 +99,56 @@ async function claim(folder: VernierFolder, root: string, io: Io): Promise<numbe
   const left = changeSet.changes.filter((change) => !applied.includes(change.id));
   io.write(describeChanges(changeSet.changes, root, { ...notes, only: left, intro: (count) => `This round is claimed already, and ${so}. Left: ${notes.intro(count)}` }));
   return 0;
+}
+
+/**
+ * Claims a round that changes were carried over to, from one that ended with
+ * them not applied (ticket 68). An open page is asked first what it shows of
+ * them now, the code as it is: those it shows are applied already, as in
+ * claim run again (ticket 67); the others go from the value it shows now.
+ * That value is kept as the change's `before`, for claim run again and `last`.
+ */
+async function claimCarried(folder: VernierFolder, root: string, io: Io, claimed: RoundState, changeSet: SavedChangeSet, notes: NotesOptions, pageOpen: boolean): Promise<number> {
+  const carried = changeSet.changes.filter((change) => change.carried).map((change) => change.id);
+  let applied: number[] = [];
+  if (pageOpen) {
+    // A brief has no value to check on the page.
+    const asked = changeSet.changes.filter((change) => change.carried && change.kind !== "brief").map((change) => change.id);
+    const opening = await newAsk(folder, asked);
+    await writeState(folder, { ...claimed, opening });
+    const results = asked.length ? await waitForChecks(folder, opening, claimed.claimedAt) : new Map<number, CheckResult>();
+    applied = appliedOf(claimed, Object.fromEntries([...results].map(([id, result]) => [id, { ...result, at: claimed.claimedAt! }])));
+    const reread = changeSet.changes.map((change) => {
+      const result = results.get(change.id);
+      return result?.outcome === "not shown" && readsBefore(change, result.width) ? { ...change, before: result.actual } : change;
+    });
+    if (reread.some((change, i) => change !== changeSet.changes[i])) {
+      changeSet = { ...changeSet, changes: reread };
+      await writeAtomically(folder.changeSet, `${JSON.stringify(changeSet, null, 2)}\n`);
+    }
+  }
+  const all = changeSet.changes.length;
+  const how = applied.length === 1 ? "as the designer's page shows it" : "as the designer's page shows them";
+  const over = `This round carries ${changesWord(carried.length)} over from the round before, not applied then (${listed(carried)})`;
+  if (applied.length === all) {
+    io.write(`${over}, and all ${all} of its changes are applied already, as the designer's page shows them: run \`npx vernierkit finish\` to end it.\n`);
+    return 0;
+  }
+  const so = applied.length ? `${applied.length} of its ${all} changes ${applied.length === 1 ? "is" : "are"} applied already (${listed(applied)}), ${how}` : `none of its ${all} changes are applied yet`;
+  const left = changeSet.changes.filter((change) => !applied.includes(change.id));
+  io.write(describeChanges(changeSet.changes, root, { ...notes, only: left, intro: (count) => `${over}, and ${so}. Left: ${notes.intro(count)}` }));
+  return 0;
+}
+
+/**
+ * Whether what the page shows instead of a change, as it checked it, is the
+ * change's value before, the code as it is: a style change's, read as wide as
+ * the window (`width` none), or in its one range. One whose range is in parts
+ * has them read again by the page before the claim instead.
+ */
+function readsBefore(change: Change, width: number | undefined): boolean {
+  if (change.kind !== "style" || change.parts) return false;
+  return change.breakpoint ? true : width === undefined;
 }
 
 /** The longest `claim` waits for an open page to read the parts of the changes' ranges it has yet to: it takes a page a moment. */

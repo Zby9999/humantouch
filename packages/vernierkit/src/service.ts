@@ -152,7 +152,7 @@ export async function startService({ root }: { root: string }): Promise<Service>
         const { id, undone, ...result } = JSON.parse(body) as CheckReport;
         if (typeof id !== "number" || typeof result.at !== "string" || !["string", "undefined"].includes(typeof result.answers)) return send(res, 400);
         // Asked by its key: what a page saw as the code changed carries none, though it may carry the ask's millisecond.
-        const asked = !!result.answers && (state.check?.key === result.answers || state.closing?.key === result.answers);
+        const asked = !!result.answers && [state.opening, state.check, state.closing].some((ask) => ask?.key === result.answers);
         await updateChecks((checks) => {
           const earlier = checks.results[id];
           // Of two pages answering the same ask, the one that could check has the say.
