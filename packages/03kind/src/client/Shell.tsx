@@ -150,8 +150,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const [worked, setWorked] = useState<{ view: View; name: string } | null>(null);
   /** The selected layers, the one selected last at the end. */
   const [selected, setSelected] = useState<Layer[]>([]);
-  /** Bumped on each undo and redo: the Layers panel lists what one brings back as it was. */
-  const [undone, bumpUndone] = useReducer((n: number) => n + 1, 0);
+  /**
+   * Bumped on each edit that restores layers as they were: an undo or redo, a deletion taken back from the
+   * change list, a layer off the canvas put back. The Layers panel lists what one brings back as it was.
+   */
+  const [restored, bumpRestored] = useReducer((n: number) => n + 1, 0);
   /** Bumped on each edit: the panel reads its values from the canvas. */
   const [, edited] = useReducer((n: number) => n + 1, 0);
   /** Values are being adjusted: the selection box steps aside so the change shows. */
@@ -326,6 +329,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const layer = outside.layer();
     if (!editor || !offCanvas || !layer) return;
     let back: Layer | null = null;
+    // Moved off this round and not edited off it, it is the layer that was deleted, back as it was; any other is new.
+    bumpRestored(undefined);
     editor.batch(() => {
       back = editor.putBack({ el: layer.el, kept: outside.keep() }, to);
       editor.along(
@@ -457,7 +462,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       lastNudge.current = null;
       const layers = redo ? editor.redo() : editor.undo();
       if (history.past.length === steps) return;
-      bumpUndone(undefined);
+      bumpRestored(undefined);
       select(layers);
       onEdit();
     };
@@ -520,7 +525,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               tree={tree}
               offCanvas={offCanvas?.list().map((outside) => outside.editor.tree()) ?? []}
               selected={selected}
-              undone={undone}
+              restored={restored}
               onSelect={(layer, extend) => select(extend ? toggleIn(selected, layer) : [layer])}
             />
           )}
@@ -583,7 +588,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               flush();
             },
             revert(id) {
-              const { taken, brought } = offAgain(withDependents(changeSet.list(), id));
+              const going = withDependents(changeSet.list(), id);
+              const { taken, brought } = offAgain(going);
+              // A deletion taken back: the layer is back as it was before it was deleted.
+              if (going.some((change) => change.kind === "delete")) bumpRestored(undefined);
               let reverted = false;
               editor.batch(() => {
                 reverted = !!editor.revert(id);

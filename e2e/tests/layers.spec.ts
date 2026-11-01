@@ -170,6 +170,23 @@ test("a layer deleted and the delete undone is listed open and closed as it was,
   expect(await treeRows(page)).toEqual(before);
 });
 
+test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
+  await enterEditMode(page);
+  // The header closed by hand, then the Stack it is in deleted: the button beside it is open.
+  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".tk-tree-chevron").click();
+  await layerTree(page).getByRole("treeitem", { name: "Stack", exact: true }).nth(1).click();
+  const before = await treeRows(page);
+  expect(before).not.toContain("5 Third Kind — Text");
+  expect(before).toContain("5 Get started — Text");
+
+  await page.keyboard.press("Delete");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Header" })).toHaveCount(0);
+  await page.getByRole("button", { name: /not applied yet/ }).click();
+  await page.getByRole("dialog", { name: "Changes" }).getByRole("button", { name: /^Undo the delet/ }).click();
+  await expect(layerTree(page).getByRole("treeitem", { name: "Header" })).toHaveCount(1);
+  expect(await treeRows(page)).toEqual(before);
+});
+
 test("each part of the page shows up as Stack, Grid, Frame, text or a locked layer", async ({ page }) => {
   await page.getByRole("button", { name: "Get started" }).click();
   await page.evaluate(() => {

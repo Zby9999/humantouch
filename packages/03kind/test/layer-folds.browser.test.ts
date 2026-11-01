@@ -40,9 +40,9 @@ test("a deleted layer comes back closed and open as it was when the delete is un
   let tree = editor.tree();
   // The list open, two of its items closed, one open.
   let closed = new Set([at(tree, "item-0"), at(tree, "item-2")]);
-  const step = (undone: boolean) => {
+  const step = (restoring: boolean) => {
     const next = editor.tree();
-    closed = folds.follow(closed, [tree], [next], undone);
+    closed = folds.follow(closed, [tree], [next], restoring);
     tree = next;
   };
 
@@ -62,14 +62,14 @@ test("a deleted layer comes back closed and open as it was when the delete is un
   expect(ids(closed)).toEqual(["item-0", "item-2"]);
 });
 
-test("a layer that comes back other than by an undo or redo is open, as any layer new to the list, and stays so", () => {
+test("a layer that comes back other than by an edit that restores it is open, as any layer new to the list, and stays so", () => {
   const { editor, at } = openCanvas();
   const folds = createFolds(() => []);
   let tree = editor.tree();
   let closed = new Set([at(tree, "item-1")]);
-  const step = (undone: boolean) => {
+  const step = (restoring: boolean) => {
     const next = editor.tree();
-    closed = folds.follow(closed, [tree], [next], undone);
+    closed = folds.follow(closed, [tree], [next], restoring);
     tree = next;
   };
 

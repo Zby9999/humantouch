@@ -10,8 +10,8 @@ interface Props {
   /** The layers of each layer off the canvas (ADR 0009): listed beside the canvas's, as Framer lists them. */
   offCanvas: LayerTree[];
   selected: Layer[];
-  /** Counts the undos and redos: the layers one brings back are listed closed and open as they were before they went. */
-  undone: number;
+  /** Counts the edits that restore layers (undo, redo, a deletion taken back, a layer put back as it was): the layers one brings back are listed closed and open as they were before they went. */
+  restored: number;
   /** `extend`: ⇧ held, the layer joins the selection or leaves it. */
   onSelect(layer: Layer, extend: boolean): void;
 }
@@ -24,19 +24,19 @@ const MAX_OPEN_ROWS = 200;
  * layers off the canvas come first, each as it is named on the canvas, at
  * the level of the canvas's outermost layers; the canvas's follow.
  */
-export function LayerTreeView({ tree, offCanvas, selected, undone, onSelect }: Props) {
+export function LayerTreeView({ tree, offCanvas, selected, restored, onSelect }: Props) {
   const trees = [...offCanvas, tree];
   const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => new Set([...initiallyCollapsed(tree.root), ...offCanvas.flatMap(closedOutside)]));
   const list = useRef<HTMLDivElement>(null);
   // Built anew after a move: the same layers stay collapsed. A layer new off the canvas starts so.
-  // Brought back by an undo or redo, a layer is as it was before it went (ticket 74).
+  // Brought back by an undo, a redo, a deletion taken back or put back as it was, a layer is as it was before it went (ticket 74).
   const shown = useRef(trees);
   const [folds] = useState(() => createFolds(closedOutside));
-  const undoneSeen = useRef(undone);
-  const undoing = undone !== undoneSeen.current;
-  undoneSeen.current = undone;
+  const restoredSeen = useRef(restored);
+  const restoring = restored !== restoredSeen.current;
+  restoredSeen.current = restored;
   if (shown.current.length !== trees.length || shown.current.some((t, i) => t !== trees[i])) {
-    const next = folds.follow(collapsed, shown.current, trees, undoing);
+    const next = folds.follow(collapsed, shown.current, trees, restoring);
     shown.current = trees;
     if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
   }
