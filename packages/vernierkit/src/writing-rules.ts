@@ -32,7 +32,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
     name: "What sets the value now",
     calledFor: (change) => change.kind === "style" || change.kind === "unstack" || (change.kind === "stack" && !!change.sources?.length),
     text:
-      "start from what **Currently set by** names, and change that: a class, replace it; a rule, change it, or, when the rule styles elements outside the scope too, override it for this layer only. " +
+      "start from what **Currently set by** names, and change that: a class, replace it; a rule, change it only when every element it styles is in the scope, " +
+      "and when it styles elements outside the scope too, leave it as it is and override it for this layer only (with Tailwind, a class on the layer; with CSS files or CSS Modules, a rule for the layer's own class). " +
       "A text style the layer inherits (from a rule on `body`, say) is set on the layer itself, not changed there for all.",
   },
   {
@@ -48,8 +49,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
     name: "A rule in no CSS layer",
     calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null),
     text:
-      "it beats every class in a CSS layer, whatever their specificity: Tailwind v4 puts its utilities in a layer, so a utility class added over it does not show. " +
-      "Change that rule, narrow it, or, as a last resort, use the class's important form (`bg-blue-600!`).",
+      "it beats every class in a CSS layer, whatever their specificity. Tailwind v4 puts its utilities in one, so a utility class added over the rule does not show: " +
+      "one that overrides it for this layer only takes its important form (`bg-[#2563EB]!`, `rounded-lg!`).",
   },
   {
     name: "CSS Modules",
@@ -200,7 +201,9 @@ const placing = (change: Change) => (change.kind === "style" && PLACING.includes
 const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change) => checkable(change) && change.kind === "style" && !placing(change),
-    text: "a style change by the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance, whatever class or rule gives it",
+    text:
+      "a style change by the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance, whatever class or rule gives it, and on nothing else: " +
+      "an edit that also changes elements outside the scope is wrong, though `done` says it shows",
   },
   {
     calledFor: (change) => checkable(change) && change.kind === "style" && !change.breakpoint,

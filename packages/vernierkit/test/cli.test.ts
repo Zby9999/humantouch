@@ -334,6 +334,33 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule((await cli("claim")).output, "All breakpoints")).not.toContain("`done`");
   });
 
+  test("a rule that styles elements outside the scope too is left as it is and overridden for this layer: past a rule in no CSS layer, with the class's important form; a round with no such rule says nothing of it (ticket 65)", async () => {
+    saveRound(style("fill", { sources: [ruleSource("button", null)] }));
+
+    const notes = (await cli("claim")).output;
+
+    expect(rule(notes, "What sets the value now")).toContain("change it only when every element it styles is in the scope");
+    expect(rule(notes, "What sets the value now")).toContain("when it styles elements outside the scope too, leave it as it is and override it for this layer only");
+    expect(rule(notes, "A rule in no CSS layer")).toContain("important form (`bg-[#2563EB]!`, `rounded-lg!`)");
+    expect(notes).not.toContain("last resort");
+    expect(notes).not.toContain("narrow it");
+
+    saveRound(style("fill", { sources: [ruleSource(".bg-white", "utilities")] }));
+    expect((await cli("claim")).output).not.toContain("important form");
+  });
+
+  test("how the page checks says it reads a style change on the layer alone: an edit that changes elements outside the scope too is wrong, though done says it shows; a round with no style change says nothing of it (ticket 65)", async () => {
+    saveRound(style("fill"));
+
+    const checks = rule((await cli("claim")).output, "How the page checks");
+
+    expect(checks).toContain("on the layer in every instance, whatever class or rule gives it, and on nothing else");
+    expect(checks).toContain("an edit that also changes elements outside the scope is wrong, though `done` says it shows");
+
+    saveRound(change("move", { before: place(2), after: place(1), order: { signs: ["li A", "li B"], self: 1, others: [] } }));
+    expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("outside the scope");
+  });
+
   test("how the page checks names the kinds of change in this round it cannot check: done says so, and the report says what was done", async () => {
     saveRound({ ...change("text", { before: "A", after: "B" }), id: 1 }, { ...change("brief", { before: null, after: "Bounce" }), id: 2 });
 

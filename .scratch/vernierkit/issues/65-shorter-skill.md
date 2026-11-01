@@ -1102,3 +1102,85 @@ Cursor：没跑成。
 - 没跑真实 Agent。下一步单派复测：Cursor 30 次、Claude 30 次。
 - button-over-rule 没改，要设计师在上面四种写法里定。
 - 没有草图的新说法只在 dissolve-place-frame 一个场景里出现，效果要复测才知道。
+
+**补修五（11/01，设计师定的写法）**
+
+起因：补修四查明的 button-over-rule 变慢。`claim` 末尾那句「Change that rule, narrow it, or, as a last resort, use the class's important form」被 Cursor 当成先后顺序，6/6 次先去收窄全局 `button` 规则，最长一段思考 41–72 秒；「How the page checks」里的「whatever class or rule gives it」又让它想到改全局规则也能过核对。设计师 2026-11-01 在补修四列的四种写法里定了第 1 种（用 `!`），并要「How the page checks」补一句。
+
+改了什么（`writing-rules.ts`，只改三句的字，没改什么时候打印）：
+
+1. 「What sets the value now」：规则管的元素都在范围内时才改规则本身；还管着范围外的元素时不动它，只为这个图层覆盖，Tailwind 在图层上写类，CSS 文件、CSS Modules 为图层自己的类写一条规则（不引入 `!`）。
+   - 改前：「start from what **Currently set by** names, and change that: a class, replace it; a rule, change it, or, when the rule styles elements outside the scope too, override it for this layer only.」
+   - 改后：「start from what **Currently set by** names, and change that: a class, replace it; a rule, change it only when every element it styles is in the scope, and when it styles elements outside the scope too, leave it as it is and override it for this layer only (with Tailwind, a class on the layer; with CSS files or CSS Modules, a rule for the layer's own class).」
+   - 后面那句继承文字样式的没动。
+2. 「A rule in no CSS layer」：不再给三种写法，覆盖它的类就用 important 形式，是默认写法。
+   - 改前：「it beats every class in a CSS layer, whatever their specificity: Tailwind v4 puts its utilities in a layer, so a utility class added over it does not show. Change that rule, narrow it, or, as a last resort, use the class's important form (`bg-blue-600!`).」
+   - 改后：「it beats every class in a CSS layer, whatever their specificity. Tailwind v4 puts its utilities in one, so a utility class added over the rule does not show: one that overrides it for this layer only takes its important form (`bg-[#2563EB]!`, `rounded-lg!`).」
+   - 两条一致：要不要动规则只在第 1 条说；第 2 条只说在 Tailwind v4 上覆盖用的类怎么写。button-over-rule 里 `button` 规则也管对话框的按钮，按第 1 条不动它、在按钮上写类，按第 2 条这个类用 `!`。
+   - 「important form」只跟 Tailwind v4 的工具类说（「Tailwind v4 puts its utilities in one, so …: one that …」）。v3 的工具类不在 layer 里，CSS Modules 的规则也不在，这两种按第 1 条写普通类或规则。
+3. 「How the page checks」的样式那一项，在「whatever class or rule gives it」后补：「, and on nothing else: an edit that also changes elements outside the scope is wrong, though `done` says it shows」。只说页面只看这个图层、改过头核对也查不出，没有重复 Scope 那一行。
+4. Skill 里没有这几句（`skill/SKILL.md` 只有流程和报告格式），没动。spec 里三处中文转述跟着改了（生成说明下「有样式改动」「当前值来自不在 CSS layer 里的规则」「How the page checks」）。
+
+**测试**
+
+- 新加两个单测（`test/cli.test.ts`，经 `claim` 的输出），都先失败、再改代码：
+  - 样式改动的当前值来自不在 CSS layer 里的 `button` 规则：「What sets the value now」写着只在规则管的元素都在范围内时才改它、管着范围外的元素时不动它并只为这个图层覆盖；「A rule in no CSS layer」写着 important 形式（`bg-[#2563EB]!`, `rounded-lg!`）；整份输出里没有「last resort」「narrow it」。当前值来自 layer 里的 `.bg-white` 的一轮，整份输出里没有「important form」。
+  - 有样式改动的一轮，「How the page checks」写着只看这个图层（「and on nothing else」）、改到范围外的元素即使 `done` 说显示了也不行；只有重排的一轮，这一条里没有「outside the scope」。
+  - 把这次的改动去掉（用 a661a73 的 `writing-rules.ts`），这两个测试失败，其余照旧通过。
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 677 个通过、1 个跳过；测量台的 node 测试 29 个通过。
+- `VK_E2E_PORT=5600 pnpm test:e2e`，review 后的最终代码跑了 4 次全量：
+  - 第 1 次 327 个通过、1 个失败、1 个跳过（5.1 分钟）。失败的是「playbook: the Agent stops halfway, with no finish …」，ticket 67 的停住提示没出现（`stalledNoticeAfterMs` 为 null），那时本机 load 约 5.6。
+  - 后 3 次都是 328 个通过、1 个跳过（4.9、4.8、4.9 分钟），这一条都通过。
+  - review 前那版（只差两处措辞）也是 328 / 1（5.1 分钟）。
+  - 这次只改命令行的文字，碰不到页面上的停住提示，按偶发记。
+  - 每次跑前把 `bench-results/playbooks/` 备份到 scratchpad，跑完原样恢复，`diff -r` 无差别。
+
+**claim 输出逐字比较（`pnpm bench:agents --dry --claim-out`，10 个标准场景）**
+
+改前在 a661a73 上跑，和补修四的「改后」逐个相同；改后在 review 后的代码上跑。字数是字符串长度。
+
+| 场景 | 改前 | 改后 | 差 | 变了的行（字数） |
+|---|---|---|---|---|
+| button-over-rule | 4,566 | 4,851 | +285 | What sets the value now 337 → 506；A rule in no CSS layer 285 → 288；How the page checks 526 → 639 |
+| cards-style | 6,227 | 6,509 | +282 | What sets the value now 337 → 506；How the page checks 526 → 639 |
+| data-and-text | 4,929 | 4,929 | 0 | 相同 |
+| dissolve-place-frame | 6,653 | 6,822 | +169 | What sets the value now 337 → 506 |
+| fill-gap-brief | 6,600 | 6,882 | +282 | What sets the value now 337 → 506；How the page checks 623 → 736 |
+| phone-breakpoints | 7,758 | 8,040 | +282 | What sets the value now 337 → 506；How the page checks 630 → 743 |
+| promote-and-grid | 6,173 | 6,455 | +282 | What sets the value now 337 → 506；How the page checks 526 → 639 |
+| put-back-and-new-text | 6,377 | 6,377 | 0 | 相同 |
+| reorder-and-move | 3,419 | 3,419 | 0 | 相同 |
+| type-and-stack | 5,883 | 6,165 | +282 | What sets the value now 337 → 506；How the page checks 641 → 754 |
+
+- 「What sets the value now」在 7 个有样式改动（或解散 Stack）的场景里都变，+169 字。
+- 「How the page checks」在其中 6 个有页面能核对的样式改动的场景里变，+113 字。dissolve-place-frame 的样式改动都是自由定位，走的是位置那一项，所以没变。
+- 「A rule in no CSS layer」只在 button-over-rule 出现，+3 字。
+- `done`、`finish` 不受影响：这三句只在 `claim` 的「How to write them」里（`change-notes.ts` 的 `toApply`）。`last` 不打印这一节。
+- 每次 `--dry` 都是 10 个场景全部设得起来（改前一次，review 前后各一次）。
+
+**Skill、切换按钮体积**
+
+- Skill 没改：3,688 字（41 行）。
+- 切换按钮：9,998 B（`react.dev.js` 818 + 共用 chunk 9,180），gzip，限额 10,240 B，没变。改的只是命令行的文字。
+
+**code-review（两路，a661a73 到这次的代码）**
+
+修了的：
+- 「…takes its important form」原来接在「Tailwind v4 puts its utilities in a layer」的同一句里，读起来像通用规则；CSS Modules、Tailwind v3 的规则也是「in no CSS layer」，也会打印这一条。现在拆成两句，`!` 只跟 Tailwind v4 的工具类说。
+- 同一句里 layer 有两种意思（CSS layer 和图层）。现在 CSS layer 那处写成「in one」（承接前一句的「a CSS layer」）。
+- 「What sets the value now」原来用分号把规则的两种情况拆开，「when it styles…」像和「a class」「a rule」并列的第三种。现在改成「, and when…」，接在「a rule」后面。
+
+没改的：
+- 例子 `bg-[#2563EB]!` 用的是设计师给的写法，正好是 button-over-rule 的答案，也是任意值。Variables 一行本来就给了 `bg-[#2563EB]`、`rounded-lg`，所以 Agent 不会因此多知道什么；别的项目里它只当写法的样子。
+- 「A rule in no CSS layer」照旧在任何 `layer === null` 的规则来源时打印，包括 Tailwind v3 的类和 CSS Modules 的规则（这次没改 `calledFor`）。新句子只对 Tailwind v4 说 `!`，这两种情况没有单测（规则文字是固定的，测不出来）。
+- 「a rule for the layer's own class」：图层原来没有类的话要先给它一个，没写明。
+- 「whatever class or rule gives it」留着，补的那句已经说清改过头不行。
+- 第一个新测试同时钉两条规则，再加一个反例的轮；「last resort」「narrow it」不出现的断言钉的是设计师的决定（不再是最后手段），留着。
+
+**没做到的、有风险的**
+
+- 没跑真实 Agent。下一步另派复测：Cursor 30 次、Claude 30 次。
+- 7 个场景的 `claim` 输出各多 169–285 字（约 3–6%）。读入字数会随之升一点。
+- Tailwind v3 的项目里，比工具类特异度高的规则（`.hero button` 这类）类也压不过，这时要的是 v3 的前缀写法 `!bg-…`。说明里没讲；10 个场景里没有这种情况。
+- e2e 的停住提示那一条 4 次全量里失败过 1 次，见上。
