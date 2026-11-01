@@ -37,7 +37,8 @@ function files(): string[] {
   return [...new Set(out.split("\0").filter(Boolean))];
 }
 
-const isDone = (text: string) => /^\**Status:?\**:?\s*(done|resolved)\b/im.test(text);
+/** Whether the ticket's Status line, the first one in the file, says done or resolved. */
+const isDone = (text: string) => /^(done|resolved)\b/i.test(/^\**Status:?\**:?\s*(.*)$/m.exec(text)?.[1] ?? "");
 
 /** The lines of `text` to check, or none when the whole file is a record of the past. */
 export function linesToCheck(path: string, text: string): { line: number; text: string }[] {
@@ -91,6 +92,7 @@ test("only the records of the past are let through", () => {
   assert.deepEqual(linesToCheck(".scratch/f/issues/12-x.md", done), []);
   assert.deepEqual(linesToCheck(".scratch/f/issues/12-x.md", open)[4], { line: 5, text: old });
   assert.deepEqual(linesToCheck(".scratch/f/issues/23-x.md", `**Status:** done\n${old}\n> Install ${old}\n`), [{ line: 3, text: `> Install ${old}` }]);
+  assert.equal(linesToCheck(".scratch/f/issues/12-x.md", `${open}**Status:** done\n`).length, 7);
   assert.equal(linesToCheck("docs/goals.md", old).length, 1);
   assert.equal(linesToCheck("packages/x/adr/y.ts", old).length, 1);
 });
