@@ -180,9 +180,8 @@ describe("init, the Skill and .gitignore", () => {
     expect(read("AGENTS.md")).toBe("Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.\n");
   });
 
-  test("the Skill tells the Agent a put back is an off-canvas layer coming back onto the canvas, and never calls it set aside", () => {
-    expect(SKILL).toContain("**Put back** (an off-canvas layer, one the designer had moved off the canvas, put back onto it)");
-    expect(SKILL).toContain("- **Put back**: an off-canvas layer, one the designer moved off the canvas, comes back onto it, at the place given.");
+  // What a put back is, the claim says in its change notes (ticket 65): see "claim, layers off the canvas put back" in cli.test.ts.
+  test("the Skill never calls an off-canvas layer set aside", () => {
     expect(SKILL).not.toMatch(/set aside|aside (beside|off)/i);
   });
 
