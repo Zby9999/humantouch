@@ -14,6 +14,7 @@ import {
   type SavedRound,
   type Variable,
 } from "../service-protocol";
+import { CLAIM_PATH } from "./code-changes";
 import { roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
 
 export interface RoundStore extends RoundWatch {
@@ -23,6 +24,12 @@ export interface RoundStore extends RoundWatch {
   status(): Promise<RoundStatus>;
   /** Ends a claimed round as it is. */
   unlock(): Promise<void>;
+  /**
+   * Claims the round being edited, once what is being saved is in: the page
+   * saw one of its changes show, with no Agent having claimed it (ticket 78).
+   * `since`: when the run of code changes it saw it in began (ms since the epoch).
+   */
+  claim(since: number): Promise<void>;
   /** Answers the check `done` asked for. */
   report(check: CheckReport): Promise<void>;
   /** The project's own breakpoints from its Tailwind theme; null when it has none to be read. */
@@ -66,6 +73,10 @@ export function connectRoundStore(): RoundStore | null {
     },
     async unlock() {
       await request("POST", { path: UNLOCK_PATH });
+    },
+    async claim(since) {
+      await saving;
+      await request("POST", { path: CLAIM_PATH, body: JSON.stringify({ since }) });
     },
     async report(check) {
       await request("POST", { path: CHECKS_PATH, body: JSON.stringify(check) });

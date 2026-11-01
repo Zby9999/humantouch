@@ -48,6 +48,10 @@ export default function thirdKind(): Plugin {
     configureServer(server) {
       service = startService({ root });
       server.httpServer?.once("close", () => void service?.then((s) => s.close()));
+      // The project's files changing, but the editor layer's own saves: a round the page claims goes back to the code as it rested before (ticket 78).
+      server.watcher.on("all", (_event, file) => {
+        if (!/[\\/]\.03kind[\\/]/.test(file)) void service?.then((s) => s.codeChanged());
+      });
     },
     async transformIndexHtml() {
       if (!service) return;

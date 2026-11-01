@@ -36,6 +36,10 @@ interface Props {
   restoreFrom: string | null;
   /** Done on the saved canvas put back, before it is laid out: what was applied in a round before taken in (ticket 68). */
   takeIn?(doc: Document): void;
+  /** The page frozen afresh in place of a canvas (ticket 78): the camera to start at, where it was, with no mode switch to show. */
+  startAt?: Camera | null;
+  /** Kept up to date with where the camera is, once there is a canvas: for a canvas frozen afresh in its place to start there. */
+  cameraNow?: { current: Camera | null };
   /** Called once the page is frozen, or the saved canvas restored, and laid out: with the views that show it, and where in the workspace to show the layers off it. */
   onCanvas(views: Views, workspace: HTMLElement): void;
   /** The layers off the canvas, shown in the workspace beside the views. */
@@ -93,7 +97,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -254,7 +258,8 @@ export function CanvasView(props: Props) {
     let mounted = true;
     // The shell around the canvas. It stays see-through until there is a canvas, so the page shows until it can turn into one.
     const shell = viewport.current!.parentElement!;
-    shell.style.opacity = "0";
+    // In place of a canvas, it is up already: the page never shows.
+    if (!startAt) shell.style.opacity = "0";
     const frozen = restoreFrom === null ? freeze(window, iframe.current!) : restore(restoreFrom, iframe.current!, takeIn);
     // Pause the page underneath, now that it has been copied: no focus, no clicks.
     const body = document.body;
@@ -265,10 +270,12 @@ export function CanvasView(props: Props) {
       const canvasViews = createViews(frozen);
       setViews(canvasViews);
       onCanvas(canvasViews, workspace.current!);
-      const start = initialCamera(frozen, { width: viewsWidth(frozen.width, widths), height: frozen.height }, viewport.current!.getBoundingClientRect());
+      const start = startAt ?? initialCamera(frozen, { width: viewsWidth(frozen.width, widths), height: frozen.height }, viewport.current!.getBoundingClientRect());
       setCamera(start);
       shell.style.opacity = "";
-      if (animate && prefersReducedMotion()) {
+      if (startAt) {
+        // No mode switch to show.
+      } else if (animate && prefersReducedMotion()) {
         play(shell, [{ opacity: 0 }, { opacity: 1 }], { duration: MODE_FADE_MS, easing: EASE_OUT });
       } else if (animate) {
         // The page shrinks from where it is in the window into its place on the canvas.
@@ -381,6 +388,8 @@ export function CanvasView(props: Props) {
   const playingRef = useRef(playing);
   playingRef.current = playing;
   const beforePlaying = useRef<Camera | null>(null);
+  // Playing, the camera to come back to is the one before it.
+  if (cameraNow && canvas) cameraNow.current = (playing && beforePlaying.current) || camera;
   useLayoutEffect(() => {
     if (!played) return;
     if (playing) {

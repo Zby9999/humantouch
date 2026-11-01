@@ -14,9 +14,9 @@ async function enterEditMode(page: Page) {
   await expect(canvas(page).locator("h1")).toBeVisible();
 }
 
-/** The toast at the bottom of the canvas, read out as it changes. */
+/** The toast at the bottom middle of the canvas, read out as it changes: not the one at its bottom left, which tells of the code changing (ticket 78). */
 function toast(page: Page) {
-  return page.getByRole("status");
+  return page.getByRole("status").and(page.locator(".tk-toasts"));
 }
 
 async function selectRow(page: Page, name: string, nth = 0) {

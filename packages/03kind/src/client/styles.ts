@@ -111,16 +111,7 @@ export const styles = /* css */ `
 .tk-button.is-primary { background: #0d99ff; color: #fff; }
 .tk-button.is-primary:hover { background: #007be5; }
 
-/* Editing paused (ticket 66): over the whole shell, which takes no pointer meanwhile, a notice dark like the change list. */
-.tk-paused {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483647;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgb(0 0 0 / 0.24);
-}
+/* A notice, dark like the change list: the Agent seems to have stopped (ticket 67). */
 .tk-notice {
   box-sizing: border-box;
   width: min(360px, 100%);
@@ -253,6 +244,21 @@ export const styles = /* css */ `
 }
 .tk-toast.is-fading { opacity: 0; translate: 0 8px; }
 @keyframes tk-toast-in { from { opacity: 0; translate: 0 8px; } }
+/* What happened outside, as the code changed (ticket 78): at the canvas's bottom left, apart from the toast answering the designer's own doing. */
+.tk-page-toasts {
+  position: absolute;
+  bottom: 16px;
+  left: 256px;
+  z-index: 1;
+  display: flex;
+  max-width: calc(100% - 512px);
+  pointer-events: none;
+}
+.tk-shell:is(.is-layers-hidden, .is-playing) > .tk-page-toasts { left: 16px; max-width: calc(100% - 272px); }
+.tk-toast.is-page { display: flex; align-items: center; gap: 8px; }
+.tk-toast.is-page > span { overflow: hidden; text-overflow: ellipsis; }
+.tk-toast.is-page:has(.tk-button) { padding-block: 4px; padding-right: 4px; }
+.tk-toast.is-page .tk-button { flex: none; }
 @keyframes tk-toast-fade-in { from { opacity: 0; } }
 
 .tk-panel-title {

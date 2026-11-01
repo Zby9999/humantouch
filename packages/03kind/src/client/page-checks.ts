@@ -14,7 +14,7 @@
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
 import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
-import { codeUpdates } from "./code-changes";
+import { codeUpdates, sliced } from "./code-changes";
 import { CHECK_MEASURE } from "./host";
 import { copyPage, type PageCopy } from "./page-copy";
 
@@ -361,4 +361,23 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       for (const copy of copies.values()) copy.close();
     },
   };
+}
+
+/**
+ * Whether the page, as wide as its window, shows any of `changes`, the round
+ * not claimed: the Agent applying it with no claim (ticket 78). Only what the
+ * window shows is looked at, with no copy of the page at other widths to make:
+ * a change shown there is enough to tell the round is being applied. Looked
+ * at a slice at a time.
+ */
+export function showsAnyHere(doc: Document, changes: Change[], viewWidths: number[]): Promise<boolean> {
+  return sliced(
+    (function* () {
+      for (const change of changes) {
+        if (checkHere(doc, change, changes, viewWidths)?.outcome === "shown") return true;
+        yield;
+      }
+      return false;
+    })(),
+  );
 }
