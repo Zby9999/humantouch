@@ -90,6 +90,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
     ...(change.kind === "style" && target.onlyText ? [onlyTextLine(target)] : []),
+    ...(change.anchor ? [placementLine(change)] : []),
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
@@ -184,6 +185,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
+      if (change.property === "right" || change.property === "bottom") return fromEdge(change);
       if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":
@@ -239,6 +241,29 @@ function intent(change: Change, list: Change[]): string {
       );
     }
   }
+}
+
+/** A change to a layer's `right` or `bottom`, which it is placed from and stays placed from (ticket 75). */
+function fromEdge({ property, before, after }: Change): string {
+  const [side, start] = property === "right" ? ["right", "left"] : ["bottom", "top"];
+  return (
+    `Change the ${propertyName(property)} from ${value(property, before)} to ${value(property, after)}: how far the layer's ${side} edge is from its container's, its CSS \`${side}\`. ` +
+    `It stays placed from that edge: do not place it by \`${start}\` instead.`
+  );
+}
+
+/**
+ * How a layer whose width or height changes is placed that way, when not from
+ * its container's left or top edge (ticket 75): it stays placed so.
+ */
+function placementLine({ property, anchor }: Change): string {
+  const across = property === "width";
+  if (anchor === "center") {
+    const [way, start, axis] = across ? ["across", "left", "x"] : ["down", "top", "y"];
+    return `**Placement:** the layer is centered ${way} on where its \`${start}\` places it, by \`translate: -50%\` (Tailwind's \`-translate-${axis}-1/2\`), and stays so: only its ${property} changes, on both sides alike.`;
+  }
+  const [side, start] = across ? ["right", "left"] : ["bottom", "top"];
+  return `**Placement:** the layer is placed from its container's ${side} edge (CSS \`${side}\`), and stays so: do not place it by \`${start}\` instead.`;
 }
 
 /**

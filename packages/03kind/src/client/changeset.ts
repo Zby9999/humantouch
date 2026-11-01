@@ -97,7 +97,7 @@ export interface Dissolved {
   layers: (Member & { x: number; y: number; width: number; height: number; style: Record<string, string>; margins?: Margins })[];
 }
 
-/** A layer's left and top margins, in px. */
+/** A layer's left and top margins, in px; for a `right` or `bottom` change, its right and bottom margins: those on the sides it is placed from. */
 export interface Margins {
   x: number;
   y: number;
@@ -251,8 +251,17 @@ export interface Change {
    * a move absolute): its left and top margins on the canvas, in the view
    * the change is made in. Its X and Y are its `left` and `top`, and it keeps
    * its margins: the canvas draws it past its X and Y by them, and so must the page.
+   * Placed by its `right` or `bottom` (a change to either), its right and bottom margins, the same way.
    */
   margins?: Margins;
+  /**
+   * A change to the width or height of a layer placed freely, which it is
+   * placed otherwise than from its container's left or top along (ticket 75):
+   * from the right or bottom edge (`end`), or centred on where it is placed
+   * by `translate: -50%` (`center`). It stays placed so: the notes say so. As
+   * it was placed when first changed.
+   */
+  anchor?: "end" | "center";
   /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
@@ -288,7 +297,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "anchor" | "instance"
     > & {
       kind?: Change["kind"];
     },

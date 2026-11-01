@@ -269,20 +269,22 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
 }
 
 /**
- * An `x`, `y` or `absolute` style change: shown where every instance is
- * absolute and drawn where the canvas draws it (`drawnThere`). `actual`:
- * along one axis, its `left` or `top` and its margin there; both, as a
- * placement is. Not shown: with the first that is not.
+ * An `x`, `y` or `absolute` style change, or a `right` or `bottom` one
+ * (ticket 75): shown where every instance is absolute and drawn where the
+ * canvas draws it (`drawnThere`), from its container's right or bottom edge
+ * for those. `actual`: along one axis, its `left` or `top` (`right`,
+ * `bottom`) and its margin there; both, as a placement is. Not shown: with the first that is not.
  */
 function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): [CheckResult, Element | null] {
+  const fromEnd = property === "right" || property === "bottom";
   for (const el of els) {
     if (!absolute(el)) return [{ outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) }, el];
-    const placed = placedOn(el);
+    const placed = placedOn(el, fromEnd);
     if (typeof after !== "number") {
       if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
       continue;
     }
-    const axis = property as "x" | "y";
+    const axis = property === "x" || property === "right" ? "x" : "y";
     if (!drawnThere(placed, { [axis]: after }, margins)) {
       return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
     }
@@ -306,12 +308,13 @@ function marginsFor(change: Change, at: PageWidth): CanvasMargins | null {
 
 type CanvasMargins = { margins: Margins; known: boolean };
 
-/** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px. */
+/** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px; from its container's right and bottom edges, its `right` and `bottom` and those margins. */
 export type PlacedOnPage = { x: number; y: number; margins: Margins };
 
-function placedOn(el: Element): PlacedOnPage {
+function placedOn(el: Element, fromEnd = false): PlacedOnPage {
   const style = getComputedStyle(el);
   const px = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100;
+  if (fromEnd) return { x: px(style.right), y: px(style.bottom), margins: { x: px(style.marginRight), y: px(style.marginBottom) } };
   return { x: px(style.left), y: px(style.top), margins: { x: px(style.marginLeft), y: px(style.marginTop) } };
 }
 

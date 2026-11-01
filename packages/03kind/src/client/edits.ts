@@ -8,16 +8,17 @@
  * every instance of that usage, and in every view of the canvas. Every edit
  * can be undone.
  */
+import { anchorOf } from "./anchors";
 import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
 import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { AS_STACK_ATTR, asShown, changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { changeKey, type Change, type ChangeSet, type Picked } from "./changeset";
-import type { Binder, Editor } from "./edit-commands";
+import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
 import { PLACING } from "./checkable";
-import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -191,6 +192,9 @@ export function createEditor(
     declare(els, declarations, breakpoint, idFor(layer));
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
+    // A size of a layer placed from its right or bottom edge, or centred: how, as when first changed.
+    const along = SIZE_AXES[property];
+    const anchor = along && (earlier ? earlier.anchor : anchorOf(el, along));
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
@@ -207,7 +211,8 @@ export function createEditor(
       ...(variables && { variables }),
       ...(within && { within }),
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
-      ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el) }),
+      ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, property === "right" || property === "bottom") }),
+      ...(anchor && anchor !== "start" && { anchor }),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
     });
@@ -358,6 +363,46 @@ export function createEditor(
     editor: () => editor,
   });
 
+  /**
+   * The CSS that places the layer from the edge across from its left or top
+   * edge, `right` or `bottom`, when `property` is its width or height and it
+   * is placed from that edge in the view worked in: changing its size changes
+   * that too, so its left or top edge stays (ticket 75). Null otherwise.
+   */
+  const placedFromEnd = (layer: Layer, property: Property): "right" | "bottom" | null => {
+    const along = SIZE_AXES[property];
+    const end = along === "x" ? "right" : "bottom";
+    if (!along || layer.text || !editor.can(layer, end)) return null;
+    return anchorOf(working.shown(layer.el), along) === "end" ? end : null;
+  };
+
+  /**
+   * `Editor.set`; `keepStart`: a layer placed from its right or bottom edge
+   * keeps its left or top edge as its size changes, its `right` or `bottom`
+   * changed with it (not as a handle resizes it, which says where each goes).
+   */
+  const setValue = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], { continues = false, step = false, variables }: SetOptions = {}, keepStart = true) => {
+    if (!editor.can(layer, property, value)) throw new Error(`03Kind: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
+    // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
+    views.lagBeside(working.beside, step || stepping, () => {
+      // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
+      if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
+        const place = { ...editor.read(layer, "absolute")!, [property]: value };
+        editHere(layer, "absolute", place, continues);
+        return;
+      }
+      const end = keepStart ? placedFromEnd(layer, property) : null;
+      if (!end) return editHere(layer, property, value, continues, variables);
+      // Its far edge goes as far as its size grows: its left or top edge stays, as in Figma.
+      const size = () => editor.measure(layer)[property as "width" | "height"];
+      const [was, from] = [size(), editor.read(layer, end)];
+      group(() => {
+        editHere(layer, property, value, continues, variables);
+        editHere(layer, end, round(from - (size() - was)), true);
+      }, continues);
+    });
+  };
+
   /** Set while edits that are steps of a run (`SetOptions.step`) are under way: each value set then is one. */
   let stepping = false;
   /** Makes what `edits` does, steps of a run when `step` (or when it already is). */
@@ -413,30 +458,21 @@ export function createEditor(
       const everywhere = changes.list().filter((change) => change.kind === "style" && change.property === property && !change.breakpoint && ofLayer(layer, change));
       return (here ?? everywhere.find(own) ?? everywhere[0])?.variables;
     },
-    set(layer, property, value, { continues = false, step = false, variables } = {}) {
-      if (!editor.can(layer, property, value)) throw new Error(`03Kind: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
-      // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
-      views.lagBeside(working.beside, step || stepping, () => {
-        // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
-        if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
-          const place = { ...editor.read(layer, "absolute")!, [property]: value };
-          editHere(layer, "absolute", place, continues);
-          return;
-        }
-        editHere(layer, property, value, continues, variables);
-      });
-    },
+    set: (layer, property, value, options) => setValue(layer, property, value, options),
     batch(edits, { continues = false, step = false } = {}) {
       steppedWhile(step, () => group(edits, continues));
     },
-    resize(layer, { width, height, x, y }, { continues = false } = {}) {
+    resize(layer, { width, height, x, y, right, bottom }, { continues = false } = {}) {
       steppedWhile(true, () =>
         group(
           () => {
-            if (width !== undefined) editor.set(layer, "width", { type: "fixed", value: width });
-            if (x !== undefined) editor.set(layer, "x", x);
-            if (height !== undefined) editor.set(layer, "height", { type: "fixed", value: height });
-            if (y !== undefined) editor.set(layer, "y", y);
+            // Each edge where the handle has it: no size keeps an edge of its own accord.
+            if (width !== undefined) setValue(layer, "width", { type: "fixed", value: width }, {}, false);
+            if (x !== undefined) setValue(layer, "x", x);
+            if (right !== undefined) setValue(layer, "right", right);
+            if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, {}, false);
+            if (y !== undefined) setValue(layer, "y", y);
+            if (bottom !== undefined) setValue(layer, "bottom", bottom);
           },
           continues,
           // Each step may set more or less than the one before: a run, apart from any of nudges.
@@ -454,6 +490,9 @@ export function createEditor(
   };
   return editor;
 }
+
+/** The axis a size is along: width across, height down. */
+const SIZE_AXES: Partial<Record<Property, "x" | "y">> = { width: "x", height: "y" };
 
 function find(layer: Layer, match: (layer: Layer) => boolean): Layer | null {
   if (match(layer)) return layer;

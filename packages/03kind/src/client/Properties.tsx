@@ -399,7 +399,8 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
   const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   return (
     <div class="tk-row tk-size-row tk-markable">
-      <BreakpointMark properties={[axis]} />
+      {/* A layer placed from its right or bottom edge has that changed with its size (ticket 75): reset together. */}
+      <BreakpointMark properties={[axis, axis === "width" ? "right" : "bottom"]} />
       <VariableSlot label={label} slot={variable}>
         <NumberField
           label={label}

@@ -16,12 +16,18 @@ import type { View } from "./views";
 /** Where a layer is moved to: a place among a Stack's layers, or absolute, at `left` and `top` in px, in a Frame. */
 export type Destination = { parent: Layer; index: number } | { parent: Layer; x: number; y: number };
 
-/** What a layer is resized to, as a handle has it (`Editor.resize`): Fixed sizes in px, border and padding in, and its X and Y placed freely; those not given stay as they are. */
+/**
+ * What a layer is resized to, as a handle has it (`Editor.resize`): Fixed
+ * sizes in px, border and padding in, and, placed freely, its X and Y, or its
+ * `right` and `bottom` for one placed from those edges (ticket 75); those not given stay as they are.
+ */
 export interface ResizeTo {
   width?: number;
   height?: number;
   x?: number;
   y?: number;
+  right?: number;
+  bottom?: number;
 }
 
 export interface SetOptions {
@@ -76,7 +82,14 @@ export interface Editor {
   can<P extends Property>(layer: Layer, property: P, value?: PropertyValues[P]): boolean;
   /** The layer's current value, as the view worked in shows it. */
   read<P extends Property>(layer: Layer, property: P): PropertyValues[P];
-  /** Changes the layer, across the instances of its usage, at the breakpoint worked in, and records the change. It can be undone. */
+  /**
+   * Changes the layer, across the instances of its usage, at the breakpoint
+   * worked in, and records the change. It can be undone. Its width or height
+   * changed, a layer placed freely keeps its left and top edges where they
+   * are, as in Figma: one placed from its container's right or bottom edge
+   * has its `right` or `bottom` changed with it, one step; one centred on
+   * where it is placed stays centred (ticket 75).
+   */
   set<P extends Property>(layer: Layer, property: P, value: PropertyValues[P], options?: SetOptions): void;
   /** Makes the edits `edits` makes one step, undone and redone together: the same change to several layers. */
   batch(edits: () => void, options?: SetOptions): void;
@@ -88,8 +101,9 @@ export interface Editor {
    * Resizes the layer, as a handle dragged on the canvas does: `width` and
    * `height`, those given, become Fixed at that size (outer, border and
    * padding in), whether they were Hug or Fill; nothing else changes. A
-   * layer placed freely in the view worked in goes to `x` and `y`, those
-   * given, in its container, so the edges not dragged stay where they are.
+   * layer placed freely in the view worked in goes to `x` and `y`, or `right`
+   * and `bottom`, those given, in its container, so the edges not dragged stay
+   * where they are.
    * At the breakpoint worked in, as `set` does. `continues`: one more step of
    * the resize under way, one step with those before it, though it sets more
    * or less than they did. A step that changes nothing (the layer already that

@@ -197,7 +197,7 @@ function readWhereMade(change: Change, width: number | undefined): boolean {
  * X and Y are its `left` and `top`, and it keeps its margins (ticket 65).
  */
 function beforeOf(change: Change, actual: unknown): unknown {
-  if (change.property === "x" || change.property === "y") {
+  if (PLACED_BY_SIDE[change.property]) {
     // With its margins kept (`margins`), the page read it so only absolute: a number is of a layer in the layout, with no X or Y.
     const placed = actual as { value?: unknown } | null;
     if (change.margins) return typeof placed?.value === "number" ? placed.value : undefined;
@@ -313,7 +313,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
   }
   if (change.margins && actual !== null && typeof actual === "object") {
     if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as PlacedOnPage, again, width);
-    if (change.property === "x" || change.property === "y") return axisOffByMargins(change.property, change.after as number, change.margins, actual as { value: number; margin: number }, again, width);
+    if (PLACED_BY_SIDE[change.property]) return axisOffByMargins(change.property as PlacedBySide, change.after as number, change.margins, actual as { value: number; margin: number }, again, width);
   }
   // What the page read: the property as the browser computes it, which the reference style writes.
   const css = Object.keys(change.style);
@@ -350,13 +350,29 @@ function offByMargins(to: { x: number; y: number }, margins: Margins, placed: Pl
   return `${drawn}${canvas}Check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
 }
 
-/** An absolute layer's X or Y the page draws elsewhere than the canvas, which draws it past its `left` or `top` by the margin it keeps (`offByMargins`). */
-function axisOffByMargins(axis: "x" | "y", to: number, margins: Margins, placed: { value: number; margin: number }, again: string, width?: number): string {
-  const side = axis === "x" ? "left" : "top";
-  const drawn = `${width ? `At ${width}px wide, the` : "The"} ${propertyName(axis)} is drawn at ${placed.value + placed.margin}px in its container (\`${side}\` ${placed.value}px, ${side} margin ${placed.margin}px), `;
+/** The properties that place an absolute layer along one axis, by the CSS of one side: X by its `left`, its right position by its `right` (ticket 75). */
+type PlacedBySide = "x" | "y" | "right" | "bottom";
+const PLACED_BY_SIDE: Record<string, { side: string; axis: "x" | "y" }> = {
+  x: { side: "left", axis: "x" },
+  y: { side: "top", axis: "y" },
+  right: { side: "right", axis: "x" },
+  bottom: { side: "bottom", axis: "y" },
+};
+
+/**
+ * An absolute layer's X or Y (or its right or bottom position, ticket 75)
+ * the page draws elsewhere than the canvas, which draws it past its `left` or
+ * `top` (`right`, `bottom`) by the margin it keeps (`offByMargins`).
+ */
+function axisOffByMargins(property: PlacedBySide, to: number, margins: Margins, placed: { value: number; margin: number }, again: string, width?: number): string {
+  const { side, axis } = PLACED_BY_SIDE[property];
+  const fromEnd = property === "right" || property === "bottom";
+  const where = fromEnd ? `from its container's ${side} edge` : "in its container";
+  const drawn = `${width ? `At ${width}px wide, the` : "The"} ${propertyName(property)} is drawn at ${placed.value + placed.margin}px ${where} (\`${side}\` ${placed.value}px, ${side} margin ${placed.margin}px), `;
+  const placedBy = fromEnd ? `it is placed by its \`${side}\`` : `its ${axis.toUpperCase()} is its \`${side}\``;
   const canvas = width
     ? `where the canvas places it at ${to}px, its \`${side}\`, and keeps its ${side} margin (${margins[axis]}px in the desktop view; at this width, the margin the project's breakpoints give it). `
-    : `where the canvas draws it at ${to + margins[axis]}px (its ${axis.toUpperCase()} is its \`${side}\`, ${to}px, and it keeps its ${margins[axis]}px ${side} margin). `;
+    : `where the canvas draws it at ${to + margins[axis]}px (${placedBy}, ${to}px, and it keeps its ${margins[axis]}px ${side} margin). `;
   if (!width && placed.value === to) {
     return `${drawn}${canvas}Its \`${side}\` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as \`m${side[0]}-6\` or \`margin-${side}\`), or add it to \`${side}\`, and ${again}.`;
   }

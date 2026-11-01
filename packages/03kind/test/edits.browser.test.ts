@@ -3951,6 +3951,28 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkChange(page, y)).toEqual({ outcome: "shown" });
   });
 
+  test("the `right` of a layer placed from its container's right edge is where the canvas draws it too: past it by the right margin it keeps there (ticket 75)", () => {
+    const html = STRUCTURE.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace(
+      `id="tag" ${loc("14:7")} style="`,
+      `id="tag" ${loc("14:7")} style="margin: 0 4px 0 0; position: absolute; right: 12px; top: 8px; `,
+    ).replace("display: inline-block;", "");
+    const { page, editor, changes, layer } = open(html);
+    editor.resize(layer("tag"), { right: 20 });
+    const [right] = changes.list();
+    expect(right).toMatchObject({ property: "right", before: 12, after: 20, margins: { x: 4, y: 0 }, style: { right: "20px" } });
+    const tag = page.getElementById("tag") as HTMLElement;
+
+    tag.style.right = "20px";
+    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    tag.style.margin = "0px";
+    expect(checkChange(page, right)).toEqual({ outcome: "not shown", actual: { value: 20, margin: 0 } });
+    tag.style.right = "24px";
+    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    // Placed by its left instead, where the canvas draws it all the same: its `right` is not the one given.
+    Object.assign(tag.style, { right: "auto", left: `${page.getElementById("board")!.clientWidth - 24 - tag.offsetWidth}px` });
+    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+  });
+
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
     const { page, editor, changes, layer } = open();
     editor.remove(layer("one"));
@@ -6028,5 +6050,104 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
 
     expect([at("marked").kind, at("marked").children]).toEqual(["text", []]);
     expect([at("close").kind, at("close").children.map((child) => child.kind)]).toEqual(["frame", ["text"]]);
+  });
+});
+
+/**
+ * Layers placed freely from their container's right or bottom edge, or
+ * centred on where they are placed by `translate: -50%`, as Tailwind v3
+ * (`transform`, through its variables) and v4 (`translate`) write
+ * `-translate-x-1/2` (ticket 75).
+ */
+const ANCHORED = `<!DOCTYPE html>
+<style>
+  * { --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; }
+  .v3-centred { --tw-translate-x: -50%; --tw-translate-y: -50%; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y)); }
+  .v4-centred { --tw-translate-x: calc(calc(1/2 * 100%) * -1); translate: var(--tw-translate-x) var(--tw-translate-y); }
+</style>
+<body style="margin: 0">
+  <div id="board" ${at("40:5")} style="position: relative; width: 300px; height: 200px">
+    <div id="right" ${at("41:7")} style="position: absolute; right: 10px; top: 8px; width: 30px; height: 20px"></div>
+    <div id="bottom" ${at("42:7")} style="position: absolute; left: 12px; bottom: 6px; width: 30px; height: 20px"></div>
+    <div id="v3" class="v3-centred" ${at("43:7")} style="position: absolute; left: 50%; top: 50%; width: 40px; height: 20px"></div>
+    <div id="v4" class="v4-centred" ${at("44:7")} style="position: absolute; left: 50%; top: 40px; width: 40px; height: 20px"></div>
+  </div>
+</body>`;
+
+describe("resizing a layer placed from its container's right or bottom edge, or centred (ticket 75)", () => {
+  const open = () => {
+    const canvas = openCanvas(ANCHORED);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const box = (id: string) => {
+      const r = canvas.doc.getElementById(id)!.getBoundingClientRect();
+      const p = canvas.doc.getElementById(id)!.parentElement!.getBoundingClientRect();
+      return [r.left - p.left, r.top - p.top, r.width, r.height];
+    };
+    const recorded = () => canvas.changes.list().map((change) => [change.property, change.before, change.after, change.anchor]);
+    return { ...canvas, layer, box, recorded };
+  };
+
+  test("by a handle, placed from the right: its `right` goes where the right edge is dragged, its width with it; dragged by its left edge, its width alone, the right edge staying", () => {
+    const { editor, layer, box, recorded } = open();
+
+    editor.resize(layer("right"), { width: 40, right: 0 });
+    expect(box("right")).toEqual([260, 8, 40, 20]);
+    editor.resize(layer("right"), { width: 50 });
+    expect(box("right")).toEqual([250, 8, 50, 20]);
+
+    expect(recorded()).toEqual([
+      ["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, "end"],
+      ["right", 10, 0, undefined],
+    ]);
+    // X shows where its left edge is now.
+    expect(editor.read(layer("right"), "x")).toBe(250);
+    editor.undo();
+    editor.undo();
+    expect(box("right")).toEqual([260, 8, 30, 20]);
+    expect(recorded()).toEqual([]);
+  });
+
+  test("its width or height set, as in the Design panel: its left and top edges stay, as in Figma; placed from the right or bottom, its `right` or `bottom` changes with it, one step", () => {
+    const { editor, layer, box, recorded } = open();
+
+    editor.set(layer("right"), "width", { type: "fixed", value: 50 });
+    editor.set(layer("bottom"), "height", { type: "fixed", value: 30 });
+
+    expect(box("right")).toEqual([260, 8, 50, 20]);
+    expect(box("bottom")).toEqual([12, 174, 30, 30]);
+    expect(recorded()).toEqual([
+      ["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, "end"],
+      ["right", 10, -10, undefined],
+      ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, "end"],
+      ["bottom", 6, -4, undefined],
+    ]);
+    editor.undo();
+    expect(box("bottom")).toEqual([12, 174, 30, 20]);
+    expect(recorded().map(([property]) => property)).toEqual(["width", "right"]);
+  });
+
+  test("centred by `translate: -50%`, as Tailwind v3 and v4 write it: its width or height set, it stays centred, and nothing else changes", () => {
+    const { editor, layer, box, recorded } = open();
+
+    editor.set(layer("v3"), "width", { type: "fixed", value: 60 });
+    editor.set(layer("v3"), "height", { type: "fixed", value: 30 });
+    editor.set(layer("v4"), "width", { type: "fixed", value: 80 });
+
+    expect(box("v3")).toEqual([120, 85, 60, 30]);
+    expect(box("v4")).toEqual([110, 40, 80, 20]);
+    expect(recorded()).toEqual([
+      ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 60 }, "center"],
+      ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, "center"],
+      // Placed by its top down, centred across only.
+      ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 80 }, "center"],
+    ]);
+  });
+
+  test("placed from its left and top, its width set: as before, nothing else changes and nothing says how it is placed", () => {
+    const { editor, layer, recorded } = open();
+
+    editor.set(layer("bottom"), "width", { type: "fixed", value: 50 });
+
+    expect(recorded()).toEqual([["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, undefined]]);
   });
 });

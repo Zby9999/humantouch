@@ -10,8 +10,8 @@
 import type { Change, Place } from "./changeset";
 import type { Property } from "./property-table";
 
-/** The properties that place a layer by its X and Y: its `left` and `top`, past which its margins draw it (`Change.margins`). */
-export const PLACING: readonly Property[] = ["x", "y", "absolute"];
+/** The properties that place a layer by its X and Y: its `left` and `top`, past which its margins draw it (`Change.margins`); or from its container's right or bottom edge, by its `right` or `bottom` and its margins there (ticket 75). */
+export const PLACING: readonly Property[] = ["x", "y", "absolute", "right", "bottom"];
 
 /**
  * Whether the page can check the change: it must find the layer by its

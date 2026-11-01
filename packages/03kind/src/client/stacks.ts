@@ -135,10 +135,14 @@ export function spotIn(el: Element, container: Element): { x: number; y: number 
   return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
 }
 
-/** An element's left and top margins, in px: how far past its X and Y an absolute layer is drawn. */
-export function marginsAt(el: Element): Margins {
-  const [top, , , left] = marginsOf(el);
-  return { x: left, y: top };
+/**
+ * An element's left and top margins, in px: how far past its X and Y an
+ * absolute layer is drawn. `end`: its right and bottom ones, past its `right`
+ * and `bottom`, for one placed from those edges.
+ */
+export function marginsAt(el: Element, end = false): Margins {
+  const [top, right, bottom, left] = marginsOf(el);
+  return end ? { x: right, y: bottom } : { x: left, y: top };
 }
 
 /** An element's margins, in px: top, right, bottom, left. */

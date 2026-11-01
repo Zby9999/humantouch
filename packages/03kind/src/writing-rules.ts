@@ -79,6 +79,21 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "its container becomes its positioning reference at those widths (`position: relative`, the same way) where it is not one already.",
   },
   {
+    name: "Placed from the right or bottom",
+    calledFor: (change) => change.kind === "style" && (fromEnd(change) || change.anchor === "end"),
+    text:
+      "a layer placed from its container's right or bottom edge (`right`, `bottom`; Tailwind's `right-*`, `bottom-*`) stays placed so: " +
+      "a change to its `right` or `bottom` changes that value, as given in px, and a change to its size changes the size alone; do not place it by `left` or `top` instead, " +
+      "which would place it otherwise as its container grows or shrinks.",
+  },
+  {
+    name: "Centered",
+    calledFor: (change) => change.kind === "style" && change.anchor === "center",
+    text:
+      "a layer centered on where its `left` or `top` places it by `translate: -50%` (Tailwind's `left-1/2 -translate-x-1/2`, `top-1/2 -translate-y-1/2`) stays centered: " +
+      "change its size alone, and keep its `left` or `top` and its translate as they are.",
+  },
+  {
     name: "This usage only",
     calledFor: (change) => change.scope !== "component" && forOneUsage(change),
     text:
@@ -196,6 +211,8 @@ interface HowChecked {
 
 /** A layer placed absolute, as the page checks it: where it is drawn. */
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
+/** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
+const fromEnd = (change: Change) => change.kind === "style" && (change.property === "right" || change.property === "bottom");
 
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [
@@ -215,8 +232,12 @@ const HOW_CHECKED: HowChecked[] = [
       "a change at a breakpoint in each part the project's breakpoints cut its range into (the design intent names them when their values differ): at the page's own width in the part its window is in, else at the part's lower edge, or, for one from no width at all, 1px under its upper edge",
   },
   {
-    calledFor: (change) => checkable(change) && placing(change),
+    calledFor: (change) => checkable(change) && placing(change) && !fromEnd(change),
     text: "a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, its `left` and `top` the X and Y given, its margins kept, not taken off, so drawn at `left` and `top` plus its margins, as on the canvas",
+  },
+  {
+    calledFor: (change) => checkable(change) && fromEnd(change),
+    text: "a layer placed from its container's right or bottom edge by where it is drawn: its `right` or `bottom` the value given, plus its right or bottom margin, kept, as on the canvas",
   },
   { calledFor: (change) => checkable(change) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change) => checkable(change) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },

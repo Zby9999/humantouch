@@ -467,6 +467,74 @@ test.describe("done checks the change on the page", () => {
     for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
   });
 
+  test("layers placed from the right, from the bottom and centered, resized by a handle or in the panel: they stay placed so, the notes say which value changes, and each change is checked on the page once the code has it (ticket 75)", async ({ page }) => {
+    // In the code, three layers placed freely in the hero: from its right, from its bottom, and centered across.
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="from-right" className="absolute top-[30px] right-[40px] h-[40px] w-[80px] bg-stone-300" />\n' +
+        '        <div data-testid="from-bottom" className="absolute bottom-[60px] left-[40px] h-[40px] w-[80px] bg-stone-300" />\n' +
+        '        <div data-testid="centered" className="absolute top-[120px] left-1/2 h-[40px] w-[80px] -translate-x-1/2 bg-stone-300" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("centered")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const view = page.locator('iframe[title="Canvas"]');
+    const zoom = await view.evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+    const pick = async (id: string) => {
+      const box = (await canvas(page).getByTestId(id).boundingBox())!;
+      await page.keyboard.down("Meta");
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.keyboard.up("Meta");
+    };
+    const dragRightEdge = async (by: number) => {
+      const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
+      await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(edge.x + edge.width / 2 + by * zoom, edge.y + edge.height / 2, { steps: 6 });
+      await page.mouse.up();
+    };
+
+    // Its right edge 30 px in: the layer stays placed from the right, 70 px from it, its left edge where it was.
+    await pick("from-right");
+    await dragRightEdge(-30);
+    // Its height typed: its top stays, its bottom 20 px nearer the hero's.
+    await pick("from-bottom");
+    await setField(page, "Height", "60");
+    // Its right edge 30 px out: both sides alike, still centered.
+    await pick("centered");
+    await dragRightEdge(30);
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(5);
+    const changes: { id: number; property: string; before: unknown; after: unknown; anchor?: string }[] = readThirdKindFile("changeset.json").changes;
+    expect(changes.map(({ property, before, after, anchor }) => ({ property, before, after, anchor }))).toEqual([
+      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 50 }, anchor: "end" },
+      { property: "right", before: 40, after: 70, anchor: undefined },
+      { property: "height", before: { type: "fixed", value: 40 }, after: { type: "fixed", value: 60 }, anchor: "end" },
+      { property: "bottom", before: 60, after: 40, anchor: undefined },
+      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 140 }, anchor: "center" },
+    ]);
+
+    const notes = await npx03kind("claim");
+    expect(notes).toContain("Change the right position from 40px to 70px: how far the layer's right edge is from its container's, its CSS `right`. It stays placed from that edge: do not place it by `left` instead.");
+    expect(notes).toContain("- **Placement:** the layer is placed from its container's bottom edge (CSS `bottom`), and stays so: do not place it by `top` instead.");
+    expect(notes).toContain("- **Placement:** the layer is centered across on where its `left` places it, by `translate: -50%` (Tailwind's `-translate-x-1/2`), and stays so: only its width changes, on both sides alike.");
+    expect(notes).toMatch(/- \*\*Placed from the right or bottom:\*\* /);
+    expect(notes).toMatch(/- \*\*Centered:\*\* /);
+    await expect(progress(page)).toHaveAttribute("aria-valuemax", "5");
+
+    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    editSource(APP, "top-[30px] right-[40px] h-[40px] w-[80px]", "top-[30px] right-[70px] h-[40px] w-[50px]");
+    editSource(APP, "bottom-[60px] left-[40px] h-[40px] w-[80px]", "bottom-[40px] left-[40px] h-[60px] w-[80px]");
+    editSource(APP, "left-1/2 h-[40px] w-[80px] -translate-x-1/2", "left-1/2 h-[40px] w-[140px] -translate-x-1/2");
+    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
+    // Where the canvas drew them: the page places them so, at its own width as at the views'.
+    const right = await page.getByTestId("from-right").evaluate((el) => el.parentElement!.getBoundingClientRect().right - el.getBoundingClientRect().right);
+    expect(right).toBe(70);
+  });
+
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
     await page.goto(DEV_URL);
     await page.getByRole("button", { name: TOGGLE_LABEL }).click();
