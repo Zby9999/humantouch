@@ -221,7 +221,7 @@ const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "create",
     text:
-      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, one the container did not have before, new text with its words, " +
+      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, counted with this round's other changes applied or not, one the container did not have before, new text with its words, " +
       "or, placed absolute, one placed absolute in the container at the X and Y given; found written at more than one place in the source, it is not checked",
   },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },

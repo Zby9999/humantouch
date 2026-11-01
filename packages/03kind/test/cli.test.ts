@@ -2392,7 +2392,7 @@ describe("claim and done, layers made this round found on the page (ticket 76)",
     const checks = rule((await cli("claim")).output, "How the page checks");
 
     expect(checks).toContain(
-      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, one the container did not have before, new text with its words, or, placed absolute, one placed absolute in the container at the X and Y given",
+      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, counted with this round's other changes applied or not, one the container did not have before, new text with its words, or, placed absolute, one placed absolute in the container at the X and Y given",
     );
     expect(checks).not.toMatch(/<div>|<p>/);
     expect(checks).not.toContain("not at all");
