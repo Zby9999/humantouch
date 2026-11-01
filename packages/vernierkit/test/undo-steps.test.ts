@@ -135,7 +135,7 @@ describe("a run of nudges", () => {
       steps.group(
         () => steps.push({ layers: [to], back: [from], key: "move", undo: () => state.log.push(`back to ${from}`), redo: () => state.log.push(`on to ${to}`) }, false),
         true,
-        true,
+        "nudge",
       );
     nudge("a", "a");
     nudge("a", "a");
@@ -143,5 +143,98 @@ describe("a run of nudges", () => {
     expect(state.log).toEqual(["back to a", "back to a"]);
     expect(names(steps.redo())).toEqual(["a"]);
     expect(state.log).toEqual(["back to a", "back to a", "on to a", "on to a"]);
+  });
+});
+
+describe("an adjustment whose first steps change nothing", () => {
+  /**
+   * An editor over a value, and a resize of the same layer's width: each
+   * step a group of the run "resize", which makes no step when the width
+   * is already what it is set to, as a handle moved without the size changing.
+   */
+  function resizable() {
+    const editor = editorOver(createHistory());
+    const width = { now: 256 };
+    const resize = (to: number, continues: boolean) =>
+      editor.steps.group(
+        () => {
+          const from = width.now;
+          if (from === to) return;
+          width.now = to;
+          editor.steps.push({ layers: ["1"], key: "1 width", undo: () => (width.now = from), redo: () => (width.now = to) }, false);
+        },
+        continues,
+        "resize",
+      );
+    return { ...editor, width, resize };
+  }
+
+  test("taken back, as Esc cancels it, it takes nothing back: the edit before it stays, to undo and redo", () => {
+    const { state, steps, set, width, resize } = resizable();
+    // The layer's fill changed; then its edge pressed and moved, its width still 256.
+    set("1", 10);
+    resize(256, false);
+    resize(256, true);
+    steps.takeBack();
+
+    expect(state.value).toBe(10);
+    expect(width.now).toBe(256);
+    expect(steps.redo()).toEqual([]);
+    expect(state.value).toBe(10);
+    steps.undo();
+    expect(state.value).toBe(0);
+    steps.redo();
+    expect(state.value).toBe(10);
+  });
+
+  test("its later steps are a step of their own, not one with the same adjustment of the same layer just before it", () => {
+    const { steps, width, resize } = resizable();
+    // A first resize to 300, where it snapped; a second begins there, in the snap, and goes on to 320.
+    resize(300, false);
+    resize(300, false);
+    resize(320, true);
+
+    steps.undo();
+    expect(width.now).toBe(300);
+    steps.undo();
+    expect(width.now).toBe(256);
+  });
+
+  test("taken back, it takes back its own steps only", () => {
+    const { steps, width, resize } = resizable();
+    resize(300, false);
+    resize(300, false);
+    resize(320, true);
+    steps.takeBack();
+
+    expect(width.now).toBe(300);
+    expect(steps.redo()).toEqual([]);
+    steps.undo();
+    expect(width.now).toBe(256);
+  });
+
+  test("a run of nudges begun with one that moves nothing is a step of its own, not one with an earlier run", () => {
+    const { state, steps } = editorOver(createHistory());
+    const nudge = (to: number, continues: boolean) =>
+      steps.group(
+        () => {
+          const from = state.value;
+          if (from === to) return;
+          state.value = to;
+          steps.push({ layers: ["a"], key: "move", undo: () => (state.value = from), redo: () => (state.value = to) }, false);
+        },
+        continues,
+        "nudge",
+      );
+    nudge(1, false);
+    nudge(2, true);
+    // Later, a run that begins against the end of a Stack: nothing moves, then it moves back.
+    nudge(2, false);
+    nudge(1, true);
+
+    steps.undo();
+    expect(state.value).toBe(2);
+    steps.undo();
+    expect(state.value).toBe(0);
   });
 });

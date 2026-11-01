@@ -23,7 +23,7 @@ import { BriefSection } from "./BriefSection";
 import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
-import { CATCH_UP_AFTER_MS, type View, type Views } from "./views";
+import { ADJUSTING_MS, type View, type Views } from "./views";
 import { hasPartsToRead } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
@@ -69,8 +69,6 @@ interface Props {
   onLeft(): void;
 }
 
-/** How long after the last edit the selection box comes back: twice as long as the views beside wait to catch up, so it comes back over views caught up (ADR 0011). */
-const ADJUSTING_MS = 2 * CATCH_UP_AFTER_MS;
 /** How long after the last edit the round is saved. */
 const AUTOSAVE_MS = 500;
 /** Nudges of the same layers this close together are a run: one step, undone at once. */
@@ -230,7 +228,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       onChanges(round.current.changeSet.list());
     }
   };
-  const onEdit = () => {
+  /** An edit made: the panel and the Layers panel follow it; `adjust`, a value set, the selection box steps aside meanwhile. Resized by a handle, it stays. */
+  const onEdit = (adjust = true) => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
     if (next && next !== tree) setTree(next);
@@ -240,6 +239,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     });
     changed();
     edited(undefined);
+    if (!adjust) return;
     setAdjusting(true);
     clearTimeout(settle.current);
     settle.current = setTimeout(() => setAdjusting(false), ADJUSTING_MS);
@@ -615,6 +615,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           const moved = editorOf(layer)!.move(layer, to);
           onEdit();
           select([moved]);
+        }}
+        onResize={(layer, to, continues) => {
+          editorOf(layer)!.resize(layer, to, { continues });
+          onEdit(false);
+        }}
+        onCancelResize={(layer) => {
+          editorOf(layer)!.takeBack();
+          onEdit(false);
         }}
         tool={tool}
         onTool={setTool}

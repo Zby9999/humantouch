@@ -644,7 +644,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           }
         },
         continues,
-        true,
+        "nudge",
       );
       return layers.map((layer, i) => found(i) ?? layer);
     },

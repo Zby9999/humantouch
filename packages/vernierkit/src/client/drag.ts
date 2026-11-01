@@ -16,7 +16,7 @@ export interface Drop {
   to: Destination;
   /** Where in a Stack or a Grid the layer would go, drawn as a line, in the view's px. None for an absolute place. */
   line: { x: number; y: number; width: number; height: number } | null;
-  /** How far layers move aside to make room, by their element on the canvas, in the view's px. */
+  /** How far layers move to make room, by their element on the canvas, in the view's px. */
   shifts: Map<Element, { x: number; y: number }>;
   /** Where the layer goes, in the view's px: where it is dragged to, or, placed freely, where it snaps to. */
   box: DOMRect;

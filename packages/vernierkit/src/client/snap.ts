@@ -31,16 +31,17 @@ export interface Snapped {
   marks: Mark[];
 }
 
-type Axis = "x" | "y";
+/** Across (x) or down (y). */
+export type Axis = "x" | "y";
 const SIZE = { x: "width", y: "height" } as const;
 const OTHER = { x: "y", y: "x" } as const;
 /** Lined up: as near as layout puts edges that are meant to meet. */
-const EPSILON = 0.01;
+export const EPSILON = 0.01;
 
 const start = (b: Box, a: Axis) => b[a];
 const end = (b: Box, a: Axis) => b[a] + b[SIZE[a]];
 /** A box's start, middle and end along an axis. */
-const anchors = (b: Box, a: Axis) => [start(b, a), start(b, a) + b[SIZE[a]] / 2, end(b, a)];
+export const anchors = (b: Box, a: Axis) => [start(b, a), start(b, a) + b[SIZE[a]] / 2, end(b, a)];
 
 /**
  * Where a layer dragged to `box` goes: as near as `threshold` px, each way,
@@ -146,7 +147,7 @@ function gaps(box: Box, axis: Axis, siblings: Box[]): Mark[] {
 }
 
 /** The lines the box lines up on along `axis`, each across the box and all it lines up with there. */
-function lines(box: Box, axis: Axis, targets: Box[]): Mark[] {
+export function lines(box: Box, axis: Axis, targets: Box[]): Mark[] {
   const across = OTHER[axis];
   const spans = new Map<number, [number, number]>();
   const own = anchors(box, axis);

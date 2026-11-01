@@ -223,7 +223,7 @@ function intent(change: Change, list: Change[]): string {
       const how = layer.origin.snippet ? "write it as its source below has it" : "write it as its look below shows it";
       if (layer.origin.copy) {
         return (
-          `Put a copy of this layer here, set aside off the canvas as a copy: the layer it copies stays where it is. ` +
+          `Put a copy of this layer here: the off-canvas layer put back is a copy of it, so the layer it copies stays where it is. ` +
           `${capitalized(how)}, ${placement(place)}, as a copy of its own.`
         );
       }

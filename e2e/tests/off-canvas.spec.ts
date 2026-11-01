@@ -156,7 +156,7 @@ test("a layer off the canvas can be deleted, and comes back with undo; leaving a
   await page.keyboard.press("Delete");
   await expect(offCanvas(page)).toHaveCount(0);
   await expect(layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true })).toHaveCount(0);
-  // Still deleted on the page: only what was set aside went.
+  // Still deleted on the page: only the off-canvas layer went.
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 
   await page.keyboard.press(`${mod}+z`);
