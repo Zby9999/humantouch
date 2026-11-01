@@ -13,13 +13,13 @@
 
 **Blocked by:** 22, 60, 61, 62, 63, 64, 65, 66, 67, 68
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 上面列出的名字全部改完；除 ADR、已完成 ticket 和 git 历史外，仓库里不再有 `vernier`、`Vernier`、`vk-`、`--vk-`、`data-vk-`、`VK_` 字样，用一条检查固定下来，防止以后写回旧名
 - [x] 全量 typecheck、单测、e2e 通过，测试数量不少于改名前；设计师看到的行为、改动单的内容不变
 - [x] 打包检查用新包名通过，包里的命令叫 `03kind`；切换按钮体积仍 ≤ 10KB
 - [x] 在临时目录的全新 Vite 与 Next.js 项目里，用本地打的包走一遍 `init` → 开发服务器 → 切换按钮出现 → `doctor` 全部 ✓ → `remove` 后 git diff 为空
-- [ ] Claude Code 与 Cursor CLI 都能认出名为 `03kind` 的 Skill；有一家不接受以数字开头的 Skill 名时，Skill 改叫 `third-kind`，并在 Comments 写明
+- [x] Claude Code 与 Cursor CLI 都能认出名为 `03kind` 的 Skill；有一家不接受以数字开头的 Skill 名时，Skill 改叫 `third-kind`，并在 Comments 写明
 - [x] 不改的部分写在 Comments：ADR 和已完成的 ticket 是历史记录，保留原名；`.scratch/vernierkit/` 是内部的 ticket 目录，不改名
 
 ## 背景
@@ -259,3 +259,65 @@
 - 23 里只有 Guide 草稿用了新名字，周围的验证记录还写着 `vernierkit@latest`、`VERNIERKIT_INSTALL_FROM`。读的人要知道这是 70 有意改的，原因写在这里。
 - 全新项目只用 npm 走过（两个脚手架默认都用 npm）；pnpm 由 e2e 的 install.spec、next-install.spec 覆盖。
 - 23 和 59 指出的 Guide 第 3 步（「打不开浏览器就请设计师看一眼」）与 24 的「无需人工介入」冲突，这一步没动，仍留给 59。
+
+### 真实 Agent 认 Skill（2026-11-01，分支 claude/stoic-bose-b2d970）
+
+最后一项验收：Claude Code 与 Cursor CLI 都能认出名为 `03kind` 的 Skill。用户同意跑真实 Agent：Claude Code 1 次，Cursor CLI 起初 1 次，第一次没有实据后又同意加 1 次，一共 3 次，都没有重跑。
+
+**怎么跑的**
+
+- 项目：用 `pnpm build`、`pnpm pack` 打出 `03kind-0.0.0.tgz`。在 session 的临时目录里用 `npm create vite@latest -- --template react-ts` 建一个全新项目，`git init` 后提交，再用 `TK_INSTALL_FROM=<tgz> npx -y --package <tgz> 03kind init` 装好，提交。
+  - `.agents/skills/03kind/SKILL.md` 和 `.claude/skills/03kind/SKILL.md` 都在，frontmatter 都是 `name: 03kind`。
+  - AGENTS.md 只有一行指向 Skill 的话，不含 Skill 正文。
+  - Cursor 第二次之前按同样做法重建了一个项目。
+- 跑法：一个临时脚本导入测量台 `e2e/bench/agents.ts`，调用 `runAgent`，超时 5 分钟。参数、环境、Cursor 的 `prepare`（cli.json 权限、浏览器插件的无头副本）都和测量台一样，只换了 prompt。
+  - Claude 只读项目级设置，不加载用户插件。
+  - 三次都没有出现带窗口的浏览器，都没改文件，都 exit 0、没超时。
+
+**Claude Code：认出了**
+
+- 桌面 app 自带的 Claude Code `2.1.309`，模型 `claude-sonnet-5-5`，effort high，用时约 7 秒。
+- prompt：问项目里有哪些 Skill，若有 `03kind` 就调用它（只读说明），说出它的名字和作用。
+- 依据：
+  - 启动时 init 事件的 `skills` 列表第一个就是 `03kind`，`slash_commands` 里也有它。
+  - 记录里有一次 `Skill {"skill": "03kind"}` 调用，结果是 `Launching skill: 03kind`，没有报错。
+  - 回答：「把设计师在 03Kind…里做的设计改动写进源码，也可以撤销上一轮改动」。
+
+**Cursor CLI 第一次：没有实据**
+
+- Cursor app 自带的 cursor-agent `2026.10.22-27dcf5f`，`--model grok-4.7-high`，记录里写的是 `Grok 4.7 256K High`，用时约 41 秒。
+- prompt 与 Claude 那次相同。
+- init 事件不列 Skill。记录里的 4 次工具调用都是它自己去找文件、读文件：
+  - glob `**/SKILL.md` 和 `**/*skill*`，找到两份 SKILL.md；
+  - 用 read 读这两份。
+- 回答说项目里只有一个 Skill 03kind。但这是它自己找文件读到的，不能说明 Skill 机制认出了它。
+
+**Cursor CLI 第二次：认出了**
+
+- 版本和模型同上，用时约 28 秒。
+- prompt 以斜杠命令开头：「/03kind 只读这个 Skill 的说明……说明你是通过 Skill 机制加载的，还是自己去找文件读的」。
+- 依据：
+  - 整个记录里没有一次工具调用，没有 glob，也没有 read。
+  - 回答里有只在 SKILL.md 正文里才有的内容：claim、done、finish 这几步，以及卸载 03Kind。frontmatter 的 description 和 AGENTS.md 那一行里都没有这些。
+  - 回答原话：「通过 Skill 机制加载的是 **03kind**」「没有自己去读文件」。
+  - 思考流里写着「通过手动附加机制加载了该 Skill」。
+- 也就是说，`/03kind` 被 Cursor 按名字找到，Skill 正文被直接放进了上下文。
+- stream-json 的 user 事件只记原始 prompt，看不到展开后的内容。
+
+**Cursor 对 Skill 名的规则（读 cursor-agent `2026.10.22-27dcf5f` 的 index.js，没有另跑）**
+
+- 找 Skill 的目录有 `.cursor/skills`、`.agents/skills`、`.claude/skills`、`.codex/skills`、`.grok/skills`。其中 `.claude`、`.codex`、`.grok` 标为第三方。
+- 名字取自所在文件夹名，检查用的正则是 `^[a-z0-9]+(?:-[a-z0-9]+)*$`，即小写字母和数字，用单个连字符连起来。允许以数字开头，`03kind` 合规。
+- frontmatter 的 name 要和文件夹名一致。`init` 写的两处都一致。
+
+**结论**
+
+- Claude Code 和 Cursor CLI 都认得名为 `03kind` 的 Skill，没有一家拒收以数字开头的名字，所以不改叫 `third-kind`。
+- 70 的验收项全部勾上，Status 改为 done。
+
+**风险**
+
+- Cursor 只在用斜杠命令点名时留下了 Skill 机制的实据。用自然语言问时，它自己去 glob、read SKILL.md，记录里看不出它会不会按 description 自动选中这个 Skill。
+- 设计师平时说的是「落地我的设计改动」。Cursor 照 AGENTS.md 那一行也能找到 SKILL.md，所以用起来不受影响，但这两条路在记录里分不开。
+- 每个 Agent 只跑了一次，模型的行为每次可能不同。
+- 两份 Cursor 记录都在 session 的临时目录里，没有进仓库。
