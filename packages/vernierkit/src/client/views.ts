@@ -20,18 +20,25 @@ import { createLater } from "./later";
 /**
  * How long the steps of a value pause, ms, before the views beside the one
  * worked in catch up with them: longer than macOS repeats a key held down by
- * default (83ms), and half as long as `ADJUSTING_MS`, so the selection box
+ * default (83ms), and half as long as `CAUGHT_UP_MS`, so the selection box
  * comes back over views caught up (ADR 0011).
  */
 export const CATCH_UP_AFTER_MS = 100;
 
 /**
- * How long after the last step of a value the selection box comes back, or,
- * a handle dragged, is drawn again in the views beside: twice as long as they
- * wait to catch up (`CATCH_UP_AFTER_MS`), made from it so it stays the longer
- * (ADR 0011).
+ * How long after the last step of a value, or of a handle dragged, the views
+ * beside have surely caught up with it: twice as long as they wait to
+ * (`CATCH_UP_AFTER_MS`), made from it so it stays the longer (ADR 0011). A
+ * handle dragged, the selection box is drawn again in them then.
  */
-export const ADJUSTING_MS = 2 * CATCH_UP_AFTER_MS;
+export const CAUGHT_UP_MS = 2 * CATCH_UP_AFTER_MS;
+
+/**
+ * How long after the last step of a value the selection box comes back: long
+ * enough to see the change without it, 0.2s and 0.5s having felt quick in use
+ * (designer, 2026-11-01), and never before the views beside have caught up.
+ */
+export const ADJUSTING_MS = Math.max(800, CAUGHT_UP_MS);
 
 /** How far a layer making room for a drag is shifted, px. */
 export interface Shift {

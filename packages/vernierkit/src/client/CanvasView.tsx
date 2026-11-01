@@ -22,7 +22,7 @@ import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggl
 import { distances } from "./snap";
 import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import type { Handle } from "./resize";
-import { ADJUSTING_MS, createViews, type View, type Views } from "./views";
+import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 
@@ -778,9 +778,9 @@ export function CanvasView(props: Props) {
     }
     // Drawn where its edges are now, as laid out: its container may place it otherwise than where it was dragged to.
     setResize({ layer: session.layer, in: session.in, handle: session.handle, showsSize: true, marks: marksNow(session) });
-    // As the selection box comes back after a value set: the views beside have caught up by then.
+    // Once the views beside have caught up.
     clearTimeout(catchingUp.current);
-    catchingUp.current = setTimeout(() => caughtUp(undefined), ADJUSTING_MS);
+    catchingUp.current = setTimeout(() => caughtUp(undefined), CAUGHT_UP_MS);
   }
 
   /**
