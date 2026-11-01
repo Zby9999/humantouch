@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { EXIT_LABEL, NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearFolder } from "./project-files";
+import { clearThirdKindFolder } from "./project-files";
 
 /** A round on the Next.js example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -15,8 +15,8 @@ const THIRD_KIND_FOLDER = `${EXAMPLE}.03kind/`;
 const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 const CARD_CSS = `${EXAMPLE}components/Card.module.css`;
 
-test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
-test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
+test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
 async function npx03kind(...args: string[]) {
   const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: EXAMPLE });

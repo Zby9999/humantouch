@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearFolder, npx03kind } from "./project-files";
+import { clearThirdKindFolder, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
@@ -12,8 +12,8 @@ const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react19-tw4
 const CHANGESET = `${THIRD_KIND_FOLDER}changeset.json`;
 const CANVAS = `${THIRD_KIND_FOLDER}canvas.html`;
 
-test.beforeEach(() => clearFolder(THIRD_KIND_FOLDER));
-test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
+test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();

@@ -321,3 +321,31 @@
 - 设计师平时说的是「落地我的设计改动」。Cursor 照 AGENTS.md 那一行也能找到 SKILL.md，所以用起来不受影响，但这两条路在记录里分不开。
 - 每个 Agent 只跑了一次，模型的行为每次可能不同。
 - 两份 Cursor 记录都在 session 的临时目录里，没有进仓库。
+
+### 整线审查（2026-11-01，分支 claude/stoic-bose-b2d970）
+
+改名线做完后，对整条线再审了一遍，只修下面几条，Status 和勾选不动。
+
+**审查出的问题**
+
+- e2e 的 helper `clearFolder()`、`readFolderFile()` 名字没说是哪个文件夹（上面第一步里记的就是这两个名字）。
+- `e2e/old-names.test.ts`：
+  - 几条正则各写一遍 ticket 目录的前缀。
+  - 主循环用「没有行要查」代表「整份放行、路径也不查」，靠 `lines.length === 0 && !isBinary(bytes)` 推出来，`isBinary` 算了两次。
+  - 70 的 Status 已是 done，已按「已完成 ticket」放行，对 70 的单独放行多余。
+  - 只查第三步列的五种写法，第一步改掉的内部标识符（window 和 dataset 上旧前缀加大写字母的名字、两个下划线开头的名字）没有查，写回去不会报。
+
+**修了什么**
+
+- helper 改名为 `clearThirdKindFolder()`、`readThirdKindFile()`，和 `THIRD_KIND_FOLDER`、源码里的 `thirdKindFolder` 一致，所有调用处（10 个文件）跟着改。`clearThirdKindFolder()` 仍带参数：React 18 和 Next 示例各有自己的 `.03kind/`。
+- `e2e/old-names.test.ts`：
+  - ticket 目录的前缀提成一个 `TICKET_FOLDER_SOURCE`，`TICKET_FOLDER`、`GUIDE_DRAFTS_TICKET`、`LOGS` 由它拼出。
+  - `linesToCheck()` 对整份放行的文件明确返回 `"whole"`，主循环见到它就跳过，路径也不查；`isBinary` 每个文件只算一次。二进制文件仍只查路径。
+  - 删掉对 70 的单独放行，文件头注释和单测跟着改：单测改为测旧目录下一份未完成的 70 照样逐行查。
+  - 补查 `\bvk[A-Z]`、`__vk`、`__VK`，区分大小写。文件头注释写明原因：这是 70 也改了的内部标识符，连字符和下划线两种写法查不到它们。现在仓库里只有 70 自己提到这些名字，70 已整份放行，没有误报。单测加了这几种写法该报和新名字（`tkSeen`、`__tkDraw`、`__TK_BENCH`）不该报的例子。
+  - 证明检查仍有效：临时往 `packages/03kind/src/cli.ts` 末尾写一行 `vkFoo` 和 `Vernier`，又写一行 `__vkBar`，三处都报出来了，撤掉后通过。
+- 测试数：vitest 710 passed、1 skipped（31 个文件），和前面一样；node --test 32 pass（e2e/bench 29 + 旧名检查 3），单测条数没变，只是改了断言；e2e 349 passed、1 skipped。`pnpm build`、`pnpm typecheck` 通过。
+
+**遗留风险（改名前就有，不在 70 范围内）**
+
+- `data-tk-loc` 和 `X-03Kind-Token` 在 e2e 里约 16 处写成字面量，没有引用 `LOC_ATTR`、`TOKEN_HEADER`。源码里其余 `data-tk-*` 属性（约 40 种）也都各写全名，没有共用的前缀常量。下次再改前缀，还得到处改；靠旧名检查兜住漏改的地方。

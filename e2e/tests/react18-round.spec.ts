@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearFolder } from "./project-files";
+import { clearThirdKindFolder } from "./project-files";
 
 /** A round on the React 18 + Tailwind v3 example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -16,12 +16,12 @@ const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 
 test.beforeEach(async () => {
-  clearFolder(THIRD_KIND_FOLDER);
+  clearThirdKindFolder(THIRD_KIND_FOLDER);
   // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
   // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
   await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
 });
-test.afterAll(() => clearFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
 function locate(file: string, snippet: string) {
