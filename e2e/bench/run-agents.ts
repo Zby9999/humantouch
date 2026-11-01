@@ -214,7 +214,7 @@ async function withScenario<T>(
   try {
     server = await startDevServer(project.dir, port);
     context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
-    await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
     await recordNotices(context);
     const page = await context.newPage();
     await page.goto(server.url);
@@ -298,15 +298,15 @@ async function runOnce({
 
     // While the Agent works: the claim, each done and the finish from the round's files; each source edit; each change newly shown on the page.
     const times: RawRun["times"] = { claim: null, dones: [], finish: null, shown: [], edits: [] };
-    const vernier = join(project.dir, ".vernier");
+    const thirdKind = join(project.dir, ".03kind");
     const readJson = (file: string) => {
       try {
-        return JSON.parse(readFileSync(join(vernier, file), "utf8"));
+        return JSON.parse(readFileSync(join(thirdKind, file), "utf8"));
       } catch {
         return null; // Not there, or being written.
       }
     };
-    const rounds = () => (existsSync(join(vernier, "history")) ? readdirSync(join(vernier, "history")).sort() : []);
+    const rounds = () => (existsSync(join(thirdKind, "history")) ? readdirSync(join(thirdKind, "history")).sort() : []);
     // The put-back scenario archived a round before the Agent started.
     const roundsBefore = rounds().length;
     /** This round's result, once archived in full: `finish` writes it last into its folder. */
@@ -492,7 +492,7 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["Agent 总用时（秒）", (m) => m.agentMs / 1000],
   ["每条平均工具调用", (m) => m.toolCallsPerChange],
   ["全仓搜索次数", (m) => m.repoWideSearches],
-  ["读 node_modules/vernierkit（次）", (m) => m.packageReads],
+  ["读 node_modules/03kind（次）", (m) => m.packageReads],
   ["读入字数：Skill", (m) => m.charsRead.skill],
   ["读入字数：claim 输出", (m) => m.charsRead.claim],
   ["读入字数：全部工具输出", (m) => m.charsRead.total],

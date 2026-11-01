@@ -12,15 +12,15 @@ import { fileURLToPath } from "node:url";
  * draws its frames on a timer of its own, not with the screen. That Chrome
  * comes to the front as it starts, so ask the designer first.
  *
- * `VK_PERF_HEADLESS=1` runs them in Playwright's headless shell instead, for
+ * `TK_PERF_HEADLESS=1` runs them in Playwright's headless shell instead, for
  * comparing numbers before and after a change while developing. Those numbers
  * are no verdict: the targets are not checked.
  */
-export const HEADLESS = process.env.VK_PERF_HEADLESS === "1";
+export const HEADLESS = process.env.TK_PERF_HEADLESS === "1";
 /** This run, named by when it started: the runner sets it, so its workers all see the same. */
-export const RUN = (process.env.VK_PERF_RUN ??= new Date().toISOString().replace(/[:.]/g, "-"));
+export const RUN = (process.env.TK_PERF_RUN ??= new Date().toISOString().replace(/[:.]/g, "-"));
 /** The example's dev server, on a port of its own, so it can run beside the e2e tests' servers. */
-const PORT = Number(process.env.VK_PERF_PORT ?? 5390);
+const PORT = Number(process.env.TK_PERF_PORT ?? 5390);
 export const BIG_URL = `http://localhost:${PORT}/big.html`;
 /** How the window is sized: on the designer's screen, at its own pixel density. */
 export const WINDOW = { width: 1440, height: 900 };

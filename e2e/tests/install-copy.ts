@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-const PACKAGE = fileURLToPath(new URL("../../packages/vernierkit/", import.meta.url));
-/** The command line as `npx vernierkit` runs it before the project has it: from the package being tested. */
+const PACKAGE = fileURLToPath(new URL("../../packages/03kind/", import.meta.url));
+/** The command line as `npx 03kind` runs it before the project has it: from the package being tested. */
 export const CLI = join(PACKAGE, "dist/cli.js");
 
 /** Runs a command; resolves with what it printed. When it fails, the error says what it printed too. */
@@ -24,20 +24,20 @@ export const sh = async (command: string, args: string[], cwd: string, env: Node
 export async function pack(dir: string): Promise<string> {
   await sh("pnpm", ["pack", "--pack-destination", dir], PACKAGE);
   const { version } = JSON.parse(readFileSync(join(PACKAGE, "package.json"), "utf8"));
-  return join(dir, `vernierkit-${version}.tgz`);
+  return join(dir, `03kind-${version}.tgz`);
 }
 
 /**
- * A copy of an example project in a temporary folder, with Vernier Kit taken
+ * A copy of an example project in a temporary folder, with 03Kind taken
  * out by `uninstall`, its dependencies installed, and committed to a git
  * repository of its own: what a project looks like before `init`.
  */
-export async function copyWithoutVernier(example: string, uninstall: (dir: string) => void): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "vernierkit-project-"));
-  cpSync(example, dir, { recursive: true, filter: (from) => !/[\\/](node_modules|dist|\.vernier|\.next)$/.test(from) });
+export async function copyWithoutThirdKind(example: string, uninstall: (dir: string) => void): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "03kind-project-"));
+  cpSync(example, dir, { recursive: true, filter: (from) => !/[\\/](node_modules|dist|\.03kind|\.next)$/.test(from) });
   const pkgFile = join(dir, "package.json");
   const pkg = JSON.parse(readFileSync(pkgFile, "utf8"));
-  delete pkg.devDependencies.vernierkit;
+  delete pkg.devDependencies["03kind"];
   writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
   uninstall(dir);
   appendFileSync(join(dir, ".gitignore"), "node_modules\ndist\n");
@@ -45,7 +45,7 @@ export async function copyWithoutVernier(example: string, uninstall: (dir: strin
   await sh("pnpm", ["install", "--prefer-offline"], dir);
   await sh("git", ["init", "-q"], dir);
   await sh("git", ["add", "-A"], dir);
-  await sh("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "Before Vernier Kit"], dir);
+  await sh("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "Before 03Kind"], dir);
   return dir;
 }
 

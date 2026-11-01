@@ -4,24 +4,24 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearVernier } from "./project-files";
+import { clearThirdKindFolder } from "./project-files";
 
-/** A round on the React 18 + Tailwind v3 example, saved into its `.vernier/` for real. */
+/** A round on the React 18 + Tailwind v3 example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
-const VERNIER = `${EXAMPLE}.vernier/`;
+const THIRD_KIND_FOLDER = `${EXAMPLE}.03kind/`;
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
-const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 
 test.beforeEach(async () => {
-  clearVernier(VERNIER);
+  clearThirdKindFolder(THIRD_KIND_FOLDER);
   // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
   // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
   await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
 });
-test.afterAll(() => clearVernier(VERNIER));
+test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
 /** `file:line:column` of the first occurrence of `snippet` in an example source file. */
 function locate(file: string, snippet: string) {
@@ -31,13 +31,13 @@ function locate(file: string, snippet: string) {
   return `${file}:${line + 1}:${lines[line].indexOf(snippet) + 1}`;
 }
 
-async function vernierkit(...args: string[]) {
+async function npx03kind(...args: string[]) {
   const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: EXAMPLE });
   return stdout;
 }
 
 function savedChanges() {
-  const file = `${VERNIER}changeset.json`;
+  const file = `${THIRD_KIND_FOLDER}changeset.json`;
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).changes : null;
 }
 
@@ -91,7 +91,7 @@ test("on React 18, the usage chain is read as on React 19: App's own elements, t
   await page.goto(REACT18_URL);
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-vk-chain"))!);
+  const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-tk-chain"))!);
   const app = { component: "App", usage: locate("src/main.tsx", "<App"), thirdParty: false };
 
   expect(await chainOf("h1")).toEqual([app]);
@@ -105,7 +105,7 @@ test("on React 18, the usage chain is read as on React 19: App's own elements, t
 test("on React 18, claim reads the usage chain as on React 19: the card's usage in App, App's in main.tsx", async ({ page }) => {
   await fillTheCards(page);
 
-  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  const [, fill] = (await npx03kind("claim")).split(/^## /m);
 
   expect(fill).toMatch(/- \*\*Location:\*\* `src\/components\/Card\.tsx:\d+:\d+`\n/);
   expect(fill).toMatch(/- \*\*Scope:\*\* This usage only: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`\. It renders 3 instances/);
@@ -129,7 +129,7 @@ test("a value typed close to a Variable, its hint left unused, is the exact valu
   await expect.poll(() => savedChanges()?.[0]?.variables).toEqual({ color: null });
   expect(savedChanges()[0].after).toEqual({ type: "solid", color: "#EEF3FF", opacity: 1 });
 
-  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  const [, fill] = (await npx03kind("claim")).split(/^## /m);
   expect(fill).toContain(
     "- **Variables:** no Variable has the fill color's value: use the exact value (with Tailwind, an arbitrary value: `bg-[#EEF3FF]`), not a class or Variable whose value is close.\n",
   );
@@ -153,26 +153,26 @@ test("a value typed before the project's Variables are in is named by them once 
 
   release();
   await expect.poll(() => savedChanges()?.[0]?.variables?.color?.name).toBe("brand-50");
-  const [, fill] = (await vernierkit("claim")).split(/^## /m);
+  const [, fill] = (await npx03kind("claim")).split(/^## /m);
   expect(fill).toContain("- **Variables:** the fill color is the Variable `brand-50`, from the Tailwind theme: use its class, `bg-brand-50`.\n");
 });
 
 test("a whole round: claim locks the editor, done checks the fill on the page once Card.tsx uses the project's color, finish ends the round", async ({ page }) => {
   await fillTheCards(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   const progress = page.getByRole("progressbar", { name: "Applying design changes" });
-  await expect(page.getByRole("button", { name: /^Vernier Kit: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByRole("button", { name: /^03Kind: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
   await expect(progress).toHaveAttribute("aria-valuemax", "1");
   const original = readFileSync(CARD, "utf8");
   try {
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it does not show the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");
 
     // As the Agent does: the project's Variable, not the hex value.
     writeFileSync(CARD, original.replace(" bg-white ", " bg-brand-50 "));
 
-    expect(await vernierkit("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");
-    expect(await vernierkit("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
+    expect(await npx03kind("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
   } finally {
     writeFileSync(CARD, original);
   }
@@ -193,6 +193,6 @@ test("a change made in the tablet view is at the range of the project's own Tail
   await setField(page, "Fill color", "eef4ff");
   await expect.poll(() => savedChanges()?.[0]?.breakpoint).toEqual({ min: 560, max: 1120, project: { tailwind: "sm:max-lg:" } });
 
-  const notes = await vernierkit("claim");
+  const notes = await npx03kind("claim");
   expect(notes).toContain("- **Breakpoint:** 560px to 1119px only (`@media (560px <= width < 1120px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `sm:max-lg:`");
 });

@@ -43,7 +43,7 @@ test("the color picker's Variables tab lists the project's colors first, by fami
   await expect(groups.nth(1)).toHaveAccessibleName("This project");
   await expect(groups.nth(1).getByRole("option")).toHaveText([/^ink#1B1D2A$/, /^muted#5B6075$/]);
   await expect(picker.getByRole("option", { name: "red-500" })).toBeVisible();
-  const swatch = picker.getByRole("option", { name: "brand-500" }).locator(".vk-variable-preview");
+  const swatch = picker.getByRole("option", { name: "brand-500" }).locator(".tk-variable-preview");
   await expect(swatch).toHaveCSS("background-color", "rgb(61, 99, 245)");
 
   await picker.getByRole("searchbox", { name: "Search variables" }).fill("brand-5");

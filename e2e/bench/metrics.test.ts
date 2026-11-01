@@ -9,7 +9,7 @@ test("a Claude Code transcript gives its model, each tool call with what it prin
     "claude",
     lines(
       { type: "system", subtype: "init", model: "claude-test-1", claude_code_version: "9.9.9" },
-      { type: "assistant", message: { content: [{ type: "text", text: "Claiming." }, { type: "tool_use", id: "a", name: "Bash", input: { command: "npx vernierkit claim" } }] } },
+      { type: "assistant", message: { content: [{ type: "text", text: "Claiming." }, { type: "tool_use", id: "a", name: "Bash", input: { command: "npx 03kind claim" } }] } },
       { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "a", content: "# Design changes\n" }] } },
       { type: "system", subtype: "api_retry", attempt: 1, no_response: { waited_ms: 181000 } },
       { type: "assistant", message: { content: [{ type: "tool_use", id: "b", name: "Read", input: { file_path: "/p/src/App.tsx" } }] } },
@@ -21,7 +21,7 @@ test("a Claude Code transcript gives its model, each tool call with what it prin
   assert.deepEqual(transcript, {
     model: "claude-test-1",
     toolCalls: [
-      { name: "Bash", command: "npx vernierkit claim", output: "# Design changes\n" },
+      { name: "Bash", command: "npx 03kind claim", output: "# Design changes\n" },
       { name: "Read", path: "/p/src/App.tsx", output: "export function App" },
     ],
     finalText: "✓ Applied\n- 1. Fill",
@@ -36,12 +36,12 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     "cursor",
     lines(
       { type: "system", subtype: "init", model: "Composer Test" },
-      { type: "tool_call", subtype: "started", call_id: "a", tool_call: { shellToolCall: { args: { command: "npx vernierkit claim" } } } },
+      { type: "tool_call", subtype: "started", call_id: "a", tool_call: { shellToolCall: { args: { command: "npx 03kind claim" } } } },
       {
         type: "tool_call",
         subtype: "completed",
         call_id: "a",
-        tool_call: { shellToolCall: { args: { command: "npx vernierkit claim" }, result: { success: { stdout: "# Design changes\n", stderr: "", exitCode: 0 } } } },
+        tool_call: { shellToolCall: { args: { command: "npx 03kind claim" }, result: { success: { stdout: "# Design changes\n", stderr: "", exitCode: 0 } } } },
       },
       {
         type: "tool_call",
@@ -54,7 +54,7 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
         type: "tool_call",
         subtype: "completed",
         call_id: "d",
-        tool_call: { readToolCall: { args: { path: ".claude/skills/vernierkit/SKILL.md" }, result: { success: { isEmpty: false, totalLines: 147, fileSize: 24653 } } } },
+        tool_call: { readToolCall: { args: { path: ".claude/skills/03kind/SKILL.md" }, result: { success: { isEmpty: false, totalLines: 147, fileSize: 24653 } } } },
       },
       { type: "assistant", message: { content: [{ type: "text", text: "✓ Applied" }] } },
       { type: "result", subtype: "success", result: "Claiming.✓ Applied" },
@@ -64,10 +64,10 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
   assert.deepEqual(transcript, {
     model: "Composer Test",
     toolCalls: [
-      { name: "shell", command: "npx vernierkit claim", output: "# Design changes\n" },
+      { name: "shell", command: "npx 03kind claim", output: "# Design changes\n" },
       { name: "read", path: "src/App.tsx", output: "export function App" },
       { name: "grep", output: '{"error":{"message":"no"}}' },
-      { name: "read", path: ".claude/skills/vernierkit/SKILL.md", output: "", size: 24653 },
+      { name: "read", path: ".claude/skills/03kind/SKILL.md", output: "", size: 24653 },
     ],
     finalText: "✓ Applied",
     permissionDenials: 0,
@@ -78,10 +78,10 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
 
 test("tool calls are counted: searches over the project, the command line's commands, and what the Agent read, the Skill (loaded, read, or printed in the shell) and claim apart", () => {
   const calls: ToolCall[] = [
-    { name: "Skill", skill: "vernierkit", output: "S".repeat(30) },
-    { name: "Read", path: "/p/.agents/skills/vernierkit/SKILL.md", output: "", size: 14 },
-    { name: "Bash", command: "npx vernierkit claim", output: "notes!" },
-    { name: "Bash", command: "cd /p && npx vernierkit claim", output: "again" },
+    { name: "Skill", skill: "03kind", output: "S".repeat(30) },
+    { name: "Read", path: "/p/.agents/skills/03kind/SKILL.md", output: "", size: 14 },
+    { name: "Bash", command: "npx 03kind claim", output: "notes!" },
+    { name: "Bash", command: "cd /p && npx 03kind claim", output: "again" },
     { name: "Grep", output: "src/App.tsx:3" },
     { name: "Grep", path: "/p/src", output: "" },
     { name: "Grep", path: "/p/src/App.tsx", output: "" },
@@ -90,9 +90,9 @@ test("tool calls are counted: searches over the project, the command line's comm
     { name: "Bash", command: "grep -rn Card src/", output: "" },
     { name: "Bash", command: "grep -n Card src/App.tsx", output: "" },
     { name: "Bash", command: "find . -name '*.css'", output: "" },
-    { name: "Bash", command: "npx vernierkit done 1", output: "Change 1 done" },
-    { name: "Bash", command: "npx vernierkit done 2 && npx vernierkit finish", output: "Round finished" },
-    { name: "shell", command: "cat .agents/skills/vernierkit/SKILL.md", output: "C".repeat(20) },
+    { name: "Bash", command: "npx 03kind done 1", output: "Change 1 done" },
+    { name: "Bash", command: "npx 03kind done 2 && npx 03kind finish", output: "Round finished" },
+    { name: "shell", command: "cat .agents/skills/03kind/SKILL.md", output: "C".repeat(20) },
   ];
 
   assert.deepEqual(toolCallStats(calls), {
@@ -110,13 +110,13 @@ test("in Claude Code, a Skill's text comes as a message after the Skill tool's a
   const transcript = parseTranscript(
     "claude",
     lines(
-      { type: "assistant", message: { content: [{ type: "tool_use", id: "s", name: "Skill", input: { skill: "vernierkit" } }] } },
-      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "s", content: "Launching skill: vernierkit" }] } },
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "s", name: "Skill", input: { skill: "03kind" } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "s", content: "Launching skill: 03kind" }] } },
       { type: "user", message: { content: [{ type: "text", text: "Base directory for this skill: /p\n\n# Applying" }] } },
     ),
   );
 
-  assert.deepEqual(transcript.toolCalls, [{ name: "Skill", skill: "vernierkit", output: "Launching skill: vernierkitBase directory for this skill: /p\n\n# Applying" }]);
+  assert.deepEqual(transcript.toolCalls, [{ name: "Skill", skill: "03kind", output: "Launching skill: 03kindBase directory for this skill: /p\n\n# Applying" }]);
 });
 
 test("a report in the Skill's form lists each change once, under ✓ or under ⚠️ with why and instead", () => {
@@ -244,23 +244,23 @@ test("subagents are counted apart: Claude Code's Task or Agent calls and the oth
 
 test("the Skill read from the package's own copy, as an Agent with none in the project may find it, is the Skill read too (ticket 65)", () => {
   const calls: ToolCall[] = [
-    { name: "Read", path: "/p/node_modules/vernierkit/skill/SKILL.md", output: "S".repeat(12) },
-    { name: "Bash", command: "cat node_modules/vernierkit/skill/SKILL.md", output: "C".repeat(5) },
+    { name: "Read", path: "/p/node_modules/03kind/skill/SKILL.md", output: "S".repeat(12) },
+    { name: "Bash", command: "cat node_modules/03kind/skill/SKILL.md", output: "C".repeat(5) },
     { name: "Read", path: "/p/src/skill/SKILL.md", output: "x" },
   ];
 
   assert.equal(toolCallStats(calls).charsRead.skill, 17);
 });
 
-test("calls that read the Vernier Kit package itself are counted, not those that run its command line (ticket 65)", () => {
+test("calls that read the 03Kind package itself are counted, not those that run its command line (ticket 65)", () => {
   const calls: ToolCall[] = [
-    { name: "read", path: "/t/run/node_modules/vernierkit/dist/cli.js", output: "x" },
-    { name: "grep", path: "/t/run/node_modules/.pnpm/vernierkit@file+..+pack/node_modules/vernierkit/dist", output: "" },
-    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/vernierkit/dist/editor.dev.js\")'", output: "" },
-    { name: "Read", path: "/p/node_modules/vernierkit/skill/SKILL.md", output: "" },
-    { name: "Bash", command: "npx vernierkit done 1", output: "" },
-    { name: "Bash", command: "node node_modules/vernierkit/dist/cli.js claim", output: "" },
-    { name: "Read", path: "/p/node_modules/vernierkitten/index.js", output: "" },
+    { name: "read", path: "/t/run/node_modules/03kind/dist/cli.js", output: "x" },
+    { name: "grep", path: "/t/run/node_modules/.pnpm/03kind@file+..+pack/node_modules/03kind/dist", output: "" },
+    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/03kind/dist/editor.dev.js\")'", output: "" },
+    { name: "Read", path: "/p/node_modules/03kind/skill/SKILL.md", output: "" },
+    { name: "Bash", command: "npx 03kind done 1", output: "" },
+    { name: "Bash", command: "node node_modules/03kind/dist/cli.js claim", output: "" },
+    { name: "Read", path: "/p/node_modules/03kindred/index.js", output: "" },
     { name: "Read", path: "/p/src/App.tsx", output: "" },
   ];
 
@@ -270,9 +270,9 @@ test("calls that read the Vernier Kit package itself are counted, not those that
 test("Cursor's glob in a folder of the package is a call there, by its target folder (ticket 65)", () => {
   const transcript = parseTranscript(
     "cursor",
-    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/vernierkit", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
+    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/03kind", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
   );
 
-  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/vernierkit");
+  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/03kind");
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });

@@ -17,7 +17,7 @@ function expectNoEditorLayerCode(dist: string) {
   for (const file of files) {
     const content = readFileSync(path.join(dist, file), "utf8");
     // The toggle, and the rest of the editor layer, which a page in development loads only as needed.
-    for (const residue of ["vernier-kit", "data-vk-", TOGGLE_LABEL, EXIT_LABEL]) {
+    for (const residue of ["third-kind", "data-tk-", TOGGLE_LABEL, EXIT_LABEL]) {
       expect(content.includes(residue), `${file} contains "${residue}"`).toBe(false);
     }
   }
@@ -27,9 +27,9 @@ test("the production page has no toggle and no markers", async ({ page }) => {
   await page.goto(PREVIEW_URL);
   await expect(page.locator("h1")).toBeVisible();
 
-  await expect(page.getByRole("button", { name: /Vernier Kit/ })).toHaveCount(0);
-  await expect(page.locator("vernier-kit")).toHaveCount(0);
-  await expect(page.locator("[data-vk-loc]")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /03Kind/ })).toHaveCount(0);
+  await expect(page.locator("third-kind")).toHaveCount(0);
+  await expect(page.locator("[data-tk-loc]")).toHaveCount(0);
 });
 
 test("the production build output contains no editor layer code", () => {
@@ -37,7 +37,7 @@ test("the production build output contains no editor layer code", () => {
 });
 
 test("a build in development mode contains no editor layer code either", () => {
-  const outDir = mkdtempSync(path.join(tmpdir(), "vernierkit-build-"));
+  const outDir = mkdtempSync(path.join(tmpdir(), "03kind-build-"));
   execFileSync("pnpm", ["exec", "vite", "build", "--mode", "development", "--outDir", outDir], {
     cwd: example,
     stdio: "pipe",

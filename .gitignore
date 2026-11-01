@@ -5,6 +5,6 @@ test-results/
 playwright-report/
 playground/
 .vitest/
-.vernier/
+.03kind/
 bench-results/
 e2e/perf/results/

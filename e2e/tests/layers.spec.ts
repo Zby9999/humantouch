@@ -99,7 +99,7 @@ test("the layer tree shows the page structure, named after components, text and 
     "2 App — Vertical Stack",
     "3 Stack — Vertical Stack",
     "4 Header — Horizontal Stack",
-    "5 Vernier Kit — Text",
+    "5 Third Kind — Text",
     "5 Badge — Locked",
     "4 A Framer-style editor layer for any page. — Text",
     "4 Button — Horizontal Stack",
@@ -194,7 +194,7 @@ test.describe("selecting layers on the canvas", () => {
     await expect(selectedRow(page)).toHaveAttribute("aria-level", "3");
     await doubleClickOn(page, "h1");
     await doubleClickOn(page, "h1");
-    await expect(selectedRow(page)).toHaveText("Vernier Kit");
+    await expect(selectedRow(page)).toHaveText("Third Kind");
   });
 
   test("double clicks do not select the page's text the way a browser would", async ({ page }) => {
@@ -353,7 +353,7 @@ test.describe("text beside other layers", () => {
     expect(await layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
     await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Button.");
     // Outlines the text only, not the whole button.
-    const outline = (await page.locator('.vk-selection[data-view="Desktop"]').boundingBox())!;
+    const outline = (await page.locator('.tk-selection[data-view="Desktop"]').boundingBox())!;
     expect(outline.width).toBeCloseTo(text.width, 0);
   });
 
@@ -371,7 +371,7 @@ test.describe("text beside other layers", () => {
 });
 
 test.describe("the selection box", () => {
-  const box = (page: Page) => page.locator('.vk-selection[data-view="Desktop"]');
+  const box = (page: Page) => page.locator('.tk-selection[data-view="Desktop"]');
 
   test("outlines the selected layer in blue", async ({ page }) => {
     await enterEditMode(page);
@@ -404,7 +404,7 @@ test.describe("the selection box", () => {
 
     await expect(selectedRow(page)).toHaveText("Badge");
     await expect(box(page)).toHaveCSS("border-color", "rgb(140, 140, 140)");
-    await expect(box(page).locator(".vk-selection-lock")).toBeVisible();
+    await expect(box(page).locator(".tk-selection-lock")).toBeVisible();
   });
 
   test("follows the layer when the canvas zooms", async ({ page }) => {
@@ -424,7 +424,7 @@ test.describe("the selection box", () => {
 });
 
 test.describe("the hover outline", () => {
-  const hover = (page: Page) => page.locator('.vk-hover[data-view="Desktop"]');
+  const hover = (page: Page) => page.locator('.tk-hover[data-view="Desktop"]');
   const rect = async (locator: ReturnType<Page["locator"]>) => {
     const { x, y, width, height } = (await locator.boundingBox())!;
     return [x, y, width, height].map(Math.round);
@@ -442,7 +442,7 @@ test.describe("the hover outline", () => {
     await expect.poll(() => rect(hover(page))).toEqual(outermost);
 
     await page.mouse.click(h1.x, h1.y);
-    expect(await rect(page.locator('.vk-selection[data-view="Desktop"]'))).toEqual(outermost);
+    expect(await rect(page.locator('.tk-selection[data-view="Desktop"]'))).toEqual(outermost);
   });
 
   test("is not drawn over the selected layer, and goes when the pointer leaves the canvas", async ({ page }) => {

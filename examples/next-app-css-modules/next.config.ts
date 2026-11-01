@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
-import { withVernier } from "vernierkit/next";
+import { withThirdKind } from "03kind/next";
 
 const nextConfig: NextConfig = {};
 
-export default withVernier(nextConfig);
+export default withThirdKind(nextConfig);

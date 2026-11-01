@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearVernier, vernierkit } from "./project-files";
+import { clearThirdKindFolder, npx03kind } from "./project-files";
 
-/** These tests save into the example project's `.vernier/` for real, so they go one at a time. */
+/** These tests save into the example project's `.03kind/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
-const VERNIER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.vernier/", import.meta.url));
-const CHANGESET = `${VERNIER}changeset.json`;
-const CANVAS = `${VERNIER}canvas.html`;
+const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.03kind/", import.meta.url));
+const CHANGESET = `${THIRD_KIND_FOLDER}changeset.json`;
+const CANVAS = `${THIRD_KIND_FOLDER}canvas.html`;
 
-test.beforeEach(() => clearVernier(VERNIER));
-test.afterAll(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -38,7 +38,7 @@ function savedChanges() {
 
 /** Where the editor layer reaches the local service, as the dev server hands it to the page. */
 function service(page: Page): Promise<{ url: string; token: string }> {
-  return page.evaluate(() => (window as unknown as { __VERNIERKIT__: { url: string; token: string } }).__VERNIERKIT__);
+  return page.evaluate(() => (window as unknown as { __THIRD_KIND__: { url: string; token: string } }).__THIRD_KIND__);
 }
 
 test("the local service listens on 127.0.0.1 only, and turns away requests without its token", async ({ page, request }) => {
@@ -48,12 +48,12 @@ test("the local service listens on 127.0.0.1 only, and turns away requests witho
 
   expect(new URL(url).hostname).toBe("127.0.0.1");
   expect((await request.get(round)).status()).toBe(401);
-  expect((await request.get(round, { headers: { "X-Vernier-Token": "not-the-token" } })).status()).toBe(401);
+  expect((await request.get(round, { headers: { "X-03Kind-Token": "not-the-token" } })).status()).toBe(401);
   expect((await request.put(round, { data: { canvas: "<html></html>", changeSet: { lastId: 0, changes: [] } } })).status()).toBe(401);
   expect((await request.delete(round)).status()).toBe(401);
-  expect((await request.get(round, { headers: { "X-Vernier-Token": token } })).ok()).toBe(true);
+  expect((await request.get(round, { headers: { "X-03Kind-Token": token } })).ok()).toBe(true);
   // Not on any other address of this machine.
-  await expect(request.get(`http://[::1]:${new URL(url).port}/round`, { headers: { "X-Vernier-Token": token } })).rejects.toThrow();
+  await expect(request.get(`http://[::1]:${new URL(url).port}/round`, { headers: { "X-03Kind-Token": token } })).rejects.toThrow();
 });
 
 test("edits are saved into the project about half a second after the designer stops, with no save action", async ({ page }) => {
@@ -72,7 +72,7 @@ test("edits are saved into the project about half a second after the designer st
   expect(waited).toBeLessThan(1500);
   // The saved canvas, edits included: the frozen page with red cards.
   const saved = readFileSync(CANVAS, "utf8");
-  expect(saved).toContain("Vernier Kit</h1>");
+  expect(saved).toContain("Third Kind</h1>");
   // In the canvas's edit styles, over the page's.
   expect(saved).toMatch(/background-color:rgb\(255 0 0 \/ 1\)!important/);
 });
@@ -185,7 +185,7 @@ test("a badge on the toggle counts the changes not yet applied", async ({ page }
 /**
  * A round saved before the instances of a layer shared their edit styles
  * (ticket 60): `e2e/fixtures/round-before-60/`, written once by the code of
- * then, with `VK_WRITE_FIXTURE` set, and kept since.
+ * then, with `TK_WRITE_FIXTURE` set, and kept since.
  *
  * A saved round names files by where they are on disk: the source a style
  * comes from, and the fonts the canvas loads through Vite's `/@fs/`. The
@@ -242,7 +242,7 @@ async function enterEveryView(page: Page) {
 }
 
 test.describe("a round saved before the instances of a layer shared their edit styles", () => {
-  test.skip(!process.env.VK_WRITE_FIXTURE, "writes the fixture, with the code of then");
+  test.skip(!process.env.TK_WRITE_FIXTURE, "writes the fixture, with the code of then");
   // Written once, by the code of then: never over the one kept.
   test.skip(existsSync(BEFORE_60), "the fixture is kept: written by the code of then");
   test("is written", async ({ page }) => {
@@ -264,13 +264,13 @@ test.describe("a round saved before the instances of a layer shared their edit s
     writeBefore60("canvas.html", readFileSync(CANVAS, "utf8"));
     writeBefore60("changeset.json", readFileSync(CHANGESET, "utf8"));
     writeBefore60("styles.json", `${JSON.stringify(await viewStyles(page))}\n`);
-    writeBefore60("claim.md", await vernierkit("claim"));
+    writeBefore60("claim.md", await npx03kind("claim"));
   });
 });
 
 test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the notes of each change are as they were", async ({ page }) => {
-  mkdirSync(VERNIER, { recursive: true });
-  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${VERNIER}${file}`, readBefore60(file));
+  mkdirSync(THIRD_KIND_FOLDER, { recursive: true });
+  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${THIRD_KIND_FOLDER}${file}`, readBefore60(file));
   const before = JSON.parse(readBefore60("styles.json"));
   const changeSet = JSON.parse(readBefore60("changeset.json"));
 
@@ -291,7 +291,7 @@ test("a round saved before the instances of a layer shared their edit styles ope
   await expect.poll(() => viewStyles(page)).toEqual(before);
   await expect.poll(() => JSON.parse(readFileSync(CHANGESET, "utf8"))).toEqual(changeSet);
   // Each change's notes as they were; what goes around them, the way through the round and how to write them, is of the notes of now (ticket 65).
-  expect(changeSections(await vernierkit("claim"))).toBe(changeSections(readBefore60("claim.md")));
+  expect(changeSections(await npx03kind("claim"))).toBe(changeSections(readBefore60("claim.md")));
 });
 
 /** The change notes' sections of the changes, one after another: what is said around them left out. */

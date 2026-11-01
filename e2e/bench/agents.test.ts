@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, PROMPT } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "vernierkit-bench-agents-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** A file that stands in for a browser binary. */
@@ -17,20 +17,20 @@ function fakeBinary(path: string): string {
 }
 
 /**
- * The browser plugins Cursor's run is given, with VK_BENCH_HEADLESS_SHELL set
+ * The browser plugins Cursor's run is given, with TK_BENCH_HEADLESS_SHELL set
  * to `shell`: each `--plugin-dir` of its command line, by the plugin's name,
  * with the MCP servers it declares.
  */
 function cursorPlugins(shell: string): Record<string, unknown> {
   const dir = mkdtempSync(join(scratch, "project-"));
   const folder = mkdtempSync(join(scratch, "run-"));
-  const saved = process.env.VK_BENCH_HEADLESS_SHELL;
-  process.env.VK_BENCH_HEADLESS_SHELL = shell;
+  const saved = process.env.TK_BENCH_HEADLESS_SHELL;
+  process.env.TK_BENCH_HEADLESS_SHELL = shell;
   try {
     AGENTS.cursor.prepare!(dir, folder);
   } finally {
-    if (saved === undefined) delete process.env.VK_BENCH_HEADLESS_SHELL;
-    else process.env.VK_BENCH_HEADLESS_SHELL = saved;
+    if (saved === undefined) delete process.env.TK_BENCH_HEADLESS_SHELL;
+    else process.env.TK_BENCH_HEADLESS_SHELL = saved;
   }
   const args = AGENTS.cursor.args(folder);
   const plugins = args.flatMap((arg, i) => (arg === "--plugin-dir" ? [args[i + 1]] : []));
@@ -98,33 +98,33 @@ test("of the processes under the Agent, the browsers that came up with a window 
 test("with no Skill, each Agent is asked only to run claim and apply as it says, by a command line of its own (ticket 65)", () => {
   for (const agent of ["claude", "cursor"] as const) {
     const args = AGENTS[agent].args("/run", NO_SKILL_PROMPT);
-    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx vernierkit claim`，照输出落地");
+    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx 03kind claim`，照输出落地");
     assert.equal(AGENTS[agent].args("/run")[1], PROMPT);
     assert.notEqual(commandLine(agent, NO_SKILL_PROMPT), commandLine(agent));
   }
 });
 
-test("Cursor runs on grok-4.7-high unless VK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
-  const saved = process.env.VK_BENCH_CURSOR_MODEL;
+test("Cursor runs on grok-4.7-high unless TK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
+  const saved = process.env.TK_BENCH_CURSOR_MODEL;
   try {
-    delete process.env.VK_BENCH_CURSOR_MODEL;
+    delete process.env.TK_BENCH_CURSOR_MODEL;
     assert.match(commandLine("cursor"), / --model grok-4\.7-high /);
-    process.env.VK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
+    process.env.TK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
     assert.match(commandLine("cursor"), / --model 'grok-4\.7\[context=256k,reasoning_effort=high,fast=false\]' /);
     assert.doesNotMatch(commandLine("cursor"), /grok-4\.7-high/);
   } finally {
-    if (saved === undefined) delete process.env.VK_BENCH_CURSOR_MODEL;
-    else process.env.VK_BENCH_CURSOR_MODEL = saved;
+    if (saved === undefined) delete process.env.TK_BENCH_CURSOR_MODEL;
+    else process.env.TK_BENCH_CURSOR_MODEL = saved;
   }
 });
 
 test("a project with no Skill: init's Skill and its line in AGENTS.md are taken out, and nothing else (ticket 65)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
-  for (const folder of [".agents/skills/vernierkit", ".claude/skills/vernierkit", ".claude/skills/deploy"]) {
+  for (const folder of [".agents/skills/03kind", ".claude/skills/03kind", ".claude/skills/deploy"]) {
     mkdirSync(join(dir, folder), { recursive: true });
     writeFileSync(join(dir, folder, "SKILL.md"), "# Skill");
   }
-  const line = "Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.";
+  const line = "03Kind: to apply the designer's design changes, or undo the last round, follow `.agents/skills/03kind/SKILL.md`.";
   writeFileSync(join(dir, "AGENTS.md"), `# Project\n\nUse pnpm.\n${line}\n`);
 
   withoutSkill(dir);
@@ -141,18 +141,18 @@ test("a project with no Skill: init's Skill and its line in AGENTS.md are taken 
 
 test("a project with no Skill: init's record of its line in AGENTS.md is taken out too, its other edits kept (ticket 63)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
-  const line = "Vernier Kit: to apply the designer's design changes, or undo the last round, follow `.agents/skills/vernierkit/SKILL.md`.";
+  const line = "03Kind: to apply the designer's design changes, or undo the last round, follow `.agents/skills/03kind/SKILL.md`.";
   writeFileSync(join(dir, "AGENTS.md"), `${line}\n`);
-  mkdirSync(join(dir, ".vernier"));
-  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [vernier(), " };
-  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".vernier/\n" }], created: ["AGENTS.md"] };
-  writeFileSync(join(dir, ".vernier/install.json"), JSON.stringify(record));
+  mkdirSync(join(dir, ".03kind"));
+  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [thirdKind(), " };
+  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".03kind/\n" }], created: ["AGENTS.md"] };
+  writeFileSync(join(dir, ".03kind/install.json"), JSON.stringify(record));
 
   withoutSkill(dir);
 
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".vernier/install.json"), "utf8")), {
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".03kind/install.json"), "utf8")), {
     dependency: true,
-    edits: [config, { file: ".gitignore", before: "", after: ".vernier/\n" }],
+    edits: [config, { file: ".gitignore", before: "", after: ".03kind/\n" }],
     created: [],
   });
 });

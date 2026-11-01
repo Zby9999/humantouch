@@ -9,10 +9,10 @@ const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
 const layerTree = (page: Page) => page.getByRole("tree", { name: "Layers" });
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
-const lines = (page: Page) => page.locator('.vk-mark[data-type="line"]');
-const sizeLabel = (page: Page) => page.locator(".vk-size-label");
+const lines = (page: Page) => page.locator('.tk-mark[data-type="line"]');
+const sizeLabel = (page: Page) => page.locator(".tk-size-label");
 /** A handle of the layer selected, in a view by its name. */
-const handle = (page: Page, name: string, view = "Desktop") => page.locator(`.vk-handles[data-view="${view}"] .vk-handle[data-handle="${name}"]`);
+const handle = (page: Page, name: string, view = "Desktop") => page.locator(`.tk-handles[data-view="${view}"] .tk-handle[data-handle="${name}"]`);
 const mod = process.platform === "darwin" ? "Meta" : "Control";
 const HERO = '[data-testid="hero"]';
 
@@ -91,14 +91,14 @@ test("the layer selected alone has handles on its corners and edges in every vie
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
 
   for (const view of ["Desktop", "Tablet", "Phone"]) {
-    await expect(page.locator(`.vk-handles[data-view="${view}"] .vk-handle`)).toHaveCount(8);
+    await expect(page.locator(`.tk-handles[data-view="${view}"] .tk-handle`)).toHaveCount(8);
   }
   // The corners show as squares; the edges only as the cursor over them.
   await expect(handle(page, "se")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(handle(page, "e")).toHaveCSS("cursor", "ew-resize");
 
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click({ modifiers: ["Shift"] });
-  await expect(page.locator(".vk-handle")).toHaveCount(0);
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click({ modifiers: ["Shift"] });
+  await expect(page.locator(".tk-handle")).toHaveCount(0);
 });
 
 test("a corner dragged resizes both ways: Hug becomes Fixed, the panel says so, W × H shows meanwhile, and it is one change each way", async ({ page }) => {
@@ -113,7 +113,7 @@ test("a corner dragged resizes both ways: Hug becomes Fixed, the panel says so, 
   expect(during).toMatchObject({ x: before.x, width: Math.round(before.width + 40), height: Math.round(before.height + 10) });
   await expect(sizeLabel(page)).toHaveText(`${Math.round(before.width + 40)} × ${Math.round(before.height + 10)}`);
   // The selection stays on it, its handles with it.
-  await expect(page.locator('.vk-selection[data-view="Desktop"]')).not.toHaveAttribute("data-hidden");
+  await expect(page.locator('.tk-selection[data-view="Desktop"]')).not.toHaveAttribute("data-hidden");
   await page.mouse.up();
 
   await expect(sizeLabel(page)).toHaveCount(0);
@@ -203,7 +203,7 @@ test("dragged near a layer beside it, its edge snaps there with a red line; with
 
 test("text dragged narrower is Fixed in width, its height still Hug, following its words as they wrap", async ({ page }) => {
   await enterEditMode(page);
-  await layerTree(page).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   const before = await boxIn(desktop(page), "h1");
 
   await dragHandle(page, handle(page, "e"), { x: 100 - before.width, y: 0 });
@@ -238,7 +238,7 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   expect((await boxIn(desktop(page), `${HERO} > button`)).width).toBe(before.width);
   expect((await boxIn(phone(page), `${HERO} > button`)).width).toBe(before.width);
   // The row's mark (ticket 57), and the breakpoint's list.
-  await expect(design(page).locator(".vk-row-mark").and(design(page).getByRole("button", { name: "Reset Width to inherit" }))).toBeVisible();
+  await expect(design(page).locator(".tk-row-mark").and(design(page).getByRole("button", { name: "Reset Width to inherit" }))).toBeVisible();
   await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveText(["Width"]);
 
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
@@ -420,7 +420,7 @@ test("pressed with ⌘ held, a handle selects the deepest layer under it, as any
   // The box, the layer around what is under the pointer.
   await pick(page, desktop(page), "#inner");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".vk-handle")).toHaveCount(24);
+  await expect(page.locator(".tk-handle")).toHaveCount(24);
   const edge = (await handle(page, "w").boundingBox())!;
 
   // Just inside the box's left edge, on what fills it.

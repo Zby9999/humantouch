@@ -1,11 +1,11 @@
 {
-  "name": "vernierkit-monorepo",
+  "name": "03kind-monorepo",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm --filter vernierkit build",
+    "build": "pnpm --filter 03kind build",
     "typecheck": "pnpm -r typecheck && tsc --noEmit -p e2e",
-    "test": "pnpm --filter vernierkit test && node --test 'e2e/bench/*.test.ts'",
+    "test": "pnpm --filter 03kind test && node --test 'e2e/bench/*.test.ts' e2e/old-names.test.ts",
     "test:e2e": "pnpm build && playwright test -c e2e/playwright.config.ts",
     "test:perf": "pnpm build && playwright test -c e2e/perf/playwright.config.ts",
     "bench:agents": "pnpm build && node e2e/bench/run-agents.ts"

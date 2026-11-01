@@ -28,14 +28,14 @@
 
 Guide 草稿：
 
-> Install Vernier Kit, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
+> Install 03Kind, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
 >
-> 1. In the project's root folder, run `npx -y vernierkit@latest init`. If it ends with "Finish by hand", make those edits.
+> 1. In the project's root folder, run `npx -y 03kind@latest init`. If it ends with "Finish by hand", make those edits.
 > 2. Start the project's dev server (such as `npm run dev`) and leave it running.
-> 3. Open the page it serves and confirm the Vernier Kit toggle is at its bottom right: a round button named "Vernier Kit: enter edit mode". If you cannot open a browser, ask me to look.
-> 4. Run `npx vernierkit doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
+> 3. Open the page it serves and confirm the 03Kind toggle is at its bottom right: a round button named "03Kind: enter edit mode". If you cannot open a browser, ask me to look.
+> 4. Run `npx 03kind doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 >
-> To remove Vernier Kit, run `npx vernierkit remove` in the project's root folder. It takes out everything `init` added and deletes `.vernier/`, with any layers I set aside off the canvas, leaving `git diff` empty. It refuses while I have design changes not applied yet, or while you are applying a round.
+> To remove 03Kind, run `npx 03kind remove` in the project's root folder. It takes out everything `init` added and deletes `.03kind/`, with any layers I set aside off the canvas, leaving `git diff` empty. It refuses while I have design changes not applied yet, or while you are applying a round.
 
 **去掉 source map（2026-10-29）**
 
@@ -63,14 +63,14 @@ Guide 草稿：
 
 Guide 草稿（取代上面那份）：
 
-> Install Vernier Kit, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
+> Install 03Kind, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
 >
-> 1. In the project's root folder, run `npx -y vernierkit@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
+> 1. In the project's root folder, run `npx -y 03kind@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
 > 2. Start the dev server with the command `init` printed (if it printed none, the project's own `dev` script) and leave it running.
-> 3. Open the page it serves and confirm the Vernier Kit toggle is at its bottom right: a round button named "Vernier Kit: enter edit mode". If you cannot open a browser, ask me to look.
-> 4. Run `npx vernierkit doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
+> 3. Open the page it serves and confirm the 03Kind toggle is at its bottom right: a round button named "03Kind: enter edit mode". If you cannot open a browser, ask me to look.
+> 4. Run `npx 03kind doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 >
-> To remove Vernier Kit, run `npx vernierkit remove` in the project's root folder. It takes out everything `init` added and deletes `.vernier/`, with any off-canvas layers, leaving `git diff` empty. If it prints "Finish by hand" (lines `init` added were changed since), make those edits too; then nothing of Vernier Kit is left in `git diff`. It refuses while I have design changes not applied yet, or while you are applying a round.
+> To remove 03Kind, run `npx 03kind remove` in the project's root folder. It takes out everything `init` added and deletes `.03kind/`, with any off-canvas layers, leaving `git diff` empty. If it prints "Finish by hand" (lines `init` added were changed since), make those edits too; then nothing of 03Kind is left in `git diff`. It refuses while I have design changes not applied yet, or while you are applying a round.
 
 **Guide 移到 59（2026-10-30）**
 

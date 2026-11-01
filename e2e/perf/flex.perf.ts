@@ -18,7 +18,7 @@ import { ms, report, summarize, type Summary } from "./stats";
  * says whether the target is met. How each is measured is said at each test;
  * ticket 22's Comments has it in full.
  *
- * In the headless shell (`VK_PERF_HEADLESS=1`) the numbers are for comparing
+ * In the headless shell (`TK_PERF_HEADLESS=1`) the numbers are for comparing
  * before and after a change only: the targets are reported, never checked.
  */
 
@@ -78,7 +78,7 @@ function print(text: string) {
 }
 
 function host(page: Page) {
-  return page.locator("vernier-kit");
+  return page.locator("third-kind");
 }
 
 function canvas(page: Page) {
@@ -133,18 +133,18 @@ interface Entered {
  * view still hidden), as is the time the desktop view's frame begins.
  */
 function armEnter(views: string[]) {
-  const w = window as unknown as { vkEnter: Promise<Entered> };
-  w.vkEnter = new Promise((resolve) => {
-    const shadow = () => document.querySelector("vernier-kit")?.shadowRoot ?? null;
+  const w = window as unknown as { tkEnter: Promise<Entered> };
+  w.tkEnter = new Promise((resolve) => {
+    const shadow = () => document.querySelector("third-kind")?.shadowRoot ?? null;
     const frameOf = (root: ShadowRoot, title: string) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`);
     const shows = (root: ShadowRoot, title: string) => !!frameOf(root, title)?.contentDocument?.querySelector("[data-testid=big-hero]");
     const desktopUp = (root: ShadowRoot | null): root is ShadowRoot => {
-      const stage = root?.querySelector<HTMLElement>(".vk-stage");
-      const shell = root?.querySelector<HTMLElement>(".vk-viewport")?.parentElement;
+      const stage = root?.querySelector<HTMLElement>(".tk-stage");
+      const shell = root?.querySelector<HTMLElement>(".tk-viewport")?.parentElement;
       return !!root && stage?.style.visibility === "visible" && shell?.style.opacity !== "0" && shows(root, views[0]);
     };
     const allUp = (root: ShadowRoot) => !!root.querySelector('[role="tree"] [role="treeitem"]') && views.every((title) => shows(root, title));
-    const travelling = (root: ShadowRoot) => !!root.querySelector(".vk-viewport.is-travelling");
+    const travelling = (root: ShadowRoot) => !!root.querySelector(".tk-viewport.is-travelling");
     /** Shown on screen: in a view not hidden while the canvas travels. */
     const allShown = (root: ShadowRoot) => allUp(root) && views.every((title) => getComputedStyle(frameOf(root, title)!).visibility === "visible");
     /**
@@ -197,7 +197,7 @@ function armEnter(views: string[]) {
 async function enterAndMeasure(page: Page, label: string) {
   await page.evaluate(armEnter, VIEWS);
   await page.getByRole("button", { name: label }).click();
-  const { click, desktop, desktopDrawn, allUp, allUpAtEnd } = await page.evaluate(() => (window as unknown as { vkEnter: Promise<Entered> }).vkEnter);
+  const { click, desktop, desktopDrawn, allUp, allUpAtEnd } = await page.evaluate(() => (window as unknown as { tkEnter: Promise<Entered> }).tkEnter);
   expect(allUpAtEnd, "once the page has shrunk into the canvas, every view shows it and the Layers panel lists it").toBe(true);
   return { desktopUp: desktopDrawn - click, desktopBegins: desktop - click, allUp: allUp - click };
 }
@@ -254,10 +254,10 @@ interface ValueSample {
  * every view shows it is kept as a reference.
  */
 function armValue({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
-  const w = window as unknown as { vkValue: Promise<ValueSample> };
+  const w = window as unknown as { tkValue: Promise<ValueSample> };
   const { scheduler } = window as unknown as WithScheduler;
-  w.vkValue = new Promise((resolve) => {
-    const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  w.tkValue = new Promise((resolve) => {
+    const root = document.querySelector("third-kind")!.shadowRoot!;
     const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
     const showsIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property) === expected;
     const shown = () => docs.every(showsIn);
@@ -317,7 +317,7 @@ async function stepValue(page: Page, field: string, selector: string, property: 
     const expected = `${parseFloat(await valueOnCanvas(page, selector, property)) + 1}px`;
     await page.evaluate(armValue, { views, selector, property, expected });
     await page.keyboard.press("ArrowUp");
-    samples.push(await page.evaluate(() => (window as unknown as { vkValue: Promise<ValueSample> }).vkValue));
+    samples.push(await page.evaluate(() => (window as unknown as { tkValue: Promise<ValueSample> }).tkValue));
     await settle(page, 150);
   }
   // After the last step, every view shows the last value.
@@ -358,7 +358,7 @@ interface HeldRecord {
  */
 function armHeld({ views, selector, property, from }: { views: string[]; selector: string; property: string; from: number }) {
   const { scheduler } = window as unknown as WithScheduler;
-  const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  const root = document.querySelector("third-kind")!.shadowRoot!;
   const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
   const valueIn = (doc: Document) => parseFloat(getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property));
   /** Once a frame has been drawn, before what the page has queued meanwhile (see `armEnter`). */
@@ -417,7 +417,7 @@ function armHeld({ views, selector, property, from }: { views: string[]; selecto
     },
     { capture: true, signal: listening.signal },
   );
-  (window as unknown as { vkHeld: HeldRecord }).vkHeld = record;
+  (window as unknown as { tkHeld: HeldRecord }).tkHeld = record;
 }
 
 /**
@@ -444,7 +444,7 @@ async function holdValue(page: Page, field: string, selector: string, property: 
   sent.push(cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }));
   await Promise.all(sent);
   await cdp.detach();
-  const held = await page.evaluate(() => (window as unknown as { vkHeld: HeldRecord }).vkHeld.done);
+  const held = await page.evaluate(() => (window as unknown as { tkHeld: HeldRecord }).tkHeld.done);
   await settle(page);
   await everyViewShows(page, selector, property, `${from + HELD_STEPS}px`);
   return held;
@@ -468,8 +468,8 @@ interface FrameRecord {
 }
 
 function armFrames(shows: string) {
-  const w = window as unknown as { vkFrames: FrameRecord };
-  const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  const w = window as unknown as { tkFrames: FrameRecord };
+  const root = document.querySelector("third-kind")!.shadowRoot!;
   const record: FrameRecord = { times: [], withLine: 0, long: [], moves: 0, stop() {} };
   const moved = () => record.moves++;
   addEventListener("pointermove", moved, true);
@@ -487,7 +487,7 @@ function armFrames(shows: string) {
     observer.disconnect();
     removeEventListener("pointermove", moved, true);
   };
-  w.vkFrames = record;
+  w.tkFrames = record;
 }
 
 /**
@@ -519,7 +519,7 @@ async function dragFor(page: Page, from: { x: number; y: number }, shows: string
   await Promise.all(sent);
   await cdp.detach();
   const record = await page.evaluate(() => {
-    const record = (window as unknown as { vkFrames: FrameRecord }).vkFrames;
+    const record = (window as unknown as { tkFrames: FrameRecord }).tkFrames;
     record.stop();
     return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
   });
@@ -534,7 +534,7 @@ async function dragCard(page: Page, n: number) {
   const box = (await canvas(page).locator(card(n)).boundingBox())!;
   const step = (await canvas(page).locator(card(n + 1)).boundingBox())!.x - box.x;
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
-  return dragFor(page, from, ".vk-drop-line", (elapsed) => {
+  return dragFor(page, from, ".tk-drop-line", (elapsed) => {
     // Across two cards and back, and down a row and back, once every 1.25s.
     const phase = (elapsed / 1250) * 2 * Math.PI;
     return [from.x + Math.sin(phase) * step * 2, from.y + (1 - Math.cos(phase)) * box.height * 0.6];
@@ -548,9 +548,9 @@ async function dragCard(page: Page, n: number) {
  * same card. The pointer is sent as `dragCard` sends it.
  */
 async function resizeCard(page: Page) {
-  const corner = (await host(page).locator('.vk-handles[data-view="Desktop"] .vk-handle[data-handle="se"]').boundingBox())!;
+  const corner = (await host(page).locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="se"]').boundingBox())!;
   const from = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 };
-  return dragFor(page, from, ".vk-size-label", (elapsed) => {
+  return dragFor(page, from, ".tk-size-label", (elapsed) => {
     // Out and back once every 1.25s: up to 80 screen px wider and 60 taller, never back within the threshold of where it was pressed.
     const phase = (elapsed / 1250) * 2 * Math.PI;
     return [from.x + 10 + (1 - Math.cos(phase)) * 40, from.y + 10 + (1 - Math.cos(phase)) * 30];
@@ -689,17 +689,17 @@ test("a value changed shows in the view worked in in the next frame, its work wi
 
 /** What `hearKeysFirst` tells of each key pressed, if anything listens. */
 interface WithKeysFirst {
-  vkKeyFirst?: (event: KeyboardEvent) => void;
+  tkKeyFirst?: (event: KeyboardEvent) => void;
 }
 
 /**
  * Before any of the page's own: a listener for every key pressed, first of all
- * at the window, that tells `window.vkKeyFirst` of it. The editor layer takes
+ * at the window, that tells `window.tkKeyFirst` of it. The editor layer takes
  * ⌘Z and ⇧⌘Z at the window, as they come, so a listener added once it is up
  * would hear them only once they are handled.
  */
 function hearKeysFirst() {
-  addEventListener("keydown", (event) => (window as unknown as WithKeysFirst).vkKeyFirst?.(event), true);
+  addEventListener("keydown", (event) => (window as unknown as WithKeysFirst).tkKeyFirst?.(event), true);
 }
 
 interface UndoRedoSample {
@@ -729,9 +729,9 @@ interface UndoRedoSample {
  * Waits for the frame under way to be drawn before listening.
  */
 function armUndoRedo({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
-  const w = window as unknown as WithKeysFirst & { vkUndoRedo: Promise<UndoRedoSample> };
+  const w = window as unknown as WithKeysFirst & { tkUndoRedo: Promise<UndoRedoSample> };
   const { scheduler } = window as unknown as WithScheduler;
-  const root = document.querySelector("vernier-kit")!.shadowRoot!;
+  const root = document.querySelector("third-kind")!.shadowRoot!;
   const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
   const valueIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property);
   /** ⌘Z or ⇧⌘Z (Ctrl on other systems): the keys pressed here. */
@@ -740,7 +740,7 @@ function armUndoRedo({ views, selector, property, expected }: { views: string[];
     requestAnimationFrame(() =>
       scheduler.postTask(
         () => {
-          w.vkUndoRedo = new Promise((resolve) => {
+          w.tkUndoRedo = new Promise((resolve) => {
             let start = 0;
             let arrived = 0;
             let handled = 0;
@@ -771,9 +771,9 @@ function armUndoRedo({ views, selector, property, expected }: { views: string[];
                 { priority: "user-blocking" },
               );
             };
-            w.vkKeyFirst = (event) => {
+            w.tkKeyFirst = (event) => {
               if (!isUndoOrRedo(event)) return;
-              w.vkKeyFirst = undefined;
+              w.tkKeyFirst = undefined;
               // Read before the time starts: the frame before has been drawn, so this lays nothing out.
               const shown = docs.map(valueIn);
               behind = shown.slice(1).some((value) => value !== shown[0]);
@@ -809,7 +809,7 @@ async function undoAndRedo(page: Page, field: string, selector: string, property
   await design(page).getByRole("textbox", { name: field, exact: true }).focus();
   const undo: UndoRedoSample[] = [];
   const redo: UndoRedoSample[] = [];
-  const measured = () => page.evaluate(() => (window as unknown as { vkUndoRedo: Promise<UndoRedoSample> }).vkUndoRedo);
+  const measured = () => page.evaluate(() => (window as unknown as { tkUndoRedo: Promise<UndoRedoSample> }).tkUndoRedo);
   for (let i = 0; i < UNDO_RUNS; i++) {
     const from = parseFloat(await valueOnCanvas(page, selector, property));
     await page.keyboard.press("ArrowUp");
@@ -886,7 +886,7 @@ test("⌘Z and ⇧⌘Z right after steps of a value show in every view in the ne
 /** Whether the views on the stage all show whole in the viewport, and how tall the stage and the viewport are, in page px. */
 function stageInSight(page: Page) {
   return host(page)
-    .locator(".vk-stage")
+    .locator(".tk-stage")
     .evaluate((stage) => {
       const [s, v] = [stage.getBoundingClientRect(), stage.parentElement!.getBoundingClientRect()];
       return { inSight: s.left >= v.left && s.top >= v.top && s.right <= v.right && s.bottom <= v.bottom, stageHeight: s.height, viewportHeight: v.height };
@@ -917,7 +917,7 @@ test.describe(() => {
     await enterEditMode(page);
     const views = [VIEWS[0]];
     for (const name of ["Tablet", "Phone"]) await page.getByRole("button", { name: `Delete ${name} view` }).click();
-    await expect(host(page).locator("iframe.vk-canvas")).toHaveCount(1);
+    await expect(host(page).locator("iframe.tk-canvas")).toHaveCount(1);
     await settle(page, 500);
     // From a card's body up to the main column: the body, the card, the cards' grid, their section, the column.
     await selectCard(page, 6);
@@ -1041,7 +1041,7 @@ interface Seen {
   measures: { start: number; duration: number }[];
 }
 function armTasks(measure: string) {
-  const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
+  const w = window as unknown as { tkSeen: Seen; tkStop: () => void };
   const seen: Seen = { long: [], measures: [] };
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
@@ -1051,14 +1051,14 @@ function armTasks(measure: string) {
   });
   observer.observe({ type: "longtask" });
   observer.observe({ type: "measure" });
-  w.vkSeen = seen;
-  w.vkStop = () => observer.disconnect();
+  w.tkSeen = seen;
+  w.tkStop = () => observer.disconnect();
 }
 function takenTasks(page: Page): Promise<Seen> {
   return page.evaluate(() => {
-    const w = window as unknown as { vkSeen: Seen; vkStop: () => void };
-    w.vkStop();
-    return w.vkSeen;
+    const w = window as unknown as { tkSeen: Seen; tkStop: () => void };
+    w.tkStop();
+    return w.tkSeen;
   });
 }
 
@@ -1078,7 +1078,7 @@ function longTasksOf(long: Seen["long"], own: { start: number; end: number; dura
  * reading all 96 of them, at the page's width and at the tablet's and the
  * phone's on copies of the page), then four hot updates to the cards' code:
  * one that applies none of them, then one per change. Each stretch of
- * checking is a `vernierkit:check` measure; a long task is the check's when
+ * checking is a `03kind:check` measure; a long task is the check's when
  * it would not be one without the checking in it. For reference, the same
  * hot updates with no round claimed: the page's own long tasks. The claim is
  * measured too: the page looks at every change, and makes its copies; and
@@ -1089,15 +1089,15 @@ test.describe("a claimed round", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const VERNIER = `${REACT18}.vernier`;
-  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
+  const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
-  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
-  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(VERNIER, { recursive: true, force: true });
+    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1110,7 +1110,7 @@ test.describe("a claimed round", () => {
     { name: "gap applied", from: "flex flex-1 flex-col gap-2 p-gutter", to: "flex flex-1 flex-col gap-[10px] p-gutter", shows: () => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px" },
   ];
 
-  const CHECKS = "vernierkit:check";
+  const CHECKS = "03kind:check";
 
   /**
    * Makes each hot update in turn, waits till the page shows it and has
@@ -1161,21 +1161,21 @@ test.describe("a claimed round", () => {
     const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
     await gap.fill("10");
     await gap.press("Enter");
-    await expect.poll(() => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
+    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
     // The claim too: the page looks at every change once, and makes its copies at the views' widths.
     await page.evaluate(armTasks, CHECKS);
-    await vernierkit("claim");
+    await npx03kind("claim");
     const ring = page.getByRole("progressbar", { name: "Applying design changes" });
     await expect(ring).toHaveAttribute("aria-valuenow", "0");
     await settle(page, 2000);
     const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
 
     let answered = "";
-    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await vernierkit("done", "1", "2", "3"))))];
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
     // None applied by that first update: done waited for it, and says so for each.
     expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
     await expect(ring).toHaveAttribute("aria-valuenow", "3");
-    await vernierkit("finish");
+    await npx03kind("finish");
     await expect(ring).toHaveCount(0);
 
     // The same hot updates with no round claimed: the page's own long tasks.
@@ -1234,22 +1234,22 @@ test.describe("a claimed round", () => {
  * finish after. Three changes to the hero made one after another in the
  * tablet view, each read once the designer stops; then two each followed at
  * once by going back to preview mode. Each step of reading is a
- * `vernierkit:parts` measure. No long task may come from the reading's first
+ * `03kind:parts` measure. No long task may come from the reading's first
  * step to its last, the reading's own or not: one the reading makes between
  * its steps (the browser laying the copy out, say) is counted too.
  */
 test.describe("a change at a breakpoint", () => {
   test.use({ keepRoundInMemory: false });
-  const VERNIER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.vernier", import.meta.url));
-  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
-  test.afterEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.03kind", import.meta.url));
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  test.afterEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
 
   const HERO = "[data-testid=big-hero]";
   const HERO_PICTURE = `${HERO} img`;
   const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
-  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")).changes : []);
+  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
 
-  const PARTS_MEASURE = "vernierkit:parts";
+  const PARTS_MEASURE = "03kind:parts";
 
   /** Selects the deepest layer at a point just inside `selector`'s box in the tablet view: edits apply from 560px to 1119px. */
   async function selectInTablet(page: Page, selector: string) {
@@ -1338,17 +1338,17 @@ test.describe("the same canvas again", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const VERNIER = `${REACT18}.vernier`;
-  const CLI = fileURLToPath(new URL("../../packages/vernierkit/dist/cli.js", import.meta.url));
+  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
+  const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
-  const vernierkit = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("rounded-card border");
   const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
-  const changesSaved = () => (existsSync(`${VERNIER}/changeset.json`) ? JSON.parse(readFileSync(`${VERNIER}/changeset.json`, "utf8")) : null);
-  test.beforeEach(() => rmSync(VERNIER, { recursive: true, force: true }));
+  const changesSaved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")) : null);
+  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(VERNIER, { recursive: true, force: true });
+    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1398,11 +1398,11 @@ test.describe("the same canvas again", () => {
     expect(changesSaved()?.changes.length).toBe(3);
 
     // The Agent applies the corners, and finishes: the fill and the gap are left (ticket 68).
-    await vernierkit("claim");
+    await npx03kind("claim");
     writeFileSync(PARTS, readFileSync(PARTS, "utf8").replace(CARD, CARD.replace("rounded-card", "rounded-[20px]")));
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius), { timeout: 20_000 }).toBe("20px");
-    await vernierkit("done", "1");
-    await vernierkit("finish");
+    await npx03kind("done", "1");
+    await npx03kind("finish");
     const carriedOver = changesSaved();
     const carried = carriedOver?.applied?.length ? await entries(page) : null;
     if (carried) expect(changesSaved()).toEqual(carriedOver);

@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { STALL_MS } from "../../packages/vernierkit/src/client/agent-stall";
+import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./project-files";
+import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /**
  * The applying bench, scripted (docs/goals.md, Robust): a script plays the
@@ -15,7 +15,7 @@ import { clearVernier, EXAMPLE, readVernier, VERNIER, vernierkit } from "./proje
  * own playbooks also measure the canvas edit mode comes back to.
  */
 
-/** These tests save into the example project's `.vernier/` for real, and edit its source. */
+/** These tests save into the example project's `.03kind/` for real, and edit its source. */
 test.use({ keepRoundInMemory: false });
 test.setTimeout(120_000);
 
@@ -23,16 +23,16 @@ test.setTimeout(120_000);
  * The toggle says the Agent seems to have stopped once nothing has moved for
  * `STALL_MS` (ticket 67), about 9 minutes. The playbooks run the page's clock
  * on past most of it (Playwright's clock: nothing in the editor layer is set
- * apart for tests); `VK_BENCH_STALL_REAL=1` has the playbook of an Agent that
+ * apart for tests); `TK_BENCH_STALL_REAL=1` has the playbook of an Agent that
  * stops halfway wait it out in real time instead.
  */
-const STALL_REAL = process.env.VK_BENCH_STALL_REAL === "1";
+const STALL_REAL = process.env.TK_BENCH_STALL_REAL === "1";
 /** How late the notice may show, past the threshold (docs/goals.md, Robust). */
 const NOTICE_LATE_MS = 5000;
 /** How much longer than that a playbook watches for it, so a notice too late is measured rather than missed. */
 const WATCH_PAST_MS = 5000;
 /** How long the editor layer is watched for noticing code changed with no claim. */
-const UNCLAIMED_WATCH_MS = Number(process.env.VK_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
+const UNCLAIMED_WATCH_MS = Number(process.env.TK_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/playbooks/", import.meta.url));
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
@@ -47,13 +47,13 @@ const CHANGES = [
 const IDS = [1, 2, 3];
 
 
-test.beforeEach(() => clearVernier(VERNIER));
+test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was: wait for the dev server to serve it so.
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
 });
-test.afterAll(() => clearVernier(VERNIER));
+test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const ring = (page: Page) => page.getByRole("progressbar", { name: "Applying design changes" });
@@ -70,7 +70,7 @@ async function designTheRound(page: Page) {
     await box.fill(value);
     await box.press("Enter");
   }
-  await expect.poll(() => readVernier("changeset.json")?.changes.length).toBe(CHANGES.length);
+  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(CHANGES.length);
 }
 
 /** The scripted Agent writes change `id` into the code; the dev server brings it into the page. */
@@ -98,8 +98,8 @@ async function progressGap(page: Page) {
 
 /** Of the changes the page can check (all three), how many have a check result, shown or not. The round's archive when it ended, else its checks so far. */
 function checkCoverage() {
-  const history = `${VERNIER}history/`;
-  let results: Record<string, { outcome: string }> = readVernier("checks.json")?.results ?? {};
+  const history = `${THIRD_KIND_FOLDER}history/`;
+  let results: Record<string, { outcome: string }> = readThirdKindFile("checks.json")?.results ?? {};
   try {
     const last = readdirSync(history).sort().at(-1);
     if (last) results = JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).checks;
@@ -136,20 +136,20 @@ async function falseNotices(page: Page) {
 
 test("playbook: the Agent follows the workflow, done after each change, then finish", async ({ page }) => {
   await designTheRound(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   const gaps: number[] = [];
   const notices: { stalled: boolean; unclaimed: boolean }[] = [];
   for (const id of IDS) {
     await apply(page, id);
     gaps.push(await progressGap(page));
     notices.push(await falseNotices(page));
-    await vernierkit("done", String(id));
+    await npx03kind("done", String(id));
     await expect(ring(page)).toHaveAttribute("aria-valuenow", String(id));
     gaps.push(await progressGap(page));
     notices.push(await falseNotices(page));
   }
   const atEnd = await progressGap(page);
-  await vernierkit("finish");
+  await npx03kind("finish");
   record("follows-the-workflow", {
     checkCoverage: checkCoverage(),
     progressGapAtEnd: atEnd,
@@ -168,7 +168,7 @@ test("playbook: the Agent follows the workflow, done after each change, then fin
 
 test("playbook: the Agent skips done, applies every change and finishes", async ({ page }) => {
   await designTheRound(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await expect(ring(page)).toBeVisible();
   const gaps: number[] = [];
   for (const id of IDS) {
@@ -176,7 +176,7 @@ test("playbook: the Agent skips done, applies every change and finishes", async 
     gaps.push(await progressGap(page));
   }
   const atEnd = gaps.at(-1)!;
-  await vernierkit("finish");
+  await npx03kind("finish");
   const coverage = checkCoverage();
   const unclaimedShown = (await unclaimedNoticesShown(page)).length;
   record("skips-done", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps), unclaimedNoticesShown: unclaimedShown });
@@ -189,14 +189,14 @@ test("playbook: the Agent skips done, applies every change and finishes", async 
 
 test("playbook: the Agent applies every change first, then runs done for them all, then finish", async ({ page }) => {
   await designTheRound(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await expect(ring(page)).toBeVisible();
   for (const id of IDS) await apply(page, id);
   const beforeDone = await progressGap(page);
-  for (const id of IDS) await vernierkit("done", String(id));
+  for (const id of IDS) await npx03kind("done", String(id));
   await expect(ring(page)).toHaveAttribute("aria-valuenow", String(IDS.length));
   const atEnd = await progressGap(page);
-  await vernierkit("finish");
+  await npx03kind("finish");
   const coverage = checkCoverage();
   const unclaimedShown = (await unclaimedNoticesShown(page)).length;
   record("done-all-at-the-end", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(beforeDone, atEnd), unclaimedNoticesShown: unclaimedShown });
@@ -213,9 +213,9 @@ test("playbook: the Agent applies every change first, then runs done for them al
  */
 async function stopHalfway(page: Page): Promise<number> {
   await designTheRound(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await apply(page, 1);
-  await vernierkit("done", "1");
+  await npx03kind("done", "1");
   const stoppedAt = Date.now();
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
   return stoppedAt;
@@ -241,7 +241,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   test.setTimeout(STALL_REAL ? STALL_MS + 120_000 : 120_000);
   if (!STALL_REAL) await page.clock.install();
   const stoppedAt = await stopHalfway(page);
-  const properties: { id: number; property: string }[] = readVernier("changeset.json").changes;
+  const properties: { id: number; property: string }[] = readThirdKindFile("changeset.json").changes;
   const unapplied = properties.filter((change) => change.id !== 1).map((change) => change.property);
   const applied = properties.find((change) => change.id === 1)!.property;
   // The Agent is gone. The toggle is to say so, the stopping threshold (ticket 67) + 5 seconds after.
@@ -256,7 +256,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   // Edit mode again: the two changes never applied are to be in the round still (ticket 68).
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const nextRound: { property: string }[] = readVernier("changeset.json")?.changes ?? [];
+  const nextRound: { property: string }[] = readThirdKindFile("changeset.json")?.changes ?? [];
   const kept = nextRound.filter((change) => unapplied.includes(change.property)).length;
   record(STALL_REAL ? "stops-halfway-real-time" : "stops-halfway", {
     stalledNoticeAfterMs,
@@ -284,26 +284,26 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
 
 /** The designer ends the round by hand: pressing and holding the locked toggle. */
 async function pressAndHold(page: Page) {
-  await page.getByRole("button", { name: /^Vernier Kit: applying design changes/ }).hover();
+  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
   await page.mouse.down();
   await page.waitForTimeout(1200);
   await page.mouse.up();
 }
 
-/** How a round ended by hand left things: its archive, the project's `.vernier/`, the toggle and what edit mode opens on next; dates and code left out. */
+/** How a round ended by hand left things: its archive, the project's `.03kind/`, the toggle and what edit mode opens on next; dates and code left out. */
 async function endedRound(page: Page) {
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-  const history = `${VERNIER}history/`;
+  const history = `${THIRD_KIND_FOLDER}history/`;
   await expect.poll(() => existsSync(history) && readdirSync(history).some((round) => existsSync(`${history}${round}/result.json`))).toBe(true);
   const last = readdirSync(history).sort().at(-1)!;
   const { ended, done, applied, checks } = JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8"));
   const outcomes = Object.fromEntries(Object.entries(checks as Record<string, { outcome: string }>).map(([id, check]) => [id, check.outcome]));
-  const files = readdirSync(VERNIER).filter((name) => name !== "history" && name !== "checks.json").sort();
+  const files = readdirSync(THIRD_KIND_FOLDER).filter((name) => name !== "history" && name !== "checks.json").sort();
   const badge = await page.getByRole("button", { name: /not applied yet$/ }).count();
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
   const firstCardFill = await canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor);
-  return { ended, done, applied, outcomes, files, badge, nextRound: readVernier("changeset.json")?.changes.length ?? 0, firstCardFill, notices: await stalledNotice(page).count() };
+  return { ended, done, applied, outcomes, files, badge, nextRound: readThirdKindFile("changeset.json")?.changes.length ?? 0, firstCardFill, notices: await stalledNotice(page).count() };
 }
 
 test("ending the round from the notice that the Agent seems to have stopped does what pressing and holding the toggle does; keep waiting has it go till the threshold has passed again", async ({ page }) => {
@@ -323,7 +323,7 @@ test("ending the round from the notice that the Agent seems to have stopped does
   // The same round again, on the code as it was, ended by pressing and holding the toggle.
   writeFileSync(CARD, original);
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
-  clearVernier(VERNIER);
+  clearThirdKindFolder(THIRD_KIND_FOLDER);
   await stopHalfway(page);
   await pressAndHold(page);
   const byHolding = await endedRound(page);
@@ -350,7 +350,7 @@ test("playbook: the Agent changes the code with no claim, while the designer is 
     // Not pressed: something else takes the press. Any other failure is the test's.
     if (!String(error).includes("intercepts pointer events")) throw error;
   }
-  const changesKept = (readVernier("changeset.json")?.changes.length ?? 0) / CHANGES.length;
+  const changesKept = (readThirdKindFile("changeset.json")?.changes.length ?? 0) / CHANGES.length;
   record("changes-code-unclaimed", {
     detected: noticeAfterMs !== null,
     noticeAfterMs,
@@ -368,23 +368,23 @@ test("playbook: the Agent changes the code with no claim, while the designer is 
 test("playbook: the Agent sits still a long time between two changes, then goes on to finish", async ({ page }) => {
   await page.clock.install();
   await designTheRound(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await apply(page, 1);
-  await vernierkit("done", "1");
+  await npx03kind("done", "1");
   // Working, though still, for 10 seconds short of the threshold (the page's clock run on): a notice here is a false one (ticket 67).
   const pauseMs = STALL_MS - 10_000;
   await page.clock.fastForward(pauseMs);
   const noticeDuringPauseAfterMs = await watchFor(stalledNotice(page), 5000);
   await apply(page, 2);
-  await vernierkit("done", "2");
+  await npx03kind("done", "2");
   // Still past the threshold, then on again: the notice shows, and goes as the code comes in.
   await page.clock.fastForward(STALL_MS);
   const noticePastThreshold = (await watchFor(stalledNotice(page), NOTICE_LATE_MS)) !== null;
   await apply(page, 3);
   const noticeAfterResuming = await stalledNotice(page).count();
-  await vernierkit("done", "3");
+  await npx03kind("done", "3");
   const atEnd = await progressGap(page);
-  await vernierkit("finish");
+  await npx03kind("finish");
   // Once the round is over, as the page hears, never.
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
   await page.clock.fastForward(STALL_MS + 1000);
@@ -491,7 +491,7 @@ async function designTheRoundAcrossViews(page: Page) {
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   await page.mouse.wheel(-400, 0);
-  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Vernier Kit", exact: true }).click();
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
   const title = (await desktop.contentFrame().locator("h1").boundingBox())!;
   const view = (await desktop.boundingBox())!;
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
@@ -499,7 +499,7 @@ async function designTheRoundAcrossViews(page: Page) {
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
   await page.mouse.up();
   await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
-  await expect.poll(() => readVernier("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
+  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
     "style", "style", "style", "style at a breakpoint", "delete",
   ]);
 }
@@ -519,19 +519,19 @@ async function enterAgain(page: Page) {
 }
 
 /** The round's changes now, by their numbers and properties. */
-const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readVernier("changeset.json")?.changes ?? [];
+const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readThirdKindFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
-const frozenAfresh = (page: Page) => canvas(page).locator("[data-vk-layer], [data-vk-style]").count().then((n) => n === 0);
+const frozenAfresh = (page: Page) => canvas(page).locator("[data-tk-layer], [data-tk-style]").count().then((n) => n === 0);
 
 test("playbook: the Agent stops halfway; the designer ends the round, and edits again on the same canvas, the changes not applied there still (ticket 68)", async ({ page }) => {
   await designTheRoundAcrossViews(page);
   const before = await canvasLooks(page);
   const designed = changesNow();
   await leaveEditMode(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await apply(page, 1);
-  await vernierkit("done", "1");
+  await npx03kind("done", "1");
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
   // The Agent is gone; the designer ends the round, as the notice that it seems to have stopped would (ticket 67).
   await pressAndHold(page);
@@ -560,10 +560,10 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   await leaveEditMode(page);
 
   // The next claim: the changes left, numbered from 1, then the new one.
-  const notes = await vernierkit("claim");
+  const notes = await npx03kind("claim");
   const sections = [...notes.matchAll(/^## (\d+)\. /gm)].map((match) => Number(match[1]));
   const opening = notes.split("\n")[2];
-  const last = await vernierkit("last");
+  const last = await npx03kind("last");
   // Ended by hand again, nothing applied: all of it is left.
   await pressAndHold(page);
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
@@ -583,7 +583,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   await page.getByRole("button", { name: /not applied yet$/ }).click();
   await changeList.getByRole("button", { name: "Discard all" }).click();
   await changeList.getByRole("button", { name: "Discard", exact: true }).click();
-  await expect.poll(() => readVernier("changeset.json")).toBeNull();
+  await expect.poll(() => readThirdKindFile("changeset.json")).toBeNull();
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
 
@@ -618,7 +618,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   expect(afterListUndo).toEqual(["rgb(255, 0, 0)", "12px"]);
   expect(newEdit).toMatchObject({ id: 5, before: { type: "solid", color: "#FF0000" } });
   expect(sections).toEqual([1, 2, 3, 4, 5]);
-  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in Vernier Kit. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx vernierkit done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx vernierkit finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
+  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in 03Kind. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
   expect(last.startsWith("# Last round of design changes") && last.includes("- **Status:** Applied")).toBe(true);
   expect(leftAgain).toEqual([1, 2, 3, 4, 5]);
   expect(refrozen).toBe(true);
@@ -629,10 +629,10 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   await designTheRound(page);
   const before = await canvasLooks(page);
   await leaveEditMode(page);
-  await vernierkit("claim");
+  await npx03kind("claim");
   await apply(page, 1);
-  await vernierkit("done", "1");
-  const finished = (await vernierkit("finish")).split("\n")[0];
+  await npx03kind("done", "1");
+  const finished = (await npx03kind("finish")).split("\n")[0];
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
   const left = changesNow();
   const unapplied = CHANGES.slice(1).length;
@@ -642,15 +642,15 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   await leaveEditMode(page);
 
   // The rest applied in the next round: then no change is left, and edit mode freezes the page afresh.
-  const notes = await vernierkit("claim");
+  const notes = await npx03kind("claim");
   await apply(page, 2);
   await apply(page, 3);
-  await vernierkit("done", "1", "2");
-  await vernierkit("finish");
-  const leftAtLast = readVernier("changeset.json");
+  await npx03kind("done", "1", "2");
+  await npx03kind("finish");
+  const leftAtLast = readThirdKindFile("changeset.json");
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
-  const lastRound = await vernierkit("last");
+  const lastRound = await npx03kind("last");
 
   record("finishes-with-changes-left", {
     finished,
@@ -720,10 +720,10 @@ test("playbook: changes left over and under what was applied: a change to the Ca
   await leaveEditMode(page);
 
   // The Agent writes the loop's padding into the Card (the page shows 24px: change 2, and not change 1's 16px), reports the board's fill done (the page cannot check it), and stops.
-  await vernierkit("claim");
+  await npx03kind("claim");
   writeFileSync(CARD, original.replace("p-5", "p-5 pt-6"));
   await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).paddingTop)).toBe("24px");
-  await vernierkit("done", "3");
+  await npx03kind("done", "3");
   await pressAndHold(page);
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
   const left = changesNow().map((change) => [change.id, change.kind, change.property]);
@@ -735,7 +735,7 @@ test("playbook: changes left over and under what was applied: a change to the Ca
   await leaveEditMode(page);
 
   // The next claim: what the Agent reads of the Card's own padding left, the code changed since; the round then ended by hand again, nothing more applied.
-  const claimed = await vernierkit("claim");
+  const claimed = await npx03kind("claim");
   const leftNotes = claimed.split(/^## /m).find((part) => part.startsWith("1. "))!;
   const paddingNotes = leftNotes.split("\n").filter((line) => /^- \*\*(Design intent|Currently set by)/.test(line));
   await pressAndHold(page);

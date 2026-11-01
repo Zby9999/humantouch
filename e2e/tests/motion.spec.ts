@@ -100,13 +100,13 @@ test("the views beside the desktop view stay hidden while the page shrinks into 
         addEventListener(
           "click",
           () => {
-            const root = () => document.querySelector("vernier-kit")!.shadowRoot!;
+            const root = () => document.querySelector("third-kind")!.shadowRoot!;
             const frameOf = (title: string) => root().querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`);
             const shows = (title: string) => !!frameOf(title)?.contentDocument?.querySelector("h1") && getComputedStyle(frameOf(title)!).visibility === "visible";
             let travelled = false;
             let hiddenWhileTravelling = true;
             const frame = () => {
-              const travelling = !!root().querySelector(".vk-viewport.is-travelling");
+              const travelling = !!root().querySelector(".tk-viewport.is-travelling");
               if (travelling) {
                 travelled = true;
                 hiddenWhileTravelling &&= views.slice(1).every((title) => !frameOf(title) || getComputedStyle(frameOf(title)!).visibility === "hidden");
@@ -155,7 +155,7 @@ function lowestShellOpacity(page: Page) {
       new Promise<number>((resolve) => {
         let lowest = 1;
         const look = () => {
-          const shell = document.querySelector("vernier-kit")!.shadowRoot!.querySelector(".vk-shell");
+          const shell = document.querySelector("third-kind")!.shadowRoot!.querySelector(".tk-shell");
           if (!shell) return resolve(lowest);
           lowest = Math.min(lowest, Number(getComputedStyle(shell).opacity));
           requestAnimationFrame(look);
@@ -175,7 +175,7 @@ test("with changes not yet applied, the canvas fades into the page once it has g
   await page.getByRole("button", { name: EXIT_LABEL }).click();
 
   // The page shows none of the changes: rather than cut to it, the editor dissolves into it, the canvas at full size.
-  const shell = page.locator(".vk-shell");
+  const shell = page.locator(".tk-shell");
   await expect.poll(() => shell.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(0.9);
   const grown = await box(page);
   expect(grown.x).toBeCloseTo(0, 0);

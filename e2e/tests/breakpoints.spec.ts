@@ -194,7 +194,7 @@ test("the change list says the breakpoint of each change made in a narrower view
   await pick(page, desktop(page), "article");
   await setField(page, "Opacity", "50");
 
-  await page.locator("[data-vk-changes-opener]").click();
+  await page.locator("[data-tk-changes-opener]").click();
   const list = page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
   await expect(list.nth(0)).toContainText("below 768px");
   await expect(list.nth(1)).toContainText("768px to 1279px");

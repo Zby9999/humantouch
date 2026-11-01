@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT_LABEL, INSTALL_PORT, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test } from "./fixtures";
-import { CLI, copyWithoutVernier, gitStatus, pack, replaceIn, sh, startServer } from "./install-copy";
+import { CLI, copyWithoutThirdKind, gitStatus, pack, replaceIn, sh, startServer } from "./install-copy";
 import { codeOf, gzipped, scripts, settle, TOGGLE_BUDGET } from "./loading";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
@@ -18,12 +18,12 @@ let project: string;
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  packed = await pack(mkdtempSync(join(tmpdir(), "vernierkit-pack-")));
-  project = await copyWithoutVernier(EXAMPLE, (dir) => {
-    replaceIn(dir, "vite.config.ts", 'import vernier from "vernierkit/vite";\n');
-    replaceIn(dir, "vite.config.ts", "vernier(), ");
-    replaceIn(dir, "src/App.tsx", 'import { Vernier } from "vernierkit/react";\n');
-    replaceIn(dir, "src/App.tsx", "      <Vernier />\n");
+  packed = await pack(mkdtempSync(join(tmpdir(), "03kind-pack-")));
+  project = await copyWithoutThirdKind(EXAMPLE, (dir) => {
+    replaceIn(dir, "vite.config.ts", 'import thirdKind from "03kind/vite";\n');
+    replaceIn(dir, "vite.config.ts", "thirdKind(), ");
+    replaceIn(dir, "src/App.tsx", 'import { ThirdKind } from "03kind/react";\n');
+    replaceIn(dir, "src/App.tsx", "      <ThirdKind />\n");
   });
 });
 
@@ -32,12 +32,12 @@ test.afterAll(() => {
   if (packed) rmSync(join(packed, ".."), { recursive: true, force: true });
 });
 
-/** `npx vernierkit …` once the project has it: its own copy, as installed. */
-const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/vernierkit/dist/cli.js"), ...args], project);
+/** `npx 03kind …` once the project has it: its own copy, as installed. */
+const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/03kind/dist/cli.js"), ...args], project);
 
-test("init installs Vernier Kit: once the dev server starts, the toggle is on the page, within 60 seconds", async ({ page }) => {
+test("init installs 03Kind: once the dev server starts, the toggle is on the page, within 60 seconds", async ({ page }) => {
   const start = Date.now();
-  const output = await sh(process.execPath, [CLI, "init"], project, { VERNIERKIT_INSTALL_FROM: packed });
+  const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
   expect(output).toContain("Installed.");
 
   const server = startServer(process.execPath, ["node_modules/vite/bin/vite.js", "--port", String(INSTALL_PORT), "--strictPort"], project);
@@ -64,7 +64,7 @@ test("as installed, the page loads only the toggle, under 10KB gzipped as Vite s
     await settle(page);
 
     // From node_modules as published, not bundled again by Vite's dependency optimizer.
-    const ours = (await loaded.all()).filter((script) => script.url.includes("/node_modules/vernierkit/dist/"));
+    const ours = (await loaded.all()).filter((script) => script.url.includes("/node_modules/03kind/dist/"));
     expect(ours.length).toBeGreaterThan(0);
     expect(gzipped(ours.map((script) => codeOf(script.text)))).toBeLessThanOrEqual(TOGGLE_BUDGET);
     expect(ours.some((script) => script.text.includes(EXIT_LABEL))).toBe(false);
@@ -79,17 +79,17 @@ test("as installed, the page loads only the toggle, under 10KB gzipped as Vite s
 
 test("init changes two places in the project's source: the build config and the mount", async () => {
   const changed = (await gitStatus(project)).split("\n").filter(Boolean).map((line) => line.slice(3));
-  const notSource = /^(package\.json|pnpm-lock\.yaml|AGENTS\.md|\.gitignore|\.agents\/skills\/vernierkit\/SKILL\.md|\.claude\/skills\/vernierkit\/SKILL\.md)$/;
+  const notSource = /^(package\.json|pnpm-lock\.yaml|AGENTS\.md|\.gitignore|\.agents\/skills\/03kind\/SKILL\.md|\.claude\/skills\/03kind\/SKILL\.md)$/;
 
   expect(changed.filter((file) => !notSource.test(file)).sort()).toEqual(["src/main.tsx", "vite.config.ts"]);
   const diff = await sh("git", ["diff", "--", "src/main.tsx", "vite.config.ts"], project);
   // Each one: the import, and the plugin or the component.
   expect(diff.split("\n").filter((line) => /^[-+](?![-+])/.test(line))).toEqual([
-    '+import { Vernier } from "vernierkit/react";',
-    "+    <Vernier />",
-    '+import vernier from "vernierkit/vite";',
+    '+import { ThirdKind } from "03kind/react";',
+    "+    <ThirdKind />",
+    '+import thirdKind from "03kind/vite";',
     "-  plugins: [react(), tailwindcss()],",
-    "+  plugins: [vernier(), react(), tailwindcss()],",
+    "+  plugins: [thirdKind(), react(), tailwindcss()],",
   ]);
 });
 
@@ -112,7 +112,7 @@ test("doctor reports every part installed, and a production build with none of t
 test("remove takes it all back out: git sees no change at all", async () => {
   const output = await installed("remove");
 
-  expect(output).toContain("Vernier Kit removed");
+  expect(output).toContain("03Kind removed");
   expect(await gitStatus(project)).toBe("");
 });
 

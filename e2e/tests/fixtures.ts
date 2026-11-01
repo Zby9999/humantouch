@@ -4,7 +4,7 @@ export { expect } from "@playwright/test";
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
 
 /**
- * Tests share one dev server, and so one `.vernier/` folder. Unless a test
+ * Tests share one dev server, and so one `.03kind/` folder. Unless a test
  * opts out with `keepRoundInMemory: false`, the round it saves stays in its
  * own browser context, so tests running side by side never see each other's.
  *
@@ -16,7 +16,7 @@ export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolea
   showLayers: [true, { option: true }],
   context: async ({ context, keepRoundInMemory, showLayers }, use) => {
     if (keepRoundInMemory) await keepRoundIn(context);
-    if (showLayers) await context.addInitScript(() => localStorage.setItem("vernierkit:layers-panel", "shown"));
+    if (showLayers) await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
     await use(context);
   },
 });
@@ -33,7 +33,7 @@ async function keepRoundIn(context: BrowserContext) {
       const headers = {
         "Access-Control-Allow-Origin": request.headers().origin ?? "*",
         "Access-Control-Allow-Methods": "GET, PUT, DELETE, POST",
-        "Access-Control-Allow-Headers": "X-Vernier-Token, Content-Type",
+        "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type",
       };
       const { pathname } = new URL(request.url());
       if (pathname === "/off-canvas") {

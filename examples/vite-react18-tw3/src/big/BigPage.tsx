@@ -1,5 +1,5 @@
 import { Badge } from "acme-ui";
-import { Vernier } from "vernierkit/react";
+import { ThirdKind } from "03kind/react";
 import { avatar, picture } from "./images";
 import { ArticleCard, ProductCard, StatTile, Testimonial, UserRow } from "./parts";
 
@@ -207,7 +207,7 @@ export function BigPage() {
           <span>Made with care</span>
         </div>
       </footer>
-      <Vernier />
+      <ThirdKind />
     </div>
   );
 }

@@ -74,7 +74,7 @@ test("play shows the canvas alone, at full size, with its changes; Esc goes back
   await playButton(page).click();
   await expect(layers(page)).toBeHidden();
   await expect(design(page)).toBeHidden();
-  await expect(page.locator(".vk-selection")).toHaveCount(0);
+  await expect(page.locator(".tk-selection")).toHaveCount(0);
   expect((await canvasBox(page)).scale).toBe(1);
   await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", RED);
 
