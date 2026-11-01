@@ -3973,6 +3973,29 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkChange(page, right)).toEqual({ outcome: "shown" });
   });
 
+  test("at a view's width where the page places the layer from its left edge instead, its `right` places nothing there: not looked at there (ticket 75)", () => {
+    const html = STRUCTURE.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace(
+      `id="tag" ${loc("14:7")} style="`,
+      `id="tag" ${loc("14:7")} style="position: absolute; right: 12px; top: 8px; `,
+    ).replace("display: inline-block;", "");
+    const { page, editor, changes, layer } = open(html);
+    editor.resize(layer("tag"), { width: 40, right: 20 });
+    const right = changes.list().find((change) => change.property === "right")!;
+    (page.getElementById("tag") as HTMLElement).style.right = "20px";
+    // The page at a phone's width, where it places the layer from its left, as \`max-md:left-2 max-md:right-auto\` does.
+    const phone = document.createElement("iframe");
+    document.body.append(phone);
+    phone.contentDocument!.open();
+    phone.contentDocument!.write(html.replace("right: 12px;", "left: 8px; right: auto;"));
+    phone.contentDocument!.close();
+    const narrow = (width: number): PageWidth => ({ width, doc: phone.contentDocument!, own: false, of: (el) => phone.contentDocument!.getElementById(el.id) });
+    try {
+      expect(checkAcross(page, right, changes.list(), [390], narrow)).toEqual({ outcome: "shown" });
+    } finally {
+      phone.remove();
+    }
+  });
+
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
     const { page, editor, changes, layer } = open();
     editor.remove(layer("one"));

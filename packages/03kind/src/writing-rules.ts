@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, PLACING } from "./client/checkable";
+import { checkable, placesFromEnd, PLACING } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 
@@ -212,7 +212,7 @@ interface HowChecked {
 /** A layer placed absolute, as the page checks it: where it is drawn. */
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
 /** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
-const fromEnd = (change: Change) => change.kind === "style" && (change.property === "right" || change.property === "bottom");
+const fromEnd = (change: Change) => change.kind === "style" && placesFromEnd(change.property);
 
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [

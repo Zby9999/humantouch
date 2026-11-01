@@ -9,6 +9,7 @@ import { changes as changesWord, describeChanges, toApply, type NotesOptions } f
 import { breakpointName } from "./client/breakpoints";
 import { listed, ordinal, propertyName, value } from "./design-values";
 import type { PlacedOnPage } from "./client/check";
+import { placesFromEnd } from "./client/checkable";
 import type { Change, Margins, Place, SavedChangeSet } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { reportFor } from "./report-form";
@@ -366,7 +367,7 @@ const PLACED_BY_SIDE: Record<string, { side: string; axis: "x" | "y" }> = {
  */
 function axisOffByMargins(property: PlacedBySide, to: number, margins: Margins, placed: { value: number; margin: number }, again: string, width?: number): string {
   const { side, axis } = PLACED_BY_SIDE[property];
-  const fromEnd = property === "right" || property === "bottom";
+  const fromEnd = placesFromEnd(property);
   const where = fromEnd ? `from its container's ${side} edge` : "in its container";
   const drawn = `${width ? `At ${width}px wide, the` : "The"} ${propertyName(property)} is drawn at ${placed.value + placed.margin}px ${where} (\`${side}\` ${placed.value}px, ${side} margin ${placed.margin}px), `;
   const placedBy = fromEnd ? `it is placed by its \`${side}\`` : `its ${axis.toUpperCase()} is its \`${side}\``;

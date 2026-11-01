@@ -22,6 +22,7 @@ import {
   type Target,
 } from "./client/changeset";
 import { breakpointName, mediaOf, tailwindOf, type Breakpoint } from "./client/breakpoints";
+import { placesFromEnd } from "./client/checkable";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
@@ -185,7 +186,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
-      if (change.property === "right" || change.property === "bottom") return fromEdge(change);
+      if (placesFromEnd(change.property)) return fromEdge(change);
       if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":

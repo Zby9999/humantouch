@@ -68,7 +68,7 @@ function shiftOf(el: Element, size: { width: number; height: number }): { x: num
   }
   if (style.translate !== "none") {
     const [across = "0px", down = "0px"] = topLevel(style.translate);
-    const [dx, dy] = [length(across, size.width), length(down, size.height)];
+    const [dx, dy] = [pxOf(across, size.width), pxOf(down, size.height)];
     if (dx === null || dy === null) return null;
     x += dx;
     y += dy;
@@ -99,7 +99,7 @@ function topLevel(value: string): string[] {
  * A length in px, a percentage of `of`: plain (`-50%`, `4px`) or a sum of
  * such in `calc()` (`calc(-50% + 4px)`), as the browser computes `translate`; null for any other.
  */
-function length(value: string, of: number): number | null {
+function pxOf(value: string, of: number): number | null {
   const inner = /^calc\((.*)\)$/.exec(value)?.[1] ?? value;
   const terms = inner.replace(/\s*([+-])\s+/g, " $1").trim().split(/\s+/);
   let sum = 0;

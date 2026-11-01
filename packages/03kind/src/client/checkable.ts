@@ -13,6 +13,9 @@ import type { Property } from "./property-table";
 /** The properties that place a layer by its X and Y: its `left` and `top`, past which its margins draw it (`Change.margins`); or from its container's right or bottom edge, by its `right` or `bottom` and its margins there (ticket 75). */
 export const PLACING: readonly Property[] = ["x", "y", "absolute", "right", "bottom"];
 
+/** Of `PLACING`, those that place a layer from its container's right or bottom edge (ticket 75). */
+export const placesFromEnd = (property: string) => property === "right" || property === "bottom";
+
 /**
  * Whether the page can check the change: it must find the layer by its
  * source marker (not one made this round, nor a run of text), and tell what

@@ -10,11 +10,12 @@
  * is drawn on the page to compare where the code that writes it cannot be
  * read: on an element put in and taken out at once, before anything is painted.
  */
+import { anchorOf } from "./anchors";
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Margins, type Place } from "./changeset";
 import { openingTag } from "./layer-target";
-import { checkable, PLACING } from "./checkable";
+import { checkable, placesFromEnd, PLACING } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -189,7 +190,7 @@ function look(doc: Document, change: Change, apart: string[], at: PageWidth, sou
   const els = styledBy(doc, change, apart, at);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const margins = marginsFor(change, at);
-  const [result, wrong] = margins && change.after !== null && PLACING.includes(property) ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins) : lookStyle(els, property, change.after, at);
+  const [result, wrong] = margins && change.after !== null && PLACING.includes(property) ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins, at.own) : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
 }
@@ -274,17 +275,21 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
  * canvas draws it (`drawnThere`), from its container's right or bottom edge
  * for those. `actual`: along one axis, its `left` or `top` (`right`,
  * `bottom`) and its margin there; both, as a placement is. Not shown: with the first that is not.
+ * `own`: looked at as wide as the page's window. At any other width, a
+ * `right` or `bottom` the page places the layer otherwise by there (its
+ * breakpoints place it from its left, say) places nothing: not looked at.
  */
-function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): [CheckResult, Element | null] {
-  const fromEnd = property === "right" || property === "bottom";
+function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins, own: boolean): [CheckResult, Element | null] {
+  const fromEnd = placesFromEnd(property);
+  const axis = property === "x" || property === "right" ? "x" : "y";
   for (const el of els) {
     if (!absolute(el)) return [{ outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) }, el];
+    if (fromEnd && !own && anchorOf(el, axis) !== "end") return [{ outcome: "unchecked", reason: `at this width the page does not place the layer by its \`${property}\`` }, null];
     const placed = placedOn(el, fromEnd);
     if (typeof after !== "number") {
       if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
       continue;
     }
-    const axis = property === "x" || property === "right" ? "x" : "y";
     if (!drawnThere(placed, { [axis]: after }, margins)) {
       return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
     }
