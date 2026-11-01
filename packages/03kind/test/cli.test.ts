@@ -428,9 +428,11 @@ describe("claim, how to write the changes (ticket 65)", () => {
   test("a layer placed from its container's right or bottom edge, or centered, resized: its changes say it stays placed so, and which value changes; how to write and check them, only in such a round (ticket 75)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value });
     saveRound(
-      style("width", { before: fixed(30), after: fixed(50), placedFrom: "end", style: { width: "50px" } }),
+      style("width", { before: fixed(30), after: fixed(50), placedFrom: { edge: "end", centered: false }, style: { width: "50px" } }),
       { ...style("right", { before: 10, after: -10, style: { right: "-10px" }, margins: { x: 0, y: 0 } }), id: 2 },
-      { ...style("height", { before: fixed(20), after: fixed(30), placedFrom: "center", style: { height: "30px" } }), id: 3 },
+      { ...style("height", { before: fixed(20), after: fixed(30), placedFrom: { edge: "start", centered: true }, style: { height: "30px" } }), id: 3 },
+      // Centered from the right: on where its `right` places it.
+      { ...style("width", { before: fixed(40), after: fixed(80), placedFrom: { edge: "end", centered: true }, style: { width: "80px" } }), id: 4 },
     );
 
     const { output } = await cli("claim");
@@ -446,9 +448,13 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(section(output, 3)).toContain(
       "- **Placement:** the layer is centered down on where its `top` places it, by `translate: -50%` (Tailwind's `-translate-y-1/2`), and stays so: only its height changes, on both sides alike.\n",
     );
+    expect(section(output, 4)).toContain(
+      "- **Placement:** the layer is centered across on where its `right` places it, by `translate: 50%` (Tailwind's `translate-x-1/2`), and stays so: only its width changes, on both sides alike.\n",
+    );
     expect(names(output)).toEqual(expect.arrayContaining(["Placed from the right or bottom", "Centered"]));
     expect(rule(output, "Placed from the right or bottom")).toContain("do not place it by `left` or `top` instead");
-    expect(rule(output, "Centered")).toContain("keep its `left` or `top` and its translate as they are");
+    expect(rule(output, "Centered")).toContain("by `translate: -50%`, or on where its `right` or `bottom` places it by `translate: 50%`");
+    expect(rule(output, "Centered")).toContain("keep what places it and its translate as they are");
     expect(rule(output, "How the page checks")).toContain("a layer placed from its container's right or bottom edge by where it is drawn: its `right` or `bottom` the value given, plus its right or bottom margin, kept");
 
     saveRound(style("width", { before: fixed(30), after: fixed(50), style: { width: "50px" } }));

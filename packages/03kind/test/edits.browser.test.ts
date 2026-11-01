@@ -6121,13 +6121,15 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
  * Layers placed freely from their container's right or bottom edge, or
  * centered on where they are placed by `translate: -50%`, as Tailwind v3
  * (`transform`, through its variables) and v4 (`translate`) write
- * `-translate-x-1/2` (ticket 75).
+ * `-translate-x-1/2` (ticket 75); or from the right, on where `right: 50%`
+ * places it, by `translate: 50%` (`right-1/2 translate-x-1/2`).
  */
 const ANCHORED = `<!DOCTYPE html>
 <style>
   * { --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1; }
   .v3-centered { --tw-translate-x: -50%; --tw-translate-y: -50%; transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y)); }
   .v4-centered { --tw-translate-x: calc(calc(1/2 * 100%) * -1); translate: var(--tw-translate-x) var(--tw-translate-y); }
+  .v4-centered-from-right { --tw-translate-x: calc(1/2 * 100%); translate: var(--tw-translate-x) var(--tw-translate-y); }
 </style>
 <body style="margin: 0">
   <div id="board" ${at("40:5")} style="position: relative; width: 300px; height: 200px">
@@ -6135,10 +6137,13 @@ const ANCHORED = `<!DOCTYPE html>
     <div id="bottom" ${at("42:7")} style="position: absolute; left: 12px; bottom: 6px; width: 30px; height: 20px"></div>
     <div id="v3" class="v3-centered" ${at("43:7")} style="position: absolute; left: 50%; top: 50%; width: 40px; height: 20px"></div>
     <div id="v4" class="v4-centered" ${at("44:7")} style="position: absolute; left: 50%; top: 40px; width: 40px; height: 20px"></div>
+    <div id="v4-right" class="v4-centered-from-right" ${at("45:7")} style="position: absolute; right: 50%; top: 120px; width: 40px; height: 20px"></div>
   </div>
 </body>`;
 
 describe("resizing a layer placed from its container's right or bottom edge, or centered (ticket 75)", () => {
+  /** How a change records a layer placed from its container's right or bottom edge, and one centered on where its `left` or `top` places it. */
+  const [END, CENTERED] = [{ edge: "end", centered: false }, { edge: "start", centered: true }];
   const open = () => {
     const canvas = openCanvas(ANCHORED);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
@@ -6160,7 +6165,7 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
     expect(box("right")).toEqual([250, 8, 50, 20]);
 
     expect(recorded()).toEqual([
-      ["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, "end"],
+      ["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, END],
       ["right", 10, 0, undefined],
     ]);
     // X shows where its left edge is now.
@@ -6180,9 +6185,9 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
     expect(box("right")).toEqual([260, 8, 50, 20]);
     expect(box("bottom")).toEqual([12, 174, 30, 30]);
     expect(recorded()).toEqual([
-      ["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, "end"],
+      ["width", { type: "fixed", value: 30 }, { type: "fixed", value: 50 }, END],
       ["right", 10, -10, undefined],
-      ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, "end"],
+      ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, END],
       ["bottom", 6, -4, undefined],
     ]);
     editor.undo();
@@ -6200,11 +6205,21 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
     expect(box("v3")).toEqual([120, 85, 60, 30]);
     expect(box("v4")).toEqual([110, 40, 80, 20]);
     expect(recorded()).toEqual([
-      ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 60 }, "center"],
-      ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, "center"],
+      ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 60 }, CENTERED],
+      ["height", { type: "fixed", value: 20 }, { type: "fixed", value: 30 }, CENTERED],
       // Placed by its top down, centered across only.
-      ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 80 }, "center"],
+      ["width", { type: "fixed", value: 40 }, { type: "fixed", value: 80 }, CENTERED],
     ]);
+  });
+
+  test("centered from the right, on where its `right` places it by `translate: 50%`: centered all the same, its width set, it stays centered, and the change says it is centered by its `right` (ticket 75, line review)", () => {
+    const { editor, layer, box, recorded } = open();
+    expect(box("v4-right")).toEqual([130, 120, 40, 20]);
+
+    editor.set(layer("v4-right"), "width", { type: "fixed", value: 80 });
+
+    expect(box("v4-right")).toEqual([110, 120, 80, 20]);
+    expect(recorded()).toEqual([["width", { type: "fixed", value: 40 }, { type: "fixed", value: 80 }, { edge: "end", centered: true }]]);
   });
 
   test("placed from its left and top, its width set: as before, nothing else changes and nothing says how it is placed", () => {

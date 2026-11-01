@@ -9,7 +9,8 @@
 import { DRAG_THRESHOLD, type At } from "./canvas-drag";
 import type { Editor, ResizeTo } from "./edit-commands";
 import type { Layer } from "./layers";
-import { placedFrom, type PlacedFrom } from "./placed-from";
+import type { Edge, PlacedFrom } from "./checkable";
+import { placedFrom } from "./placed-from";
 import { readValue, round } from "./property-table";
 import { marksOf, middlesOf, resizeBox, type Handle, type Limits, type Middles } from "./resize";
 import type { Axis, Box, Mark } from "./snap";
@@ -100,10 +101,12 @@ export function resizeStep(session: ResizeSession, editor: Editor, pointer: Resi
   };
   if (resized.width) session.set.add("width");
   if (resized.height) session.set.add("height");
-  if (place?.placedFrom.x === "start" && box.x !== was.x) session.set.add("x");
-  if (place?.placedFrom.y === "start" && box.y !== was.y) session.set.add("y");
-  if (place?.placedFrom.x === "end" && right) session.set.add("right");
-  if (place?.placedFrom.y === "end" && bottom) session.set.add("bottom");
+  // Centered, neither: it stays where it is placed.
+  const by = (axis: Axis, edge: Edge) => !!place && !place.placedFrom[axis].centered && place.placedFrom[axis].edge === edge;
+  if (by("x", "start") && box.x !== was.x) session.set.add("x");
+  if (by("y", "start") && box.y !== was.y) session.set.add("y");
+  if (by("x", "end") && right) session.set.add("right");
+  if (by("y", "end") && bottom) session.set.add("bottom");
   // Once set, each is set as the handle has it now: dragged back, or with ⌥ or ⇧ let go, it goes back too.
   const to: ResizeTo = Object.fromEntries([...session.set].map((key) => [key, now[key]]));
   return { to, box, marks: resized.marks };
@@ -124,7 +127,7 @@ export function marksNow(session: ResizeSession): Mark[] {
 
 /** The ways the layer is centered on where it is placed, and stays so as it is resized. */
 function centeredOf({ place }: Begun): Middles {
-  return { x: place?.placedFrom.x === "center", y: place?.placedFrom.y === "center" };
+  return { x: !!place?.placedFrom.x.centered, y: !!place?.placedFrom.y.centered };
 }
 
 /** What the resize begins from: the layer as the view dragged in lays it out now, and what the editor reads of it there. */

@@ -6,31 +6,28 @@
  * `transform`, in v4 through `translate`). Resized, it stays placed so: what
  * changes is the value that places it from the edge it is placed from.
  */
-import { SIDES, type Edge } from "./checkable";
+import { SIDES, type Edge, type PlacedFrom } from "./checkable";
 import { absolute, declaredValue } from "./property-table";
 import type { Axis } from "./snap";
 import { pinnedOf } from "./style-source";
-
-/** Where a layer is placed from along one axis: its start edge (left, top), its end edge (right, bottom), or its middle. */
-export type PlacedFrom = Edge | "center";
 
 /**
  * How `el` is placed along `axis`, as it is laid out in its document (the
  * view worked in): by what the page and the edits declare. Placed by both
  * edges, or by neither, it is taken to be placed from its start (left, top),
  * as the browser places it; so is a layer the freezer pinned that way, which
- * the canvas places from its top whatever the page does. Not placed freely: from its start.
+ * the canvas places from its top whatever the page does. Not placed freely:
+ * from its start. Centered from either edge, it is resized alike, on both sides.
  */
 export function placedFrom(el: Element, axis: Axis): PlacedFrom {
   const { start, end } = SIDES[axis];
-  if (!absolute(el) || pinnedOf(el).includes(start)) return "start";
+  if (!absolute(el) || pinnedOf(el).includes(start)) return { edge: "start", centered: false };
   const edge: Edge = declared(el, end) && !declared(el, start) ? "end" : "start";
   // Moved back half its size from where it is placed (forward, placed from the end): centered there.
   const { width, height } = el.getBoundingClientRect();
   const half = (axis === "x" ? width : height) / 2;
   const moved = half > 0 ? shiftOf(el, { width, height })?.[axis] : undefined;
-  if (moved !== undefined && Math.abs(moved + (edge === "end" ? -half : half)) <= 0.5) return "center";
-  return edge;
+  return { edge, centered: moved !== undefined && Math.abs(moved + (edge === "end" ? -half : half)) <= 0.5 };
 }
 
 /**

@@ -513,13 +513,13 @@ test.describe("done checks the change on the page", () => {
     await pick("centered");
     await dragRightEdge(30);
     await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(5);
-    const changes: { id: number; property: string; before: unknown; after: unknown; placedFrom?: string }[] = readThirdKindFile("changeset.json").changes;
+    const changes: { id: number; property: string; before: unknown; after: unknown; placedFrom?: unknown }[] = readThirdKindFile("changeset.json").changes;
     expect(changes.map(({ property, before, after, placedFrom }) => ({ property, before, after, placedFrom }))).toEqual([
-      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 50 }, placedFrom: "end" },
+      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 50 }, placedFrom: { edge: "end", centered: false } },
       { property: "right", before: 40, after: 70, placedFrom: undefined },
-      { property: "height", before: { type: "fixed", value: 40 }, after: { type: "fixed", value: 60 }, placedFrom: "end" },
+      { property: "height", before: { type: "fixed", value: 40 }, after: { type: "fixed", value: 60 }, placedFrom: { edge: "end", centered: false } },
       { property: "bottom", before: 60, after: 40, placedFrom: undefined },
-      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 140 }, placedFrom: "center" },
+      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 140 }, placedFrom: { edge: "start", centered: true } },
     ]);
 
     const notes = await npx03kind("claim");

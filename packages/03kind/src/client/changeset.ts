@@ -5,6 +5,7 @@
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
+import type { PlacedFrom } from "./checkable";
 import type { Align, Padding } from "./property-table";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -262,11 +263,11 @@ export interface Change {
   /**
    * A change to the width or height of a layer placed freely, which it is
    * placed otherwise than from its container's left or top along (ticket 75,
-   * GLOSSARY: Placement): from the right or bottom edge (`end`), or centered
-   * on where it is placed by `translate: -50%` or `50%` (`center`). It stays
+   * GLOSSARY: Placement): from the right or bottom edge, or centered on where
+   * its `left` or `top`, or its `right` or `bottom`, places it. It stays
    * placed so: the notes say so. As it was placed when first changed.
    */
-  placedFrom?: "end" | "center";
+  placedFrom?: PlacedFrom;
   /**
    * A change to the `right` or `bottom` of a layer at every width (ticket 75,
    * line review): the ranges of the views where the canvas places the layer

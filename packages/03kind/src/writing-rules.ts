@@ -80,7 +80,7 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "Placed from the right or bottom",
-    calledFor: (change) => isEndOffsetChange(change) || (change.kind === "style" && change.placedFrom === "end"),
+    calledFor: (change) => isEndOffsetChange(change) || (change.kind === "style" && change.placedFrom?.edge === "end" && !change.placedFrom.centered),
     text:
       "a layer placed from its container's right or bottom edge (`right`, `bottom`; Tailwind's `right-*`, `bottom-*`) stays placed so: " +
       "a change to its `right` or `bottom` changes that value, as given in px, and a change to its size changes the size alone; do not place it by `left` or `top` instead, " +
@@ -88,10 +88,11 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "Centered",
-    calledFor: (change) => change.kind === "style" && change.placedFrom === "center",
+    calledFor: (change) => change.kind === "style" && !!change.placedFrom?.centered,
     text:
-      "a layer centered on where its `left` or `top` places it by `translate: -50%` (Tailwind's `left-1/2 -translate-x-1/2`, `top-1/2 -translate-y-1/2`) stays centered: " +
-      "change its size alone, and keep its `left` or `top` and its translate as they are.",
+      "a layer centered on where its `left` or `top` places it by `translate: -50%`, or on where its `right` or `bottom` places it by `translate: 50%` " +
+      "(Tailwind's `left-1/2 -translate-x-1/2`, `right-1/2 translate-x-1/2`, and the same down) stays centered: " +
+      "change its size alone, and keep what places it and its translate as they are.",
   },
   {
     name: "This usage only",

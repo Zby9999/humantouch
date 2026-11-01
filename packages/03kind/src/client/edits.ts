@@ -196,6 +196,7 @@ export function createEditor(
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
     const along = SIZE_AXIS[property];
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
+    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : {};
     // Its `right` or `bottom` changed at every width: where the canvas places it otherwise, its `right` or `bottom` places nothing.
     const placedOtherwiseAt = !earlier && !breakpoint && isEndOffset(property) ? viewsPlacingOtherwise(layer, PLACED_BY[property]!.axis) : [];
     const variables = bind?.(property, value, picked, earlier?.variables);
@@ -215,7 +216,7 @@ export function createEditor(
       ...(within && { within }),
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
       ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, PLACED_BY[property]?.edge) }),
-      ...(from && from !== "start" && { placedFrom: from }),
+      ...placed,
       ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
@@ -400,7 +401,8 @@ export function createEditor(
     if (!along || layer.text) return null;
     const { end } = SIDES[along];
     if (!editor.can(layer, end)) return null;
-    return placedFrom(working.shown(layer.el), along) === "end" ? end : null;
+    const { edge, centered } = placedFrom(working.shown(layer.el), along);
+    return edge === "end" && !centered ? end : null;
   };
 
   /**

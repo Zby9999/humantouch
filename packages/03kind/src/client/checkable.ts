@@ -17,6 +17,17 @@ export const PLACING: readonly Property[] = ["x", "y", "absolute", "right", "bot
 /** A container's edge a layer placed freely is placed from along one axis: its start (left, top) or its end (right, bottom). */
 export type Edge = "start" | "end";
 
+/**
+ * How a layer placed freely is placed along one axis (GLOSSARY: Placement,
+ * ticket 75): from its container's `edge`, by the side that places it from
+ * there (`SIDES`); `centered` on where that side places it, moved back half
+ * its size (`translate: -50%` from the start, `50%` from the end).
+ */
+export interface PlacedFrom {
+  edge: Edge;
+  centered: boolean;
+}
+
 /** Along each axis, the CSS side that places a layer from its container's start edge and from its end edge (ticket 75). */
 export const SIDES = {
   x: { start: "left", end: "right" },

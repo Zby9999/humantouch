@@ -264,9 +264,11 @@ const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` 
  */
 function placementLine({ property, placedFrom }: Change): string {
   const axis = SIZE_AXIS[property]!;
-  if (placedFrom === "center") {
-    const [way, start] = axis === "x" ? ["across", "left"] : ["down", "top"];
-    return `**Placement:** the layer is centered ${way} on where its \`${start}\` places it, by \`translate: -50%\` (Tailwind's \`-translate-${axis}-1/2\`), and stays so: only its ${property} changes, on both sides alike.`;
+  if (placedFrom!.centered) {
+    // On where the side it is placed by places it: moved back half its size from a `left` or `top`, forward from a `right` or `bottom`.
+    const [side, back] = [SIDES[axis][placedFrom!.edge], placedFrom!.edge === "start" ? "-" : ""];
+    const way = axis === "x" ? "across" : "down";
+    return `**Placement:** the layer is centered ${way} on where its \`${side}\` places it, by \`translate: ${back}50%\` (Tailwind's \`${back}translate-${axis}-1/2\`), and stays so: only its ${property} changes, on both sides alike.`;
   }
   const side = SIDES[axis].end;
   return `**Placement:** the layer is placed from its container's ${side} edge (CSS \`${side}\`), and stays so: ${notByStart(axis)}.`;
