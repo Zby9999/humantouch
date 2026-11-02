@@ -100,3 +100,24 @@
 - 复制、拖回、合成的 Stack 的「第几个」没改，仍是记下时的位置；有同样的歧义，但没测到绕路，也不在本 ticket 里。
 - n 小：put-back 每家 5 次、dissolve 3 次。Cursor 改后 5 次都没进包，改前 2/5，可能还有没测到的绕路；Claude 两个版本范围重叠。
 - 没调用 code-review 技能（它会另起子 agent，按指挥的要求不派），自己按 ticket 和 spec 对过一遍 diff。
+
+**整线审查补修（2026-11-02，起点 1c24e4c；提交 2d2e1e1 实现、测试和 spec，acc354f 测试补一句断言，本提交 Comments）**
+
+- **草图里两种位置混用：成立，已修。** 1c24e4c 的草图里新建的图层写落地后的位置（`landed`），复制、移入、拖回的图层仍写记下时的位置，同一张草图里可能两个图层同一个序数。改为整张草图都按落地后写：带生成说明的 Frame 是这一轮新建的，起初是空的，`layoutOnceApplied` 按改动单的顺序把放进这个 Frame、从它拿出去的图层排一遍（放进来的按那条改动记下的第几个插入，拿出去的按图层去掉），得到落地后的顺序，每个图层写它在其中是第几个；不在其中的（后来又被拿走）照旧写记下的位置。这是设计师「直接写这一轮所有改动落地后的位置」最贴近的做法，不用另做设计决定：两种口径没有要取舍的，序数一致也不冲突。原来的 `(made && landed(c, list)?.nth) || place.nth` 随之换成 `at === -1 ? place.nth : at + 1`（`at` 是它在落地后顺序里的下标）。
+  - 测试：`cli.test.ts`「in a new Frame's sketch, every layer is where it lands, put back, copied or moved in as well as drawn: no two at the same place」：新文字、复制进来、移进来、再在最前面新建文字，改前「Button (a copy): 2nd」「Button (moved in): 1st」和「Pricing: 1st」撞号，改后 1st–4th 各一个。81 原来那条草图测试（两条新文字）照旧通过。
+  - 草图只在新建了带生成说明的 Frame 时出现，所以没有新建图层的场景不可能变；`--dry` 的 10 个场景都没有草图（见下面比对）。
+- **命名（第 7 条）：** `landed()` / `interface Landed` → `placeOnceApplied()` / `PlaceOnceApplied`（和注释里的「once the round is applied」、GLOSSARY 的 Apply 一致）；`placement(place, at)` 的 `at` → `onceApplied`；局部 `once` → `asApplied`；`layoutChanges` 的 `out` / `inn` → `takenOut` / `putIn`（现在带着图层，草图要按图层排）。
+- **`layoutChanges()` 和 `placedAt()` 的重复：复用了。** 放入的位置直接取 `client/changeset.ts` 的 `placedAt`（移动、复制、新建、拖回、合成的 Stack，五种和原来按 kind 分支取的一样；「把这个 Frame 变成 Stack」没有位置，原来也是空），`layoutChanges` 只自己写拿出去的（删除、移动的原位置，合成 Stack 带走的成员）。`placesOf()` 没复用：它是「改动碰到的位置」，复制会带上原件的位置、没有删除，和这里的「拿出去」意思不同。输出不变（cli.test.ts 全部通过、dry 比对逐字相同）。
+
+**Agent 读到的输出**（`pnpm bench:agents --dry` 布置 10 个场景，接着跑 `done <全部>`、`finish`、再 `claim`，用不提交的补丁存下，比完已还原；改前是本 worktree 里换回 1c24e4c 的 `packages/03kind/src` 再 build）
+
+- 1c24e4c 和改后两份共 40 个文件逐字相同（`diff -r` 无输出），包括 put-back-and-new-text：claim 6,827 字、done 846、finish 1,085、claim-again 3,772，新文字那句仍是「as its 2nd layer, once all of this round's changes are applied」。
+
+**体积**（gzip，Node zlib 默认级别）：`cli.js` 132,023 / 37,315 → 132,519 / 37,457 B（+142，含 82 补修里本机服务的改动）；`change-notes.ts` 只有 CLI 用，切换按钮的文件逐字节不变（见 82 的补修）。
+
+**测试**：`pnpm typecheck` 通过；`pnpm test` vitest 804 个通过、1 个跳过，node 测试 32 个通过；`TK_E2E_PORT=5600 pnpm test:e2e` 全量 393 个通过、1 个跳过（和 82 的补修同一次）。
+
+**风险**
+
+- 草图里的顺序也靠改动单的顺序推：一个图层的移动只记一条（第一次的编号、最后的位置），在这个 Frame 里移动过两次的图层，按第一次的编号排，可能差一个位置。只是说明里的序数，页面核对不靠它；序数之间不会撞号。
+- 新建图层自己的 Design intent 仍用 `placeOnceApplied`（从记下的位置起加减），和草图里的排法在上面这种移动两次的情况下可能差一；其他情况两者相同（新测试里 Plans 两处都是 3rd）。

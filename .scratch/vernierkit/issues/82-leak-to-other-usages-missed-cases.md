@@ -120,3 +120,70 @@
 - 一轮刚结束、下一轮马上又认领时，上一轮的页面如果晚到一个 `POST /other-usages`，会被当成新一轮的值存下（按编号对上）。页面在认领推送后的第一眼就送，一轮的结束到下一次认领通常隔几秒以上，没测到，没处理。
 - 第 3 种（只写在某个断点上的漏改）照决定没做。
 - 没调用 code-review 技能（它会另起子 agent，按指挥的要求不派），自己按 ticket 和 spec 对过一遍 diff。
+
+**整线审查补修（2026-11-02，起点 1c24e4c；提交 4d8814a 实现和测试、0afe7a9 对照剧本、c09dbf4 性能测试跟上新的文件格式，本提交 Comments）**
+
+逐条（审查清单第 1–5、7 条；第 6 条见 81）：
+
+1. **上一轮的值带进下一轮（假 ⚠️）：成立，已修。** `other-usages.json` 改为 `{ claimedAt, otherUsages }`：存的时候写上这一轮的认领时间，读的时候认领时间和现在的 `state.json` 对不上就当作没存。页面交值时带上记下的时间（`POST /other-usages` 的 body 由 `OtherUsagesKept` 改为 `{ at, otherUsages }`，`at` 取这一批第一条记下的时刻）；记在这一轮认领之前的（上一轮的页面晚到的，编号已从 1 重排）回 409、不收。做法照 `checks.json` 已有的「`at` 早于 `claimedAt` 的是上一轮的」（`appliedOf`、`POST /checks`）。没用「改动的属性和目标」（`notedFor`）来比：留到下一轮的改动，属性、目标不变，重排后编号也可能一样，比不出是哪一轮记的。`POST /claim` 带的值由服务自己按刚写下的认领存，不用页面的时间（那份本来就记在认领之前）。
+   - 测试：`page-claim-service.test.ts`「a page's notes of the round before, coming in once the next is claimed, are not this round's: not kept, and what this round's page notes is」（`finish` 留到下一轮、重新 `claim`，带上一轮时间的值 409、`GET /round` 仍是 `{}`，这一轮的值照收）。改前这条是 204、被当成这一轮的值存下。原有 3 条按新 body 改了调用，断言不变。
+2. **开着第二个页面时自动认领的一轮：成立，而且只让「存下的值优先」不够，已修。** 那个页面听到认领时，手上的这一轮是认领前读的，原来立刻按它开始核对：第一眼就记下漏改后的值，可能在重新读到存下的值之前就报了 shown，而 shown 是粘住的（服务不收之后不带 `undone` 的 not shown）。现在：认领期间 `GET /round` 总带着 `otherUsages`（没存值时是 `{}`），没有它的就是认领前读的；核对那段看到手上这一轮是认领前读的，先重新读一次（每次认领只读一次），读到之前不记、不核对、`answer` 也不答（读到后按依赖重新答）；读到后存下的值盖过页面自己记的（先存的就是最早的）。原来状态从 editing 变 claimed 时就会重新读这一轮，现在这一读交给核对那段，状态从 claimed 变回 editing 时照旧读，所以认领时请求数不变。
+   - 剧本：`applying-bench.spec.ts` 82 那组新加「a second page open in preview mode … the fourth card is red too, by either page」和对照「… writes it for the loop alone … no false leak」。改前（本 worktree 换回 1c24e4c 的产品代码，跑同一份新剧本，`--repeat-each 3`）：3 次都是 `saidUnasked` shown、`done` 说「it shows the change」、归档算落地，发现率 **0/3**；改后单独跑 1 + 3 + 2 次、全量 e2e 里 1 次，发现率 **7/7**（`saidUnasked` 都是 not shown），对照 2 + 1 次误报 **0**。原有 5 个 82 剧本照旧通过（`--repeat-each 3` 一次，全量一次）。
+3. **`keepOtherUsages` 读-合并-写有没有串行：不成立，不改。** 写 `other-usages.json` 的只有这几处：本机服务的 `POST /claim`、`POST /other-usages`（读-合并-写，都在 `handle` 里，经 `queue` 一次处理一个请求）；`claimFresh`（CLI `claim`、服务 `POST /claim`）和 `archiveRound`（CLI `finish`、服务 `POST /unlock`）只删文件。third-kind-folder.ts 的 `keepOtherUsages` 本身不排队，但只有服务的 `handle` 调用它，两个页面同时 POST 也是一前一后合并，不丢条目。CLI 的 `finish` 不经队列：服务正在处理的 POST 可能在 `finish` 删掉文件之后把它写回。写回的文件带着上一轮的认领时间：下一轮认领时 `claimFresh` 先删；即使在下一轮认领之后才写回（`finish` 到 `claim` 之间请求还在路上），读的时候认领时间对不上，当作没存，这一轮的值照常存进去、把它盖掉。测试：「written back once the round ended (`finish` takes no turn with the pages), the file is read as no claim's, and gives way to this round's notes」。（同一个项目同时跑两个开发服务器时有两个本机服务、两条队列，那时两边可能互相盖掉；审查前就是这样，没处理。）
+4. **`before()` 没有防护：成立，已修。** `watchCodeRuns` 调 `before` 包了 try/catch（和量时间合在一起的 `take`）：抛错时这一次运行照常开始、照常告诉，`run.before` 为 undefined，`EditorLayer` 就当作没有改前值（`POST /claim` 不带 `otherUsages`，页面照常替 Agent 认领），之后的运行照常取。`CodeRun.before` 的类型改为 `B | undefined`。测试：`page-changed.browser.test.ts`「what is to be taken as a run begins failing to be taken: the run is told all the same, with nothing taken, and so is the next」（改前第一次运行就丢了，`told.length` 一直是 0）。
+5. **`readOtherUsages` 的 `JSON.parse`：成立，已修。** 读不出（截断、`null`、数组、形状不对）时当作没存，`GET /round` 照常 200、`otherUsages: {}`；之后页面的值照常存进去。测试：「the file unreadable: as if nothing were kept, the round still loaded; a page's notes kept afresh」（改前 500）。
+7. **规范和命名：**
+   - `CLAIM_PATH` 的注释改成 body 是 `{ since, otherUsages }`、各是什么；`OTHER_USAGES_PATH` 的注释写明新的 body `{ at, otherUsages }` 和为什么带 `at`。
+   - `EditorLayer.tsx` 里的 `fresh` → `toKeep`（要交给服务存的这一批），`keepOtherUsages` 里的 `fresh` → `newlyNoted`（这次新记的、还没存的编号）。
+   - `page-checks.ts` 的局部 `noted` → `notes`，不再遮蔽外层的 `noted(change)`。
+   - 记录形状只定义一处：`service-protocol.ts` 新加 `OtherUsagesNote<More>`，`OtherUsagesKept = Record<string, OtherUsagesNote | null>`，`other-usages.ts` 的 `OtherUsagesNoted = OtherUsagesNote<{ el?: Element }>`。只加类型，切换按钮的共用 chunk 逐字节不变（见体积）。
+   - spec「核对」82 那段补上第 1、2 条的做法（文件带认领时间、认领之前记的不收、读不出当作没存；页面听到认领先重新读这一轮）。ADR 0013 那句「只属于这一轮，一轮结束就删」仍然成立，没改。
+
+**只记录、没改的（指挥列的两条）**
+
+- 自动认领的「改前」取自触发认领的那次代码运行开始时：更早一次运行已经漏改、但那次没让画布上的改动显示出来（没触发认领）的，漏改已经在改前值里，查不出（不误报）。和 78 给 `last` 取的 `since` 是同一个时点、同一个代价。
+- `noteRound` 没分片：每次代码变化开始时一次读完画布上所有「只改这一处」的改动的其他使用处，代价随页面上这些使用处的实例数增长（95 张卡片时这一片约 3ms，见 82 原来的性能表和下面的新数字）。这次没动它。
+
+**Agent 读到的输出**：`pnpm bench:agents --dry` 的 10 个场景，`claim`、`done <全部>`、`finish`、再 `claim` 共 40 份，1c24e4c 和改后逐字相同（做法和数字见 81 的补修）。dry 下没有漏改，也没有晚到的值，「没有漏改时输出不变」成立；Agent 读到的漏改说法没改。
+
+**性能**（`TK_PERF_PORT=5610 TK_PERF_HEADLESS=1`，5006 个元素的大页面，headless 只作前后比较；改前是本 worktree 换回 1c24e4c 的 `packages/03kind/src` 再 build，跑同一份 `flex.perf.ts`。相关的 6 个，改后、改前交替两轮：22:22 改后、22:24 改前、22:27 改后、22:29 改前；每轮前后查合盖睡眠都是 `No`，没有作废的；负载 4.3–8.8）
+
+| 测试（每次热更新：最长一段中位数 / 每次合计中位数，ms；两轮） | 改前 1c24e4c | 改后 |
+|---|---|---|
+| 认领期间核对（64） | 14.4、13.4 / 43.7、39.4 | 12.8、12.2 / 35.1、34.8 |
+| 认领期间核对新建文字（76） | 14.7、13.3 / 43.1、34.5 | 15.1、15.1 / 38.3、40.0 |
+| 认领期间看其他使用处（77） | 9.7、6.3 / 24.9、23.9 | 7.5、8.5 / 23.1、25.0 |
+| 认领后刷新页面，按存下的值找回（82） | 9.3、9.4 / 27.4、26.3 | 8.4、9.6 / 25.1、25.3 |
+| 　其中刷新后那一段（看几次 / 最长） | 7 次 / 13.2、11.7 | 7 次 / 11.6、11.5 |
+| 编辑模式中没认领、判断页面变没变（78） | 5.3、3.9 / 8.6、7.5 | 4.4、5.0 / 8.3、8.9 |
+| 同上，每次代码变化开始记另一处的 95 张（82） | 2.3、5.0 / 4.2、8.2 | 3.6、4.4 / 7.0、8.5 |
+
+- 前后在同一范围里互有高低，看作噪声。改动对页面的代价只有：认领时多等一次 `GET /round` 才开始核对（原来状态一变也会读一次，只是不等它），`before` 外面多一层 try/catch；刷新后的那一段次数、最长都没变。
+- long task：第 2 轮改后的「新建文字」那项，「the text written in every card」那次热更新有 1 个 51ms 的 long task 算在核对上。擦边，单独把这一项改后、改前交替各跑 2 × 3 次（22:33–22:38，合盖睡眠都是 `No`，负载约 4.5）：改后 6 次里 1 次（56ms），改前 6 次里 2 次（50ms、53ms）；连同第一轮，改后 8 次里 2 次、改前 8 次里 2 次。改前同样出现，是 headless 下这项热更新本身（96 张卡片换文字）和核对挤在一起，不是这次改动带来的；其余 5 项两轮都没有 long task。
+- 全套性能（13 个）没跑：页面代码只动了认领开始时的读法、自动认领取改前值的防护。
+
+**体积**（gzip，Node zlib 默认级别；和 82 原来的口径不同，只比前后）
+
+| 文件 | 改前 1c24e4c | 改后 |
+|---|---|---|
+| 切换按钮的共用 chunk `chunk-UQJRS7YD.js`、`react.dev.js` | 21,575 B、1,423 B（未压缩） | 逐字节相同（md5 相同） |
+| install.spec 口径（Vite 送给页面的） | 10,155 B | 10,153–10,154 B（同样的文件，每次跑在 ±2 B 里跳） |
+| toggle-first.spec 口径（发布的） | 9,993 B | 9,993 B |
+| `editor.dev.js` | 322,653 / 110,248 B | 322,868 / 110,318 B（+70） |
+| `cli.js`（含 81 的改动） | 132,023 / 37,315 B | 132,519 / 37,457 B（+142） |
+
+新的运行时代码都在编辑层和本机服务里；`service-protocol.ts` 只加了类型。
+
+**测试**
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 804 个通过、1 个跳过（新加 5 个：page-claim-service 3 个、page-changed 1 个、cli 1 个）；测量台和旧名检查的 node 测试 32 个通过。
+- `TK_E2E_PORT=5600 pnpm test:e2e`：全量一次（22:38–22:46，负载约 4.5）393 个通过、1 个跳过，没有失败、没有重跑。
+
+**新的风险**
+
+- 页面听到认领后要先等一次 `GET /round` 才开始记、核对：77 的竞态（Agent 刚 `claim` 就改代码、热更新先到）多了一次本机请求的时间（排在服务队列里其他请求后面，通常几毫秒）。记得晚，记下的就可能已是漏改后的值（查不出，不误报）。
+- Agent 自己 `claim` 的一轮、两个页面都开着：两个页面都在认领后记，先存的为准，后存的那个页面内存里仍用自己记的值（一轮中途不再重新读这一轮）。两份都是认领后第一眼，只在上面的竞态里会不同。
+- 页面交值带的是页面记下的时刻，服务拿它和 CLI 写的认领时刻比，两者都是同一台机器的钟；页面和本机服务不在同一台机器上时（目前不支持）这个比法不成立。
+- 一个项目同时跑两个开发服务器时有两个本机服务、两条队列，写 `other-usages.json` 不再串行（审查前就是这样）。
+- 没调用 code-review 技能（它会另起子 agent，按指挥的要求不派），自己按审查清单、ticket 和 spec 对过一遍 diff。
