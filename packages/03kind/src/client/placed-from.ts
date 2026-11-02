@@ -4,11 +4,15 @@
  * edge (`right`, `bottom`), or centered on where it is placed from either
  * (`translate: -50%` from its left, as Tailwind's `-translate-x-1/2` writes
  * it, in v3 through `transform`, in v4 through `translate`; `50%` from its
- * right). Resized, it stays placed so: what changes is the value that places
- * it from the edge it is placed from, or, centered, its size alone.
+ * right). Resized or moved, it stays placed so (ADR 0014): what changes is the
+ * value that places it from the edge it is placed from, or, centered, its
+ * size alone, or how far past the share of its container it is centered on
+ * (`calc(50% + 20px)`, ticket 79).
  */
-import { SIDES, type Edge, type PlacedFrom } from "./checkable";
-import { absolute, declaredValue } from "./property-table";
+import { AXIS_SIZE, pxIn, SIDES, type Edge, type PlacedAlong, type PlacedFrom, type Share } from "./checkable";
+import { absolute, declaredValue, round } from "./property-table";
+import { split } from "./paint";
+import { insideBorder, marginsOf } from "./stacks";
 import type { Axis } from "./snap";
 import { pinnedOf } from "./style-source";
 
@@ -63,46 +67,136 @@ function shiftOf(el: Element, size: { width: number; height: number }): Record<A
     y += m.f;
   }
   if (style.translate !== "none") {
-    const [across = "0px", down = "0px"] = splitAtTopLevelSpaces(style.translate);
-    const [dx, dy] = [pxOf(across, size.width), pxOf(down, size.height)];
-    if (dx === null || dy === null) return null;
-    x += dx;
-    y += dy;
+    const [across = "0px", down = "0px"] = split(style.translate, " ");
+    const [dx, dy] = [shareOf(across), shareOf(down)];
+    if (!dx || !dy) return null;
+    x += pxIn(dx, size.width);
+    y += pxIn(dy, size.height);
   }
   return { x, y };
 }
 
-/** A value's parts separated by spaces, but those inside brackets: `calc(-50% + 4px) 0px` is two. */
-function splitAtTopLevelSpaces(value: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let part = "";
-  for (const c of value.trim()) {
-    if (c === " " && !depth) {
-      if (part) parts.push(part);
-      part = "";
-      continue;
+/**
+ * A length as a share of a size and px past it (`Share`): in px, a
+ * percentage, or `calc()` of such, added, taken away, and multiplied or
+ * divided by plain numbers, as the browser computes `translate` and as
+ * Tailwind writes `left-1/2` (`calc(1/2 * 100%)`); null for any other (a
+ * `var()`, an `em`).
+ */
+export function shareOf(value: string): Share | null {
+  const tokens = value.trim().match(/calc\(|\d*\.?\d+(?:e[+-]?\d+)?(?:px|%)?|[-+*/()]|\S+/gi) ?? [];
+  let at = 0;
+  type Term = Share & { plain: boolean };
+  const sum = (): Term | null => {
+    let left = product();
+    while (left && (tokens[at] === "+" || tokens[at] === "-")) {
+      const sign = tokens[at++] === "-" ? -1 : 1;
+      const right = product();
+      if (!right || right.plain !== left.plain) return null;
+      left = { percent: left.percent + sign * right.percent, px: left.px + sign * right.px, plain: left.plain };
     }
-    if (c === "(") depth++;
-    if (c === ")") depth--;
-    part += c;
-  }
-  if (part) parts.push(part);
-  return parts;
+    return left;
+  };
+  const product = (): Term | null => {
+    let left = factor();
+    while (left && (tokens[at] === "*" || tokens[at] === "/")) {
+      const divide = tokens[at++] === "/";
+      const right = factor();
+      if (!right || (divide && (!right.plain || !right.px)) || (!left.plain && !right.plain)) return null;
+      const [length, by] = left.plain && !divide ? [right, left.px] : [left, divide ? 1 / right.px : right.px];
+      left = { percent: length.percent * by, px: length.px * by, plain: left.plain && right.plain };
+    }
+    return left;
+  };
+  const factor = (): Term | null => {
+    const token = tokens[at++];
+    if (token === "-" || token === "+") {
+      const term = factor();
+      return term && (token === "-" ? { percent: -term.percent, px: -term.px, plain: term.plain } : term);
+    }
+    if (token === "(" || token?.toLowerCase() === "calc(") {
+      const term = sum();
+      return tokens[at++] === ")" ? term : null;
+    }
+    const match = /^(\d*\.?\d+(?:e[+-]?\d+)?)(px|%)?$/i.exec(token ?? "");
+    if (!match) return null;
+    const n = parseFloat(match[1]);
+    return match[2] === "%" ? { percent: n, px: 0, plain: false } : { percent: 0, px: n, plain: !match[2] };
+  };
+  const term = sum();
+  // A plain number is no length, but 0.
+  if (!term || at !== tokens.length || (term.plain && term.px !== 0)) return null;
+  return { percent: term.percent, px: term.px };
+}
+
+/** How far `transform` and `translate` move `el` across and down, in px: none when they do more than move it, or move it in a way not read here. */
+export function shiftIn(el: Element): Record<Axis, number> {
+  const { width, height } = el.getBoundingClientRect();
+  return shiftOf(el, { width, height }) ?? { x: 0, y: 0 };
 }
 
 /**
- * A length in px, a percentage of `of`: plain (`-50%`, `4px`) or a sum of
- * such in `calc()` (`calc(-50% + 4px)`), as the browser computes `translate`; null for any other.
+ * How much room `el`'s container gives it along `axis`, as its document lays
+ * it out: what its `left` and `right` (`top`, `bottom`) are shares of, its
+ * containing block's size. Read from the browser's values for those, its
+ * margins and its size, which add up to it when it is placed freely: its
+ * size as laid out, not as a `transform` or `rotate` draws it.
  */
-function pxOf(value: string, of: number): number | null {
-  const inner = /^calc\((.*)\)$/.exec(value)?.[1] ?? value;
-  const terms = inner.replace(/\s*([+-])\s+/g, " $1").trim().split(/\s+/);
-  let sum = 0;
-  for (const term of terms) {
-    const match = /^([+-]?\d*\.?\d+(?:e[+-]?\d+)?)(px|%)$/i.exec(term);
-    if (!match) return null;
-    sum += match[2] === "%" ? (parseFloat(match[1]) / 100) * of : parseFloat(match[1]);
+export function roomOf(el: Element, axis: Axis): number {
+  const style = getComputedStyle(el);
+  const { start, end } = SIDES[axis];
+  const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
+  const sides = [start, end].map((side) => px(`padding-${side}`) + px(`border-${side}-width`));
+  const size = px(AXIS_SIZE[axis]) + (style.boxSizing === "border-box" ? 0 : sides[0] + sides[1]);
+  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + size;
+}
+
+/**
+ * How much room `container` gives a layer placed absolute in it, as its
+ * positioning reference, along each axis: its size inside its border, to the
+ * fraction of a px (`insideBorder`). What the share and the px a layer is
+ * placed by from its right or bottom edge, or centered, are of (ticket 79).
+ */
+export function roomIn(container: Element): Record<Axis, number> {
+  const { width, height } = insideBorder(container, container.getBoundingClientRect());
+  return { x: width, y: height };
+}
+
+/**
+ * Where `el`, centered along `axis` on where its side from `edge` places it,
+ * is centered: the value it gives that side now, as a share of its
+ * container's size and px past it (ticket 79); null when it is not one read here.
+ */
+export function sideShareOf(el: Element, axis: Axis, edge: Edge): Share | null {
+  return shareOf(declaredValue(el, SIDES[axis][edge]));
+}
+
+/** How far past `percent` of `room` px `at` px is, to two places: what a side gives a layer centered past its share. */
+export const pastShare = (at: number, percent: number, room: number) => round(at - pxIn({ percent, px: 0 }, room));
+
+/**
+ * Along each axis `el` is placed otherwise than from its container's left or
+ * top edge, as its document lays it out (`placedFrom`): how, and what the side
+ * that places it so is to give it for its left and top edges to be at `at`
+ * (its X and Y, its `left` and `top` were it placed by them) in a container
+ * that gives it `room` (ticket 79, ADR 0014). From the right or bottom edge,
+ * px, as X and Y are; centered, the share of its container it is centered on
+ * now, and px past it. None along an axis it is placed from the start, or
+ * centered on a side whose value is not read here (placed by its X and Y then).
+ */
+export function placedAlong(el: Element, at: Record<Axis, number>, room: Record<Axis, number>): Partial<Record<Axis, PlacedAlong>> | undefined {
+  const placed: Partial<Record<Axis, PlacedAlong>> = {};
+  const r = el.getBoundingClientRect();
+  const [top, right, bottom, left] = marginsOf(el);
+  for (const axis of ["x", "y"] as const) {
+    const from = placedFrom(el, axis);
+    if (from.edge === "start" && !from.centered) continue;
+    const share = from.centered ? sideShareOf(el, axis, from.edge) : { percent: 0, px: 0 };
+    if (!share) continue;
+    // From the end edge: what is left of its container's room past it and its margins.
+    const size = axis === "x" ? r.width + left + right : r.height + top + bottom;
+    const value = from.edge === "start" ? at[axis] : room[axis] - at[axis] - size;
+    placed[axis] = { ...from, percent: share.percent, px: pastShare(value, share.percent, room[axis]) };
   }
-  return sum;
+  return Object.keys(placed).length ? placed : undefined;
 }

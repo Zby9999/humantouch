@@ -480,6 +480,45 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(plain).not.toContain("**Placement:**");
   });
 
+  test("a layer placed from its container's right edge, or centered, moved: its changes say it stays placed so, and what the side that places it is to give it; moved into another Frame or copied, the same; how to write and check them (ticket 79)", async () => {
+    const other = { ...container, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="relative">' } };
+    const into = (absolute: object) => ({ container: { layer: "9", target: other }, nth: 1, slot: 0, absolute });
+    saveRound(
+      // Centered across on its `left`, moved 20px right.
+      style("x", { before: 150, after: 170, placedFrom: { edge: "start", centered: true }, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, style: { left: "calc(50% + 20px)", right: "auto" }, margins: { x: 0, y: 0 } }),
+      // Centered across on its `right`, moved 20px right.
+      { ...style("right", { before: 150, after: 130, placedFrom: { edge: "end", centered: true }, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: -20 } }, style: { right: "calc(50% - 20px)" }, margins: { x: 0, y: 0 } }), id: 2 },
+      // Placed from the right, moved into another Frame; centered, copied there.
+      { ...change("move", { after: into({ x: 100, y: 10, placed: { x: { edge: "end", centered: false, percent: 0, px: 70 } } }) }), id: 3 },
+      { ...change("duplicate", { property: "copy", after: into({ x: 80, y: 0, placed: { x: { edge: "start", centered: true, percent: 50, px: -20 } } }) }), id: 4 },
+    );
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change where its `left` places it from `50%` to `calc(50% + 20px)`: 50% of its container's width from its left edge, and 20px past that (Tailwind's `left-[calc(50%+20px)]`). " +
+        "Its X position goes from 150px to 170px as the designer saw it, but write the share, not a px value: as its container grows or shrinks, it stays as far past that share of it.\n",
+    );
+    expect(section(output, 1)).toContain(
+      "- **Placement:** the layer is centered across on where its `left` places it, by `translate: -50%` (Tailwind's `-translate-x-1/2`), and stays so: keep the translate and the share, only how far past it changes.\n",
+    );
+    expect(section(output, 2)).toContain("Change where its `right` places it from `50%` to `calc(50% - 20px)`: 50% of its container's width from its right edge, less 20px (Tailwind's `right-[calc(50%-20px)]`).");
+    // The Frame or the container the layer goes in, said so on both axes: not "its", which reads as the layer's (ticket 76).
+    expect(section(output, 3)).toContain(
+      "at 70px from the Frame's right edge (CSS `right`, placed from that edge as the layer is now: not by `left`) and Y 10px from the Frame's top edge (CSS `top`). Make the Frame its positioning reference",
+    );
+    expect(section(output, 4)).toContain(
+      "centered across on `left: calc(50% - 20px)` (50% of the container's width from its left edge, less 20px, with its `translate: -50%` kept, as the layer is now) and Y 0px from the container's top edge (CSS `top`);",
+    );
+    expect(names(output)).toEqual(expect.arrayContaining(["Placed from the right or bottom", "Centered"]));
+    expect(rule(output, "Centered")).toContain("keep what places it and its translate as they are");
+    expect(rule(output, "Centered")).toContain("moved, only how far past the share of its container it is centered on changes: write the side as given (`left: calc(50% + 20px)`, Tailwind's `left-[calc(50%+20px)]`), keeping the share and the translate");
+    expect(rule(output, "How the page checks")).toContain(
+      "a layer centered on where its side places it by that side at each width: the share of its container given, and the px past it, plus its margin, kept, as on the canvas, and its translate still centering it there; a px value right as wide as the page's window is not right at the other widths",
+    );
+    expect(rule(output, "How the page checks")).not.toContain("a layer placed from its container's right or bottom edge by where it is drawn");
+  });
+
   test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
     saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
 
@@ -1738,6 +1777,92 @@ describe("done, checked on the page", () => {
     );
   });
 
+  test("for a layer centered and moved, the page placing it elsewhere than the share its side gives it puts it: says where the canvas centers it at that width, and to write the share (ticket 79)", async () => {
+    saveRound({ ...redFill, property: "x", before: 150, after: 170, placedFrom: { edge: "start", centered: true }, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, style: { left: "calc(50% + 20px)", right: "auto" }, margins: { x: 0, y: 0 } });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 170, margin: 0, at: 404 }, width: 768 }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. At 768px wide, the layer's `left` is 170px (left margin 0px), where the canvas centers it at 404px: 50% of its container's width there, and 20px past that (`left: calc(50% + 20px)`), its margin kept. " +
+        "Write its `left` as that share of its container, not in px, keep its `translate`, and run `npx 03kind done 1` again.\n",
+    );
+  });
+
+  test("for a layer centered and moved, its translate gone on the page: says it is not centered, and to keep the translate, not that its side is right (line review)", async () => {
+    const other = { ...cards, loc: "src/App.tsx:30:7", instances: 1 };
+    const into = (absolute: object) => ({ container: { layer: "9", target: other }, nth: 1, slot: 0, absolute });
+    saveRound(
+      { ...redFill, property: "x", before: 150, after: 170, placedFrom: { edge: "start", centered: true }, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, style: { left: "calc(50% + 20px)", right: "auto" }, margins: { x: 0, y: 0 } },
+      { ...redFill, id: 2, property: "right", before: 150, after: 130, placedFrom: { edge: "end", centered: true }, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: -20 } }, style: { right: "calc(50% - 20px)" }, margins: { x: 0, y: 0 } },
+      { ...redFill, id: 3, kind: "move", property: "move", before: into({ x: 0, y: 0 }), after: into({ x: 120, y: 50, placed: { x: { edge: "start", centered: true, percent: 50, px: 20 } } }), style: {} },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({
+      outcome: "not shown",
+      actual: id === 3 ? { x: 120, y: 50, margins: { x: 0, y: 0 }, centered: false } : { value: 170, margin: 0, at: 170, share: { percent: 50, px: 20 }, centered: false },
+      ...(id === 2 && { width: 768 }),
+    }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The layer is not centered on where its `left` places it: the page does not move it back half its width by `translate: -50%` (Tailwind's `-translate-x-1/2`), or something else, such as another `transform` or `rotate`, takes its place. " +
+        "Keep its `translate`, as the notes say, and run `npx 03kind done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. At 768px wide, the layer is not centered on where its `right` places it: the page does not move it forward half its width by `translate: 50%` (Tailwind's `translate-x-1/2`), or something else, such as another `transform` or `rotate`, takes its place. ",
+    );
+    expect((await cli("done", "3")).output).toContain("it does not show the change. The layer is not centered on where its `left` places it: the page does not move it back half its width by `translate: -50%`");
+    expect((await cli("finish")).output).not.toContain("is right");
+  });
+
+  test("for a layer moved to be placed absolute, from its container's right edge or centered, or not, the page not placing it absolute: says so first, by the sides the notes give (line review)", async () => {
+    const list = { ...cards, loc: "src/App.tsx:20:7", instances: 1 };
+    const place = (absolute: object | null) => ({ container: { layer: "4", target: list }, nth: 2, slot: 1, absolute });
+    const move = (id: number, absolute: object) => ({ ...redFill, id, layer: String(4 + id), kind: "move", property: "move", before: place({ x: 0, y: 0 }), after: place(absolute), style: {}, margins: { x: 0, y: 0 } });
+    saveRound(
+      move(1, { x: 230, y: 8, placed: { x: { edge: "end", centered: false, percent: 0, px: 40 } } }),
+      move(2, { x: 170, y: 40, placed: { x: { edge: "start", centered: true, percent: 50, px: 20 }, y: { edge: "end", centered: false, percent: 0, px: 12 } } }),
+      move(3, { x: 40, y: 12 }),
+    );
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: null }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The layer is not placed absolute, not absolute at 40px from its container's right edge and Y 8px: check its `position`, `right` and `top`, and that its container is its positioning reference, then run `npx 03kind done 1` again.\n",
+    );
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. The layer is not placed absolute, not absolute centered on `left: calc(50% + 20px)` and at 12px from its container's bottom edge: check its `position`, `left` and `bottom`, and that its container is its positioning reference, then run `npx 03kind done 2` again.\n",
+    );
+    // As before, placed from its container's top left.
+    expect((await cli("done", "3")).output).toContain(
+      "it does not show the change. The layer is not placed absolute, not absolute at X 40px and Y 12px: check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx 03kind done 3` again.\n",
+    );
+  });
+
+  test("for a layer's X, Y, right or bottom, the page not placing the layer absolute: says so, and what to check, with no value read off it (ticket 80)", async () => {
+    saveRound(
+      { ...redFill, property: "x", before: 0, after: 40, style: { left: "40px", right: "auto" } },
+      { ...redFill, id: 2, property: "y", before: 368, after: 488, style: { top: "488px", bottom: "auto" }, margins: { x: 0, y: 24 } },
+      { ...redFill, id: 3, property: "right", before: 10, after: 0, style: { right: "0px" }, margins: { x: 4, y: 0 } },
+      { ...redFill, id: 4, property: "bottom", before: 0, after: 12, style: { bottom: "12px" } },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({ outcome: "not shown", actual: null, ...(id === 3 && { width: 390 }) }));
+
+    const notPlaced = (id: number, at: string, check: string) =>
+      `Checked on the page: it does not show the change. ${at}: check its \`position\` and \`${check}\`, and that its container is its positioning reference, then run \`npx 03kind done ${id}\` again.\n`;
+    expect((await cli("done", "1")).output).toContain(notPlaced(1, "The layer is not placed absolute, not absolute at X 40px", "left"));
+    expect((await cli("done", "2")).output).toContain(notPlaced(2, "The layer is not placed absolute, not absolute at Y 488px", "top"));
+    expect((await cli("done", "3")).output).toContain(notPlaced(3, "At 390px wide, the layer is not placed absolute, not absolute at 0px from its container's right edge", "right"));
+    expect((await cli("done", "4")).output).toContain(notPlaced(4, "The layer is not placed absolute, not absolute at 12px from its container's bottom edge", "bottom"));
+
+    const report = (await cli("finish")).output;
+    expect(report).toContain("- 1. X: <the layer>\n  Why: the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).toContain("- 2. Y: <the layer>\n  Why: the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).toContain("- 3. Right: <the layer>\n  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).toContain("- 4. Bottom: <the layer>\n  Why: the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).not.toContain("null");
+  });
+
   test("several changes at once: each marked done, each with how the page checked it", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
@@ -2195,6 +2320,31 @@ describe("changes not applied, carried over to the next round on the same canvas
     expect(section(output, 1)).toContain("- **Design intent:** Change the X position from 32px to 40px.\n");
     expect(output).not.toContain("[object Object]");
     expect(changeSet().changes.map((change: { before: unknown }) => change.before)).toEqual([32, { x: 5, y: 6 }]);
+  });
+
+  test("a centered layer's X carried over goes from what the page shows now, and so does what its side is written as: the notes say both as the code has them (line review)", async () => {
+    const x = {
+      ...redFill,
+      id: 2,
+      property: "x",
+      before: 640,
+      after: 660,
+      placedFrom: { edge: "start", centered: true },
+      centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } },
+      style: { left: "calc(50% + 20px)", right: "auto" },
+      margins: { x: 0, y: 0 },
+    };
+    await carriedOver({ ...smallRadius, id: 1 }, x);
+    // The Agent wrote `left-[600px]`, its translate kept.
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 600, margin: 0, at: 660, share: { percent: 0, px: 600 } } }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change where its `left` places it from `600px` to `calc(50% + 20px)`: 50% of its container's width from its left edge, and 20px past that (Tailwind's `left-[calc(50%+20px)]`). " +
+        "Its X position goes from 600px to 660px as the designer saw it",
+    );
+    expect(changeSet().changes[0].centeredOn).toEqual({ before: { percent: 0, px: 600 }, after: { percent: 50, px: 20 } });
   });
 
   test("an X the page does not place absolute now keeps the X it went from", async () => {

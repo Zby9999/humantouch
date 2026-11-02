@@ -22,7 +22,7 @@ import {
   type Target,
 } from "./client/changeset";
 import { breakpointName, mediaOf, tailwindOf, type Breakpoint } from "./client/breakpoints";
-import { isEndOffset, PLACED_BY, SIDES, SIZE_AXIS } from "./client/checkable";
+import { AXIS_SIZE, AXIS_WAY, CENTERING_SIGN, isEndOffset, PLACED_BY, shareCss, SIDES, SIZE_AXIS, type Edge, type Share } from "./client/checkable";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
@@ -187,6 +187,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
+      if (change.centeredOn) return centeredIntent(change);
       if (isEndOffset(change.property)) return endOffsetIntent(change);
       if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
@@ -255,6 +256,32 @@ function endOffsetIntent({ property, before, after }: Change): string {
   );
 }
 
+/**
+ * A change to where the side that places a layer centered on it does
+ * (ticket 79): the share of its container it gives it, kept, and how far past
+ * that, which changes, as CSS and Tailwind write it.
+ */
+function centeredIntent({ property, before, after, centeredOn }: Change): string {
+  const { axis, edge } = PLACED_BY[property]!;
+  const side = SIDES[axis][edge];
+  const [from, to] = [shareCss(centeredOn!.before), shareCss(centeredOn!.after)];
+  return (
+    `Change where its \`${side}\` places it from \`${from}\` to \`${to}\`: ${shareWords(centeredOn!.after, axis, edge, "its container")} (Tailwind's \`${side}-[${to.replace(/ /g, "")}]\`). ` +
+    `Its ${propertyName(property)} goes from ${value(property, before)} to ${value(property, after)} as the designer saw it, but write the share, not a px value: as its container grows or shrinks, it stays as far past that share of it.`
+  );
+}
+
+/**
+ * What a share a side gives a layer is, in words, of `container` ("its
+ * container", "the Frame"): "50% of its container's width from its left
+ * edge, and 20px past that", "…, less 20px".
+ */
+export function shareWords({ percent, px }: Share, axis: Axis, edge: Edge, container: string, where?: "there"): string {
+  const past = !px ? "" : px > 0 ? `, and ${px}px past that` : `, less ${-px}px`;
+  // `there`: as large as its container is at some width, said rather than its edge.
+  return `${percent}% of ${container}'s ${AXIS_SIZE[axis]} ${where ?? `from its ${SIDES[axis][edge]} edge`}${past}`;
+}
+
 /** What keeps a layer placed from its container's right or bottom edge along `axis` so: its `left` or `top` left alone. */
 const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` instead`;
 
@@ -263,12 +290,14 @@ const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` 
  * its container's left or top edge (ticket 75): it stays placed so.
  */
 function placementLine({ property, placedFrom }: Change): string {
-  const axis = SIZE_AXIS[property]!;
+  const sized = SIZE_AXIS[property];
+  const axis = sized ?? PLACED_BY[property]!.axis;
   if (placedFrom!.centered) {
     // On where the side it is placed by places it: moved back half its size from a `left` or `top`, forward from a `right` or `bottom`.
-    const [side, back] = [SIDES[axis][placedFrom!.edge], placedFrom!.edge === "start" ? "-" : ""];
-    const way = axis === "x" ? "across" : "down";
-    return `**Placement:** the layer is centered ${way} on where its \`${side}\` places it, by \`translate: ${back}50%\` (Tailwind's \`${back}translate-${axis}-1/2\`), and stays so: only its ${property} changes, on both sides alike.`;
+    const [side, back] = [SIDES[axis][placedFrom!.edge], CENTERING_SIGN[placedFrom!.edge]];
+    // Moved (ticket 79): the side keeps its share of the container.
+    const only = sized ? `only its ${property} changes, on both sides alike` : "keep the translate and the share, only how far past it changes";
+    return `**Placement:** the layer is centered ${AXIS_WAY[axis]} on where its \`${side}\` places it, by \`translate: ${back}50%\` (Tailwind's \`${back}translate-${axis}-1/2\`), and stays so: ${only}.`;
   }
   const side = SIDES[axis].end;
   return `**Placement:** the layer is placed from its container's ${side} edge (CSS \`${side}\`), and stays so: ${notByStart(axis)}.`;
@@ -397,10 +426,9 @@ function placement(place: Place, at: Landed | null = null): string {
     const once = at?.others ? ", once all of this round's changes are applied" : "";
     return `in the layout of ${container(place)}, as its ${ordinal(nth)} layer${cell({ ...place, nth })}${once}`;
   }
-  const { x, y } = place.absolute;
   // The container is the positioning reference, not the layer: "which is to be" read as the layer was taken for both (ticket 76).
   return (
-    `absolute in ${container(place)}, at X ${x}px and Y ${y}px from the container's top left (CSS \`left\` and \`top\`); ` +
+    `absolute in ${container(place)}, at ${absoluteWhere(place.absolute, "container")}; ` +
     "the container, not this layer, is the positioning reference: give the container `position: relative` if it has none"
   );
 }
@@ -471,6 +499,28 @@ function layoutChanges(change: Change): { out: Place[]; inn: Place[] } {
     default:
       return { out: [], inn: [] };
   }
+}
+
+/**
+ * Where a layer placed absolute is: its X and Y from its container's top
+ * left (`whose`: the container, or the Frame). Placed otherwise along an axis
+ * (ticket 79), by the side that places it so, as the layer is placed now.
+ */
+function absoluteWhere({ x, y, placed }: NonNullable<Place["absolute"]>, whose: string): string {
+  if (!placed) return `X ${x}px and Y ${y}px from the ${whose}'s top left (CSS \`left\` and \`top\`)`;
+  // The container named on each axis, as for both at once: "its" would read as the layer's (ticket 76).
+  const whereOnAxis = (axis: Axis, at: number) => {
+    const how = placed[axis];
+    const { start, end } = SIDES[axis];
+    if (!how) return `${axis.toUpperCase()} ${at}px from the ${whose}'s ${start} edge (CSS \`${start}\`)`;
+    if (!how.centered) return `${how.px}px from the ${whose}'s ${end} edge (CSS \`${end}\`, placed from that edge as the layer is now: not by \`${start}\`)`;
+    const side = SIDES[axis][how.edge];
+    return (
+      `centered ${AXIS_WAY[axis]} on \`${side}: ${shareCss(how)}\` ` +
+      `(${shareWords(how, axis, how.edge, `the ${whose}`)}, with its \`translate: ${CENTERING_SIGN[how.edge]}50%\` kept, as the layer is now)`
+    );
+  };
+  return `${whereOnAxis("x", x)} and ${whereOnAxis("y", y)}`;
 }
 
 /**
@@ -589,9 +639,8 @@ function moveIntent(change: Change): string {
   }
   const from = before.absolute ? `out of where it is placed in ${container(before)}` : `out of the layout of ${container(before)}, where it is ${ordinal(before.nth)}`;
   if (kind === "Move") return `Move it ${from}, into the layout of ${container(after)}, as its ${ordinal(after.nth)} layer${cell(after)}.`;
-  const { x, y } = after.absolute!;
   const into = after.container.layer === before.container.layer ? "in the same Frame" : `in ${container(after)}`;
-  return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the Frame's top left (CSS \`left\` and \`top\`). Make the Frame its positioning reference (\`position: relative\`) if it is not one already.`;
+  return `Take it ${from}, and place it absolute ${into}, at ${absoluteWhere(after.absolute!, "Frame")}. Make the Frame its positioning reference (\`position: relative\`) if it is not one already.`;
 }
 
 /**
