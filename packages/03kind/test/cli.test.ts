@@ -1885,7 +1885,7 @@ describe("a change for one usage, shown at another usage of its component too (t
   const leaked = {
     outcome: "not shown",
     actual: redFill.after,
-    elsewhere: [{ chain: YOUR_TURN, was: { type: "solid", color: "#FFFFFF", opacity: 1 }, is: { type: "solid", color: "#FF0000", opacity: 0.5 } }],
+    otherUsages: [{ chain: YOUR_TURN, was: { type: "solid", color: "#FFFFFF", opacity: 1 }, is: { type: "solid", color: "#FF0000", opacity: 0.5 } }],
   };
 
   test("done says the page shows it on the layer, but at the other usage too: where, and the property from what to what; it is not applied", async () => {
@@ -1907,7 +1907,7 @@ describe("a change for one usage, shown at another usage of its component too (t
     saveRound(redFill);
     await cli("claim");
     const second = { chain: [{ component: "Card", usage: "src/Footer.tsx:9:7", thirdParty: false }, APP], was: { type: "solid", color: "#F5F5F4", opacity: 1 }, is: redFill.after };
-    closePage = openPage(() => ({ ...leaked, elsewhere: [...leaked.elsewhere, second] }));
+    closePage = openPage(() => ({ ...leaked, otherUsages: [...leaked.otherUsages, second] }));
 
     const { output } = await cli("done", "1");
 

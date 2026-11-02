@@ -129,11 +129,11 @@ export type CheckResult =
    * shown that wide, when not as wide as the page's window. `sources`: of a
    * style change carried over from a round before, what sets that value on
    * the page, read where `actual` is, as `claim` asks (ticket 68).
-   * `elsewhere`: the layer shows the change, but other usages of its
+   * `otherUsages`: the layer shows the change, but other usages of its
    * component do too, the change being for one usage alone (ticket 77);
    * `actual` is then the layer's own value.
    */
-  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[]; elsewhere?: Elsewhere[] }
+  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[]; otherUsages?: OtherUsageChanged[] }
   /** `anyPage`: no page could check it either (a brief, a copy made this round): not worth waiting for another. */
   | { outcome: "unchecked"; reason: string; anyPage?: true };
 
@@ -143,7 +143,7 @@ export type CheckResult =
  * of the component alone (ticket 77): the usage, by its usage chain, innermost
  * first; its value then (`was`) and now (`is`), in design language.
  */
-export interface Elsewhere {
+export interface OtherUsageChanged {
   chain: UsageLevel[];
   was: unknown;
   is: unknown;

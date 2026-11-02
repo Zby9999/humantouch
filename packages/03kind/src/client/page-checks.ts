@@ -10,7 +10,7 @@
  *
  * A change for one usage of a component alone is not shown, though its layer
  * shows it, where the component's other usages show its property otherwise
- * than when the page began to check (ticket 77, `elsewhere.ts`).
+ * than when the page began to check (ticket 77, `other-usages.ts`).
  *
  * Looking is spread out so it never holds the page up for long: as many
  * changes as fit in a short slice of time, the rest after the page has had a turn.
@@ -19,7 +19,7 @@ import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type Check
 import type { Change } from "./changeset";
 import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
 import { codeUpdates, sliced } from "./code-changes";
-import { elsewhereNow, looksElsewhere, noteOtherUsages, type OtherUsages } from "./elsewhere";
+import { otherUsagesChanged, looksAtOtherUsages, noteOtherUsages, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
 import type { RoundOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
@@ -48,7 +48,7 @@ interface Options {
    * caller for as long as the round is claimed, so a page that checks it
    * anew, the round read again, still goes by what they showed at the claim.
    */
-  otherUsages?: Map<number, OtherUsages | null>;
+  otherUsages?: Map<number, OtherUsagesNoted | null>;
 }
 
 /** The longest the page looks in one go before it lets the page have a turn. */
@@ -75,15 +75,15 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const said = new Map<number, string>();
   const checkable = changes.filter((change) => !uncheckable(change, changes));
   const copies = new Map<number, PageCopy>();
-  const noted = (change: Change) => others.has(change.id) || !looksElsewhere(change);
+  const noted = (change: Change) => others.has(change.id) || !looksAtOtherUsages(change);
   const note = (change: Change) => others.set(change.id, noteOtherUsages(doc, change, changes, win.innerWidth));
   /** Shown on its layer (or not looked at there, at this width): not shown after all where other usages of its component show it too. */
-  const orElsewhere = (change: Change, result: CheckResult | null): CheckResult | null => {
+  const orAtOtherUsages = (change: Change, result: CheckResult | null): CheckResult | null => {
     if (result && result.outcome !== "shown") return result;
     if (!noted(change)) note(change);
-    const elsewhere = elsewhereNow(doc, change, others.get(change.id) ?? null, win.innerWidth);
+    const changed = otherUsagesChanged(doc, change, others.get(change.id) ?? null, win.innerWidth);
     observer.takeRecords();
-    return elsewhere.length ? { outcome: "not shown", actual: change.after, elsewhere } : result;
+    return changed.length ? { outcome: "not shown", actual: change.after, otherUsages: changed } : result;
   };
   /** The copies laid out as they are since they last changed. */
   const laidOut = new Set<number>();
@@ -126,13 +126,13 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     return { width, doc: copy.doc, own: false, of: copy.of };
   };
   /** Looks at `change` now; what looking puts in the page is not the code changing. `sources`: not shown, what sets the value shown instead too. */
-  const check = (change: Change, sources = false): CheckResult => measured(change, () => orElsewhere(change, lookNow(change, sources))!);
+  const check = (change: Change, sources = false): CheckResult => measured(change, () => orAtOtherUsages(change, lookNow(change, sources))!);
   /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
   const checkAgain = (change: Change): CheckResult | null =>
     measured(change, () => {
       const result = checkHere(doc, change, changes, viewWidths());
       observer.takeRecords();
-      return orElsewhere(change, result);
+      return orAtOtherUsages(change, result);
     });
   const measured = <T,>(change: Change, look: () => T): T => {
     const start = performance.now();

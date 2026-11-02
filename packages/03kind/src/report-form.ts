@@ -8,7 +8,7 @@
  */
 import type { Change } from "./client/changeset";
 import type { CheckResult } from "./service-protocol";
-import { changeTitle, elsewhereWords, listed, otherUsagesWord, propertyName, value } from "./design-values";
+import { changeTitle, otherUsagesWords, listed, otherUsagesWord, propertyName, value } from "./design-values";
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
 export const REPORT_RULES =
@@ -50,7 +50,7 @@ export function reportFor(changes: Change[], applied: number[], checks: Record<n
 function pageShows(change: Change, check: CheckResult): string {
   if (check.outcome !== "not shown") return "<why it is not applied>";
   // Shown on the layer, but at other usages of its component too (ticket 77).
-  if (check.elsewhere?.length) return `the page shows it at ${otherUsagesWord(change, check.elsewhere)} too, ${elsewhereWords(change.property, check.elsewhere, false)}`;
+  if (check.otherUsages?.length) return `the page shows it at ${otherUsagesWord(change, check.otherUsages)} too, ${otherUsagesWords(change.property, check.otherUsages, false)}`;
   const at = check.width ? `at ${check.width}px wide, ` : "";
   if (change.kind === "delete") return `${at}the layer is still on the page`;
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;

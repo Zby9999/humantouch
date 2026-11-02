@@ -10,7 +10,7 @@
  * property of itself, every usage when the round changes the component
  * itself so, and usages not on the page.
  */
-import type { Elsewhere } from "../service-protocol";
+import type { OtherUsageChanged } from "../service-protocol";
 import type { Change } from "./changeset";
 import { forOneUsage, foundByMarker } from "./checkable";
 import { originOf } from "./layers";
@@ -19,13 +19,13 @@ import { readValue, type Property } from "./property-table";
 import { readUsageChain, type UsageLevel } from "./usage-chain";
 
 /** What the component's other usages showed of a change's property, as the page began to check the round, as wide as its window was then: by element, each instance of each usage. */
-export interface OtherUsages {
+export interface OtherUsagesNoted {
   width: number;
   seen: { el: Element; key: string; chain: UsageLevel[]; value: unknown }[];
 }
 
 /** Whether the page looks at the component's other usages for `change`: a style change for one usage of it alone, to a layer it finds by its source marker. */
-export function looksElsewhere(change: Change): boolean {
+export function looksAtOtherUsages(change: Change): boolean {
   return change.kind === "style" && change.scope === "usage" && !change.data && foundByMarker(change.target) && forOneUsage(change);
 }
 
@@ -41,12 +41,12 @@ function changesTheSame(change: Change, other: Change): boolean {
  * itself changes the property this round (`round`). A usage that changes it
  * itself this round is left out.
  */
-export function noteOtherUsages(doc: Document, change: Change, round: Change[], width: number): OtherUsages | null {
-  if (!looksElsewhere(change)) return null;
+export function noteOtherUsages(doc: Document, change: Change, round: Change[], width: number): OtherUsagesNoted | null {
+  if (!looksAtOtherUsages(change)) return null;
   const component = change.target.chain[0].component;
   if (round.some((other) => other.scope === "component" && other.target.chain[0]?.component === component && changesTheSame(change, other))) return null;
   const changedThere = new Set(round.filter((other) => other.scope === "usage" && changesTheSame(change, other)).map((other) => JSON.stringify(other.target.chain)));
-  const seen: OtherUsages["seen"] = [];
+  const seen: OtherUsagesNoted["seen"] = [];
   for (const [key, els] of otherUsagesOf(doc, change.target)) {
     const { chain } = originOf(els[0], readUsageChain(els[0]));
     if (changedThere.has(JSON.stringify(chain))) continue;
@@ -62,9 +62,9 @@ export function noteOtherUsages(doc: Document, change: Change, round: Change[], 
  * be told. An element the page has drawn anew is found again by its usage,
  * and its place among the usage's instances; not found, it is not looked at.
  */
-export function elsewhereNow(doc: Document, change: Change, noted: OtherUsages | null, width: number): Elsewhere[] {
+export function otherUsagesChanged(doc: Document, change: Change, noted: OtherUsagesNoted | null, width: number): OtherUsageChanged[] {
   if (!noted || noted.width !== width) return [];
-  const found = new Map<string, Elsewhere>();
+  const found = new Map<string, OtherUsageChanged>();
   let now: Map<string, Element[]> | undefined;
   noted.seen.forEach(({ el, key, chain, value }, i) => {
     if (found.has(key)) return;

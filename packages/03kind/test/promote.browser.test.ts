@@ -440,11 +440,11 @@ describe("a change for one usage, looked at on the component's other usages (tic
 
     await expect.poll(() => last(1)).toMatchObject({
       outcome: "not shown",
-      elsewhere: [{ chain: cardAt("src/App.tsx:8:7"), was: WHITE, is: RED }],
+      otherUsages: [{ chain: cardAt("src/App.tsx:8:7"), was: WHITE, is: RED }],
     });
     fill(3, "rgb(255, 255, 255)");
     await expect.poll(() => last(1)?.outcome).toBe("shown");
-    expect(last(1)).not.toHaveProperty("elsewhere");
+    expect(last(1)).not.toHaveProperty("otherUsages");
     checks.stop();
   });
 
@@ -458,7 +458,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
     for (const i of [0, 1, 2]) fill(i, "rgb(255, 0, 0)");
 
     await expect.poll(() => last(1)?.outcome).toBe("shown");
-    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    expect(reports.some((r) => "otherUsages" in r)).toBe(false);
     checks.stop();
   });
 
@@ -473,7 +473,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
 
     fill(3, "rgb(255, 0, 0)");
 
-    await expect.poll(() => last(1)).toMatchObject({ outcome: "not shown", undone: true, elsewhere: [{ was: WHITE, is: RED }] });
+    await expect.poll(() => last(1)).toMatchObject({ outcome: "not shown", undone: true, otherUsages: [{ was: WHITE, is: RED }] });
     checks.stop();
   });
 
@@ -489,7 +489,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
     fill(3, "rgb(0, 0, 255)");
 
     await expect.poll(() => [last(1)?.outcome, last(2)?.outcome]).toEqual(["shown", "shown"]);
-    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    expect(reports.some((r) => "otherUsages" in r)).toBe(false);
     checks.stop();
   });
 
@@ -508,7 +508,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
     fill(3, "rgb(255, 0, 0)");
 
     await expect.poll(() => [last(round[0].id)?.outcome, last(round[1].id)?.outcome]).toEqual(["shown", "shown"]);
-    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    expect(reports.some((r) => "otherUsages" in r)).toBe(false);
     checks.stop();
   });
 
@@ -523,7 +523,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
     for (const i of [0, 1, 2, 3]) fill(i, "rgb(255, 0, 0)");
 
     await expect.poll(() => last(1)?.outcome).toBe("shown");
-    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    expect(reports.some((r) => "otherUsages" in r)).toBe(false);
     checks.stop();
   });
 });
