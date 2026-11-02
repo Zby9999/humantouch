@@ -163,12 +163,12 @@ export function createEditor(
    * and the room its container gives it. Null for any other, or a side whose
    * value is not read here (a `var()`): written in px, as X and Y are.
    */
-  const centeredSide = (el: Element, property: Property, earlier: Change | null) => {
+  const centeringSide = (el: Element, property: Property, earlier: Change | null) => {
     const along = PLACED_BY[property];
     if (!along) return null;
     const from = placedFrom(el, along.axis);
     if (!from.centered || from.edge !== along.edge) return null;
-    const share = earlier?.centeredOn ? { percent: earlier.centeredOn.percent } : sideShareOf(el, along.axis, along.edge);
+    const share = earlier?.centeredOn ? earlier.centeredOn.after : sideShareOf(el, along.axis, along.edge);
     return share && { from, share, room: roomOf(el, along.axis), side: SIDES[along.axis][along.edge] };
   };
 
@@ -190,12 +190,12 @@ export function createEditor(
     // At a breakpoint, it is made a real Stack there too: an edit at every width that made it one may be taken back.
     const asStack = definition.stack && ((!!breakpoint && !!earlier?.asStack) || layer.el.hasAttribute(AS_STACK_ATTR) || flowing());
     // Centered on where the side that places it does (ticket 79): the side keeps its share of the container, past it by as much as the layer moves.
-    const centered = typeof value === "number" ? asShown(el, () => centeredSide(el, property, earlier)) : null;
-    const offCenter = centered && pastShare(value as number, centered.share.percent, centered.room);
+    const centering = typeof value === "number" ? asShown(el, () => centeringSide(el, property, earlier)) : null;
+    const offCenter = centering && pastShare(value as number, centering.share.percent, centering.room);
     const declarations = asShown(el, () => ({
       ...(asStack && { display: "flex", "flex-direction": stackOf(el).direction === "horizontal" ? "row" : "column" }),
       ...definition.write(value, el),
-      ...(centered && { [centered.side]: shareCss({ percent: centered.share.percent, px: offCenter! }) }),
+      ...(centering && { [centering.side]: shareCss({ percent: centering.share.percent, px: offCenter! }) }),
       // Placed freely at a breakpoint and placed anew there: as large as it was when first taken out of the layout.
       ...(property === "absolute" && value && earlier?.style.width && { width: earlier.style.width, height: earlier.style.height }),
     }));
@@ -217,10 +217,7 @@ export function createEditor(
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
     const along = SIZE_AXIS[property];
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
-    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centered ? { placedFrom: earlier?.placedFrom ?? centered.from } : {};
-    const offCenterAt = centered && {
-      centeredOn: { percent: centered.share.percent, before: earlier?.centeredOn?.before ?? pastShare(before as number, centered.share.percent, centered.room), after: offCenter! },
-    };
+    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centering ? { placedFrom: earlier?.placedFrom ?? centering.from } : {};
     // Its `right` or `bottom` changed at every width: where the canvas places it otherwise, its `right` or `bottom` places nothing.
     const placedOtherwiseAt = !earlier && !breakpoint && isEndOffset(property) ? viewsPlacingOtherwise(layer, PLACED_BY[property]!.axis) : [];
     const variables = bind?.(property, value, picked, earlier?.variables);
@@ -241,7 +238,12 @@ export function createEditor(
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
       ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, PLACED_BY[property]?.edge) }),
       ...placed,
-      ...offCenterAt,
+      ...(centering && {
+        centeredOn: {
+          before: earlier?.centeredOn?.before ?? { percent: centering.share.percent, px: pastShare(before as number, centering.share.percent, centering.room) },
+          after: { percent: centering.share.percent, px: offCenter! },
+        },
+      }),
       ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
@@ -463,7 +465,7 @@ export function createEditor(
       // Moved, placed from its container's right or bottom edge: that offset changes the other way, so it stays placed so (ticket 79).
       const placing = sizeAlone ? null : endPlacingOf(layer, property);
       if (placing) {
-        const [was, offset] = [editor.read(layer, property as "x" | "y"), editor.read(layer, placing)];
+        const [was, offset] = [editor.read(layer, property as Axis), editor.read(layer, placing)];
         return editHere(layer, placing, round(offset - ((value as number) - was)), continues);
       }
       const end = sizeAlone ? null : endOffsetOf(layer, property);

@@ -9,8 +9,8 @@
  * nothing had.
  */
 import type { Drop } from "./drag";
-import { splitAtTopLevelSpaces } from "./placed-from";
 import type { Layer } from "./layers";
+import { split } from "./paint";
 import type { Shown } from "./view-layout";
 import type { Shift, Views } from "./views";
 
@@ -173,5 +173,5 @@ function setStyles(session: DragSession, el: Element, styles: Record<string, str
 /** An element's own `translate`, as the browser computes it, split into its parts: null for none. */
 function translateOf(el: Element): string[] | null {
   const value = getComputedStyle(el).translate;
-  return !value || value === "none" ? null : splitAtTopLevelSpaces(value);
+  return !value || value === "none" ? null : split(value, " ");
 }

@@ -15,11 +15,12 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { roomOf } from "./placed-from";
+import { placedFrom, roomOf, sideShareOf } from "./placed-from";
 import { checkable, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
+import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
@@ -398,7 +399,8 @@ function lookMade(doc: Document, change: Change, round: RoundOnCanvas, at: PageW
  * Whether every one of `els` is placed absolute in its container, drawn at
  * `to`; with no elements, it cannot be told. Along an axis it is `placed`
  * otherwise (ticket 79), by the side that places it so, at what that gives it
- * there, as large as its container is: its margins as they are.
+ * there, as large as its container is: its margins as they are; centered,
+ * still so, its translate kept (`centered: false` in `actual` when not).
  */
 function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["absolute"]>, margins: CanvasMargins | null): CheckResult {
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
@@ -408,11 +410,13 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
     // Placed from its container, or from somewhere else.
     if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
     const at = placedOn(el);
-    const otherwise = (["x", "y"] as const).some((axis) => {
+    // Centered, its translate gone or turned over: drawn half its size aside, whatever its side gives it.
+    if ((["x", "y"] as const).some((axis) => placed[axis]?.centered && !stillCentered(el, axis, placed[axis]!.edge))) return { outcome: "not shown", actual: { ...at, centered: false } };
+    const sideOff = (["x", "y"] as const).some((axis) => {
       const how = placed[axis];
       return how && Math.abs((parseFloat(style.getPropertyValue(SIDES[axis][how.edge])) || 0) - pxIn(how, roomOf(el, axis))) > 0.5;
     });
-    if (otherwise || !drawnThere(at, { ...(!placed.x && { x }), ...(!placed.y && { y }) }, margins)) return { outcome: "not shown", actual: at };
+    if (sideOff || !drawnThere(at, { ...(!placed.x && { x }), ...(!placed.y && { y }) }, margins)) return { outcome: "not shown", actual: at };
   }
   return { outcome: "shown" };
 }
@@ -427,23 +431,37 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
  * Not shown: with the first that is not. `els` are all absolute (`look`).
  * `centered`: of a layer centered on where the side places it (ticket 79),
  * the share of its container the side gives it: at each width, it is where
- * that puts it there, as its container is (`at` in `actual`).
+ * that puts it there, as its container is (`at` in `actual`, with what its
+ * side is written as now, `share`); and centered still, its translate kept
+ * (`centered: false` in `actual` when not, line review).
  */
 function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins, centered?: Change["centeredOn"]): [CheckResult, Element | null] {
-  const along = PLACED_BY[property];
+  const placedBy = PLACED_BY[property];
   for (const el of els) {
-    const placed = placedOn(el, along?.edge);
+    const placed = placedOn(el, placedBy?.edge);
     if (typeof after !== "number") {
       if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
       continue;
     }
-    const { axis } = along!;
-    const at = centered ? Math.round(pxIn({ percent: centered.percent, px: centered.after }, roomOf(el, axis)) * 100) / 100 : after;
-    if (!drawnThere(placed, { [axis]: at }, margins)) {
-      return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis], ...(centered && { at }) } }, el];
+    const { axis, edge } = placedBy!;
+    if (!centered) {
+      if (!drawnThere(placed, { [axis]: after }, margins)) return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
+      continue;
     }
+    // Where the canvas centers it at this width, and what its side is written as now: a share, or else px.
+    const at = Math.round(pxIn(centered.after, roomOf(el, axis)) * 100) / 100;
+    const off = { value: placed[axis], margin: placed.margins[axis], at, share: sideShareOf(el, axis, edge) ?? { percent: 0, px: placed[axis] } };
+    // Its translate gone or turned over: drawn half its size aside, whatever its side gives it.
+    if (!stillCentered(el, axis, edge)) return [{ outcome: "not shown", actual: { ...off, centered: false } }, el];
+    if (!drawnThere(placed, { [axis]: at }, margins)) return [{ outcome: "not shown", actual: off }, el];
   }
   return [{ outcome: "shown" }, null];
+}
+
+/** Whether the page still centers `el` along `axis` on where its side from `edge` places it: moved back (forward) half its size, by a translate nothing turns or scales. */
+function stillCentered(el: Element, axis: Axis, edge: Edge): boolean {
+  const from = placedFrom(el, axis);
+  return from.centered && from.edge === edge;
 }
 
 /**

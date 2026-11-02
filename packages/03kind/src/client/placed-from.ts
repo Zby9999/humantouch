@@ -9,9 +9,10 @@
  * size alone, or how far past the share of its container it is centered on
  * (`calc(50% + 20px)`, ticket 79).
  */
-import { pxIn, SIDES, type Edge, type PlacedAlong, type PlacedFrom, type Share } from "./checkable";
+import { AXIS_SIZE, pxIn, SIDES, type Edge, type PlacedAlong, type PlacedFrom, type Share } from "./checkable";
 import { absolute, declaredValue, round } from "./property-table";
-import { marginsOf } from "./stacks";
+import { split } from "./paint";
+import { insideBorder, marginsOf } from "./stacks";
 import type { Axis } from "./snap";
 import { pinnedOf } from "./style-source";
 
@@ -66,32 +67,13 @@ function shiftOf(el: Element, size: { width: number; height: number }): Record<A
     y += m.f;
   }
   if (style.translate !== "none") {
-    const [across = "0px", down = "0px"] = splitAtTopLevelSpaces(style.translate);
+    const [across = "0px", down = "0px"] = split(style.translate, " ");
     const [dx, dy] = [shareOf(across), shareOf(down)];
     if (!dx || !dy) return null;
     x += pxIn(dx, size.width);
     y += pxIn(dy, size.height);
   }
   return { x, y };
-}
-
-/** A value's parts separated by spaces, but those inside brackets: `calc(-50% + 4px) 0px` is two. */
-export function splitAtTopLevelSpaces(value: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let part = "";
-  for (const c of value.trim()) {
-    if (c === " " && !depth) {
-      if (part) parts.push(part);
-      part = "";
-      continue;
-    }
-    if (c === "(") depth++;
-    if (c === ")") depth--;
-    part += c;
-  }
-  if (part) parts.push(part);
-  return parts;
 }
 
 /**
@@ -157,14 +139,27 @@ export function shiftIn(el: Element): Record<Axis, number> {
  * How much room `el`'s container gives it along `axis`, as its document lays
  * it out: what its `left` and `right` (`top`, `bottom`) are shares of, its
  * containing block's size. Read from the browser's values for those, its
- * margins and its size, which add up to it when it is placed freely.
+ * margins and its size, which add up to it when it is placed freely: its
+ * size as laid out, not as a `transform` or `rotate` draws it.
  */
 export function roomOf(el: Element, axis: Axis): number {
   const style = getComputedStyle(el);
   const { start, end } = SIDES[axis];
   const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
-  const { width, height } = el.getBoundingClientRect();
-  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + (axis === "x" ? width : height);
+  const sides = [start, end].map((side) => px(`padding-${side}`) + px(`border-${side}-width`));
+  const size = px(AXIS_SIZE[axis]) + (style.boxSizing === "border-box" ? 0 : sides[0] + sides[1]);
+  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + size;
+}
+
+/**
+ * How much room `container` gives a layer placed absolute in it, as its
+ * positioning reference, along each axis: its size inside its border, to the
+ * fraction of a px (`insideBorder`). What the share and the px a layer is
+ * placed by from its right or bottom edge, or centered, are of (ticket 79).
+ */
+export function roomIn(container: Element): Record<Axis, number> {
+  const { width, height } = insideBorder(container, container.getBoundingClientRect());
+  return { x: width, y: height };
 }
 
 /**

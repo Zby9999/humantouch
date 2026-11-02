@@ -38,9 +38,9 @@ async function enterEditMode(page: Page) {
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
 }
 
-/** Selects the layer under the middle of the tag in the desktop view, the deepest there. */
-async function pickTag(page: Page) {
-  const box = (await desktop(page).contentFrame().locator("#tag").first().boundingBox())!;
+/** Selects the layer under the middle of the tag in a view (the desktop view), the deepest there: the view is the one worked in from then on. */
+async function pickTag(page: Page, view = desktop(page)) {
+  const box = (await view.contentFrame().locator("#tag").first().boundingBox())!;
   await page.keyboard.down(mod);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.up(mod);
@@ -52,12 +52,12 @@ function zoomOf(view: Locator) {
 }
 
 /**
- * Presses the tag in the desktop view and drags it `by` px of the view, in
+ * Presses the tag in a view (the desktop view) and drags it `by` px of the view, in
  * steps, ⌘ held once it moves, so it snaps to nothing; let go unless `drop` is false.
  */
-async function dragTag(page: Page, by: { x: number; y: number }, { drop = true } = {}) {
-  const zoom = await zoomOf(desktop(page));
-  const box = (await desktop(page).contentFrame().locator("#tag").first().boundingBox())!;
+async function dragTag(page: Page, by: { x: number; y: number }, { drop = true, view = desktop(page) } = {}) {
+  const zoom = await zoomOf(view);
+  const box = (await view.contentFrame().locator("#tag").first().boundingBox())!;
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -241,4 +241,46 @@ test("placed from the right, dragged into another Frame or copied with ⌥: ther
   for (const view of everyView(page)) {
     await expect.poll(() => view.contentFrame().locator("#other > #tag").evaluate((el) => Math.round(el.parentElement!.getBoundingClientRect().right - el.getBoundingClientRect().right))).toBe(40);
   }
+});
+
+test("placed from the right, moved in the tablet view: it stays placed from the right there, its `right` changing at the tablet's breakpoint only; the desktop and phone views keep it where it was (line review)", async ({ page }) => {
+  await addBoard(page, "top: 60px; right: 40px");
+  await enterEditMode(page);
+  await pickTag(page, tablet(page));
+  const x = await number(page, "X");
+  const views = async () => Promise.all(everyView(page).map((view) => gapsIn(view).then(({ right, top }) => ({ right, top }))));
+
+  await dragTag(page, { x: -50, y: 0 }, { view: tablet(page) });
+  const dragged = x - (await number(page, "X"));
+  expect(Math.abs(dragged - 50)).toBeLessThanOrEqual(1);
+  await expect.poll(views).toEqual([{ right: 40, top: 60 }, { right: 40 + dragged, top: 60 }, { right: 40, top: 60 }]);
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(views).toEqual([{ right: 40, top: 60 }, { right: 41 + dragged, top: 60 }, { right: 40, top: 60 }]);
+
+  await field(page, "X").fill(String(x - 60));
+  await field(page, "X").press("Enter");
+  await expect.poll(views).toEqual([{ right: 40, top: 60 }, { right: 100, top: 60 }, { right: 40, top: 60 }]);
+  // Its `right` at the tablet's breakpoint: no X, and the Position row marked.
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveText(["Right"]);
+});
+
+test("placed from the right, resized in the tablet view: its width and its `right` reset together from its Position row's mark, so it is back where it was, not moved by half of it (line review)", async ({ page }) => {
+  await addBoard(page, "top: 60px; right: 40px");
+  await enterEditMode(page);
+  await pickTag(page, tablet(page));
+
+  await field(page, "Width").fill("100");
+  await field(page, "Width").press("Enter");
+  // Its left edge stays: 20 px from the right, 100 wide, in the tablet view only.
+  await expect.poll(() => gapsIn(tablet(page)).then(({ right }) => right)).toBe(20);
+  await expect.poll(() => gapsIn(desktop(page)).then(({ right }) => right)).toBe(40);
+  const marks = design(page).locator(".tk-row-mark");
+  await expect(marks).toHaveCount(2);
+
+  await design(page).getByRole("region", { name: "Position" }).locator(".tk-row-mark").click();
+  for (const view of everyView(page)) await expect.poll(() => gapsIn(view).then(({ right }) => right)).toBe(40);
+  await expect.poll(() => tablet(page).contentFrame().locator("#tag").evaluate((el) => el.getBoundingClientRect().width)).toBe(80);
+  await expect(marks).toHaveCount(0);
+  await expect(badge(page)).toHaveCount(0);
 });

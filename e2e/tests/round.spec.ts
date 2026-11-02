@@ -647,7 +647,7 @@ test.describe("done checks the change on the page", () => {
       { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 100 }, centeredOn: undefined },
       { property: "right", before: 40, after: 30, centeredOn: undefined },
       { property: "bottom", before: 60, after: 80, centeredOn: undefined },
-      { property: "x", before: hero / 2, after: hero / 2 + 40, centeredOn: { percent: 50, before: 0, after: 40 } },
+      { property: "x", before: hero / 2, after: hero / 2 + 40, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 40 } } },
     ]);
 
     const notes = await npx03kind("claim");

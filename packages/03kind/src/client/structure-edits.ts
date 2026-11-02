@@ -50,7 +50,7 @@ import { componentBrief, componentElements, componentKey, inComponent, promotabl
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
-import { placedAlong, roomOf, shiftIn } from "./placed-from";
+import { placedAlong, roomIn, shiftIn } from "./placed-from";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -150,8 +150,9 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     let absolute: Place["absolute"] = null;
     if (layer.absolute) {
       const at = { x: definitionOf("x").read(layer.el, colors), y: definitionOf("y").read(layer.el, colors) };
-      // Placed from its container's right or bottom edge, or centered: so (ticket 79).
-      const placed = layer.text ? undefined : placedAlong(layer.el, at, { x: roomOf(layer.el, "x"), y: roomOf(layer.el, "y") });
+      // Placed from its container's right or bottom edge, or centered, in the view worked in, as a drop reads it (`freelyAt`): so (ticket 79).
+      const el = working.shown(layer.el);
+      const placed = layer.text ? undefined : placedAlong(el, { x: definitionOf("x").read(el, colors), y: definitionOf("y").read(el, colors) }, roomIn(working.shown(parent.el)));
       absolute = { ...at, ...(placed && { placed }) };
     }
     return { container, nth: parent.children.indexOf(layer) + 1, slot: slotsOf(parent.el).indexOf(layer.el), absolute };
@@ -193,8 +194,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     const el = working.shown(layer.el);
     const shift = shiftIn(el);
     const at = { x: round(to.x - shift.x), y: round(to.y - shift.y) };
-    const container = working.shown(to.parent.el);
-    const placed = placedAlong(el, at, { x: container.clientWidth, y: container.clientHeight });
+    const placed = placedAlong(el, at, roomIn(working.shown(to.parent.el)));
     return { ...at, ...(placed && { placed }) };
   };
 

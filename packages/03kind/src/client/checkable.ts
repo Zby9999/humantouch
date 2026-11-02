@@ -64,6 +64,22 @@ export const SIDES = {
   y: { start: "top", end: "bottom" },
 } as const satisfies Record<Axis, Record<Edge, string>>;
 
+/** The size along each axis: width across, height down. */
+export const AXIS_SIZE = { x: "width", y: "height" } as const satisfies Record<Axis, string>;
+
+/** Which way each axis goes, in words: across, down. */
+export const AXIS_WAY = { x: "across", y: "down" } as const satisfies Record<Axis, string>;
+
+/** The other edge along an axis: what a side placing a layer from one edge leaves `auto`. */
+export const OTHER_EDGE = { start: "end", end: "start" } as const satisfies Record<Edge, Edge>;
+
+/**
+ * The sign of the translate that centers a layer on where its side from each
+ * edge places it (ticket 75): back half its size from the start (`-50%`, Tailwind's
+ * `-translate-x-1/2`), forward from the end (`50%`, `translate-x-1/2`).
+ */
+export const CENTERING_SIGN = { start: "-", end: "" } as const satisfies Record<Edge, string>;
+
 /** The axis each size is along: width across, height down. */
 export const SIZE_AXIS: Readonly<Partial<Record<string, Axis>>> = { width: "x", height: "y" };
 

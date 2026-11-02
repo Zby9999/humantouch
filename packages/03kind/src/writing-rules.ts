@@ -81,7 +81,7 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     name: "Placed from the right or bottom",
     calledFor: (change) =>
-      (isEndOffsetChange(change) && !change.centeredOn) || (change.kind === "style" && change.placedFrom?.edge === "end" && !change.placedFrom.centered) || placedOtherwise(change, false),
+      (isEndOffsetChange(change) && !change.centeredOn) || (change.kind === "style" && change.placedFrom?.edge === "end" && !change.placedFrom.centered) || placedOtherwise(change, { centered: false }),
     text:
       "a layer placed from its container's right or bottom edge (`right`, `bottom`; Tailwind's `right-*`, `bottom-*`) stays placed so: " +
       "a change to its `right` or `bottom` changes that value, as given in px, and a change to its size changes the size alone; do not place it by `left` or `top` instead, " +
@@ -89,7 +89,7 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "Centered",
-    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.centered) || placedOtherwise(change, true),
+    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.centered) || placedOtherwise(change, { centered: true }),
     text:
       "a layer centered on where its `left` or `top` places it by `translate: -50%`, or on where its `right` or `bottom` places it by `translate: 50%` " +
       "(Tailwind's `left-1/2 -translate-x-1/2`, `right-1/2 translate-x-1/2`, and the same down) stays centered: " +
@@ -206,8 +206,8 @@ interface HowChecked {
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
 /** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
 const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOffset(change.property);
-/** A move or a copy that places a layer absolute otherwise than from its container's left or top along an axis (ticket 79): `centered` so, or from the right or bottom. */
-const placedOtherwise = (change: Change, centered: boolean) =>
+/** A move or a copy that places a layer absolute otherwise than from its container's left or top along an axis (ticket 79): `centered` so, or (not) from the right or bottom. */
+const placedOtherwise = (change: Change, { centered }: { centered: boolean }) =>
   (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some((how) => how.centered === centered);
 
 /** What the page reads, and where, kind by kind, in the order said. */
@@ -238,7 +238,7 @@ const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change, list) => checkable(change, list) && !!change.centeredOn,
     text:
-      "a layer centered on where its side places it by that side at each width: the share of its container given, and the px past it, plus its margin, kept, as on the canvas; " +
+      "a layer centered on where its side places it by that side at each width: the share of its container given, and the px past it, plus its margin, kept, as on the canvas, and its translate still centering it there; " +
       "a px value right as wide as the page's window is not right at the other widths",
   },
   {

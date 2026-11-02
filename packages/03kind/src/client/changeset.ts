@@ -5,7 +5,7 @@
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
-import type { PlacedAlong, PlacedFrom } from "./checkable";
+import type { PlacedAlong, PlacedFrom, Share } from "./checkable";
 import type { Align, Padding } from "./property-table";
 import type { Axis } from "./snap";
 import type { StyleSource } from "./style-source";
@@ -277,13 +277,15 @@ export interface Change {
   /**
    * A change to the X or Y, or the `right` or `bottom`, of a layer centered on
    * where that side places it (ticket 79, ADR 0014): what the side gives it,
-   * a share of its container's size (`percent`, which stays) and px past it,
-   * before and after: `calc(50% + 20px)` is 50 and 20. The change's own
+   * a share of its container's size and px past it (`Share`), before and
+   * after: `calc(50% + 20px)` is 50 and 20. The share after is the one it
+   * keeps as it moves; before, as the code has it (read again with a round
+   * carried over, it may be px alone). The change's own
    * values are where that side has it in the view worked in, as X and Y show
    * it; at every other width it is where the share puts it there, and so the
    * page checks it.
    */
-  centeredOn?: { percent: number; before: number; after: number };
+  centeredOn?: { before: Share; after: Share };
   /**
    * A change to the `right` or `bottom` of a layer at every width (ticket 75,
    * line review): the ranges of the views where the canvas places the layer

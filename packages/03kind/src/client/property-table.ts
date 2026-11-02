@@ -7,7 +7,7 @@
  */
 import { asShown, declaredByEdit } from "./canvas-style";
 import type { Change, Fragment, Place } from "./changeset";
-import { shareCss, SIDES as PLACING_SIDES } from "./checkable";
+import { OTHER_EDGE, shareCss, SIDES as PLACING_SIDES } from "./checkable";
 import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
@@ -331,11 +331,10 @@ export function readAsShown<P extends Property>(el: Element, property: P, colors
 export function absoluteAt({ x, y, placed }: NonNullable<Place["absolute"]>): Record<string, string> {
   const css: Record<string, string> = { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" };
   for (const axis of ["x", "y"] as const) {
-    const along = placed?.[axis];
-    if (!along) continue;
-    const { start, end } = PLACING_SIDES[axis];
-    css[along.edge === "start" ? start : end] = shareCss(along);
-    css[along.edge === "start" ? end : start] = "auto";
+    const how = placed?.[axis];
+    if (!how) continue;
+    css[PLACING_SIDES[axis][how.edge]] = shareCss(how);
+    css[PLACING_SIDES[axis][OTHER_EDGE[how.edge]]] = "auto";
   }
   return css;
 }

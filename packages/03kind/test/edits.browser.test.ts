@@ -5131,6 +5131,34 @@ describe("breakpoints", () => {
     expect(marksIn().changed(["fill", "radius"])).toEqual(["fill", "radius"]);
   });
 
+  test("a layer placed from the right, resized in the phone view, its width and its `right` changed there together: reset from its Position row, its size row or the breakpoint's list, both inherit again, so it is back where it was (line review)", async () => {
+    const fixed = (value: number) => ({ type: "fixed", value }) as const;
+    const rows = { position: ["x", "y", "absolute", "right", "bottom"], size: ["width"], list: ["right"] } as const;
+    for (const row of Object.values(rows)) {
+      const { editor, phone, layer } = await open(ANCHORED);
+      const right = layer("right");
+      const box = () => {
+        const el = phone.document.getElementById("right")!;
+        const [r, p] = [el.getBoundingClientRect(), el.parentElement!.getBoundingClientRect()];
+        return [r.left - p.left, r.width];
+      };
+      const was = box();
+      editor.at(phone);
+      editor.set(right, "width", fixed(50));
+      expect(editor.changesHere(right)).toEqual(["width", "right"]);
+      const marks = breakpointMarks(editor, [right], () => {});
+
+      // What the row's mark resets, as it is clicked.
+      marks.reset(row === rows.list ? [...row] : marks.changed([...row]));
+
+      expect(editor.changesHere(right)).toEqual([]);
+      phone.document.body.offsetWidth;
+      expect(box()).toEqual(was);
+      phoneFrame?.remove();
+      iframe?.remove();
+    }
+  });
+
   test("an edit at a breakpoint is undone and redone there, whichever view is worked in then; set back to where it started, it is no change", async () => {
     const { editor, changes, phone, desktop, layer, fills } = await open();
 
@@ -6470,10 +6498,10 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     expect(box("v3")).toEqual([110, 90, 40, 20]);
     expect(declared("v4", "left")).toBe("calc(50% + 20px)");
     expect(recorded()).toEqual([
-      ["x", 150, 170, CENTERED, { percent: 50, before: 0, after: 20 }],
+      ["x", 150, 170, CENTERED, { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }],
       ["y", 40, 50, undefined, undefined],
       // Dropped at the same height: down, it stays as it is.
-      ["x", 150, 130, CENTERED, { percent: 50, before: 0, after: -20 }],
+      ["x", 150, 130, CENTERED, { before: { percent: 50, px: 0 }, after: { percent: 50, px: -20 } }],
     ]);
     editor.undo();
     editor.undo();
@@ -6489,7 +6517,7 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     expect(box("v4-right")).toEqual([150, 120, 40, 20]);
     expect(declared("v4-right", "right")).toBe("calc(50% - 20px)");
     expect(declared("v4-right", "left")).toBe("");
-    expect(recorded()).toEqual([["right", 150, 130, CENTERED_FROM_RIGHT, { percent: 50, before: 0, after: -20 }]]);
+    expect(recorded()).toEqual([["right", 150, 130, CENTERED_FROM_RIGHT, { before: { percent: 50, px: 0 }, after: { percent: 50, px: -20 } }]]);
   });
 
   /** The page as the canvas was frozen from it, its board `width` px wide; `css`: the code as the Agent writes it. */
@@ -6513,7 +6541,7 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     for (const width of [300, 400]) expect(checkChange(pageWith(width, "#v4 { left: calc(50% + 20px) !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
     expect(checkChange(pageWith(300, "#v4 { left: 170px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
     // Its container 400px wide: centered 20px past its middle, at 220px; not at 170px.
-    expect(checkChange(pageWith(400, "#v4 { left: 170px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: 170, margin: 0, at: 220 } });
+    expect(checkChange(pageWith(400, "#v4 { left: 170px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: 170, margin: 0, at: 220, share: { percent: 0, px: 170 } } });
   });
 
   test("centered from the right and moved: its `right` is looked at the same way", () => {
@@ -6522,11 +6550,29 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     const [moved] = changes.list();
 
     expect(checkChange(pageWith(400, "#v4-right { right: calc(50% - 20px) !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
-    expect(checkChange(pageWith(400, "#v4-right { right: 130px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: 130, margin: 0, at: 180 } });
+    expect(checkChange(pageWith(400, "#v4-right { right: 130px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: 130, margin: 0, at: 180, share: { percent: 0, px: 130 } } });
+  });
+
+  test("centered and moved, its side right but its translate gone or overridden: the page draws it half its width aside, so it is not shown at any width, and says the translate is gone (line review)", () => {
+    const { editor, layer, changes } = open(UNCHAINED);
+    editor.move(layer("v4"), { parent: layer("board"), x: 150, y: 40 });
+    editor.move(layer("v4-right"), { parent: layer("board"), x: 150, y: 120 });
+    const [moved, fromRight] = changes.list();
+    const share = { percent: 50, px: 20 };
+
+    for (const width of [300, 400]) {
+      // Its `-translate-x-1/2` taken out; in v3, another `transform` written over it.
+      for (const css of ["#v4 { left: calc(50% + 20px) !important; translate: none !important }", "#v4 { left: calc(50% + 20px) !important; translate: none !important; transform: rotate(3deg) }"]) {
+        expect(checkChange(pageWith(width, css), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: width / 2 + 20, margin: 0, at: width / 2 + 20, share, centered: false } });
+      }
+    }
+    expect(checkChange(pageWith(400, "#v4-right { right: calc(50% - 20px) !important; translate: none !important }"), fromRight, onCanvas([fromRight]))).toMatchObject({ outcome: "not shown", actual: { centered: false } });
+    // Off by its `left`, the translate kept: as before, where the canvas centers it, and what its `left` is written as now.
+    expect(checkChange(pageWith(400, "#v4 { left: 170px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: 170, margin: 0, at: 220, share: { percent: 0, px: 170 } } });
   });
 
   /** With another Frame below the board, 200 px wide, its own positioning reference. */
-  const WITH_OTHER = ANCHORED.replace("</body>", `  <div id="other" ${at("50:5")} style="position: relative; width: 200px; height: 100px"></div>\n</body>`);
+  const WITH_OTHER =ANCHORED.replace("</body>", `  <div id="other" ${at("50:5")} style="position: relative; width: 200px; height: 100px"></div>\n</body>`);
 
   test("dragged into another Frame, placed freely there: placed from the right, it stays so, from that Frame's right edge; centered, it stays centered there, past its middle by as much (as Figma's constraints go with the layer)", () => {
     const { editor, layer, box, changes, declared } = open(WITH_OTHER);
@@ -6577,6 +6623,47 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     expect(checkChange(pageWith(400, "#right { right: 40px !important }"), moved, onCanvas([moved])).outcome).toBe("shown");
     // Placed by its left, where the canvas has it as wide as the canvas's board, not as wide as this one.
     expect(checkChange(pageWith(400, "#right { left: 230px !important; right: auto !important }"), moved, onCanvas([moved])).outcome).toBe("not shown");
+  });
+
+  test("centered, moved into another Frame and back into its own at another place: the page shows it by its side, and not with its translate gone (line review)", () => {
+    const html = WITH_OTHER.replace(/ data-tk-chain='[^']*'/g, "");
+    const { editor, layer, changes } = open(html);
+    editor.move(layer("v4"), { parent: layer("other"), x: 100, y: 10 });
+    editor.move(layer("v4"), { parent: layer("board"), x: 150, y: 40 });
+    const [moved] = changes.list();
+    expect((moved.after as Place).absolute).toEqual({ x: 170, y: 40, placed: { x: { edge: "start", centered: true, percent: 50, px: 20 } } });
+
+    expect(checkChange(pageWith(400, "#v4 { left: calc(50% + 20px) !important }"), moved, onCanvas([moved])).outcome).toBe("shown");
+    expect(checkChange(pageWith(400, "#v4 { left: calc(50% + 20px) !important; translate: none !important }"), moved, onCanvas([moved]))).toMatchObject({ outcome: "not shown", actual: { centered: false } });
+  });
+
+  test("copied in the phone view, placed from the right there only: the copy is placed as the layer is in the view worked in, from its container's right edge; in the desktop view, from its left (line review)", async () => {
+    const html = ANCHORED.replace(
+      "</style>",
+      "  #narrow { position: absolute; left: 12px; top: 60px; width: 30px; height: 20px }\n  @media (max-width: 500px) { #narrow { left: auto; right: 20px } }\n</style>",
+    ).replace("  </div>\n</body>", `    <div id="narrow" ${at("46:7")}></div>\n  </div>\n</body>`);
+    const canvas = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    const [desktop] = canvas.views.list();
+    const { editor, layer, changes } = canvas;
+
+    editor.at(phone);
+    editor.duplicate(layer("narrow"));
+    editor.at(desktop);
+    editor.duplicate(layer("narrow"));
+
+    expect(changes.list().map((change) => [(change.before as Place).absolute, (change.after as Place).absolute])).toEqual([
+      [
+        { x: 12, y: 60, placed: { x: { edge: "end", centered: false, percent: 0, px: 20 } } },
+        { x: 12, y: 60, placed: { x: { edge: "end", centered: false, percent: 0, px: 20 } } },
+      ],
+      [
+        { x: 12, y: 60 },
+        { x: 12, y: 60 },
+      ],
+    ]);
   });
 
   test("placed from its left and top, moved: as before, its X and Y", () => {
