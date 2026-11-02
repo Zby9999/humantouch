@@ -382,6 +382,9 @@ describe("claim, how to write the changes (ticket 65)", () => {
     const onMade = (layer: string) => style("fill", { id: 2, layer, target: madeAs(layer) });
     test.each([
       ["a style change", style("fill")],
+      // Placed from its container's right or bottom edge (ticket 75): checked by where the page draws it, as X and Y are.
+      ["a layer placed from its container's right edge", style("right", { before: 10, after: 0, style: { right: "0px" }, margins: { x: 0, y: 0 } })],
+      ["a layer placed from its container's bottom edge, at a breakpoint", style("bottom", { before: 10, after: 4, style: { bottom: "4px" }, margins: { x: 0, y: 0 }, breakpoint: { min: null, max: 640 } })],
       ["a new Frame in a container with a source marker", frame("9", place(2))],
       ["a style change to a new Frame, with the change that makes it", [frame("9", place(2)), onMade("9")]],
       ["a new Frame in a new Frame", [frame("8", place(2)), { ...frame("9", placeIn(madeAs("8"), 1, at(10, 20))), id: 2 }]],
