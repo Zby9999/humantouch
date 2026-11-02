@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, makerOf, PLACING } from "./client/checkable";
+import { checkable, isEndOffset, makerOf, PLACING } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 
@@ -77,6 +77,22 @@ const HOW_TO_WRITE: HowToWrite[] = [
     text:
       "the layer leaves its container's layout at those widths only: `position: absolute`, the `left` / `top` and the size given, in the media query or with the variant given on each class; " +
       "its container becomes its positioning reference at those widths (`position: relative`, the same way) where it is not one already.",
+  },
+  {
+    name: "Placed from the right or bottom",
+    calledFor: (change) => isEndOffsetChange(change) || (change.kind === "style" && change.placedFrom?.edge === "end" && !change.placedFrom.centered),
+    text:
+      "a layer placed from its container's right or bottom edge (`right`, `bottom`; Tailwind's `right-*`, `bottom-*`) stays placed so: " +
+      "a change to its `right` or `bottom` changes that value, as given in px, and a change to its size changes the size alone; do not place it by `left` or `top` instead, " +
+      "which would place it otherwise as its container grows or shrinks.",
+  },
+  {
+    name: "Centered",
+    calledFor: (change) => change.kind === "style" && !!change.placedFrom?.centered,
+    text:
+      "a layer centered on where its `left` or `top` places it by `translate: -50%`, or on where its `right` or `bottom` places it by `translate: 50%` " +
+      "(Tailwind's `left-1/2 -translate-x-1/2`, `right-1/2 translate-x-1/2`, and the same down) stays centered: " +
+      "change its size alone, and keep what places it and its translate as they are.",
   },
   {
     name: "This usage only",
@@ -196,6 +212,8 @@ interface HowChecked {
 
 /** A layer placed absolute, as the page checks it: where it is drawn. */
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
+/** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
+const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOffset(change.property);
 
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [
@@ -215,8 +233,12 @@ const HOW_CHECKED: HowChecked[] = [
       "a change at a breakpoint in each part the project's breakpoints cut its range into (the design intent names them when their values differ): at the page's own width in the part its window is in, else at the part's lower edge, or, for one from no width at all, 1px under its upper edge",
   },
   {
-    calledFor: (change, list) => checkable(change, list) && placing(change),
+    calledFor: (change, list) => checkable(change, list) && placing(change) && !isEndOffsetChange(change),
     text: "a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, its `left` and `top` the X and Y given, its margins kept, not taken off, so drawn at `left` and `top` plus its margins, as on the canvas",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && isEndOffsetChange(change),
+    text: "a layer placed from its container's right or bottom edge by where it is drawn: its `right` or `bottom` the value given, plus its right or bottom margin, kept, as on the canvas",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "create",

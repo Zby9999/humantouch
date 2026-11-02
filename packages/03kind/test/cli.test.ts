@@ -438,6 +438,45 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("margins");
   });
 
+  test("a layer placed from its container's right or bottom edge, or centered, resized: its changes say it stays placed so, and which value changes; how to write and check them, only in such a round (ticket 75)", async () => {
+    const fixed = (value: number) => ({ type: "fixed", value });
+    saveRound(
+      style("width", { before: fixed(30), after: fixed(50), placedFrom: { edge: "end", centered: false }, style: { width: "50px" } }),
+      { ...style("right", { before: 10, after: -10, style: { right: "-10px" }, margins: { x: 0, y: 0 } }), id: 2 },
+      { ...style("height", { before: fixed(20), after: fixed(30), placedFrom: { edge: "start", centered: true }, style: { height: "30px" } }), id: 3 },
+      // Centered from the right: on where its `right` places it.
+      { ...style("width", { before: fixed(40), after: fixed(80), placedFrom: { edge: "end", centered: true }, style: { width: "80px" } }), id: 4 },
+    );
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the width from Fixed 30px to Fixed 50px.\n" +
+        "- **Placement:** the layer is placed from its container's right edge (CSS `right`), and stays so: do not place it by `left` instead.\n",
+    );
+    expect(section(output, 2)).toMatch(/^2\. Right\n/);
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Change the right position from 10px to -10px: how far the layer's right edge is from its container's, its CSS `right`. It stays placed from that edge: do not place it by `left` instead.\n",
+    );
+    expect(section(output, 3)).toContain(
+      "- **Placement:** the layer is centered down on where its `top` places it, by `translate: -50%` (Tailwind's `-translate-y-1/2`), and stays so: only its height changes, on both sides alike.\n",
+    );
+    expect(section(output, 4)).toContain(
+      "- **Placement:** the layer is centered across on where its `right` places it, by `translate: 50%` (Tailwind's `translate-x-1/2`), and stays so: only its width changes, on both sides alike.\n",
+    );
+    expect(names(output)).toEqual(expect.arrayContaining(["Placed from the right or bottom", "Centered"]));
+    expect(rule(output, "Placed from the right or bottom")).toContain("do not place it by `left` or `top` instead");
+    expect(rule(output, "Centered")).toContain("by `translate: -50%`, or on where its `right` or `bottom` places it by `translate: 50%`");
+    expect(rule(output, "Centered")).toContain("keep what places it and its translate as they are");
+    expect(rule(output, "How the page checks")).toContain("a layer placed from its container's right or bottom edge by where it is drawn: its `right` or `bottom` the value given, plus its right or bottom margin, kept");
+
+    saveRound(style("width", { before: fixed(30), after: fixed(50), style: { width: "50px" } }));
+    const plain = (await cli("claim")).output;
+    expect(names(plain)).not.toContain("Placed from the right or bottom");
+    expect(names(plain)).not.toContain("Centered");
+    expect(plain).not.toContain("**Placement:**");
+  });
+
   test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
     saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
 
@@ -1681,6 +1720,18 @@ describe("done, checked on the page", () => {
       "The layer is drawn at X 2px and Y 6px in its container (`left` 0px and `top` 0px, margins 2px left and 6px top), " +
         "where the canvas draws it at X 42px and Y 18px (its X and Y are its `left` and `top`, 40px and 12px, and it keeps its margins, 2px left and 6px top). " +
         "Check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx 03kind done 3` again.\n",
+    );
+  });
+
+  test("for a layer placed from its container's right edge, the page drawing it off the canvas by its right margin: says so, and what to keep (ticket 75)", async () => {
+    saveRound({ ...redFill, property: "right", before: 10, after: 0, style: { right: "0px" }, margins: { x: 4, y: 0 } });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 0, margin: 0 } }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. The right position is drawn at 0px from its container's right edge (`right` 0px, right margin 0px), " +
+        "where the canvas draws it at 4px (it is placed by its `right`, 0px, and it keeps its 4px right margin). " +
+        "Its `right` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mr-6` or `margin-right`), or add it to `right`, and run `npx 03kind done 1` again.\n",
     );
   });
 

@@ -12,17 +12,19 @@ import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
 import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { AS_STACK_ATTR, asShown, changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { changeKey, type Change, type ChangeSet, type Picked } from "./changeset";
-import type { Binder, Editor } from "./edit-commands";
+import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { PLACING } from "./checkable";
-import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { isEndOffset, PLACED_BY, PLACING, SIDES, SIZE_AXIS } from "./checkable";
+import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { endOffsetPlaces, placedFrom } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
 import { createHistory, createSteps, type History } from "./undo-steps";
 import { pickedIn } from "./variables";
+import type { Axis } from "./snap";
 import type { Views } from "./views";
 
 export interface EditorOptions {
@@ -191,6 +193,12 @@ export function createEditor(
     declare(els, declarations, breakpoint, idFor(layer));
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
+    // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
+    const along = SIZE_AXIS[property];
+    const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
+    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : {};
+    // Its `right` or `bottom` changed at every width: where the canvas places it otherwise, its `right` or `bottom` places nothing.
+    const placedOtherwiseAt = !earlier && !breakpoint && isEndOffset(property) ? viewsPlacingOtherwise(layer, PLACED_BY[property]!.axis) : [];
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
@@ -207,7 +215,9 @@ export function createEditor(
       ...(variables && { variables }),
       ...(within && { within }),
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
-      ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el) }),
+      ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, PLACED_BY[property]?.edge) }),
+      ...placed,
+      ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
     });
@@ -237,6 +247,28 @@ export function createEditor(
       declare(els, { position: "relative" }, breakpoint);
     } else restoreStyle(els, ["position"], others, breakpoint);
   };
+
+  /**
+   * The ranges of the views, but the one worked in, where the canvas places
+   * the layer otherwise than by its offset from its container's end edge
+   * along `axis` (`right`, `bottom`), that offset given a value at every
+   * width: in its container's layout there, or by its `left` or `top` too, as
+   * the page's breakpoints may have it (ticket 75). Read as each view shows
+   * the layer now, from its computed `position` and what is declared: no view
+   * is brought up to date or laid out (ADR 0011), as what places the layer
+   * there is not what the change changes. A view in the desktop view's range
+   * is the desktop view's, where the change is made.
+   */
+  const viewsPlacingOtherwise = (layer: Layer, axis: Axis): Breakpoint[] =>
+    views
+      .list()
+      .slice(1)
+      .filter((view) => view !== working.beside())
+      .flatMap((view) => {
+        const el = view.elementOf(layer.el);
+        const range = working.breakpointAt(view.width);
+        return el && range && !endOffsetPlaces(el, axis) ? [range] : [];
+      });
 
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
@@ -358,6 +390,49 @@ export function createEditor(
     editor: () => editor,
   });
 
+  /**
+   * The offset that places the layer from its container's end edge, `right`
+   * or `bottom`, when `property` is its width or height and it is placed from
+   * that edge in the view worked in: changing its size changes that too, so
+   * its left or top edge stays (ticket 75). Null otherwise.
+   */
+  const endOffsetOf = (layer: Layer, property: Property): "right" | "bottom" | null => {
+    const along = SIZE_AXIS[property];
+    if (!along || layer.text) return null;
+    const { end } = SIDES[along];
+    if (!editor.can(layer, end)) return null;
+    const { edge, centered } = placedFrom(working.shown(layer.el), along);
+    return edge === "end" && !centered ? end : null;
+  };
+
+  /**
+   * `Editor.set`. `sizeAlone`: a width or height set as a handle sets it,
+   * which says where each edge goes; else a layer placed from its right or
+   * bottom edge keeps its left or top edge as its size changes, its `right`
+   * or `bottom` changed with it.
+   */
+  const setValue = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], { continues = false, step = false, variables, sizeAlone = false }: SetOptions & { sizeAlone?: boolean } = {}) => {
+    if (!editor.can(layer, property, value)) throw new Error(`03Kind: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
+    // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
+    views.lagBeside(working.beside, step || stepping, () => {
+      // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
+      if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
+        const place = { ...editor.read(layer, "absolute")!, [property]: value };
+        editHere(layer, "absolute", place, continues);
+        return;
+      }
+      const end = sizeAlone ? null : endOffsetOf(layer, property);
+      if (!end) return editHere(layer, property, value, continues, variables);
+      // Its far edge goes as far as its size grows: its left or top edge stays, as in Figma.
+      const size = () => editor.measure(layer)[property as "width" | "height"];
+      const [was, from] = [size(), editor.read(layer, end)];
+      group(() => {
+        editHere(layer, property, value, continues, variables);
+        editHere(layer, end, round(from - (size() - was)), true);
+      }, continues);
+    });
+  };
+
   /** Set while edits that are steps of a run (`SetOptions.step`) are under way: each value set then is one. */
   let stepping = false;
   /** Makes what `edits` does, steps of a run when `step` (or when it already is). */
@@ -413,30 +488,21 @@ export function createEditor(
       const everywhere = changes.list().filter((change) => change.kind === "style" && change.property === property && !change.breakpoint && ofLayer(layer, change));
       return (here ?? everywhere.find(own) ?? everywhere[0])?.variables;
     },
-    set(layer, property, value, { continues = false, step = false, variables } = {}) {
-      if (!editor.can(layer, property, value)) throw new Error(`03Kind: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
-      // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
-      views.lagBeside(working.beside, step || stepping, () => {
-        // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
-        if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
-          const place = { ...editor.read(layer, "absolute")!, [property]: value };
-          editHere(layer, "absolute", place, continues);
-          return;
-        }
-        editHere(layer, property, value, continues, variables);
-      });
-    },
+    set: (layer, property, value, options) => setValue(layer, property, value, options),
     batch(edits, { continues = false, step = false } = {}) {
       steppedWhile(step, () => group(edits, continues));
     },
-    resize(layer, { width, height, x, y }, { continues = false } = {}) {
+    resize(layer, { width, height, x, y, right, bottom }, { continues = false } = {}) {
       steppedWhile(true, () =>
         group(
           () => {
-            if (width !== undefined) editor.set(layer, "width", { type: "fixed", value: width });
-            if (x !== undefined) editor.set(layer, "x", x);
-            if (height !== undefined) editor.set(layer, "height", { type: "fixed", value: height });
-            if (y !== undefined) editor.set(layer, "y", y);
+            // Each edge where the handle has it: no size keeps an edge of its own accord.
+            if (width !== undefined) setValue(layer, "width", { type: "fixed", value: width }, { sizeAlone: true });
+            if (x !== undefined) setValue(layer, "x", x);
+            if (right !== undefined) setValue(layer, "right", right);
+            if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
+            if (y !== undefined) setValue(layer, "y", y);
+            if (bottom !== undefined) setValue(layer, "bottom", bottom);
           },
           continues,
           // Each step may set more or less than the one before: a run, apart from any of nudges.

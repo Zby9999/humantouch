@@ -22,10 +22,12 @@ import {
   type Target,
 } from "./client/changeset";
 import { breakpointName, mediaOf, tailwindOf, type Breakpoint } from "./client/breakpoints";
+import { isEndOffset, PLACED_BY, SIDES, SIZE_AXIS } from "./client/checkable";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/property-table";
+import type { Axis } from "./client/snap";
 import { variablesLine } from "./variable-notes";
 import { writingRules } from "./writing-rules";
 import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
@@ -90,6 +92,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
     ...(change.kind === "style" && target.onlyText ? [onlyTextLine(target)] : []),
+    ...(change.placedFrom ? [placementLine(change)] : []),
     ...(change.keeps ? [fragments(change)] : []),
     ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
@@ -184,6 +187,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
+      if (isEndOffset(change.property)) return endOffsetIntent(change);
       if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
     case "move":
@@ -239,6 +243,35 @@ function intent(change: Change, list: Change[]): string {
       );
     }
   }
+}
+
+/** A change to a layer's `right` or `bottom`, which it is placed from and stays placed from (ticket 75). */
+function endOffsetIntent({ property, before, after }: Change): string {
+  const { axis } = PLACED_BY[property]!;
+  const side = SIDES[axis].end;
+  return (
+    `Change the ${propertyName(property)} from ${value(property, before)} to ${value(property, after)}: how far the layer's ${side} edge is from its container's, its CSS \`${side}\`. ` +
+    `It stays placed from that edge: ${notByStart(axis)}.`
+  );
+}
+
+/** What keeps a layer placed from its container's right or bottom edge along `axis` so: its `left` or `top` left alone. */
+const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` instead`;
+
+/**
+ * How a layer whose width or height changes is placed that way, when not from
+ * its container's left or top edge (ticket 75): it stays placed so.
+ */
+function placementLine({ property, placedFrom }: Change): string {
+  const axis = SIZE_AXIS[property]!;
+  if (placedFrom!.centered) {
+    // On where the side it is placed by places it: moved back half its size from a `left` or `top`, forward from a `right` or `bottom`.
+    const [side, back] = [SIDES[axis][placedFrom!.edge], placedFrom!.edge === "start" ? "-" : ""];
+    const way = axis === "x" ? "across" : "down";
+    return `**Placement:** the layer is centered ${way} on where its \`${side}\` places it, by \`translate: ${back}50%\` (Tailwind's \`${back}translate-${axis}-1/2\`), and stays so: only its ${property} changes, on both sides alike.`;
+  }
+  const side = SIDES[axis].end;
+  return `**Placement:** the layer is placed from its container's ${side} edge (CSS \`${side}\`), and stays so: ${notByStart(axis)}.`;
 }
 
 /**

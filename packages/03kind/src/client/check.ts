@@ -14,7 +14,7 @@ import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place, type Target } from "./changeset";
 import { openingTag } from "./layer-target";
-import { checkable, madeLayer, makerOf, placeOfMade, PLACING } from "./checkable";
+import { checkable, madeLayer, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, type Edge } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -71,7 +71,9 @@ export function itself(doc: Document): PageWidth {
  * copy of the page. A change at a breakpoint: one width in each part of its
  * range the project's breakpoints cut it into, where the window is not. One made in the desktop view: every view's width
  * too, but those where the round changes the same property of the layer at a
- * breakpoint of its own. A reorder is the same at every width.
+ * breakpoint of its own, and, for a `right` or `bottom`, those where the canvas
+ * places the layer otherwise (`Change.placedOtherwiseAt`, ticket 75): the
+ * window's width either. A reorder is the same at every width.
  */
 export function widthsOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): { own: boolean; others: number[] } {
   const { breakpoint } = change;
@@ -86,7 +88,8 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
   const { loc, chain, made: madeAs } = change.target;
   const sameLayer = (other: Change) => (madeAs ? other.layer === change.layer : other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain));
   const ownRanges = loc || madeAs ? round.filter((other) => other.breakpoint && other.property === change.property && sameLayer(other)).map((other) => other.breakpoint!) : [];
-  const covered = (width: number) => ownRanges.some((range) => within(range, width));
+  const placesNothing = change.placedOtherwiseAt ?? [];
+  const covered = (width: number) => [...ownRanges, ...placesNothing].some((range) => within(range, width));
   return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
 }
 
@@ -204,6 +207,9 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
   if (reason) return { outcome: "unchecked", reason };
   const page = itself(doc);
   const { own, others } = widthsOf(change, round, page.width, viewWidths);
+  if (!own && !others.length && change.placedOtherwiseAt?.length) {
+    return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas places the layer otherwise than by its \`${change.property}\`` };
+  }
   const apart = ownValues(change, round);
   let checked = false;
   if (own) {
@@ -398,20 +404,24 @@ function placedThere(els: Element[], { x, y }: { x: number; y: number }, margins
 }
 
 /**
- * An `x`, `y` or `absolute` style change: shown where every instance is
- * absolute and drawn where the canvas draws it (`drawnThere`). `actual`:
- * along one axis, its `left` or `top` and its margin there; both, as a
- * placement is. Not shown: with the first that is not.
+ * An `x`, `y` or `absolute` style change, or a `right` or `bottom` one
+ * (ticket 75): shown where every instance is absolute and drawn where the
+ * canvas draws it (`drawnThere`), from its container's right or bottom edge
+ * for those, whatever the page places it by: where the canvas places it so
+ * (`widthsOf`), it must be drawn there. `actual`: along one axis, its `left`
+ * or `top` (`right`, `bottom`) and its margin there; both, as a placement is.
+ * Not shown: with the first that is not.
  */
 function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): [CheckResult, Element | null] {
+  const along = PLACED_BY[property];
   for (const el of els) {
     if (!absolute(el)) return [{ outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) }, el];
-    const placed = placedOn(el);
+    const placed = placedOn(el, along?.edge);
     if (typeof after !== "number") {
       if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
       continue;
     }
-    const axis = property as "x" | "y";
+    const { axis } = along!;
     if (!drawnThere(placed, { [axis]: after }, margins)) {
       return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
     }
@@ -435,13 +445,15 @@ function marginsFor(change: Change, at: PageWidth): CanvasMargins | null {
 
 type CanvasMargins = { margins: Margins; known: boolean };
 
-/** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px. */
+/** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px; from its container's right and bottom edges, its `right` and `bottom` and those margins. */
 export type PlacedOnPage = { x: number; y: number; margins: Margins };
 
-function placedOn(el: Element): PlacedOnPage {
+/** Where the page places an absolute layer, from its container's start edges (left, top) or `from` its end edges (right, bottom). */
+function placedOn(el: Element, from: Edge = "start"): PlacedOnPage {
   const style = getComputedStyle(el);
   const px = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100;
-  return { x: px(style.left), y: px(style.top), margins: { x: px(style.marginLeft), y: px(style.marginTop) } };
+  const [x, y] = [SIDES.x[from], SIDES.y[from]];
+  return { x: px(style.getPropertyValue(x)), y: px(style.getPropertyValue(y)), margins: { x: px(style.getPropertyValue(`margin-${x}`)), y: px(style.getPropertyValue(`margin-${y}`)) } };
 }
 
 /**

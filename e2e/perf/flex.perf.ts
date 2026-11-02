@@ -883,6 +883,11 @@ test("⌘Z and ⇧⌘Z right after steps of a value show in every view in the ne
   verdict(met, "⌘Z and ⇧⌘Z right after steps of a value show in every view in the next frame, their work within two frames");
 });
 
+/** How many rows the Layers panel lists. */
+function layerRows(page: Page) {
+  return page.getByRole("tree", { name: "Layers" }).getByRole("treeitem").count();
+}
+
 /** Whether the views on the stage all show whole in the viewport, and how tall the stage and the viewport are, in page px. */
 function stageInSight(page: Page) {
   return host(page)
@@ -903,57 +908,56 @@ function stageInSight(page: Page) {
  * drawn only as far as it shows again. Measured as the value changed above,
  * the Stack gap of a card, in the desktop view, the only one left.
  *
- * With the Layers panel hidden: once the delete is undone, it lists every
- * layer of the column, some 5200 rows, against some 160 before (the layers
- * collapsed in it were deleted with it, and come back open), and drawing
- * them adds about 20ms to each step, whatever the stage does. That is not
- * what this measures; ticket 71's Comments has it.
+ * With the Layers panel shown (ticket 74): the delete undone, the column's
+ * layers are listed open and closed as they were before it, some 160 rows,
+ * not every layer in it, some 5200, each of which adds to every step drawn.
  */
-test.describe(() => {
-  test.use({ showLayers: false });
+test("after the views beside are deleted and the page's main column deleted and the delete undone, a value changed shows in the next frame, its work within two frames", async ({ page }) => {
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  const views = [VIEWS[0]];
+  for (const name of ["Tablet", "Phone"]) await page.getByRole("button", { name: `Delete ${name} view` }).click();
+  await expect(host(page).locator("iframe.tk-canvas")).toHaveCount(1);
+  await settle(page, 500);
+  // From a card's body up to the main column: the body, the card, the cards' grid, their section, the column.
+  await selectCard(page, 6);
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Escape");
+  await settle(page);
+  const rowsBefore = await layerRows(page);
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await stageInSight(page)).inSight, { message: "with its main column deleted, the desktop view shows whole" }).toBe(true);
+  await settle(page, 500);
+  const short = await stageInSight(page);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(async () => (await stageInSight(page)).inSight, { message: "the delete undone, it is mostly out of sight" }).toBe(false);
+  await settle(page, 500);
+  const long = await stageInSight(page);
+  const rowsUndone = await layerRows(page);
+  await selectCard(page, 6);
+  const rows = await layerRows(page);
+  const gap = await stepValue(page, "Gap", cardBody(6), "row-gap", views);
 
-  test("after the views beside are deleted and the page's main column deleted and the delete undone, a value changed shows in the next frame, its work within two frames", async ({ page }) => {
-    const elements = await openBigPage(page);
-    await enterEditMode(page);
-    const views = [VIEWS[0]];
-    for (const name of ["Tablet", "Phone"]) await page.getByRole("button", { name: `Delete ${name} view` }).click();
-    await expect(host(page).locator("iframe.tk-canvas")).toHaveCount(1);
-    await settle(page, 500);
-    // From a card's body up to the main column: the body, the card, the cards' grid, their section, the column.
-    await selectCard(page, 6);
-    for (let i = 0; i < 4; i++) await page.keyboard.press("Escape");
-    await page.keyboard.press("Delete");
-    await expect.poll(async () => (await stageInSight(page)).inSight, { message: "with its main column deleted, the desktop view shows whole" }).toBe(true);
-    await settle(page, 500);
-    const short = await stageInSight(page);
-    await page.keyboard.press("ControlOrMeta+z");
-    await expect.poll(async () => (await stageInSight(page)).inSight, { message: "the delete undone, it is mostly out of sight" }).toBe(false);
-    await settle(page, 500);
-    const long = await stageInSight(page);
-    await selectCard(page, 6);
-    const gap = await stepValue(page, "Gap", cardBody(6), "row-gap", views);
-
-    const name = "Stack gap (layout)";
-    const work = summarize(gap.map((s) => s.work));
-    const latency = summarize(gap.map((s) => s.latency));
-    const inFirstFrame = gap.filter((s) => s.firstFrame).length;
-    const met = inFirstFrame === gap.length && work.p95 <= VALUE_TARGET_MS;
-    keep("valueAfterChanges", { [name]: { work, latency, inFirstFrame }, stageHeights: { short: short.stageHeight, long: long.stageHeight, viewport: long.viewportHeight } });
-    print(
-      report(
-        `Changing a value after the views beside are deleted and the main column deleted and the delete undone, ${elements} elements, ${views.length} view — ${mode}`,
-        [
-          { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met },
-          { name: `${name}: key to frame drawn`, summary: latency },
-        ],
-        [
-          `The desktop view ${short.stageHeight.toFixed(0)}px tall on screen without its main column, in a viewport ${long.viewportHeight.toFixed(0)}px tall; ${long.stageHeight.toFixed(0)}px once the delete is undone.`,
-          `${inFirstFrame} of ${gap.length} steps shown in the desktop view in the first frame.`,
-        ],
-      ),
-    );
-    verdict(met, "after changes that are not the camera's, a value changed shows in the next frame, its work within two frames");
-  });
+  const name = "Stack gap (layout)";
+  const work = summarize(gap.map((s) => s.work));
+  const latency = summarize(gap.map((s) => s.latency));
+  const inFirstFrame = gap.filter((s) => s.firstFrame).length;
+  const met = inFirstFrame === gap.length && work.p95 <= VALUE_TARGET_MS;
+  keep("valueAfterChanges", { [name]: { work, latency, inFirstFrame }, stageHeights: { short: short.stageHeight, long: long.stageHeight, viewport: long.viewportHeight }, layerRows: { before: rowsBefore, undone: rowsUndone, measured: rows } });
+  print(
+    report(
+      `Changing a value after the views beside are deleted and the main column deleted and the delete undone, ${elements} elements, ${views.length} view — ${mode}`,
+      [
+        { name: `${name}: work`, summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms, in the first frame`, met },
+        { name: `${name}: key to frame drawn`, summary: latency },
+      ],
+      [
+        `The desktop view ${short.stageHeight.toFixed(0)}px tall on screen without its main column, in a viewport ${long.viewportHeight.toFixed(0)}px tall; ${long.stageHeight.toFixed(0)}px once the delete is undone.`,
+        `${inFirstFrame} of ${gap.length} steps shown in the desktop view in the first frame.`,
+        `The Layers panel ${rowsBefore} rows before the delete, ${rowsUndone} once it is undone, ${rows} with the card's body selected.`,
+      ],
+    ),
+  );
+  verdict(met, "after changes that are not the camera's, a value changed shows in the next frame, its work within two frames");
 });
 
 test("an arrow key held down shows each step in the view worked in in the next frame, its work within two frames; every view catches up once it is let go", async ({ page }) => {

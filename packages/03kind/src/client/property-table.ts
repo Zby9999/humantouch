@@ -60,6 +60,14 @@ export interface PropertyValues extends TypographyValues {
   x: number;
   y: number;
   /**
+   * An absolute layer's place from its parent's right and bottom edges, in
+   * px: what places one placed from those edges (CSS `right`, `bottom`; ticket
+   * 75). Not offered in the panel: a resize of such a layer changes them, so
+   * it stays placed from those edges.
+   */
+  right: number;
+  bottom: number;
+  /**
    * Placed freely in its container, at X and Y from its top left, in px, at
    * its size; null: in its container's layout. Not offered in the panel: a
    * layer in a Frame's flow dragged or nudged in a narrower view is placed
@@ -193,6 +201,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   backgroundBlur: { kinds: BOXES, ...blur("backdrop-filter") },
   x: position("left", "right", 0),
   y: position("top", "bottom", 1),
+  right: endOffset("right"),
+  bottom: endOffset("bottom"),
   absolute: {
     kinds: [],
     read: (el) => (absolute(el) ? { x: offsetOf(el, "left", 0), y: offsetOf(el, "top", 1) } : null),
@@ -478,7 +488,7 @@ function stretches(el: Element): boolean {
 }
 
 /** The value the page (or an edit) declares for `property` of `el`, as written: `auto` when nothing does. */
-function declaredValue(el: Element, property: string): string {
+export function declaredValue(el: Element, property: string): string {
   return declaredByEdit(el, property) || pageValue(el, property) || "auto";
 }
 
@@ -499,6 +509,21 @@ function position(start: "left" | "top", end: "right" | "bottom", axis: 0 | 1): 
     write: (value) => ({ [start]: `${value}px`, [end]: "auto" }),
     writes: [start, end],
     sets: [start],
+  };
+}
+
+/**
+ * An absolute layer's offset from its parent's right or bottom edge, as CSS
+ * sets it: written alone, so the layer stays placed from that edge.
+ */
+function endOffset(end: "right" | "bottom"): Definition<number> {
+  return {
+    kinds: EVERY_KIND,
+    applies: absolute,
+    read: (el) => round(parseFloat(getComputedStyle(el).getPropertyValue(end)) || 0),
+    write: (value) => ({ [end]: `${value}px` }),
+    writes: [end],
+    sets: [end],
   };
 }
 

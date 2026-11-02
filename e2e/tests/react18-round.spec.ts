@@ -196,3 +196,54 @@ test("a change made in the tablet view is at the range of the project's own Tail
   const notes = await npx03kind("claim");
   expect(notes).toContain("- **Breakpoint:** 560px to 1119px only (`@media (560px <= width < 1120px)`), as the designer changed it in a narrower view. The project writes these widths with Tailwind's `sm:max-lg:`");
 });
+
+test("a layer centered by Tailwind v3's `-translate-x-1/2`, through `transform`, resized by a handle: it stays centered, only its width changes, and done checks it once the code has it (ticket 75)", async ({ page }) => {
+  const APP = `${EXAMPLE}src/App.tsx`;
+  const original = readFileSync(APP, "utf8");
+  const hero = '<section className="flex flex-col gap-4 py-section md:items-center md:text-center" data-testid="hero">';
+  expect(original).toContain(hero);
+  try {
+    writeFileSync(
+      APP,
+      original.replace(
+        hero,
+        `${hero.replace('className="', 'className="relative ')}\n        <div data-testid="centered" className="absolute left-1/2 top-[8px] h-[40px] w-[80px] -translate-x-1/2 bg-muted" />`,
+      ),
+    );
+    await expect(async () => {
+      await page.goto(REACT18_URL);
+      await expect(page.getByTestId("centered")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    expect(await page.getByTestId("centered").evaluate((el) => getComputedStyle(el).transform)).not.toBe("none");
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(canvas(page).locator("h1")).toBeVisible();
+    const view = page.locator('iframe[title="Canvas"]');
+    const zoom = await view.evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+    const middle = () => canvas(page).getByTestId("centered").evaluate((el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; });
+    const box = (await canvas(page).getByTestId("centered").boundingBox())!;
+    await page.keyboard.down("Meta");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.keyboard.up("Meta");
+    const before = await middle();
+
+    const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
+    await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(edge.x + edge.width / 2 + 30 * zoom, edge.y + edge.height / 2, { steps: 6 });
+    await page.mouse.up();
+
+    expect(await middle()).toBe(before);
+    await expect.poll(() => savedChanges()?.length).toBe(1);
+    // Wider, as far as it snapped to: the one change, its width.
+    const [change] = savedChanges();
+    expect(change).toMatchObject({ property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed" }, placedFrom: { edge: "start", centered: true } });
+    expect(change.after.value).toBeGreaterThan(100);
+    expect(await npx03kind("claim")).toContain("- **Placement:** the layer is centered across on where its `left` places it, by `translate: -50%` (Tailwind's `-translate-x-1/2`), and stays so");
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");
+    writeFileSync(APP, readFileSync(APP, "utf8").replace("h-[40px] w-[80px] -translate-x-1/2", `h-[40px] w-[${change.after.value}px] -translate-x-1/2`));
+    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+  } finally {
+    writeFileSync(APP, original);
+    await expect.poll(async () => (await fetch(`${REACT18_URL}/src/App.tsx`)).text()).not.toContain("centered");
+  }
+});

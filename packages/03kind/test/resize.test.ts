@@ -93,6 +93,19 @@ describe("resizing a layer by a handle", () => {
     expect(resizeBox(input("w", { x: -9, y: 0 }, { fromCenter: true, snap: { targets: [target], within: 5 } })).box).toEqual(box(-2, 20, 124, 50));
   });
 
+  test("centered one way (`translate: -50%`, ticket 75): that way it grows on both sides alike, as with ⌥; the other way as usual", () => {
+    const centered = { x: true, y: false };
+    expect(resizeBox(input("e", { x: 10, y: 0 }, { centered })).box).toEqual(box(0, 20, 120, 50));
+    expect(resizeBox(input("w", { x: 10, y: 0 }, { centered })).box).toEqual(box(20, 20, 80, 50));
+    // The corner: across from the middle, down from the top, the bottom edge following the pointer.
+    expect(resizeBox(input("se", { x: 10, y: 10 }, { centered })).box).toEqual(box(0, 20, 120, 60));
+    // Snapped from the middle too: the edge across lines up as far the other way.
+    const target = box(-12, 200, 10, 10);
+    const snapped = resizeBox(input("e", { x: 9, y: 0 }, { centered, snap: { targets: [target], within: 5 } }));
+    expect(snapped.box).toEqual(box(-2, 20, 124, 50));
+    expect(snapped.marks.map((mark) => mark.x1)).toEqual([-2]);
+  });
+
   test("nothing within reach: no snapping, no marks", () => {
     const resized = resizeBox(input("e", { x: 30, y: 0 }, { snap: { targets: [box(150, 0, 10, 10)], within: 5 } }));
 

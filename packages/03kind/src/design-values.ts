@@ -15,6 +15,8 @@ const PROPERTIES: Record<string, string> = {
   backgroundBlur: "Background blur",
   x: "X",
   y: "Y",
+  right: "Right",
+  bottom: "Bottom",
   absolute: "Absolute",
   width: "Width",
   height: "Height",
@@ -44,7 +46,7 @@ const PROPERTIES: Record<string, string> = {
   textDecoration: "Decoration",
 };
 /** Where the title does not read well in a sentence. */
-const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", absolute: "absolute placement", clip: "content clipping", columns: "number of columns" };
+const IN_A_SENTENCE: Record<string, string> = { x: "X position", y: "Y position", right: "right position", bottom: "bottom position", absolute: "absolute placement", clip: "content clipping", columns: "number of columns" };
 
 /** A property's name as a title: "Fill", "Corner radius". */
 export function propertyTitle(property: string): string {
@@ -288,6 +290,8 @@ export function value(property: string, v: unknown): string {
     }
     case "x":
     case "y":
+    case "right":
+    case "bottom":
     case "gap":
     case "rowGap":
     case "columnGap":
