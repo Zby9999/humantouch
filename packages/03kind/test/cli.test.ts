@@ -2782,10 +2782,13 @@ describe("claim, a new layer's place once the round is applied (ticket 81)", () 
       change(5, "create", { property: "new", target: frameTarget, after: { type: "text", place: inFrame(1), width: null, height: null, text: "Pricing" } }),
     );
 
-    const notes = section((await cli("claim")).output, 1);
+    const output = (await cli("claim")).output;
+    const notes = section(output, 1);
 
     expect(notes).toContain(
       "\n  - Text “Plans”: 3rd in its layout (change 2)\n  - Button (a copy): 4th in its layout (change 3)\n  - Button (moved in): 2nd in its layout (change 4)\n  - Text “Pricing”: 1st in its layout (change 5)\n",
     );
+    // The new text's own intent says the same place.
+    expect(where(output, 2)).toBe("as its 3rd layer, once all of this round's changes are applied");
   });
 });
