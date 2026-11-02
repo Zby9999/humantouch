@@ -91,3 +91,13 @@ test("in a git repository, last takes a round the page claimed back to the code 
   execFileSync("sh", ["-c", undo!], { cwd: root });
   expect(readFileSync(join(root, "Card.tsx"), "utf8")).toContain('className="bg-white"');
 });
+
+test("a round with a change carried over, claimed by the page, keeps the change's before as the round before had it: the page reads nothing anew", async () => {
+  const carried = { ...ROUND, changeSet: { ...ROUND.changeSet, changes: [{ ...ROUND.changeSet.changes[0], carried: true as const }] } };
+  await call("PUT", ROUND_PATH, carried);
+  const saved = readFileSync(join(root, ".03kind/changeset.json"), "utf8");
+  expect((await call("POST", CLAIM_PATH, { since: Date.now() })).status).toBe(204);
+  // No ask of the page (`claim`'s `opening`): the Agent's code is on the page already, and a change carried over not shown yet may show its edit underway.
+  expect(JSON.parse(readFileSync(join(root, ".03kind/state.json"), "utf8")).opening).toBeUndefined();
+  expect(readFileSync(join(root, ".03kind/changeset.json"), "utf8")).toBe(saved);
+});
