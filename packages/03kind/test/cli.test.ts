@@ -1197,7 +1197,7 @@ describe("claim, new layers, words, deleting and copying", () => {
 
     expect(section(output, 1)).toMatch(/^1\. New Frame\n/);
     expect(section(output, 1)).toContain("- **Layer:** a new Frame, in Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`)\n");
-    expect(section(output, 1)).toContain("- **Design intent:** Add a Frame, Fixed 200 × 120px, with no fill, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 4th layer.\n");
+    expect(section(output, 1)).toContain("- **Design intent:** Add a Frame, Fixed 200 × 120px, with no fill, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 5th layer, once all of this round's changes are applied.\n");
     expect(section(output, 1)).toContain(
       "- **Brief:** “A pricing table with three plans”. Make what it asks for in this Frame, from the project's own components and styles, laid out as the sketch shows.\n",
     );
@@ -1206,7 +1206,7 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 2)).toContain("- **Sketch:** this layer is drawn in the Frame of change 1 as part of its sketch: follow the brief, with it as a guide to the layout, rather than writing it as it is.\n");
     expect(section(output, 3)).toMatch(/^3\. New text\n/);
     expect(section(output, 3)).toContain(
-      "- **Design intent:** Add text that reads “Hello”, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.\n",
+      "- **Design intent:** Add text that reads “Hello”, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 2nd layer, once all of this round's changes are applied. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.\n",
     );
     expect(section(output, 3)).not.toContain("Sketch");
   });
@@ -2548,5 +2548,74 @@ describe("claim and done, layers made this round found on the page (ticket 76)",
     const { output } = await cli("finish");
 
     expect(output).toContain("⚠️ Not applied 1:1\n- 1. New Frame: <the layer>\n  Why: the page does not have it where the change puts it: <what keeps it so>\n");
+  });
+});
+
+describe("claim, a new layer's place once the round is applied (ticket 81)", () => {
+  const list = { ...cards, loc: "src/App.tsx:20:7", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "App", "Stack"], element: '<ul class="flex flex-col">' } };
+  const place = (nth: number, absolute: object | null = null, layer = "4") => ({ container: { layer, target: list }, nth, slot: nth - 1, absolute });
+  const change = (id: number, kind: string, more: object) => ({ ...redFill, id, kind, layer: String(10 + id), target: list, before: null, style: {}, sources: [], ...more });
+  const newText = (id: number, nth: number, layer = "4") => change(id, "create", { property: "new", after: { type: "text", place: place(nth, null, layer), width: null, height: null, text: "Works with any Agent." } });
+  /** The words of a change's Design intent, after the container: where it goes in its layout. */
+  const where = (notes: string, id: number) => /\), (as its [^.]*)\./.exec(/^- \*\*Design intent:\*\* (.*)$/m.exec(section(notes, id))?.[1] ?? "")?.[1];
+
+  test("new text whose container a later change takes a layer before it out of: its place is given as it is once that is applied, and said to be so", async () => {
+    saveRound(newText(1, 3), change(2, "delete", { property: "delete", before: place(2), after: null, style: { display: "none" } }));
+
+    expect(where((await cli("claim")).output, 1)).toBe("as its 2nd layer, once all of this round's changes are applied");
+  });
+
+  test("layers put in before it later, moved there from elsewhere or wrapped in a Stack with others, are counted as they land", async () => {
+    const button = { ...list, context: { path: ["Page", "Button"], element: "<button>" } };
+    saveRound(
+      newText(1, 3),
+      change(2, "move", { property: "move", target: button, before: place(1, null, "9"), after: place(1) }),
+      change(3, "stack", { property: "stack", after: { direction: "horizontal", gap: 8, padding: [0, 0, 0, 0], align: "start", place: place(2), layers: [{ layer: "20", target: list, from: place(2) }, { layer: "21", target: list, from: place(3) }] } }),
+    );
+
+    // [a, b, new] → button in first: [button, a, b, new] → a and b wrapped: [button, Stack, new].
+    expect(where((await cli("claim")).output, 1)).toBe("as its 3rd layer, once all of this round's changes are applied");
+  });
+
+  test("changes to the container after it only, or before it was made: its place is as made, and said to be with the round applied", async () => {
+    saveRound(change(1, "delete", { property: "delete", before: place(1), after: null, style: { display: "none" } }), newText(2, 2), change(3, "delete", { property: "delete", before: place(3), after: null, style: { display: "none" } }));
+
+    expect(where((await cli("claim")).output, 2)).toBe("as its 2nd layer, once all of this round's changes are applied");
+  });
+
+  test("no other change to its container's layout: its place as made, said as before", async () => {
+    saveRound(newText(1, 3), change(2, "delete", { property: "delete", before: place(1, null, "9"), after: null, style: { display: "none" } }), { ...smallRadius, id: 3, layer: "11" });
+
+    expect(where((await cli("claim")).output, 1)).toBe("as its 3rd layer");
+  });
+
+  test("moved by the designer itself later: its place as made, as before, the later change saying where it goes", async () => {
+    saveRound(newText(1, 3), change(2, "delete", { property: "delete", before: place(1), after: null, style: { display: "none" } }), change(3, "move", { layer: "11", property: "move", before: place(2), after: place(1) }));
+
+    expect(where((await cli("claim")).output, 1)).toBe("as its 3rd layer");
+  });
+
+  test("in a Grid, the cell is the one it lands in", async () => {
+    const grid = (nth: number) => ({ ...place(nth), container: { layer: "4", target: list, grid: true } });
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: grid(3), width: 100, height: 100 } }),
+      change(2, "delete", { property: "delete", before: grid(1), after: null, style: { display: "none" } }),
+    );
+
+    expect(where((await cli("claim")).output, 1)).toBe("as its 2nd layer: the Grid's 2nd cell, once all of this round's changes are applied");
+  });
+
+  test("a new layer drawn in a new Frame's sketch is where it lands too", async () => {
+    const frameTarget = { ...list, loc: null, made: "11", context: { path: ["Page", "App", "Stack", "Frame"], element: "<div>" } };
+    const inFrame = (nth: number) => ({ ...place(nth, null, "11"), container: { layer: "11", target: frameTarget } });
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }),
+      change(2, "create", { property: "new", target: frameTarget, after: { type: "text", place: inFrame(1), width: null, height: null, text: "Plans" } }),
+      change(3, "create", { property: "new", target: frameTarget, after: { type: "text", place: inFrame(1), width: null, height: null, text: "Pricing" } }),
+    );
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain("\n  - Text “Plans”: 2nd in its layout (change 2)\n  - Text “Pricing”: 1st in its layout (change 3)\n");
   });
 });

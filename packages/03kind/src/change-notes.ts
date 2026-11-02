@@ -198,9 +198,9 @@ function intent(change: Change, list: Change[]): string {
       return unstackIntent(change.before as StackSettings, change.after as Dissolved);
     case "create": {
       const { type, place, width, height, text } = change.after as Created;
-      if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place)}.`;
+      if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, landed(change, list))}.`;
       const wide = width === null ? "" : `, ${width}px wide`;
-      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place)}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
+      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, landed(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
     }
     case "text":
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
@@ -386,15 +386,91 @@ function cell(place: Place): string {
   return place.container.grid ? `: the Grid's ${ordinal(place.nth)} cell` : "";
 }
 
-/** Where a layer goes in a container: a place in its layout, or absolute in it. */
-function placement(place: Place): string {
-  if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer${cell(place)}`;
+/**
+ * Where a layer goes in a container: a place in its layout, or absolute in it.
+ * `at`: a new layer's place in the layout once the round is applied, when
+ * that is known (`landed`), else its place as made.
+ */
+function placement(place: Place, at: Landed | null = null): string {
+  if (!place.absolute) {
+    const nth = at?.nth ?? place.nth;
+    const once = at?.others ? ", once all of this round's changes are applied" : "";
+    return `in the layout of ${container(place)}, as its ${ordinal(nth)} layer${cell({ ...place, nth })}${once}`;
+  }
   const { x, y } = place.absolute;
   // The container is the positioning reference, not the layer: "which is to be" read as the layer was taken for both (ticket 76).
   return (
     `absolute in ${container(place)}, at X ${x}px and Y ${y}px from the container's top left (CSS \`left\` and \`top\`); ` +
     "the container, not this layer, is the positioning reference: give the container `position: relative` if it has none"
   );
+}
+
+/**
+ * A new layer's place in its container's layout once all of its round is
+ * applied (ticket 81), and whether another change of the round puts a layer
+ * into that layout, takes one out or moves one in it (`others`), so that the
+ * place with the round applied or not could differ: the notes then say which
+ * it is, and the Agent need not work it out. An Agent left to count went
+ * looking in the package for how the page counts.
+ */
+interface Landed {
+  nth: number;
+  others: boolean;
+}
+
+/**
+ * Where the layer `maker` makes in its container's layout is once the round
+ * is applied: its place as made, moved along by each later change that takes
+ * a layer before it out of the container or puts one in before it. Null for
+ * a layer placed absolute, and for one a later change takes elsewhere itself
+ * (a move of it, a Stack made of it), or whose container a later change
+ * dissolves: its own change says where it goes then.
+ */
+function landed(maker: Change, list: Change[]): Landed | null {
+  const { place } = maker.after as Created;
+  if (place.absolute) return null;
+  const id = place.container.layer;
+  const into = (at: Place | null | undefined): at is Place => !!at && at.container.layer === id;
+  let nth = place.nth;
+  let others = false;
+  for (const change of list) {
+    if (change === maker) continue;
+    const { out, inn } = layoutChanges(change);
+    if (out.some(into) || inn.some(into)) others = true;
+    if (change.id < maker.id) continue;
+    const members = change.kind === "stack" ? (change.after as Composed).layers.map((member) => member.layer) : [];
+    if ((change.kind === "move" || change.kind === "delete") && change.layer === maker.layer) return null;
+    if (members.includes(maker.layer) || (change.kind === "unstack" && change.layer === id)) return null;
+    nth -= out.filter((at) => into(at) && at.nth < nth).length;
+    nth += inn.filter((at) => into(at) && at.nth <= nth).length;
+  }
+  return { nth, others };
+}
+
+/**
+ * The places a change takes layers out of (`out`) and puts layers in (`inn`),
+ * as it records them: each counted on the canvas as it was then, those it
+ * takes out gone before it puts one in.
+ */
+function layoutChanges(change: Change): { out: Place[]; inn: Place[] } {
+  switch (change.kind) {
+    case "delete":
+      return { out: [change.before as Place], inn: [] };
+    case "move":
+      return { out: [change.before as Place], inn: [change.after as Place] };
+    case "create":
+      return { out: [], inn: [(change.after as Created).place] };
+    case "putBack":
+      return { out: [], inn: [(change.after as PutBack).place] };
+    case "duplicate":
+      return { out: [], inn: [change.after as Place] };
+    case "stack": {
+      const { place, layers } = change.after as Composed;
+      return place ? { out: layers.map((member) => member.from), inn: [place] } : { out: [], inn: [] };
+    }
+    default:
+      return { out: [], inn: [] };
+  }
 }
 
 /**
@@ -415,7 +491,7 @@ function sketch(change: Change, list: Change[]): string[] {
     const place = placedAt(c)!;
     const made = c.kind === "create" ? (c.after as Created) : null;
     const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
-    let where = `${ordinal(place.nth)} in its layout`;
+    let where = `${ordinal((made && landed(c, list)?.nth) || place.nth)} in its layout`;
     if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
     const fixed = (size: Size | undefined) => (size?.type === "fixed" ? size.value : null);
     const width = fixed(latest<Size | undefined>(c.layer, "width", undefined)) ?? made?.width ?? null;
