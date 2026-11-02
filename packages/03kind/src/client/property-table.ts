@@ -6,7 +6,8 @@
  * text: the editor reads and writes through it.
  */
 import { asShown, declaredByEdit } from "./canvas-style";
-import type { Change, Fragment } from "./changeset";
+import type { Change, Fragment, Place } from "./changeset";
+import { OTHER_EDGE, shareCss, SIDES as PLACING_SIDES } from "./checkable";
 import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
@@ -322,9 +323,20 @@ export function readAsShown<P extends Property>(el: Element, property: P, colors
   return property === "visible" ? PROPERTIES[property].read(el, colors) : asShown(el, () => PROPERTIES[property].read(el, colors));
 }
 
-/** The CSS that places a layer absolute at `x` and `y`, in px, from its container's top left. */
-export function absoluteAt({ x, y }: { x: number; y: number }): Record<string, string> {
-  return { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" };
+/**
+ * The CSS that places a layer absolute at `x` and `y`, in px, from its
+ * container's top left; along an axis it is `placed` otherwise, by the side
+ * that places it so, at what it gives it (ticket 79).
+ */
+export function absoluteAt({ x, y, placed }: NonNullable<Place["absolute"]>): Record<string, string> {
+  const css: Record<string, string> = { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" };
+  for (const axis of ["x", "y"] as const) {
+    const how = placed?.[axis];
+    if (!how) continue;
+    css[PLACING_SIDES[axis][how.edge]] = shareCss(how);
+    css[PLACING_SIDES[axis][OTHER_EDGE[how.edge]]] = "auto";
+  }
+  return css;
 }
 
 /** An element's size as CSS sets it now: what keeps it as large once it is absolute. */

@@ -7,6 +7,7 @@
  * the Skill gives its form, and its rules in the very words `finish` does.
  */
 import type { Change } from "./client/changeset";
+import { PLACED_BY } from "./client/checkable";
 import type { CheckResult } from "./service-protocol";
 import { changeTitle, otherUsagesWords, listed, otherUsagesWord, propertyName, value } from "./design-values";
 
@@ -56,6 +57,8 @@ function pageShows(change: Change, check: CheckResult): string {
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;
   // A new layer, not found where its change puts it, or found placed elsewhere (ticket 76).
   if (change.kind === "create") return `${at}the page does not have it where the change puts it`;
+  // Not placed absolute, the layer has no X, Y, right or bottom on the page to tell (ticket 80).
+  if (PLACED_BY[change.property] && check.actual === null) return `${at}the layer is not placed absolute on the page`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
 }

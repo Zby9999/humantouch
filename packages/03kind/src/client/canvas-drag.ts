@@ -10,6 +10,7 @@
  */
 import type { Drop } from "./drag";
 import type { Layer } from "./layers";
+import { split } from "./paint";
 import type { Shown } from "./view-layout";
 import type { Shift, Views } from "./views";
 
@@ -53,6 +54,8 @@ export interface DragSession {
   release: () => void;
   /** Where the pointer was last, to drag again there as ⌘ is pressed or let go. */
   pointer?: Pointer;
+  /** The layer dragged's own `translate`, across and down (and in depth), which the drag's adds to: none, it has none (ticket 79). */
+  translate: string[] | null;
 }
 
 /**
@@ -77,6 +80,7 @@ export function startDragSession(layer: Layer, shown: Shown, views: Views): Drag
     to: null,
     back: null,
     release: () => {},
+    translate: layer.text ? null : translateOf(layer.el),
   };
   if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
     session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };
@@ -108,7 +112,10 @@ export function laidOut(session: DragSession, layer: Layer): DOMRect {
  */
 export function shift(session: DragSession, by: Shift, drop: Drop | null, caughtUp?: () => void): void {
   const { layer } = session;
-  if (!layer.text) setStyles(session, layer.el, { translate: `${by.x}px ${by.y}px`, transition: "none" });
+  // Moved on from its own translate (centered, back half its size), so it stays under the pointer, not that far aside.
+  const own = session.translate;
+  const translate = own ? [`calc(${own[0]} + ${by.x}px)`, `calc(${own[1] ?? "0px"} + ${by.y}px)`, ...own.slice(2)].join(" ") : `${by.x}px ${by.y}px`;
+  if (!layer.text) setStyles(session, layer.el, { translate, transition: "none" });
   session.makingRoom = new Map([...(drop?.shifts ?? [])].filter(([el]) => el !== layer.el));
   session.views.makeRoom(session.in.view, session.makingRoom, caughtUp);
 }
@@ -161,4 +168,10 @@ function setStyles(session: DragSession, el: Element, styles: Record<string, str
     original[name] ??= [style.getPropertyValue(name), style.getPropertyPriority(name)];
     style.setProperty(name, styles[name], "important");
   }
+}
+
+/** An element's own `translate`, as the browser computes it, split into its parts: null for none. */
+function translateOf(el: Element): string[] | null {
+  const value = getComputedStyle(el).translate;
+  return !value || value === "none" ? null : split(value, " ");
 }
