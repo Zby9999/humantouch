@@ -10,6 +10,7 @@ import { putBackBy, withDependents, type Change, type RangePart } from "./change
 import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
+import type { OtherUsages } from "./elsewhere";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
@@ -116,6 +117,11 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Layout effects: an effect would wait for a frame, which a background tab may not draw for a while.
   const checks = useRef<PageChecks | null>(null);
   const isClaimed = claimed !== null;
+  /** What the components' other usages showed as the page began to check the claimed round (ticket 77): kept as the round is read again, till it is no longer claimed. */
+  const otherUsages = useRef(new Map<number, OtherUsages | null>());
+  useEffect(() => {
+    if (!isClaimed) otherUsages.current = new Map();
+  }, [isClaimed]);
   useLayoutEffect(() => {
     if (!isClaimed || !store || !round) return;
     const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
@@ -127,6 +133,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       onShown: setSeen,
       viewWidths: readViewWidths,
       copiesIn,
+      otherUsages: otherUsages.current,
     });
     checks.current = watcher;
     return () => {

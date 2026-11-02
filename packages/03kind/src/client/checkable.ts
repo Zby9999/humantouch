@@ -83,6 +83,18 @@ export function checkable(change: Change, round: Change[]): boolean {
   return after.absolute ? true : !before.absolute && !!change.order;
 }
 
+/**
+ * Whether the change is for one usage of a component, the others to stay as
+ * they are: not one with no component, nor one written by a component used
+ * outside any other (the notes' Scope line says it is changed where it is
+ * written). The notes say so (`writing-rules.ts`), and the page looks at the
+ * component's other usages for it (ticket 77).
+ */
+export function forOneUsage({ target: { chain } }: Pick<Change, "target">): boolean {
+  const [own, ...outer] = chain;
+  return !!own && !(own.usage && !outer.length);
+}
+
 /** The change that makes the layer `id` this round, if one of `round` does: new text or a Frame, a copy, a layer put back, a new Stack. */
 export function makerOf(id: string, round: Change[]): Change | null {
   const makes = (change: Change) =>

@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, isEndOffset, makerOf, PLACING } from "./client/checkable";
+import { checkable, forOneUsage, isEndOffset, makerOf, PLACING } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 
@@ -193,16 +193,6 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "when the data is written in the code (an array, a constant, a fixture), change it there. When it comes from outside the code (an API, a CMS, a database), do not fake it in the code: report it under ⚠️.",
   },
 ];
-
-/**
- * Whether the change is for one usage of a component, the others to stay as
- * they are: not one with no component, nor one written by a component used
- * outside any other (the notes' Scope line says it is changed where it is written).
- */
-function forOneUsage({ target: { chain } }: Change): boolean {
-  const [own, ...outer] = chain;
-  return !!own && !(own.usage && !outer.length);
-}
 
 /** How the page checks one kind of change (ticket 65): what it reads, and where, said once for the changes it is for, of the round `list`. */
 interface HowChecked {

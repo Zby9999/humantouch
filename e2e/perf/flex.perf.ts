@@ -1237,6 +1237,65 @@ test.describe("a claimed round", () => {
     reportChecks(claimed, unclaimed, elements, "claimedChecksMade", "new text in the 96 cards, and its size");
   });
 
+  /**
+   * Ticket 77: the same three changes, made on a usage of the product card of
+   * its own (the first card, written apart from the loop for this test), so
+   * the page also notes, as the round is claimed, what the loop's 95 cards,
+   * the card's other usage, show of each change's property, and looks at them
+   * again on each hot update. The hot updates write the changes into the card
+   * itself, so the other 95 change too: the most there is to look at.
+   */
+  test("while a round with a change for one usage is claimed, the page looks at the component's other usages on each hot update with no long task of its own", async ({ page }) => {
+    const BIG = `${REACT18}src/big/BigPage.tsx`;
+    const big = readFileSync(BIG, "utf8");
+    const LOOP = "{Array.from({ length: PRODUCTS }, (_, i) => (\n                <ProductCard key={i} index={i} />\n              ))}";
+    expect(big).toContain(LOOP);
+    const apart = async (yes: boolean) => {
+      writeFileSync(BIG, yes ? big.replace(LOOP, LOOP.replace("{Array.from({ length: PRODUCTS }", "<ProductCard index={0} />\n              {Array.from({ length: PRODUCTS - 1 }").replace("index={i}", "index={i + 1}")) : big);
+      await expect.poll(async () => (await (await fetch(new URL("/src/big/BigPage.tsx", BIG_URL))).text()).includes("PRODUCTS - 1")).toBe(yes);
+    };
+    try {
+      await apart(true);
+      const elements = await openBigPage(page);
+      await enterEditMode(page);
+      await selectCard(page, 1, { parent: true });
+      for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+        const box = design(page).getByRole("textbox", { name: field, exact: true });
+        await box.fill(value);
+        await box.press("Enter");
+      }
+      await selectCard(page, 1);
+      const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+      await gap.fill("10");
+      await gap.press("Enter");
+      const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+      await expect.poll(() => saved().length).toBe(3);
+      // One usage of the card, with one instance; the loop's 95 its other usage.
+      expect(saved().map((change: { scope: string; target: { instances: number } }) => `${change.scope} ${change.target.instances}`)).toEqual(["usage 1", "usage 1", "usage 1"]);
+      await page.evaluate(armTasks, CHECKS);
+      await npx03kind("claim");
+      const ring = page.getByRole("progressbar", { name: "Applying design changes" });
+      await expect(ring).toHaveAttribute("aria-valuenow", "0");
+      await settle(page, 2000);
+      const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
+      let answered = "";
+      const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
+      expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
+      const ringAtEnd = await ring.getAttribute("aria-valuenow");
+      await npx03kind("finish");
+      await expect(ring).toHaveCount(0);
+      console.log(`ticket 77, other usages: the ring at the end ${ringAtEnd} of 3`);
+
+      writeFileSync(PARTS, original);
+      await expect.poll(served).toBe(true);
+      await openBigPage(page);
+      const unclaimed = await hotUpdates(page);
+      reportChecks(claimed, unclaimed, elements, "claimedChecksUsages", "3 changes to a card's own usage, 95 cards of another");
+    } finally {
+      await apart(false);
+    }
+  });
+
   /** Prints and keeps what was seen of the checks of a claimed round, and says whether no long task was the check's. */
   function reportChecks(claimed: { name: string; long: Seen["long"]; checks: Seen["measures"] }[], unclaimed: { long: Seen["long"] }[], elements: number, kept: string, what: string) {
     const rows = claimed.map(({ name, long, checks }, i) => {

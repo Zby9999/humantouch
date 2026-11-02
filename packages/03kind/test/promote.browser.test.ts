@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { createChangeSet } from "../src/client/changeset";
+import { createChangeSet, type Change } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
+import { watchPage } from "../src/client/page-checks";
+import type { CheckReport } from "../src/service-protocol";
 import { createEditor } from "../src/client/edits";
 import type { Fill } from "../src/client/property-table";
 import { serializeCanvas } from "../src/client/freezer";
@@ -380,5 +382,144 @@ describe("promote", () => {
 
     expect(changes.list()).toMatchObject([{ kind: "brief", scope: "component", before: null, after: "Lift higher" }]);
     expect(cards.map((el) => el.getAttribute("data-tk-brief"))).toEqual(Array(4).fill("Lift higher"));
+  });
+});
+
+/**
+ * Ticket 77: a change for one usage of the Card alone, which the Agent may
+ * write into the Card itself, so its other usage changes with it. The page
+ * notes, as it begins to check the claimed round, what the Card's other
+ * usages show of the change's property, and looks again as the code changes:
+ * changed there, the change is not shown, and the page says where and from
+ * what to what. Those usages the round changes the property of itself, or
+ * the Card itself, are not looked at.
+ */
+describe("a change for one usage, looked at on the component's other usages (ticket 77)", () => {
+  const WHITE: Fill = { type: "solid", color: "#FFFFFF", opacity: 1 };
+  const BLUE: Fill = { type: "solid", color: "#0000FF", opacity: 1 };
+  /** The live page, the canvas's page as React renders it: the loop's three Cards and "Your turn", each Card's usage known; `fill(i, color)` as the Agent's code paints the `i`th. */
+  function livePage() {
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(PAGE);
+    page.close();
+    function App() {}
+    function Card() {}
+    const app = { type: App, memoizedProps: {}, _debugOwner: null };
+    const cards = [...page.querySelectorAll("article")] as HTMLElement[];
+    cards.forEach((el, i) => {
+      const usage = i < 3 ? "src/App.tsx:6:9" : "src/App.tsx:8:7";
+      Object.assign(el, { __reactFiber$leak: { _debugOwner: { type: Card, memoizedProps: { "data-tk-usage": usage }, _debugOwner: app } } });
+    });
+    const fill = (i: number, color: string) => (cards[i].style.backgroundColor = color);
+    return { page, fill };
+  }
+  /** The page checking the claimed round `round`, what it says of each change. */
+  function watch(page: Document, round: Change[]) {
+    const reports: CheckReport[] = [];
+    const checks = watchPage({ window: page.defaultView!, changes: round, report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+    const last = (id: number) => reports.filter((r) => r.id === id).at(-1);
+    return { checks, reports, last };
+  }
+
+  test("the loop's Cards filled red, written into the Card: the fourth is red too, so it is not shown, and the page says where and from what to what; put back, it is shown", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "fill", RED);
+    const { page, fill } = livePage();
+    const { checks, last } = watch(page, changes.list());
+    await expect.poll(() => last(1)?.outcome).toBe("not shown");
+
+    for (const i of [0, 1, 2, 3]) fill(i, "rgb(255, 0, 0)");
+
+    await expect.poll(() => last(1)).toMatchObject({
+      outcome: "not shown",
+      elsewhere: [{ chain: cardAt("src/App.tsx:8:7"), was: WHITE, is: RED }],
+    });
+    fill(3, "rgb(255, 255, 255)");
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+    expect(last(1)).not.toHaveProperty("elsewhere");
+    checks.stop();
+  });
+
+  test("written at the loop's usage alone, its three instances change and the fourth does not: shown", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "fill", RED);
+    const { page, fill } = livePage();
+    const { checks, reports, last } = watch(page, changes.list());
+    await expect.poll(() => last(1)?.outcome).toBe("not shown");
+
+    for (const i of [0, 1, 2]) fill(i, "rgb(255, 0, 0)");
+
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    checks.stop();
+  });
+
+  test("shown, then written into the Card by a later edit: the page sees the fourth change, and it is not shown any more", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "fill", RED);
+    const { page, fill } = livePage();
+    const { checks, last } = watch(page, changes.list());
+    await expect.poll(() => last(1)?.outcome).toBe("not shown");
+    for (const i of [0, 1, 2]) fill(i, "rgb(255, 0, 0)");
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+
+    fill(3, "rgb(255, 0, 0)");
+
+    await expect.poll(() => last(1)).toMatchObject({ outcome: "not shown", undone: true, elsewhere: [{ was: WHITE, is: RED }] });
+    checks.stop();
+  });
+
+  test("the fourth Card has a fill of its own this round: its fill changing is its own change, not the loop's", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "fill", RED);
+    editor.set(layerOf(cards[3]), "fill", BLUE);
+    const { page, fill } = livePage();
+    const { checks, reports, last } = watch(page, changes.list());
+    await expect.poll(() => last(1)?.outcome).toBe("not shown");
+
+    for (const i of [0, 1, 2]) fill(i, "rgb(255, 0, 0)");
+    fill(3, "rgb(0, 0, 255)");
+
+    await expect.poll(() => [last(1)?.outcome, last(2)?.outcome]).toEqual(["shown", "shown"]);
+    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    checks.stop();
+  });
+
+  test("the Card itself has a fill change this round too, the loop's own fill in place of it: the other usages taking the Card's fill is no leak", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[3]), "fill", RED);
+    editor.promote(layerOf(cards[3]));
+    editor.set(layerOf(cards[0]), "fill", BLUE);
+    const { page, fill } = livePage();
+    const round = changes.list();
+    expect(round.map((change) => change.scope)).toEqual(["component", "usage"]);
+    const { checks, reports, last } = watch(page, round);
+    await expect.poll(() => last(round[1].id)?.outcome).toBe("not shown");
+
+    for (const i of [0, 1, 2]) fill(i, "rgb(0, 0, 255)");
+    fill(3, "rgb(255, 0, 0)");
+
+    await expect.poll(() => [last(round[0].id)?.outcome, last(round[1].id)?.outcome]).toEqual(["shown", "shown"]);
+    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    checks.stop();
+  });
+
+  test("promoted to the Card itself, written into the Card: every usage is red, as asked", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.set(layerOf(cards[0]), "fill", RED);
+    editor.promote(layerOf(cards[0]));
+    const { page, fill } = livePage();
+    const { checks, reports, last } = watch(page, changes.list());
+    await expect.poll(() => last(1)?.outcome).toBe("not shown");
+
+    for (const i of [0, 1, 2, 3]) fill(i, "rgb(255, 0, 0)");
+
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+    expect(reports.some((r) => "elsewhere" in r)).toBe(false);
+    checks.stop();
   });
 });

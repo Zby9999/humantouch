@@ -3,6 +3,8 @@ import type { Change, Composed, Created, Place, PutBack, StackSettings } from ".
 import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/property-table";
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
+import type { UsageLevel } from "./client/usage-chain";
+import type { Elsewhere } from "./service-protocol";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -151,6 +153,27 @@ const MAX_BRIEF = 40;
 /** A brief as the change list shows it: quoted, cut short when long. */
 function briefShown(brief: string): string {
   return quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief);
+}
+
+/**
+ * Where a usage of a component is, as the notes name one: `Card used at
+ * \`src/App.tsx:44:9\``, and, `outer`, the components it is inside, out to the
+ * page (ticket 77).
+ */
+function usageWhere(chain: UsageLevel[], outer = true): string {
+  const levels = (outer ? chain : chain.slice(0, 1)).map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`);
+  return levels.join(", inside ");
+}
+
+/** Other usages of a change's component, as many as `elsewhere` has, in a sentence: `another usage of Card`, `2 other usages of Card` (ticket 77). */
+export function otherUsagesWord(change: Change, elsewhere: Elsewhere[]): string {
+  const component = change.target.chain[0]?.component;
+  return elsewhere.length === 1 ? `another usage of ${component}` : `${elsewhere.length} other usages of ${component}`;
+}
+
+/** What other usages of a change's component show of its property now, and showed as the round was claimed (ticket 77): each `Card used at …, its fill from … to …`. */
+export function elsewhereWords(property: string, elsewhere: Elsewhere[], outer = true): string {
+  return elsewhere.map(({ chain, was, is }) => `${usageWhere(chain, outer)}, its ${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`).join("; ");
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */

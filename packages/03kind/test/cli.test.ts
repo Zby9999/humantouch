@@ -1878,6 +1878,61 @@ describe("done, checked on the page", () => {
   });
 });
 
+describe("a change for one usage, shown at another usage of its component too (ticket 77)", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+  const YOUR_TURN = [{ component: "Card", usage: "src/App.tsx:44:9", thirdParty: false }, APP];
+  const leaked = {
+    outcome: "not shown",
+    actual: redFill.after,
+    elsewhere: [{ chain: YOUR_TURN, was: { type: "solid", color: "#FFFFFF", opacity: 1 }, is: { type: "solid", color: "#FF0000", opacity: 0.5 } }],
+  };
+
+  test("done says the page shows it on the layer, but at the other usage too: where, and the property from what to what; it is not applied", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage(() => leaked);
+
+    const { output } = await cli("done", "1");
+
+    expect(output).toBe(
+      "Change 1 done: 0 of 2 changes applied.\n" +
+        "Checked on the page: it shows the change, but on another usage of Card too: Card used at `src/App.tsx:44:9`, inside App used at `src/main.tsx:8:5`, " +
+        "its fill from #FFFFFF to #FF0000 at 50% opacity since the round was claimed. The change is for this usage only (Scope): make it at the usage, " +
+        "put the other usage back as it was, and run `npx 03kind done 1` again.\n",
+    );
+  });
+
+  test("two other usages are named both", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    const second = { chain: [{ component: "Card", usage: "src/Footer.tsx:9:7", thirdParty: false }, APP], was: { type: "solid", color: "#F5F5F4", opacity: 1 }, is: redFill.after };
+    closePage = openPage(() => ({ ...leaked, elsewhere: [...leaked.elsewhere, second] }));
+
+    const { output } = await cli("done", "1");
+
+    expect(output).toContain(
+      "it shows the change, but on 2 other usages of Card too: Card used at `src/App.tsx:44:9`, inside App used at `src/main.tsx:8:5`, its fill from #FFFFFF to #FF0000 at 50% opacity; " +
+        "Card used at `src/Footer.tsx:9:7`, inside App used at `src/main.tsx:8:5`, its fill from #F5F5F4 to #FF0000 at 50% opacity since the round was claimed. " +
+        "The change is for this usage only (Scope): make it at the usage, put the other usages back as they were, and run `npx 03kind done 1` again.\n",
+    );
+  });
+
+  test("finish says so, and puts it under ⚠️ with what the page shows at the other usage", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage((id) => (id === 1 ? leaked : { outcome: "shown" }));
+
+    const { output } = await cli("finish");
+
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Shown at other usages of its component too: 1.\n");
+    expect(output).toContain("✓ Applied\n- 2. Corner radius: <the layer, and what you changed>\n");
+    expect(output).toContain(
+      "⚠️ Not applied 1:1\n- 1. Fill: <the layer>\n  Why: the page shows it at another usage of Card too, Card used at `src/App.tsx:44:9`, its fill from #FFFFFF to #FF0000 at 50% opacity: <what keeps it so>\n",
+    );
+  });
+});
+
 describe("progress, as the page shows it", () => {
   let closePage = () => {};
   afterEach(() => closePage());

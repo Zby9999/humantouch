@@ -4,7 +4,7 @@ import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
+import { CARD_EDITED, clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /**
  * The applying bench, scripted (docs/goals.md, Robust): a script plays the
@@ -38,7 +38,7 @@ const RESULTS = fileURLToPath(new URL("../../bench-results/playbooks/", import.m
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const original = readFileSync(CARD, "utf8");
 
-/** The round: the cards of the loop filled red, with 4px corners and a red stroke; each change, as an Agent writes it into the Card. */
+/** The round: the cards of the loop filled red, with 4px corners and a red stroke; each change, as an Agent writes it into the Card for the loop's cards alone (ticket 77: the fourth card stays as it was). */
 const CHANGES = [
   { field: "Fill color", value: "ff0000", from: "bg-white", to: "bg-[#ff0000]", property: "backgroundColor", shown: "rgb(255, 0, 0)" },
   { field: "Corner radius", value: "4", from: "rounded-xl", to: "rounded-[4px]", property: "borderTopLeftRadius", shown: "4px" },
@@ -51,7 +51,7 @@ test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was: wait for the dev server to serve it so.
-  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
+  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
 });
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
@@ -78,7 +78,7 @@ async function apply(page: Page, id: number) {
   const { from, to, property, shown } = CHANGES[id - 1];
   const text = readFileSync(CARD, "utf8");
   expect(text).toContain(from);
-  writeFileSync(CARD, text.replace(from, to));
+  writeFileSync(CARD, forTheLoopAlone(text, from, to));
   await expect.poll(() => page.locator("article").first().evaluate((card, name) => getComputedStyle(card)[name as "color"], property)).toBe(shown);
 }
 
@@ -323,7 +323,7 @@ test("ending the round from the notice that the Agent seems to have stopped does
 
   // The same round again, on the code as it was, ended by pressing and holding the toggle.
   writeFileSync(CARD, original);
-  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
+  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
   clearThirdKindFolder(THIRD_KIND_FOLDER);
   await stopHalfway(page);
   await pressAndHold(page);
@@ -411,7 +411,7 @@ test("playbook: the Agent lands the designer's changes with no claim, while the 
   await designTheRound(page);
   const changesBefore = readThirdKindFile("changeset.json").changes.map((change: { id: number }) => change.id);
   // Not claimed: the Agent goes by the chat, not the Skill.
-  writeFileSync(CARD, original.replace(CHANGES[0].from, CHANGES[0].to));
+  writeFileSync(CARD, forTheLoopAlone(original, CHANGES[0].from, CHANGES[0].to));
   const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
   const autoClaimed = claimedAfterMs !== null;
   const atClaim = await noticesSoFar(page);
@@ -1283,4 +1283,178 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
   } finally {
     await context.close();
   }
+});
+
+/**
+ * Ticket 77: a change for one usage of the Card alone (the loop's, or the
+ * fourth card's, "Your turn"), which the Agent may write into the Card
+ * itself, so the Card's other usage changes with it. The page notes, as the
+ * round is claimed, what the Card's other usages on the page show of the
+ * change's property, and looks again as the code changes: changed there, the
+ * change is not applied. The scripted Agent writes each change either into
+ * the Card (a leak), or at its one usage, a prop passed there alone. And three
+ * the page checks as before: a change promoted to the Card, one to a layer
+ * in no component, and one to the loop's three instances, which are one
+ * usage. Measured first on the code before 77, with its assertions left out.
+ */
+test.describe("a change for one usage of the Card (ticket 77)", () => {
+  test.afterEach(async () => {
+    // Run before the file's own hooks, which put the Card back: App.tsx is put back here, and the next page must open on it as it was.
+    if (readFileSync(APP, "utf8") !== originalApp) writeFileSync(APP, originalApp);
+    await expect.poll(async () => /gap: "gap-3"|flex flex-col gap-3|opacity-50|bg-\[#ff0000\]/.test(await (await fetch(`${DEV_URL}/src/App.tsx`)).text())).toBe(false);
+  });
+
+  /** The live page's four cards, the loop's three and "Your turn", as the browser computes `property` for each. */
+  const cardsOnThePage = (page: Page, property: string) => page.locator("article").evaluateAll((cards, name) => cards.map((card) => getComputedStyle(card)[name as "color"]), property);
+  /** The loop's usage of the Card in App.tsx, and the fourth card's. */
+  const LOOP_USAGE = "<Card key={feature.title} title={feature.title} body={feature.body} />";
+  const OWN_USAGE = '<Card title="Your turn" body="Open the editor and try it." />';
+  const CARD_PROPS = "export function Card({ title, body }: { title: string; body: string }) {";
+
+  /** In edit mode, the `nth` Card of the layer tree selected (0: the loop's first; 3: "Your turn"), and `fields` set on it; promoted, with `promote`. Back in preview mode, the change saved. */
+  async function changeACard(page: Page, nth: number, fields: [string, string][], promote = false) {
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(canvas(page).locator("h1")).toBeVisible();
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).nth(nth).click();
+    for (const [field, value] of fields) await setField(page, field, value);
+    if (promote) await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Promote" }).click();
+    await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property}`)).toEqual(fields.map(([field]) => `style ${field === "Gap" ? "gap" : "fill"}`));
+    await leaveEditMode(page);
+  }
+
+  /** `edits` made to the source, as the Agent writes the change; once `shows` says the page has them. */
+  async function write(edits: [string, string, string][], shows: () => Promise<boolean>) {
+    for (const [file, from, to] of edits) {
+      const text = readFileSync(file, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(file, text.replace(from, to));
+    }
+    await expect.poll(shows).toBe(true);
+  }
+
+  /** The round claimed, the change written by `edits`, `done 1`, the ring, and `finish`: what each said, and what the page shows. */
+  async function applyTheChange(page: Page, edits: [string, string, string][], shows: () => Promise<boolean>) {
+    await npx03kind("claim");
+    // As a real Agent, which reads the notes before it edits: the page has begun to check, and has noted what the other usages show.
+    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    await write(edits, shows);
+    const done = await npx03kind("done", "1");
+    await expect(ring(page)).toBeVisible();
+    const ringAfterDone = Number(await ring(page).getAttribute("aria-valuenow"));
+    const finished = await npx03kind("finish");
+    const checks = checksOf([1]);
+    return { done, ringAfterDone, finished, checks, ticked: tickedIn(finished), applied: appliedInArchive() };
+  }
+
+  /** What a playbook keeps: the done line, the outcome, the ring, the report's ✓, the archive's applied. */
+  const kept = ({ done, ringAfterDone, finished, checks, ticked, applied }: Awaited<ReturnType<typeof applyTheChange>>) => ({
+    outcome: checks.outcomes[1],
+    ringAfterDone,
+    ticked,
+    applied,
+    done: done.split("\n").slice(0, 2).join(" "),
+    finished: finished.split("\n")[0],
+    warned: /⚠️ Not applied 1:1\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "",
+  });
+
+  /** Whether `done` and `finish` tell a leak, as ticket 77 has them: not applied, the other usage named, the property from what to what; under ⚠️, not ✓. */
+  const toldLeak = (result: Awaited<ReturnType<typeof applyTheChange>>, usage: RegExp) =>
+    result.checks.outcomes[1] === "not shown" && usage.test(result.done) && !result.ticked.includes(1) && usage.test(result.finished);
+
+  test("playbook: the loop's cards filled red, the Agent writing it into the Card itself: the fourth card is red too", async ({ page }) => {
+    await changeACard(page, 0, [["Fill color", "ff0000"]]);
+    const result = await applyTheChange(page, [[CARD, "bg-white", "bg-[#ff0000]"]], async () => (await cardsOnThePage(page, "backgroundColor")).every((fill) => fill === "rgb(255, 0, 0)"));
+    const fourth = (await cardsOnThePage(page, "backgroundColor"))[3];
+    const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
+    record("usage-leak-fill", { ...kept(result), fourthCard: fourth, told, found: told ? 1 : 0 });
+    // Ticket 77: not applied, the fourth card named, its fill from white to red; under ⚠️, and the ring does not count it.
+    expect(result.done).toMatch(/it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`.*its fill from #FFFFFF to #FF0000 since the round was claimed/);
+    expect(told).toBe(true);
+    expect(result.ringAfterDone).toBe(0);
+    expect(result.applied).toEqual([]);
+  });
+
+  test("playbook: the loop's cards given a 12px gap, the Agent writing it into the Card with an 8px gap for every other usage (fill-gap-brief #3): the fourth card is a Stack with an 8px gap", async ({ page }) => {
+    await changeACard(page, 0, [["Gap", "12"]]);
+    const result = await applyTheChange(
+      page,
+      [
+        [CARD, CARD_PROPS, 'export function Card({ title, body, gap = "gap-2" }: { title: string; body: string; gap?: string }) {'],
+        [CARD, '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`flex flex-col ${gap} rounded-xl border border-stone-200 bg-white p-5 shadow-sm`}>"],
+        [CARD, '<p className="mt-2 text-sm', '<p className="text-sm'],
+        [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} gap="gap-3" />'],
+      ],
+      async () => (await cardsOnThePage(page, "rowGap")).join() === "12px,12px,12px,8px",
+    );
+    const fourth = { display: (await cardsOnThePage(page, "display"))[3], rowGap: (await cardsOnThePage(page, "rowGap"))[3] };
+    const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
+    record("usage-leak-gap", { ...kept(result), fourthCard: fourth, told, found: told ? 1 : 0 });
+    // Ticket 77: the gap alone is looked at (the fourth card's display, flex now, is not), 0 to 8px.
+    expect(result.done).toMatch(/its gap from 0px to 8px since the round was claimed/);
+    expect(told).toBe(true);
+    expect(result.ringAfterDone).toBe(0);
+    expect(result.applied).toEqual([]);
+  });
+
+  test("playbook: the same gap, the Agent passing it to the loop's usage alone: its three instances change, the fourth card does not (no false leak)", async ({ page }) => {
+    await changeACard(page, 0, [["Gap", "12"]]);
+    const result = await applyTheChange(
+      page,
+      [
+        [CARD, CARD_PROPS, 'export function Card({ title, body, className = "" }: { title: string; body: string; className?: string }) {'],
+        [CARD, '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`rounded-xl border border-stone-200 bg-white p-5 shadow-sm ${className}`}>"],
+        [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} className="flex flex-col gap-3" />'],
+      ],
+      async () => (await cardsOnThePage(page, "rowGap")).join() === "12px,12px,12px,normal",
+    );
+    const falseLeaks = result.checks.outcomes[1] === "shown" ? 0 : 1;
+    record("usage-only-gap", { ...kept(result), falseLeaks });
+    expect(falseLeaks).toBe(0);
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the fourth card filled red, the Agent passing the fill to its usage alone: the loop's cards stay white (no false leak)", async ({ page }) => {
+    await changeACard(page, 3, [["Fill color", "ff0000"]]);
+    const result = await applyTheChange(
+      page,
+      [
+        [CARD, CARD_PROPS, 'export function Card({ title, body, fill = "bg-white" }: { title: string; body: string; fill?: string }) {'],
+        [CARD, '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`rounded-xl border border-stone-200 ${fill} p-5 shadow-sm`}>"],
+        [APP, OWN_USAGE, '<Card title="Your turn" body="Open the editor and try it." fill="bg-[#ff0000]" />'],
+      ],
+      async () => (await cardsOnThePage(page, "backgroundColor")).join() === "rgb(255, 255, 255),rgb(255, 255, 255),rgb(255, 255, 255),rgb(255, 0, 0)",
+    );
+    const falseLeaks = result.checks.outcomes[1] === "shown" ? 0 : 1;
+    record("usage-only-fill", { ...kept(result), falseLeaks });
+    expect(falseLeaks).toBe(0);
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the loop's cards filled red, promoted to the Card itself; the Agent writes it into the Card: every card is red, as asked (as before 77)", async ({ page }) => {
+    await changeACard(page, 0, [["Fill color", "ff0000"]], true);
+    expect(changesNow()[0]).toMatchObject({ scope: "component" });
+    const result = await applyTheChange(page, [[CARD, "bg-white", "bg-[#ff0000]"]], async () => (await cardsOnThePage(page, "backgroundColor")).every((fill) => fill === "rgb(255, 0, 0)"));
+    record("usage-promoted", kept(result));
+    expect(result.checks.outcomes[1]).toBe("shown");
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the intro, written in the App itself, in no component, made half opaque; the Agent writes it there (as before 77)", async ({ page }) => {
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(canvas(page).locator("h1")).toBeVisible();
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
+    await setField(page, "Opacity", "50");
+    await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property}`)).toEqual(["style opacity"]);
+    await leaveEditMode(page);
+    const result = await applyTheChange(page, [[APP, '<p className="mt-4 text-stone-600">', '<p className="mt-4 text-stone-600 opacity-50">']], async () =>
+      page.locator('[data-testid="hero"] > p').evaluate((el) => getComputedStyle(el).opacity === "0.5"),
+    );
+    record("usage-no-component", kept(result));
+    expect(result.checks.outcomes[1]).toBe("shown");
+    expect(result.ticked).toEqual([1]);
+  });
 });

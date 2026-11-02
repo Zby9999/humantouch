@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
+import { CARD_EDITED, clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -15,14 +15,14 @@ test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") === originalCard) return;
   writeFileSync(CARD, originalCard);
   // The next test's page must open on the Card as it was.
-  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("rounded-xl border border-stone-200 bg-white")).toBe(true);
+  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
 });
 
-/** As the Agent does: one of the changes `changeTheCards` makes, written into the Card. */
+/** As the Agent does: one of the changes `changeTheCards` makes, written into the Card for the loop's cards alone (ticket 77). */
 const CARD_EDITS = { fill: ["bg-white", "bg-[#ff0000]"], radius: ["rounded-xl", "rounded-[2px]"] } as const;
 async function applyToCard(page: Page, which: keyof typeof CARD_EDITS) {
   const [from, to] = CARD_EDITS[which];
-  writeFileSync(CARD, readFileSync(CARD, "utf8").replace(from, to));
+  writeFileSync(CARD, forTheLoopAlone(readFileSync(CARD, "utf8"), from, to));
   const [property, value] = which === "fill" ? (["backgroundColor", "rgb(255, 0, 0)"] as const) : (["borderTopLeftRadius", "2px"] as const);
   await expect.poll(() => page.locator("article").first().evaluate((card, name) => getComputedStyle(card)[name], property)).toBe(value);
 }
@@ -147,7 +147,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   });
 
   await npx03kind("claim");
-  writeFileSync(CARD, readFileSync(CARD, "utf8").replace(...CARD_EDITS.fill));
+  writeFileSync(CARD, forTheLoopAlone(readFileSync(CARD, "utf8"), ...CARD_EDITS.fill));
   // The Card's module and the stylesheet with its new class are both in; React has not drawn it yet.
   await expect.poll(async () => ((c) => c.at > codeAt && c.updating === 0)(await code())).toBe(true);
   await expect.poll(() => page.evaluate(() => [...document.querySelectorAll("style")].some((style) => style.textContent?.includes("bg-\\[\\#ff0000\\]")))).toBe(true);
@@ -328,7 +328,8 @@ test.describe("done checks the change on the page", () => {
   function editSource(file: string, from: string, to: string) {
     const text = readFileSync(file, "utf8");
     expect(text).toContain(from);
-    writeFileSync(file, text.replace(from, to));
+    // The Card's changes are for the loop's cards alone (ticket 77): the fourth card stays as it was.
+    writeFileSync(file, file === CARD ? forTheLoopAlone(text, from, to) : text.replace(from, to));
   }
 
   test("a change the code really makes is shown; one a page rule overrides is not, until it is fixed", async ({ page }) => {

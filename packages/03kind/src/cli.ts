@@ -7,7 +7,7 @@
  */
 import { changes as changesWord, describeChanges, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
-import { listed, ordinal, propertyName, value } from "./design-values";
+import { elsewhereWords, listed, ordinal, otherUsagesWord, propertyName, value } from "./design-values";
 import type { MadeMissing, PlacedOnPage } from "./client/check";
 import { PLACED_BY, SIDES } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
@@ -15,7 +15,7 @@ import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
+import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type Elsewhere } from "./service-protocol";
 import {
   appliedOf,
   archiveRound,
@@ -176,7 +176,8 @@ function readAgain(change: Change, result: CheckResult | undefined): Change {
   // Each part read again: one value in all of them is the change's before, as the notes say it once.
   const [first, ...others] = change.parts ?? [];
   if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
-  if (result?.outcome !== "not shown" || !readWhereMade(change, result.width)) return next;
+  // Shown on the layer, and at other usages too (ticket 77): its value there is its after.
+  if (result?.outcome !== "not shown" || result.elsewhere || !readWhereMade(change, result.width)) return next;
   const before = change.parts ? undefined : beforeOf(change, result.actual);
   return { ...next, ...(before !== undefined && { before }), ...(result.sources?.length && { sources: result.sources }) };
 }
@@ -287,10 +288,24 @@ function checkLine(change: Change, result: CheckResult | undefined): string {
     case "shown":
       return "Checked on the page: it shows the change.";
     case "not shown":
+      if (result.elsewhere?.length) return shownElsewhere(change, result.elsewhere);
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
       return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
   }
+}
+
+/**
+ * A change for one usage alone that the page shows on its layer, and on other
+ * usages of its component too (ticket 77): which, what they show now that they
+ * did not as the round was claimed, and to put them back.
+ */
+function shownElsewhere(change: Change, elsewhere: Elsewhere[]): string {
+  const one = elsewhere.length === 1;
+  return (
+    `Checked on the page: it shows the change, but on ${otherUsagesWord(change, elsewhere)} too: ${elsewhereWords(change.property, elsewhere)} since the round was claimed. ` +
+    `The change is for this usage only (Scope): make it at the usage, put the other ${one ? "usage back as it was" : "usages back as they were"}, and run \`npx 03kind done ${change.id}\` again.`
+  );
 }
 
 /** What the page shows instead of change `id`, `width` px wide when not as wide as its window, what to look at, and to check again. */
@@ -465,9 +480,13 @@ async function finish(folder: ThirdKindFolder, io: Io): Promise<number> {
   const applied = result.applied ?? result.done;
   const notShown = ids.filter((id) => !applied.includes(id) && result.checks[id]?.outcome === "not shown");
   const missing = ids.filter((id) => !applied.includes(id) && !notShown.includes(id));
+  // Shown on the layer, but at other usages of its component too (ticket 77).
+  const elsewhere = notShown.filter((id) => ((check) => check?.outcome === "not shown" && !!check.elsewhere?.length)(result.checks[id]));
+  const unshown = notShown.filter((id) => !elsewhere.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
-  if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}.`;
+  if (unshown.length) text += ` The page does not show: ${unshown.join(", ")}.`;
+  if (elsewhere.length) text += ` Shown at other usages of its component too: ${elsewhere.join(", ")}.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }
