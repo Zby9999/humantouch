@@ -1,13 +1,15 @@
 /**
- * Which changes the page checks (ADR 0006, 0013), from what the change
- * records alone: the page's check (`check.ts`) and what the change notes tell
- * the Agent of it (`writing-rules.ts`) both go by this, so they cannot differ
- * (ticket 65). With them, the properties that place a layer, which the page
- * checks by where it is drawn, and which the editor (`edits.ts`, `range-parts.ts`)
- * and the bench go by too, and the CSS sides that place it along each axis.
- * It imports types only, so the bench, run by Node itself, imports it too.
+ * Which changes the page checks (ADR 0006, 0013), from what the changes of
+ * the round record alone: the page's check (`check.ts`) and what the change
+ * notes tell the Agent of it (`writing-rules.ts`) both go by this, so they
+ * cannot differ (ticket 65). With them, the properties that place a layer,
+ * which the page checks by where it is drawn, and which the editor
+ * (`edits.ts`, `range-parts.ts`) and the bench go by too, and the CSS sides
+ * that place it along each axis; and where a layer made this round is to be
+ * found (ticket 76). It imports types only, so the bench, run by Node itself,
+ * imports it too.
  */
-import type { Change, Place } from "./changeset";
+import type { Change, Created, Place, Target } from "./changeset";
 import type { Property } from "./property-table";
 import type { Axis } from "./snap";
 
@@ -53,17 +55,24 @@ export const PLACED_BY: Readonly<Partial<Record<string, { axis: Axis; edge: Edge
 /** Whether `property` is an offset from a container's end edge, `right` or `bottom`, which places a layer from that edge (ticket 75). */
 export const isEndOffset = (property: string) => PLACED_BY[property]?.edge === "end";
 
+/** The element the editor makes a new layer of on the canvas, by its type: the editor's, not the designer's, so the page finds the layer the Agent writes of any (ticket 76). */
+export const NEW_TAGS: Record<Created["type"], string> = { text: "p", frame: "div" };
+
 /**
  * Whether the page can check the change: it must find the layer by its
- * source marker (not one made this round, nor a run of text), and tell what
- * the change does there: a style, a deletion, a reorder in the same container
+ * source marker (not a run of text), or, made this round as new text or a
+ * Frame, at its place (`madeLayer`), and tell what the change does there: a
+ * style, the layer made itself, a deletion, a reorder in the same container
  * (unless text runs on among its layers), a placement absolute in the same
  * container, that container found on the page too; not when one of a loop's
- * instances is changed alone, which the page cannot tell apart.
+ * instances is changed alone, which the page cannot tell apart. `round`: the
+ * changes of its round, where those that make layers are.
  */
-export function checkable(change: Change): boolean {
+export function checkable(change: Change, round: Change[]): boolean {
   const { target } = change;
-  if (target.made || target.run !== undefined || !target.loc) return false;
+  if (change.kind === "create") return !!madeLayer(change.layer, round);
+  if (target.made) return change.kind === "style" && !!madeLayer(target.made, round);
+  if (!foundByMarker(target)) return false;
   if (change.kind === "style") return true;
   if (change.data) return false;
   if (change.kind === "delete") return true;
@@ -72,4 +81,73 @@ export function checkable(change: Change): boolean {
   const container = after.container.target;
   if (before.container.layer !== after.container.layer || !container.loc || container.made) return false;
   return after.absolute ? true : !before.absolute && !!change.order;
+}
+
+/**
+ * Whether the change is for one usage of a component, the others to stay as
+ * they are: not one with no component, nor one written by a component used
+ * outside any other (the notes' Scope line says it is changed where it is
+ * written). The notes say so (`writing-rules.ts`), and the page looks at the
+ * component's other usages for it (ticket 77).
+ */
+export function forOneUsage({ target: { chain } }: Pick<Change, "target">): boolean {
+  const [own, ...outer] = chain;
+  return !!own && !(own.usage && !outer.length);
+}
+
+/** The change that makes the layer `id` this round, if one of `round` does: new text or a Frame, a copy, a layer put back, a new Stack. */
+export function makerOf<C extends Change>(id: string, round: C[]): C | null {
+  const makes = (change: C) =>
+    ["create", "duplicate", "putBack"].includes(change.kind) || (change.kind === "stack" && !!(change.after as { place: Place | null }).place);
+  return round.find((change) => change.layer === id && makes(change)) ?? null;
+}
+
+/** Where the layer made this round by `maker` is now: where the designer last moved it, else where it was made. */
+export function placeOfMade(maker: Change, round: Change[]): Place {
+  const moved = round.filter((change) => change.kind === "move" && change.layer === maker.layer).at(-1);
+  return moved ? (moved.after as Place) : (maker.after as Created).place;
+}
+
+/**
+ * Whether the page finds a layer by its source marker (`Target.loc`): one
+ * with an element of its own, not a run of text, and not made this round
+ * (found where its change puts it instead, `whereMade`).
+ */
+export function foundByMarker(target: Target): boolean {
+  return !target.made && !!target.loc && target.run === undefined;
+}
+
+/**
+ * Why the page cannot find a layer made this round, or a container one is
+ * made in: made in a round before, so the canvas has no source marker for it
+ * (`before`); made otherwise than as new text or a Frame, as a copy, a layer
+ * put back or a new Stack (`otherwise`); a container with no source marker
+ * (`unmarked`).
+ */
+export type Unfound = "before" | "otherwise" | "unmarked";
+
+/**
+ * Of a layer made this round, the change that made it, new text or a Frame,
+ * and where it is: in a container the page finds by its source marker, or in
+ * one made this round the same way, as deep as they go (ticket 76). Else why
+ * the page cannot find it: the layer itself (`layer`), or its container or
+ * one that is in, in turn (`container`). Whether the page can check a change
+ * (`checkable`) and why it cannot (`check.ts`) both go by this.
+ */
+export function whereMade<C extends Change>(id: string, round: C[]): { maker: C; place: Place } | { layer: Exclude<Unfound, "unmarked"> } | { container: Unfound } {
+  const maker = makerOf(id, round);
+  if (!maker) return { layer: "before" };
+  if (maker.kind !== "create") return { layer: "otherwise" };
+  const place = placeOfMade(maker, round);
+  const { target } = place.container;
+  if (!target.made) return foundByMarker(target) ? { maker, place } : { container: "unmarked" };
+  const outer = whereMade(target.made, round);
+  if ("maker" in outer) return { maker, place };
+  return { container: "layer" in outer ? outer.layer : outer.container };
+}
+
+/** Of a layer made this round, the change that made it and where it is, as `whereMade` finds it; null when the page cannot find it. */
+export function madeLayer<C extends Change>(id: string, round: C[]): { maker: C; place: Place } | null {
+  const where = whereMade(id, round);
+  return "maker" in where ? where : null;
 }

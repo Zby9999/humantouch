@@ -36,6 +36,8 @@ test("the page loads only the toggle, under 10KB gzipped; the rest of the editor
 
   const atLoad = [...files];
   expect(atLoad.length).toBeGreaterThan(0);
+  // In the output, to compare with the budget from one ticket to the next.
+  console.log(`toggle as published: ${published(atLoad)} B gzipped of ${TOGGLE_BUDGET} B`);
   expect(published(atLoad)).toBeLessThanOrEqual(TOGGLE_BUDGET);
 
   await toggle.click();

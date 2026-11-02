@@ -3,7 +3,7 @@
  * to the canvas being edited and to a saved one. A layer goes in each instance
  * of its container's usage; a layer one of several a loop renders goes alone.
  */
-import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
+import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
 
@@ -63,6 +63,71 @@ export function syncOrders(doc: Document, changes: ChangeSet) {
     };
     if (JSON.stringify(order) !== JSON.stringify(change.order)) changes.record(change.layer, { ...change, order });
   }
+}
+
+/**
+ * Where a new layer (a `create`) is among its container's layers on its
+ * round's canvas, in its container's layout: how many come before it there
+ * that the live page has too (`before`), and how many it may have or not, as
+ * the Agent has applied the round so far or not (`maybe`: layers deleted,
+ * moved or made this round, and those moved out of the container). `signs`:
+ * what the container's layers not new this round look like (tag and words,
+ * as a reorder's `order` has them), those moved out of it too: of the
+ * elements of their look at its place, those are not it.
+ */
+export interface Among {
+  before: number;
+  maybe: number;
+  signs: string[];
+}
+
+/** A change of a round placed on its canvas: a new layer's with where it is there (`among`; null: in no container there). */
+export type ChangeOnCanvas = Change & { among?: Among | null };
+
+declare const onCanvas: unique symbol;
+
+/**
+ * The changes of a round placed on its canvas, as `placedOnCanvas` alone
+ * makes them: what the page checks a round by, as the Agent applies it,
+ * claimed or not (ticket 76, 78). A new layer is found by where the canvas
+ * places it, so the check takes no round its new layers are not placed in.
+ */
+export type RoundOnCanvas = ChangeOnCanvas[] & { readonly [onCanvas]: true };
+
+/**
+ * The changes of a round, each new layer's with where it is among its
+ * container's layers on the round's canvas, `canvas` as saved (`Among`,
+ * ticket 76): what the page finds it by. Read from the canvas by the page as
+ * it checks, never saved with the ChangeSet, which the Agent may read: an
+ * Agent that did went looking in the package for what it was. A round with
+ * no new layer is as it is, its canvas not read.
+ */
+export function placedOnCanvas(changes: Change[], canvas: string): RoundOnCanvas {
+  if (!canvas || !changes.some((change) => change.kind === "create")) return changes as RoundOnCanvas;
+  const doc = new DOMParser().parseFromString(canvas, "text/html");
+  return changes.map((change) => (change.kind === "create" ? { ...change, among: amongOf(doc, change.layer, changes) } : change)) as RoundOnCanvas;
+}
+
+/**
+ * Where the new layer with id `id` is among its container's layers on the
+ * canvas (`Among`). Null when it is in no container.
+ */
+function amongOf(doc: Document, id: string, changes: Change[]): Among | null {
+  const el = elementsOf(doc, id).find((e) => e.getAttribute(MADE_ATTR) === id);
+  const container = el?.parentElement;
+  if (!el || !container) return null;
+  const layers = [...container.children].filter((child) => !NOT_DRAWN.has(child.localName));
+  let before = 0;
+  let maybe = 0;
+  for (const layer of layers.slice(0, layers.indexOf(el))) {
+    if ([DELETED_ATTR, MADE_ATTR, MOVE_ATTR, WRAP_ATTR].some((attr) => layer.hasAttribute(attr))) maybe++;
+    else before++;
+  }
+  const own = container.getAttribute(LAYER_ID_ATTR);
+  const out = changes.filter((change) => change.kind === "move" && (change.before as Place).container.layer === own && (change.after as Place).container.layer !== own);
+  const outside = out.flatMap((move) => elementsOf(doc, move.layer).slice(0, 1));
+  const signs = [...layers.filter((layer) => !layer.hasAttribute(MADE_ATTR)), ...outside].map(signOf);
+  return { before, maybe: maybe + out.length, signs };
 }
 
 /**

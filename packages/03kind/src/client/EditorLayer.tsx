@@ -3,14 +3,16 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
 import { watchStall, type StallWatch } from "./agent-stall";
-import { CodeChangeNotice } from "./CodeChangeNotice";
-import { watchCodeChanges } from "./code-changes";
+import type { Camera } from "./camera";
+import { PAGE_CHANGED_MEASURE, watchCodeRuns, type CodeRun } from "./code-changes";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
 import { putBackBy, withDependents, type Change, type RangePart } from "./changeset";
 import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
-import { watchPage, type PageChecks } from "./page-checks";
-import { whenLetGo } from "./pointer-held";
+import { placedOnCanvas, type RoundOnCanvas } from "./moves";
+import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
+import type { OtherUsagesNoted } from "./other-usages";
+import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
 import { connectRoundStore } from "./service";
@@ -80,8 +82,6 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * they left: once anything else saves it, they are dropped.
    */
   const listSteps = useRef<{ past: ListStep[]; future: ListStep[] }>({ past: [], future: [] });
-  /** Editing is paused: the code changed in edit mode with no Agent claiming the round (ticket 66). */
-  const [paused, setPaused] = useState(false);
   /** The canvas, while edit mode is up: the change list works on it then. */
   const control = useRef<RoundControl | null>(null);
 
@@ -107,6 +107,16 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   }, []);
 
   const changes = round?.changeSet.changes ?? [];
+  /**
+   * A round as saved, placed on its canvas (ticket 76): what the page checks
+   * it by, claimed or not (ticket 78). Placed once for each round saved, as
+   * it is first checked: the canvas is read only then.
+   */
+  const placed = useRef<{ round: SavedRound; changes: RoundOnCanvas } | null>(null);
+  const placedNow = (saved: SavedRound): RoundOnCanvas => {
+    if (placed.current?.round !== saved) placed.current = { round: saved, changes: placedOnCanvas(saved.changeSet.changes, saved.canvas) };
+    return placed.current.changes;
+  };
   /** The changes this page has seen show, before the local service says so to every page. */
   const [seen, setSeen] = useState<number[]>([]);
   /** Applied, as the page shows them (ADR 0013). */
@@ -118,16 +128,22 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Layout effects: an effect would wait for a frame, which a background tab may not draw for a while.
   const checks = useRef<PageChecks | null>(null);
   const isClaimed = claimed !== null;
+  /** What the components' other usages showed as the page began to check the claimed round (ticket 77): kept as the round is read again, till it is no longer claimed. */
+  const otherUsages = useRef(new Map<number, OtherUsagesNoted | null>());
+  useEffect(() => {
+    if (!isClaimed) otherUsages.current = new Map();
+  }, [isClaimed]);
   useLayoutEffect(() => {
     if (!isClaimed || !store || !round) return;
     const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
     const watcher = watchPage({
       window,
-      changes: round.changeSet.changes,
+      changes: placedNow(round),
       report,
       onShown: setSeen,
       viewWidths: readViewWidths,
       copiesIn,
+      otherUsages: otherUsages.current,
     });
     checks.current = watcher;
     return () => {
@@ -259,7 +275,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     const outside = redo ? step.offCanvasAfter : step.offCanvasBefore;
     if (outside !== offCanvas) saveOffCanvas(outside);
   };
-  const discard = () => {
+  /** Every change taken back out, the round dropped: the change list's Discard all, and updating a canvas the page changed since (ticket 78). */
+  const discardRound = () => {
     setListOpen(false);
     if (control.current) control.current.discard();
     else if (offCanvas && round) {
@@ -268,6 +285,9 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     }
     setLive(null);
     save(null);
+  };
+  const discard = () => {
+    discardRound();
     // The canvas goes with the round: back to the page, which edit mode freezes afresh.
     if (mode === "edit") setMode(shellShown.current ? "leaving" : "preview");
   };
@@ -298,31 +318,86 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // In edit mode, the way back and the changes so far sit beside the Design panel's title, in place of the toggle.
   const editing = mode === "edit" && shellShown.current;
 
-  // In edit mode, with the round not claimed, the code changing under the canvas pauses editing (ticket 66). A file the
-  // page does not use brings nothing in; a claim, as the Agent applies the round, folds edit mode away instead. The
-  // Agent may claim and edit at once, before the page hears of the claim: the local service is asked how the round stands.
+  // In edit mode, with the round not claimed, each run of code changes is told once the code rests and the designer is
+  // done with what they were doing (ticket 78). A file the page does not use brings nothing in. The Agent may claim
+  // and edit at once, before the page hears of the claim: the local service is asked how the round stands. Then:
+  // a change of the canvas shown, the Agent is applying it unclaimed, and the round is claimed for it, as if it had;
+  // the page drawing what it did before, nothing at all; the page changed, a canvas with no changes is frozen afresh,
+  // and one with changes says so, once till it is frozen afresh.
   const unclaimed = editing && !claimed;
+  const [pageToast, setPageToast] = useState<PageToastMessage | null>(null);
+  const pageToasts = useRef(0);
+  const tell = (kind: PageToastMessage["kind"] | null) => setPageToast(kind && { kind, key: ++pageToasts.current });
+  /** Bumped to freeze the page afresh in place of the canvas, the camera where it was. */
+  const [freezes, setFreezes] = useState(0);
+  const cameraNow = useRef<Camera | null>(null);
+  const [startAt, setStartAt] = useState<Camera | null>(null);
+  /** The page changed since the canvas was frozen, and the designer was told: not again till it is frozen afresh. */
+  const stale = useRef(false);
+  const refreeze = () => {
+    stale.current = false;
+    setStartAt(cameraNow.current);
+    setFreezes((n) => n + 1);
+  };
+  // Edit mode on a round of none, the page frozen afresh: up to date.
   useEffect(() => {
-    if (!unclaimed) return setPaused(false);
+    if (editing && !round) stale.current = false;
+    if (!editing) setPageToast(null);
+  }, [editing]);
+  /** The changes on the canvas as of the last render: what a run of code changes, told later, is told by. */
+  const listedNow = useRef(listed);
+  listedNow.current = listed;
+  /** `saved` placed on its canvas, measured as telling a run of code changes is. */
+  const placing = (saved: SavedRound) => {
+    const start = performance.now();
+    try {
+      return placedNow(saved);
+    } finally {
+      performance.measure(PAGE_CHANGED_MEASURE, { start, end: performance.now() });
+    }
+  };
+  useEffect(() => {
+    if (!unclaimed) return;
     let watching = true;
-    const waits: (() => void)[] = [];
-    const stop = watchCodeChanges(window, () => {
-      const asked = store ? store.status().catch(() => lastStatus.current) : Promise.resolve(lastStatus.current);
-      void asked.then((status) => {
-        // A press under way ends first, as the designer meant it: what it does is an edit made before the pause.
-        if (watching && status?.status !== "claimed") waits.push(whenLetGo(() => setPaused(true)));
-      });
-    });
+    const tellRun = async (run: CodeRun) => {
+      const status = await (store ? store.status().catch(() => lastStatus.current) : lastStatus.current);
+      if (!watching || status?.status === "claimed") return;
+      // The round as saved by the canvas's last edit, placed on that canvas: checked as a claimed round is (ticket 76).
+      control.current?.save();
+      const saved = roundNow.current;
+      if (saved?.changeSet.changes.length && (await showsAnyHere(document, placing(saved), readViewWidths()))) {
+        if (!watching) return;
+        store?.claim(run.since).catch((error: unknown) => console.warn(error));
+        return;
+      }
+      if (!(await run.pageChanged()) || !watching) return;
+      if (!listedNow.current.length) {
+        // Nothing waiting to be saved is lost: the layers off the canvas, say.
+        control.current?.save();
+        refreeze();
+        tell("updated");
+      } else if (!stale.current) {
+        stale.current = true;
+        tell("changed");
+      }
+    };
+    const stop = watchCodeRuns(window, (run) => void tellRun(run).catch((error: unknown) => console.warn(error)));
     return () => {
       watching = false;
       stop();
-      for (const callOff of waits) callOff();
     };
   }, [unclaimed]);
+  const updateCanvas = () => {
+    tell(null);
+    discardRound();
+    refreeze();
+  };
   return (
     <>
       {shellShown.current && (
         <Shell
+          // Frozen afresh: a new canvas, in place of the last.
+          key={freezes}
           // Only while in edit mode: leaving, the toggle is back with its badge.
           controls={
             editing && (
@@ -360,21 +435,16 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           onSaveOffCanvas={saveOffCanvas}
           onChanges={setLive}
           control={control}
-          paused={unclaimed && paused}
+          notice={editing && <PageToast message={pageToast} changes={listed.length} onUpdate={updateCanvas} />}
+          startAt={startAt}
+          cameraNow={cameraNow}
           leaving={mode === "leaving"}
           animate={animate}
           onLeft={() => {
             setMode("preview");
             setLive(null);
-          }}
-        />
-      )}
-      {unclaimed && paused && (
-        <CodeChangeNotice
-          onKeepEditing={() => setPaused(false)}
-          onBackToPreview={(animate) => {
-            setPaused(false);
-            switchMode(animate);
+            // Edit mode next time starts where it starts, not where this canvas left the camera.
+            setStartAt(null);
           }}
         />
       )}

@@ -5,17 +5,17 @@
  * `last` prints the round before, to undo it by. `init`, `doctor` and
  * `remove` install 03Kind, check it, and take it back out.
  */
-import { changes as changesWord, describeChanges, toApply, type NotesOptions } from "./change-notes";
+import { changes as changesWord, container as containerOf, describeChanges, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
-import { listed, ordinal, propertyName, value } from "./design-values";
-import type { PlacedOnPage } from "./client/check";
+import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, value } from "./design-values";
+import type { MadeMissing, PlacedOnPage } from "./client/check";
 import { PLACED_BY, SIDES } from "./client/checkable";
-import type { Change, Margins, Place, SavedChangeSet } from "./client/changeset";
+import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult } from "./service-protocol";
+import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
 import {
   appliedOf,
   archiveRound,
@@ -176,7 +176,8 @@ function readAgain(change: Change, result: CheckResult | undefined): Change {
   // Each part read again: one value in all of them is the change's before, as the notes say it once.
   const [first, ...others] = change.parts ?? [];
   if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
-  if (result?.outcome !== "not shown" || !readWhereMade(change, result.width)) return next;
+  // Shown on the layer, and at other usages too (ticket 77): its value there is its after.
+  if (result?.outcome !== "not shown" || result.otherUsages || !readWhereMade(change, result.width)) return next;
   const before = change.parts ? undefined : beforeOf(change, result.actual);
   return { ...next, ...(before !== undefined && { before }), ...(result.sources?.length && { sources: result.sources }) };
 }
@@ -287,10 +288,24 @@ function checkLine(change: Change, result: CheckResult | undefined): string {
     case "shown":
       return "Checked on the page: it shows the change.";
     case "not shown":
+      if (result.otherUsages?.length) return shownAtOtherUsages(change, result.otherUsages);
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
       return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
   }
+}
+
+/**
+ * A change for one usage alone that the page shows on its layer, and on other
+ * usages of its component too (ticket 77): which, what they show now that they
+ * did not as the round was claimed, and to put them back.
+ */
+function shownAtOtherUsages(change: Change, usages: OtherUsageChanged[]): string {
+  const one = usages.length === 1;
+  return (
+    `Checked on the page: it shows the change, but on ${otherUsagesWord(change, usages)} too: ${otherUsagesWords(change.property, usages)} since the round was claimed. ` +
+    `The change is for this usage only (Scope): make it at the usage, put the other ${one ? "usage back as it was" : "usages back as they were"}, and run \`npx 03kind done ${change.id}\` again.`
+  );
 }
 
 /** What the page shows instead of change `id`, `width` px wide when not as wide as its window, what to look at, and to check again. */
@@ -300,6 +315,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     if (width) return `At ${width}px wide, the layer is still on the page: take it out at every width, and ${again}.`;
     return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
   }
+  if (change.kind === "create") return madeNotShown(change, actual, again, width);
   if (change.kind === "move") {
     const { absolute, nth } = change.after as Place;
     if (!absolute) return `Its container's layers are in another order on the page: put it ${ordinal(nth)}, as the notes say, and ${again}.`;
@@ -325,6 +341,28 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     return `At ${width}px wide, the ${instead} The change applies ${applies}: see what sets the value at that width (a breakpoint variant such as \`sm:\`, a media query), fix it, and ${again}.`;
   }
   return `The ${instead} Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and ${again}.`;
+}
+
+/**
+ * A new layer the page does not find at its place (ticket 76), or finds,
+ * placed absolute, drawn elsewhere: what it looked for and what is there.
+ */
+function madeNotShown(change: Change, actual: unknown, again: string, width?: number): string {
+  const container = containerOf((change.after as Created).place, false);
+  if (actual && typeof actual === "object" && "type" in actual) {
+    const { type, words, nth, there } = actual as MadeMissing;
+    const what = type === "text" ? `the new text, reading \u201c${words}\u201d,` : "the new Frame";
+    if (!nth) return `The page does not have ${what} placed absolute in ${container}: write the new layer there, as the notes say, and ${again}.`;
+    // A range: the page may have layers there the round takes out, or not yet those it puts in.
+    const which = nth[0] === nth[1] ? ordinal(nth[0]) : `${ordinal(nth[0])} ${nth[1] - nth[0] === 1 ? "or" : "to"} ${ordinal(nth[1])}`;
+    const instead = there ? `it has ${there} there` : "it has no layer there";
+    return `The page does not have ${what} as the ${which} layer of ${container}: ${instead}. Write the new layer there, as the notes say, and ${again}.`;
+  }
+  const at = width ? `At ${width}px wide, the` : "The";
+  if (actual === "no reference") return `${at} new layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
+  const placed = actual as PlacedOnPage | null;
+  const where = placed ? `at X ${placed.x}px and Y ${placed.y}px` : "not placed absolute";
+  return `${at} new layer is ${where}, not where the notes place it: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
 }
 
 /** Margins in words: `2px left and 6px top`, `24px top`, `none`. */
@@ -441,9 +479,13 @@ async function finish(folder: ThirdKindFolder, io: Io): Promise<number> {
   const applied = result.applied ?? result.done;
   const notShown = ids.filter((id) => !applied.includes(id) && result.checks[id]?.outcome === "not shown");
   const missing = ids.filter((id) => !applied.includes(id) && !notShown.includes(id));
+  // Shown on the layer, but at other usages of its component too (ticket 77).
+  const atOtherUsages = notShown.filter((id) => ((check) => check?.outcome === "not shown" && !!check.otherUsages?.length)(result.checks[id]));
+  const unshown = notShown.filter((id) => !atOtherUsages.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
-  if (notShown.length) text += ` The page does not show: ${notShown.join(", ")}.`;
+  if (unshown.length) text += ` The page does not show: ${unshown.join(", ")}.`;
+  if (atOtherUsages.length) text += ` Shown at other usages of its component too: ${atOtherUsages.join(", ")}.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }

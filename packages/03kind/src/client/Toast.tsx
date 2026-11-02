@@ -26,52 +26,46 @@ export interface ToastMessage {
 }
 
 /**
+ * How long a toast shows: `message` from when it is set, then fading out, then
+ * gone; but not while `held` (the pointer on it, say), and once let go, for
+ * `ms` again. What it is to show is `shown`, kept while it fades.
+ */
+export function useToastTime<T>(message: T | null, ms: number, held: boolean): { shown: T | null; fading: boolean } {
+  const [shown, setShown] = useState<T | null>(message);
+  const [fading, setFading] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const stay = () => clearTimeout(timer.current);
+  useEffect(() => {
+    setShown(message);
+    setFading(false);
+  }, [message]);
+  useEffect(() => {
+    stay();
+    if (!message) return;
+    if (held) return setFading(false);
+    timer.current = setTimeout(() => {
+      setFading(true);
+      timer.current = setTimeout(() => setShown(null), TOAST_FADE_MS);
+    }, ms);
+  }, [message, held]);
+  useEffect(() => stay, []);
+  return { shown, fading };
+}
+
+/**
  * At the bottom middle of the canvas, as in Figma: a dark pill of one line,
  * fading out about 3 seconds after it shows, but not while the pointer is on it.
  * Read out as it changes.
  */
 export function Toast({ message }: { message: ToastMessage | null }) {
-  /** The toast showing, kept while it fades out. */
-  const [shown, setShown] = useState<ToastMessage | null>(message);
-  const [fading, setFading] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   /** The pointer is on the toast: it stays until the pointer leaves. */
-  const hovered = useRef(false);
-
-  const stay = () => clearTimeout(timer.current);
-  /** Starts the time it stays, then fades it out and takes it away. */
-  const wait = () => {
-    stay();
-    timer.current = setTimeout(() => {
-      setFading(true);
-      timer.current = setTimeout(() => setShown(null), TOAST_FADE_MS);
-    }, TOAST_MS);
-  };
-
-  useEffect(() => {
-    setShown(message);
-    setFading(false);
-    if (!message) stay();
-    else if (!hovered.current) wait();
-  }, [message]);
-  useEffect(() => stay, []);
-
+  const [hovered, setHovered] = useState(false);
+  const { shown, fading } = useToastTime(message, TOAST_MS, hovered);
   return (
     <div class="tk-toasts" role="status">
       {shown && (
         // One toast at a time: a new one shows its words in the same place, without coming in again.
-        <p
-          class={`tk-toast${fading ? " is-fading" : ""}`}
-          onPointerEnter={() => {
-            hovered.current = true;
-            stay();
-            setFading(false);
-          }}
-          onPointerLeave={() => {
-            hovered.current = false;
-            wait();
-          }}
-        >
+        <p class={`tk-toast${fading ? " is-fading" : ""}`} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
           {/* A new toast is new words in the live region, though they be the same: it is read out again. */}
           <span key={shown.key}>{shown.text}</span>
         </p>

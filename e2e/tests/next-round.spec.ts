@@ -14,6 +14,7 @@ const EXAMPLE = fileURLToPath(new URL("../../examples/next-app-css-modules/", im
 const THIRD_KIND_FOLDER = `${EXAMPLE}.03kind/`;
 const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 const CARD_CSS = `${EXAMPLE}components/Card.module.css`;
+const CARD = `${EXAMPLE}components/Card.tsx`;
 
 test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
@@ -99,8 +100,11 @@ test("claim locks the editor; done checks the change on the page once the CSS Mo
   await expect(page.getByRole("button", { name: /^03Kind: applying design changes/ })).toHaveAttribute("aria-disabled", "true");
   await expect(progress).toHaveAttribute("aria-valuemax", "2");
   const original = readFileSync(CARD_CSS, "utf8");
+  const originalCard = readFileSync(CARD, "utf8");
   try {
-    writeFileSync(CARD_CSS, original.replace("background: rgb(255, 255, 255);", "background: rgb(255, 0, 0);"));
+    // For the loop's cards alone (ticket 77): the `.card` rule styles the fourth card too, so the loop's get a class of their own.
+    writeFileSync(CARD_CSS, `${original}\n.loop {\n  background: rgb(255, 0, 0);\n}\n`);
+    writeFileSync(CARD, originalCard.replace("<article className={styles.card}>", '<article className={title === "Your turn" ? styles.card : `${styles.card} ${styles.loop}`}>'));
 
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");
@@ -108,6 +112,7 @@ test("claim locks the editor; done checks the change on the page once the CSS Mo
     expect(await npx03kind("finish")).toContain("Round finished: 1 of 2 changes applied. The page does not show: 2.");
   } finally {
     writeFileSync(CARD_CSS, original);
+    writeFileSync(CARD, originalCard);
   }
 });
 

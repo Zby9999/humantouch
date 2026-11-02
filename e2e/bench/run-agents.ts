@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
-import { recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
+import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
 
@@ -75,7 +75,9 @@ interface RawRun {
    * How many times, from the Agent's start on, the designer's page showed the
    * notice that the code is changing but no Agent has claimed the changes
    * (ticket 66). Recorded only, never scored: before the claim it is the Agent
-   * editing unclaimed, after it a false one. Missing in runs before ticket 66.
+   * editing unclaimed, after it a false one. Missing in runs before ticket 66;
+   * 0 from ticket 78 on, which took the notice away (the page claims the round
+   * for an Agent applying it unclaimed).
    */
   unclaimedNotices?: number;
   /**
@@ -239,9 +241,9 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
   try {
     return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
       const problems: string[] = [];
-      // Designing touches no code with no claim: the editor layer has no cause to ask.
-      const notices = (await unclaimedNoticesShown(designer)).length;
-      if (notices) problems.push(`the notice that no Agent claimed the changes showed ${notices} times as it was set up`);
+      // Designing touches no code with no claim: the editor layer has nothing to tell of the code changing.
+      const notices = (await unclaimedNoticesShown(designer)).length + (await canvasUpdatedNoticesShown(designer)).length + (await pageChangedNoticesShown(designer)).length;
+      if (notices) problems.push(`a notice of the code changing showed ${notices} times as it was set up`);
       const kinds = saved.map((change) => change.kind).join(", ");
       const named = scenario.changes.map((change) => change.kind).join(", ");
       if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);

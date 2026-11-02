@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, isEndOffset, PLACING } from "./client/checkable";
+import { checkable, forOneUsage, isEndOffset, makerOf, PLACING } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 
@@ -194,19 +194,9 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
 ];
 
-/**
- * Whether the change is for one usage of a component, the others to stay as
- * they are: not one with no component, nor one written by a component used
- * outside any other (the notes' Scope line says it is changed where it is written).
- */
-function forOneUsage({ target: { chain } }: Change): boolean {
-  const [own, ...outer] = chain;
-  return !!own && !(own.usage && !outer.length);
-}
-
-/** How the page checks one kind of change (ticket 65): what it reads, and where, said once for the changes it is for. */
+/** How the page checks one kind of change (ticket 65): what it reads, and where, said once for the changes it is for, of the round `list`. */
 interface HowChecked {
-  calledFor(change: Change): boolean;
+  calledFor(change: Change, list: Change[]): boolean;
   text: string;
 }
 
@@ -218,67 +208,75 @@ const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOf
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [
   {
-    calledFor: (change) => checkable(change) && change.kind === "style" && !placing(change),
+    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !placing(change),
     text:
       "a style change by the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance, whatever class or rule gives it, and on nothing else: " +
       "an edit that also changes elements outside the scope is wrong, though `done` says it shows",
   },
   {
-    calledFor: (change) => checkable(change) && change.kind === "style" && !change.breakpoint,
+    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !change.breakpoint,
     text: "a change at all breakpoints at the page's own width and at each of the designer's views' widths (a phone's, a tablet's), but where this round changes it at a breakpoint of its own",
   },
   {
-    calledFor: (change) => checkable(change) && !!change.breakpoint,
+    calledFor: (change, list) => checkable(change, list) && !!change.breakpoint,
     text:
       "a change at a breakpoint in each part the project's breakpoints cut its range into (the design intent names them when their values differ): at the page's own width in the part its window is in, else at the part's lower edge, or, for one from no width at all, 1px under its upper edge",
   },
   {
-    calledFor: (change) => checkable(change) && placing(change) && !isEndOffsetChange(change),
+    calledFor: (change, list) => checkable(change, list) && placing(change) && !isEndOffsetChange(change),
     text: "a layer placed absolute by where it is drawn: `position: absolute`, its container its positioning reference, its `left` and `top` the X and Y given, its margins kept, not taken off, so drawn at `left` and `top` plus its margins, as on the canvas",
   },
   {
-    calledFor: (change) => checkable(change) && isEndOffsetChange(change),
+    calledFor: (change, list) => checkable(change, list) && isEndOffsetChange(change),
     text: "a layer placed from its container's right or bottom edge by where it is drawn: its `right` or `bottom` the value given, plus its right or bottom margin, kept, as on the canvas",
   },
-  { calledFor: (change) => checkable(change) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
-  { calledFor: (change) => checkable(change) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
+  {
+    calledFor: (change, list) => checkable(change, list) && change.kind === "create",
+    text:
+      "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, counted with this round's other changes applied or not, one the container did not have before, new text with its words, " +
+      "or, placed absolute, one placed absolute in the container at the X and Y given; found written at more than one place in the source, it is not checked",
+  },
+  { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
+  { calledFor: (change, list) => checkable(change, list) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
 ];
 
 /** A move of a layer the page can find that it still cannot check (`checkable`). */
-const movedUnchecked = (change: Change) => change.kind === "move" && !change.data && !change.target.made && !!change.target.loc && !checkable(change);
+const movedUnchecked = (change: Change, list: Change[]) => change.kind === "move" && !change.data && !change.target.made && !!change.target.loc && !checkable(change, list);
 /** A move that leaves the layer in a container the page has no marker to find by: one made this round, or one with no source marker. */
 function inUnfoundContainer({ before, after }: Change): boolean {
   const { container } = after as Place;
   return (before as Place).container.layer === container.layer && (!!container.target.made || !container.target.loc);
 }
 
-/** The kinds of change the page cannot check, as the rule names them, in this order. */
-const UNCHECKED: [string, (change: Change) => boolean][] = [
+/** The kinds of change the page cannot check, as the rule names them, in this order, of the round `list`. */
+const UNCHECKED: [string, (change: Change, list: Change[]) => boolean][] = [
   ["a change to one of a loop's instances alone", (change) => !!change.data],
-  ["a change to a layer made this round", (change) => !change.data && !!change.target.made && change.kind !== "create"],
+  ["a change to a layer made this round", (change, list) => !change.data && !!change.target.made && change.kind !== "create" && !!makerOf(change.target.made, list) && !checkable(change, list)],
+  ["a change to a layer made in a round before", (change, list) => !change.data && !!change.target.made && !makerOf(change.target.made, list) && change.kind !== "brief"],
   ["a change to a layer the page cannot find", (change) => !change.data && !change.target.made && (!change.target.loc || change.target.run !== undefined) && change.kind !== "brief"],
-  ["a new layer", (change) => change.kind === "create" || change.kind === "putBack"],
+  ["a new layer in a container the page cannot find", (change, list) => change.kind === "create" && !checkable(change, list)],
+  ["a layer put back", (change) => change.kind === "putBack"],
   ["a Stack made or dissolved", (change) => change.kind === "stack" || change.kind === "unstack"],
-  ["a move into another container, or into a layout from a place of its own", (change) => movedUnchecked(change) && !inUnfoundContainer(change)],
-  ["a move in a container made this round, or one the page cannot find", (change) => movedUnchecked(change) && inUnfoundContainer(change)],
+  ["a move into another container, or into a layout from a place of its own", (change, list) => movedUnchecked(change, list) && !inUnfoundContainer(change)],
+  ["a move in a container made this round, or one the page cannot find", (change, list) => movedUnchecked(change, list) && inUnfoundContainer(change)],
   ["a copy", (change) => change.kind === "duplicate" && !change.data],
   ["new words", (change) => change.kind === "text" && !change.data],
   ["a brief", (change) => change.kind === "brief"],
 ];
 
-/** The **How the page checks** rule: for the kinds of change of the round, each once (ticket 65). */
-function howChecked(list: Change[]): string {
-  const said = HOW_CHECKED.filter((how) => list.some(how.calledFor)).map((how) => how.text);
-  const unchecked = UNCHECKED.filter(([, of]) => list.some(of)).map(([name]) => name);
+/** The **How the page checks** rule: for the kinds of change given (`list`), each once (ticket 65), as the page checks them in their round (`round`). */
+function howChecked(list: Change[], round: Change[]): string {
+  const said = HOW_CHECKED.filter((how) => list.some((change) => how.calledFor(change, round))).map((how) => how.text);
+  const unchecked = UNCHECKED.filter(([, of]) => list.some((change) => of(change, round))).map(([name]) => name);
   if (unchecked.length) said.push(`${listed(unchecked)}, not at all: \`done\` says Not checked, which is no error; say in the report what you did`);
-  const shows = list.some(checkable) ? " Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks." : "";
+  const shows = list.some((change) => checkable(change, round)) ? " Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks." : "";
   return `the page reads ${said.join("; ")}.${shows}`;
 }
 
-/** The **How to write them** section of a round's notes: the rules its changes call for, and how the page checks them. */
-export function writingRules(list: Change[]): string {
+/** The **How to write them** section of a round's notes: the rules the changes given (`list`) call for, and how the page checks them in their round (`round`). */
+export function writingRules(list: Change[], round: Change[] = list): string {
   const called = HOW_TO_WRITE.filter((how) => list.some(how.calledFor)).map((how) => ({ name: how.name, text: typeof how.text === "string" ? how.text : how.text(list) }));
-  called.push({ name: "How the page checks", text: howChecked(list) });
+  called.push({ name: "How the page checks", text: howChecked(list, round) });
   return `## How to write them\n\n${called.map((how) => `- **${how.name}:** ${how.text}\n`).join("")}`;
 }
 

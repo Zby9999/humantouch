@@ -12,12 +12,14 @@
  */
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
-import { changeKey, isReorder, type Change, type Margins, type Place } from "./changeset";
+import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
+import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { checkable, PLACED_BY, PLACING, SIDES, type Edge } from "./checkable";
+import { checkable, madeLayer, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
-import { signOf, usageKey } from "./layers";
+import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
+import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
 
@@ -35,17 +37,38 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
   },
 };
 
-/** Why a change cannot be checked, when it cannot (`checkable`): the page must be able to find the layer, and tell what the change does there. */
-export function uncheckable(change: Change): string | null {
-  if (checkable(change)) return null;
+/** Why a change cannot be checked, when it cannot (`checkable`): the page must be able to find the layer, and tell what the change does there. `round`: the changes of its round. */
+export function uncheckable(change: Change, round: Change[]): string | null {
+  if (checkable(change, round)) return null;
   if (change.kind === "brief") return BRIEF_UNCHECKED;
-  if (change.target.made) return "the layer is new this round, so the page has no marker to find it by";
+  if (change.kind === "create" || change.target.made) {
+    const where = whereMade(change.kind === "create" ? change.layer : change.target.made!, round);
+    if (change.kind !== "create" && !("layer" in where) && change.kind !== "style") return "of the changes to a layer made this round, the page checks only the layer itself and its styles";
+    if (!("maker" in where)) return "layer" in where ? MADE_UNFOUND[where.layer] : CONTAINER_UNFOUND[where.container];
+  }
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
   if (change.kind === "style") return "the layer's container cannot be found on the page";
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
 }
+
+/**
+ * Why the page cannot find a layer made this round (`whereMade`): made in a
+ * round before, its source not marked on the canvas (ticket 76: it is not
+ * looked for); made as a copy, a layer put back or a new Stack.
+ */
+const MADE_UNFOUND: Record<Exclude<Unfound, "unmarked">, string> = {
+  before: "the layer was made in a round before, and the page cannot find it: the canvas has no source marker for it",
+  otherwise: "the layer is new this round, so the page has no marker to find it by",
+};
+
+/** Why the page cannot find a container a layer is made in, as deep as layers made this round go (`whereMade`). */
+const CONTAINER_UNFOUND: Record<Unfound, string> = {
+  unmarked: "its container has no source marker, so the page cannot find it",
+  before: "its container was made in a round before, and the page cannot find it",
+  otherwise: "its container is new this round (a copy, a layer put back or a new Stack), so the page has no marker to find it by",
+};
 
 /**
  * The page as a check reads it at one width: the page itself (`own`), or a
@@ -81,12 +104,86 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
     return { own: parts.some((part) => within(part, pageWidth)), others: parts.filter((part) => !within(part, pageWidth)).map(widthIn) };
   }
   if (change.kind === "move" && !(change.after as Place).absolute) return { own: true, others: [] };
-  const { loc, chain } = change.target;
-  const sameLayer = (other: Change) => other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain);
-  const ownRanges = loc ? round.filter((other) => other.breakpoint && other.property === change.property && sameLayer(other)).map((other) => other.breakpoint!) : [];
+  // A new layer in its container's layout is there or not at every width alike; placed absolute, it is placed at each.
+  if (change.kind === "create" && !placeOfMade(change, round).absolute) return { own: true, others: [] };
+  const { loc, chain, made: madeAs } = change.target;
+  const sameLayer = (other: Change) => (madeAs ? other.layer === change.layer : other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain));
+  const ownRanges = loc || madeAs ? round.filter((other) => other.breakpoint && other.property === change.property && sameLayer(other)).map((other) => other.breakpoint!) : [];
   const placesNothing = change.placedOtherwiseAt ?? [];
   const covered = (width: number) => [...ownRanges, ...placesNothing].some((range) => within(range, width));
   return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
+}
+
+/** What the page shows where a layer made this round is to be, and is not (ticket 76). */
+export interface MadeMissing {
+  /** What it is, and new text's words, as the page looks for it: of any tag (the canvas's `<div>` or `<p>` is the editor's, not the designer's). */
+  type: Created["type"];
+  words?: string;
+  /** Which of its container's layers it is to be, from 1; a range, as the page may still have layers the round takes out, or not yet those it puts in. Null: placed absolute. */
+  nth: [number, number] | null;
+  /** What is there instead, as an opening tag and its words: none, nothing. */
+  there: string | null;
+}
+
+/** A layer made this round, looked for on the page: its elements, or what is at its place instead, or why it cannot be told. */
+type Found = { els: Element[] } | { missing: MadeMissing } | { unchecked: string };
+
+/**
+ * The elements of a layer made this round (ticket 76), on the live page:
+ * where its change says, in its container (found by its marker, or made
+ * this round as well, found so), an element the container did not have
+ * before, of any tag, new text with its words. In a container's layout,
+ * among the layers the canvas has before it; placed absolute, any of the
+ * container's layers placed absolute. In every instance
+ * of the container. Found at more than one place in the source, which one is
+ * the layer cannot be told: the page does not guess.
+ */
+function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
+  const found = madeLayer(id, round);
+  if (!found) return { unchecked: "the layer cannot be found on the page" };
+  const { maker, place } = found;
+  const created = maker.after as Created;
+  const { target } = place.container;
+  const outer: Found = target.made ? findMade(doc, target.made, round) : { els: elementsOf(doc, target) };
+  if ("unchecked" in outer) return outer;
+  if ("missing" in outer || !outer.els.length) return { unchecked: "its container is not on the page now" };
+  const written = round.filter((change) => change.kind === "text" && change.layer === id).at(-1)?.after as string | undefined;
+  const words = created.type === "text" ? spaced(written ?? created.text ?? "") : undefined;
+  const among = maker.among;
+  const range: [number, number] | null = place.absolute ? null : among ? [among.before, among.before + among.maybe] : [place.nth - 1, place.nth - 1];
+  const els: Element[] = [];
+  for (const container of outer.els) {
+    const layers = [...container.children].filter((el) => !NOT_DRAWN.has(el.localName));
+    // Not a layer the container had before this round: of the elements that look so, as many as it had are its own (tag and words, `signOf`).
+    const counts = new Map<string, number>();
+    for (const el of layers) counts.set(signOf(el), (counts.get(signOf(el)) ?? 0) + 1);
+    for (const sign of among?.signs ?? []) counts.set(sign, (counts.get(sign) ?? 0) - 1);
+    const matches = (el: Element) => (words === undefined || spaced(el.textContent ?? "") === words) && counts.get(signOf(el))! > 0;
+    const here = range ? layers.slice(range[0], range[1] + 1).filter(matches) : layers.filter((el) => matches(el) && /^(absolute|fixed)$/.test(getComputedStyle(el).position));
+    if (!here.length) {
+      const there = range ? layers[range[0]] : undefined;
+      return { missing: { type: created.type, ...(words !== undefined && { words }), nth: range && [range[0] + 1, range[1] + 1], there: there ? described(there) : null } };
+    }
+    els.push(...here);
+  }
+  // Rendered more than once from one place in the source (a loop, a component) is one layer; from several, the page cannot tell which.
+  const places = [...new Set(els.map((el) => originOf(el, readUsageChain(el)).loc))];
+  if (places.length > 1) {
+    const where = places.map((loc) => (loc ? `\`${loc}\`` : "one with no source marker"));
+    return { unchecked: `${els.length} elements at its place match it, written at ${places.length} places in the source (${where.join(", ")}): the page does not guess which is the layer` };
+  }
+  return { els };
+}
+
+/** Words as a reader takes them, white space run together. */
+function spaced(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** An element as the Agent finds it: its opening tag, and its words. */
+function described(el: Element): string {
+  const words = spaced(el.textContent ?? "").slice(0, SIGN_WORDS);
+  return `${openingTag(el)}${words ? ` reading “${words}”` : ""}`;
 }
 
 function within({ min, max }: Breakpoint, width: number): boolean {
@@ -102,8 +199,8 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * breakpoint changed on its own keeps its value. `sources`: a style change
  * not shown says what sets the value shown instead too.
  */
-export function checkAcross(doc: Document, change: Change, round: Change[], viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
-  const reason = uncheckable(change);
+export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
+  const reason = uncheckable(change, round);
   if (reason) return { outcome: "unchecked", reason };
   const page = itself(doc);
   const { own, others } = widthsOf(change, round, page.width, viewWidths);
@@ -113,7 +210,7 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
   const apart = ownValues(change, round);
   let checked = false;
   if (own) {
-    const result = lookAt(doc, change, apart, page, sources);
+    const result = lookAt(doc, change, round, apart, page, sources);
     if (result.outcome !== "shown") return result;
     checked = true;
   }
@@ -126,7 +223,7 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
     if (change.breakpoint && !copy.doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
       return { outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
     }
-    const result = lookAt(doc, change, apart, copy, sources);
+    const result = lookAt(doc, change, round, apart, copy, sources);
     // Not there at this width at all: nothing to show there.
     if (result.outcome === "unchecked") continue;
     if (result.outcome === "not shown") return result;
@@ -141,16 +238,16 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
  * page to bring up to date. Null when the change is not to show at that
  * width, and is looked at on copies of the page only.
  */
-export function checkHere(doc: Document, change: Change, round: Change[], viewWidths: number[]): CheckResult | null {
-  if (uncheckable(change)) return null;
+export function checkHere(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[]): CheckResult | null {
+  if (uncheckable(change, round)) return null;
   const page = itself(doc);
-  return widthsOf(change, round, page.width, viewWidths).own ? lookAt(doc, change, ownValues(change, round), page) : null;
+  return widthsOf(change, round, page.width, viewWidths).own ? lookAt(doc, change, round, ownValues(change, round), page) : null;
 }
 
-/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. */
-export function checkChange(doc: Document, change: Change, round: Change[] = []): CheckResult {
-  const reason = uncheckable(change);
-  return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, ownValues(change, round), itself(doc));
+/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. `round`: the changes of its round, placed on its canvas. */
+export function checkChange(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
+  const reason = uncheckable(change, round);
+  return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, round, ownValues(change, round), itself(doc));
 }
 
 /**
@@ -169,10 +266,10 @@ function ownValues(change: Change, round: Change[]): string[] {
  * `doc`, read where `at` shows it. A change to a component, but in the usages
  * `apart`. `sources`: a style change not shown says what sets the value there.
  */
-function lookAt(doc: Document, change: Change, apart: string[], at: PageWidth, sources = false): CheckResult {
+function lookAt(doc: Document, change: Change, round: RoundOnCanvas, apart: string[], at: PageWidth, sources = false): CheckResult {
   // A change at a breakpoint is looked at at a width in its range: which one does not matter, but for a range in parts (ticket 65).
   const width = at.own || (change.breakpoint && !change.parts) ? undefined : at.width;
-  const result = look(doc, change, apart, at, sources);
+  const result = look(doc, change, round, apart, at, sources);
   return result.outcome === "not shown" && width !== undefined ? { ...result, width } : result;
 }
 
@@ -188,11 +285,19 @@ export function valueOn(doc: Document, change: Change, at: PageWidth): unknown {
   return el ? readValue(el, change.property as Property) : undefined;
 }
 
-function look(doc: Document, change: Change, apart: string[], at: PageWidth, sources: boolean): CheckResult {
+function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string[], at: PageWidth, sources: boolean): CheckResult {
   if (change.kind === "delete") return lookDeleted(doc, change, at);
   if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, at) : lookOrder(doc, change);
+  if (change.kind === "create") return lookMade(doc, change, round, at);
   const property = change.property as Property;
-  const els = styledBy(doc, change, apart, at);
+  let els: Element[];
+  if (change.target.made) {
+    // A layer made this round: found where its change puts it (ticket 76).
+    const found = findMade(doc, change.target.made, round);
+    if ("unchecked" in found) return { outcome: "unchecked", reason: found.unchecked };
+    if ("missing" in found) return { outcome: "unchecked", reason: `the layer is new this round, and not at its place on the page (change ${makerOf(change.target.made, round)!.id})` };
+    els = found.els.map((el) => at.of(el)).filter((el): el is Element => !!el);
+  } else els = styledBy(doc, change, apart, at);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const margins = marginsFor(change, at);
   const [result, wrong] = margins && change.after !== null && PLACING.includes(property) ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins) : lookStyle(els, property, change.after, at);
@@ -260,9 +365,30 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
   const els = elementsOf(doc, change.target)
     .map((el) => at.of(el))
     .filter((el): el is Element => !!el);
+  return placedThere(els, (change.after as Place).absolute!, marginsFor(change, at));
+}
+
+/**
+ * The layer a `create` change makes (ticket 76), found where it puts it:
+ * new text with its words, its container's layer the canvas has it as, or,
+ * placed absolute, placed where the canvas has it (its X and Y as
+ * the designer last set them). `actual`, not found: what is there instead
+ * (`MadeMissing`); placed elsewhere, as for a move placed absolute.
+ */
+function lookMade(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): CheckResult {
+  const found = findMade(doc, change.layer, round);
+  if ("unchecked" in found) return { outcome: "unchecked", reason: found.unchecked };
+  if ("missing" in found) return { outcome: "not shown", actual: found.missing };
+  const { absolute: placed } = placeOfMade(change, round);
+  if (!placed) return { outcome: "shown" };
+  const els = found.els.map((el) => at.of(el)).filter((el): el is Element => !!el);
+  const latest = (axis: "x" | "y") => round.filter((other) => other.kind === "style" && other.layer === change.layer && other.property === axis && !other.breakpoint).at(-1)?.after as number | undefined;
+  return placedThere(els, { x: latest("x") ?? placed.x, y: latest("y") ?? placed.y }, null);
+}
+
+/** Whether every one of `els` is placed absolute in its container, drawn at `to`; with no elements, it cannot be told. */
+function placedThere(els: Element[], { x, y }: { x: number; y: number }, margins: CanvasMargins | null): CheckResult {
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-  const { x, y } = (change.after as Place).absolute!;
-  const margins = marginsFor(change, at);
   for (const el of els) {
     const style = getComputedStyle(el);
     if (!/^(absolute|fixed)$/.test(style.position)) return { outcome: "not shown", actual: null };

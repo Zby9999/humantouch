@@ -2,6 +2,7 @@
 import type { Place, SavedChangeSet, Target } from "./client/changeset";
 import type { Snippet } from "./source-snippet";
 import type { StyleSource } from "./client/style-source";
+import type { UsageLevel } from "./client/usage-chain";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__THIRD_KIND__";
@@ -128,10 +129,25 @@ export type CheckResult =
    * shown that wide, when not as wide as the page's window. `sources`: of a
    * style change carried over from a round before, what sets that value on
    * the page, read where `actual` is, as `claim` asks (ticket 68).
+   * `otherUsages`: the layer shows the change, but other usages of its
+   * component do too, the change being for one usage alone (ticket 77);
+   * `actual` is then the layer's own value.
    */
-  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[] }
-  /** `anyPage`: no page could check it either (a brief, a layer new this round): not worth waiting for another. */
+  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[]; otherUsages?: OtherUsageChanged[] }
+  /** `anyPage`: no page could check it either (a brief, a copy made this round): not worth waiting for another. */
   | { outcome: "unchecked"; reason: string; anyPage?: true };
+
+/**
+ * Another usage of a component on the page whose value of a change's property
+ * is not what it was as the round was claimed, the change being for one usage
+ * of the component alone (ticket 77): the usage, by its usage chain, innermost
+ * first; its value then (`was`) and now (`is`), in design language.
+ */
+export interface OtherUsageChanged {
+  chain: UsageLevel[];
+  was: unknown;
+  is: unknown;
+}
 
 /**
  * How a page checked change `id`, at `at` (an ISO date). `answers`: the key

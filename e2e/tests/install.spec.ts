@@ -66,7 +66,10 @@ test("as installed, the page loads only the toggle, under 10KB gzipped as Vite s
     // From node_modules as published, not bundled again by Vite's dependency optimizer.
     const ours = (await loaded.all()).filter((script) => script.url.includes("/node_modules/03kind/dist/"));
     expect(ours.length).toBeGreaterThan(0);
-    expect(gzipped(ours.map((script) => codeOf(script.text)))).toBeLessThanOrEqual(TOGGLE_BUDGET);
+    const served = gzipped(ours.map((script) => codeOf(script.text)));
+    // In the output, to compare with the budget from one ticket to the next.
+    console.log(`toggle as Vite serves it: ${served} B gzipped of ${TOGGLE_BUDGET} B`);
+    expect(served).toBeLessThanOrEqual(TOGGLE_BUDGET);
     expect(ours.some((script) => script.text.includes(EXIT_LABEL))).toBe(false);
 
     await toggle.click();

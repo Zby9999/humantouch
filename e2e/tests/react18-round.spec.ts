@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKindFolder } from "./project-files";
+import { CARD_EDITED, clearThirdKindFolder, forTheLoopAlone } from "./project-files";
 
 /** A round on the React 18 + Tailwind v3 example, saved into its `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -19,7 +19,7 @@ test.beforeEach(async () => {
   clearThirdKindFolder(THIRD_KIND_FOLDER);
   // A test that edits Card.tsx puts it back, but the dev server's watcher may see that late: till then a page loaded
   // would still get the edit, bg-brand-50, the very color the tablet view test sets, and its fill would change nothing.
-  await expect.poll(async () => (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text()).toContain(" bg-white ");
+  await expect.poll(async () => ((text) => text.includes(" bg-white ") && !CARD_EDITED.test(text))(await (await fetch(`${REACT18_URL}/src/components/Card.tsx`)).text())).toBe(true);
 });
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
@@ -168,7 +168,7 @@ test("a whole round: claim locks the editor, done checks the fill on the page on
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");
 
     // As the Agent does: the project's Variable, not the hex value.
-    writeFileSync(CARD, original.replace(" bg-white ", " bg-brand-50 "));
+    writeFileSync(CARD, forTheLoopAlone(original, " bg-white ", " bg-brand-50 "));
 
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress).toHaveAttribute("aria-valuenow", "1");

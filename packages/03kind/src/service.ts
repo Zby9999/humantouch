@@ -14,6 +14,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { PutBack } from "./client/changeset";
+import { CLAIM_PATH, CODE_QUIET_MS } from "./client/code-changes";
 import { readProjectBreakpoints } from "./project-breakpoints";
 import { snippetAt } from "./source-snippet";
 import {
@@ -27,6 +28,7 @@ import {
   UNLOCK_PATH,
   VARIABLES_PATH,
   type CheckReport,
+  type CodeSnapshot,
   type SavedOffCanvasLayer,
   type OffCanvasSaveAnswer,
   type RoundStatus,
@@ -40,10 +42,12 @@ import {
   readOffCanvas,
   readState,
   roundStatus,
+  snapshotCode,
   thirdKindFolder,
   writeAtomically,
   writeChecks,
   writeOffCanvas,
+  writeState,
   type Checks,
 } from "./third-kind-folder";
 import { readVariables } from "./variables";
@@ -53,11 +57,17 @@ const MAX_BODY = 64 * 1024 * 1024;
 /** How often the state file is looked at: the command line changes it from another process. */
 const WATCH_MS = 100;
 
+/** The code as it rested, kept while a round is edited: how many it keeps. */
+const RESTED_KEPT = 5;
+
 export interface Service extends ServiceConfig {
+  /** A file of the project changed, as the dev server's watcher says (`.03kind/` aside). */
+  codeChanged(): void;
   close(): Promise<void>;
 }
 
-export async function startService({ root }: { root: string }): Promise<Service> {
+/** `quietMs`: how long the code is to be still before it counts as at rest. */
+export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: string; quietMs?: number }): Promise<Service> {
   const files = thirdKindFolder(root);
   const token = randomBytes(32).toString("hex");
 
@@ -93,6 +103,35 @@ export async function startService({ root }: { root: string }): Promise<Service>
     queue = queue.then(() => updateChecks()).catch((error) => console.error("03Kind:", error));
   };
 
+  /**
+   * The code each time it rested while a round was edited, and not claimed:
+   * a round the page claims (ticket 78) was claimed after the Agent began to
+   * edit, so `last` goes back to the code as it was before the run of changes
+   * the page saw a change of the round in. `at`: when it was read, the code
+   * still since. Taken as the round is first saved, then each time the code
+   * rests after a change, as long as the round is edited.
+   */
+  let rested: { at: number; code: CodeSnapshot | null }[] = [];
+  /** Changes to the code seen so far, and as of the code rested last. */
+  let edits = 0;
+  let restedEdits = -1;
+  let resting: ReturnType<typeof setTimeout> | undefined;
+  const takeRested = async () => {
+    if (restedEdits === edits || !existsSync(files.changeSet) || existsSync(files.state)) return;
+    const [at, before] = [Date.now(), edits];
+    const code = await snapshotCode(root);
+    // Changed again while it was read: not the code at rest.
+    if (edits !== before) return;
+    restedEdits = before;
+    rested = [...rested.slice(1 - RESTED_KEPT), { at, code }];
+  };
+  const codeChanged = () => {
+    edits++;
+    clearTimeout(resting);
+    resting = setTimeout(() => void takeRested().catch((error) => console.error("03Kind:", error)), quietMs);
+    resting.unref();
+  };
+
   /** `body`: read in full before the request takes its turn, so a slow one holds up no other. */
   const handle = async (req: IncomingMessage, res: ServerResponse, path: string, body: string) => {
     const route = `${req.method} ${path}`;
@@ -123,6 +162,8 @@ export async function startService({ root }: { root: string }): Promise<Service>
         await writeAtomically(files.changeSet, `${JSON.stringify(round.changeSet, null, 2)}\n`);
         // Not claimed: no checks yet, whatever an earlier round left.
         await updateChecks((checks) => void (checks.results = {}));
+        // The code as it is now, unless it is at rest as read already: a round the page claims may go back to it.
+        void takeRested().catch((error) => console.error("03Kind:", error));
         return send(res, 204);
       }
       case `DELETE ${ROUND_PATH}`:
@@ -189,10 +230,22 @@ export async function startService({ root }: { root: string }): Promise<Service>
         // The editor layer keeps each with its layer: it goes with it when put back, and comes back with it when that is undone.
         return send(res, 200, JSON.stringify({ snippets: Object.fromEntries(layers.map((layer) => [layer.id, layer.origin.snippet ?? null])) } satisfies OffCanvasSaveAnswer));
       }
+      case `POST ${CLAIM_PATH}`: {
+        // A page saw a change of the round show, the Agent applying it with no claim (ticket 78). Claimed already, it stays as it is.
+        if (!existsSync(files.changeSet)) return send(res, 409);
+        if (await readState(files)) return send(res, 204);
+        const { since } = JSON.parse(body || "{}") as { since?: number };
+        // The code as it rested before the run the page saw it in; failing that, as it is now.
+        const before = typeof since === "number" ? rested.filter((one) => one.at <= since).at(-1) : undefined;
+        await writeState(files, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: before ? before.code : await snapshotCode(root) });
+        rested = [];
+        broadcast();
+        return send(res, 204);
+      }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 
@@ -228,7 +281,9 @@ export async function startService({ root }: { root: string }): Promise<Service>
   return {
     url: `http://127.0.0.1:${port}`,
     token,
+    codeChanged,
     close: () => {
+      clearTimeout(resting);
       unwatchFile(files.state);
       for (const res of listeners) res.end();
       return new Promise((resolve) => server.close(() => resolve()));

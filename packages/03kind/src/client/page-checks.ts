@@ -8,14 +8,20 @@
  * edited before the ask has reached the page, as far as the dev server can
  * say, and then had a moment to show.
  *
+ * A change for one usage of a component alone is not shown, though its layer
+ * shows it, where the component's other usages show its property otherwise
+ * than when the page began to check (ticket 77, `other-usages.ts`).
+ *
  * Looking is spread out so it never holds the page up for long: as many
  * changes as fit in a short slice of time, the rest after the page has had a turn.
  */
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
 import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
-import { codeUpdates } from "./code-changes";
+import { codeUpdates, sliced } from "./code-changes";
+import { otherUsagesChanged, looksAtOtherUsages, noteOtherUsages, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
+import type { RoundOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
 
 export interface PageChecks {
@@ -26,8 +32,8 @@ export interface PageChecks {
 
 interface Options {
   window: Window;
-  /** The claimed round's changes. */
-  changes: Change[];
+  /** The claimed round's changes, placed on its canvas as saved: where its new layers are (ticket 76). */
+  changes: RoundOnCanvas;
   /** Says what the page saw of a change: as the code changed, or in answer to an ask. */
   report(report: CheckReport): void;
   /** The changes the page shows now, at every width each is to: each time they change. */
@@ -36,6 +42,13 @@ interface Options {
   viewWidths(): number[];
   /** Where the copies of the page at other widths go: apart from the page, so they never copy themselves. */
   copiesIn(): ParentNode;
+  /**
+   * What the components' other usages showed of each change for one usage
+   * alone, by its id, as the page first looked (ticket 77): kept by the
+   * caller for as long as the round is claimed, so a page that checks it
+   * anew, the round read again, still goes by what they showed at the claim.
+   */
+  otherUsages?: Map<number, OtherUsagesNoted | null>;
 }
 
 /** The longest the page looks in one go before it lets the page have a turn. */
@@ -51,17 +64,27 @@ const QUIET_MS = 500;
 
 /**
  * Checks the round on `window`'s page till stopped. A change the page cannot
- * check at all (a brief, a layer new this round) it never looks at by itself:
+ * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn }: Options): PageChecks {
+export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map() }: Options): PageChecks {
   const doc = win.document;
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
   /** What was last said of each change as the code changed, to say it again only when it changes. */
   const said = new Map<number, string>();
-  const checkable = changes.filter((change) => !uncheckable(change));
+  const checkable = changes.filter((change) => !uncheckable(change, changes));
   const copies = new Map<number, PageCopy>();
+  const noted = (change: Change) => others.has(change.id) || !looksAtOtherUsages(change);
+  const note = (change: Change) => others.set(change.id, noteOtherUsages(doc, change, changes, win.innerWidth));
+  /** Shown on its layer (or not looked at there, at this width): not shown after all where other usages of its component show it too. */
+  const orAtOtherUsages = (change: Change, result: CheckResult | null): CheckResult | null => {
+    if (result && result.outcome !== "shown") return result;
+    if (!noted(change)) note(change);
+    const changed = otherUsagesChanged(doc, change, others.get(change.id) ?? null, win.innerWidth);
+    observer.takeRecords();
+    return changed.length ? { outcome: "not shown", actual: change.after, otherUsages: changed } : result;
+  };
   /** The copies laid out as they are since they last changed. */
   const laidOut = new Set<number>();
   let stopped = false;
@@ -103,13 +126,13 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     return { width, doc: copy.doc, own: false, of: copy.of };
   };
   /** Looks at `change` now; what looking puts in the page is not the code changing. `sources`: not shown, what sets the value shown instead too. */
-  const check = (change: Change, sources = false): CheckResult => measured(change, () => lookNow(change, sources));
+  const check = (change: Change, sources = false): CheckResult => measured(change, () => orAtOtherUsages(change, lookNow(change, sources))!);
   /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
   const checkAgain = (change: Change): CheckResult | null =>
     measured(change, () => {
       const result = checkHere(doc, change, changes, viewWidths());
       observer.takeRecords();
-      return result;
+      return orAtOtherUsages(change, result);
     });
   const measured = <T,>(change: Change, look: () => T): T => {
     const start = performance.now();
@@ -163,6 +186,12 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       const start = performance.now();
       while (todo.length) {
         const change = todo[0];
+        // What the other usages of its component show, noted first: before the code changes, if it may (ticket 77).
+        if (!noted(change)) {
+          measured(change, () => note(change));
+          if (performance.now() - start > SLICE_MS) return later(slice, 0);
+          continue;
+        }
         if (shown.has(change.id)) {
           todo.shift();
           // Undone by a later edit, it is not shown: looked at at every width again from now on.
@@ -340,7 +369,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
         });
       for (const id of ask.ids) {
         const change = changes.find((c) => c.id === id);
-        const reason = change ? uncheckable(change) : "the page does not have this round";
+        const reason = change ? uncheckable(change, changes) : "the page does not have this round";
         if (!change || reason) answer(id, { outcome: "unchecked", reason: reason!, ...(change && { anyPage: true as const }) });
         // Shown already: looked at again, at once, as a later edit may have undone it.
         else if (shown.has(id))
@@ -361,4 +390,24 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       for (const copy of copies.values()) copy.close();
     },
   };
+}
+
+/**
+ * Whether the page, as wide as its window, shows any of `changes`, the round
+ * not claimed: the Agent applying it with no claim (ticket 78). Looked at as
+ * the claimed round's check looks again (`checkHere`), on the round placed on
+ * its canvas as that is (ticket 76): only what the window shows, with no copy
+ * of the page at other widths to make; a change shown there is enough to tell
+ * the round is being applied. Looked at a slice at a time.
+ */
+export function showsAnyHere(doc: Document, changes: RoundOnCanvas, viewWidths: number[]): Promise<boolean> {
+  return sliced(
+    (function* () {
+      for (const change of changes) {
+        if (checkHere(doc, change, changes, viewWidths)?.outcome === "shown") return true;
+        yield;
+      }
+      return false;
+    })(),
+  );
 }

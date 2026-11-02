@@ -30,7 +30,7 @@ import type { Size } from "./client/property-table";
 import type { Axis } from "./client/snap";
 import { variablesLine } from "./variable-notes";
 import { writingRules } from "./writing-rules";
-import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, value } from "./design-values";
+import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -39,8 +39,8 @@ export interface NotesOptions {
   intro(count: string): string;
   /** A status line for each change, when there is one to give. */
   status?(change: Change): string;
-  /** What the notes end with, after the last change. */
-  end?(list: Change[]): string;
+  /** What the notes end with, after the last change, of the changes given (`list`) of the round (`round`). */
+  end?(list: Change[], round: Change[]): string;
   /** The changes to give, when not all of the round: the others are only referred to (a layer one of them made, say). */
   only?: Change[];
 }
@@ -71,7 +71,7 @@ export function describeChanges(list: Change[], root: string, options: NotesOpti
   const given = options.only ?? list;
   let notes = `# ${options.heading}\n\n${options.intro(changes(given.length))}\n\n`;
   for (const change of given) notes += section(change, list, root, options.status?.(change));
-  return notes + (options.end?.(given) ?? "");
+  return notes + (options.end?.(given, list) ?? "");
 }
 
 function section(change: Change, list: Change[], root: string, status: string | undefined): string {
@@ -390,7 +390,11 @@ function cell(place: Place): string {
 function placement(place: Place): string {
   if (!place.absolute) return `in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer${cell(place)}`;
   const { x, y } = place.absolute;
-  return `absolute in ${container(place)}, at X ${x}px and Y ${y}px from its top left (CSS \`left\` and \`top\`), which is to be its positioning reference (\`position: relative\`)`;
+  // The container is the positioning reference, not the layer: "which is to be" read as the layer was taken for both (ticket 76).
+  return (
+    `absolute in ${container(place)}, at X ${x}px and Y ${y}px from the container's top left (CSS \`left\` and \`top\`); ` +
+    "the container, not this layer, is the positioning reference: give the container `position: relative` if it has none"
+  );
 }
 
 /**
@@ -514,8 +518,13 @@ function moveIntent(change: Change): string {
   return `Take it ${from}, and place it absolute ${into}, at X ${x}px and Y ${y}px from the Frame's top left (CSS \`left\` and \`top\`). Make the Frame its positioning reference (\`position: relative\`) if it is not one already.`;
 }
 
-/** A Stack or Frame a move takes a layer from or to, as the Agent finds it: its name and element, where it is written, and in which usage. */
-function container({ container: { target } }: Place): string {
+/**
+ * A Stack or Frame a move takes a layer from or to, or a layer is made in, as
+ * the Agent finds it: its name and element, and, `located`, where it is
+ * written, and in which usage.
+ */
+export function container({ container: { target } }: Place, located = true): string {
+  if (!located) return `${target.context.path.at(-1)} (\`${target.context.element}\`)`;
   const where = target.loc ? `at \`${target.loc}\`` : `not located, at ${target.context.path.join(" › ")} on the page`;
   const [own] = target.chain;
   const usage = own?.usage && target.chain.length > 1 ? `, in ${own.component} used at \`${own.usage}\`` : "";
@@ -576,7 +585,7 @@ function scope({ chain, instances, locked, context }: Target): string {
   if (own.usage === null && !own.thirdParty) {
     return `**Usage not determined.** ${own.component} is used from code 03Kind could not locate. Change only the usage the layer is in, found from its place on the page${context.page ? ` at \`${context.page}\`` : ""} (Layer, above), and leave the other usages of ${own.component} as they are.`;
   }
-  const where = chain.map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`);
+  const where = chain.map(usedAt);
   let text = `This usage only: ${where[0]}${outer.length ? `, inside ${where.slice(1).join(", inside ")}` : ""}.`;
   if (instances > 1) text += ` It renders ${instances} instances, which change together.`;
   text += ` Other usages of ${own.component} stay as they are.`;
@@ -590,7 +599,7 @@ function scope({ chain, instances, locked, context }: Target): string {
  */
 function componentScope({ chain, loc }: Target): string {
   const [own, ...outer] = chain;
-  const where = [own.usage ? `\`${own.usage}\`` : "an undetermined place", ...outer.map((level) => `${level.component} used at ${level.usage ? `\`${level.usage}\`` : "an undetermined place"}`)];
+  const where = [usagePlace(own.usage), ...outer.map(usedAt)];
   return (
     `The component itself: ${own.component}. Change ${own.component} where it writes the layer, at Location (\`${loc}\`), so every usage of ${own.component} shows it, ` +
     `not only the usage the designer made it on (${where.join(", inside ")}). Changes listed for one usage only stay with that usage.`

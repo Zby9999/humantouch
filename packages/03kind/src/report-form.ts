@@ -8,7 +8,7 @@
  */
 import type { Change } from "./client/changeset";
 import type { CheckResult } from "./service-protocol";
-import { changeTitle, listed, propertyName, value } from "./design-values";
+import { changeTitle, otherUsagesWords, listed, otherUsagesWord, propertyName, value } from "./design-values";
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
 export const REPORT_RULES =
@@ -49,9 +49,13 @@ export function reportFor(changes: Change[], applied: number[], checks: Record<n
 /** What the page shows of a change it does not show, as the report's Why. */
 function pageShows(change: Change, check: CheckResult): string {
   if (check.outcome !== "not shown") return "<why it is not applied>";
+  // Shown on the layer, but at other usages of its component too (ticket 77).
+  if (check.otherUsages?.length) return `the page shows it at ${otherUsagesWord(change, check.otherUsages)} too, ${otherUsagesWords(change.property, check.otherUsages, false)}`;
   const at = check.width ? `at ${check.width}px wide, ` : "";
   if (change.kind === "delete") return `${at}the layer is still on the page`;
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;
+  // A new layer, not found where its change puts it, or found placed elsewhere (ticket 76).
+  if (change.kind === "create") return `${at}the page does not have it where the change puts it`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
 }

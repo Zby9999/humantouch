@@ -53,7 +53,7 @@ export interface ScenarioChange {
   kind: Change["kind"];
   /** What the page shows once it is applied, in words. */
   expect: string;
-  /** Whether the editor layer's page check can tell it (the Skill's list): not a new layer, a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief. */
+  /** Whether the editor layer's page check can tell it (the Skill's list): not a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief; a new layer is, by its place (ticket 76). */
   checkable: boolean;
   /** The Variable the notes name for it, as the code may write it (its Tailwind class, or its CSS variable): the bench looks for one of these in the lines the Agent added. */
   variable?: string[];
@@ -496,7 +496,7 @@ export const SCENARIOS: Scenario[] = [
       {
         kind: "create",
         expect: "The hero has the words “Works with any Agent.” below where the intro paragraph was.",
-        checkable: false,
+        checkable: true,
         shows: () => [...document.querySelectorAll('[data-testid="hero"] *')].some((el) => el.textContent?.trim() === "Works with any Agent." && el.children.length === 0),
       },
       {
@@ -618,7 +618,7 @@ export const SCENARIOS: Scenario[] = [
       {
         kind: "create",
         expect: "The hero has a new Frame where it was drawn (360 × 80px, within 4px), with a row of three partner logos in it.",
-        checkable: false,
+        checkable: true,
         shows: ({ change }) => {
           const hero = document.querySelector('[data-testid="hero"]')!;
           const box = hero.getBoundingClientRect();

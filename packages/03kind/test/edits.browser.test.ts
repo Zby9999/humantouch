@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
-import { createChangeSet, type Place } from "../src/client/changeset";
+import { createChangeSet, type Change, type Place } from "../src/client/changeset";
+import { placedOnCanvas } from "../src/client/moves";
 import { checkAcross, checkChange, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
@@ -20,6 +21,9 @@ import { fontsOf } from "../src/client/typography";
 import { CATCH_UP_AFTER_MS, createViews, type View } from "../src/client/views";
 import { bind, bindRecorded, resolveVariables, type Catalog } from "../src/client/variables";
 import type { Variable } from "../src/service-protocol";
+
+/** A round as the page checks it, placed on its canvas: with no new layer, no canvas to read. */
+const onCanvas = (round: Change[]) => placedOnCanvas(round, "");
 
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
@@ -3175,7 +3179,7 @@ describe("a brief on any layer", () => {
     const { doc, editor, changes, cards, layerOf } = openCanvas();
     editor.setBrief(layerOf(cards[0]), "Bounce back harder when pressed");
 
-    expect(await checkChange(doc, changes.list()[0])).toEqual({
+    expect(await checkChange(doc, changes.list()[0], onCanvas([changes.list()[0]]))).toEqual({
       outcome: "unchecked",
       reason: "a brief asks for what the Design panel cannot set, so the page has no value to check it by",
     });
@@ -3626,8 +3630,8 @@ describe("text styles are checked on the live page", () => {
     page.write(STRUCTURE.replace('style="margin: 0">One', 'style="margin: 0; line-height: 150%; font-size: 1.25rem">One'));
     page.close();
 
-    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
-    expect(await checkChange(page, changes.list()[1])).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[0], onCanvas([changes.list()[0]]))).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[1], onCanvas([changes.list()[1]]))).toEqual({ outcome: "shown" });
   });
 });
 
@@ -3643,7 +3647,7 @@ describe("a layer wrapped in a new element on its own line", () => {
     page.write(STRUCTURE.replace(`<p id="one" ${loc("11:7")} style="margin: 0">One</p>`, `<div ${loc("11:7")}><p id="one" ${loc("12:9")} style="margin: 0; font-size: 20px">One</p></div>`).replace(loc("12:7"), loc("13:7")));
     page.close();
 
-    expect(checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+    expect(checkChange(page, changes.list()[0], onCanvas([changes.list()[0]]))).toEqual({ outcome: "shown" });
   });
 });
 
@@ -3665,7 +3669,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
   const check = async (page: Document, change: Parameters<typeof checkChange>[1]) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      const result = checkChange(page, change);
+      const result = checkChange(page, change, onCanvas([change]));
       vi.advanceTimersByTime(CHECK_SETTLE_MS);
       return await result;
     } finally {
@@ -3703,7 +3707,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     const [change] = changes.list();
     write("border: 1px solid #ff0000");
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+    const checks = watchPage({ window: page.defaultView!, changes: onCanvas([change]), report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
 
     checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "ask-1" });
     write("border: 3px solid #ff0000");
@@ -3723,7 +3727,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     const [change] = changes.list();
     write("border: 3px solid #ff0000");
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+    const checks = watchPage({ window: page.defaultView!, changes: onCanvas([change]), report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
 
     checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "opening", sources: true });
     checks.ask({ ids: [change.id], at: new Date().toISOString(), key: "done" });
@@ -3744,7 +3748,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     const [change] = changes.list();
     const shown: number[][] = [];
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
+    const checks = watchPage({ window: page.defaultView!, changes: onCanvas([change]), report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
 
     write("border: 1.5px solid #ff0000");
     await expect.poll(() => shown.at(-1)).toEqual([change.id]);
@@ -3766,7 +3770,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     win.dispatchEvent(new Event(CODE_EVENT));
     const shown: number[][] = [];
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: win, changes: [change], report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
+    const checks = watchPage({ window: win, changes: onCanvas([change]), report: (r) => reports.push(r), onShown: (ids) => shown.push(ids), viewWidths: () => [], copiesIn: () => document.body });
 
     // The page's first look, before the page is drawn anew.
     await expect.poll(() => reports.at(-1)?.outcome).toBe("not shown");
@@ -3781,7 +3785,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
     const [change] = changes.list();
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: page.defaultView!, changes: [change], report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+    const checks = watchPage({ window: page.defaultView!, changes: onCanvas([change]), report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
 
     write("border: 1.5px solid #ff0000");
     await expect.poll(() => reports.at(-1)?.outcome).toBe("shown");
@@ -3860,7 +3864,7 @@ describe("changes to the structure are checked on the live page", () => {
     const check = async (change: (typeof changes.list extends () => (infer C)[] ? C : never)) => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
-        const result = checkChange(page, change);
+        const result = checkChange(page, change, onCanvas([change]));
         vi.advanceTimersByTime(CHECK_SETTLE_MS);
         return await result;
       } finally {
@@ -3888,14 +3892,14 @@ describe("changes to the structure are checked on the live page", () => {
 
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      const result = checkChange(page, changes.list()[0]);
+      const result = checkChange(page, changes.list()[0], onCanvas([changes.list()[0]]));
       vi.advanceTimersByTime(CHECK_SETTLE_MS);
       expect(await result).toEqual({ outcome: "not shown", actual: "no reference" });
     } finally {
       vi.useRealTimers();
     }
     page.getElementById("board")!.style.position = "relative";
-    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[0], onCanvas([changes.list()[0]]))).toEqual({ outcome: "shown" });
   });
 
   /** The board's tag with margins, 2px on its left and 6px on its top. */
@@ -3911,13 +3915,13 @@ describe("changes to the structure are checked on the live page", () => {
 
     // As the Agent writes it: `left` and `top` as given, its margins kept.
     Object.assign(tag.style, { position: "absolute", left: "40px", top: "30px" });
-    expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, placed, onCanvas([placed]))).toEqual({ outcome: "shown" });
     // Its margins taken off: drawn 2px and 6px off where the canvas draws it.
     tag.style.margin = "0px";
-    expect(checkChange(page, placed)).toEqual({ outcome: "not shown", actual: { x: 40, y: 30, margins: { x: 0, y: 0 } } });
+    expect(checkChange(page, placed, onCanvas([placed]))).toEqual({ outcome: "not shown", actual: { x: 40, y: 30, margins: { x: 0, y: 0 } } });
     // Their room put into `left` and `top`: drawn where the canvas draws it.
     Object.assign(tag.style, { left: "42px", top: "36px" });
-    expect(checkChange(page, placed)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, placed, onCanvas([placed]))).toEqual({ outcome: "shown" });
   });
 
   test("at the other views' widths, where the canvas's margins are not known, a layer with its margins put into its `left` and `top` is shown, as one that keeps them is", () => {
@@ -3930,9 +3934,9 @@ describe("changes to the structure are checked on the live page", () => {
     const viewWidth = (width: number): PageWidth => ({ width, doc: page, own: false, of: (el) => el });
 
     Object.assign(tag.style, { position: "absolute", left: "42px", top: "36px", margin: "0px" });
-    expect(checkAcross(page, placed, changes.list(), [390], viewWidth)).toEqual({ outcome: "shown" });
+    expect(checkAcross(page, placed, onCanvas(changes.list()), [390], viewWidth)).toEqual({ outcome: "shown" });
     Object.assign(tag.style, { left: "40px", top: "30px", margin: "6px 0 0 2px" });
-    expect(checkAcross(page, placed, changes.list(), [390], viewWidth)).toEqual({ outcome: "shown" });
+    expect(checkAcross(page, placed, onCanvas(changes.list()), [390], viewWidth)).toEqual({ outcome: "shown" });
   });
 
   test("the Y of an absolute layer is where the canvas draws it too: its `top`, past it by the top margin it keeps there", () => {
@@ -3944,11 +3948,11 @@ describe("changes to the structure are checked on the live page", () => {
     const tag = page.getElementById("tag") as HTMLElement;
 
     tag.style.top = "30px";
-    expect(checkChange(page, y)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, y, onCanvas([y]))).toEqual({ outcome: "shown" });
     tag.style.margin = "0px";
-    expect(checkChange(page, y)).toEqual({ outcome: "not shown", actual: { value: 30, margin: 0 } });
+    expect(checkChange(page, y, onCanvas([y]))).toEqual({ outcome: "not shown", actual: { value: 30, margin: 0 } });
     tag.style.top = "36px";
-    expect(checkChange(page, y)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, y, onCanvas([y]))).toEqual({ outcome: "shown" });
   });
 
   test("the `right` of a layer placed from its container's right edge is where the canvas draws it too: past it by the right margin it keeps there (ticket 75)", () => {
@@ -3963,14 +3967,14 @@ describe("changes to the structure are checked on the live page", () => {
     const tag = page.getElementById("tag") as HTMLElement;
 
     tag.style.right = "20px";
-    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, right, onCanvas([right]))).toEqual({ outcome: "shown" });
     tag.style.margin = "0px";
-    expect(checkChange(page, right)).toEqual({ outcome: "not shown", actual: { value: 20, margin: 0 } });
+    expect(checkChange(page, right, onCanvas([right]))).toEqual({ outcome: "not shown", actual: { value: 20, margin: 0 } });
     tag.style.right = "24px";
-    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, right, onCanvas([right]))).toEqual({ outcome: "shown" });
     // Placed by its left instead, where the canvas draws it all the same: its `right` is not the one given.
     Object.assign(tag.style, { right: "auto", left: `${page.getElementById("board")!.clientWidth - 24 - tag.offsetWidth}px` });
-    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, right, onCanvas([right]))).toEqual({ outcome: "shown" });
   });
 
   /**
@@ -4011,10 +4015,10 @@ describe("changes to the structure are checked on the live page", () => {
     // Not as the notes say: placed by its left, where the canvas draws it as wide as the window, 800px.
     const byLeft = "left: 740px; right: auto; width: 40px";
     (page.getElementById("tag") as HTMLElement).style.cssText = byLeft;
-    expect(checkChange(page, right)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, right, onCanvas([right]))).toEqual({ outcome: "shown" });
     // At the phone's width, the canvas has it 20px from the right; the page, 390px off it.
     const phone = pageAt(fromTheRight().replace("</style>", `#tag { ${byLeft} }</style>`), 390);
-    expect(checkAcross(page, right, changes.list(), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: -390, margin: 0 }, width: 390 });
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: -390, margin: 0 }, width: 390 });
   });
 
   test("a layer the canvas places from its left edge in a view, as the page's breakpoints say: its `right` places nothing there, and is not looked at in the view's range, the page's window there or not (ticket 75)", async () => {
@@ -4031,7 +4035,7 @@ describe("changes to the structure are checked on the live page", () => {
     // As the notes say, at every width; the page's own CSS places it by its left below 500px still.
     page.getElementById("tag")!.setAttribute("style", "right: 20px; width: 40px");
     const phone = pageAt(html.replace("</style>", "#tag { right: 20px; width: 40px } @media (max-width: 500px) { #tag { left: 8px; right: auto } }</style>"), 390);
-    expect(checkAcross(page, right, changes.list(), [390], () => phone)).toEqual({ outcome: "shown" });
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown" });
     // Looked at as wide as the page's window only.
     expect(widthsOf(right, changes.list(), 800, [390])).toEqual({ own: true, others: [] });
     expect(widthsOf(right, changes.list(), 390, [390])).toEqual({ own: false, others: [] });
@@ -4045,10 +4049,10 @@ describe("changes to the structure are checked on the live page", () => {
     // The Agent deletes it: the next paragraph moves up to its line.
     page.getElementById("one")!.remove();
     page.getElementById("two")!.setAttribute("data-tk-loc", "src/App.tsx:11:7");
-    expect(await checkChange(page, deleted)).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, deleted, onCanvas([deleted]))).toEqual({ outcome: "shown" });
 
     page.getElementById("flow")!.remove();
-    expect(await checkChange(page, deleted)).toEqual({ outcome: "unchecked", reason: "its container is not on the page now" });
+    expect(await checkChange(page, deleted, onCanvas([deleted]))).toEqual({ outcome: "unchecked", reason: "its container is not on the page now" });
   });
 
   test("checked: shown once the page's own markup has the change; a deletion not yet made is not", async () => {
@@ -4062,19 +4066,19 @@ describe("changes to the structure are checked on the live page", () => {
     page.getElementById("list")!.prepend(page.getElementById("c")!);
     Object.assign((page.getElementById("tag") as HTMLElement).style, { position: "absolute", left: "40px", top: "30px" });
     page.getElementById("board")!.style.position = "relative";
-    expect(await checkChange(page, reorder)).toEqual({ outcome: "shown" });
-    expect(await checkChange(page, placed)).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, reorder, onCanvas([reorder]))).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, placed, onCanvas([placed]))).toEqual({ outcome: "shown" });
 
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      const result = checkChange(page, deleted);
+      const result = checkChange(page, deleted, onCanvas([deleted]));
       vi.advanceTimersByTime(CHECK_SETTLE_MS);
       expect(await result).toEqual({ outcome: "not shown", actual: "there" });
     } finally {
       vi.useRealTimers();
     }
     page.getElementById("b")!.remove();
-    expect(await checkChange(page, deleted)).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, deleted, onCanvas([deleted]))).toEqual({ outcome: "shown" });
   });
 });
 
@@ -4760,15 +4764,15 @@ describe("breakpoints", () => {
 
     const wide = livePage(1000, applied);
     const shown = copiesOf(wide);
-    expect(checkAcross(wide, change, changes.list(), [768, 390], shown.at)).toEqual({ outcome: "shown" });
+    expect(checkAcross(wide, change, onCanvas(changes.list()), [768, 390], shown.at)).toEqual({ outcome: "shown" });
     expect(shown.widths).toEqual([799]);
     const page = livePage(1000, "");
-    expect(checkAcross(page, change, changes.list(), [768, 390], copiesOf(page).at)).toEqual({ outcome: "not shown", actual: null });
-    expect(checkAcross(page, change, changes.list(), [768, 390], () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], copiesOf(page).at)).toEqual({ outcome: "not shown", actual: null });
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], () => null)).toEqual({ outcome: "unchecked", reason: "it applies below 800px only, and the page could not be shown 799px wide to check it" });
     // The window in the range already: checked on the page as it is.
     const narrowPage = livePage(700, applied);
     const narrow = copiesOf(narrowPage);
-    expect(checkAcross(narrowPage, change, changes.list(), [768, 390], narrow.at)).toEqual({ outcome: "shown" });
+    expect(checkAcross(narrowPage, change, onCanvas(changes.list()), [768, 390], narrow.at)).toEqual({ outcome: "shown" });
     expect(narrow.widths).toEqual([]);
   });
 
@@ -4782,15 +4786,15 @@ describe("breakpoints", () => {
 
     const allOfIt = livePage(1000, "@media (width < 768px) { #board { background-color: rgb(255, 0, 0) } }");
     const shown = copiesOf(allOfIt);
-    expect(checkAcross(allOfIt, change, round, [390], shown.at)).toEqual({ outcome: "shown" });
+    expect(checkAcross(allOfIt, change, onCanvas(round), [390], shown.at)).toEqual({ outcome: "shown" });
     expect(shown.widths).toEqual([639, 640]);
     // Below 640px only: the part from 640px is not.
     const partOfIt = livePage(1000, "@media (width < 640px) { #board { background-color: rgb(255, 0, 0) } }");
-    expect(checkAcross(partOfIt, change, round, [390], copiesOf(partOfIt).at)).toEqual({ outcome: "not shown", actual: null, width: 640 });
+    expect(checkAcross(partOfIt, change, onCanvas(round), [390], copiesOf(partOfIt).at)).toEqual({ outcome: "not shown", actual: null, width: 640 });
     // The window in one part: the page itself there, a copy for the other.
     const narrow = livePage(700, "@media (width < 768px) { #board { background-color: rgb(255, 0, 0) } }");
     const inPart = copiesOf(narrow);
-    expect(checkAcross(narrow, change, round, [390], inPart.at)).toEqual({ outcome: "shown" });
+    expect(checkAcross(narrow, change, onCanvas(round), [390], inPart.at)).toEqual({ outcome: "shown" });
     expect(inPart.widths).toEqual([639]);
   });
 
@@ -4849,7 +4853,7 @@ describe("breakpoints", () => {
     const page = livePage(1000, css);
     const { at, widths } = copiesOf(page);
 
-    expect(checkAcross(page, change, changes.list(), [768, 390], at)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 });
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 });
     expect(widths).toEqual([768, 390]);
 
     // Changed in the phone view too, the board keeps that value below 800px: not looked at there.
@@ -4857,7 +4861,7 @@ describe("breakpoints", () => {
     editor.set(layer("board"), "fill", { type: "solid", color: "#FFFFFF", opacity: 1 });
     const desktopChange = changes.list().find((c) => !c.breakpoint)!;
     const again = copiesOf(page);
-    expect(checkAcross(page, desktopChange, changes.list(), [768, 390], again.at)).toEqual({ outcome: "shown" });
+    expect(checkAcross(page, desktopChange, onCanvas(changes.list()), [768, 390], again.at)).toEqual({ outcome: "shown" });
     expect(again.widths).toEqual([]);
   });
 
@@ -5871,8 +5875,8 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     // The live page, as the Agent writes the text's styles on the button.
     page.write(BOXES_PAGE.replace("font: inherit\">Close", "font: inherit; font-size: 20px; color: rgb(255, 255, 0)\">Close"));
     page.close();
-    expect(await checkChange(page, changes.list()[0])).toEqual({ outcome: "shown" });
-    expect(await checkChange(page, changes.list()[1])).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[0], onCanvas([changes.list()[0]]))).toEqual({ outcome: "shown" });
+    expect(await checkChange(page, changes.list()[1], onCanvas([changes.list()[1]]))).toEqual({ outcome: "shown" });
   });
 
   test("undone and redone, a change to the text is the text's still, and the text is what is left selected", () => {
@@ -6114,6 +6118,161 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
 
     expect([at("marked").kind, at("marked").children]).toEqual(["text", []]);
     expect([at("close").kind, at("close").children.map((child) => child.kind)]).toEqual(["frame", ["text"]]);
+  });
+});
+
+describe("layers made this round are found on the live page at their place, and checked there (ticket 76)", () => {
+  /** The round as the page checks it: its changes, as saved, each new layer's with where it is on the canvas as saved. */
+  const savedOf = (doc: Document, changes: { save(): { changes: Change[] } }) =>
+    placedOnCanvas(JSON.parse(JSON.stringify(changes.save().changes)), serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }));
+  const open = (page = STRUCTURE) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    return { ...canvas, layer, saved: () => savedOf(canvas.doc, canvas.changes) };
+  };
+  /** The live page: `page` as the Agent has written it. */
+  const livePage = (page: string) => {
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(page);
+    doc.close();
+    return doc;
+  };
+  const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  /** A Frame drawn in the list's layout, 2nd, filled red with 4px corners. */
+  const frameInTheList = () => {
+    const canvas = open();
+    const frame = canvas.editor.create("frame", { parent: canvas.layer("list"), index: 1 }, { width: 120, height: 40 });
+    canvas.editor.set(canvas.editor.tree().layerOf(frame.el)!, "fill", RED);
+    canvas.editor.set(canvas.editor.tree().layerOf(frame.el)!, "radius", 4);
+    return canvas;
+  };
+  /** STRUCTURE, with `html` written in the list after A, the lines below one down. */
+  const writtenAfterA = (html: string) => STRUCTURE.replace(`<div id="b" ${loc("7:7")}`, `${html}<div id="b" ${loc("8:7")}`).replace(`<div id="c" ${loc("8:7")}`, `<div id="c" ${loc("9:7")}`);
+
+  test("a new Frame and the changes to it show where the Agent writes it: the 2nd layer of its container, a <div>", () => {
+    const { saved } = frameInTheList();
+    const page = livePage(writtenAfterA(`<div ${loc("7:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
+
+    expect(saved().map((change) => checkChange(page, change, saved()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+  });
+
+  test("written at another place, the new Frame is not shown, with what is at its place instead, a layer the container had; the changes to it are not checked", () => {
+    const { saved } = frameInTheList();
+    const round = saved();
+    const elsewhere = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")} style="height: 20px">C</div>`, `<div id="c" ${loc("8:7")} style="height: 20px">C</div><div ${loc("9:7")} style="width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></div>`));
+
+    expect(checkChange(elsewhere, round[0], round)).toEqual({ outcome: "not shown", actual: { type: "frame", nth: [2, 2], there: '<div id="b"> reading \u201cB\u201d' } });
+    expect(checkChange(elsewhere, round[1], round)).toEqual({ outcome: "unchecked", reason: "the layer is new this round, and not at its place on the page (change 1)" });
+  });
+
+  test("of whatever element the Agent writes it: a Frame as a <ul> or a <section>, text as an <h2> or a <span>; the canvas's <div> and <p> are the editor's", () => {
+    for (const tag of ["ul", "section"]) {
+      const { saved } = frameInTheList();
+      const page = livePage(writtenAfterA(`<${tag} ${loc("7:7")} style="display: block; margin: 0; padding: 0; width: 120px; height: 40px; background-color: rgb(255, 0, 0); border-radius: 4px"></${tag}>`));
+      expect(saved().map((change) => checkChange(page, change, saved()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+      live?.remove();
+      iframe?.remove();
+    }
+    for (const tag of ["h2", "span"]) {
+      const { editor, saved, layer } = open();
+      const text = editor.create("text", { parent: layer("list"), index: 1 });
+      editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+      const page = livePage(writtenAfterA(`<${tag} ${loc("7:7")} style="display: block; margin: 0; font-size: 20px">Text</${tag}>`));
+      expect(saved().map((change) => checkChange(page, change, saved()))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+      live?.remove();
+      iframe?.remove();
+    }
+  });
+
+  test("new text is found at its place by its words too", () => {
+    const { editor, saved, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 1 });
+    editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+    const round = saved();
+
+    const right = livePage(writtenAfterA(`<p ${loc("7:7")} style="margin: 0; font-size: 20px">Text</p>`));
+    expect(round.map((change) => checkChange(right, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+    live?.remove();
+    const wrong = livePage(writtenAfterA(`<p ${loc("7:7")} style="margin: 0; font-size: 20px">Other words</p>`));
+    expect(checkChange(wrong, round[0], round)).toEqual({ outcome: "not shown", actual: { type: "text", words: "Text", nth: [2, 2], there: '<p> reading \u201cOther words\u201d' } });
+  });
+
+  test("a layer before it deleted this round: found there with the layer still on the page, and once it is gone", () => {
+    const { editor, changes, saved, layer } = open();
+    editor.create("frame", { parent: layer("list"), index: 2 }, { width: 120, height: 40 });
+    editor.remove(layer("a"));
+    const round = saved();
+    expect(round[0].among).toMatchObject({ before: 1, maybe: 1 });
+    // Read from the canvas by the page, never saved with the ChangeSet, which the Agent may read.
+    expect(JSON.stringify(changes.save())).not.toContain("among");
+
+    const frame = `<div ${loc("8:7")} style="width: 120px; height: 40px"></div>`;
+    const kept = livePage(STRUCTURE.replace(`<div id="c" ${loc("8:7")}`, `${frame}<div id="c" ${loc("9:7")}`));
+    expect(checkChange(kept, round[0], round)).toEqual({ outcome: "shown" });
+    live?.remove();
+    const gone = livePage(STRUCTURE.replace(`<div id="a" ${loc("6:7")} style="height: 20px">A</div>`, "").replace(`<div id="c" ${loc("8:7")}`, `${frame}<div id="c" ${loc("9:7")}`));
+    expect(checkChange(gone, round[0], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("a Frame placed absolute in a Frame is found placed absolute in it, wherever among its layers it is written, at the X and Y the designer last gave it; text in it, in turn", () => {
+    const { editor, saved, layer } = open();
+    const frame = editor.create("frame", { parent: layer("board"), x: 30, y: 20 }, { width: 120, height: 80 });
+    editor.set(editor.tree().layerOf(frame.el)!, "x", 40);
+    const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 10 });
+    editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+    const round = saved();
+    expect(round.map((change) => change.kind)).toEqual(["create", "style", "create", "style"]);
+
+    const written = (left: number) =>
+      STRUCTURE.replace(
+        `<div id="board" ${loc("13:5")} style="width: 300px; height: 100px"><span id="tag" ${loc("14:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>`,
+        `<div id="board" ${loc("13:5")} style="position: relative; width: 300px; height: 100px"><div ${loc("14:7")} style="position: absolute; left: ${left}px; top: 20px; width: 120px; height: 80px"><p ${loc("15:9")} style="position: absolute; left: 10px; top: 10px; margin: 0; font-size: 20px">Text</p></div><span id="tag" ${loc("17:7")} style="display: inline-block; width: 50px; height: 20px">Tag</span></div>`,
+      );
+    const page = livePage(written(40));
+    expect(round.map((change) => checkChange(page, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }, { outcome: "shown" }]);
+    live?.remove();
+    const off = livePage(written(30));
+    expect(checkChange(off, round[0], round)).toEqual({ outcome: "not shown", actual: { x: 30, y: 20, margins: { x: 0, y: 0 } } });
+    expect(checkChange(off, round[2], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("written in a loop's instances from one place in the source, it is one layer, checked in each; from two places, it is not checked, and they are named", () => {
+    const card = (n: number, inner: string) => `<article ${loc("30:9")} style="display: flex; flex-direction: column"><h3 ${loc("31:11")}>Card ${n}</h3>${inner}</article>`;
+    const cards = (inner: (n: number) => string) => `<!DOCTYPE html><body style="margin: 0"><main ${loc("29:7")}>${[1, 2, 3].map((n) => card(n, inner(n))).join("")}</main></body>`;
+    const { doc, editor, changes } = openCanvas(cards(() => ""));
+    const saved = () => savedOf(doc, changes);
+    const article = find(editor.tree().root, (l) => l.el === doc.querySelector("article"))!;
+    const text = editor.create("text", { parent: article, index: 1 });
+    editor.set(editor.tree().layerOf(text.el)!, "fontSize", 20);
+    const round = saved();
+
+    const once = livePage(cards(() => `<p ${loc("32:11")} style="font-size: 20px">Text</p>`));
+    expect(round.map((change) => checkChange(once, change, round))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+    live?.remove();
+    const smaller = livePage(cards((n) => `<p ${loc("32:11")} style="font-size: ${n === 3 ? 14 : 20}px">Text</p>`));
+    expect(checkChange(smaller, round[1], round)).toEqual({ outcome: "not shown", actual: 14 });
+    live?.remove();
+    const twice = livePage(cards((n) => `<p ${loc(n === 1 ? "33:13" : "35:13")} style="font-size: 20px">Text</p>`));
+    const reason = "3 elements at its place match it, written at 2 places in the source (`src/App.tsx:33:13`, `src/App.tsx:35:13`): the page does not guess which is the layer";
+    expect(round.map((change) => checkChange(twice, change, round))).toEqual([
+      { outcome: "unchecked", reason },
+      { outcome: "unchecked", reason },
+    ]);
+  });
+
+  test("a layer copied this round is not looked for; one made in a round before is not either, and the check says so", () => {
+    const { editor, saved, layer } = open();
+    const copy = editor.duplicate(layer("a"));
+    editor.set(editor.tree().layerOf(copy.el)!, "fontSize", 20);
+    const round = saved();
+    const page = livePage(STRUCTURE);
+
+    expect(checkChange(page, round[1], round)).toEqual({ outcome: "unchecked", reason: "the layer is new this round, so the page has no marker to find it by" });
+    expect(checkChange(page, round[1], onCanvas([round[1]]))).toEqual({ outcome: "unchecked", reason: "the layer was made in a round before, and the page cannot find it: the canvas has no source marker for it" });
   });
 });
 

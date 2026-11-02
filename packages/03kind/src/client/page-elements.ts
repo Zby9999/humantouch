@@ -43,6 +43,24 @@ export function componentElementsOf(doc: Document, target: Target, apart: string
 }
 
 /**
+ * The elements the component writes at a layer's location in its other
+ * usages on the live page now (ticket 77): every instance of each, by its
+ * usage key; none of the layer's own usage. By their markers as they are:
+ * none where they have moved.
+ */
+export function otherUsagesOf(doc: Document, target: Target): Map<string, Element[]> {
+  const usages = new Map<string, Element[]>();
+  if (!target.loc) return usages;
+  const own = usageKey(target.loc, target.chain);
+  const tag = tagOf(target);
+  for (const [el, key] of keysIn(doc.documentElement, new Set([target.loc]))) {
+    if (key === own || !key.startsWith(`${target.loc} `) || (tag && el.localName !== tag)) continue;
+    usages.set(key, [...(usages.get(key) ?? []), el]);
+  }
+  return usages;
+}
+
+/**
  * A layer whose markers no longer match, found among the elements of the same
  * tag written in the same file, by the same components: the one whose
  * locations moved least. None when two are as near.

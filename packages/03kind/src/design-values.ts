@@ -3,6 +3,8 @@ import type { Change, Composed, Created, Place, PutBack, StackSettings } from ".
 import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/property-table";
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
+import type { UsageLevel } from "./client/usage-chain";
+import type { OtherUsageChanged } from "./service-protocol";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -151,6 +153,36 @@ const MAX_BRIEF = 40;
 /** A brief as the change list shows it: quoted, cut short when long. */
 function briefShown(brief: string): string {
   return quoted(brief.length > MAX_BRIEF ? `${brief.slice(0, MAX_BRIEF - 1)}…` : brief);
+}
+
+/**
+ * Where a usage of a component is, as the notes name one: `Card used at
+ * \`src/App.tsx:44:9\``, and, `outer`, the components it is inside, out to the
+ * page (ticket 77).
+ */
+function usageWhere(chain: UsageLevel[], outer = true): string {
+  return (outer ? chain : chain.slice(0, 1)).map(usedAt).join(", inside ");
+}
+
+/** Where a component is used, as the notes name it: `\`src/App.tsx:44:9\``, or an undetermined place, where 03Kind could not locate it. */
+export function usagePlace(usage: string | null): string {
+  return usage ? `\`${usage}\`` : "an undetermined place";
+}
+
+/** A level of a usage chain, as the notes name it: `Card used at \`src/App.tsx:44:9\``. */
+export function usedAt(level: UsageLevel): string {
+  return `${level.component} used at ${usagePlace(level.usage)}`;
+}
+
+/** Other usages of a change's component, as many as `usages` has, in a sentence: `another usage of Card`, `2 other usages of Card` (ticket 77). */
+export function otherUsagesWord(change: Change, usages: OtherUsageChanged[]): string {
+  const component = change.target.chain[0]?.component;
+  return usages.length === 1 ? `another usage of ${component}` : `${usages.length} other usages of ${component}`;
+}
+
+/** What other usages of a change's component show of its property now, and showed as the round was claimed (ticket 77): each `Card used at …, its fill from … to …`. */
+export function otherUsagesWords(property: string, usages: OtherUsageChanged[], outer = true): string {
+  return usages.map(({ chain, was, is }) => `${usageWhere(chain, outer)}, its ${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`).join("; ");
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */

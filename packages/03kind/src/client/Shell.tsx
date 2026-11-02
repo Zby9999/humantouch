@@ -2,6 +2,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
+import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
@@ -42,6 +43,8 @@ export interface RoundControl {
   partsRead(id: number, parts: RangePart[] | null): void;
   /** Takes every change back out and stops saving: the round is being discarded. */
   discard(): void;
+  /** Saves now what is waiting to be saved: the round about to be claimed, or the canvas frozen afresh. */
+  save(): void;
 }
 
 interface Props {
@@ -61,8 +64,12 @@ interface Props {
   onChanges(changes: Change[]): void;
   /** Set once there is a canvas, for the change list to reach it. */
   control: { current: RoundControl | null };
-  /** Editing is paused, a notice over the shell (ticket 66): nothing in it takes the pointer or the focus. */
-  paused?: boolean;
+  /** At the canvas's bottom left: what happened outside as the code changed (ticket 78). */
+  notice?: ComponentChildren;
+  /** Frozen afresh in place of a canvas (ticket 78): the camera to start at, where it was. */
+  startAt?: Camera | null;
+  /** Kept up to date with where the camera is, for a canvas frozen afresh in this one's place. */
+  cameraNow?: { current: Camera | null };
   /** Edit mode has ended; the shell goes once the canvas is back over the page. */
   leaving: boolean;
   /** False: switch modes instantly (the toggle was pressed from the keyboard). */
@@ -78,7 +85,7 @@ const NUDGE_RUN_MS = 1000;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, paused = false, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, leaving, animate, onLeft }: Props) {
   /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
   const [layersShown, setLayersShown] = useState(readLayersShown);
   const layersToggle = useRef<HTMLButtonElement>(null);
@@ -514,7 +521,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   return (
-    <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`} inert={paused}>
+    <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
       {layersShown ? (
         <aside class="tk-panel is-layers" aria-label="Layers">
           <div class="tk-panel-header">
@@ -541,6 +548,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
+        startAt={startAt}
+        cameraNow={cameraNow}
         // A round carried over (ticket 68): what was applied in the rounds before stays on the canvas, under what is left, as the page's own.
         takeIn={restoreFrom?.changeSet.applied?.length ? (doc) => takeInApplied(doc, restoreFrom.changeSet) : undefined}
         onCanvas={(views, workspace) => {
@@ -616,6 +625,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               if (taken.length || brought.length) saveOffCanvas(outside);
               edited(undefined);
             },
+            save: flush,
           };
         }}
         offCanvas={offCanvas}
@@ -694,6 +704,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       />
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
+      {notice}
       <aside class="tk-panel is-design" aria-label="Design">
         <div class="tk-panel-header">
           <h2 class="tk-panel-title">Design</h2>
