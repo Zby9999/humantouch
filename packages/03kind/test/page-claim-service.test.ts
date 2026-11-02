@@ -113,18 +113,20 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
   const RED = { type: "solid", color: "#FF0000", opacity: 1 };
   const noted = (value: unknown): OtherUsagesKept => ({ 1: { width: 1280, seen: [{ key: "Card.tsx:1:27 App.tsx:8:7", chain: [{ component: "Card", usage: "App.tsx:8:7", thirdParty: false }], value }] } });
   const loaded = async () => ((await (await call("GET", ROUND_PATH)).json()) as SavedRound).otherUsages;
+  /** A page keeping what it noted at `at`. */
+  const keep = (otherUsages: unknown, at = new Date().toISOString()) => call("POST", OTHER_USAGES_PATH, { at, otherUsages });
 
   test("claimed by the command line, a page's notes are kept, the first page's to note a change; the round loaded comes with them; not claimed, there is nowhere to keep them", async () => {
     await call("PUT", ROUND_PATH, ROUND);
-    expect((await call("POST", OTHER_USAGES_PATH, noted(WHITE))).status).toBe(409);
+    expect((await keep(noted(WHITE))).status).toBe(409);
     expect(await loaded()).toBeUndefined();
     expect((await cli("claim")).code).toBe(0);
     expect(await loaded()).toEqual({});
-    expect((await call("POST", OTHER_USAGES_PATH, noted(WHITE))).status).toBe(204);
+    expect((await keep(noted(WHITE))).status).toBe(204);
     // Another page, noting later: the leak may be on the page by then.
-    expect((await call("POST", OTHER_USAGES_PATH, { ...noted(RED), 2: null })).status).toBe(204);
+    expect((await keep({ ...noted(RED), 2: null })).status).toBe(204);
     expect(await loaded()).toEqual({ ...noted(WHITE), 2: null });
-    expect((await call("POST", OTHER_USAGES_PATH, [])).status).toBe(400);
+    expect((await keep([])).status).toBe(400);
     // `claim` again: the same round, the notes kept.
     expect((await cli("claim")).code).toBe(0);
     expect(await loaded()).toEqual({ ...noted(WHITE), 2: null });
@@ -149,7 +151,7 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
     expect(await loaded()).toBeUndefined();
     expect((await cli("claim")).code).toBe(0);
     expect(await loaded()).toEqual({});
-    await call("POST", OTHER_USAGES_PATH, noted(RED));
+    await keep(noted(RED));
     expect((await call("POST", "/unlock")).status).toBe(204);
     expect(existsSync(kept)).toBe(false);
     // A file left behind (written back as the round ended, say) is no claim's: claimed afresh, it goes.
@@ -160,5 +162,50 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
     writeFileSync(kept, JSON.stringify(noted(RED)));
     expect((await call("POST", CLAIM_PATH, { since: Date.now() })).status).toBe(204);
     expect(await loaded()).toEqual({});
+  });
+
+  test("a page's notes of the round before, coming in once the next is claimed, are not this round's: not kept, and what this round's page notes is", async () => {
+    await call("PUT", ROUND_PATH, ROUND);
+    expect((await cli("claim")).code).toBe(0);
+    const before = new Date().toISOString();
+    // Not done: carried over, renumbered from 1, and claimed again.
+    expect((await cli("finish")).code).toBe(0);
+    await wait(5);
+    expect((await cli("claim")).code).toBe(0);
+    // Noted as the round before was claimed, its page's word comes in late.
+    expect((await keep(noted(RED), before)).status).toBe(409);
+    expect((await keep(noted(RED), "not a time")).status).toBe(400);
+    expect(await loaded()).toEqual({});
+    expect((await keep(noted(WHITE))).status).toBe(204);
+    expect(await loaded()).toEqual(noted(WHITE));
+  });
+
+  test("written back once the round ended (`finish` takes no turn with the pages), the file is read as no claim's, and gives way to this round's notes", async () => {
+    const kept = join(root, ".03kind/other-usages.json");
+    await call("PUT", ROUND_PATH, ROUND);
+    expect((await call("POST", CLAIM_PATH, { since: Date.now(), otherUsages: noted(RED) })).status).toBe(204);
+    const written = readFileSync(kept, "utf8");
+    expect((await cli("finish")).code).toBe(0);
+    await wait(5);
+    expect((await cli("claim")).code).toBe(0);
+    // A page's note of the round before, kept as `finish` took the round away.
+    writeFileSync(kept, written);
+    expect(await loaded()).toEqual({});
+    expect((await keep(noted(WHITE))).status).toBe(204);
+    expect(await loaded()).toEqual(noted(WHITE));
+  });
+
+  test("the file unreadable: as if nothing were kept, the round still loaded; a page's notes kept afresh", async () => {
+    const kept = join(root, ".03kind/other-usages.json");
+    await call("PUT", ROUND_PATH, ROUND);
+    expect((await cli("claim")).code).toBe(0);
+    for (const broken of ["{\"claimedAt\":", "null", "[]", "{\"claimedAt\":1,\"otherUsages\":3}"]) {
+      writeFileSync(kept, broken);
+      const answer = await call("GET", ROUND_PATH);
+      expect(answer.status).toBe(200);
+      expect(((await answer.json()) as SavedRound).otherUsages).toEqual({});
+    }
+    expect((await keep(noted(WHITE))).status).toBe(204);
+    expect(await loaded()).toEqual(noted(WHITE));
   });
 });

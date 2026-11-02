@@ -184,18 +184,39 @@ export async function archiveRound(folder: ThirdKindFolder, ended: RoundResult["
   return result;
 }
 
-/** What a page noted of the other usages of the claimed round's changes (ticket 82); none when no page has. Only the claimed round's: see `claimFresh`. */
-export async function readOtherUsages(folder: ThirdKindFolder): Promise<OtherUsagesKept> {
-  const text = await readIfThere(folder.otherUsages);
-  return text === null ? {} : (JSON.parse(text) as OtherUsagesKept);
+/**
+ * What `other-usages.json` holds: the notes, and when the round they belong to
+ * was claimed. Change ids start from 1 again as a round's changes are carried
+ * over, so the notes go by the claim, not by id alone: a page's word that
+ * comes in late, or a file written back as the round ended (`finish` takes no
+ * turn with the pages' requests), is an earlier round's.
+ */
+interface OtherUsagesFile {
+  claimedAt?: string;
+  otherUsages: OtherUsagesKept;
 }
 
-/** Keeps what a page noted of the other usages with the claim: a change noted already keeps what was noted first. */
-export async function keepOtherUsages(folder: ThirdKindFolder, noted: OtherUsagesKept) {
-  const kept = await readOtherUsages(folder);
-  const fresh = Object.entries(noted).filter(([id]) => !(id in kept));
-  if (!fresh.length) return;
-  await writeAtomically(folder.otherUsages, `${JSON.stringify({ ...kept, ...Object.fromEntries(fresh) })}\n`);
+/** What a page noted of the other usages of the changes of the round claimed as `state` (ticket 82); none when no page has, or the file is another claim's or cannot be read. */
+export async function readOtherUsages(folder: ThirdKindFolder, state: RoundState): Promise<OtherUsagesKept> {
+  const text = await readIfThere(folder.otherUsages);
+  let file: Partial<OtherUsagesFile> | null = null;
+  try {
+    file = text === null ? null : (JSON.parse(text) as Partial<OtherUsagesFile> | null);
+  } catch {
+    // Cut short or garbled: nothing kept, as the page notes them again.
+  }
+  const notes = file?.otherUsages;
+  if (!notes || typeof notes !== "object" || Array.isArray(notes) || file!.claimedAt !== state.claimedAt) return {};
+  return notes;
+}
+
+/** Keeps what a page noted of the other usages with the claim `state`: a change noted already keeps what was noted first. */
+export async function keepOtherUsages(folder: ThirdKindFolder, state: RoundState, noted: OtherUsagesKept) {
+  const kept = await readOtherUsages(folder, state);
+  const newlyNoted = Object.entries(noted).filter(([id]) => !(id in kept));
+  if (!newlyNoted.length) return;
+  const file: OtherUsagesFile = { claimedAt: state.claimedAt, otherUsages: { ...kept, ...Object.fromEntries(newlyNoted) } };
+  await writeAtomically(folder.otherUsages, `${JSON.stringify(file)}\n`);
 }
 
 /** Claims the round afresh, as `state` has it: what was noted of the other usages for a round before is no longer kept (ticket 82). */

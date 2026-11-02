@@ -1595,6 +1595,40 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
       expect(result.applied).toEqual([]);
     });
 
+    /**
+     * After the line's review: a second page open as the page claims the round
+     * noted the other usages only once it heard of the claim, the leak in by
+     * then, and said the change shows; kept by the service, that stood. It
+     * goes by what the claiming page noted before the code changed, kept with
+     * the claim.
+     */
+    test("playbook: the same in edit mode, a second page open in preview mode; the Agent writes it into the Card itself with no claim, and the first page claims the round for it: the fourth card is red too, by either page", async ({ page }) => {
+      await fillTheLoopInEditMode(page);
+      const other = await page.context().newPage();
+      try {
+        await other.goto(DEV_URL);
+        // Its editor layer up, the saved round counted on its toggle: it checks the round as it is claimed.
+        await expect(other.getByRole("button", { name: /not applied yet/ })).toHaveText("1");
+        const claimedAfterMs = await writeUnclaimed(page, original.replace("bg-white", "bg-[#ff0000]"), () => allRed(page));
+        expect(claimedAfterMs).not.toBeNull();
+        await expect(ring(other)).toBeVisible();
+        await expect.poll(() => allRed(other)).toBe(true);
+        // Each page has had its look: the second's word, said as the code changed, stays if it says the change shows.
+        await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome, { timeout: 10_000 }).toBeTruthy();
+        await other.waitForTimeout(1500);
+        const saidUnasked = readThirdKindFile("checks.json")?.results?.[1]?.outcome;
+        const result = await doneAndFinish(page);
+        const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
+        record("usage-leak-unclaimed-two-pages", { ...kept(result), claimedAfterMs, saidUnasked, told, found: told ? 1 : 0 });
+        expect(saidUnasked).toBe("not shown");
+        expect(told).toBe(true);
+        expect(result.ringAfterDone).toBe(0);
+        expect(result.applied).toEqual([]);
+      } finally {
+        await other.close();
+      }
+    });
+
     test("playbook: the same in edit mode; the Agent writes it for the loop alone with no claim, and the page claims the round for it: no false leak", async ({ page }) => {
       await fillTheLoopInEditMode(page);
       const claimedAfterMs = await writeUnclaimed(page, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"), () => loopRed(page));

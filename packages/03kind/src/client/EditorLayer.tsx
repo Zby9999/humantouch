@@ -131,24 +131,37 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   /**
    * What the components' other usages showed as the page began to check the
    * claimed round (ticket 77): kept as the round is read again, till it is no
-   * longer claimed. Kept with the claim in `.03kind/` too, and taken from
-   * there for the changes this page has not noted itself: noted by a page
-   * before it was reloaded or opened (ticket 82).
+   * longer claimed. Kept with the claim in `.03kind/` too, and what was kept
+   * there goes before what this page noted itself, as the first noted: by a
+   * page before it was reloaded or opened, or by the page that claimed the
+   * round for the Agent before the code changed (ticket 82).
    */
   const otherUsages = useRef(new Map<number, OtherUsagesNoted | null>());
+  /** Whether the round, read before it was claimed, has been asked for again since (ticket 82). */
+  const reread = useRef(false);
   useEffect(() => {
-    if (!isClaimed) otherUsages.current = new Map();
+    if (isClaimed) return;
+    otherUsages.current = new Map();
+    reread.current = false;
   }, [isClaimed]);
   useLayoutEffect(() => {
     if (!isClaimed || !store || !round) return;
+    // Read before it was claimed: what was kept with the claim comes as it is read again (ticket 82). Till then the page neither
+    // notes nor checks: noted now, the code changed already, the other usages may show a leak, and a change shown stays shown.
+    if (!round.otherUsages) {
+      if (!reread.current) void load();
+      reread.current = true;
+      return;
+    }
     const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
-    for (const [id, noted] of notedFrom(round.otherUsages ?? {})) if (!otherUsages.current.has(id)) otherUsages.current.set(id, noted);
-    // Notes taken in one look go together.
-    const fresh = new Map<number, OtherUsagesNoted | null>();
+    for (const [id, noted] of notedFrom(round.otherUsages)) otherUsages.current.set(id, noted);
+    // Notes taken in one look go together, with when they were taken.
+    const toKeep = new Map<number, OtherUsagesNoted | null>();
+    let notedAt = "";
     const keep = () => {
-      if (!fresh.size) return;
-      store.keepOtherUsages(keptOf(fresh)).catch((error: unknown) => console.warn(error));
-      fresh.clear();
+      if (!toKeep.size) return;
+      store.keepOtherUsages(keptOf(toKeep), notedAt).catch((error: unknown) => console.warn(error));
+      toKeep.clear();
     };
     const watcher = watchPage({
       window,
@@ -159,8 +172,11 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       copiesIn,
       otherUsages: otherUsages.current,
       onNoted(id, noted) {
-        if (!fresh.size) queueMicrotask(keep);
-        fresh.set(id, noted);
+        if (!toKeep.size) {
+          notedAt = new Date().toISOString();
+          queueMicrotask(keep);
+        }
+        toKeep.set(id, noted);
       },
     });
     checks.current = watcher;
@@ -173,6 +189,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // What `claim` asks of the changes carried over from the round before (ticket 68), `done` asks, and `finish` before it ends the round.
   const answer = (ask: CheckAsk | undefined) => {
     if (!ask || !store || round === undefined) return;
+    // The round read before it was claimed: asked again as it is read again, and checked (ticket 82).
+    if (claimed && round && !round.otherUsages) return;
     if (checks.current) checks.current.ask(ask);
     else for (const id of ask.ids) store.report({ id, at: new Date().toISOString(), answers: ask.key, outcome: "unchecked", reason: "the page does not have this round" }).catch((error: unknown) => console.warn(error));
   };
@@ -203,8 +221,9 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   useEffect(
     () =>
       store?.watch((next) => {
-        // Claimed: the round is what the Agent got. Ended: what is left of it, carried over to the next round (ticket 68); nothing with all of it applied.
-        if (lastStatus.current && lastStatus.current.status !== next.status) void load();
+        // Ended: what is left of it, carried over to the next round (ticket 68); nothing with all of it applied. Claimed, the round,
+        // as the Agent got it, is read again as the page begins to check it, with what was kept with the claim (ticket 82).
+        if (lastStatus.current?.status === "claimed" && next.status !== "claimed") void load();
         lastStatus.current = next;
         setStatus(next);
       }),
@@ -391,10 +410,15 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       if (saved?.changeSet.changes.length && (await showsAnyHere(document, placing(saved), readViewWidths()))) {
         if (!watching) return;
         // Of the changes saved as they were as the run began: their notes go with the claim, and the page goes by them, the claim heard or not.
-        const noted = new Map([...run.before.noted].filter(([id]) => {
-          const [then, now] = [run.before.changes.find((change) => change.id === id), saved.changeSet.changes.find((change) => change.id === id)];
-          return then && now && notedFor(then, now);
-        }));
+        const before = run.before;
+        const noted = new Map(
+          before
+            ? [...before.noted].filter(([id]) => {
+                const [then, now] = [before.changes.find((change) => change.id === id), saved.changeSet.changes.find((change) => change.id === id)];
+                return then && now && notedFor(then, now);
+              })
+            : [],
+        );
         for (const [id, one] of noted) otherUsages.current.set(id, one);
         store
           ?.claim(run.since, noted.size ? keptOf(noted) : undefined)

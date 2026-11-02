@@ -32,8 +32,8 @@ export interface RoundStore extends RoundWatch {
    * `otherUsages`: what the other usages showed as that run began, kept with the claim (ticket 82).
    */
   claim(since: number, otherUsages?: OtherUsagesKept): Promise<void>;
-  /** Keeps what the page noted of the other usages with the claim, those of a change noted already aside (ticket 82). */
-  keepOtherUsages(otherUsages: OtherUsagesKept): Promise<void>;
+  /** Keeps what the page noted of the other usages with the claim, those of a change noted already aside (ticket 82). `at`: when it noted them, to tell a round's from the round's before. */
+  keepOtherUsages(otherUsages: OtherUsagesKept, at: string): Promise<void>;
   /** Answers the check `done` asked for. */
   report(check: CheckReport): Promise<void>;
   /** The project's own breakpoints from its Tailwind theme; null when it has none to be read. */
@@ -82,8 +82,8 @@ export function connectRoundStore(): RoundStore | null {
       await saving;
       await request("POST", { path: CLAIM_PATH, body: JSON.stringify({ since, otherUsages }) });
     },
-    async keepOtherUsages(otherUsages) {
-      await request("POST", { path: OTHER_USAGES_PATH, body: JSON.stringify(otherUsages) });
+    async keepOtherUsages(otherUsages, at) {
+      await request("POST", { path: OTHER_USAGES_PATH, body: JSON.stringify({ at, otherUsages }) });
     },
     async report(check) {
       await request("POST", { path: CHECKS_PATH, body: JSON.stringify(check) });

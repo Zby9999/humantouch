@@ -16,7 +16,7 @@
  * did not (ticket 78) goes by what the other usages showed as the code began
  * to change (`noteRound`), noted before the code it claims for is in.
  */
-import type { OtherUsageChanged, OtherUsagesKept } from "../service-protocol";
+import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
 import type { Change } from "./changeset";
 import { forOneUsage, foundByMarker } from "./checkable";
 import { originOf } from "./layers";
@@ -30,10 +30,7 @@ import { readUsageChain, type UsageLevel } from "./usage-chain";
  * each instance of each usage. `el`: the element, as long as the page knows
  * it; kept in `.03kind/` and read back, none till it is found again.
  */
-export interface OtherUsagesNoted {
-  width: number;
-  seen: { el?: Element; key: string; chain: UsageLevel[]; value: unknown }[];
-}
+export type OtherUsagesNoted = OtherUsagesNote<{ el?: Element }>;
 
 /** The round's notes, `noted` by change id, as kept in `.03kind/` (ticket 82): with no elements. */
 export function keptOf(noted: Map<number, OtherUsagesNoted | null>): OtherUsagesKept {

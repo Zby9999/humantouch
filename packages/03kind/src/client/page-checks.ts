@@ -80,9 +80,9 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const copies = new Map<number, PageCopy>();
   const noted = (change: Change) => others.has(change.id) || !looksAtOtherUsages(change);
   const note = (change: Change) => {
-    const noted = noteOtherUsages(doc, change, changes, win.innerWidth);
-    others.set(change.id, noted);
-    onNoted?.(change.id, noted);
+    const notes = noteOtherUsages(doc, change, changes, win.innerWidth);
+    others.set(change.id, notes);
+    onNoted?.(change.id, notes);
   };
   /** Shown on its layer (or not looked at there, at this width): not shown after all where other usages of its component show it too. */
   const orAtOtherUsages = (change: Change, result: CheckResult | null): CheckResult | null => {

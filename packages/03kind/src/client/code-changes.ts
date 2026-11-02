@@ -17,19 +17,23 @@ import { pointerHeld } from "./pointer-held";
 /**
  * `POST`, to the local service: the page claims the round, having seen one of
  * its changes show with no Agent claiming it (ticket 78). Its body,
- * `{ since }`: when the run of code changes it saw it in began (ms since the
- * epoch), so `last` takes the round back to the code before it. Here rather
- * than in `service-protocol.ts`, whose paths the page loads with the toggle:
- * only edit mode claims.
+ * `{ since, otherUsages }`: when the run of code changes it saw it in began
+ * (ms since the epoch), so `last` takes the round back to the code before it;
+ * and what the other usages showed as that run began, as `OtherUsagesKept`,
+ * if the page noted any, to keep with the claim (ticket 82). Here rather than
+ * in `service-protocol.ts`, whose paths the page loads with the toggle: only
+ * edit mode claims.
  */
 export const CLAIM_PATH = "/claim";
 
 /**
  * `POST`, to the local service: what a page noted of the other usages of a
- * claimed round's changes for one usage alone, as `OtherUsagesKept`, to keep
- * with the claim (ticket 82); a change noted already keeps what was noted
- * first. `POST /claim` takes the same as `otherUsages` in its body. Here
- * with `CLAIM_PATH`, for the same reason.
+ * claimed round's changes for one usage alone, to keep with the claim
+ * (ticket 82); a change noted already keeps what was noted first. Its body,
+ * `{ at, otherUsages }`: when the page noted them (an ISO time), and the
+ * notes, as `OtherUsagesKept`; noted before the round was claimed, they are
+ * an earlier round's, and not kept. Here with `CLAIM_PATH`, for the same
+ * reason.
  */
 export const OTHER_USAGES_PATH = "/other-usages";
 
@@ -89,8 +93,8 @@ export function watchCodeChanges(win: Window, onChange: () => void, { quietMs = 
 export interface CodeRun<B = undefined> {
   /** When it began, in ms since the epoch. */
   since: number;
-  /** What `before` took as it began, before the dev server brought any of its code in. */
-  before: B;
+  /** What `before` took as it began, before the dev server brought any of its code in; undefined when it could not. */
+  before: B | undefined;
   /** Whether the page draws anything otherwise than before the run: told a slice at a time. */
   pageChanged(): Promise<boolean>;
 }
@@ -127,7 +131,7 @@ export function watchCodeRuns<B = undefined>(
   const doc = win.document;
   const brings = bringsCode(win);
   /** The run under way: when it began, what `before` took then, and what the page did since. */
-  let run: { since: number; before: B; records: MutationRecord[] } | null = null;
+  let run: { since: number; before: B | undefined; records: MutationRecord[] } | null = null;
   /** When the last update of the run came. */
   let lastUpdate = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -136,6 +140,18 @@ export function watchCodeRuns<B = undefined>(
     for (const record of records) run?.records.push(record);
   };
   const observer = new MutationObserver(keep);
+  /** What `before` takes, measured; nothing when it fails, the run told all the same. */
+  const take = (before: () => B): B | undefined => {
+    const start = performance.now();
+    try {
+      return before();
+    } catch (error) {
+      console.warn(error);
+      return undefined;
+    } finally {
+      performance.measure(PAGE_CHANGED_MEASURE, { start, end: performance.now() });
+    }
+  };
   const rest = () => {
     if (!run) return;
     const updating = !!codeUpdates(win)?.updating && performance.now() - lastUpdate < UPDATE_LOST_MS;
@@ -152,9 +168,7 @@ export function watchCodeRuns<B = undefined>(
   const onCode = () => {
     if (!brings()) return;
     if (!run) {
-      const start = performance.now();
-      run = { since: Date.now(), before: before?.() as B, records: [] };
-      if (before) performance.measure(PAGE_CHANGED_MEASURE, { start, end: performance.now() });
+      run = { since: Date.now(), before: before && take(before), records: [] };
       // As the update begins, before Vite has fetched the code it brings, let alone run it.
       observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, attributeOldValue: true, characterData: true, characterDataOldValue: true });
     }

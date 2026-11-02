@@ -52,6 +52,7 @@ import {
   writeChecks,
   writeOffCanvas,
   type Checks,
+  type RoundState,
 } from "./third-kind-folder";
 import { readVariables } from "./variables";
 
@@ -145,7 +146,8 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         const canvas = changeSet && (await readIfThere(files.canvas));
         if (!changeSet || !canvas) return send(res, 204);
         // Claimed: with what was noted of the other usages, for a page opened or reloaded since to go by (ticket 82).
-        const otherUsages = (await readState(files)) ? await readOtherUsages(files) : null;
+        const state = await readState(files);
+        const otherUsages = state && (await readOtherUsages(files, state));
         return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }) } satisfies SavedRound));
       }
       case `PUT ${ROUND_PATH}`: {
@@ -241,24 +243,29 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         const { since, otherUsages } = JSON.parse(body || "{}") as { since?: number; otherUsages?: OtherUsagesKept };
         const noted = otherUsages && typeof otherUsages === "object" ? otherUsages : {};
         // What the other usages showed as the run began, kept with the claim (ticket 82); claimed already, as any page's notes.
-        if (await readState(files)) {
-          await keepOtherUsages(files, noted);
+        const claimed = await readState(files);
+        if (claimed) {
+          await keepOtherUsages(files, claimed, noted);
           return send(res, 204);
         }
         // The code as it rested before the run the page saw it in; failing that, as it is now.
         const before = typeof since === "number" ? rested.filter((one) => one.at <= since).at(-1) : undefined;
-        await claimFresh(files, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: before ? before.code : await snapshotCode(root) });
-        await keepOtherUsages(files, noted);
+        const state: RoundState = { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: before ? before.code : await snapshotCode(root) };
+        await claimFresh(files, state);
+        await keepOtherUsages(files, state, noted);
         rested = [];
         broadcast();
         return send(res, 204);
       }
       case `POST ${OTHER_USAGES_PATH}`: {
         // What a page noted of the other usages, kept with the claim (ticket 82): only while the round is claimed.
-        if (!(await readState(files))) return send(res, 409);
-        const noted = JSON.parse(body || "null") as OtherUsagesKept | null;
-        if (!noted || typeof noted !== "object" || Array.isArray(noted)) return send(res, 400);
-        await keepOtherUsages(files, noted);
+        const state = await readState(files);
+        if (!state) return send(res, 409);
+        const { at, otherUsages: noted } = (JSON.parse(body || "null") ?? {}) as { at?: string; otherUsages?: OtherUsagesKept };
+        if (typeof at !== "string" || Number.isNaN(Date.parse(at)) || !noted || typeof noted !== "object" || Array.isArray(noted)) return send(res, 400);
+        // Noted before this round was claimed: an earlier round's, by ids that may be this round's other changes now, come in late.
+        if (state.claimedAt && at < state.claimedAt) return send(res, 409);
+        await keepOtherUsages(files, state, noted);
         return send(res, 204);
       }
       case `POST ${UNLOCK_PATH}`:
