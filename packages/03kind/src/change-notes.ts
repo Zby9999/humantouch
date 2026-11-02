@@ -199,9 +199,9 @@ function intent(change: Change, list: Change[]): string {
       return unstackIntent(change.before as StackSettings, change.after as Dissolved);
     case "create": {
       const { type, place, width, height, text } = change.after as Created;
-      if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, landed(change, list))}.`;
+      if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, placeOnceApplied(change, list))}.`;
       const wide = width === null ? "" : `, ${width}px wide`;
-      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, landed(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
+      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
     }
     case "text":
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
@@ -417,14 +417,14 @@ function cell(place: Place): string {
 
 /**
  * Where a layer goes in a container: a place in its layout, or absolute in it.
- * `at`: a new layer's place in the layout once the round is applied, when
- * that is known (`landed`), else its place as made.
+ * `onceApplied`: a new layer's place in the layout once the round is applied,
+ * when that is known (`placeOnceApplied`), else its place as made.
  */
-function placement(place: Place, at: Landed | null = null): string {
+function placement(place: Place, onceApplied: PlaceOnceApplied | null = null): string {
   if (!place.absolute) {
-    const nth = at?.nth ?? place.nth;
-    const once = at?.others ? ", once all of this round's changes are applied" : "";
-    return `in the layout of ${container(place)}, as its ${ordinal(nth)} layer${cell({ ...place, nth })}${once}`;
+    const nth = onceApplied?.nth ?? place.nth;
+    const asApplied = onceApplied?.others ? ", once all of this round's changes are applied" : "";
+    return `in the layout of ${container(place)}, as its ${ordinal(nth)} layer${cell({ ...place, nth })}${asApplied}`;
   }
   // The container is the positioning reference, not the layer: "which is to be" read as the layer was taken for both (ticket 76).
   return (
@@ -441,7 +441,7 @@ function placement(place: Place, at: Landed | null = null): string {
  * it is, and the Agent need not work it out. An Agent left to count went
  * looking in the package for how the page counts.
  */
-interface Landed {
+interface PlaceOnceApplied {
   nth: number;
   others: boolean;
 }
@@ -454,51 +454,65 @@ interface Landed {
  * (a move of it, a Stack made of it), or whose container a later change
  * dissolves: its own change says where it goes then.
  */
-function landed(maker: Change, list: Change[]): Landed | null {
+function placeOnceApplied(maker: Change, list: Change[]): PlaceOnceApplied | null {
   const { place } = maker.after as Created;
   if (place.absolute) return null;
   const id = place.container.layer;
-  const into = (at: Place | null | undefined): at is Place => !!at && at.container.layer === id;
+  const into = ({ place: at }: Placed) => !!at && at.container.layer === id;
   let nth = place.nth;
   let others = false;
   for (const change of list) {
     if (change === maker) continue;
-    const { out, inn } = layoutChanges(change);
-    if (out.some(into) || inn.some(into)) others = true;
+    const { takenOut, putIn } = layoutChanges(change);
+    if (takenOut.some(into) || putIn.some(into)) others = true;
     if (change.id < maker.id) continue;
     const members = change.kind === "stack" ? (change.after as Composed).layers.map((member) => member.layer) : [];
     if ((change.kind === "move" || change.kind === "delete") && change.layer === maker.layer) return null;
     if (members.includes(maker.layer) || (change.kind === "unstack" && change.layer === id)) return null;
-    nth -= out.filter((at) => into(at) && at.nth < nth).length;
-    nth += inn.filter((at) => into(at) && at.nth <= nth).length;
+    nth -= takenOut.filter((one) => into(one) && one.place.nth < nth).length;
+    nth += putIn.filter((one) => into(one) && one.place.nth <= nth).length;
   }
   return { nth, others };
 }
 
 /**
- * The places a change takes layers out of (`out`) and puts layers in (`inn`),
- * as it records them: each counted on the canvas as it was then, those it
- * takes out gone before it puts one in.
+ * The layers in the layout of `frame`, a Frame made this round, once the
+ * round is applied, in order: each change that puts a layer in it or takes
+ * one out, in the order of the ChangeSet, at the place it records. With
+ * nothing in it to begin with, every layer drawn, put back, copied or moved
+ * into it has a place of its own, the sketch saying them all as one round
+ * applied (ticket 81). A layer moved twice is recorded once, by the id of its
+ * first move, at the place of its last: counted where that id comes, it may
+ * be a place off.
  */
-function layoutChanges(change: Change): { out: Place[]; inn: Place[] } {
-  switch (change.kind) {
-    case "delete":
-      return { out: [change.before as Place], inn: [] };
-    case "move":
-      return { out: [change.before as Place], inn: [change.after as Place] };
-    case "create":
-      return { out: [], inn: [(change.after as Created).place] };
-    case "putBack":
-      return { out: [], inn: [(change.after as PutBack).place] };
-    case "duplicate":
-      return { out: [], inn: [change.after as Place] };
-    case "stack": {
-      const { place, layers } = change.after as Composed;
-      return place ? { out: layers.map((member) => member.from), inn: [place] } : { out: [], inn: [] };
-    }
-    default:
-      return { out: [], inn: [] };
+function layoutOnceApplied(frame: string, list: Change[]): string[] {
+  const layers: string[] = [];
+  for (const change of list) {
+    const { takenOut, putIn } = layoutChanges(change);
+    for (const { layer, place } of takenOut) if (place?.container.layer === frame && layers.includes(layer)) layers.splice(layers.indexOf(layer), 1);
+    for (const { layer, place } of putIn) if (place.container.layer === frame) layers.splice(Math.min(place.nth - 1, layers.length), 0, layer);
   }
+  return layers;
+}
+
+/** A layer a change takes out of a place, or puts in one. */
+interface Placed {
+  layer: string;
+  place: Place;
+}
+
+/**
+ * The layers a change takes out of their places (`takenOut`) and puts in
+ * places (`putIn`, where `placedAt` says), as it records them: each counted
+ * on the canvas as it was then, those it takes out gone before it puts one in.
+ */
+function layoutChanges(change: Change): { takenOut: Placed[]; putIn: Placed[] } {
+  const put = placedAt(change);
+  const putIn = put ? [{ layer: change.layer, place: put }] : [];
+  if (change.kind === "delete" || change.kind === "move") return { takenOut: [{ layer: change.layer, place: change.before as Place }], putIn };
+  // A Stack made where its layers were takes them out of their places; one made of a Frame's own layers puts none in.
+  if (change.kind === "stack" && put) return { takenOut: (change.after as Composed).layers.map((member) => ({ layer: member.layer, place: member.from })), putIn };
+  return { takenOut: [], putIn };
 }
 
 /**
@@ -537,11 +551,14 @@ function sketch(change: Change, list: Change[]): string[] {
   // Each layer as it is now: moved or resized since it was drawn, it is where the later changes put it.
   const latest = <T>(layer: string, property: string, then: T) =>
     (list.find((c) => c.kind === "style" && c.layer === layer && c.property === property && !c.breakpoint)?.after as T) ?? then;
+  // Where each is in the layout once the round is applied, as a new layer's place is said (ticket 81); one taken out again, where it was put.
+  const laidOut = layoutOnceApplied(change.layer, list);
   const items = drawnIn(change.layer, list).map((c) => {
     const place = placedAt(c)!;
     const made = c.kind === "create" ? (c.after as Created) : null;
     const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
-    let where = `${ordinal((made && landed(c, list)?.nth) || place.nth)} in its layout`;
+    const at = laidOut.indexOf(c.layer);
+    let where = `${ordinal(at === -1 ? place.nth : at + 1)} in its layout`;
     if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
     const fixed = (size: Size | undefined) => (size?.type === "fixed" ? size.value : null);
     const width = fixed(latest<Size | undefined>(c.layer, "width", undefined)) ?? made?.width ?? null;

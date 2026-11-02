@@ -2768,4 +2768,24 @@ describe("claim, a new layer's place once the round is applied (ticket 81)", () 
 
     expect(notes).toContain("\n  - Text “Plans”: 2nd in its layout (change 2)\n  - Text “Pricing”: 1st in its layout (change 3)\n");
   });
+
+  test("in a new Frame's sketch, every layer is where it lands, put back, copied or moved in as well as drawn: no two at the same place (after the line's review)", async () => {
+    const frameTarget = { ...list, loc: null, made: "11", context: { path: ["Page", "App", "Stack", "Frame"], element: "<div>" } };
+    const inFrame = (nth: number) => ({ ...place(nth, null, "11"), container: { layer: "11", target: frameTarget } });
+    const button = { ...list, context: { path: ["Page", "Button"], element: "<button>" } };
+    saveRound(
+      change(1, "create", { property: "new", after: { type: "frame", place: place(4), width: 200, height: 120, brief: "Plans" } }),
+      change(2, "create", { property: "new", target: frameTarget, after: { type: "text", place: inFrame(1), width: null, height: null, text: "Plans" } }),
+      // [Plans] → a copy of a button after it: [Plans, copy] → the button itself moved in first: [Button, Plans, copy] → new text first: [Pricing, Button, Plans, copy].
+      change(3, "duplicate", { property: "copy", target: button, before: place(1), after: inFrame(2) }),
+      change(4, "move", { layer: "30", property: "move", target: button, before: place(1), after: inFrame(1) }),
+      change(5, "create", { property: "new", target: frameTarget, after: { type: "text", place: inFrame(1), width: null, height: null, text: "Pricing" } }),
+    );
+
+    const notes = section((await cli("claim")).output, 1);
+
+    expect(notes).toContain(
+      "\n  - Text “Plans”: 3rd in its layout (change 2)\n  - Button (a copy): 4th in its layout (change 3)\n  - Button (moved in): 2nd in its layout (change 4)\n  - Text “Pricing”: 1st in its layout (change 5)\n",
+    );
+  });
 });
