@@ -1286,6 +1286,46 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
 });
 
 /**
+ * Ticket 78, after the line's review: a Frame drawn in the hero between the
+ * intro and the button, the round not claimed. The page tells whether the
+ * Agent is applying the round unclaimed by the check itself, the new layer
+ * found by where the saved canvas places it (ticket 76): code that leaves the
+ * page as it was claims nothing, though the button is at the Frame's place
+ * in the hero; the Frame written there claims the round. Measured first on
+ * the code before the fix, with these assertions left out: the page took
+ * the button for the Frame.
+ */
+test("playbook: a Frame drawn between the intro and the button, not claimed; the Card's code changes and the page draws the same: no claim (ticket 78, after review)", async ({ page }) => {
+  await drawAFrameBelowTheIntro(page);
+  const locBefore = await page.locator("article").first().getAttribute("data-tk-loc");
+  writeFileSync(CARD, typedApart(original));
+  await expect.poll(() => page.locator("article").first().getAttribute("data-tk-loc")).not.toBe(locBefore);
+  // Past the second the code is to rest, and some.
+  await page.waitForTimeout(3000);
+  const claimed = existsSync(`${THIRD_KIND_FOLDER}state.json`) || (await ring(page).count()) > 0;
+  const notices = await noticesSoFar(page);
+  // Claimed, the editor has folded into the toggle: nothing to edit.
+  const editable = !claimed && (await stillEditable(page));
+  record("frame-drawn-code-same", { falseClaims: claimed ? 1 : 0, notices, editable });
+  expect(claimed).toBe(false);
+  // Nor a toast that says the canvas was frozen afresh, nor ticket 66's notice. The page-changed toast is recorded, not asserted: what this playbook measures is the claim.
+  expect({ ...notices, pageChanged: 0 }).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
+  expect(editable).toBe(true);
+});
+
+test("playbook: the same Frame, the Agent writing it at its place with no claim: the round is claimed (ticket 78, after review)", async ({ page }) => {
+  const made = await drawAFrameBelowTheIntro(page);
+  const { width, height } = made.after;
+  await writeBelowTheIntro(page, `        <div className="h-[${height}px] w-[${width}px]" />\n`);
+  const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
+  const notices = await noticesSoFar(page);
+  record("frame-drawn-applied-unclaimed", { autoClaimed: claimedAfterMs !== null, claimedAfterMs, notices });
+  expect(claimedAfterMs).not.toBeNull();
+  expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
+  await npx03kind("finish");
+});
+
+/**
  * Ticket 77: a change for one usage of the Card alone (the loop's, or the
  * fourth card's, "Your turn"), which the Agent may write into the Card
  * itself, so the Card's other usage changes with it. The page notes, as the

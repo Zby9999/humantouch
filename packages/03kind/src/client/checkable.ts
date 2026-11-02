@@ -96,8 +96,8 @@ export function forOneUsage({ target: { chain } }: Pick<Change, "target">): bool
 }
 
 /** The change that makes the layer `id` this round, if one of `round` does: new text or a Frame, a copy, a layer put back, a new Stack. */
-export function makerOf(id: string, round: Change[]): Change | null {
-  const makes = (change: Change) =>
+export function makerOf<C extends Change>(id: string, round: C[]): C | null {
+  const makes = (change: C) =>
     ["create", "duplicate", "putBack"].includes(change.kind) || (change.kind === "stack" && !!(change.after as { place: Place | null }).place);
   return round.find((change) => change.layer === id && makes(change)) ?? null;
 }
@@ -115,7 +115,7 @@ export function placeOfMade(maker: Change, round: Change[]): Place {
  * when the page cannot find it: made otherwise (a copy, a layer put back, a
  * new Stack), made in a round before, or in such a container, or one with no marker.
  */
-export function madeLayer(id: string, round: Change[]): { maker: Change; place: Place } | null {
+export function madeLayer<C extends Change>(id: string, round: C[]): { maker: C; place: Place } | null {
   const maker = makerOf(id, round);
   if (maker?.kind !== "create") return null;
   const place = placeOfMade(maker, round);

@@ -4,11 +4,12 @@ import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRoun
 import { ChangeList } from "./ChangeList";
 import { watchStall, type StallWatch } from "./agent-stall";
 import type { Camera } from "./camera";
-import { watchCodeRuns, type CodeRun } from "./code-changes";
+import { PAGE_CHANGED_MEASURE, watchCodeRuns, type CodeRun } from "./code-changes";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
 import { putBackBy, withDependents, type Change, type RangePart } from "./changeset";
 import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
+import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
 import type { OtherUsages } from "./elsewhere";
 import { PageToast, type PageToastMessage } from "./PageToast";
@@ -106,6 +107,16 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   }, []);
 
   const changes = round?.changeSet.changes ?? [];
+  /**
+   * A round as saved, placed on its canvas (ticket 76): what the page checks
+   * it by, claimed or not (ticket 78). Placed once for each round saved, as
+   * it is first checked: the canvas is read only then.
+   */
+  const placed = useRef<{ round: SavedRound; changes: RoundOnCanvas } | null>(null);
+  const placedNow = (saved: SavedRound): RoundOnCanvas => {
+    if (placed.current?.round !== saved) placed.current = { round: saved, changes: placedOnCanvas(saved.changeSet.changes, saved.canvas) };
+    return placed.current.changes;
+  };
   /** The changes this page has seen show, before the local service says so to every page. */
   const [seen, setSeen] = useState<number[]>([]);
   /** Applied, as the page shows them (ADR 0013). */
@@ -127,8 +138,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
     const watcher = watchPage({
       window,
-      changes: round.changeSet.changes,
-      canvas: round.canvas,
+      changes: placedNow(round),
       report,
       onShown: setSeen,
       viewWidths: readViewWidths,
@@ -337,16 +347,26 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   /** The changes on the canvas as of the last render: what a run of code changes, told later, is told by. */
   const listedNow = useRef(listed);
   listedNow.current = listed;
+  /** `saved` placed on its canvas, measured as telling a run of code changes is. */
+  const placing = (saved: SavedRound) => {
+    const start = performance.now();
+    try {
+      return placedNow(saved);
+    } finally {
+      performance.measure(PAGE_CHANGED_MEASURE, { start, end: performance.now() });
+    }
+  };
   useEffect(() => {
     if (!unclaimed) return;
     let watching = true;
     const tellRun = async (run: CodeRun) => {
       const status = await (store ? store.status().catch(() => lastStatus.current) : lastStatus.current);
       if (!watching || status?.status === "claimed") return;
-      const changesNow = listedNow.current;
-      if (changesNow.length && (await showsAnyHere(document, changesNow, readViewWidths()))) {
+      // The round as saved by the canvas's last edit, placed on that canvas: checked as a claimed round is (ticket 76).
+      control.current?.save();
+      const saved = roundNow.current;
+      if (saved?.changeSet.changes.length && (await showsAnyHere(document, placing(saved), readViewWidths()))) {
         if (!watching) return;
-        control.current?.save();
         store?.claim(run.since).catch((error: unknown) => console.warn(error));
         return;
       }

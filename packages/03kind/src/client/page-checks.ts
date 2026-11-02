@@ -21,7 +21,7 @@ import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from ".
 import { codeUpdates, sliced } from "./code-changes";
 import { elsewhereNow, looksElsewhere, noteOtherUsages, type OtherUsages } from "./elsewhere";
 import { CHECK_MEASURE } from "./host";
-import { placedOnCanvas } from "./moves";
+import type { RoundOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
 
 export interface PageChecks {
@@ -32,9 +32,8 @@ export interface PageChecks {
 
 interface Options {
   window: Window;
-  /** The claimed round's changes, and its canvas, as saved: where its new layers are (ticket 76). */
-  changes: Change[];
-  canvas?: string;
+  /** The claimed round's changes, placed on its canvas as saved: where its new layers are (ticket 76). */
+  changes: RoundOnCanvas;
   /** Says what the page saw of a change: as the code changed, or in answer to an ask. */
   report(report: CheckReport): void;
   /** The changes the page shows now, at every width each is to: each time they change. */
@@ -68,9 +67,8 @@ const QUIET_MS = 500;
  * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes: given, canvas, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map() }: Options): PageChecks {
+export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map() }: Options): PageChecks {
   const doc = win.document;
-  const changes = placedOnCanvas(given, canvas);
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
   /** What was last said of each change as the code changed, to say it again only when it changes. */
@@ -396,12 +394,13 @@ export function watchPage({ window: win, changes: given, canvas, report, onShown
 
 /**
  * Whether the page, as wide as its window, shows any of `changes`, the round
- * not claimed: the Agent applying it with no claim (ticket 78). Only what the
- * window shows is looked at, with no copy of the page at other widths to make:
- * a change shown there is enough to tell the round is being applied. Looked
- * at a slice at a time.
+ * not claimed: the Agent applying it with no claim (ticket 78). Looked at as
+ * the claimed round's check looks again (`checkHere`), on the round placed on
+ * its canvas as that is (ticket 76): only what the window shows, with no copy
+ * of the page at other widths to make; a change shown there is enough to tell
+ * the round is being applied. Looked at a slice at a time.
  */
-export function showsAnyHere(doc: Document, changes: Change[], viewWidths: number[]): Promise<boolean> {
+export function showsAnyHere(doc: Document, changes: RoundOnCanvas, viewWidths: number[]): Promise<boolean> {
   return sliced(
     (function* () {
       for (const change of changes) {

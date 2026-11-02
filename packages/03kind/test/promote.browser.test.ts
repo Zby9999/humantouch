@@ -9,6 +9,10 @@ import { serializeCanvas } from "../src/client/freezer";
 import { revertSaved } from "../src/client/saved-round";
 import type { Layer } from "../src/client/layers";
 import { createViews } from "../src/client/views";
+import { placedOnCanvas } from "../src/client/moves";
+
+/** A round as the page checks it, placed on its canvas: with no new layer, no canvas to read. */
+const onCanvas = (round: Change[]) => placedOnCanvas(round, "");
 
 /**
  * Promote (ticket 20): a layer's changes for its usage alone made changes to
@@ -366,8 +370,8 @@ describe("promote", () => {
     });
 
     const [card, usage] = changes.list();
-    expect(checkChange(page, card, changes.list())).toEqual({ outcome: "shown" });
-    expect(checkChange(page, usage, changes.list())).toEqual({ outcome: "shown" });
+    expect(checkChange(page, card, onCanvas(changes.list()))).toEqual({ outcome: "shown" });
+    expect(checkChange(page, usage, onCanvas(changes.list()))).toEqual({ outcome: "shown" });
   });
 
   test("a brief a usage wrote in place of the Card's, promoted once the Card's is taken back out, is the Card's brief from none", () => {
@@ -420,7 +424,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
   /** The page checking the claimed round `round`, what it says of each change. */
   function watch(page: Document, round: Change[]) {
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: page.defaultView!, changes: round, report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+    const checks = watchPage({ window: page.defaultView!, changes: onCanvas(round), report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
     const last = (id: number) => reports.filter((r) => r.id === id).at(-1);
     return { checks, reports, last };
   }

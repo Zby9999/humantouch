@@ -13,6 +13,7 @@
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place, type Target } from "./changeset";
+import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { checkable, madeLayer, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, type Edge } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
@@ -141,7 +142,7 @@ type Found = { els: Element[] } | { missing: MadeMissing } | { unchecked: string
  * of the container. Found at more than one place in the source, which one is
  * the layer cannot be told: the page does not guess.
  */
-function findMade(doc: Document, id: string, round: Change[]): Found {
+function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
   const found = madeLayer(id, round);
   if (!found) return { unchecked: "the layer cannot be found on the page" };
   const { maker, place } = found;
@@ -202,7 +203,7 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * breakpoint changed on its own keeps its value. `sources`: a style change
  * not shown says what sets the value shown instead too.
  */
-export function checkAcross(doc: Document, change: Change, round: Change[], viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
+export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
   const reason = uncheckable(change, round);
   if (reason) return { outcome: "unchecked", reason };
   const page = itself(doc);
@@ -241,14 +242,14 @@ export function checkAcross(doc: Document, change: Change, round: Change[], view
  * page to bring up to date. Null when the change is not to show at that
  * width, and is looked at on copies of the page only.
  */
-export function checkHere(doc: Document, change: Change, round: Change[], viewWidths: number[]): CheckResult | null {
+export function checkHere(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[]): CheckResult | null {
   if (uncheckable(change, round)) return null;
   const page = itself(doc);
   return widthsOf(change, round, page.width, viewWidths).own ? lookAt(doc, change, round, ownValues(change, round), page) : null;
 }
 
-/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. */
-export function checkChange(doc: Document, change: Change, round: Change[] = [change]): CheckResult {
+/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. `round`: the changes of its round, placed on its canvas. */
+export function checkChange(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
   const reason = uncheckable(change, round);
   return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, round, ownValues(change, round), itself(doc));
 }
@@ -269,7 +270,7 @@ function ownValues(change: Change, round: Change[]): string[] {
  * `doc`, read where `at` shows it. A change to a component, but in the usages
  * `apart`. `sources`: a style change not shown says what sets the value there.
  */
-function lookAt(doc: Document, change: Change, round: Change[], apart: string[], at: PageWidth, sources = false): CheckResult {
+function lookAt(doc: Document, change: Change, round: RoundOnCanvas, apart: string[], at: PageWidth, sources = false): CheckResult {
   // A change at a breakpoint is looked at at a width in its range: which one does not matter, but for a range in parts (ticket 65).
   const width = at.own || (change.breakpoint && !change.parts) ? undefined : at.width;
   const result = look(doc, change, round, apart, at, sources);
@@ -288,7 +289,7 @@ export function valueOn(doc: Document, change: Change, at: PageWidth): unknown {
   return el ? readValue(el, change.property as Property) : undefined;
 }
 
-function look(doc: Document, change: Change, round: Change[], apart: string[], at: PageWidth, sources: boolean): CheckResult {
+function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string[], at: PageWidth, sources: boolean): CheckResult {
   if (change.kind === "delete") return lookDeleted(doc, change, at);
   if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, at) : lookOrder(doc, change);
   if (change.kind === "create") return lookMade(doc, change, round, at);
@@ -378,7 +379,7 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
  * the designer last set them). `actual`, not found: what is there instead
  * (`MadeMissing`); placed elsewhere, as for a move placed absolute.
  */
-function lookMade(doc: Document, change: Change, round: Change[], at: PageWidth): CheckResult {
+function lookMade(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): CheckResult {
   const found = findMade(doc, change.layer, round);
   if ("unchecked" in found) return { outcome: "unchecked", reason: found.unchecked };
   if ("missing" in found) return { outcome: "not shown", actual: found.missing };
