@@ -196,3 +196,7 @@
 - `done` 说新建图层不在位置上时的容器名，改用改动说明自己的 `container()`（加了 `located` 参数，`false` 时只给名字和开头标签，和原来 `cli.ts` 自己拼的一样）（e4638fb）。
 - 绑定测试（「How the page checks 说能核对，正好就是页面能核对的」）补了 75 的 `right`、`bottom` 两种：一种所有宽度、一种断点上（3bbe140）。
 - Agent 读到的输出：10 个场景 `pnpm bench:agents --dry`，接着 `done <全部>`、`finish`、再 `claim`，40 份和 77 收尾时（a28f0ca）逐字相同（`diff -r` 无输出）。
+
+## 设计师确认（2026-11-02）
+
+指挥代定的事全部确认：新建的 Frame 不比标签，Agent 写成 `<section>`、`<ul>` 都算；新建文字比字，不比标签。位置信息不存进改动单，由页面从画布现场算；说明里那句「counted with this round's other changes applied or not」之后不再为措辞迭代。Cursor 在 put-back-and-new-text 变慢，见 ticket 81。
