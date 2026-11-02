@@ -150,3 +150,66 @@ End your reply with this report. Each change is under the heading the page's che
 1. 没跑真实 Agent。新说法会不会让真实 Agent 先去落地解散 Stack 那条、再回来 `done`，要等下次测量台跑 dissolve-place-frame 才知道。
 2. 图层设了 `absolute`、但容器不是它的定位参考时，X、Y、右边、下边的核对仍按原来的方式（不单独查定位参考），`done` 的说法里已经有「and that its container is its positioning reference」。这是原来就有的，本 ticket 没改。
 3. 页面核对这几种改动时，每个元素多看一次 `position`（没记外边距的老改动）或少看一次、多看一次相抵（记了外边距的），开销可以不计，没有单独量。
+
+**整线审查修正（2026-11-02）**
+
+*结论*
+
+定位线（80、79）的整线代码审查在 80 上找到两处：验收第 4 条没完全做到（代定第 4 条承认两处输出变了，却没存前后对照）；`done` 对拖进别的 Frame 又拖回的移动，不先说 80 的「not placed absolute」。前后对照补在下面；`done` 的顺序改好了（改法记在 79 的「整线审查修正」毛病 3，因为那一支是 79 加的）。另一个老问题写进遗留风险，没在这次修。
+
+*审查找到的毛病*
+
+1. **验收第 4 条：变了的输出没存前后对照**。代定第 4 条说两处输出变了：改动单没记外边距的老 X / Y 改动（ticket 65 之前存的），图层 `position: relative` 时：
+   - `done` 原来走一般的样式比较，可能报「显示了」（`relative` 图层的 `top` 正好是改后值）；现在报没显示。
+   - 留到下一轮、`claim` 重读改前时，原来把 `relative` 图层的 `top` 当改前；现在不改改前。
+2. **`done` 的说法顺序**：拖进别的 Frame 又拖回、位置记了 `placed` 的移动，页面答「不是自由定位」时，`done` 先说「not where the notes place it」，不说 80 的那句。场景：按右边定位的图层拖出原 Frame 再拖回，Agent 没写 `absolute`。
+
+*改了什么*
+
+- **补前后对照**（毛病 1）：用脚本复现，改前是 b9938dd 的代码，改后是本次修正的代码。页面的核对在浏览器里跑（Playwright 的 headless shell），命令行用页面答出来的结果，两边都是各自版本的代码。场景：一个自由定位的图层 `left: 12px; top: 8px`，在画布上改 Y 到 30，改动单里去掉外边距（像 ticket 65 之前存的那样）；页面上这个图层是 `position: relative`。
+  - (a) 页面写了 `top: 30px`，Agent 跑 `done 1` 和 `finish`。
+
+    改前（页面答「显示了」）：
+    ```
+    Change 1 done: 1 of 1 change applied.
+    Checked on the page: it shows the change.
+    ```
+    `finish` 的第一行是「Round finished: 1 of 1 change applied.」，这条在 ✓ 下面（「- 1. Y: <the layer, and what you changed>」）。这是一个虚假的 ✓：图层不是自由定位，Y 不决定它的位置。
+
+    改后：
+    ```
+    Change 1 done: 0 of 1 change applied.
+    Checked on the page: it does not show the change. The layer is not placed absolute, not absolute at Y 30px: check its `position` and `top`, and that its container is its positioning reference, then run `npx 03kind done 1` again.
+    ```
+    `finish`：「Round finished: 0 of 1 change applied. The page does not show: 1.」，这条在 ⚠️ 下面，Why 一行「the layer is not placed absolute on the page: <what keeps it so>」。
+  - (b) 同一条 Y 改动留到下一轮，页面这时写的是 `top: 20px`，Agent 跑 `claim`（只有设计意图那一行变了，其余逐字相同）。
+
+    改前：
+    ```
+    - **Design intent:** Change the Y position from 20px to 30px.
+    ```
+    改后（改前仍是上一轮的 8px）：
+    ```
+    - **Design intent:** Change the Y position from 8px to 30px.
+    ```
+  - 现在的 main 上存下来的改动都记了外边距（ticket 65 起），这两处只影响很老的改动单。
+- **`done` 先说不是自由定位**（毛病 2）：移动的改动，页面答「不是自由定位」时，先说 80 那句，按说明给的那一边写该查什么：「The layer is not placed absolute, not absolute at 40px from its container's right edge and Y 8px: check its `position`, `right` and `top`, …」。没有 `placed` 的移动（从容器左上角按 X、Y 摆）说法逐字和原来一样。
+
+*代定的事（待设计师确认）*
+
+没有新的。毛病 2 的说法属于 79，代定记在 79（第 7 条）。
+
+*测试*
+
+- 命令行（`cli.test.ts`）+1 条（和 79 共用）：移动的改动、页面答「不是自由定位」，按右边定位、居中加按下边定位、按左上角三种的 `done`。没改的代码（9d5ab1d）前两种说「not where the notes place it」，失败；第三种和原来逐字一样。
+- 前后对照的脚本没有放进仓库（它跑的是 b9938dd 的旧代码），结果原样贴在上面。
+
+*全量结果*
+
+和 79 的这次修正一起跑，见 79 的「整线审查修正」。
+
+*遗留风险*
+
+（接实现记录的遗留风险）
+
+4. **只在某个宽度以上自由定位的图层，`done` 在窄的宽度叫 Agent 去设 `position`**。场景：图层只在 md 以上自由定位（例如 `md:absolute`，手机宽度在排版里），设计师在桌面视图改它的 X，作用于所有宽度。`done` 在 390px 宽度核对时，页面那里不是自由定位，说「At 390px wide, the layer is not placed absolute, not absolute at X …: check its `position` and `left` …」，要 Agent 在手机宽度也设成自由定位；但画布在那个宽度也不是自由定位，Agent 照做反而和画布不一样。这是 ticket 64（在页面窗口以外的宽度也核对）起就有的老问题，原来说的是「Something overrides your change」，80 的新说法让它更像一个明确的指令，更误导。这次没修，留给指挥开新 ticket、交设计师分诊。

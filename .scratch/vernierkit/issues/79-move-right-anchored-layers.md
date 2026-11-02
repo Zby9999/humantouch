@@ -170,3 +170,100 @@
 4. 从画布外拖回、作为新图层插入的图层，若带 translate，落点仍按原来的算法（没有改拖回的新建路径）。
 5. 居中图层的 X 是它的中点（75 遗留风险第 2 条）、固定在窗口上的图层上下方向按上边（75 遗留风险第 4 条），都照旧。
 6. 有窗口 Chrome 没有跑拖动的性能；headless 下拖的是按左边定位的卡片，居中图层拖动时每一步的 `calc()` translate 没有在 5000 个元素的页面上单独量。
+
+**整线审查修正（2026-11-02）**
+
+*结论*
+
+定位线（80、79）的整线代码审查在 79 上找到六个行为上的毛病，和一批写法上的问题，都已改好。最要紧的是一个虚假的 ✓（docs/goals.md「虚假的 ✓ 0」）：居中图层移动后，Agent 把它的 translate 去掉了，`done` 仍在每个宽度报「显示了」，页面上图层却偏了半个宽度。拖动、微移、改 X / Y 时设计师看到的行为没有变；变的是 `done` 和改动说明的几句话，和断点标记重置的范围（代定第 1 条）。
+
+*审查找到的毛病*
+
+1. **居中图层的核对不看 translate 还在不在（虚假的 ✓）**。居中的图层移动后，页面只按那一边（`left` / `right`）算出来的值核对。场景：Agent 写了 `left-[calc(50%+20px)]`，却去掉了 `-translate-x-1/2`，或者 v3 里别的 `transform`、`rotate` 类盖掉了 translate。每个宽度都报「显示了」，页面上图层比画布往右偏半个宽度。拖进别的 Frame 又拖回原来的 Frame（同一个容器里的移动）也一样。
+2. **留到下一轮、重读改前时，说明前后两处不一致**。下一轮 `claim` 按代码现状重读改前，只改了 X 的改前，没改「那一边原来写成什么」。场景：Agent 写了 `left-[600px]` 没过，下一轮的说明同时写「from `50%` to `calc(50% + 20px)`」和「X goes from 600 to 660」。
+3. **`done` 的说法顺序**：拖进别的 Frame 又拖回、位置记了 `placed` 的移动，只要页面没显示，`done` 一律先说「not where the notes place it」，排在「图层还不是自由定位」（ticket 80 的说法）前面。场景：按右边定位的图层拖出原 Frame 再拖回，Agent 没写 `absolute`，`done` 不说「not placed absolute」。
+4. **副本和位置按桌面视图读定位方式**。放下的位置按正在工作的视图读定位方式（75 定下、设计师已确认），但移动的起点、⌘D 的副本、删除的位置按桌面视图读，容器空间也用另一种算法。场景：在手机视图里 ⌘D 一个只在手机上按右边定位的图层，改动单记成按左边定位。
+5. **断点标记可能留下一半**。79 让 Position 行的断点标记也管 `right` / `bottom`。场景：在平板视图里改按右边定位图层的宽度（宽和 `right` 一起变），尺寸行和 Position 行都出标记；点 Position 行的标记只重置 `right`，宽度留着改过的值，图层的左边往左挪了 20px。e2e 先在没改的代码上复现过（见「测试」）。
+6. **改动说明的文案退回了 ticket 76 修过的歧义**。拖进别的 Frame、复制时，某一方向没有 `placed`，说「Y 10px from its top」，"its" 读起来像图层；从右边定位那一支写死了「the container's」，拖进 Frame 时同一句前后是「Frame」和「container」两个说法。
+
+*改了什么*
+
+- **核对看 translate**（毛病 1）：居中图层的移动，页面先看图层在那个方向是不是仍居中（自身一半的 translate 还在，没被别的 `transform`、`rotate`、`scale` 换掉），再看那一边的值。不是居中，就算「没显示」，`done` 说：「The layer is not centered on where its `left` places it: the page does not move it back half its width by `translate: -50%` (Tailwind's `-translate-x-1/2`), or something else, such as another `transform` or `rotate`, takes its place. Keep its `translate`, as the notes say, and run `npx 03kind done 1` again.」从右边居中的说 `right`、forward、`translate: 50%`；不在窗口宽度时开头是「At 768px wide, the layer …」。拖进别的 Frame 又拖回的移动同样。「How the page checks」里居中那条补了「and its translate still centering it there」。连带：页面算容器宽度（`roomOf`）原来用图层画出来的边框，图层被旋转时会算错，改为用排版的宽度，不受 `transform`、`rotate` 影响。
+- **重读改前时两处一起变**（毛病 2）：页面没显示居中图层时，另外答出那一边现在写成什么（能读成「百分比 + px」就照读，读不出来时用 px）。下一轮重读改前时，X 的改前和「那一边从什么改」一起换成代码现状。上面的场景现在说「from `600px` to `calc(50% + 20px)`」和「X goes from 600px to 660px」。
+- **`done` 先说不是自由定位**（毛病 3）：移动的改动，页面答「不是自由定位」时，先说 ticket 80 那句，按说明给的那一边写：「The layer is not placed absolute, not absolute at 40px from its container's right edge and Y 8px: check its `position`, `right` and `top`, …」；居中的那一方向写「centered on `left: calc(50% + 20px)`」。没有 `placed` 的移动说法逐字不变。
+- **按工作的视图读**（毛病 4）：移动的起点、⌘D 的副本、删除时记下的位置，定位方式和那一边的值都按正在工作的视图读，和放下的位置一样；容器空间两处统一为一个算法（`roomIn`：容器边框以内的大小，精确到小数）。X、Y 本身照旧按桌面视图读（代定第 2 条）。
+- **一起变的一起回去**（毛病 5）：在断点上宽和 `right`（高和 `bottom`）两样都改过时，点尺寸行、Position 行的标记，或断点列表里任一样的重置，两样一起回去；只改过一样时只回那一样。标记的提示文字列出两样，例如「Right and Width」。规则写在一处（`BreakpointMark.tsx` 的 `RESET_TOGETHER`），尺寸行、Position 行、断点列表都按它。
+- **改动说明照 76 的说法**（毛病 6）：每个方向都写出容器，用传进来的名字：拖进 Frame 时「at 70px from the Frame's right edge (CSS `right`, …) and Y 10px from the Frame's top edge (CSS `top`)」，复制时「… and Y 0px from the container's top edge (CSS `top`)」；居中那一支写「50% of the Frame's width from its left edge」。没有 `placed` 的位置说法逐字不变。
+- **写法**（照 75 整线审查立的规矩，输出逐字不变）：
+  - 裸布尔改成有名字的参数：写法规则里的 `placedOtherwise(change, { centered: true })`。
+  - 用已有的类型：`Edge`、`Axis`。
+  - 一名多义各起准确的名字：`along` 在核对里改 `placedBy`，在 `absoluteAt` 里改 `how`（和改动说明里同一样东西的名字一致），在改动说明里改 `whereOnAxis`，断点标记的 `along` 参数随毛病 5 的改法去掉了；`otherwise` 在 `done` 里改 `placedOtherwise`，在核对里改 `sideOff`；编辑命令里的 `centered`（装的是那一边、百分比、容器空间）改 `centeringSide` / `centering`，`offCenterAt` 去掉，直接写进改动。
+  - 轴和边的对应放进 `checkable.ts` 的共用表：`AXIS_SIZE`（width / height）、`AXIS_WAY`（across / down）、`CENTERING_SIGN`（translate 的正负号）、`OTHER_EDGE`，各处改用。
+  - 改动单的 `centeredOn` 改为 `{ before: Share; after: Share }`（这条线没合进 main，不兼容旧写法），不再各处临时拼 `{ percent, px }`。
+  - `done` 里「At …px wide, the / The」六处抽成一个 `sentenceAt`。
+  - 按顶层空格切开的函数：`paint.ts` 早有一个做同样事的 `split(css, " ")`（效果层也在用），`splitAtTopLevelSpaces` 删掉，两处改用它。
+- spec「移动时保留定位方式」「核对」两节各补了一条。
+- 79 代定第 8 条补在下面（放回、删除后撤销、解散 Frame 也保留定位方式）。
+
+*代定的事（待设计师确认）*
+
+我按「最贴近设计师决定」代定的：
+
+1. **一起重置的规则**（毛病 5，照 75 代定第 8 条和 79 代定第 5 条「一起变的一起回去」）：在断点上，宽和 `right`、高和 `bottom` 两样都改过时，从尺寸行、Position 行的标记，或断点列表里任一样重置，两样一起回去；只改过一样时只回那一样。所以先改尺寸再移动（`right` 改了两次），点任一处都回到改尺寸之前；只移动过（只改了 `right`）时，Position 行只回 `right`。
+2. **位置的 X、Y 照旧按桌面视图读**，只有定位方式和那一边的值按工作的视图读（毛病 4）。X、Y 是放回、解散 Frame 时写在所有宽度上的值，原来就按桌面视图；改成按工作的视图会让在手机视图里删掉再放回的图层在桌面视图里挪位。代价：一个各断点定位方式不同的图层，在手机视图里删除、再放回，放回后在所有宽度按手机视图的定位方式摆（遗留风险第 2 条）。
+3. **不是居中时先说 translate**：居中图层 translate 没了、那一边的值也不对时，`done` 只说 translate 没了；Agent 改好 translate 后再 `done`，才说那一边的值。translate 没了时那一边的值看不出图层在哪里。
+4. **「仍居中」按页面实际画出来的样子认**：自身一半的 translate 还在，并且没有 `rotate`、`scale` 或会转、会缩放的 `transform`（和 75 认居中的规则同一个）。所以 Agent 给居中图层加了 `rotate-3`，`done` 也报 translate 没了，说法里已有「or something else, such as another `transform` or `rotate`, takes its place」。
+5. **重读改前时，那一边读不成「百分比 + px」**（例如用了 `var()`）时，改前写成页面上的 px。
+6. **「How the page checks」补一句**说也看 translate：居中改动的一轮，`claim` 的这一句多了「and its translate still centering it there」。
+7. **移动时的 `done`，不是自由定位时**，按说明给的那一边说该查什么（`right` / `bottom` / 居中的那一边），和 80 对 X、Y、右边、下边的说法一致。
+8. **（补 79 代定）放回、删除后撤销、解散 Frame 也保留定位方式**：79 让删除、放回、解散 Frame 记下的位置也带上 `placed`，所以一个按右边定位或居中的图层被删除后放回（从画布外拖回原处或别处）、删除后撤销、所在的 Frame 被解散后，仍按原来的定位方式摆，和拖动、复制一样（约束跟着图层走）。79 的实现记录里没写，补在这里。
+
+*测试*
+
+接缝沿用 75、79 的选法（设计师和指挥不在场，没有当面商定）：编辑命令和页面核对、命令行、e2e。每条都先写、先在没改的代码上看着失败，再修。没改的代码是 9d5ab1d，把新测试放进它的 worktree 里跑。
+
+- **编辑命令、页面核对**（`edits.browser.test.ts`）+4 条：
+  - 居中移动后 translate 去掉、v3 里被 `transform: rotate(3deg)` 换掉，两种宽度都「没显示」、答出 `centered: false`；从右边居中的一样；translate 在、`left` 写成 px 时照旧，另答出那一边写成什么。没改的代码报「显示了」（就是那个虚假的 ✓），失败。
+  - 拖进别的 Frame 又拖回、translate 去掉：「没显示」。没改的代码报「显示了」，失败。
+  - 在手机视图里 ⌘D 一个只在手机上按右边定位的图层：起点和副本都记成按右边、离右边 20；在桌面视图里 ⌘D 照旧。没改的代码记成按左边，失败。
+  - 在手机视图改按右边定位图层的宽度，从 Position 行、尺寸行、断点列表的「Right」各重置一次：两样都回去，图层回到原处。没改的代码 Position 行只回 `right`、宽度留着，失败。
+  - 原有两条居中核对的期望加上「那一边现在写成什么」。
+- **命令行**（`cli.test.ts`）+3 条，改 1 条：
+  - translate 没了：`done` 的三种说法（从左边、从右边且不在窗口宽度、拖回的移动）。没改的代码说那一边的值，不说 translate，失败。
+  - 留到下一轮的居中 X：说明两处都按代码现状，改动单里 `centeredOn.before` 是 `600px`。没改的代码仍是「from `50%`」，失败。
+  - 移动的不是自由定位：按右边、居中加按下边、按左上三种 `done`，最后一种逐字和原来一样。没改的代码前两种说「not where the notes place it」，失败。
+  - 79 的改动说明那条：拖进 Frame、复制时每个方向都写出 Frame / container。没改的代码是「from its top」「from the container's right edge」，失败。
+- **e2e**（`move-placement.spec.ts`）+2 条：
+  - 在平板视图里拖动、微移、改 X 一个按右边定位的图层（79 遗留风险第 3 条），三个视图都量：平板里离右边 40 → 90 → 91 → 100，桌面、手机一直是 40；改动是一条平板断点上的 Right。这条在没改的代码上也过（平板视图里的移动 79 本来就对，只是没有 e2e）。
+  - 在平板视图改宽度后点 Position 行的标记：三个视图都离右边 40、宽 80，标记和改动都没了。没改的代码只重置了 `right`：离右边 40，宽度仍是 100，左边往左挪了 20，失败。
+- 原有测试改了改动单 `centeredOn` 的写法（单测、命令行、`round.spec.ts`），期望的值不变。
+
+*全量结果*
+
+- typecheck 通过。
+- 单测 785 通过、1 跳过；node 测试 32 条通过（含旧名检查）。
+- e2e（`TK_E2E_PORT=5800 pnpm test:e2e`）386 通过、1 跳过，一次跑过，没有重跑（新加 2 条，都在 `move-placement.spec.ts`）。切换按钮体积检查（install.spec、toggle-first.spec）通过。
+- 全量 e2e 之后，命令行里「移动的不是自由定位」那句的拼法又整理了一次（输出逐字不变，`cli.test.ts` 逐字比对过），没有再跑一遍 e2e。
+
+*前后数字（docs/goals.md「度量」）*
+
+拖动受影响的只有放下那一下：记位置时多按工作的视图读一次定位方式（原来也读，只是读桌面视图），容器空间换了算法；拖动每一步做的事没变（拆 translate 换成了 `paint.ts` 的 `split`，只在拖动开始时一次）。用 Playwright 的 headless 跑「dragging a layer keeps 60fps」（5006 个元素、三个视图，拖一张卡片），改前（9d5ab1d）、改后各一次，前后都查过没有合盖睡眠（AppleClamshellState = No），只作前后比较，不算验收：
+
+| | 改前 | 改后 | 目标 |
+|---|---|---|---|
+| 每次拖拽的帧率（中位数 / p95 / 最差） | 60.0 / 60.0 / 60.0fps | 60.0 / 60.0 / 60.0fps | 每次 ≥ 58 |
+| 帧间隔（中位数 / p95 / 最差） | 16.7 / 16.7 / 16.8ms | 16.7 / 16.7 / 16.8ms | p95 ≤ 20.8ms |
+| 迟到的帧 | 0 / 450 | 0 / 452 | 少于 5% |
+| long task | 0 | 0 | 0 |
+
+两次在同一水平，没有擦边，没有交替重跑。被拖的卡片按左边、上边定位；有窗口 Chrome 没有跑，要跑由指挥决定。
+
+包体积（gzip -9）：切换按钮 `react.dev.js` 823 B + 共用 chunk `chunk-HBO7Q6T2.js` 9165 B，改前改后逐字节相同（同一个文件名，校验和相同）。编辑层延迟加载的部分 `editor.dev.js` 320650 → 321217 B（未压缩，+567 B），gzip 108972 → 109127 B（+155 B）。
+
+*遗留风险*
+
+1. 「仍居中」按「自身一半的 translate，且没有转、缩放」认（代定第 4 条）。Agent 用别的写法居中（例如 `margin-left: -40px` 配 `left: 50%`）时，页面上图层在对的地方，`done` 也报 translate 没了。
+2. 各断点定位方式不同的图层，在手机或平板视图里删除再放回、解散它所在的 Frame 时，放回后在所有宽度按那个视图的定位方式摆（代定第 2 条）。
+3. 一起重置的规则只认「同一个方向的尺寸和 `right` / `bottom`」。在断点上拖左边控制点（只改宽度）和移动（只改 `right`）是两回事，也会一起重置（代定第 1 条），重置后两样都回到断点之前。
+4. 留到下一轮重读改前，只在窗口宽度上没显示时重读（原来的规则）。Agent 写成只在窗口宽度对的 px 时，窗口宽度上算显示了，不重读，下一轮的说明仍是上一轮的改前。
+5. 没跑真实 Agent；有窗口 Chrome 没跑拖动的性能。
