@@ -3955,6 +3955,24 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkChange(page, y, onCanvas([y]))).toEqual({ outcome: "shown" });
   });
 
+  test("the Y or `right` of a layer the page does not place absolute is not shown, and no value is read off it: it is not placed by them at all, its `top` or `right` written or not (ticket 80)", () => {
+    const html = MARGINED.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace("display: inline-block;", "position: absolute; left: 12px; top: 8px;");
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "y", 30);
+    editor.resize(layer("tag"), { right: 20 });
+    const placing = changes.list().filter((change) => change.property === "y" || change.property === "right");
+    expect(placing.map((change) => change.property)).toEqual(["y", "right"]);
+    const tag = page.getElementById("tag") as HTMLElement;
+
+    for (const position of ["static", "relative"]) {
+      // Its `top` and `right` as the changes give them, but not absolute.
+      Object.assign(tag.style, { position, top: "30px", right: "20px", margin: "0px" });
+      for (const change of placing) expect(checkChange(page, change, onCanvas([change]))).toEqual({ outcome: "not shown", actual: null });
+      Object.assign(tag.style, { top: "", right: "" });
+      for (const change of placing) expect(checkChange(page, change, onCanvas([change]))).toEqual({ outcome: "not shown", actual: null });
+    }
+  });
+
   test("the `right` of a layer placed from its container's right edge is where the canvas draws it too: past it by the right margin it keeps there (ticket 75)", () => {
     const html = STRUCTURE.replace(`id="board" ${loc("13:5")} style="`, `id="board" ${loc("13:5")} style="position: relative; `).replace(
       `id="tag" ${loc("14:7")} style="`,

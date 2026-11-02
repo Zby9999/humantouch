@@ -200,7 +200,7 @@ function readWhereMade(change: Change, width: number | undefined): boolean {
  */
 function beforeOf(change: Change, actual: unknown): unknown {
   if (PLACED_BY[change.property]) {
-    // With its margins kept (`margins`), the page read it so only absolute: a number is of a layer in the layout, with no X or Y.
+    // With its margins kept (`margins`), the page read it so: its `left` or `top` and its margin there. Not absolute, it read none (null, ticket 80).
     const placed = actual as { value?: unknown } | null;
     if (change.margins) return typeof placed?.value === "number" ? placed.value : undefined;
     return typeof actual === "number" ? actual : undefined;
@@ -328,6 +328,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     const where = placed ? `at X ${placed.x}px and Y ${placed.y}px` : "not placed absolute";
     return `${at} layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
   }
+  if (PLACED_BY[change.property] && actual === null) return notPlacedAbsolute(change.property, change.after as number, again, width);
   if (change.margins && actual !== null && typeof actual === "object") {
     if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as PlacedOnPage, again, width);
     if (PLACED_BY[change.property]) return axisOffByMargins(change.property, change.after as number, change.margins, actual as { value: number; margin: number }, again, width);
@@ -387,6 +388,19 @@ function offByMargins(to: { x: number; y: number }, margins: Margins, placed: Pl
     return `${drawn}${canvas}Its \`left\` and \`top\` are right, but not its margins: keep the margins it has on the canvas (what sets them, such as \`mt-6\` or \`margin-top\`), or add them to \`left\` and \`top\`, and ${again}.`;
   }
   return `${drawn}${canvas}Check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+}
+
+/**
+ * A layer's X or Y, or its right or bottom position, that the page does not
+ * place it by, as it does not place it absolute (ticket 80): said as a move
+ * absolute says it (`notShown`), with the side to check along that axis.
+ * `property`: one of `PLACED_BY`.
+ */
+function notPlacedAbsolute(property: string, to: number, again: string, width?: number): string {
+  const { axis, edge } = PLACED_BY[property]!;
+  const side = SIDES[axis][edge];
+  const where = edge === "end" ? `${to}px from its container's ${side} edge` : `${axis.toUpperCase()} ${to}px`;
+  return `${width ? `At ${width}px wide, the` : "The"} layer is not placed absolute, not absolute at ${where}: check its \`position\` and \`${side}\`, and that its container is its positioning reference, then ${again}.`;
 }
 
 /**

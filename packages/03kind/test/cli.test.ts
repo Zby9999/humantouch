@@ -1738,6 +1738,31 @@ describe("done, checked on the page", () => {
     );
   });
 
+  test("for a layer's X, Y, right or bottom, the page not placing the layer absolute: says so, and what to check, with no value read off it (ticket 80)", async () => {
+    saveRound(
+      { ...redFill, property: "x", before: 0, after: 40, style: { left: "40px", right: "auto" } },
+      { ...redFill, id: 2, property: "y", before: 368, after: 488, style: { top: "488px", bottom: "auto" }, margins: { x: 0, y: 24 } },
+      { ...redFill, id: 3, property: "right", before: 10, after: 0, style: { right: "0px" }, margins: { x: 4, y: 0 } },
+      { ...redFill, id: 4, property: "bottom", before: 0, after: 12, style: { bottom: "12px" } },
+    );
+    await cli("claim");
+    closePage = openPage((id) => ({ outcome: "not shown", actual: null, ...(id === 3 && { width: 390 }) }));
+
+    const notPlaced = (id: number, at: string, check: string) =>
+      `Checked on the page: it does not show the change. ${at}: check its \`position\` and \`${check}\`, and that its container is its positioning reference, then run \`npx 03kind done ${id}\` again.\n`;
+    expect((await cli("done", "1")).output).toContain(notPlaced(1, "The layer is not placed absolute, not absolute at X 40px", "left"));
+    expect((await cli("done", "2")).output).toContain(notPlaced(2, "The layer is not placed absolute, not absolute at Y 488px", "top"));
+    expect((await cli("done", "3")).output).toContain(notPlaced(3, "At 390px wide, the layer is not placed absolute, not absolute at 0px from its container's right edge", "right"));
+    expect((await cli("done", "4")).output).toContain(notPlaced(4, "The layer is not placed absolute, not absolute at 12px from its container's bottom edge", "bottom"));
+
+    const report = (await cli("finish")).output;
+    expect(report).toContain("- 1. X: <the layer>\n  Why: the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).toContain("- 2. Y: <the layer>\n  Why: the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).toContain("- 3. Right: <the layer>\n  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).toContain("- 4. Bottom: <the layer>\n  Why: the layer is not placed absolute on the page: <what keeps it so>\n");
+    expect(report).not.toContain("null");
+  });
+
   test("several changes at once: each marked done, each with how the page checked it", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");

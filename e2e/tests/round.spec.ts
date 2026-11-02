@@ -468,6 +468,34 @@ test.describe("done checks the change on the page", () => {
     for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
   });
 
+  test("a layer's Y written in the code, the layer not placed absolute there: done and finish say it is not placed absolute, and what to check, not a value read off it (ticket 80)", async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    const layers = page.getByRole("tree", { name: "Layers" });
+    // The header's Stack dissolved: on the canvas, its title is absolute where it was, and moved 20px lower.
+    await layers.getByRole("treeitem", { name: "Header", exact: true }).click();
+    await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Dissolve Stack" }).click();
+    await layers.getByRole("treeitem", { name: "Third Kind", exact: true }).click();
+    const y = Number(await page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Y", exact: true }).inputValue()) + 20;
+    await setField(page, "Y", String(y));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(2);
+    expect(readThirdKindFile("changeset.json").changes[1]).toMatchObject({ id: 2, kind: "style", property: "y", after: y });
+    await npx03kind("claim");
+    const notPlaced = `Checked on the page: it does not show the change. The layer is not placed absolute, not absolute at Y ${y}px: check its \`position\` and \`top\`, and that its container is its positioning reference, then run \`npx 03kind done 2\` again.\n`;
+
+    // As an Agent that has written neither yet: the title is in its header's layout, with no Y to read.
+    const unwritten = await npx03kind("done", "2");
+    expect(unwritten).toContain(notPlaced);
+    // Then writes the title's `top`, but not the dissolved Stack: the title is in its header's layout still, its `top` drawing it nowhere.
+    editSource(APP, 'className="font-display text-4xl', `className="top-[${y}px] font-display text-4xl`);
+    await expect(page.locator("h1")).toHaveClass(/top-\[/);
+    const written = await npx03kind("done", "2");
+    expect(written).toContain(notPlaced);
+    const finish = await npx03kind("finish");
+    expect(finish).toMatch(/\n- 2\. Y: <the layer>\n {2}Why: the layer is not placed absolute on the page: <what keeps it so>\n/);
+    for (const output of [unwritten, written, finish]) expect(output).not.toContain("null");
+  });
+
   /** Selects the layer of the element with test id `id` on the canvas, deepest first. */
   async function pickOnCanvas(page: Page, id: string) {
     const box = (await canvas(page).getByTestId(id).boundingBox())!;

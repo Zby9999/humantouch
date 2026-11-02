@@ -300,7 +300,14 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
   } else els = styledBy(doc, change, apart, at);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const margins = marginsFor(change, at);
-  const [result, wrong] = margins && change.after !== null && PLACING.includes(property) ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins) : lookStyle(els, property, change.after, at);
+  const placing = change.after !== null && PLACING.includes(property);
+  // Not absolute on the page, a layer is not placed by its X, Y, right or bottom at all: no value read off it stands for one (ticket 80).
+  const notAbsolute = placing ? els.find((el) => !absolute(el)) : undefined;
+  const [result, wrong]: [CheckResult, Element | null] = notAbsolute
+    ? [{ outcome: "not shown", actual: null }, notAbsolute]
+    : placing && margins
+      ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins)
+      : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
 }
@@ -407,12 +414,11 @@ function placedThere(els: Element[], { x, y }: { x: number; y: number }, margins
  * for those, whatever the page places it by: where the canvas places it so
  * (`widthsOf`), it must be drawn there. `actual`: along one axis, its `left`
  * or `top` (`right`, `bottom`) and its margin there; both, as a placement is.
- * Not shown: with the first that is not.
+ * Not shown: with the first that is not. `els` are all absolute (`look`).
  */
 function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): [CheckResult, Element | null] {
   const along = PLACED_BY[property];
   for (const el of els) {
-    if (!absolute(el)) return [{ outcome: "not shown", actual: property === "absolute" ? null : readValue(el, property) }, el];
     const placed = placedOn(el, along?.edge);
     if (typeof after !== "number") {
       if (!drawnThere(placed, after, margins)) return [{ outcome: "not shown", actual: placed }, el];
