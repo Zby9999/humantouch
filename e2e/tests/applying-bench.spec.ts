@@ -1629,6 +1629,26 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
       }
     });
 
+    test("playbook: the same, a second page open in preview mode; the Agent writes it for the loop alone with no claim, and the first page claims the round for it: no false leak", async ({ page }) => {
+      await fillTheLoopInEditMode(page);
+      const other = await page.context().newPage();
+      try {
+        await other.goto(DEV_URL);
+        await expect(other.getByRole("button", { name: /not applied yet/ })).toHaveText("1");
+        const claimedAfterMs = await writeUnclaimed(page, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"), () => loopRed(page));
+        expect(claimedAfterMs).not.toBeNull();
+        await expect(ring(other)).toBeVisible();
+        await expect.poll(() => loopRed(other)).toBe(true);
+        const result = await doneAndFinish(page);
+        const falseLeaks = result.checks.outcomes[1] === "shown" ? 0 : 1;
+        record("usage-only-unclaimed-two-pages", { ...kept(result), claimedAfterMs, falseLeaks });
+        expect(falseLeaks).toBe(0);
+        expect(result.ticked).toEqual([1]);
+      } finally {
+        await other.close();
+      }
+    });
+
     test("playbook: the same in edit mode; the Agent writes it for the loop alone with no claim, and the page claims the round for it: no false leak", async ({ page }) => {
       await fillTheLoopInEditMode(page);
       const claimedAfterMs = await writeUnclaimed(page, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"), () => loopRed(page));
