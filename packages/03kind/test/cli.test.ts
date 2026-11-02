@@ -480,6 +480,42 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(plain).not.toContain("**Placement:**");
   });
 
+  test("a layer placed from its container's right edge, or centered, moved: its changes say it stays placed so, and what the side that places it is to give it; moved into another Frame or copied, the same; how to write and check them (ticket 79)", async () => {
+    const other = { ...container, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="relative">' } };
+    const into = (absolute: object) => ({ container: { layer: "9", target: other }, nth: 1, slot: 0, absolute });
+    saveRound(
+      // Centered across on its `left`, moved 20px right.
+      style("x", { before: 150, after: 170, placedFrom: { edge: "start", centered: true }, centeredOn: { percent: 50, before: 0, after: 20 }, style: { left: "calc(50% + 20px)", right: "auto" }, margins: { x: 0, y: 0 } }),
+      // Centered across on its `right`, moved 20px right.
+      { ...style("right", { before: 150, after: 130, placedFrom: { edge: "end", centered: true }, centeredOn: { percent: 50, before: 0, after: -20 }, style: { right: "calc(50% - 20px)" }, margins: { x: 0, y: 0 } }), id: 2 },
+      // Placed from the right, moved into another Frame; centered, copied there.
+      { ...change("move", { after: into({ x: 100, y: 10, placed: { x: { edge: "end", centered: false, percent: 0, px: 70 } } }) }), id: 3 },
+      { ...change("duplicate", { property: "copy", after: into({ x: 80, y: 0, placed: { x: { edge: "start", centered: true, percent: 50, px: -20 } } }) }), id: 4 },
+    );
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change where its `left` places it from `50%` to `calc(50% + 20px)`: 50% of its container's width from its left edge, and 20px past that (Tailwind's `left-[calc(50%+20px)]`). " +
+        "Its X position goes from 150px to 170px as the designer saw it, but write the share, not a px value: as its container grows or shrinks, it stays as far past that share of it.\n",
+    );
+    expect(section(output, 1)).toContain(
+      "- **Placement:** the layer is centered across on where its `left` places it, by `translate: -50%` (Tailwind's `-translate-x-1/2`), and stays so: keep the translate and the share, only how far past it changes.\n",
+    );
+    expect(section(output, 2)).toContain("Change where its `right` places it from `50%` to `calc(50% - 20px)`: 50% of its container's width from its right edge, less 20px (Tailwind's `right-[calc(50%-20px)]`).");
+    expect(section(output, 3)).toContain("at 70px from the container's right edge (CSS `right`, placed from that edge as the layer is now: not by `left`) and Y 10px from its top (CSS `top`).");
+    expect(section(output, 4)).toContain(
+      "centered across on `left: calc(50% - 20px)` (50% of the container's width from its left edge, less 20px, with its `translate: -50%` kept, as the layer is now) and Y 0px from its top (CSS `top`);",
+    );
+    expect(names(output)).toEqual(expect.arrayContaining(["Placed from the right or bottom", "Centered"]));
+    expect(rule(output, "Centered")).toContain("keep what places it and its translate as they are");
+    expect(rule(output, "Centered")).toContain("moved, only how far past the share of its container it is centered on changes: write the side as given (`left: calc(50% + 20px)`, Tailwind's `left-[calc(50%+20px)]`), keeping the share and the translate");
+    expect(rule(output, "How the page checks")).toContain(
+      "a layer centered on where its side places it by that side at each width: the share of its container given, and the px past it, plus its margin, kept, as on the canvas",
+    );
+    expect(rule(output, "How the page checks")).not.toContain("a layer placed from its container's right or bottom edge by where it is drawn");
+  });
+
   test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
     saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
 
@@ -1735,6 +1771,17 @@ describe("done, checked on the page", () => {
       "it does not show the change. The right position is drawn at 0px from its container's right edge (`right` 0px, right margin 0px), " +
         "where the canvas draws it at 4px (it is placed by its `right`, 0px, and it keeps its 4px right margin). " +
         "Its `right` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as `mr-6` or `margin-right`), or add it to `right`, and run `npx 03kind done 1` again.\n",
+    );
+  });
+
+  test("for a layer centered and moved, the page placing it elsewhere than the share its side gives it puts it: says where the canvas centers it at that width, and to write the share (ticket 79)", async () => {
+    saveRound({ ...redFill, property: "x", before: 150, after: 170, placedFrom: { edge: "start", centered: true }, centeredOn: { percent: 50, before: 0, after: 20 }, style: { left: "calc(50% + 20px)", right: "auto" }, margins: { x: 0, y: 0 } });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 170, margin: 0, at: 404 }, width: 768 }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. At 768px wide, the layer's `left` is 170px (left margin 0px), where the canvas centers it at 404px: 50% of its container's width there, and 20px past that (`left: calc(50% + 20px)`), its margin kept. " +
+        "Write its `left` as that share of its container, not in px, keep its `translate`, and run `npx 03kind done 1` again.\n",
     );
   });
 

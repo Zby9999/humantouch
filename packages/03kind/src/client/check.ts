@@ -15,7 +15,8 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { checkable, madeLayer, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
+import { roomOf } from "./placed-from";
+import { checkable, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -306,7 +307,7 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
   const [result, wrong]: [CheckResult, Element | null] = notAbsolute
     ? [{ outcome: "not shown", actual: null }, notAbsolute]
     : placing && margins
-      ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins)
+      ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins, change.centeredOn)
       : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
@@ -393,16 +394,25 @@ function lookMade(doc: Document, change: Change, round: RoundOnCanvas, at: PageW
   return placedThere(els, { x: latest("x") ?? placed.x, y: latest("y") ?? placed.y }, null);
 }
 
-/** Whether every one of `els` is placed absolute in its container, drawn at `to`; with no elements, it cannot be told. */
-function placedThere(els: Element[], { x, y }: { x: number; y: number }, margins: CanvasMargins | null): CheckResult {
+/**
+ * Whether every one of `els` is placed absolute in its container, drawn at
+ * `to`; with no elements, it cannot be told. Along an axis it is `placed`
+ * otherwise (ticket 79), by the side that places it so, at what that gives it
+ * there, as large as its container is: its margins as they are.
+ */
+function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["absolute"]>, margins: CanvasMargins | null): CheckResult {
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   for (const el of els) {
     const style = getComputedStyle(el);
     if (!/^(absolute|fixed)$/.test(style.position)) return { outcome: "not shown", actual: null };
     // Placed from its container, or from somewhere else.
     if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
-    const placed = placedOn(el);
-    if (!drawnThere(placed, { x, y }, margins)) return { outcome: "not shown", actual: placed };
+    const at = placedOn(el);
+    const otherwise = (["x", "y"] as const).some((axis) => {
+      const how = placed[axis];
+      return how && Math.abs((parseFloat(style.getPropertyValue(SIDES[axis][how.edge])) || 0) - pxIn(how, roomOf(el, axis))) > 0.5;
+    });
+    if (otherwise || !drawnThere(at, { ...(!placed.x && { x }), ...(!placed.y && { y }) }, margins)) return { outcome: "not shown", actual: at };
   }
   return { outcome: "shown" };
 }
@@ -415,8 +425,11 @@ function placedThere(els: Element[], { x, y }: { x: number; y: number }, margins
  * (`widthsOf`), it must be drawn there. `actual`: along one axis, its `left`
  * or `top` (`right`, `bottom`) and its margin there; both, as a placement is.
  * Not shown: with the first that is not. `els` are all absolute (`look`).
+ * `centered`: of a layer centered on where the side places it (ticket 79),
+ * the share of its container the side gives it: at each width, it is where
+ * that puts it there, as its container is (`at` in `actual`).
  */
-function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins): [CheckResult, Element | null] {
+function lookPosition(els: Element[], property: Property, after: number | { x: number; y: number }, margins: CanvasMargins, centered?: Change["centeredOn"]): [CheckResult, Element | null] {
   const along = PLACED_BY[property];
   for (const el of els) {
     const placed = placedOn(el, along?.edge);
@@ -425,8 +438,9 @@ function lookPosition(els: Element[], property: Property, after: number | { x: n
       continue;
     }
     const { axis } = along!;
-    if (!drawnThere(placed, { [axis]: after }, margins)) {
-      return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
+    const at = centered ? Math.round(pxIn({ percent: centered.percent, px: centered.after }, roomOf(el, axis)) * 100) / 100 : after;
+    if (!drawnThere(placed, { [axis]: at }, margins)) {
+      return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis], ...(centered && { at }) } }, el];
     }
   }
   return [{ outcome: "shown" }, null];

@@ -42,11 +42,15 @@ export function breakpointMarks(editor: Editor, layers: Layer[], onEdit: () => v
  * properties are changed on their own at the breakpoint worked in, as in
  * Framer. Clicked, they inherit again, as the breakpoint's list resets them
  * (`BreakpointSection`). The row is `tk-markable`, for the mark to sit beside it.
+ * `along`: properties that change with the row's own, reset with them, but
+ * no mark of their own here: a size's `right` or `bottom` (ticket 79).
  */
-export function BreakpointMark({ properties }: { properties: Property[] }) {
+export function BreakpointMark({ properties, along = [] }: { properties: Property[]; along?: Property[] }) {
   const marks = useContext(BreakpointMarksContext);
-  const changed = marks?.changed(properties) ?? [];
-  if (!changed.length) return null;
+  const own = marks?.changed(properties) ?? [];
+  if (!own.length) return null;
+  // What changes with the row's own, reset with them: not a mark of its own.
+  const changed = [...own, ...(marks?.changed(along) ?? [])];
   const names = listed(changed.map(propertyTitle));
   return (
     <button

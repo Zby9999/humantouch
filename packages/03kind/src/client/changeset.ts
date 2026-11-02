@@ -5,8 +5,9 @@
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
-import type { PlacedFrom } from "./checkable";
+import type { PlacedAlong, PlacedFrom } from "./checkable";
 import type { Align, Padding } from "./property-table";
+import type { Axis } from "./snap";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
 
@@ -54,8 +55,13 @@ export interface Place {
   nth: number;
   /** Its place among the container element's child nodes on the canvas, to put it back by. */
   slot: number;
-  /** Absolute: `left` and `top` in the container, in px. Null: in the container's layout. */
-  absolute: { x: number; y: number } | null;
+  /**
+   * Absolute: `left` and `top` in the container, in px (X and Y). Null: in the
+   * container's layout. `placed`: along an axis it is placed otherwise than
+   * from the container's left or top edge, how, and what the side that places
+   * it so gives it there (ticket 79, ADR 0014): it keeps how it is placed.
+   */
+  absolute: { x: number; y: number; placed?: Partial<Record<Axis, PlacedAlong>> } | null;
 }
 
 /** How a Stack lays its layers out, in design language. */
@@ -269,6 +275,16 @@ export interface Change {
    */
   placedFrom?: PlacedFrom;
   /**
+   * A change to the X or Y, or the `right` or `bottom`, of a layer centered on
+   * where that side places it (ticket 79, ADR 0014): what the side gives it,
+   * a share of its container's size (`percent`, which stays) and px past it,
+   * before and after: `calc(50% + 20px)` is 50 and 20. The change's own
+   * values are where that side has it in the view worked in, as X and Y show
+   * it; at every other width it is where the share puts it there, and so the
+   * page checks it.
+   */
+  centeredOn?: { percent: number; before: number; after: number };
+  /**
    * A change to the `right` or `bottom` of a layer at every width (ticket 75,
    * line review): the ranges of the views where the canvas places the layer
    * otherwise, by its `left` or `top` (as the page's breakpoints may have
@@ -312,7 +328,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "placedOtherwiseAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "instance"
     > & {
       kind?: Change["kind"];
     },
@@ -368,6 +384,8 @@ export function createChangeSet(saved?: SavedChangeSet): ChangeSet {
         // And where the canvas draws it, by the margins it has where it is now.
         if (change.margins) earlier.margins = change.margins;
         else delete earlier.margins;
+        // And, centered, how far past its share.
+        if (change.centeredOn) earlier.centeredOn = change.centeredOn;
       } else {
         const { breakpoint, ...rest } = change;
         changes.set(key, { id: ++lastId, kind: "style", layer: layerId, ...(breakpoint && { breakpoint: { ...breakpoint } }), ...rest });

@@ -16,9 +16,9 @@ import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { isEndOffset, PLACED_BY, PLACING, SIDES, SIZE_AXIS } from "./checkable";
+import { isEndOffset, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { endOffsetPlaces, placedFrom } from "./placed-from";
+import { endOffsetPlaces, pastShare, placedFrom, roomOf, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -155,6 +155,23 @@ export function createEditor(
     edit(layer, property, value, continues, breakpoint, undefined, picked, cut ? cutting(cut, range!) : undefined);
   };
 
+  /**
+   * Of a change to `property`, one of those that place a layer along an axis
+   * by a side (`PLACED_BY`): that side, when `el`, as laid out, is centered on
+   * where it places it (ticket 79). With how it is placed, the share of its
+   * container the side gives it, which stays (as first changed, `earlier`),
+   * and the room its container gives it. Null for any other, or a side whose
+   * value is not read here (a `var()`): written in px, as X and Y are.
+   */
+  const centeredSide = (el: Element, property: Property, earlier: Change | null) => {
+    const along = PLACED_BY[property];
+    if (!along) return null;
+    const from = placedFrom(el, along.axis);
+    if (!from.centered || from.edge !== along.edge) return null;
+    const share = earlier?.centeredOn ? { percent: earlier.centeredOn.percent } : sideShareOf(el, along.axis, along.edge);
+    return share && { from, share, room: roomOf(el, along.axis), side: SIDES[along.axis][along.edge] };
+  };
+
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
   const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
     const definition = definitionOf(property);
@@ -172,9 +189,13 @@ export function createEditor(
     const flowing = () => !asShown(el, () => stackOf(el).flex);
     // At a breakpoint, it is made a real Stack there too: an edit at every width that made it one may be taken back.
     const asStack = definition.stack && ((!!breakpoint && !!earlier?.asStack) || layer.el.hasAttribute(AS_STACK_ATTR) || flowing());
+    // Centered on where the side that places it does (ticket 79): the side keeps its share of the container, past it by as much as the layer moves.
+    const centered = typeof value === "number" ? asShown(el, () => centeredSide(el, property, earlier)) : null;
+    const offCenter = centered && pastShare(value as number, centered.share.percent, centered.room);
     const declarations = asShown(el, () => ({
       ...(asStack && { display: "flex", "flex-direction": stackOf(el).direction === "horizontal" ? "row" : "column" }),
       ...definition.write(value, el),
+      ...(centered && { [centered.side]: shareCss({ percent: centered.share.percent, px: offCenter! }) }),
       // Placed freely at a breakpoint and placed anew there: as large as it was when first taken out of the layout.
       ...(property === "absolute" && value && earlier?.style.width && { width: earlier.style.width, height: earlier.style.height }),
     }));
@@ -196,7 +217,10 @@ export function createEditor(
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
     const along = SIZE_AXIS[property];
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
-    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : {};
+    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centered ? { placedFrom: earlier?.placedFrom ?? centered.from } : {};
+    const offCenterAt = centered && {
+      centeredOn: { percent: centered.share.percent, before: earlier?.centeredOn?.before ?? pastShare(before as number, centered.share.percent, centered.room), after: offCenter! },
+    };
     // Its `right` or `bottom` changed at every width: where the canvas places it otherwise, its `right` or `bottom` places nothing.
     const placedOtherwiseAt = !earlier && !breakpoint && isEndOffset(property) ? viewsPlacingOtherwise(layer, PLACED_BY[property]!.axis) : [];
     const variables = bind?.(property, value, picked, earlier?.variables);
@@ -217,6 +241,7 @@ export function createEditor(
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
       ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, PLACED_BY[property]?.edge) }),
       ...placed,
+      ...offCenterAt,
       ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
@@ -406,6 +431,20 @@ export function createEditor(
   };
 
   /**
+   * The offset that places the layer from its container's end edge, `right`
+   * or `bottom`, when `property` is its X or Y and it is placed from that
+   * edge in the view worked in, centered on where it places it there or not:
+   * moving it changes that offset instead, so it stays placed so (ticket 79,
+   * ADR 0014). Null otherwise.
+   */
+  const endPlacingOf = (layer: Layer, property: Property): "right" | "bottom" | null => {
+    if ((property !== "x" && property !== "y") || layer.text) return null;
+    const { end } = SIDES[property];
+    if (!editor.can(layer, end)) return null;
+    return placedFrom(working.shown(layer.el), property).edge === "end" ? end : null;
+  };
+
+  /**
    * `Editor.set`. `sizeAlone`: a width or height set as a handle sets it,
    * which says where each edge goes; else a layer placed from its right or
    * bottom edge keeps its left or top edge as its size changes, its `right`
@@ -420,6 +459,12 @@ export function createEditor(
         const place = { ...editor.read(layer, "absolute")!, [property]: value };
         editHere(layer, "absolute", place, continues);
         return;
+      }
+      // Moved, placed from its container's right or bottom edge: that offset changes the other way, so it stays placed so (ticket 79).
+      const placing = sizeAlone ? null : endPlacingOf(layer, property);
+      if (placing) {
+        const [was, offset] = [editor.read(layer, property as "x" | "y"), editor.read(layer, placing)];
+        return editHere(layer, placing, round(offset - ((value as number) - was)), continues);
       }
       const end = sizeAlone ? null : endOffsetOf(layer, property);
       if (!end) return editHere(layer, property, value, continues, variables);

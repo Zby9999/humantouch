@@ -229,8 +229,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve }: Prop
         <section class="tk-section" aria-labelledby="tk-position">
           <h3 id="tk-position" class="tk-section-title">Position</h3>
           <div class="tk-grid-2 tk-markable">
-            {/* Placed freely at the breakpoint (ADR 0008): its X and Y there are that placement. */}
-            <BreakpointMark properties={["x", "y", "absolute"]} />
+            {/* Placed freely at the breakpoint (ADR 0008): its X and Y there are that placement. Placed from its right or bottom edge, those move it (ticket 79). */}
+            <BreakpointMark properties={["x", "y", "absolute", "right", "bottom"]} />
             <NumberField label="X" glyph="X" value={number(x)} onChange={set("x")} />
             <NumberField label="Y" glyph="Y" value={number(y)} onChange={set("y")} />
           </div>
@@ -400,8 +400,8 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable }: {
   const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   return (
     <div class="tk-row tk-size-row tk-markable">
-      {/* A layer placed from its right or bottom edge has that changed with its size (ticket 75): reset together. */}
-      <BreakpointMark properties={[axis, SIDES[SIZE_AXIS[axis]!].end]} />
+      {/* A layer placed from its right or bottom edge has that changed with its size (ticket 75): reset together. Moved, it is its Position's (ticket 79). */}
+      <BreakpointMark properties={[axis]} along={[SIDES[SIZE_AXIS[axis]!].end]} />
       <VariableSlot label={label} slot={variable}>
         <NumberField
           label={label}

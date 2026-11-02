@@ -5,11 +5,11 @@
  * `last` prints the round before, to undo it by. `init`, `doctor` and
  * `remove` install 03Kind, check it, and take it back out.
  */
-import { changes as changesWord, container as containerOf, describeChanges, toApply, type NotesOptions } from "./change-notes";
+import { changes as changesWord, container as containerOf, describeChanges, shareWords, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
 import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, value } from "./design-values";
 import type { MadeMissing, PlacedOnPage } from "./client/check";
-import { PLACED_BY, SIDES } from "./client/checkable";
+import { PLACED_BY, shareCss, SIDES } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { reportFor } from "./report-form";
@@ -323,12 +323,19 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     if (actual === "no reference") {
       return `${at} layer is placed absolute, but not from its container: make the container its positioning reference (\`position: relative\`), and ${again}.`;
     }
+    // Placed from its container's right or bottom edge, or centered, along an axis (ticket 79): by the side the notes give.
+    const otherwise = absolute.placed;
+    if (otherwise) {
+      const [across, down] = (["x", "y"] as const).map((axis) => SIDES[axis][otherwise[axis]?.edge ?? "start"]);
+      return `${at} layer is not where the notes place it: check its \`position\`, \`${across}\` and \`${down}\` as the notes give them, and that its container is its positioning reference, then ${again}.`;
+    }
     if (change.margins && actual) return offByMargins(absolute, change.margins, actual as PlacedOnPage, again, width);
     const placed = actual as { x: number; y: number } | null;
     const where = placed ? `at X ${placed.x}px and Y ${placed.y}px` : "not placed absolute";
     return `${at} layer is ${where}, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
   }
   if (PLACED_BY[change.property] && actual === null) return notPlacedAbsolute(change.property, change.after as number, again, width);
+  if (change.centeredOn && actual !== null && typeof actual === "object" && "at" in actual) return centeredOff(change, actual as { value: number; margin: number; at: number }, again, width);
   if (change.margins && actual !== null && typeof actual === "object") {
     if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as PlacedOnPage, again, width);
     if (PLACED_BY[change.property]) return axisOffByMargins(change.property, change.after as number, change.margins, actual as { value: number; margin: number }, again, width);
@@ -422,6 +429,22 @@ function axisOffByMargins(property: string, to: number, margins: Margins, placed
     return `${drawn}${canvas}Its \`${side}\` is right, but not its margin: keep the margin it has on the canvas (what sets it, such as \`m${side[0]}-6\` or \`margin-${side}\`), or add it to \`${side}\`, and ${again}.`;
   }
   return `${drawn}${canvas}Check its \`position\` and \`${side}\`, and that its container is its positioning reference, then ${again}.`;
+}
+
+/**
+ * The X or Y, or the `right` or `bottom`, of a layer centered on where that
+ * side places it (ticket 79), the page placing it elsewhere than the share
+ * of its container the side gives it on the canvas puts it, at that width (`at`).
+ */
+function centeredOff({ property, centeredOn }: Change, placed: { value: number; margin: number; at: number }, again: string, width?: number): string {
+  const { axis, edge } = PLACED_BY[property]!;
+  const side = SIDES[axis][edge];
+  const share = { percent: centeredOn!.percent, px: centeredOn!.after };
+  return (
+    `${width ? `At ${width}px wide, the` : "The"} layer's \`${side}\` is ${placed.value}px (${side} margin ${placed.margin}px), ` +
+    `where the canvas centers it at ${placed.at}px: ${shareWords(share, axis, edge, "its", "there")} (\`${side}: ${shareCss(share)}\`), its margin kept. ` +
+    `Write its \`${side}\` as that share of its container, not in px, keep its \`translate\`, and ${again}.`
+  );
 }
 
 /**

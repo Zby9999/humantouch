@@ -30,6 +30,34 @@ export interface PlacedFrom {
   centered: boolean;
 }
 
+/**
+ * A length as a share of a container's size along one axis and px past that:
+ * `calc(50% + 20px)` is 50 and 20. How a layer centered is placed: what its
+ * side gives it, the share kept as it moves (ticket 79).
+ */
+export interface Share {
+  percent: number;
+  px: number;
+}
+
+/**
+ * Along one axis, how a layer placed absolute is placed otherwise than from
+ * its container's left or top edge, and what the side that places it so gives
+ * it (ticket 79): from the right or bottom edge, px (the share none); centered, a share.
+ */
+export interface PlacedAlong extends PlacedFrom, Share {}
+
+/** A share in px, of a size `of` px. */
+export const pxIn = ({ percent, px }: Share, of: number) => (percent / 100) * of + px;
+
+/** A share as CSS writes it: `50%`, `20px`, `calc(50% + 20px)`, `calc(50% - 20px)`, to two places. */
+export function shareCss({ percent, px }: Share): string {
+  const [p, n] = [Math.round(percent * 100) / 100, Math.round(px * 100) / 100];
+  if (!p) return `${n}px`;
+  if (!n) return `${p}%`;
+  return `calc(${p}% ${n < 0 ? "-" : "+"} ${Math.abs(n)}px)`;
+}
+
 /** Along each axis, the CSS side that places a layer from its container's start edge and from its end edge (ticket 75). */
 export const SIDES = {
   x: { start: "left", end: "right" },

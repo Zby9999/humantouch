@@ -614,6 +614,61 @@ test.describe("done checks the change on the page", () => {
     expect(await npx03kind("done", right)).toContain("Checked on the page: it shows the change.");
   });
 
+  test("layers placed from the right, from the bottom and centered, moved, one resized first: they stay placed so, the notes say which value changes and how to write it, and done checks each, a centered one at every view's width (ticket 79)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="from-right" className="absolute top-[30px] right-[40px] h-[40px] w-[80px] bg-stone-300" />\n' +
+        '        <div data-testid="from-bottom" className="absolute bottom-[60px] left-[40px] h-[40px] w-[80px] bg-stone-300" />\n' +
+        '        <div data-testid="centered" className="absolute top-[120px] left-1/2 h-[40px] w-[80px] -translate-x-1/2 bg-stone-300" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("centered")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    const hero = await page.getByTestId("hero").evaluate((el) => el.clientWidth);
+    await enterEditMode(page);
+    const x = () => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "X", exact: true }).inputValue();
+
+    // Its right edge 20 px out, then the layer 10 px left: 30 px from the right, 100 wide.
+    await pickOnCanvas(page, "from-right");
+    await dragRightEdgeOf(page, 20);
+    await page.keyboard.press("Shift+ArrowLeft");
+    // 20 px up: 80 px from the bottom.
+    await pickOnCanvas(page, "from-bottom");
+    await setField(page, "Y", String(Number(await page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Y", exact: true }).inputValue()) - 20));
+    // 40 px right of the middle, still centered.
+    await pickOnCanvas(page, "centered");
+    await setField(page, "X", String(Number(await x()) + 40));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string; before: unknown; after: unknown; centeredOn?: unknown }[] = readThirdKindFile("changeset.json").changes;
+    expect(changes.map(({ property, before, after, centeredOn }) => ({ property, before, after, centeredOn }))).toEqual([
+      { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 100 }, centeredOn: undefined },
+      { property: "right", before: 40, after: 30, centeredOn: undefined },
+      { property: "bottom", before: 60, after: 80, centeredOn: undefined },
+      { property: "x", before: hero / 2, after: hero / 2 + 40, centeredOn: { percent: 50, before: 0, after: 40 } },
+    ]);
+
+    const notes = await npx03kind("claim");
+    expect(notes).toContain("Change the right position from 40px to 30px: how far the layer's right edge is from its container's, its CSS `right`. It stays placed from that edge: do not place it by `left` instead.");
+    expect(notes).toContain("Change the bottom position from 60px to 80px");
+    expect(notes).toContain("Change where its `left` places it from `50%` to `calc(50% + 40px)`: 50% of its container's width from its left edge, and 40px past that (Tailwind's `left-[calc(50%+40px)]`).");
+    expect(notes).toMatch(/- \*\*Centered:\*\* .*moved, only how far past the share of its container it is centered on changes/);
+    expect(notes).not.toMatch(/Change the X position/);
+
+    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    editSource(APP, "top-[30px] right-[40px] h-[40px] w-[80px]", "top-[30px] right-[30px] h-[40px] w-[100px]");
+    editSource(APP, "bottom-[60px] left-[40px]", "bottom-[80px] left-[40px]");
+    // Not as the notes say: in px, right as wide as the window only.
+    editSource(APP, "left-1/2 h-[40px] w-[80px]", `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`);
+    for (const { id } of changes.slice(0, 3)) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
+    const centered = String(changes[3].id);
+    expect(await npx03kind("done", centered)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer's `left` is");
+    editSource(APP, `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`, "left-[calc(50%+40px)] h-[40px] w-[80px]");
+    expect(await npx03kind("done", centered)).toContain("Checked on the page: it shows the change.");
+  });
+
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
     await page.goto(DEV_URL);
     await page.getByRole("button", { name: TOGGLE_LABEL }).click();

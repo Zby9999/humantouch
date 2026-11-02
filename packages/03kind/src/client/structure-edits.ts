@@ -50,6 +50,7 @@ import { componentBrief, componentElements, componentKey, inComponent, promotabl
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
+import { placedAlong, roomOf, shiftIn } from "./placed-from";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -146,7 +147,13 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   const placeOf = (layer: Layer): Place => {
     const parent = layer.parent!;
     const container = containerOf(parent);
-    const absolute = layer.absolute ? { x: definitionOf("x").read(layer.el, colors), y: definitionOf("y").read(layer.el, colors) } : null;
+    let absolute: Place["absolute"] = null;
+    if (layer.absolute) {
+      const at = { x: definitionOf("x").read(layer.el, colors), y: definitionOf("y").read(layer.el, colors) };
+      // Placed from its container's right or bottom edge, or centered: so (ticket 79).
+      const placed = layer.text ? undefined : placedAlong(layer.el, at, { x: roomOf(layer.el, "x"), y: roomOf(layer.el, "y") });
+      absolute = { ...at, ...(placed && { placed }) };
+    }
     return { container, nth: parent.children.indexOf(layer) + 1, slot: slotsOf(parent.el).indexOf(layer.el), absolute };
   };
 
@@ -174,13 +181,30 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     return { container, containerId, place, target: targetOf(container, count) };
   };
 
+  /**
+   * Where `layer` is placed absolute, let go with its border box at `to`, as
+   * the view worked in lays it out: its `left` and `top` less than that by its
+   * own translate (half its size, centered, ticket 79); placed from its
+   * container's right or bottom edge, or centered, it stays so in `to`'s
+   * container, as Figma's constraints go with a layer (ADR 0014).
+   */
+  const freelyAt = (layer: Layer, to: { parent: Layer; x: number; y: number }): NonNullable<Place["absolute"]> => {
+    if (layer.text) return { x: round(to.x), y: round(to.y) };
+    const el = working.shown(layer.el);
+    const shift = shiftIn(el);
+    const at = { x: round(to.x - shift.x), y: round(to.y - shift.y) };
+    const container = working.shown(to.parent.el);
+    const placed = placedAlong(el, at, { x: container.clientWidth, y: container.clientHeight });
+    return { ...at, ...(placed && { placed }) };
+  };
+
   /** The layer's place at `to`, worked out before it moves. */
   const placeAt = (layer: Layer, to: Destination): Place => {
     const parent = to.parent;
     const container = containerOf(parent);
     const others = parent.children.filter((child) => child !== layer);
     const nodes = slotsOf(parent.el).filter((node) => node !== layer.el);
-    if ("x" in to) return { container, nth: others.length + 1, slot: nodes.length, absolute: { x: round(to.x), y: round(to.y) } };
+    if ("x" in to) return { container, nth: others.length + 1, slot: nodes.length, absolute: freelyAt(layer, to) };
     const next = others[to.index];
     const slot = next ? nodes.indexOf(nodeOf(next)) : nodes.length;
     return { container, nth: to.index + 1, slot, absolute: null };
@@ -200,8 +224,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     }
     const el = working.shown(layer.el);
     if (!absolute(el)) return spotIn(el, container);
+    // Where its border box is: past its `left` and `top` by its own translate, as a drop has it.
     const style = getComputedStyle(el);
-    return { x: parseFloat(style.left) || 0, y: parseFloat(style.top) || 0 };
+    const shift = shiftIn(el);
+    return { x: (parseFloat(style.left) || 0) + shift.x, y: (parseFloat(style.top) || 0) + shift.y };
   };
 
   /**
@@ -531,8 +557,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       if ("x" in to && to.parent === layer.parent && (working.breakpoint() || (layer.absolute && !layer.text && !moved))) {
         // At a breakpoint, loose text gets an element of its own, to be placed freely there.
         if (layer.text) layer = wrap(layer);
+        // Let go where its border box is: moved back by its own translate (centered, half its size), its `left` and `top` are less (ticket 79).
         const [dx, dy] = pinOffsetOf(layer.el);
-        const at = { x: round(to.x - dx), y: round(to.y - dy) };
+        const shift = layer.text ? { x: 0, y: 0 } : shiftIn(working.shown(layer.el));
+        const at = { x: round(to.x - dx - shift.x), y: round(to.y - dy - shift.y) };
         // At a breakpoint, a layer in its container's flow there is placed freely there only (ADR 0008).
         if (working.breakpoint() && !absolute(working.shown(layer.el))) editHere(layer, "absolute", at, false);
         else {
@@ -941,7 +969,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       let style: Record<string, string> = {};
       if (!to) place = { container: where, nth: parent.children.indexOf(layer) + 2, slot: slots.indexOf(layer.el) + 1, absolute: from.absolute };
       else if ("x" in to) {
-        place = { container: where, nth: parent.children.length + 1, slot: slots.length, absolute: { x: round(to.x), y: round(to.y) } };
+        place = { container: where, nth: parent.children.length + 1, slot: slots.length, absolute: freelyAt(layer, to) };
         style = { ...absoluteAt(place.absolute!), ...sizeOf(layer.el) };
       } else {
         const next = parent.children.filter((child) => child !== layer)[to.index];
