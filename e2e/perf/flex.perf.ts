@@ -1339,7 +1339,9 @@ test.describe("a claimed round", () => {
       await expect(ring).toHaveAttribute("aria-valuenow", "0");
       await settle(page, 2000);
       const { long: atReloadLong, measures: atReloadChecks } = await takenTasks(page);
-      const kept = existsSync(`${THIRD_KIND_FOLDER}/other-usages.json`) ? Object.keys(JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/other-usages.json`, "utf8"))).length : 0;
+      // The file holds the notes with the claim they belong to (after the line's review); before that, the notes alone.
+      const file = existsSync(`${THIRD_KIND_FOLDER}/other-usages.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/other-usages.json`, "utf8")) : {};
+      const kept = Object.keys(file.otherUsages ?? file).length;
       let answered = "";
       const claimed = [{ name: "reload", long: atReloadLong, checks: atReloadChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
       expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
