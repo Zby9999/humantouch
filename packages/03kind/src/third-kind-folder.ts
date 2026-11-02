@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { carryOver, type SavedChangeSet } from "./client/changeset";
-import type { CheckAsk, CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
+import type { CheckAsk, CheckResult, CodeSnapshot, OtherUsagesKept, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 
 export const THIRD_KIND_DIR = ".03kind";
 
@@ -27,6 +27,8 @@ export interface ThirdKindFolder {
   checks: string;
   /** The layers off the canvas: no round's, so no round's end takes them (ADR 0009). */
   offCanvas: string;
+  /** What a page noted of the other usages of the claimed round's changes for one usage alone (ticket 82): the claimed round's, gone as it ends. */
+  otherUsages: string;
 }
 
 /** What `checks.json` holds. */
@@ -89,7 +91,7 @@ export async function roundStatus(folder: ThirdKindFolder): Promise<RoundStatus>
 
 export function thirdKindFolder(root: string): ThirdKindFolder {
   const dir = join(root, THIRD_KIND_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.03kind/`, else `cwd` itself. */
@@ -176,8 +178,51 @@ export async function archiveRound(folder: ThirdKindFolder, ended: RoundResult["
     await rm(folder.canvas, { force: true });
     await rm(folder.checks, { force: true });
   }
+  // What was noted of the other usages is this round's alone (ticket 82).
+  await rm(folder.otherUsages, { force: true });
   await rm(folder.state, { force: true });
   return result;
+}
+
+/**
+ * What `other-usages.json` holds: the notes, and when the round they belong to
+ * was claimed. Change ids start from 1 again as a round's changes are carried
+ * over, so the notes go by the claim, not by id alone: a page's word that
+ * comes in late, or a file written back as the round ended (`finish` takes no
+ * turn with the pages' requests), is an earlier round's.
+ */
+interface OtherUsagesFile {
+  claimedAt?: string;
+  otherUsages: OtherUsagesKept;
+}
+
+/** What a page noted of the other usages of the changes of the round claimed as `state` (ticket 82); none when no page has, or the file is another claim's or cannot be read. */
+export async function readOtherUsages(folder: ThirdKindFolder, state: RoundState): Promise<OtherUsagesKept> {
+  const text = await readIfThere(folder.otherUsages);
+  let file: Partial<OtherUsagesFile> | null = null;
+  try {
+    file = text === null ? null : (JSON.parse(text) as Partial<OtherUsagesFile> | null);
+  } catch {
+    // Cut short or garbled: nothing kept, as the page notes them again.
+  }
+  const notes = file?.otherUsages;
+  if (!notes || typeof notes !== "object" || Array.isArray(notes) || file!.claimedAt !== state.claimedAt) return {};
+  return notes;
+}
+
+/** Keeps what a page noted of the other usages with the claim `state`: a change noted already keeps what was noted first. */
+export async function keepOtherUsages(folder: ThirdKindFolder, state: RoundState, noted: OtherUsagesKept) {
+  const kept = await readOtherUsages(folder, state);
+  const newlyNoted = Object.entries(noted).filter(([id]) => !(id in kept));
+  if (!newlyNoted.length) return;
+  const file: OtherUsagesFile = { claimedAt: state.claimedAt, otherUsages: { ...kept, ...Object.fromEntries(newlyNoted) } };
+  await writeAtomically(folder.otherUsages, `${JSON.stringify(file)}\n`);
+}
+
+/** Claims the round afresh, as `state` has it: what was noted of the other usages for a round before is no longer kept (ticket 82). */
+export async function claimFresh(folder: ThirdKindFolder, state: RoundState) {
+  await rm(folder.otherUsages, { force: true });
+  await writeState(folder, state);
 }
 
 /** The layers off the canvas; none when there are none. */

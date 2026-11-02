@@ -17,12 +17,25 @@ import { pointerHeld } from "./pointer-held";
 /**
  * `POST`, to the local service: the page claims the round, having seen one of
  * its changes show with no Agent claiming it (ticket 78). Its body,
- * `{ since }`: when the run of code changes it saw it in began (ms since the
- * epoch), so `last` takes the round back to the code before it. Here rather
- * than in `service-protocol.ts`, whose paths the page loads with the toggle:
- * only edit mode claims.
+ * `{ since, otherUsages }`: when the run of code changes it saw it in began
+ * (ms since the epoch), so `last` takes the round back to the code before it;
+ * and what the other usages showed as that run began, as `OtherUsagesKept`,
+ * if the page noted any, to keep with the claim (ticket 82). Here rather than
+ * in `service-protocol.ts`, whose paths the page loads with the toggle: only
+ * edit mode claims.
  */
 export const CLAIM_PATH = "/claim";
+
+/**
+ * `POST`, to the local service: what a page noted of the other usages of a
+ * claimed round's changes for one usage alone, to keep with the claim
+ * (ticket 82); a change noted already keeps what was noted first. Its body,
+ * `{ at, otherUsages }`: when the page noted them (an ISO time), and the
+ * notes, as `OtherUsagesKept`; noted before the round was claimed, they are
+ * an earlier round's, and not kept. Here with `CLAIM_PATH`, for the same
+ * reason.
+ */
+export const OTHER_USAGES_PATH = "/other-usages";
 
 /** How the code `win`'s page has stands, as the dev server says; undefined when it says nothing (Next.js). */
 export function codeUpdates(win: Window): CodeUpdates | undefined {
@@ -77,9 +90,11 @@ export function watchCodeChanges(win: Window, onChange: () => void, { quietMs = 
 }
 
 /** A run of code changes, the code at rest since. */
-export interface CodeRun {
+export interface CodeRun<B = undefined> {
   /** When it began, in ms since the epoch. */
   since: number;
+  /** What `before` took as it began, before the dev server brought any of its code in; undefined when it could not. */
+  before: B | undefined;
   /** Whether the page draws anything otherwise than before the run: told a slice at a time. */
   pageChanged(): Promise<boolean>;
 }
@@ -104,14 +119,19 @@ export function designerBusy(): boolean {
  * Calls `onRest` once for each run of code the dev server brings into `win`'s
  * page, each update within `quietMs` of the one before: once the run has
  * been quiet that long, nothing is being brought in, and the designer is not
- * `busy`. What the page does meanwhile is watched, to tell by. Returns the
- * way to stop.
+ * `busy`. What the page does meanwhile is watched, to tell by; `before` is
+ * called as a run begins, the page as it was before it, measured as the
+ * telling is (ticket 82). Returns the way to stop.
  */
-export function watchCodeRuns(win: Window, onRest: (run: CodeRun) => void, { quietMs = CODE_QUIET_MS, busy = designerBusy } = {}): () => void {
+export function watchCodeRuns<B = undefined>(
+  win: Window,
+  onRest: (run: CodeRun<B>) => void,
+  { quietMs = CODE_QUIET_MS, busy = designerBusy, before }: { quietMs?: number; busy?: () => boolean; before?: () => B } = {},
+): () => void {
   const doc = win.document;
   const brings = bringsCode(win);
-  /** The run under way: when it began, and what the page did since. */
-  let run: { since: number; records: MutationRecord[] } | null = null;
+  /** The run under way: when it began, what `before` took then, and what the page did since. */
+  let run: { since: number; before: B | undefined; records: MutationRecord[] } | null = null;
   /** When the last update of the run came. */
   let lastUpdate = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -120,6 +140,18 @@ export function watchCodeRuns(win: Window, onRest: (run: CodeRun) => void, { qui
     for (const record of records) run?.records.push(record);
   };
   const observer = new MutationObserver(keep);
+  /** What `before` takes, measured; nothing when it fails, the run told all the same. */
+  const take = (before: () => B): B | undefined => {
+    const start = performance.now();
+    try {
+      return before();
+    } catch (error) {
+      console.warn(error);
+      return undefined;
+    } finally {
+      performance.measure(PAGE_CHANGED_MEASURE, { start, end: performance.now() });
+    }
+  };
   const rest = () => {
     if (!run) return;
     const updating = !!codeUpdates(win)?.updating && performance.now() - lastUpdate < UPDATE_LOST_MS;
@@ -129,14 +161,14 @@ export function watchCodeRuns(win: Window, onRest: (run: CodeRun) => void, { qui
     }
     keep(observer.takeRecords());
     observer.disconnect();
-    const { since, records } = run;
+    const { since, before: was, records } = run;
     run = null;
-    onRest({ since, pageChanged: () => sliced(changedBy(records)) });
+    onRest({ since, before: was, pageChanged: () => sliced(changedBy(records)) });
   };
   const onCode = () => {
     if (!brings()) return;
     if (!run) {
-      run = { since: Date.now(), records: [] };
+      run = { since: Date.now(), before: before && take(before), records: [] };
       // As the update begins, before Vite has fetched the code it brings, let alone run it.
       observer.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, attributeOldValue: true, characterData: true, characterDataOldValue: true });
     }

@@ -1496,4 +1496,168 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     expect(result.checks.outcomes[1]).toBe("shown");
     expect(result.ticked).toEqual([1]);
   });
+
+  /**
+   * Ticket 82: what the other usages showed as the round was claimed is kept
+   * with the claim in `.03kind/`, so a page that checks the round anew (the
+   * designer reloads it, or opens it again) still goes by it; a round the page
+   * claims for an Agent that did not (ticket 78) goes by what they showed
+   * before the code began to change. Before 82 the page noted them afresh
+   * then, the leak on the page already: none of the three leaks was found.
+   */
+  test.describe("leaks the page noted too late before (ticket 82)", () => {
+    const allRed = async (page: Page) => (await cardsOnThePage(page, "backgroundColor")).every((fill) => fill === "rgb(255, 0, 0)");
+    const loopRed = async (page: Page) => (await cardsOnThePage(page, "backgroundColor")).join() === "rgb(255, 0, 0),rgb(255, 0, 0),rgb(255, 0, 0),rgb(255, 255, 255)";
+
+    /** The page open again, `how`: reloaded, or opened anew after it was left; once it has looked at change 1 again. */
+    async function openAgain(page: Page, how: "reload" | "reopen") {
+      const since = new Date().toISOString();
+      if (how === "reload") await page.reload();
+      else await page.goto(DEV_URL);
+      await expect(ring(page)).toBeVisible();
+      await expect.poll(() => (readThirdKindFile("checks.json")?.results?.[1]?.at ?? "") >= since, { timeout: 20_000 }).toBe(true);
+    }
+
+    /** `done 1`, the ring, and `finish`: what each said, and what the page shows, as `applyTheChange` keeps them. */
+    async function doneAndFinish(page: Page) {
+      const done = await npx03kind("done", "1");
+      await expect(ring(page)).toBeVisible();
+      const ringAfterDone = Number(await ring(page).getAttribute("aria-valuenow"));
+      const finished = await npx03kind("finish");
+      const checks = checksOf([1]);
+      return { done, ringAfterDone, finished, checks, ticked: tickedIn(finished), applied: appliedInArchive() };
+    }
+
+    /** The loop's first card filled red in edit mode, left there with no claim; the change saved. */
+    async function fillTheLoopInEditMode(page: Page) {
+      await recordNotices(page);
+      await page.goto(DEV_URL);
+      await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+      await expect(canvas(page).locator("h1")).toBeVisible();
+      await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+      await setField(page, "Fill color", "ff0000");
+      await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property}`)).toEqual(["style fill"]);
+      // The canvas at rest, the edit saved: what the page notes as the code begins to change is the round's.
+      await page.waitForTimeout(500);
+    }
+
+    /** The Agent writes `card` with no claim; the page claims the round for it: how long that took, or null. */
+    async function writeUnclaimed(page: Page, card: string, shows: () => Promise<boolean>) {
+      writeFileSync(CARD, card);
+      await expect.poll(shows).toBe(true);
+      return within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
+    }
+
+    for (const how of ["reload", "reopen"] as const) {
+      test(`playbook: the loop's cards filled red and claimed; the Agent writes it into the Card itself, ${how === "reload" ? "the page open, then reloaded" : "the page left first and opened again after"}: the fourth card is red too`, async ({ page }) => {
+        await changeACard(page, 0, [["Fill color", "ff0000"]]);
+        await npx03kind("claim");
+        await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+        if (how === "reopen") await page.goto("about:blank");
+        await write([[CARD, "bg-white", "bg-[#ff0000]"]], async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("bg-[#ff0000]"));
+        if (how === "reload") await expect.poll(() => allRed(page)).toBe(true);
+        await openAgain(page, how);
+        expect(await allRed(page)).toBe(true);
+        const result = await doneAndFinish(page);
+        const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
+        record(`usage-leak-${how}`, { ...kept(result), told, found: told ? 1 : 0 });
+        expect(result.done).toMatch(/it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`.*its fill from #FFFFFF to #FF0000 since the round was claimed/);
+        expect(told).toBe(true);
+        expect(result.ringAfterDone).toBe(0);
+        expect(result.applied).toEqual([]);
+      });
+    }
+
+    test("playbook: the same, claimed; the Agent writes it for the loop alone, and the page is reloaded: no false leak", async ({ page }) => {
+      await changeACard(page, 0, [["Fill color", "ff0000"]]);
+      await npx03kind("claim");
+      await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+      writeFileSync(CARD, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"));
+      await expect.poll(() => loopRed(page)).toBe(true);
+      await openAgain(page, "reload");
+      const result = await doneAndFinish(page);
+      const falseLeaks = result.checks.outcomes[1] === "shown" ? 0 : 1;
+      record("usage-only-reload", { ...kept(result), falseLeaks });
+      expect(falseLeaks).toBe(0);
+      expect(result.ticked).toEqual([1]);
+    });
+
+    test("playbook: the loop's cards filled red in edit mode; the Agent writes it into the Card itself with no claim, and the page claims the round for it: the fourth card is red too", async ({ page }) => {
+      await fillTheLoopInEditMode(page);
+      const claimedAfterMs = await writeUnclaimed(page, original.replace("bg-white", "bg-[#ff0000]"), () => allRed(page));
+      expect(claimedAfterMs).not.toBeNull();
+      const result = await doneAndFinish(page);
+      const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
+      record("usage-leak-unclaimed", { ...kept(result), claimedAfterMs, told, found: told ? 1 : 0 });
+      expect(result.done).toMatch(/it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`.*its fill from #FFFFFF to #FF0000 since the round was claimed/);
+      expect(told).toBe(true);
+      expect(result.ringAfterDone).toBe(0);
+      expect(result.applied).toEqual([]);
+    });
+
+    /**
+     * After the line's review: a second page open as the page claims the round
+     * noted the other usages only once it heard of the claim, the leak in by
+     * then, and said the change shows; kept by the service, that stood. It
+     * goes by what the claiming page noted before the code changed, kept with
+     * the claim.
+     */
+    test("playbook: the same in edit mode, a second page open in preview mode; the Agent writes it into the Card itself with no claim, and the first page claims the round for it: the fourth card is red too, by either page", async ({ page }) => {
+      await fillTheLoopInEditMode(page);
+      const other = await page.context().newPage();
+      try {
+        await other.goto(DEV_URL);
+        // Its editor layer up, the saved round counted on its toggle: it checks the round as it is claimed.
+        await expect(other.getByRole("button", { name: /not applied yet/ })).toHaveText("1");
+        const claimedAfterMs = await writeUnclaimed(page, original.replace("bg-white", "bg-[#ff0000]"), () => allRed(page));
+        expect(claimedAfterMs).not.toBeNull();
+        await expect(ring(other)).toBeVisible();
+        await expect.poll(() => allRed(other)).toBe(true);
+        // Each page has had its look: the second's word, said as the code changed, stays if it says the change shows.
+        await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome, { timeout: 10_000 }).toBeTruthy();
+        await other.waitForTimeout(1500);
+        const saidUnasked = readThirdKindFile("checks.json")?.results?.[1]?.outcome;
+        const result = await doneAndFinish(page);
+        const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
+        record("usage-leak-unclaimed-two-pages", { ...kept(result), claimedAfterMs, saidUnasked, told, found: told ? 1 : 0 });
+        expect(saidUnasked).toBe("not shown");
+        expect(told).toBe(true);
+        expect(result.ringAfterDone).toBe(0);
+        expect(result.applied).toEqual([]);
+      } finally {
+        await other.close();
+      }
+    });
+
+    test("playbook: the same, a second page open in preview mode; the Agent writes it for the loop alone with no claim, and the first page claims the round for it: no false leak", async ({ page }) => {
+      await fillTheLoopInEditMode(page);
+      const other = await page.context().newPage();
+      try {
+        await other.goto(DEV_URL);
+        await expect(other.getByRole("button", { name: /not applied yet/ })).toHaveText("1");
+        const claimedAfterMs = await writeUnclaimed(page, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"), () => loopRed(page));
+        expect(claimedAfterMs).not.toBeNull();
+        await expect(ring(other)).toBeVisible();
+        await expect.poll(() => loopRed(other)).toBe(true);
+        const result = await doneAndFinish(page);
+        const falseLeaks = result.checks.outcomes[1] === "shown" ? 0 : 1;
+        record("usage-only-unclaimed-two-pages", { ...kept(result), claimedAfterMs, falseLeaks });
+        expect(falseLeaks).toBe(0);
+        expect(result.ticked).toEqual([1]);
+      } finally {
+        await other.close();
+      }
+    });
+
+    test("playbook: the same in edit mode; the Agent writes it for the loop alone with no claim, and the page claims the round for it: no false leak", async ({ page }) => {
+      await fillTheLoopInEditMode(page);
+      const claimedAfterMs = await writeUnclaimed(page, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"), () => loopRed(page));
+      expect(claimedAfterMs).not.toBeNull();
+      const result = await doneAndFinish(page);
+      const falseLeaks = result.checks.outcomes[1] === "shown" ? 0 : 1;
+      record("usage-only-unclaimed", { ...kept(result), claimedAfterMs, falseLeaks });
+      expect(falseLeaks).toBe(0);
+      expect(result.ticked).toEqual([1]);
+    });
+  });
 });
