@@ -128,3 +128,11 @@
 - 只看这一项属性：连带改掉的其他属性（例如 #3 第 4 张的 `display`）照设计师决定不查。继承来的属性：别的图层（不在同一使用处）这一轮的改动让其他使用处的这项属性变了，会被当成漏改；这种组合没在测试里出现。
 - 漏改时 `done` 要等约 1.5 秒（等这条改动「显示」等到时限），和其他没显示的结果一样。
 - e2e 里脚本 Agent 按标题区分第 4 张卡片，只为测试方便，不是推荐写法；新剧本里的对照用的是传参数的写法。
+
+**整线审查补修（2026-11-02，起点 a28f0ca）**
+
+- 命名统一成 other usages（和 GLOSSARY「使用处」一致）（e4638fb）：`client/elsewhere.ts` 改名 `client/other-usages.ts`；`looksElsewhere` → `looksAtOtherUsages`，`elsewhereNow` → `otherUsagesChanged`，记下的值 `OtherUsages` → `OtherUsagesNoted`；核对结果里的 `elsewhere` 字段 → `otherUsages`（类型 `Elsewhere` → `OtherUsageChanged`，`checks.json` 里的字段名随之改，Agent 不读它）；`design-values.ts` 的 `elsewhereWords` → `otherUsagesWords`，`cli.ts` 的 `shownElsewhere` → `shownAtOtherUsages`。
+- 「`Card used at …`」的写法原来在 `design-values.ts`（77 加的）和 `change-notes.ts` 的 Scope 两处一共三份，现在共用 `usedAt` / `usagePlace`。
+- 「这一处只按源码标记找图层」的条件改用 `checkable.ts` 共用的 `foundByMarker`，不再自己写一遍（bd600d4）。
+- GLOSSARY「核对」补上：只改这一处的改动，还看组件在当前页面上的其他使用处（4609dd8）。
+- Agent 读到的输出：10 个场景 40 份和 77 收尾时逐字相同。切换按钮：toggle-first.spec 9,989 → 9,992 B、install.spec 10,153 → 10,153 B（上限 10,240 B）；发布的切换按钮文件未压缩的字节数没变（共用 chunk 21,575 B、`react.dev.js` 1,423 B），差的 3 B 是共用 chunk 文件名的哈希和压缩器给的变量名变了。`editor.dev.js` 107,560 → 107,727 B（+167，主要是 78 补修 1 的放到画布上）。

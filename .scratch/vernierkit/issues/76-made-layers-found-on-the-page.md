@@ -188,3 +188,11 @@
 - 一轮里在新建图层前面、还没落地的结构改动多时，找的范围会宽一些，在范围里位置稍错也算对。
 - 自动认领（78）判断新建图层时用记下的 `nth`，没从画布读位置；在它前面删过图层的情况下，Agent 没认领就落地新建图层，不会触发自动认领（会走情况 3 / 4 的 toast）。
 - 新建 Frame 的尺寸不核对。
+
+**整线审查补修（2026-11-02，起点 a28f0ca）**
+
+- 同源（bd600d4）：「能不能找到同一轮新建的图层、它所在的容器」（`checkable.ts` 的 `madeLayer` / `findable`）和「为什么找不到」（`check.ts` 的 `madeUnfound` / `containerUnfound`）是同一个递归写了两份。现在只有 `checkable.ts` 的 `whereMade` 走一遍，找到时给出新建它的改动和位置，找不到时说是图层本身（上一轮新建 / 不是新建文字或 Frame）还是容器（没有源码标记 / 上一轮新建 / 不是新建出来的）；`checkable` 和 `check.ts` 的理由都从它推出，不会再分叉。「这个图层按源码标记找」也只写一处（`foundByMarker`），`checkable` 和 77 的其他使用处都用它。理由文字逐字没变。
+- `RoundOnCanvas`（78 的补修 1）：`among` 不再挂在会存进 `changeset.json` 的 `Change` 类型上，只在「放到画布上的一轮」里有；核对只收这种一轮。改动单本来就不存它，这是让「没放到画布上就核对」写不出来。测试里核对一条孤立的改动时用 `placedOnCanvas(round, "")`（没有新建图层，不读画布）。
+- `done` 说新建图层不在位置上时的容器名，改用改动说明自己的 `container()`（加了 `located` 参数，`false` 时只给名字和开头标签，和原来 `cli.ts` 自己拼的一样）（e4638fb）。
+- 绑定测试（「How the page checks 说能核对，正好就是页面能核对的」）补了 75 的 `right`、`bottom` 两种：一种所有宽度、一种断点上（3bbe140）。
+- Agent 读到的输出：10 个场景 `pnpm bench:agents --dry`，接着 `done <全部>`、`finish`、再 `claim`，40 份和 77 收尾时（a28f0ca）逐字相同（`diff -r` 无输出）。
