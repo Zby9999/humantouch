@@ -6,7 +6,7 @@
 
 **Blocked by:** 无
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] X、Y、右边、下边的改动，图层在页面上不是自由定位时，`done` 不出现 `null`，说出图层还不是自由定位、该检查什么（和「位置」改动现有的「not placed absolute」说法一致）
 - [ ] `finish` 的 Why 一行同样不出现 `null`
@@ -18,5 +18,9 @@
 - 落地线（78、76、77）整线审查时发现（2026-11-02）。测量台的 dissolve-place-frame 场景在没人落地时（`--dry`）就能看到：`done` 和 `finish` 都写了 `nullpx`。main 上一样。
 - 原因：`client/check.ts` 的 `lookPosition` 遇到不是 absolute 的元素时，给出的 actual 是按 X/Y 读的值，读不到就是 `null`；`cli.ts` 里专门处理「不是自由定位」的分支只管「位置」（absolute）一种改动，X、Y、右边、下边落到通用的「Something overrides your change」那句，把 `null` 拼成了 `nullpx`。从 ticket 64（7c8049e）起就这样，不是落地线引入的。
 - 真实 Agent 忘了设 `position: absolute` 时会碰到，`done` 的说法会把它引到错误的方向（去查 Currently set by）。
+
+## 设计师决定（2026-11-02，分诊）
+
+- 做，按上面的验收项。真实 Agent 照现在这句话会去查 Currently set by，绕错方向。不跑真实 Agent。
 
 ## Comments
