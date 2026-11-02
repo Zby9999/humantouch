@@ -72,7 +72,7 @@ export function checkable(change: Change, round: Change[]): boolean {
   const { target } = change;
   if (change.kind === "create") return !!madeLayer(change.layer, round);
   if (target.made) return change.kind === "style" && !!madeLayer(target.made, round);
-  if (target.run !== undefined || !target.loc) return false;
+  if (!foundByMarker(target)) return false;
   if (change.kind === "style") return true;
   if (change.data) return false;
   if (change.kind === "delete") return true;
@@ -109,21 +109,45 @@ export function placeOfMade(maker: Change, round: Change[]): Place {
 }
 
 /**
- * Of a layer made this round, the change that made it, new text or a Frame,
- * and where it is: in a container the page finds by its source marker, or in
- * one made this round the same way, as deep as they go (ticket 76). Null
- * when the page cannot find it: made otherwise (a copy, a layer put back, a
- * new Stack), made in a round before, or in such a container, or one with no marker.
+ * Whether the page finds a layer by its source marker (`Target.loc`): one
+ * with an element of its own, not a run of text, and not made this round
+ * (found where its change puts it instead, `whereMade`).
  */
-export function madeLayer<C extends Change>(id: string, round: C[]): { maker: C; place: Place } | null {
-  const maker = makerOf(id, round);
-  if (maker?.kind !== "create") return null;
-  const place = placeOfMade(maker, round);
-  return findable(place.container.target, round) ? { maker, place } : null;
+export function foundByMarker(target: Target): boolean {
+  return !target.made && !!target.loc && target.run === undefined;
 }
 
-/** Whether the page can find a container: by its source marker, or made this round as a Frame it can find. */
-function findable(target: Target, round: Change[]): boolean {
-  if (target.made) return !!madeLayer(target.made, round);
-  return !!target.loc && target.run === undefined;
+/**
+ * Why the page cannot find a layer made this round, or a container one is
+ * made in: made in a round before, so the canvas has no source marker for it
+ * (`before`); made otherwise than as new text or a Frame, as a copy, a layer
+ * put back or a new Stack (`otherwise`); a container with no source marker
+ * (`unmarked`).
+ */
+export type Unfound = "before" | "otherwise" | "unmarked";
+
+/**
+ * Of a layer made this round, the change that made it, new text or a Frame,
+ * and where it is: in a container the page finds by its source marker, or in
+ * one made this round the same way, as deep as they go (ticket 76). Else why
+ * the page cannot find it: the layer itself (`layer`), or its container or
+ * one that is in, in turn (`container`). Whether the page can check a change
+ * (`checkable`) and why it cannot (`check.ts`) both go by this.
+ */
+export function whereMade<C extends Change>(id: string, round: C[]): { maker: C; place: Place } | { layer: Exclude<Unfound, "unmarked"> } | { container: Unfound } {
+  const maker = makerOf(id, round);
+  if (!maker) return { layer: "before" };
+  if (maker.kind !== "create") return { layer: "otherwise" };
+  const place = placeOfMade(maker, round);
+  const { target } = place.container;
+  if (!target.made) return foundByMarker(target) ? { maker, place } : { container: "unmarked" };
+  const outer = whereMade(target.made, round);
+  if ("maker" in outer) return { maker, place };
+  return { container: "layer" in outer ? outer.layer : outer.container };
+}
+
+/** Of a layer made this round, the change that made it and where it is, as `whereMade` finds it; null when the page cannot find it. */
+export function madeLayer<C extends Change>(id: string, round: C[]): { maker: C; place: Place } | null {
+  const where = whereMade(id, round);
+  return "maker" in where ? where : null;
 }

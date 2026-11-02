@@ -12,7 +12,7 @@
  */
 import type { Elsewhere } from "../service-protocol";
 import type { Change } from "./changeset";
-import { forOneUsage } from "./checkable";
+import { forOneUsage, foundByMarker } from "./checkable";
 import { originOf } from "./layers";
 import { otherUsagesOf } from "./page-elements";
 import { readValue, type Property } from "./property-table";
@@ -26,8 +26,7 @@ export interface OtherUsages {
 
 /** Whether the page looks at the component's other usages for `change`: a style change for one usage of it alone, to a layer it finds by its source marker. */
 export function looksElsewhere(change: Change): boolean {
-  const { target } = change;
-  return change.kind === "style" && change.scope === "usage" && !change.data && !!target.loc && target.run === undefined && !target.made && forOneUsage(change);
+  return change.kind === "style" && change.scope === "usage" && !change.data && foundByMarker(change.target) && forOneUsage(change);
 }
 
 /** Whether `other`, another change of the round, changes what `change` changes: its property, or a CSS property its reference style names. */

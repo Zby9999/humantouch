@@ -12,10 +12,10 @@
  */
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
-import { changeKey, isReorder, type Change, type Created, type Margins, type Place, type Target } from "./changeset";
+import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { checkable, madeLayer, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, type Edge } from "./checkable";
+import { checkable, madeLayer, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -41,14 +41,34 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
 export function uncheckable(change: Change, round: Change[]): string | null {
   if (checkable(change, round)) return null;
   if (change.kind === "brief") return BRIEF_UNCHECKED;
-  if (change.kind === "create") return containerUnfound(placeOfMade(change, round).container.target, round);
-  if (change.target.made) return madeUnfound(change, change.target.made, round);
+  if (change.kind === "create" || change.target.made) {
+    const where = whereMade(change.kind === "create" ? change.layer : change.target.made!, round);
+    if (change.kind !== "create" && !("layer" in where) && change.kind !== "style") return "of the changes to a layer made this round, the page checks only the layer itself and its styles";
+    if (!("maker" in where)) return "layer" in where ? MADE_UNFOUND[where.layer] : CONTAINER_UNFOUND[where.container];
+  }
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
   if (change.kind === "style") return "the layer's container cannot be found on the page";
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
 }
+
+/**
+ * Why the page cannot find a layer made this round (`whereMade`): made in a
+ * round before, its source not marked on the canvas (ticket 76: it is not
+ * looked for); made as a copy, a layer put back or a new Stack.
+ */
+const MADE_UNFOUND: Record<Exclude<Unfound, "unmarked">, string> = {
+  before: "the layer was made in a round before, and the page cannot find it: the canvas has no source marker for it",
+  otherwise: "the layer is new this round, so the page has no marker to find it by",
+};
+
+/** Why the page cannot find a container a layer is made in, as deep as layers made this round go (`whereMade`). */
+const CONTAINER_UNFOUND: Record<Unfound, string> = {
+  unmarked: "its container has no source marker, so the page cannot find it",
+  before: "its container was made in a round before, and the page cannot find it",
+  otherwise: "its container is new this round (a copy, a layer put back or a new Stack), so the page has no marker to find it by",
+};
 
 /**
  * The page as a check reads it at one width: the page itself (`own`), or a
@@ -92,30 +112,6 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
   const placesNothing = change.placedOtherwiseAt ?? [];
   const covered = (width: number) => [...ownRanges, ...placesNothing].some((range) => within(range, width));
   return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
-}
-
-/**
- * Why the page cannot find a layer made this round, as change `change` to it
- * needs: made in a round before, its source not marked on the canvas (ticket
- * 76: it is not looked for); made as a copy, a layer put back or a new
- * Stack; in a container the page cannot find; or found, but the change is
- * not to its style.
- */
-function madeUnfound(change: Change, id: string, round: Change[]): string {
-  const maker = makerOf(id, round);
-  if (!maker) return "the layer was made in a round before, and the page cannot find it: the canvas has no source marker for it";
-  if (maker.kind !== "create") return "the layer is new this round, so the page has no marker to find it by";
-  if (change.kind !== "style") return "of the changes to a layer made this round, the page checks only the layer itself and its styles";
-  return containerUnfound(placeOfMade(maker, round).container.target, round);
-}
-
-/** Why the page cannot find a container a layer is made in, as deep as layers made this round go. */
-function containerUnfound(target: Target, round: Change[]): string {
-  if (!target.made) return "its container has no source marker, so the page cannot find it";
-  const maker = makerOf(target.made, round);
-  if (!maker) return "its container was made in a round before, and the page cannot find it";
-  if (maker.kind !== "create") return "its container is new this round (a copy, a layer put back or a new Stack), so the page has no marker to find it by";
-  return containerUnfound(placeOfMade(maker, round).container.target, round);
 }
 
 /** What the page shows where a layer made this round is to be, and is not (ticket 76). */
