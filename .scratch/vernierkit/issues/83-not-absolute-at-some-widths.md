@@ -1,0 +1,24 @@
+# 83: 图层只在某些宽度自由定位时，`done` 在别的宽度要 Agent 去设 `position`
+
+**What to build:** 页面里有的图层只在某些宽度是自由定位（例如 `md:absolute`：平板、桌面自由定位，手机上在排版里）。在桌面视图里改它的 X 或 Y，改动作用于所有宽度；`done` 在每个视图的宽度上核对，到了手机宽度，图层在页面上不是自由定位，`done` 就说「At 390px wide, the layer is not placed absolute … check its `position` and `left`」（ticket 80 的说法）。但画布在手机视图里它也不是自由定位，设计师看到的就是这样：Agent 照代码写对了，那个宽度本来就不该看，`done` 却报「没有显示」，还把 Agent 引去改 `position`，可能把手机上的排版改坏。要定：这类宽度怎么核对、`done` 怎么说。
+
+参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准，用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策（ADR 0006、0008、0013、0014）。
+
+**Blocked by:** 无
+
+**Status:** needs-triage
+
+- [ ] 先复现：脚本扮演的 Agent 照改动写对了 X，`done` 在画布不是自由定位的那个宽度报「没有显示」（定位线整线审查读代码时发现，还没有用剧本复现过）
+- [ ] 按设计师选的做法改；不报虚假的 ✓（docs/goals.md）
+- [ ] 剧本或单元测试覆盖：只在 `md` 以上自由定位的图层，在桌面视图改 X
+
+## 背景
+
+- 定位线（80、79）整线审查时发现（2026-11-02）。从 ticket 64 起就这样（以前 `done` 在那个宽度说「Something overrides your change」或 `nullpx`），ticket 80 的新说法让它更像是 Agent 的错：明确要 Agent 去设 `position`。
+- 同类的情况 ticket 75 已经处理过一种：按右边定位的图层，画布在某个视图不按右边定位时，`done` 在那个视图代表的宽度不看 `right`（改动单的 `placedOtherwiseAt`，按画布定，不按 Agent 改完后的页面定；设计师 2026-11-02 确认）。X、Y 改动和图层是不是自由定位没有这样处理。
+- 可选做法：
+  1. 照 75 的做法：改动第一次记下时，看旁边的视图里画布是不是自由定位，不是的视图，它代表的宽度 `done` 不看。
+  2. 照看，但在画布也不是自由定位的宽度，`done` 换个说法（例如说明那个宽度画布上也不是自由定位，不用改），不算「没有显示」。
+  3. 不改，在 spec 里写明。
+
+## Comments
