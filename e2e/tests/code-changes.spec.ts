@@ -3,7 +3,7 @@ import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice } from "../bench/notices";
 import { expect, test, type Page } from "./fixtures";
-import { CARD_EDITED, clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
+import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /**
  * The code changing while the designer is in edit mode, with no Agent having
@@ -30,7 +30,7 @@ test.afterEach(async () => {
   for (const file of UNUSED) rmSync(file, { force: true });
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was.
-  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
+  await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), original)).toBe(true);
 });
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 

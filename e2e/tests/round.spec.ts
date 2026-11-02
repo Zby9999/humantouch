@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
-import { CARD_EDITED, clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
+import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
 test.use({ keepRoundInMemory: false });
@@ -15,7 +15,7 @@ test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") === originalCard) return;
   writeFileSync(CARD, originalCard);
   // The next test's page must open on the Card as it was.
-  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
+  await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), originalCard)).toBe(true);
 });
 
 /** As the Agent does: one of the changes `changeTheCards` makes, written into the Card for the loop's cards alone (ticket 77). */

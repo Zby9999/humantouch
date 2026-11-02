@@ -4,7 +4,7 @@ import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { expect, test, type Locator, type Page } from "./fixtures";
-import { CARD_EDITED, clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
+import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /**
  * The applying bench, scripted (docs/goals.md, Robust): a script plays the
@@ -51,7 +51,7 @@ test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was: wait for the dev server to serve it so.
-  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
+  await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), original)).toBe(true);
 });
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
@@ -323,7 +323,7 @@ test("ending the round from the notice that the Agent seems to have stopped does
 
   // The same round again, on the code as it was, ended by pressing and holding the toggle.
   writeFileSync(CARD, original);
-  await expect.poll(async () => ((text) => text.includes("rounded-xl border border-stone-200 bg-white") && !CARD_EDITED.test(text))(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text())).toBe(true);
+  await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), original)).toBe(true);
   clearThirdKindFolder(THIRD_KIND_FOLDER);
   await stopHalfway(page);
   await pressAndHold(page);
@@ -1007,7 +1007,7 @@ test.afterEach(async () => {
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("Fresh")).toBe(false);
   if (readFileSync(APP, "utf8") === originalApp) return;
   writeFileSync(APP, originalApp);
-  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("-[")).toBe(false);
+  await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/App.tsx`)).text(), originalApp)).toBe(true);
 });
 
 /** The round's checks: from its archive once it has ended, else so far. */
@@ -1308,8 +1308,7 @@ test("playbook: a Frame drawn between the intro and the button, not claimed; the
   const editable = !claimed && (await stillEditable(page));
   record("frame-drawn-code-same", { falseClaims: claimed ? 1 : 0, notices, editable });
   expect(claimed).toBe(false);
-  // Nor a toast that says the canvas was frozen afresh, nor ticket 66's notice. The page-changed toast is recorded, not asserted: what this playbook measures is the claim.
-  expect({ ...notices, pageChanged: 0 }).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
+  expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
   expect(editable).toBe(true);
 });
 

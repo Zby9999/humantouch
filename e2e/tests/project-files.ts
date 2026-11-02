@@ -33,6 +33,20 @@ export function readThirdKindFile(file: string) {
 /** What the dev server serves of a Card edited for one usage alone (`forTheLoopAlone`, or a prop the Card takes with a default, ticket 77): a test that puts the Card back waits till it serves none of it. */
 export const CARD_EDITED = /"Your turn" \?|= "gap-2"|className = ""|fill = "bg-white"/;
 
+/**
+ * Whether what the dev server serves of a component (`served`) is its code as
+ * `source` writes it: the same class strings, none edited in or taken out,
+ * and nothing of a Card edited for one usage alone (`CARD_EDITED`). A test
+ * that edits the code and puts it back waits for this before the next test
+ * opens its page: the dev server's watcher may hear of the file put back
+ * late, and till then serves the edit, so the next page would open on it
+ * already (and an edit written the same again would bring nothing in).
+ */
+export function servesAsWritten(served: string, source: string): boolean {
+  const classes = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((match) => match[1]).sort().join("\n");
+  return classes(served, /className: "([^"]*)"/g) === classes(source, /className="([^"]*)"/g) && !CARD_EDITED.test(served);
+}
+
 /** How the scripted Agent tells the fourth card ("Your turn") from the loop's in a Card's code. */
 const FOURTH = 'title === "Your turn"';
 
