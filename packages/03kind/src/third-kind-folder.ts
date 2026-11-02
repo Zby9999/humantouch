@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { carryOver, type SavedChangeSet } from "./client/changeset";
-import type { CheckAsk, CheckResult, CodeSnapshot, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
+import type { CheckAsk, CheckResult, CodeSnapshot, OtherUsagesKept, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 
 export const THIRD_KIND_DIR = ".03kind";
 
@@ -27,6 +27,8 @@ export interface ThirdKindFolder {
   checks: string;
   /** The layers off the canvas: no round's, so no round's end takes them (ADR 0009). */
   offCanvas: string;
+  /** What a page noted of the other usages of the claimed round's changes for one usage alone (ticket 82): the claimed round's, gone as it ends. */
+  otherUsages: string;
 }
 
 /** What `checks.json` holds. */
@@ -89,7 +91,7 @@ export async function roundStatus(folder: ThirdKindFolder): Promise<RoundStatus>
 
 export function thirdKindFolder(root: string): ThirdKindFolder {
   const dir = join(root, THIRD_KIND_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.03kind/`, else `cwd` itself. */
@@ -176,8 +178,30 @@ export async function archiveRound(folder: ThirdKindFolder, ended: RoundResult["
     await rm(folder.canvas, { force: true });
     await rm(folder.checks, { force: true });
   }
+  // What was noted of the other usages is this round's alone (ticket 82).
+  await rm(folder.otherUsages, { force: true });
   await rm(folder.state, { force: true });
   return result;
+}
+
+/** What a page noted of the other usages of the claimed round's changes (ticket 82); none when no page has. Only the claimed round's: see `claimFresh`. */
+export async function readOtherUsages(folder: ThirdKindFolder): Promise<OtherUsagesKept> {
+  const text = await readIfThere(folder.otherUsages);
+  return text === null ? {} : (JSON.parse(text) as OtherUsagesKept);
+}
+
+/** Keeps what a page noted of the other usages with the claim: a change noted already keeps what was noted first. */
+export async function keepOtherUsages(folder: ThirdKindFolder, noted: OtherUsagesKept) {
+  const kept = await readOtherUsages(folder);
+  const fresh = Object.entries(noted).filter(([id]) => !(id in kept));
+  if (!fresh.length) return;
+  await writeAtomically(folder.otherUsages, `${JSON.stringify({ ...kept, ...Object.fromEntries(fresh) })}\n`);
+}
+
+/** Claims the round afresh, as `state` has it: what was noted of the other usages for a round before is no longer kept (ticket 82). */
+export async function claimFresh(folder: ThirdKindFolder, state: RoundState) {
+  await rm(folder.otherUsages, { force: true });
+  await writeState(folder, state);
 }
 
 /** The layers off the canvas; none when there are none. */

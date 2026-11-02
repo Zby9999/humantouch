@@ -46,9 +46,12 @@ interface Options {
    * What the components' other usages showed of each change for one usage
    * alone, by its id, as the page first looked (ticket 77): kept by the
    * caller for as long as the round is claimed, so a page that checks it
-   * anew, the round read again, still goes by what they showed at the claim.
+   * anew, the round read again, still goes by what they showed at the claim;
+   * with what was kept in `.03kind/` in it, a page reloaded too (ticket 82).
    */
   otherUsages?: Map<number, OtherUsagesNoted | null>;
+  /** Each note taken into `otherUsages` as the page first looks at a change, to be kept with the claim (ticket 82). */
+  onNoted?(id: number, noted: OtherUsagesNoted | null): void;
 }
 
 /** The longest the page looks in one go before it lets the page have a turn. */
@@ -67,7 +70,7 @@ const QUIET_MS = 500;
  * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map() }: Options): PageChecks {
+export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted }: Options): PageChecks {
   const doc = win.document;
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
@@ -76,7 +79,11 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const checkable = changes.filter((change) => !uncheckable(change, changes));
   const copies = new Map<number, PageCopy>();
   const noted = (change: Change) => others.has(change.id) || !looksAtOtherUsages(change);
-  const note = (change: Change) => others.set(change.id, noteOtherUsages(doc, change, changes, win.innerWidth));
+  const note = (change: Change) => {
+    const noted = noteOtherUsages(doc, change, changes, win.innerWidth);
+    others.set(change.id, noted);
+    onNoted?.(change.id, noted);
+  };
   /** Shown on its layer (or not looked at there, at this width): not shown after all where other usages of its component show it too. */
   const orAtOtherUsages = (change: Change, result: CheckResult | null): CheckResult | null => {
     if (result && result.outcome !== "shown") return result;

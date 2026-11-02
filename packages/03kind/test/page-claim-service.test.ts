@@ -2,11 +2,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { run } from "../src/cli";
-import { CLAIM_PATH } from "../src/client/code-changes";
+import { CLAIM_PATH, OTHER_USAGES_PATH } from "../src/client/code-changes";
 import { startService, type Service } from "../src/service";
-import { ROUND_PATH, STATUS_PATH, TOKEN_HEADER, type SavedRound } from "../src/service-protocol";
+import { ROUND_PATH, STATUS_PATH, TOKEN_HEADER, type OtherUsagesKept, type SavedRound } from "../src/service-protocol";
 
 /**
  * Ticket 78: the page claims the round when it sees one of its changes show
@@ -100,4 +100,65 @@ test("a round with a change carried over, claimed by the page, keeps the change'
   // No ask of the page (`claim`'s `opening`): the Agent's code is on the page already, and a change carried over not shown yet may show its edit underway.
   expect(JSON.parse(readFileSync(join(root, ".03kind/state.json"), "utf8")).opening).toBeUndefined();
   expect(readFileSync(join(root, ".03kind/changeset.json"), "utf8")).toBe(saved);
+});
+
+/**
+ * Ticket 82: what a page noted of the other usages of the round's changes for
+ * one usage alone is kept with the claim, and comes with the round while it
+ * is claimed, for a page opened or reloaded since to go by. It belongs to the
+ * round claimed: the round ended, or claimed afresh, it is gone.
+ */
+describe("what the other usages showed, kept with the claim (ticket 82)", () => {
+  const WHITE = { type: "solid", color: "#FFFFFF", opacity: 1 };
+  const RED = { type: "solid", color: "#FF0000", opacity: 1 };
+  const noted = (value: unknown): OtherUsagesKept => ({ 1: { width: 1280, seen: [{ key: "Card.tsx:1:27 App.tsx:8:7", chain: [{ component: "Card", usage: "App.tsx:8:7", thirdParty: false }], value }] } });
+  const loaded = async () => ((await (await call("GET", ROUND_PATH)).json()) as SavedRound).otherUsages;
+
+  test("claimed by the command line, a page's notes are kept, the first page's to note a change; the round loaded comes with them; not claimed, there is nowhere to keep them", async () => {
+    await call("PUT", ROUND_PATH, ROUND);
+    expect((await call("POST", OTHER_USAGES_PATH, noted(WHITE))).status).toBe(409);
+    expect(await loaded()).toBeUndefined();
+    expect((await cli("claim")).code).toBe(0);
+    expect(await loaded()).toEqual({});
+    expect((await call("POST", OTHER_USAGES_PATH, noted(WHITE))).status).toBe(204);
+    // Another page, noting later: the leak may be on the page by then.
+    expect((await call("POST", OTHER_USAGES_PATH, { ...noted(RED), 2: null })).status).toBe(204);
+    expect(await loaded()).toEqual({ ...noted(WHITE), 2: null });
+    expect((await call("POST", OTHER_USAGES_PATH, [])).status).toBe(400);
+    // `claim` again: the same round, the notes kept.
+    expect((await cli("claim")).code).toBe(0);
+    expect(await loaded()).toEqual({ ...noted(WHITE), 2: null });
+  });
+
+  test("claimed by the page, its notes from before the code changed go with the claim; claimed already, they are kept as any page's", async () => {
+    await call("PUT", ROUND_PATH, ROUND);
+    expect((await call("POST", CLAIM_PATH, { since: Date.now(), otherUsages: noted(WHITE) })).status).toBe(204);
+    expect(await loaded()).toEqual(noted(WHITE));
+    expect((await call("POST", CLAIM_PATH, { since: Date.now(), otherUsages: { ...noted(RED), 2: null } })).status).toBe(204);
+    expect(await loaded()).toEqual({ ...noted(WHITE), 2: null });
+  });
+
+  test("the round's alone: finished, unlocked, or claimed afresh, what was noted is gone", async () => {
+    const kept = join(root, ".03kind/other-usages.json");
+    await call("PUT", ROUND_PATH, ROUND);
+    expect((await call("POST", CLAIM_PATH, { since: Date.now(), otherUsages: noted(WHITE) })).status).toBe(204);
+    expect(existsSync(kept)).toBe(true);
+    // Not done: carried over to the next round, on the same canvas.
+    expect((await cli("finish")).code).toBe(0);
+    expect(existsSync(kept)).toBe(false);
+    expect(await loaded()).toBeUndefined();
+    expect((await cli("claim")).code).toBe(0);
+    expect(await loaded()).toEqual({});
+    await call("POST", OTHER_USAGES_PATH, noted(RED));
+    expect((await call("POST", "/unlock")).status).toBe(204);
+    expect(existsSync(kept)).toBe(false);
+    // A file left behind (written back as the round ended, say) is no claim's: claimed afresh, it goes.
+    writeFileSync(kept, JSON.stringify(noted(RED)));
+    expect((await cli("claim")).code).toBe(0);
+    expect(await loaded()).toEqual({});
+    await cli("finish");
+    writeFileSync(kept, JSON.stringify(noted(RED)));
+    expect((await call("POST", CLAIM_PATH, { since: Date.now() })).status).toBe(204);
+    expect(await loaded()).toEqual({});
+  });
 });

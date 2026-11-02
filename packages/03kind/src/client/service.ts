@@ -8,13 +8,14 @@ import {
   UNLOCK_PATH,
   VARIABLES_PATH,
   type CheckReport,
+  type OtherUsagesKept,
   type RoundStatus,
   type SavedOffCanvasLayer,
   type OffCanvasSaveAnswer,
   type SavedRound,
   type Variable,
 } from "../service-protocol";
-import { CLAIM_PATH } from "./code-changes";
+import { CLAIM_PATH, OTHER_USAGES_PATH } from "./code-changes";
 import { roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
 
 export interface RoundStore extends RoundWatch {
@@ -28,8 +29,11 @@ export interface RoundStore extends RoundWatch {
    * Claims the round being edited, once what is being saved is in: the page
    * saw one of its changes show, with no Agent having claimed it (ticket 78).
    * `since`: when the run of code changes it saw it in began (ms since the epoch).
+   * `otherUsages`: what the other usages showed as that run began, kept with the claim (ticket 82).
    */
-  claim(since: number): Promise<void>;
+  claim(since: number, otherUsages?: OtherUsagesKept): Promise<void>;
+  /** Keeps what the page noted of the other usages with the claim, those of a change noted already aside (ticket 82). */
+  keepOtherUsages(otherUsages: OtherUsagesKept): Promise<void>;
   /** Answers the check `done` asked for. */
   report(check: CheckReport): Promise<void>;
   /** The project's own breakpoints from its Tailwind theme; null when it has none to be read. */
@@ -74,9 +78,12 @@ export function connectRoundStore(): RoundStore | null {
     async unlock() {
       await request("POST", { path: UNLOCK_PATH });
     },
-    async claim(since) {
+    async claim(since, otherUsages) {
       await saving;
-      await request("POST", { path: CLAIM_PATH, body: JSON.stringify({ since }) });
+      await request("POST", { path: CLAIM_PATH, body: JSON.stringify({ since, otherUsages }) });
+    },
+    async keepOtherUsages(otherUsages) {
+      await request("POST", { path: OTHER_USAGES_PATH, body: JSON.stringify(otherUsages) });
     },
     async report(check) {
       await request("POST", { path: CHECKS_PATH, body: JSON.stringify(check) });

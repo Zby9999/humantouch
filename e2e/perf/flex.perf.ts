@@ -1089,6 +1089,21 @@ function longTasksOf(long: Seen["long"], own: { start: number; end: number; dura
  * with the first hot update, `done` for all three, which the page answers as
  * the code comes in.
  */
+/**
+ * The large page with its first product card written apart from the loop, a
+ * usage of the card of its own (`yes`), or as it was: so a change to that card
+ * is for one usage alone, and the loop's 95 cards are another usage of it
+ * (tickets 77, 82). Resolves once the dev server serves it so.
+ */
+async function firstCardApart(yes: boolean) {
+  const BIG = fileURLToPath(new URL("../../examples/vite-react18-tw3/src/big/BigPage.tsx", import.meta.url));
+  const LOOP = "{Array.from({ length: PRODUCTS }, (_, i) => (\n                <ProductCard key={i} index={i} />\n              ))}";
+  const big = readFileSync(BIG, "utf8").replace(LOOP.replace("{Array.from({ length: PRODUCTS }", "<ProductCard index={0} />\n              {Array.from({ length: PRODUCTS - 1 }").replace("index={i}", "index={i + 1}"), LOOP);
+  expect(big).toContain(LOOP);
+  writeFileSync(BIG, yes ? big.replace(LOOP, LOOP.replace("{Array.from({ length: PRODUCTS }", "<ProductCard index={0} />\n              {Array.from({ length: PRODUCTS - 1 }").replace("index={i}", "index={i + 1}")) : big);
+  await expect.poll(async () => (await (await fetch(new URL("/src/big/BigPage.tsx", BIG_URL))).text()).includes("PRODUCTS - 1")).toBe(yes);
+}
+
 test.describe("a claimed round", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
@@ -1246,16 +1261,8 @@ test.describe("a claimed round", () => {
    * itself, so the other 95 change too: the most there is to look at.
    */
   test("while a round with a change for one usage is claimed, the page looks at the component's other usages on each hot update with no long task of its own", async ({ page }) => {
-    const BIG = `${REACT18}src/big/BigPage.tsx`;
-    const big = readFileSync(BIG, "utf8");
-    const LOOP = "{Array.from({ length: PRODUCTS }, (_, i) => (\n                <ProductCard key={i} index={i} />\n              ))}";
-    expect(big).toContain(LOOP);
-    const apart = async (yes: boolean) => {
-      writeFileSync(BIG, yes ? big.replace(LOOP, LOOP.replace("{Array.from({ length: PRODUCTS }", "<ProductCard index={0} />\n              {Array.from({ length: PRODUCTS - 1 }").replace("index={i}", "index={i + 1}")) : big);
-      await expect.poll(async () => (await (await fetch(new URL("/src/big/BigPage.tsx", BIG_URL))).text()).includes("PRODUCTS - 1")).toBe(yes);
-    };
     try {
-      await apart(true);
+      await firstCardApart(true);
       const elements = await openBigPage(page);
       await enterEditMode(page);
       await selectCard(page, 1, { parent: true });
@@ -1292,7 +1299,62 @@ test.describe("a claimed round", () => {
       const unclaimed = await hotUpdates(page);
       reportChecks(claimed, unclaimed, elements, "claimedChecksUsages", "3 changes to a card's own usage, 95 cards of another");
     } finally {
-      await apart(false);
+      await firstCardApart(false);
+    }
+  });
+
+  /**
+   * Ticket 82: the same round, claimed, then the page reloaded. What the page
+   * noted of the 95 cards of the other usage at the claim is kept in
+   * `.03kind/` and comes with the round: the reloaded page finds those cards
+   * again by their usage, rather than noting them afresh (before 82). The
+   * reload's own checking, from the page's first script on, then the same hot
+   * updates as above.
+   */
+  test("a round with a change for one usage claimed, the page reloaded: it goes by what was kept, and looks at the other usages on each hot update with no long task of its own", async ({ page }) => {
+    try {
+      await firstCardApart(true);
+      const elements = await openBigPage(page);
+      await enterEditMode(page);
+      await selectCard(page, 1, { parent: true });
+      for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+        const box = design(page).getByRole("textbox", { name: field, exact: true });
+        await box.fill(value);
+        await box.press("Enter");
+      }
+      await selectCard(page, 1);
+      const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+      await gap.fill("10");
+      await gap.press("Enter");
+      const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+      await expect.poll(() => saved().length).toBe(3);
+      await npx03kind("claim");
+      const ring = page.getByRole("progressbar", { name: "Applying design changes" });
+      await expect(ring).toHaveAttribute("aria-valuenow", "0");
+      await settle(page, 2000);
+      // From the reloaded page's first script on.
+      await page.addInitScript(armTasks, CHECKS);
+      await page.reload();
+      await expect(page.locator("[data-testid=product]")).toHaveCount(PRODUCTS);
+      await expect(ring).toHaveAttribute("aria-valuenow", "0");
+      await settle(page, 2000);
+      const { long: atReloadLong, measures: atReloadChecks } = await takenTasks(page);
+      const kept = existsSync(`${THIRD_KIND_FOLDER}/other-usages.json`) ? Object.keys(JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/other-usages.json`, "utf8"))).length : 0;
+      let answered = "";
+      const claimed = [{ name: "reload", long: atReloadLong, checks: atReloadChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
+      expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
+      const ringAtEnd = await ring.getAttribute("aria-valuenow");
+      await npx03kind("finish");
+      await expect(ring).toHaveCount(0);
+      console.log(`ticket 82, reloaded: changes noted in .03kind/ ${kept}; the ring at the end ${ringAtEnd} of 3`);
+
+      writeFileSync(PARTS, original);
+      await expect.poll(served).toBe(true);
+      await openBigPage(page);
+      const unclaimed = await hotUpdates(page);
+      reportChecks(claimed, unclaimed, elements, "claimedChecksReloaded", "3 changes to a card's own usage, 95 cards of another, the page reloaded once claimed");
+    } finally {
+      await firstCardApart(false);
     }
   });
 
@@ -1430,6 +1492,74 @@ test.describe("the code changing in edit mode, with no claim", () => {
       ),
     );
     verdict(met, `telling whether the page changed: longest slice ${longest.toFixed(1)}ms, ${ofTelling.length} long tasks of its own`);
+  });
+
+  test("in edit mode with no claim, two changes for a card's own usage on the canvas, the page notes the 95 cards of its other usage as each run of hot updates begins, with no long task of its own (ticket 82)", async ({ page }) => {
+    await firstCardApart(true);
+    try {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    await selectCard(page, 1, { parent: true });
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(2);
+    await settle(page, 1000);
+    const locAtStart = await page.evaluate(productLoc);
+    const updates = [
+      { name: "the page the same, every marker a line down", from: IMPORT, to: `${IMPORT}\ntype Unused = string;`, shows: async () => (await page.evaluate(productLoc)) !== locAtStart },
+      { name: "the words of 96 cards", from: "Made in small batches", to: "Made in small lots", shows: () => page.evaluate(() => document.querySelector("[data-testid=product] p")!.textContent!.includes("small lots")) },
+      {
+        name: "a class on 96 cards, new to the stylesheet",
+        from: "flex flex-1 flex-col gap-2 p-gutter",
+        to: "flex flex-1 flex-col gap-[10px] p-gutter",
+        shows: () => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px"),
+      },
+    ];
+    const rows: { name: string; looks: number; longestStretch: number; telling: number; longTasks: number[]; longTasksOfTelling: number[]; told: number }[] = [];
+    for (const { name, from, to, shows } of updates) {
+      await page.evaluate(armTasks, MEASURE);
+      const text = readFileSync(PARTS, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(PARTS, text.replace(from, to));
+      await expect.poll(shows, { timeout: 20_000 }).toBe(true);
+      // The code at rest for a second, then told: and some.
+      await settle(page, 3000);
+      const seen = await takenTasks(page);
+      const own = seen.measures.filter((entry) => entry.duration >= 0);
+      rows.push({
+        name,
+        looks: own.length,
+        longestStretch: Math.max(0, ...own.map((entry) => entry.duration)),
+        telling: own.reduce((sum, entry) => sum + entry.duration, 0),
+        longTasks: seen.long.map((task) => task.duration),
+        longTasksOfTelling: longTasksOf(seen.long, own.map((entry) => ({ start: entry.start, end: entry.start + entry.duration, duration: entry.duration }))).map((task) => task.duration),
+        told: await host(page).locator('[data-tk-notice="page-changed"]').count(),
+      });
+    }
+    const longest = Math.max(...rows.map((row) => row.longestStretch));
+    const ofTelling = rows.flatMap((row) => row.longTasksOfTelling);
+    const met = ofTelling.length === 0 && longest < 50;
+    keep("unclaimedCodeChangesUsages", { elements, rows });
+    print(
+      report(
+        `Telling whether the page changed on hot updates in edit mode, no claim, ${elements} elements, 2 changes to a card's own usage, 95 cards of another — ${mode}`,
+        [
+          { name: "longest stretch of telling", summary: summarize(rows.map((row) => row.longestStretch)), target: "< 50ms, no long task of its own", met },
+          { name: "telling per hot update", summary: summarize(rows.map((row) => row.telling)) },
+        ],
+        rows.map(
+          (row) =>
+            `${row.name}: ${row.looks} slices, the longest ${ms(row.longestStretch)}, ${ms(row.telling)} in all; long tasks ${row.longTasks.map((d) => d.toFixed(0)).join(", ") || "none"} (its own: ${row.longTasksOfTelling.length}); page-changed toast up: ${row.told}`,
+        ),
+      ),
+    );
+    verdict(met, `telling whether the page changed, other usages noted: longest slice ${longest.toFixed(1)}ms, ${ofTelling.length} long tasks of its own`);
+      } finally {
+      await firstCardApart(false);
+    }
   });
 });
 

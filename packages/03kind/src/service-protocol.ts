@@ -172,7 +172,26 @@ export interface SavedRound {
   /** The edited canvas, as an HTML document. */
   canvas: string;
   changeSet: SavedChangeSet;
+  /**
+   * While the round is claimed, as `GET /round` answers: what the other
+   * usages of each change for one usage alone showed of its property as the
+   * page began to check the round, by the change's id (ticket 77), kept with
+   * the claim (ticket 82), so a page opened or reloaded since goes by it.
+   * Never saved with the round: the service ignores it in `PUT /round`.
+   */
+  otherUsages?: OtherUsagesKept;
 }
+
+/**
+ * What a page noted of the other usages of the components of a claimed
+ * round's changes for one usage alone (ticket 77), as kept in `.03kind/` with
+ * the claim (ticket 82), by change id: for each, how wide the window was, and
+ * each element noted, in the order noted: its usage's key, its usage chain,
+ * and its value of the change's property then, in design language. Null for
+ * a change whose other usages the page does not look at. It belongs to the
+ * round claimed: dropped as it ends, and as the next is claimed.
+ */
+export type OtherUsagesKept = Record<string, { width: number; seen: { key: string; chain: UsageLevel[]; value: unknown }[] } | null>;
 
 /**
  * An Off-canvas Layer (ADR 0009) as saved in `.03kind/off-canvas.json`: where

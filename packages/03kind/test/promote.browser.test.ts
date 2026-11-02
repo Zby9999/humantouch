@@ -10,6 +10,7 @@ import { revertSaved } from "../src/client/saved-round";
 import type { Layer } from "../src/client/layers";
 import { createViews } from "../src/client/views";
 import { placedOnCanvas } from "../src/client/moves";
+import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "../src/client/other-usages";
 
 /** A round as the page checks it, placed on its canvas: with no new layer, no canvas to read. */
 const onCanvas = (round: Change[]) => placedOnCanvas(round, "");
@@ -421,12 +422,22 @@ describe("a change for one usage, looked at on the component's other usages (tic
     const fill = (i: number, color: string) => (cards[i].style.backgroundColor = color);
     return { page, fill };
   }
-  /** The page checking the claimed round `round`, what it says of each change. */
-  function watch(page: Document, round: Change[]) {
+  /** The page checking the claimed round `round`, what it says of each change; going by `otherUsages` as noted, with each note it takes in `noted`. */
+  function watch(page: Document, round: Change[], otherUsages?: Map<number, OtherUsagesNoted | null>) {
     const reports: CheckReport[] = [];
-    const checks = watchPage({ window: page.defaultView!, changes: onCanvas(round), report: (r) => reports.push(r), onShown() {}, viewWidths: () => [], copiesIn: () => document.body });
+    const noted = new Map<number, OtherUsagesNoted | null>();
+    const checks = watchPage({
+      window: page.defaultView!,
+      changes: onCanvas(round),
+      report: (r) => reports.push(r),
+      onShown() {},
+      viewWidths: () => [],
+      copiesIn: () => document.body,
+      otherUsages,
+      onNoted: (id, one) => noted.set(id, one),
+    });
     const last = (id: number) => reports.filter((r) => r.id === id).at(-1);
-    return { checks, reports, last };
+    return { checks, reports, last, noted };
   }
 
   test("the loop's Cards filled red, written into the Card: the fourth is red too, so it is not shown, and the page says where and from what to what; put back, it is shown", async () => {
@@ -525,5 +536,78 @@ describe("a change for one usage, looked at on the component's other usages (tic
     await expect.poll(() => last(1)?.outcome).toBe("shown");
     expect(reports.some((r) => "otherUsages" in r)).toBe(false);
     checks.stop();
+  });
+
+  /**
+   * Ticket 82: what the page notes as it begins to check is kept with the
+   * claim (`keptOf`, as JSON), and a page that checks the round anew, the
+   * designer having reloaded it, goes by it (`notedFrom`): the elements found
+   * again by their usage.
+   */
+  describe("kept with the claim (ticket 82)", () => {
+    /** What a first page notes as the round is claimed, kept as `.03kind/` keeps it; that page then gone. */
+    async function keptAtTheClaim(round: Change[]) {
+      const { page } = livePage();
+      const { checks, noted } = watch(page, round);
+      await expect.poll(() => noted.size).toBe(1);
+      checks.stop();
+      live!.remove();
+      return JSON.parse(JSON.stringify(keptOf(noted))) as ReturnType<typeof keptOf>;
+    }
+
+    test("the page reloaded once the Agent wrote the fill into the Card itself: by what was kept, the fourth Card red is found; noted afresh, as before, it is not", async () => {
+      const { editor, changes, cards, layerOf } = openCanvas();
+      editor.set(layerOf(cards[0]), "fill", RED);
+      const round = changes.list();
+      const kept = await keptAtTheClaim(round);
+      expect(kept).toEqual({ 1: { width: 800, seen: [{ key: expect.stringContaining("src/App.tsx:8:7"), chain: cardAt("src/App.tsx:8:7"), value: WHITE }] } });
+
+      const { page, fill } = livePage();
+      for (const i of [0, 1, 2, 3]) fill(i, "rgb(255, 0, 0)");
+      const afresh = watch(page, round);
+      await expect.poll(() => afresh.last(1)?.outcome).toBe("shown");
+      afresh.checks.stop();
+
+      const { checks, last, noted } = watch(page, round, notedFrom(kept));
+      await expect.poll(() => last(1)).toMatchObject({ outcome: "not shown", otherUsages: [{ chain: cardAt("src/App.tsx:8:7"), was: WHITE, is: RED }] });
+      // Noted already: nothing to keep again.
+      expect(noted.size).toBe(0);
+      fill(3, "rgb(255, 255, 255)");
+      await expect.poll(() => last(1)?.outcome).toBe("shown");
+      checks.stop();
+    });
+
+    test("the page reloaded once the Agent wrote the fill for the loop alone: by what was kept, shown", async () => {
+      const { editor, changes, cards, layerOf } = openCanvas();
+      editor.set(layerOf(cards[0]), "fill", RED);
+      const round = changes.list();
+      const kept = await keptAtTheClaim(round);
+      const { page, fill } = livePage();
+      for (const i of [0, 1, 2]) fill(i, "rgb(255, 0, 0)");
+      const { checks, reports, last } = watch(page, round, notedFrom(kept));
+      await expect.poll(() => last(1)?.outcome).toBe("shown");
+      expect(reports.some((r) => "otherUsages" in r)).toBe(false);
+      checks.stop();
+    });
+
+    test("noted as the code begins to change with no claim: the changes for one usage alone, the page as it is; for the change by the same id it was noted for alone", () => {
+      const { editor, changes, cards, layerOf } = openCanvas();
+      editor.set(layerOf(cards[0]), "fill", RED);
+      // The Card's own corners, promoted: for every usage, so no usage's to look at others for.
+      editor.set(layerOf(cards[3]), "radius", 4);
+      editor.promote(layerOf(cards[3]));
+      const round = changes.list();
+      expect(round.map((change) => `${change.scope} ${change.property}`)).toEqual(["usage fill", "component radius"]);
+      const { page, fill } = livePage();
+      const noted = noteRound(page, round, 800);
+      expect([...noted.keys()]).toEqual([1]);
+      expect(noted.get(1)!.seen.map(({ chain, value }) => ({ chain, value }))).toEqual([{ chain: cardAt("src/App.tsx:8:7"), value: WHITE }]);
+      // The Agent's code in, the fourth card red: noted before, white it was.
+      fill(3, "rgb(255, 0, 0)");
+      expect(noted.get(1)!.seen[0].value).toEqual(WHITE);
+      expect(notedFor(round[0], round[0])).toBe(true);
+      expect(notedFor(round[0], { ...round[0], property: "radius" } as Change)).toBe(false);
+      expect(notedFor(round[0], { ...round[1], id: round[0].id })).toBe(false);
+    });
   });
 });

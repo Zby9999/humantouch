@@ -19,6 +19,7 @@ import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type
 import {
   appliedOf,
   archiveRound,
+  claimFresh,
   findProject,
   lastEdited,
   readChangeSet,
@@ -79,7 +80,7 @@ async function claim(folder: ThirdKindFolder, root: string, io: Io): Promise<num
   }
   // The code as it was before the Agent changed anything, to undo the round by.
   const claimed: RoundState | null = state ? null : { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: await snapshotCode(root) };
-  if (claimed) await writeState(folder, claimed);
+  if (claimed) await claimFresh(folder, claimed);
   const checks = await readChecks(folder);
   const pageOpen = !!checks?.pages && isRunning(checks.service);
   const notes = toApply(pageOpen);

@@ -147,3 +147,27 @@ test("an error from the dev server brings no code in, and once stopped, nothing 
   await wait(QUIET_MS * 2);
   expect(runs).toHaveLength(0);
 });
+
+test("what is to be taken as a run begins is taken once for the run, as the dev server begins to bring its code in, the page as it was before it (ticket 82)", async () => {
+  stop!();
+  const taken: string[] = [];
+  const told: CodeRun<string>[] = [];
+  stop = watchCodeRuns(window, (run) => told.push(run), { quietMs: QUIET_MS, before: () => (taken.push(card().className), card().className) });
+  beforeUpdate();
+  await wait(5);
+  card().className = "card is-red";
+  afterUpdate();
+  // Another file of the same run: nothing taken again.
+  beforeUpdate();
+  card().className = "card is-red is-wide";
+  afterUpdate();
+  await expect.poll(() => told.length, { timeout: QUIET_MS * 20 }).toBe(1);
+  expect(taken).toEqual(["card"]);
+  expect(told[0].before).toBe("card");
+  // The next run: taken afresh, as the page is then.
+  beforeUpdate();
+  card().className = "card";
+  afterUpdate();
+  await expect.poll(() => told.length, { timeout: QUIET_MS * 20 }).toBe(2);
+  expect(told.map((run) => run.before)).toEqual(["card", "card is-red is-wide"]);
+});

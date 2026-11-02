@@ -3,7 +3,7 @@ import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice } from "../bench/notices";
 import { expect, test, type Page } from "./fixtures";
-import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
+import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /**
  * The code changing while the designer is in edit mode, with no Agent having
@@ -77,7 +77,8 @@ test("the Agent landing a change with no claim: the round is claimed as if it ha
   await page.goto(DEV_URL);
   await designARound(page);
 
-  writeFileSync(CARD, original.replace("rounded-xl", "rounded-[4px]"));
+  // For the loop's cards alone, as the change is for their usage: written into the Card itself, the fourth card's corners would change too, a leak the page finds since ticket 82 (it notes the other usages as the code begins to change).
+  writeFileSync(CARD, forTheLoopAlone(original, "rounded-xl", "rounded-[4px]"));
 
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);

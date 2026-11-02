@@ -11,7 +11,7 @@ import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
-import type { OtherUsagesNoted } from "./other-usages";
+import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
@@ -128,7 +128,13 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Layout effects: an effect would wait for a frame, which a background tab may not draw for a while.
   const checks = useRef<PageChecks | null>(null);
   const isClaimed = claimed !== null;
-  /** What the components' other usages showed as the page began to check the claimed round (ticket 77): kept as the round is read again, till it is no longer claimed. */
+  /**
+   * What the components' other usages showed as the page began to check the
+   * claimed round (ticket 77): kept as the round is read again, till it is no
+   * longer claimed. Kept with the claim in `.03kind/` too, and taken from
+   * there for the changes this page has not noted itself: noted by a page
+   * before it was reloaded or opened (ticket 82).
+   */
   const otherUsages = useRef(new Map<number, OtherUsagesNoted | null>());
   useEffect(() => {
     if (!isClaimed) otherUsages.current = new Map();
@@ -136,6 +142,14 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   useLayoutEffect(() => {
     if (!isClaimed || !store || !round) return;
     const report = (check: CheckReport) => store.report(check).catch((error: unknown) => console.warn(error));
+    for (const [id, noted] of notedFrom(round.otherUsages ?? {})) if (!otherUsages.current.has(id)) otherUsages.current.set(id, noted);
+    // Notes taken in one look go together.
+    const fresh = new Map<number, OtherUsagesNoted | null>();
+    const keep = () => {
+      if (!fresh.size) return;
+      store.keepOtherUsages(keptOf(fresh)).catch((error: unknown) => console.warn(error));
+      fresh.clear();
+    };
     const watcher = watchPage({
       window,
       changes: placedNow(round),
@@ -144,6 +158,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       viewWidths: readViewWidths,
       copiesIn,
       otherUsages: otherUsages.current,
+      onNoted(id, noted) {
+        if (!fresh.size) queueMicrotask(keep);
+        fresh.set(id, noted);
+      },
     });
     checks.current = watcher;
     return () => {
@@ -359,7 +377,12 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   useEffect(() => {
     if (!unclaimed) return;
     let watching = true;
-    const tellRun = async (run: CodeRun) => {
+    /** What the other usages show as a run of code changes begins, of the changes on the canvas then (ticket 82): what a round the page claims for the Agent goes by. */
+    const noteNow = () => {
+      const changes = listedNow.current;
+      return { changes, noted: noteRound(document, changes, window.innerWidth) };
+    };
+    const tellRun = async (run: CodeRun<ReturnType<typeof noteNow>>) => {
       const status = await (store ? store.status().catch(() => lastStatus.current) : lastStatus.current);
       if (!watching || status?.status === "claimed") return;
       // The round as saved by the canvas's last edit, placed on that canvas: checked as a claimed round is (ticket 76).
@@ -367,7 +390,19 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       const saved = roundNow.current;
       if (saved?.changeSet.changes.length && (await showsAnyHere(document, placing(saved), readViewWidths()))) {
         if (!watching) return;
-        store?.claim(run.since).catch((error: unknown) => console.warn(error));
+        // Of the changes saved as they were as the run began: their notes go with the claim, and the page goes by them, the claim heard or not.
+        const noted = new Map([...run.before.noted].filter(([id]) => {
+          const [then, now] = [run.before.changes.find((change) => change.id === id), saved.changeSet.changes.find((change) => change.id === id)];
+          return then && now && notedFor(then, now);
+        }));
+        for (const [id, one] of noted) otherUsages.current.set(id, one);
+        store
+          ?.claim(run.since, noted.size ? keptOf(noted) : undefined)
+          .catch((error: unknown) => {
+            console.warn(error);
+            // Not claimed after all: not to go by when it is.
+            for (const id of noted.keys()) otherUsages.current.delete(id);
+          });
         return;
       }
       if (!(await run.pageChanged()) || !watching) return;
@@ -381,7 +416,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
         tell("changed");
       }
     };
-    const stop = watchCodeRuns(window, (run) => void tellRun(run).catch((error: unknown) => console.warn(error)));
+    const stop = watchCodeRuns(window, (run) => void tellRun(run).catch((error: unknown) => console.warn(error)), { before: noteNow });
     return () => {
       watching = false;
       stop();

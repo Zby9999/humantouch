@@ -14,7 +14,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { PutBack } from "./client/changeset";
-import { CLAIM_PATH, CODE_QUIET_MS } from "./client/code-changes";
+import { CLAIM_PATH, CODE_QUIET_MS, OTHER_USAGES_PATH } from "./client/code-changes";
 import { readProjectBreakpoints } from "./project-breakpoints";
 import { snippetAt } from "./source-snippet";
 import {
@@ -29,6 +29,7 @@ import {
   VARIABLES_PATH,
   type CheckReport,
   type CodeSnapshot,
+  type OtherUsagesKept,
   type SavedOffCanvasLayer,
   type OffCanvasSaveAnswer,
   type RoundStatus,
@@ -37,9 +38,12 @@ import {
 } from "./service-protocol";
 import {
   archiveRound,
+  claimFresh,
+  keepOtherUsages,
   readChecks,
   readIfThere,
   readOffCanvas,
+  readOtherUsages,
   readState,
   roundStatus,
   snapshotCode,
@@ -47,7 +51,6 @@ import {
   writeAtomically,
   writeChecks,
   writeOffCanvas,
-  writeState,
   type Checks,
 } from "./third-kind-folder";
 import { readVariables } from "./variables";
@@ -141,7 +144,9 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         const changeSet = await readIfThere(files.changeSet);
         const canvas = changeSet && (await readIfThere(files.canvas));
         if (!changeSet || !canvas) return send(res, 204);
-        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet) } satisfies SavedRound));
+        // Claimed: with what was noted of the other usages, for a page opened or reloaded since to go by (ticket 82).
+        const otherUsages = (await readState(files)) ? await readOtherUsages(files) : null;
+        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }) } satisfies SavedRound));
       }
       case `PUT ${ROUND_PATH}`: {
         // The Agent is applying the ChangeSet: it stays as claimed.
@@ -233,19 +238,33 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
       case `POST ${CLAIM_PATH}`: {
         // A page saw a change of the round show, the Agent applying it with no claim (ticket 78). Claimed already, it stays as it is.
         if (!existsSync(files.changeSet)) return send(res, 409);
-        if (await readState(files)) return send(res, 204);
-        const { since } = JSON.parse(body || "{}") as { since?: number };
+        const { since, otherUsages } = JSON.parse(body || "{}") as { since?: number; otherUsages?: OtherUsagesKept };
+        const noted = otherUsages && typeof otherUsages === "object" ? otherUsages : {};
+        // What the other usages showed as the run began, kept with the claim (ticket 82); claimed already, as any page's notes.
+        if (await readState(files)) {
+          await keepOtherUsages(files, noted);
+          return send(res, 204);
+        }
         // The code as it rested before the run the page saw it in; failing that, as it is now.
         const before = typeof since === "number" ? rested.filter((one) => one.at <= since).at(-1) : undefined;
-        await writeState(files, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: before ? before.code : await snapshotCode(root) });
+        await claimFresh(files, { status: "claimed", done: [], claimedAt: new Date().toISOString(), code: before ? before.code : await snapshotCode(root) });
+        await keepOtherUsages(files, noted);
         rested = [];
         broadcast();
+        return send(res, 204);
+      }
+      case `POST ${OTHER_USAGES_PATH}`: {
+        // What a page noted of the other usages, kept with the claim (ticket 82): only while the round is claimed.
+        if (!(await readState(files))) return send(res, 409);
+        const noted = JSON.parse(body || "null") as OtherUsagesKept | null;
+        if (!noted || typeof noted !== "object" || Array.isArray(noted)) return send(res, 400);
+        await keepOtherUsages(files, noted);
         return send(res, 204);
       }
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, OTHER_USAGES_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 
