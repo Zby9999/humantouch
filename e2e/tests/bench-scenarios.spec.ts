@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
+import { designProblems, openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
 import { DEV_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
@@ -11,16 +11,17 @@ import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, np
  * scenario, not the Agent.
  */
 
-/** These tests save into the example project's `.03kind/` for real; one scenario edits the source, as a round before it. */
+/** These tests save into the example project's `.03kind/` for real; some scenarios edit the source, as a round before them. */
 test.use({ keepRoundInMemory: false });
 test.setTimeout(90_000);
 
-const APP = `${EXAMPLE}src/App.tsx`;
-const original = readFileSync(APP, "utf8");
+/** The example's files a round before edited, as they were: put back after each test. */
+const originals = new Map<string, string>();
 
 test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
-  if (readFileSync(APP, "utf8") !== original) writeFileSync(APP, original);
+  for (const [file, text] of originals) if (readFileSync(file, "utf8") !== text) writeFileSync(file, text);
+  originals.clear();
   await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("font-display text-4xl")).toBe(true);
 });
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
@@ -34,6 +35,7 @@ for (const scenario of SCENARIOS) {
       cli: npx03kind,
       edit: async (file, from, to) => {
         const text = readFileSync(`${EXAMPLE}${file}`, "utf8");
+        if (!originals.has(`${EXAMPLE}${file}`)) originals.set(`${EXAMPLE}${file}`, text);
         expect(text).toContain(from);
         writeFileSync(`${EXAMPLE}${file}`, text.replace(from, to));
       },
@@ -43,6 +45,8 @@ for (const scenario of SCENARIOS) {
     });
     const saved = readThirdKindFile("changeset.json").changes;
     expect(saved.map((change: { kind: string }) => change.kind)).toEqual(scenario.changes.map((change) => change.kind));
+    // What the page can check, and which values are Variables, as the scenario names them.
+    expect(designProblems(scenario, saved)).toEqual([]);
 
     // Pages of their own, kept from the local service as the bench keeps them.
     const observers = await openObservers(browser, scenario, DEV_URL);

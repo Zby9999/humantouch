@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, measureRun, parseTranscript, reportedAsExpected, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -275,4 +275,18 @@ test("Cursor's glob in a folder of the package is a call there, by its target fo
 
   assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/03kind");
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
+});
+
+test("changes that cannot be applied 1:1 are counted as reported right when the report lists them under ⚠️ with why and instead; none expected, no rate (ticket 86)", () => {
+  const report = checkReport(
+    ["✓ Applied", "- 1. Fill: the Grid, stone-100", "", "⚠️ Not applied 1:1", "- 2. Width: Badge", "  Why: acme-ui sets it", "  Instead: left as it was", "- 3. Width: Badge", "  Why: acme-ui sets it"].join("\n"),
+    [1, 2, 3, 4],
+  );
+
+  assert.equal(reportedAsExpected(report, [2]), 1);
+  // Under ⚠️ without both lines, or under ✓, or not listed at all, it is not.
+  assert.equal(reportedAsExpected(report, [3]), 0);
+  assert.equal(reportedAsExpected(report, [1, 2]), 0.5);
+  assert.equal(reportedAsExpected(report, [4]), 0);
+  assert.equal(reportedAsExpected(report, []), null);
 });

@@ -252,10 +252,24 @@ export function checkReport(text: string, ids: number[]): ReportCheck {
   const problems: string[] = [];
   const timesListed = (id: number) => listed.filter((item) => item.id === id).length;
   for (const id of new Set(listed.map((item) => item.id))) if (timesListed(id) > 1) problems.push(`change ${id} listed more than once`);
-  for (const item of listed) if (item.warned && item.notes < 2) problems.push(`change ${item.id} under ⚠️ without both why and instead`);
+  for (const item of listed) if (item.warned && item.notes < 2) problems.push(unexplained(item.id));
   for (const id of ids) if (!timesListed(id)) problems.push(`change ${id} not listed`);
   const unique = (warnedOnes: boolean) => [...new Set(listed.filter((item) => item.warned === warnedOnes).map((item) => item.id))];
   return { compliant: !problems.length, applied: unique(false), notApplied: unique(true), problems };
+}
+
+/** The problem of a change listed under ⚠️ without both lines, why and instead. */
+const unexplained = (id: number) => `change ${id} under ⚠️ without both why and instead`;
+
+/**
+ * Of the changes `expected` under ⚠️, those a scenario knows cannot be
+ * applied 1:1 (ticket 86), the share the report lists there, with why and
+ * instead, and not under ✓ too; null when the run has none.
+ */
+export function reportedAsExpected(report: ReportCheck, expected: number[]): number | null {
+  if (!expected.length) return null;
+  const right = expected.filter((id) => report.notApplied.includes(id) && !report.applied.includes(id) && !report.problems.includes(unexplained(id)));
+  return right.length / expected.length;
 }
 
 /** A change of the scenario, as the run left it. */

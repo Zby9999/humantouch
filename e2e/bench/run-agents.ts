@@ -9,6 +9,13 @@
  *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
  *                     [--claim-out <dir>]   and write what `claim` prints for each to <dir>/<scenario>.md, to compare two versions word for word
+ *   pnpm bench:agents --scripted [--scenarios id,…]
+ *                                     set each scenario with scripted code (`apply`, all of them by default) up as `--dry` does, then play an
+ *                                     Agent applying it right, with no Agent run: claim, write that code, `done` for the changes it applies,
+ *                                     `finish`, and fill in the report `finish` lays out. Each change must show by the scenario's own test at
+ *                                     its widths, and get the page's check of it as shown; one with a Variable must write it (as `usesVariable`
+ *                                     counts it); one `notOneToOne` must be in the report under ⚠️ alone, with why and instead (`checkReport`)
+ *                                     With `--dry` or `--scripted`, BENCH_DEBUG=1 prints a scenario's error whole, not its first line only.
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
  * Runs go one after another, never side by side, so their times compare,
@@ -23,10 +30,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
-import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { checkReport, measureRun, parseTranscript, reportedAsExpected, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
-import { openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
+import { designProblems, openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
 
 /** Whether something answers on `port` of this machine, as a dev server there would. */
 function answers(port: number): Promise<boolean> {
@@ -70,7 +77,7 @@ interface RawRun {
   headlessShell?: string | null;
   /** Browsers that came up under the Agent with a window. */
   headedBrowsers: string[];
-  changes: { id: number; kind: string; checkable: boolean; variable?: string[]; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
+  changes: { id: number; kind: string; checkable: boolean; variable?: string[]; notOneToOne?: true; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
   /**
    * How many times, from the Agent's start on, the designer's page showed the
    * notice that the code is changing but no Agent has claimed the changes
@@ -99,7 +106,11 @@ async function main(argv: string[]) {
     return at < 0 ? undefined : argv[at + 1];
   };
   const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
-  const scenarios = option("scenarios") ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : SCENARIOS;
+  const scripted = argv.includes("--scripted");
+  // The scripted pass takes the scenarios with scripted code, unless named.
+  const scenarios = option("scenarios")
+    ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id))
+    : SCENARIOS.filter((scenario) => !scripted || scenario.apply);
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
@@ -110,11 +121,12 @@ async function main(argv: string[]) {
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
 
   const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
-  const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
-  console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
+  const plan = dry || scripted ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
+  if (scripted) console.log(`Applying ${plan} scenarios by their scripted code, with no Agent.`);
+  else console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
 
   const versions: Partial<Record<AgentName, string>> = {};
-  if (!dry) {
+  if (!dry && !scripted) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
@@ -148,7 +160,13 @@ async function main(argv: string[]) {
   };
   const failures: string[] = [];
   try {
-    if (dry) {
+    if (scripted) {
+      for (const scenario of scenarios) {
+        const problems = await applyScripted(browser, base, await nextPort(), scenario);
+        console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
+        failures.push(...problems);
+      }
+    } else if (dry) {
       for (const scenario of scenarios) {
         const problems = await setUp(browser, base, await nextPort(), scenario, claimOut && join(claimOut, `${scenario.id}.md`));
         console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
@@ -244,9 +262,7 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
       // Designing touches no code with no claim: the editor layer has nothing to tell of the code changing.
       const notices = (await unclaimedNoticesShown(designer)).length + (await canvasUpdatedNoticesShown(designer)).length + (await pageChangedNoticesShown(designer)).length;
       if (notices) problems.push(`a notice of the code changing showed ${notices} times as it was set up`);
-      const kinds = saved.map((change) => change.kind).join(", ");
-      const named = scenario.changes.map((change) => change.kind).join(", ");
-      if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
+      problems.push(...designProblems(scenario, saved));
       (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
       if (claimTo) {
         mkdirSync(join(claimTo, ".."), { recursive: true });
@@ -255,8 +271,85 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
       return problems;
     });
   } catch (error) {
+    if (process.env.BENCH_DEBUG) console.error(error);
     return [(error as Error).message.split("\n")[0]];
   }
+}
+
+/**
+ * The scripted pass of a scenario (ticket 86): set up as `--dry` does, then
+ * applied by its scripted code, as an Agent applying it right would, with no
+ * Agent run. What is wrong: what `--dry` finds; a change applied that its
+ * test or the page's check does not show; a Variable named not written; a
+ * report, as `finish` lays it out and an Agent fills it in, with a change
+ * under ⚠️ other than those `notOneToOne`, or one of them not there.
+ */
+async function applyScripted(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
+  if (!scenario.apply) return ["no scripted code (`apply`)"];
+  try {
+    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
+      const problems = designProblems(scenario, saved);
+      if (problems.length) return problems;
+      (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
+      const head = await project.head();
+      const history = join(project.dir, ".03kind/history");
+      const rounds = () => (existsSync(history) ? readdirSync(history).sort() : []);
+      const roundsBefore = rounds().length;
+
+      await project.cli("claim");
+      await scenario.apply!({ page: designer, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
+      const applied = saved.filter((_, i) => !scenario.changes[i].notOneToOne).map((change) => change.id);
+      if (applied.length) await project.cli("done", ...applied.map(String));
+      const report = fillInReport(await project.cli("finish"), scenario, saved);
+
+      await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
+      const atEnd = await shown(observers, scenario, saved);
+      const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
+      await sh("git", ["add", "-A"], project.dir);
+      const diff = await sh("git", ["diff", "--cached", head], project.dir);
+      scenario.changes.forEach((change, i) => {
+        if (change.notOneToOne) return;
+        const id = saved[i].id;
+        if (atEnd[i] === false) problems.push(`change ${i + 1} does not show: ${change.expect}`);
+        if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
+        if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code writes none of ${change.variable.join(", ")}`);
+      });
+      const check = checkReport(report, saved.map((change) => change.id));
+      if (!check.compliant) problems.push(`the report: ${check.problems.join("; ")}`);
+      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne).map((change) => change.id);
+      if (check.notApplied.join() !== warned.join()) problems.push(`the report has ${check.notApplied.join(", ") || "none"} under ⚠️, not ${warned.join(", ") || "none"}`);
+      if (reportedAsExpected(check, warned) !== (warned.length ? 1 : null)) problems.push("the report has the changes that cannot be applied 1:1 elsewhere than under ⚠️ alone, with why and instead");
+      return problems;
+    });
+  } catch (error) {
+    if (process.env.BENCH_DEBUG) console.error(error);
+    return [(error as Error).message.split("\n")[0]];
+  }
+}
+
+/**
+ * The report `finish` lays out (its fenced block), filled in as an Agent
+ * applying the round right would: under ⚠️, why a change cannot be applied
+ * 1:1 (`notOneToOne`) and that it was left as it was.
+ */
+function fillInReport(finished: string, scenario: Scenario, saved: SavedChange[]): string {
+  const block = /```\n([\s\S]*?)\n```/.exec(finished);
+  if (!block) return finished;
+  let change: number | null = null;
+  return block[1]
+    .split("\n")
+    .map((line) => {
+      const item = /^\s*-\s*(\d+)\./.exec(line);
+      if (item) change = Number(item[1]);
+      const reason = scenario.changes[saved.findIndex((c) => c.id === change)]?.notOneToOne ?? "unknown";
+      return line
+        .replace("<the layer, and what you changed>", "as asked")
+        .replace("<the layer>", "the layer")
+        .replace("<why it is not applied>", reason)
+        .replace("<what keeps it so>", "unknown")
+        .replace("<what you did, or “left as it was”>", "left as it was");
+    })
+    .join("\n");
 }
 
 /** The newest file under `dir`, by when it changed, in ms; `node_modules` and dot folders left out. */
@@ -391,6 +484,7 @@ async function runOnce({
         kind: change.kind,
         checkable: change.checkable,
         ...(change.variable && { variable: change.variable }),
+        ...(change.notOneToOne && { notOneToOne: true as const }),
         shownBefore: before[i],
         shownAtEnd: atEnd[i],
       })),
@@ -411,7 +505,7 @@ export function measureFolder(folder: string) {
     ...saved,
     changes: saved.changes.map((change, i) => {
       const now = scenario?.changes[i];
-      return now?.kind === change.kind ? { ...change, checkable: now.checkable, variable: now.variable } : change;
+      return now?.kind === change.kind ? { ...change, checkable: now.checkable, variable: now.variable, notOneToOne: now.notOneToOne ? (true as const) : undefined } : change;
     }),
   };
   const transcript = parseTranscript(raw.agent, readFileSync(join(folder, "transcript.jsonl"), "utf8"));
@@ -473,6 +567,8 @@ export function measureFolder(folder: string) {
     reportCompliant: report.compliant,
     reportProblems: report.problems,
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
+    /** Of the changes that cannot be applied 1:1 (ticket 86), the share the report lists under ⚠️, with why and instead; null with none. */
+    reportedAsExpected: reportedAsExpected(report, raw.changes.filter((change) => change.notOneToOne).map((change) => change.id)),
     /** A scenario test that held before the Agent started is a broken test, not a change applied. */
     shownBefore: raw.changes.filter((change) => change.shownBefore).map((change) => change.id),
   };
@@ -505,6 +601,7 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["跑了 finish（比例）", (m) => Number(m.ranFinish)],
   ["报告格式合规（比例）", (m) => Number(m.reportCompliant)],
   ["设计变量使用率", (m) => m.variableUse],
+  ["落地不了 1:1 的改动报在 ⚠️ 下（比例）", (m) => m.reportedAsExpected],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
   ["没认领就改代码的提示（次）", (m) => m.unclaimedNotices],
