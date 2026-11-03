@@ -231,3 +231,14 @@ End your reply with this report. Each change is under the heading the page's che
 *前后数字*
 
 包体积（gzip -9）：切换按钮 `react.dev.js` 822 B + 共用 chunk `chunk-UQJRS7YD.js` 9164 B，改前改后逐字节相同（同名、校验和相同；install / toggle-first 量到的发布体积 9993 B，上限 10240 B）。编辑层延迟加载的部分 `editor.dev.js` 322964 → 323018 B（未压缩，+54 B），gzip 109720 → 109733 B（+13 B）。性能没有跑：只是把读旁边视图的 `position` 的判断从「是不是 absolute / fixed」换成「是不是 static」，读的次数不变。
+
+## 设计师确认（2026-11-03）
+
+代定的四条全部确认：
+
+1. 只在画布上图层 `position: static` 的宽度不看 X、Y；`relative`、`sticky`、`absolute`、`fixed` 的宽度照常核对（审查后收紧的这一条只会少报 ✓，不会多报）。
+2. 「How the page checks」不补句。
+3. 所有宽度都被跳过时的原因照 75 代定第 6 条。
+4. 旁边视图的样子只在改动第一次记下时读一次，照 75 代定第 4 条。
+
+遗留风险第 5、6、7 条（relative、sticky 宽度上的说法和 `right` / `bottom` 的空子）另行分诊。
