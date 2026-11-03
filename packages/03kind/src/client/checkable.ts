@@ -83,6 +83,24 @@ export const CENTERING_SIGN = { start: "-", end: "" } as const satisfies Record<
 /** The axis each size is along: width across, height down. */
 export const SIZE_AXIS: Readonly<Partial<Record<string, Axis>>> = { width: "x", height: "y" };
 
+/**
+ * How a layer still in its container's layout is moved by its `left`, `top`,
+ * `right` or `bottom` (ticket 84): placed `relative`, moved that far from
+ * where its container lays it out; placed `sticky`, kept that far in from the
+ * edge of what it scrolls in, as far as its container lets it.
+ */
+export type InLayout = "relative" | "sticky";
+
+/** How a layer is placed, as the browser computes its `position`. */
+export type Position = "static" | InLayout | "absolute" | "fixed";
+
+/**
+ * How far a value given to a layer's side from `edge` moves it, placed
+ * relative, across or down (ticket 84): a `left` or `top` as far, a `right`
+ * or `bottom` as far the other way; and so the value, of how far it is moved.
+ */
+export const movedBy = (edge: Edge, value: number) => (edge === "start" ? value : 0 - value);
+
 /** One CSS side of a layer: along `axis`, the one that places it from its container's `edge` (`SIDES`). */
 export interface Side {
   axis: Axis;

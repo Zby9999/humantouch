@@ -4117,11 +4117,122 @@ describe("changes to the structure are checked on the live page", () => {
     const [x, y] = changes.list();
     expect([x.placedOtherwiseAt, y.placedOtherwiseAt]).toEqual([undefined, undefined]);
 
-    // Right as wide as the window; at the phone's width, its `left` and `top` as the page had them.
+    // Right as wide as the window; at the phone's width, its `left` and `top` as the page had them (ticket 84: by its offset there, not as placed absolute).
     page.getElementById("tag")!.setAttribute("style", "left: 30px; top: 20px");
     const phone = pageAt(html.replace("</style>", "@media (min-width: 501px) { #tag { left: 30px; top: 20px } }</style>"), 390);
-    for (const change of [x, y]) expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+    expect([x, y].map((change) => checkAcross(page, change, onCanvas(changes.list()), [390], () => phone))).toEqual([
+      { outcome: "not shown", actual: { canvas: position, position, offset: 12 }, width: 390 },
+      { outcome: "not shown", actual: { canvas: position, position, offset: 8 }, width: 390 },
+    ]);
   });
+
+  test.each(["relative", "sticky"] as const)(
+    "a layer the canvas places %s in a view: its X and Y record that range, where the check compares their value itself; written at every width, they show; laid out static there, placed absolute there, or placed so with another value, they do not (ticket 84)",
+    async (position) => {
+      const html = fromTheTopLeft(`position: ${position}`);
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", 30);
+      editor.set(layer("tag"), "y", 20);
+      const [x, y] = changes.list();
+      for (const change of [x, y]) expect([change.placedOtherwiseAt, change.offsetInLayoutAt]).toEqual([undefined, [{ breakpoint: { min: null, max: 800 }, position }]]);
+
+      const at = (css: string) => pageAt(html.replace("</style>", `${css}</style>`), 390);
+      const check = (phone: PageWidth) => [x, y].map((change) => checkAcross(page, change, onCanvas(changes.list()), [390], () => phone));
+      page.getElementById("tag")!.setAttribute("style", "left: 30px; top: 20px");
+      // As the notes say, at every width: the phone's CSS places it as the canvas does there, moved by them.
+      expect(check(at("#tag { left: 30px; top: 20px }"))).toEqual([{ outcome: "shown" }, { outcome: "shown" }]);
+      // Laid out in its container there, or taken out of its layout: their values move it nothing there, or place it otherwise.
+      for (const placed of ["static", "absolute"]) {
+        const phone = at(`#tag { left: 30px; top: 20px } @media (max-width: 500px) { #tag { position: ${placed} } }`);
+        expect(check(phone)).toEqual([0, 1].map(() => ({ outcome: "not shown", actual: { canvas: position, position: placed, offset: null }, width: 390 })));
+      }
+      // Placed as the canvas places it there, its `left` as the canvas has it, its `top` not.
+      expect(check(at("#tag { left: 30px; top: 0px }"))).toEqual([{ outcome: "shown" }, { outcome: "not shown", actual: { canvas: position, position, offset: 0 }, width: 390 }]);
+    },
+  );
+
+  test("a layer the canvas places sticky in a view: the page giving it its `top` there as a share is not the px given, though the number is the same (ticket 84, review)", async () => {
+    const html = fromTheTopLeft("position: sticky");
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "y", 20);
+    const [y] = changes.list();
+    page.getElementById("tag")!.setAttribute("style", "top: 20px");
+    const phone = pageAt(html.replace("</style>", "#tag { top: 20% }</style>"), 390);
+    expect(checkAcross(page, y, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" }, width: 390 });
+  });
+
+  test.each(["relative", "sticky"] as const)(
+    "a layer placed from its right edge that the canvas places %s in a view, with no `left` there: its `right` moves it there, so the change records that range, where the check compares the value itself (ticket 84)",
+    async (position) => {
+      const html = fromTheRight(`position: ${position}`);
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      // Moved 20px left: placed from the right, its `right` is 20px more (ADR 0014).
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      expect([right.property, right.before, right.after, right.placedOtherwiseAt, right.offsetInLayoutAt]).toEqual(["right", 12, 32, undefined, [{ breakpoint: { min: null, max: 800 }, position }]]);
+
+      page.getElementById("tag")!.setAttribute("style", "right: 32px");
+      const at = (css: string) => pageAt(html.replace("</style>", `${css}</style>`), 390);
+      const check = (phone: PageWidth) => checkAcross(page, right, onCanvas(changes.list()), [390], () => phone);
+      expect(check(at("#tag { right: 32px }"))).toEqual({ outcome: "shown" });
+      // From `md` up only: at the phone's width, its `right` as the page had it.
+      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "not shown", actual: { canvas: position, position, offset: 12 }, width: 390 });
+    },
+  );
+
+  test("a layer placed from its right edge that the canvas places relative in a view, with a `left` there: its `right` moves nothing there, and is not looked at in the view's range, as before (ticket 84)", async () => {
+    const { views, editor, changes, layer } = open(fromTheRight("position: relative; left: 8px"));
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    expect([right.property, right.placedOtherwiseAt, right.offsetInLayoutAt]).toEqual(["right", [{ min: null, max: 800 }], undefined]);
+  });
+
+  test("the page placing a layer relative by its `left` and its `right` both: the `left` moves it, so a `right` of the change's value does not show (ticket 84)", async () => {
+    const html = fromTheRight("position: relative");
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    page.getElementById("tag")!.setAttribute("style", "right: 32px");
+    const phone = pageAt(html.replace("</style>", "#tag { right: 32px } @media (max-width: 500px) { #tag { left: 8px } }</style>"), 390);
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: -8 }, width: 390 });
+  });
+
+  test.each([
+    ["left", "left: 50%; right: auto; translate: -50% 0", "x"],
+    ["right", "right: 50%; translate: 50% 0", "right"],
+  ])(
+    "a layer centered on where its %s places it that the canvas places relative in a view: no range is recorded, so the check looks at it there as placed absolute, not shown though written right, and never skipped (ticket 84, review: leftover risk)",
+    async (_, centered, property) => {
+      const html = fromTheRight("position: relative").replace("right: 12px", centered);
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [change] = changes.list();
+      expect([change.property, !!change.centeredOn, change.placedOtherwiseAt, change.offsetInLayoutAt]).toEqual([property, true, undefined, undefined]);
+
+      const css = Object.entries(change.style).map(([name, value]) => `${name}: ${value}`).join("; ");
+      page.getElementById("tag")!.setAttribute("style", css);
+      const phone = pageAt(html.replace("</style>", `#tag { ${css} }</style>`), 390);
+      expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+    },
+  );
 
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
     const { page, editor, changes, layer } = open();
