@@ -657,6 +657,33 @@ test.describe("done checks the change on the page", () => {
     );
   });
 
+  test("a layer the canvas places relative on phones, absolute from `md` up: its X moves it on phones too, so the phone's width is looked at, and its `left` written from `md` up only does not show (ticket 83, review)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="relative-below-md" className="relative h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:left-[40px]" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("relative-below-md")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const field = (name: string) => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+
+    // In the desktop view, 20px right, at every width: on the canvas, the phone view moves it 60px from where the hero lays it out.
+    await pickOnCanvas(page, "relative-below-md");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKindFile("changeset.json").changes;
+    expect([change.property, change.before, change.after, change.placedOtherwiseAt]).toEqual(["x", 40, 60, undefined]);
+    await npx03kind("claim");
+
+    // Written from `md` up only: on phones, the page does not move it.
+    editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
+    expect(await npx03kind("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
+  });
+
   test("layers placed from the right, from the bottom and centered, moved, one resized first: they stay placed so, the notes say which value changes and how to write it, and done checks each, a centered one at every view's width (ticket 79)", async ({ page }) => {
     editSource(
       APP,

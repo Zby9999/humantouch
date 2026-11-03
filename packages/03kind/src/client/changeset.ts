@@ -287,13 +287,14 @@ export interface Change {
    */
   centeredOn?: { before: Share; after: Share };
   /**
-   * A change to the `right` or `bottom` of a layer at every width (ticket 75,
-   * line review): the ranges of the views where the canvas places the layer
-   * otherwise, by its `left` or `top` (as the page's breakpoints may have
-   * it) or in its container's layout; to its X or Y (ticket 83), those where
-   * it lays it out in its container. The value places nothing
-   * there, so the check does not look at those widths, whatever the page does
-   * once the Agent has changed it. Read as the change is first made.
+   * A change at every width to a layer's X or Y (ticket 83), or to its
+   * `right` or `bottom` (ticket 75, line review): the ranges of the views
+   * where the value moves nothing on the canvas. An X or Y moves nothing
+   * where the layer is static; a `right` or `bottom`, where the layer is not
+   * placed absolute, or is placed by its `left` or `top` (as the page's
+   * breakpoints may have it). The check does not look at those widths,
+   * whatever the page does once the Agent has changed it. Read as the change
+   * is first made.
    */
   placedOtherwiseAt?: Breakpoint[];
   /**

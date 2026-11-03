@@ -207,9 +207,9 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
   const page = itself(doc);
   const { own, others } = widthsOf(change, round, page.width, viewWidths);
   if (!own && !others.length && change.placedOtherwiseAt?.length) {
-    // Its X or Y places nothing where the canvas does not place the layer absolute (ticket 83).
-    const otherwise = isEndOffset(change.property) ? `places the layer otherwise than by its \`${change.property}\`` : "does not place the layer absolute";
-    return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas ${otherwise}` };
+    // Its X or Y moves nothing where the canvas lays the layer out static (ticket 83).
+    const howTheCanvasPlacesIt = isEndOffset(change.property) ? `places the layer otherwise than by its \`${change.property}\`` : "does not place the layer absolute";
+    return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas ${howTheCanvasPlacesIt}` };
   }
   const apart = ownValues(change, round);
   let checked = false;

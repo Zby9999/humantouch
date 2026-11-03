@@ -4106,6 +4106,23 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkAcross(page, x, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
   });
 
+  test.each(["relative", "sticky"])("a layer the canvas places %s in a view, as the page's breakpoints say: its X and Y move it there too, and are looked at in the view's range; the page giving it its `left` and `top` from `md` up only does not show them (ticket 83, review)", async (position) => {
+    const html = fromTheTopLeft(`position: ${position}`);
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", 30);
+    editor.set(layer("tag"), "y", 20);
+    const [x, y] = changes.list();
+    expect([x.placedOtherwiseAt, y.placedOtherwiseAt]).toEqual([undefined, undefined]);
+
+    // Right as wide as the window; at the phone's width, its `left` and `top` as the page had them.
+    page.getElementById("tag")!.setAttribute("style", "left: 30px; top: 20px");
+    const phone = pageAt(html.replace("</style>", "@media (min-width: 501px) { #tag { left: 30px; top: 20px } }</style>"), 390);
+    for (const change of [x, y]) expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+  });
+
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
     const { page, editor, changes, layer } = open();
     editor.remove(layer("one"));
