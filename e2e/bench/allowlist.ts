@@ -37,6 +37,32 @@ export function backgroundServer(command: string, servers: readonly string[], in
 }
 
 /**
+ * The install bench's check of a command that runs a program of its own
+ * choosing (ticket 91): `npx`, `bunx`, `npm exec`, `pnpm dlx` and the like,
+ * the `runners` it lists. Past the runner's own options, the program it runs
+ * is not one of `programs` (by its name, a path to it too; `git push` by two
+ * words): the denied commands, and the shells and interpreters that would run
+ * anything (`sh`, `node`, `env`, `xargs`…). None of the runner's options runs
+ * a command line of its own (`-c`, `--call`, `--shell-mode`), and no word
+ * anywhere is one of `options` (`--open`, which opens a window).
+ */
+export function runsAllowed(words: readonly string[], runners: readonly string[], programs: readonly string[], options: readonly string[] = []): boolean {
+  if (words.some((word) => options.some((option) => word === option || word.startsWith(`${option}=`)))) return false;
+  const runner = runners.find((prefix) => prefix.split(" ").every((word, i) => words[i] === word));
+  if (!runner) return true;
+  let at = runner.split(" ").length;
+  for (; at < words.length && words[at].startsWith("-"); at++) {
+    const option = words[at];
+    if (/^--(call|shell)/.test(option) || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(option)) return false;
+    // The package to install, the next word, and not the program.
+    if (option === "-p" || option === "--package") at++;
+  }
+  if (at >= words.length) return true;
+  const program = [words[at].split("/").at(-1)!, ...words.slice(at + 1)];
+  return !programs.some((denied) => denied.split(" ").every((word, i) => program[i] === word));
+}
+
+/**
  * Options of a listed command that run another program or write a file, by
  * the command's first words, matched against each word as bash passes it.
  */

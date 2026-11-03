@@ -274,8 +274,11 @@ function convert(start: Start, dir: string): string[][] {
     pkg.scripts.dev = "next dev --webpack";
     pkg.scripts.build = "next build --webpack";
     if (start.styles === "tailwind4") {
+      // Taken out by hand keeps the order; added by the package manager, sorted as it writes package.json. A
+      // package.json ordered by hand gets reordered by bun or npm the next time either adds or removes a package
+      // (`init`, `remove`), and git would see that as a change `remove` left (ticket 91, walk 1).
       delete pkg.devDependencies["@tailwindcss/turbopack"];
-      pkg.devDependencies["@tailwindcss/postcss"] = "^4";
+      adds.push(addCommand(pm, ["@tailwindcss/postcss@^4"], true));
       replaceIn(dir, "next.config.ts", `  turbopack: {\n    rules: {\n      "*.css": {\n        loaders: ["@tailwindcss/turbopack"],\n        as: "*.css",\n      },\n    },\n  },\n`);
       writeFileSync(join(dir, "postcss.config.mjs"), `const config = {\n  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n};\n\nexport default config;\n`);
     }

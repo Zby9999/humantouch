@@ -281,9 +281,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
   },
 };
 
-/** The command line as a person would type it, for the record. */
-export function commandLine(agent: AgentName, prompt = PROMPT): string {
-  const { binary, args } = AGENTS[agent];
+/** The command line as a person would type it, for the record; `spec`, another way of running it (the install bench's). */
+export function commandLine(agent: AgentName, prompt = PROMPT, spec: Pick<AgentSpec, "binary" | "args"> = AGENTS[agent]): string {
+  const { binary, args } = spec;
   return [binary(), ...args("<run folder>", prompt)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
@@ -306,15 +306,14 @@ export interface AgentRun {
 export interface ProcessRow {
   pid: number;
   ppid: number;
+  /** Its process group, as `processTable` lists it. */
+  pgid?: number;
   command: string;
 }
 
-/** A browser's own executable, as a command line starts (its helpers carry `--type=`). */
-const BROWSER = /(?:^|\/)(?:Google Chrome(?: for Testing| Canary| Beta| Dev)?|Chromium|chrome|chromium|Microsoft Edge|msedge|firefox)(?:\s|$)/;
-
-/** The command lines of the browsers under process `root` that run with a window: neither Playwright's headless shell nor started `--headless`. */
-export function headedBrowsers(processes: ProcessRow[], root: number): string[] {
-  const under = new Set([root]);
+/** The processes under `roots`, the roots among them. */
+export function descendants(processes: Pick<ProcessRow, "pid" | "ppid">[], roots: Iterable<number>): Set<number> {
+  const under = new Set(roots);
   for (let grew = true; grew; ) {
     grew = false;
     for (const { pid, ppid } of processes) {
@@ -324,17 +323,26 @@ export function headedBrowsers(processes: ProcessRow[], root: number): string[] 
       }
     }
   }
+  return under;
+}
+
+/** A browser's own executable, as a command line starts (its helpers carry `--type=`). */
+const BROWSER = /(?:^|\/)(?:Google Chrome(?: for Testing| Canary| Beta| Dev)?|Chromium|chrome|chromium|Microsoft Edge|msedge|firefox)(?:\s|$)/;
+
+/** The command lines of the browsers under process `root` that run with a window: neither Playwright's headless shell nor started `--headless`. */
+export function headedBrowsers(processes: ProcessRow[], root: number): string[] {
+  const under = descendants(processes, [root]);
   return processes
     .filter(({ pid, command }) => under.has(pid) && BROWSER.test(command) && !/--type=|chrome-headless-shell/.test(command) && !/(?:^|\s)--?headless(?:=\S*)?(?:\s|$)/.test(command))
     .map(({ command }) => command);
 }
 
 /** Every process on the machine, as `ps` lists it. */
-async function processTable(): Promise<ProcessRow[]> {
-  const { stdout } = await execFileAsync("ps", ["-axww", "-o", "pid=,ppid=,command="], { maxBuffer: 64 * 1024 * 1024 });
+export async function processTable(): Promise<ProcessRow[]> {
+  const { stdout } = await execFileAsync("ps", ["-axww", "-o", "pid=,ppid=,pgid=,command="], { maxBuffer: 64 * 1024 * 1024 });
   return stdout.split("\n").flatMap((line) => {
-    const [, pid, ppid, command] = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line) ?? [];
-    return pid ? [{ pid: Number(pid), ppid: Number(ppid), command }] : [];
+    const [, pid, ppid, pgid, command] = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line) ?? [];
+    return pid ? [{ pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), command }] : [];
   });
 }
 
@@ -344,8 +352,8 @@ export interface RunOptions {
   spec?: Pick<AgentSpec, "binary" | "args" | "prepare">;
   /** The environment, in place of `cleanEnv()`. */
   env?: NodeJS.ProcessEnv;
-  /** Told the Agent's process id, and when it started, as soon as it has started. */
-  onStart?(pid: number, startedAt: number): void;
+  /** Told the Agent's process id as soon as it has started. */
+  onStart?(pid: number): void;
   /** Leaves what the Agent started running once it exits (its dev server), for the bench to stop itself; still stopped on a timeout. */
   leaveRunning?: boolean;
 }
@@ -360,7 +368,7 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
   const prepared = spec.prepare?.(dir, folder);
   const startedAt = Date.now();
   const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: options.env ?? cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
-  if (child.pid) options.onStart?.(child.pid, startedAt);
+  if (child.pid) options.onStart?.(child.pid);
   // Only looked at, never stopped: a window that came up is for the record.
   const headed = new Set<string>();
   let looking: Promise<void> = Promise.resolve();

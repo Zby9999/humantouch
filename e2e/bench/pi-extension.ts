@@ -15,14 +15,17 @@
  *
  * The install bench (ticket 91) writes `install-list.json` beside the copy:
  * then the shell commands allowed are its `shell` in place of the applying
- * bench's, and one of its `servers` may start a dev server in the background
- * (allowlist.ts, backgroundServer). With no such file, nothing changes.
+ * bench's, one of its `servers` may start a dev server in the background
+ * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
+ * `pnpm exec`…) may run no program of its `programs` and no word may be one
+ * of its `options` (allowlist.ts, runsAllowed). With no such file, nothing
+ * changes.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backgroundServer, DENIED, deniedReason, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
+import { backgroundServer, DENIED, deniedReason, runsAllowed, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
 
 /** As much of pi's extension API as the bench uses (`@earendil-works/pi-coding-agent`, which the repository does not install). */
 interface PiExtensionApi {
@@ -31,17 +34,20 @@ interface PiExtensionApi {
 
 /** The file the install bench writes beside the extension's copy, and what it holds. */
 export const INSTALL_LIST = "install-list.json";
-interface ShellList {
+export interface ShellList {
   shell: readonly string[];
   servers: readonly string[];
+  runners: readonly string[];
+  programs: readonly string[];
+  options: readonly string[];
 }
 
 /** The applying bench's list, or the install bench's when `file` is there. */
 function shellList(file: string): ShellList {
-  if (!existsSync(file)) return { shell: SHELL, servers: [] };
-  const { shell, servers } = JSON.parse(readFileSync(file, "utf8"));
-  if (!Array.isArray(shell) || !Array.isArray(servers)) throw new Error(`${file} has no shell and servers lists`);
-  return { shell, servers };
+  if (!existsSync(file)) return { shell: SHELL, servers: [], runners: [], programs: [], options: [] };
+  const list = JSON.parse(readFileSync(file, "utf8"));
+  for (const key of ["shell", "servers", "runners", "programs", "options"]) if (!Array.isArray(list[key])) throw new Error(`${file} has no ${key} list`);
+  return list;
 }
 
 /** pi's own tools that work on a path, and those of them that search all below it. */
@@ -181,11 +187,14 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
   const intoPi = (what: string) => block(`${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`);
   if (toolName === "bash") {
     const command = String(input.command ?? "");
-    const denied = () => block(list.servers.length ? deniedReason(command, list.shell, list.servers) : deniedReason(command));
+    const denied = () => block(deniedReason(command, list.shell, list.servers));
     const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
     // A dev server in the background is checked as the command it runs, the paths in it too.
     const checked = shellAllowed(command, list.shell) ? command : backgroundServer(command, list.servers, inProject);
     if (checked === null) return denied();
+    if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.programs, list.options))) {
+      return block(`${DENIED} npx and the like (${list.runners.join(", ")}) to run no ${list.programs.join(", ")}, with no -c, --call or --shell-mode, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`);
+    }
     const reaches = shellReaches(checked, cwd);
     if (reaches === "out") return denied();
     return reaches === "pi" ? intoPi(command) : undefined;
