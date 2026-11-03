@@ -4,7 +4,7 @@
 
 参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准，用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策（ADR 0006、0012、0013）。
 
-**Blocked by:** 85、86、87
+**Blocked by:** 85、86、87、92
 
 **Status:** ready-for-agent
 
@@ -19,6 +19,7 @@
   - 整轮用时和读入字数（记下来，作为以后的基线）
 - [ ] 按场景、按改动类别列出没达标的地方，每条找到原因（Agent 没照 Skill、Skill 写得不清楚、`claim` 的说明不够、页面核对判错、场景本身的问题），原始记录留在测量台的结果目录里
 - [ ] 结论记在 Comments：哪几项达标、哪几项没有；要不要改 Skill 措辞、要不要把截图从路线图提前（原 24 的最后一条）。要改的东西另开 ticket（编号在 main 上取），不在这张 ticket 里改代码
+- [ ] 开跑时把设计师 pi 的 `settings.json`、`models.json` 的指纹（内容摘要，不是内容本身）记进每次跑的结果；pi 带 fff 跑（ticket 92），结果里标明 fff 的版本
 - [ ] Cursor、Codex 不在这次验收里；goals 不改（以后有额度再验）
 
 ## 背景
