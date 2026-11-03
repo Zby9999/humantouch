@@ -1,4 +1,4 @@
-# 90: 安装验收的测量台
+# 91: 安装验收的测量台
 
 **What to build:** ticket 24 要的安装验收要一套能反复跑的测量：现建一个全新项目，把 README「For Agents」那一节的四步原文交给无头的 Agent（Claude、pi），量到切换按钮出现用了多久，核对装得对不对，再 `remove`，核对 `git diff` 为空。现在的测量台（`pnpm bench:agents`）只会跑落地场景，不会做这些。这张 ticket 把它做出来，并在发布前用本地打的包、脚本扮演的 Agent 走通；发布以后，24 换成 npm 上的包和真实 Agent 直接跑。
 
