@@ -60,8 +60,30 @@ export function replaceIn(dir: string, file: string, from: string, to = "") {
 /** `git status`, short: empty when the project is as it was committed. */
 export const gitStatus = (dir: string) => sh("git", ["status", "--porcelain", "--untracked-files=all"], dir);
 
-/** Starts a dev server; stop it with `stop()`. */
-export function startServer(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): ChildProcess & { stop(): void } {
+/** How long a stopped server's processes get to end before they are killed. */
+const STOP_MS = 5000;
+
+/**
+ * Starts a dev server; stop it with `stop()`, which resolves once it has
+ * exited: its process group is asked to end, and killed if it has not in a
+ * few seconds. A server that has exited already is left as it is.
+ */
+export function startServer(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): ChildProcess & { stop(): Promise<void> } {
   const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: "ignore", detached: true });
-  return Object.assign(child, { stop: () => void (child.pid && process.kill(-child.pid, "SIGTERM")) });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  const signal = (name: NodeJS.Signals) => {
+    try {
+      if (child.pid) process.kill(-child.pid, name);
+    } catch {
+      // Gone already (ESRCH).
+    }
+  };
+  const stop = async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    signal("SIGTERM");
+    const timer = setTimeout(() => signal("SIGKILL"), STOP_MS);
+    await exited;
+    clearTimeout(timer);
+  };
+  return Object.assign(child, { stop });
 }

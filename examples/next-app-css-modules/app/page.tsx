@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { BillingPicker } from "../components/BillingPicker";
 import { Card } from "../components/Card";
 import { GetStarted } from "../components/GetStarted";
+import { Stat } from "../components/Stat";
 import styles from "./page.module.css";
 
 const features = [
@@ -9,7 +11,7 @@ const features = [
   { title: "Apply", body: "Your Agent writes the changes into code." },
 ];
 
-/** A server component, as are `Card` and the layout; `GetStarted` is the client component. */
+/** A server component, as are `Card`, `Stat` and the layout; `GetStarted` and `BillingPicker` are client components. */
 export default function Home() {
   return (
     <main className={styles.main}>
@@ -26,6 +28,12 @@ export default function Home() {
         ))}
         <Card title="Your turn" body="Open the editor and try it." />
       </div>
+      <section className={styles.stats} data-testid="stats">
+        <Stat value="3" label="views side by side" />
+        <Stat value="5,000" label="layers at 60fps" />
+        <Stat value="0" label="bytes in production" />
+      </section>
+      <BillingPicker />
       <footer>
         <Link href="/about">About</Link>
       </footer>
