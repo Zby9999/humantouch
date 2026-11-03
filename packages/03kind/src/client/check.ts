@@ -16,7 +16,7 @@ import { changeKey, isReorder, type Change, type Created, type Margins, type Pla
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { placedFrom, roomOf, sideShareOf } from "./placed-from";
-import { checkable, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
+import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
 import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -94,9 +94,9 @@ export function itself(doc: Document): PageWidth {
  * copy of the page. A change at a breakpoint: one width in each part of its
  * range the project's breakpoints cut it into, where the window is not. One made in the desktop view: every view's width
  * too, but those where the round changes the same property of the layer at a
- * breakpoint of its own, and, for a `right` or `bottom`, those where the canvas
- * places the layer otherwise (`Change.placedOtherwiseAt`, ticket 75): the
- * window's width either. A reorder is the same at every width.
+ * breakpoint of its own, and, for an X or Y, a `right` or `bottom`, those where
+ * the canvas places the layer otherwise (`Change.placedOtherwiseAt`, tickets
+ * 75, 83): the window's width either. A reorder is the same at every width.
  */
 export function widthsOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): { own: boolean; others: number[] } {
   const { breakpoint } = change;
@@ -207,7 +207,9 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
   const page = itself(doc);
   const { own, others } = widthsOf(change, round, page.width, viewWidths);
   if (!own && !others.length && change.placedOtherwiseAt?.length) {
-    return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas places the layer otherwise than by its \`${change.property}\`` };
+    // Its X or Y moves nothing where the canvas lays the layer out static (ticket 83).
+    const howTheCanvasPlacesIt = isEndOffset(change.property) ? `places the layer otherwise than by its \`${change.property}\`` : "does not place the layer absolute";
+    return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas ${howTheCanvasPlacesIt}` };
   }
   const apart = ownValues(change, round);
   let checked = false;

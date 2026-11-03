@@ -614,6 +614,76 @@ test.describe("done checks the change on the page", () => {
     expect(await npx03kind("done", right)).toContain("Checked on the page: it shows the change.");
   });
 
+  test("a layer the canvas places absolute from `md` up is not looked at at the phone's width, where the canvas lays it out in its container: its X and Y written as the notes say show; one placed absolute at every width is looked at there, and laid out there is not shown (ticket 83)", async ({ page }) => {
+    // In the code, two layers in the hero: one placed freely from `md` up, in the hero's layout below; one placed freely at every width.
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="from-md" className="h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:left-[40px]" />\n' +
+        '        <div data-testid="everywhere" className="absolute top-[90px] left-[40px] h-[40px] w-[80px] bg-stone-300" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("everywhere")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const field = (name: string) => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+
+    // In the desktop view: the first 20px right and 10px lower, at every width; the second 20px right.
+    await pickOnCanvas(page, "from-md");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await setField(page, "Y", String(Number(await field("Y").inputValue()) + 10));
+    await pickOnCanvas(page, "everywhere");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(3);
+    const changes: { id: number; property: string; before: unknown; after: unknown; placedOtherwiseAt?: { min: number | null; max: number | null }[] }[] = readThirdKindFile("changeset.json").changes;
+    expect(changes.map(({ property, before, after, placedOtherwiseAt }) => [property, before, after, placedOtherwiseAt?.map(({ min, max }) => [min, max])])).toEqual([
+      // On the canvas, the phone view lays the first out in the hero: its X and Y place nothing below 768px.
+      ["x", 40, 60, [[null, 768]]],
+      ["y", 30, 40, [[null, 768]]],
+      ["x", 40, 60, undefined],
+    ]);
+    const [x, y, other] = changes.map(({ id }) => String(id));
+    await npx03kind("claim");
+    for (const id of [x, y, other]) expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change.");
+
+    // As the notes say for the first; the second written placed freely from `md` up only, in the hero's layout on phones, unlike the canvas.
+    editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[40px] md:left-[60px]");
+    editSource(APP, 'className="absolute top-[90px] left-[40px]', 'className="md:absolute md:top-[90px] md:left-[60px]');
+    for (const id of [x, y]) expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
+    expect(await npx03kind("done", other)).toContain(
+      `Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its \`position\` and \`left\`, and that its container is its positioning reference, then run \`npx 03kind done ${other}\` again.`,
+    );
+  });
+
+  test("a layer the canvas places relative on phones, absolute from `md` up: its X moves it on phones too, so the phone's width is looked at, and its `left` written from `md` up only does not show (ticket 83, review)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="relative-below-md" className="relative h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:left-[40px]" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("relative-below-md")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const field = (name: string) => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+
+    // In the desktop view, 20px right, at every width: on the canvas, the phone view moves it 60px from where the hero lays it out.
+    await pickOnCanvas(page, "relative-below-md");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKindFile("changeset.json").changes;
+    expect([change.property, change.before, change.after, change.placedOtherwiseAt]).toEqual(["x", 40, 60, undefined]);
+    await npx03kind("claim");
+
+    // Written from `md` up only: on phones, the page does not move it.
+    editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
+    expect(await npx03kind("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
+  });
+
   test("layers placed from the right, from the bottom and centered, moved, one resized first: they stay placed so, the notes say which value changes and how to write it, and done checks each, a centered one at every view's width (ticket 79)", async ({ page }) => {
     editSource(
       APP,
