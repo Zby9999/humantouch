@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { DENIED } from "./allowlist.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
-test("a Claude Code transcript gives its model, each tool call with what it printed, the last words, and how often the API had to be asked again", () => {
+test("a Claude Code transcript gives its model, the skills it was given, each tool call with what it printed, the last words, and how often the API had to be asked again", () => {
   const transcript = parseTranscript(
     "claude",
     lines(
-      { type: "system", subtype: "init", model: "claude-test-1", claude_code_version: "9.9.9" },
+      { type: "system", subtype: "init", model: "claude-test-1", claude_code_version: "9.9.9", skills: ["03kind", "debug"] },
       { type: "assistant", message: { content: [{ type: "text", text: "Claiming." }, { type: "tool_use", id: "a", name: "Bash", input: { command: "npx 03kind claim" } }] } },
       { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "a", content: "# Design changes\n" }] } },
       { type: "system", subtype: "api_retry", attempt: 1, no_response: { waited_ms: 181000 } },
@@ -20,6 +22,8 @@ test("a Claude Code transcript gives its model, each tool call with what it prin
 
   assert.deepEqual(transcript, {
     model: "claude-test-1",
+    responseModels: [],
+    skills: ["03kind", "debug"],
     toolCalls: [
       { name: "Bash", command: "npx 03kind claim", output: "# Design changes\n" },
       { name: "Read", path: "/p/src/App.tsx", output: "export function App" },
@@ -63,6 +67,8 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
 
   assert.deepEqual(transcript, {
     model: "Composer Test",
+    responseModels: [],
+    skills: [],
     toolCalls: [
       { name: "shell", command: "npx 03kind claim", output: "# Design changes\n" },
       { name: "read", path: "src/App.tsx", output: "export function App" },
@@ -74,6 +80,66 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     subagents: { calls: 0, models: [] },
     apiRetries: 0,
   });
+});
+
+test("a pi transcript (--mode json) gives its provider and model, the model the provider answered with, the skills its system prompt lists, each tool call with what it got back, and the last words", () => {
+  // Cut from a real run (85-real-pi, button-over-rule), its long outputs shortened and its run folder made /t/run.
+  const transcript = parseTranscript("pi", readFileSync(new URL("./fixtures/pi.jsonl", import.meta.url), "utf8"));
+
+  assert.equal(transcript.model, "command-code/deepseek/deepseek-v4.1-flash");
+  assert.deepEqual(transcript.responseModels, ["deepseek/deepseek-v4.1-flash-1017-cm"]);
+  assert.deepEqual(transcript.skills, ["03kind"]);
+  assert.deepEqual(
+    transcript.toolCalls.map(({ output, ...call }) => call),
+    [
+      { name: "read", path: "/t/run/.agents/skills/03kind/SKILL.md" },
+      { name: "bash", command: "cd /t/run && npx 03kind claim 2>&1" },
+      { name: "read", path: "/t/run/src/App.tsx" },
+      { name: "read", path: "/t/run/src/index.css" },
+      { name: "read", path: "/t/run/src/components/Dialog.tsx" },
+      { name: "edit", path: "/t/run/src/App.tsx" },
+      { name: "bash", command: "cd /t/run && npx 03kind done 1 2 2>&1" },
+      { name: "bash", command: "cd /t/run && npx 03kind finish 2>&1" },
+    ],
+  );
+  assert.match(transcript.toolCalls[0].output, /^---\nname: 03kind\n/);
+  assert.equal(transcript.toolCalls[5].output, "Successfully replaced 1 block(s) in /t/run/src/App.tsx.");
+  assert.match(transcript.toolCalls[6].output, /^Changes 1 and 2 done: 2 of 2 changes applied\./);
+  assert.match(transcript.finalText, /^Applied both changes/);
+  assert.deepEqual({ permissionDenials: transcript.permissionDenials, subagents: transcript.subagents, apiRetries: transcript.apiRetries }, { permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 });
+  assert.deepEqual(
+    { ...toolCallStats(transcript.toolCalls), charsRead: undefined },
+    { toolCalls: 8, repoWideSearches: 0, claims: 1, dones: 1, finished: true, packageReads: 0, charsRead: undefined },
+  );
+  assert.equal(toolCallStats(transcript.toolCalls).charsRead.skill, transcript.toolCalls[0].output.length);
+  assert.equal(checkReport(transcript.finalText, [1, 2]).compliant, true);
+});
+
+test("in a pi transcript, a call the bench's extension blocked is a permission denial, and a retry of the API is counted", () => {
+  const transcript = parseTranscript(
+    "pi",
+    lines(
+      { type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: "a", name: "bash", arguments: { command: "rm -rf src" } }] } },
+      { type: "message_end", message: { role: "toolResult", toolCallId: "a", toolName: "bash", content: [{ type: "text", text: `${DENIED} only these shell commands … Turned away: rm -rf src` }], isError: true } },
+      { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "529 overloaded" },
+      { type: "message_end", message: { role: "toolResult", toolCallId: "b", toolName: "bash", content: [{ type: "text", text: "Not found" }], isError: true } },
+    ),
+  );
+
+  assert.equal(transcript.permissionDenials, 1);
+  assert.equal(transcript.apiRetries, 1);
+  assert.match(transcript.toolCalls[0].output, /Turned away: rm -rf src$/);
+});
+
+test("a pi transcript with an answer from another model than its first names both, a model no Agent is pinned to: pi starts no subagent, so it is a switch, and the bench stops on it", () => {
+  const assistant = (model: string, text: string) => ({ type: "message_end", message: { role: "assistant", provider: "command-code", model, content: [{ type: "text", text }], stopReason: "stop" } });
+
+  const transcript = parseTranscript("pi", lines(assistant("main", "a"), assistant("other", "b"), assistant("main", "c")));
+
+  assert.equal(transcript.model, "command-code/main, command-code/other");
+  assert.deepEqual(transcript.subagents, { calls: 0, models: [] });
+  assert.equal(transcript.finalText, "c");
+  assert.equal(parseTranscript("pi", lines(assistant("main", "a"), assistant("main", "b"))).model, "command-code/main");
 });
 
 test("tool calls are counted: searches over the project, the command line's commands, and what the Agent read, the Skill (loaded, read, or printed in the shell) and claim apart", () => {
