@@ -647,7 +647,7 @@ export function measureFolder(folder: string) {
     reportCompliant: applying ? report.compliant : null,
     reportProblems: applying ? report.problems : null,
     /** The changes with a Variable, and how many of them the diff writes it for: summed up over runs, not run by run (`pooled`). Measured from the diff, so runs from before it was recorded have it too. */
-    variables: { whole: withVariable.length, part: usedVariable.length },
+    variables: { part: usedVariable.length, whole: withVariable.length },
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
     /** Of the changes that cannot be applied 1:1 (ticket 86), the share the report gives right: under ⚠️ with why and instead, or under ✓ and shown; null with none. */
     reportedAsExpected: reportedAsExpected(

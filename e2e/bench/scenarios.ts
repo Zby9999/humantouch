@@ -773,6 +773,8 @@ export const SCENARIOS: Scenario[] = [
           const shadows = (shadow === "none" ? [] : shadow.split(/,(?![^(]*\))/)).map((one) => {
             const [, color, lengths] = /^(.*?)\s*((?:-?[\d.]+px\s*){2,4}(?:inset)?)$/.exec(one.trim()) ?? [];
             context.clearRect(0, 0, 1, 1);
+            // A color the canvas cannot read leaves the one before: none, then.
+            context.fillStyle = "transparent";
             context.fillStyle = color ?? "transparent";
             context.fillRect(0, 0, 1, 1);
             return { pixel: [...context.getImageData(0, 0, 1, 1).data], lengths: lengths?.trim() };

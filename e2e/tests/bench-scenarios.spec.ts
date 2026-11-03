@@ -15,15 +15,22 @@ import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, np
 test.use({ keepRoundInMemory: false });
 test.setTimeout(90_000);
 
-/** The example's files a round before edited, by path from its root, as they were: put back after each test. */
+/** The example's files a round before edited, by path from its root, as they were: written back after each test. */
 const originals = new Map<string, string>();
+
+/**
+ * Until the dev server has `file` as `text` (`?raw`: its text as a string, untransformed, with or without a `;` after). Waited
+ * for once the file is edited too: the dev server reads `?raw` from disk the first time, and only from then on keeps it until
+ * it sees the file change, as it does the module the page loads.
+ */
+const served = (file: string, text: string) => expect.poll(async () => (await fetch(`${DEV_URL}/${file}?raw`)).text()).toContain(`export default ${JSON.stringify(text)}`);
 
 test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
   for (const [file, text] of originals) {
     if (readFileSync(`${EXAMPLE}${file}`, "utf8") !== text) writeFileSync(`${EXAMPLE}${file}`, text);
-    // Until the dev server has each file back as it was (`?raw`: its text as a string, untransformed, with or without a `;` after), so the next test's page loads it so.
-    await expect.poll(async () => (await fetch(`${DEV_URL}/${file}?raw`)).text()).toContain(`export default ${JSON.stringify(text)}`);
+    // So the next test's page loads it as it was.
+    await served(file, text);
   }
   originals.clear();
 });
@@ -41,6 +48,7 @@ for (const scenario of SCENARIOS) {
         if (!originals.has(file)) originals.set(file, text);
         expect(text).toContain(from);
         writeFileSync(`${EXAMPLE}${file}`, text.replace(from, to));
+        await served(file, text.replace(from, to));
       },
       // The example's code is no commit of its own: the round before is taken back out after the test.
       settle: async () => {},
