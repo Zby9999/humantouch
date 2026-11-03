@@ -1,22 +1,30 @@
-# 24: Agent 验收
+# 24: Agent 验收：安装
 
-**What to build:** 用约 10 个标准场景（每种改动至少出现一次）在 Claude Code、Codex、Cursor 上分别跑一轮，按 docs/goals.md 统计各项指标，作为第一版成功标准的最终判定。另做安装验收：三家 Agent 各在 10 个全新项目上从 Guide 开始安装，再运行 remove。
+**What to build:** Agent 验收的后一半：安装验收。包发布到 npm 之后，Claude（Sonnet 5.5，effort high）和无头 pi（DeepSeek v4.1 flash，command-code）各在 10 个全新项目里，从 README「For Agents」那一节的四步原文开始安装（`npx -y 03kind@latest init`，不拿本地打的包代替），确认切换按钮出现，再运行 `remove`。落地的那一半（原来这张 ticket 的标准场景部分）移到 ticket 88。
 
-参考本功能的 spec.md（同目录上一级），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
+参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准（「Light」「Reversible」），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
-**Blocked by:** 07, 09, 14, 16, 17, 18, 19, 20, 21, 22, 26, 27, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 50
+**Blocked by:** 88；包已发布到 npm（设计师自己操作，发布前把 GitHub 仓库设为公开）
 
 **Status:** ready-for-human
 
-- [ ] 准备好约 10 个标准场景及其预期结果，含断点改动与挪出、拖回画布
-- [ ] 三家 Agent 各跑一遍，记录每个场景的落地结果与报告
-- [ ] 1:1 落地率 ≥ 95%（以 `done` 核对为准），虚假的 ✓ = 0，其余均有合规报告
-- [ ] 存在匹配的设计变量时，设计变量使用率 ≥ 90%
-- [ ] 每条改动平均 ≤ 3 次工具调用、0 次全仓搜索（从 Agent 的对话记录统计）
-- [ ] 安装：三家 Agent × 10 个全新项目 100% 成功，每次 ≤ 60 秒且无需人工介入
-- [ ] remove 后 git diff 为空
-- [ ] 根据结果决定是否调整 Skill 措辞，或把截图从路线图提前（结论记录在 Comments 中）
+- [ ] 跑之前先问设计师：2 家 × 10 个项目 = 20 次安装，估计用时；设计师同意了再跑
+- [ ] 10 个全新项目覆盖常见的起点，每个都用官方脚手架现建，不复用：Vite + React（TypeScript、JavaScript 各一）、Next.js App Router（Turbopack 默认、webpack 各一，有 `src/` 和没有各一）；包管理器 npm、pnpm、yarn、bun 都有；样式 Tailwind v4、Tailwind v3、CSS Modules、普通 CSS 都有；React 18 至少一个。具体十个由这条线列出来，跑之前给设计师看
+- [ ] 每次安装：从 Agent 收到「For Agents」的四步到切换按钮出现 ≤ 60 秒，全程没有人插手；`doctor` 全部 ✓；用户源码只改 ≤ 2 处（构建配置 1 行 + 挂载 1 行，goals「Light」）
+- [ ] 第 3 步：Agent 开不了浏览器时（无头跑就是这样），照样装完，最后告诉设计师下次打开页面右下角应有一个圆形按钮。切换按钮在不在由测量台用无头浏览器确认，不以 Agent 自报为准
+- [ ] 2 家 × 10 个项目 100% 成功；没成功的，记下卡在哪一步、为什么
+- [ ] 每个项目装完再 `remove`：`git diff` 为空，没有留下文件（goals「Reversible」）
+- [ ] 结论记在 Comments：要不要改 README / For Agents 的措辞，要改的另开 ticket（编号在 main 上取）
+- [ ] Cursor、Codex 不在这次验收里；goals 不改（以后有额度再验）
+
+## 设计师决定（2026-11-03，重新分诊）
+
+- Agent 验收拆开：先跑落地验收（ticket 88），再发布到 npm（设计师自己操作），最后跑安装验收（本 ticket）。理由：落地验收不依赖发布，可能要改 Skill 措辞，改好再发布第一版；安装验收要照 For Agents 原文，第 1 步只有发布后才跑得通。
+- 这次只验 Claude（Sonnet，high）和无头 pi（command-code 的 DeepSeek v4.1 flash）：Cursor 没有额度。docs/goals.md 不改：Codex、Cursor 以后还要验，这次不算偏离。
+- 测量台接上 pi 在 ticket 85，标准场景补全在 86、87。
 
 ## Comments
 
 **改名为 03Kind（2026-11-01，ticket 70 第三步）**：已查，无旧名（旧产品名、命令、包名、文件夹名和 vk 前缀，不分大小写地查过）。
+
+**重新分诊前的验收项（2026-11-03 之前）**：原来的 Blocked by 是 07, 09, 14, 16, 17, 18, 19, 20, 21, 22, 26, 27, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 50，都已完成。原来的标准场景、三家 Agent 落地、1:1 落地率、设计变量使用率、工具调用次数、Skill 措辞和截图的结论，移到 ticket 88；安装和 remove 两项留在这里。

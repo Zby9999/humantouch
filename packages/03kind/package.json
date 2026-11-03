@@ -1,8 +1,13 @@
 {
   "name": "03kind",
   "version": "0.0.0",
-  "description": "A Framer-style editor layer for your local dev server. Edit the page, hand the changes to your Agent.",
+  "description": "An editor layer for your project's local dev server: edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zby9999/03kind.git",
+    "directory": "packages/03kind"
+  },
   "type": "module",
   "files": [
     "dist",
@@ -31,7 +36,9 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "node -e \"for (const file of ['README.md', 'LICENSE']) require('node:fs').copyFileSync('../../' + file, file)\"",
+    "postpack": "node -e \"for (const file of ['README.md', 'LICENSE']) require('node:fs').rmSync(file, { force: true })\""
   },
   "dependencies": {
     "@babel/parser": "^8.0.7",
