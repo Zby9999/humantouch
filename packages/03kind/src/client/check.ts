@@ -16,8 +16,8 @@ import { changeKey, isReorder, type Change, type Created, type Margins, type Pla
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { placedFrom, roomOf, sideShareOf } from "./placed-from";
-import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type Unfound } from "./checkable";
-import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
+import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
+import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import type { Axis } from "./snap";
@@ -305,15 +305,63 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const margins = marginsFor(change, at);
   const placing = change.after !== null && PLACING.includes(property);
+  // Where the canvas moves it in its container's layout still, relative or sticky: by the value itself (ticket 84).
+  const inLayout = placing ? change.offsetInLayoutAt?.find(({ breakpoint }) => within(breakpoint, at.width))?.position : undefined;
   // Not absolute on the page, a layer is not placed by its X, Y, right or bottom at all: no value read off it stands for one (ticket 80).
-  const notAbsolute = placing ? els.find((el) => !absolute(el)) : undefined;
-  const [result, wrong]: [CheckResult, Element | null] = notAbsolute
-    ? [{ outcome: "not shown", actual: null }, notAbsolute]
-    : placing && margins
-      ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins, change.centeredOn)
-      : lookStyle(els, property, change.after, at);
+  const notAbsolute = placing && !inLayout ? els.find((el) => !absolute(el)) : undefined;
+  const [result, wrong]: [CheckResult, Element | null] = inLayout
+    ? lookOffset(els, property, change.after as number, inLayout)
+    : notAbsolute
+      ? [{ outcome: "not shown", actual: null }, notAbsolute]
+      : placing && margins
+        ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins, change.centeredOn)
+        : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
+}
+
+/**
+ * How the page has a layer in its container's layout at a width where the
+ * canvas moves it there by its X or Y, `right` or `bottom` (`OffsetInLayout`,
+ * ticket 84): placed `canvas`, as the canvas places it; placed `position` on
+ * the page; and `offset`, how far its side moves it there, in px, as the
+ * side's value goes. Null where the side moves it nothing (laid out static),
+ * places it (absolute, fixed), or is not in px (sticky: `auto`, a
+ * percentage), as the browser computes it then (`written`).
+ */
+export interface OffsetInLayout {
+  canvas: InLayout;
+  position: Position;
+  offset: number | null;
+  written?: string;
+}
+
+/**
+ * An X or Y, or a `right` or `bottom`, at a width where the canvas has the
+ * layer in its container's layout still, moved by the value, placed relative
+ * or sticky (`Change.offsetInLayoutAt`, ticket 84): shown where every one of
+ * `els` is placed as the canvas places it there, and its side gives it `after`
+ * itself, its margins left out, as they are where its container lays it out.
+ * Relative, by how far the browser moves it, which it gives its `left` and
+ * `top`: a `right` or `bottom` moves it the other way, but not with a `left`
+ * or `top` declared too, which it goes by instead. Sticky, by its side's
+ * value. Not shown: with the first that is not, and how (`OffsetInLayout`).
+ */
+function lookOffset(els: Element[], property: Property, after: number, canvas: InLayout): [CheckResult, Element | null] {
+  const { axis, edge } = PLACED_BY[property]!;
+  for (const el of els) {
+    const style = getComputedStyle(el);
+    const position = style.position as Position;
+    // Sticky, as written: a percentage is not px, though it reads as a number.
+    const written = style.getPropertyValue(SIDES[axis][edge]);
+    const offset =
+      position === "relative" ? movedBy(edge, rounded(parseFloat(style.getPropertyValue(SIDES[axis].start)) || 0)) : position === "sticky" && written.endsWith("px") ? rounded(parseFloat(written)) : null;
+    if (position !== canvas || offset === null || Math.abs(offset - after) > 0.5) {
+      const actual: OffsetInLayout = { canvas, position, offset, ...(position === "sticky" && offset === null && { written }) };
+      return [{ outcome: "not shown", actual }, el];
+    }
+  }
+  return [{ outcome: "shown" }, null];
 }
 
 /** Whether every one of `els` shows `after`; not, the first that does not, and the value it shows. */
