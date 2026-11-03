@@ -9,12 +9,17 @@
  *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
  *                     [--claim-out <dir>]   and write what `claim` prints for each to <dir>/<scenario>.md, to compare two versions word for word
- *   pnpm bench:agents --scripted      set the scenarios up as --dry does, then a script plays the Agent writing the right code
- *                                     (the scenario's `script`): claim, the code, done, finish; the page must then show every change
+ *   pnpm bench:agents --scripted [--scenarios id,…]
+ *                                     set each scenario with scripted code (`apply`, all of them by default) up as `--dry` does, then play an
+ *                                     Agent applying it right, with no Agent run: claim, write that code, `done` for its changes, `finish`.
+ *                                     Each change must show by the scenario's own test at its widths (a change with no test fails), and get
+ *                                     the page's check of it as shown; one with a Variable must write it (as `usesVariable` counts it)
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
  * Each scenario runs on its own example project (`example`), each set up once
- * for the whole bench.
+ * for the whole bench. Dev servers take ports from 5620 on, or from
+ * `TK_BENCH_PORT` (30 of them), so two checkouts running the bench at once
+ * keep apart.
  *
  * Runs go one after another, never side by side, so their times compare,
  * run 1 of every scenario first; `--max-runs` stops after that many Agent
@@ -47,8 +52,8 @@ function answers(port: number): Promise<boolean> {
 }
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/agents/", import.meta.url));
-/** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. */
-const FIRST_PORT = 5620;
+/** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. Another checkout's bench sets `TK_BENCH_PORT` apart. */
+const FIRST_PORT = Number(process.env.TK_BENCH_PORT ?? 5620);
 const PORTS = 30;
 /** Longest an Agent gets for a round. */
 const AGENT_TIMEOUT_MS = 20 * 60_000;
@@ -105,23 +110,27 @@ async function main(argv: string[]) {
     return at < 0 ? undefined : argv[at + 1];
   };
   const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
-  const scenarios = option("scenarios") ? STANDARD_SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : STANDARD_SCENARIOS;
+  const scripted = argv.includes("--scripted");
+  // The scripted pass takes the scenarios with scripted code, unless named.
+  const scenarios = option("scenarios")
+    ? STANDARD_SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id))
+    : STANDARD_SCENARIOS.filter((scenario) => !scripted || scenario.apply);
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
-  const scripted = argv.includes("--scripted");
-  const dry = argv.includes("--dry") || scripted;
+  const dry = argv.includes("--dry");
   const claimOut = option("claim-out");
   const skill = !argv.includes("--no-skill");
   const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
 
   const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
-  const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
-  console.log(scripted ? `Setting up ${plan} scenarios, a script playing the Agent.` : dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
+  const plan = dry || scripted ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
+  if (scripted) console.log(`Applying ${plan} scenarios by their scripted code, with no Agent.`);
+  else console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
 
   const versions: Partial<Record<AgentName, string>> = {};
-  if (!dry) {
+  if (!dry && !scripted) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
@@ -161,15 +170,17 @@ async function main(argv: string[]) {
   };
   const failures: string[] = [];
   try {
-    if (dry) {
+    if (scripted) {
       for (const scenario of scenarios) {
-        if (scripted && !scenario.script) {
-          console.log(`– ${scenario.id}: no script`);
-          continue;
-        }
-        const { problems, notes } = await setUp(browser, await baseFor(scenario), await nextPort(), scenario, { claimTo: claimOut && join(claimOut, `${scenario.id}.md`), scripted });
-        console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${[...problems, ...notes].map((line) => `\n    ${line}`).join("")}`);
-        failures.push(...problems.map((problem) => `${scenario.id}: ${problem}`));
+        const problems = await applyScripted(browser, await baseFor(scenario), await nextPort(), scenario);
+        console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
+        failures.push(...problems);
+      }
+    } else if (dry) {
+      for (const scenario of scenarios) {
+        const problems = await setUp(browser, await baseFor(scenario), await nextPort(), scenario, claimOut && join(claimOut, `${scenario.id}.md`));
+        console.log(`${problems.length ? "✗" : "✓"} ${scenario.id}${problems.map((problem) => `\n    ${problem}`).join("")}`);
+        failures.push(...problems);
       }
     } else {
       let agentRuns = 0;
@@ -243,76 +254,102 @@ async function withScenario<T>(
     await scenario.design(desk);
     return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages, designer: page, desk });
   } finally {
-    await observers?.close().catch(() => {});
-    await context?.close().catch(() => {});
-    server?.stop();
-    project.remove();
+    try {
+      await observers?.close().catch(() => {});
+      await context?.close().catch(() => {});
+      // Stopped, and gone: else its service may write into the project as it is being removed (`.03kind/checks.json.<pid>.tmp`).
+      await server?.stop();
+    } finally {
+      project.remove();
+    }
   }
 }
 
 /**
  * Sets a scenario up with no Agent; what is wrong with it: changes not as it
  * names them, or shown on the page already. `claimTo`: then claims the round,
- * and writes what `claim` prints there. `scripted`: then plays the Agent with
- * the scenario's script, and what is wrong is a change the page does not show
- * after; `notes` has what `done` said of each.
+ * and writes what `claim` prints there.
  */
-async function setUp(browser: Browser, base: string, port: number, scenario: Scenario, { claimTo, scripted = false }: { claimTo?: string; scripted?: boolean } = {}): Promise<{ problems: string[]; notes: string[] }> {
+async function setUp(browser: Browser, base: string, port: number, scenario: Scenario, claimTo?: string): Promise<string[]> {
   try {
-    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer, desk }) => {
-      const problems: string[] = [];
-      // Designing touches no code with no claim: the editor layer has nothing to tell of the code changing.
-      const notices = (await unclaimedNoticesShown(designer)).length + (await canvasUpdatedNoticesShown(designer)).length + (await pageChangedNoticesShown(designer)).length;
-      if (notices) problems.push(`a notice of the code changing showed ${notices} times as it was set up`);
-      const kinds = saved.map((change) => change.kind).join(", ");
-      const named = scenario.changes.map((change) => change.kind).join(", ");
-      if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
-      (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
-      const claim = claimTo || scripted ? await project.cli("claim") : null;
+    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
+      const problems = await setUpProblems(scenario, saved, observers, designer);
       if (claimTo) {
         mkdirSync(join(claimTo, ".."), { recursive: true });
-        writeFileSync(claimTo, claim!);
+        writeFileSync(claimTo, await project.cli("claim"));
       }
-      if (!scripted || problems.length) return { problems, notes: [] };
-      return await playTheAgent(scenario, desk, saved, observers, problems);
+      return problems;
     });
   } catch (error) {
-    return { problems: [(error as Error).message.split("\n")[0]], notes: [] };
+    return [(error as Error).message.split("\n")[0]];
   }
 }
 
-/** Longest the page gets to show the script's code, as the dev server brings it in. */
+/** What is wrong with a scenario just set up: a notice of the code changing, changes not as it names them, or shown on the page already. */
+async function setUpProblems(scenario: Scenario, saved: SavedChange[], observers: Map<number, Page>, designer: Page): Promise<string[]> {
+  const problems: string[] = [];
+  // Designing touches no code with no claim: the editor layer has nothing to tell of the code changing.
+  const notices = (await unclaimedNoticesShown(designer)).length + (await canvasUpdatedNoticesShown(designer)).length + (await pageChangedNoticesShown(designer)).length;
+  if (notices) problems.push(`a notice of the code changing showed ${notices} times as it was set up`);
+  const kinds = saved.map((change) => change.kind).join(", ");
+  const named = scenario.changes.map((change) => change.kind).join(", ");
+  if (kinds !== named) problems.push(`changes are ${kinds}, not ${named}`);
+  (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
+  return problems;
+}
+
+/** Longest the page gets to show the scripted code, as the dev server brings it in, before `done` is run. */
 const SCRIPTED_SHOWN_MS = 30_000;
 
 /**
- * The scripted pass, on a claimed round: the scenario's script writes the
- * right code, `done` is run for every change and `finish` after, as an Agent
- * following the Skill does; then the page, loaded afresh, must show every
- * change. What `done` says of each goes to the notes.
+ * The scripted pass of a scenario: set up as `--dry` does, then applied by
+ * its scripted code (`apply`), as an Agent applying it right would, with no
+ * Agent run: claim, the code, `done` for every change, `finish`. What is
+ * wrong: what `--dry` finds; a change that its own test does not show at its
+ * widths, or that has no test (a brief aside); a change the page can check
+ * whose check, as the round was archived, is not "shown"; a Variable named
+ * that the code does not write.
  */
-async function playTheAgent(scenario: Scenario, desk: Desk, saved: SavedChange[], observers: Map<number, Page>, problems: string[]) {
-  await scenario.script!(desk);
-  const reload = () => Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
-  let now: (boolean | null)[] = [];
-  for (const until = Date.now() + SCRIPTED_SHOWN_MS; ; ) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    await reload();
-    now = await shown(observers, scenario, saved);
-    if (now.every((shows) => shows !== false) || Date.now() > until) break;
+async function applyScripted(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
+  if (!scenario.apply) return ["no scripted code (`apply`)"];
+  try {
+    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer, desk }) => {
+      const problems = await setUpProblems(scenario, saved, observers, designer);
+      if (problems.length) return problems;
+      const head = await project.head();
+      const history = join(project.dir, ".03kind/history");
+      const rounds = () => (existsSync(history) ? readdirSync(history).sort() : []);
+      const roundsBefore = rounds().length;
+
+      await project.cli("claim");
+      await scenario.apply!(desk);
+      // The dev server brings the code in: then `done`, as an Agent runs it once the page has the change.
+      const reload = () => Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
+      for (const until = Date.now() + SCRIPTED_SHOWN_MS; ; ) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await reload().catch(() => {});
+        if ((await shown(observers, scenario, saved)).every((shows) => shows !== false) || Date.now() > until) break;
+      }
+      await project.cli("done", ...saved.map((change) => String(change.id)));
+      await project.cli("finish");
+
+      await reload();
+      const atEnd = await shown(observers, scenario, saved);
+      const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
+      await sh("git", ["add", "-A"], project.dir);
+      const diff = await sh("git", ["diff", "--cached", head], project.dir);
+      scenario.changes.forEach((change, i) => {
+        const id = saved[i].id;
+        if (atEnd[i] === false) problems.push(`change ${i + 1} does not show: ${change.expect}`);
+        if (atEnd[i] === null && change.kind !== "brief") problems.push(`change ${i + 1} has no test of its own (\`shows\`) to show it by`);
+        if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
+        if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code writes none of ${change.variable.join(", ")}`);
+      });
+      return problems;
+    });
+  } catch (error) {
+    return [(error as Error).message.split("\n")[0]];
   }
-  const ids = saved.map((change) => change.id);
-  const said = await desk.cli("done", ...ids.map(String));
-  const notes = ids.map((id, i) => {
-    // One change: its line follows the count; several: each on a line of its own.
-    const line = ids.length === 1 ? said.split("\n")[1] : said.split("\n").find((text) => text.startsWith(`Change ${id}: `))?.slice(`Change ${id}: `.length);
-    // The page's own check and the scenario's test disagree: one of them is wrong.
-    if (scenario.changes[i].checkable && /^checked on the page: it does not show/i.test(line ?? "")) problems.push(`done says change ${i + 1} does not show, once the script has applied it`);
-    return `done ${id}: ${line ?? "?"}`;
-  });
-  await desk.cli("finish");
-  await reload();
-  (await shown(observers, scenario, saved)).forEach((shows, i) => shows === false && problems.push(`change ${i + 1} does not show once the script has applied it`));
-  return { problems, notes };
 }
 
 /** The newest file under `dir`, by when it changed, in ms; `node_modules` and dot folders left out. */

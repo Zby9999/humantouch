@@ -35,7 +35,7 @@ export function App() {
         <Card title="Your turn" body="Open the editor and try it." />
       </Surface>
       <section className="flex flex-col gap-4 pb-section" data-testid="pricing">
-        <h2 className="text-lead font-semibold text-ink">Pricing</h2>
+        <h2 className="text-xl font-semibold text-ink">Pricing</h2>
         {yearlySaving > 0 && <span className="self-start rounded-pill bg-brand-50 px-2 py-0.5 text-caption text-brand-700">Save {yearlySaving}% yearly</span>}
         <p className={cn("text-caption", yearlySaving > 0 ? "text-ink" : "text-muted")}>Free while in beta, then per seat.</p>
         <div className="flex flex-wrap gap-3">

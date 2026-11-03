@@ -78,13 +78,12 @@ export interface Scenario {
   design(desk: Desk): Promise<void>;
   changes: ScenarioChange[];
   /**
-   * Writes the code an Agent applying the round right would, through
-   * `desk.edit`, once the round is claimed: the bench's scripted pass
-   * (`--scripted`) plays the Agent with it, so the page must then show every
-   * change. That checks the scenario's own tests (`shows`) can tell a change
-   * applied, not only one not yet.
+   * Writes the round into the code as an Agent applying it right would,
+   * once it is claimed (`desk.edit`), for the bench's scripted pass
+   * (`pnpm bench:agents --scripted`): every change shows by its own test then,
+   * so a test that cannot hold is found before an Agent is measured by it.
    */
-  script?(desk: Desk): Promise<void>;
+  apply?(desk: Desk): Promise<void>;
 }
 
 /** The example project a scenario runs on. */

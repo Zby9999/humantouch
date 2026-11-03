@@ -7,8 +7,7 @@
  * component's variant picked by a prop, one component used several times and
  * one usage of it changed, a layer rendered on a condition.
  *
- * Each has a script that writes the code an Agent applying it right would
- * (`--scripted`), as the Skill's notes ask for it: the class or rule that
+ * Each says how the round is applied right (`apply`, for `--scripted`), as the Skill's notes ask for it: the class or rule that
  * sets the value now, the project's Variable where one has the value, a
  * breakpoint written the project's way, one usage changed alone.
  */
@@ -101,8 +100,8 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
         shows: () => getComputedStyle(document.querySelector('[data-testid="pricing"] > p')!).fontSize === "19px",
       },
     ],
-    async script(desk) {
-      await desk.edit("src/App.tsx", '<h2 className="text-lead font-semibold text-ink">Pricing</h2>', '<h2 className="text-display font-semibold text-ink">Pricing</h2>');
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<h2 className="text-xl font-semibold text-ink">Pricing</h2>', '<h2 className="text-display font-semibold text-ink">Pricing</h2>');
       await desk.edit("src/App.tsx", '"self-start rounded-pill bg-brand-50 px-2', '"self-start rounded-card bg-brand-50 px-2');
       await desk.edit("src/App.tsx", '<div className="flex flex-wrap gap-3">', '<div className="flex flex-wrap gap-gutter">');
       // This usage alone: a variant of its own, so Talk to us keeps the secondary one.
@@ -135,7 +134,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
         kind: "style",
         expect: "Below 560px the Save 20% yearly tag is #DBE6FF; at 560px and up it stays #EEF4FF.",
         checkable: true,
-        variable: ["max-sm:bg-brand-100"],
+        variable: ["bg-brand-100"],
         widths: [390, 768, 1280],
         shows: ({ width }) => getComputedStyle(document.querySelector('[data-testid="pricing"] span')!).backgroundColor === (width < 560 ? "rgb(219, 230, 255)" : "rgb(238, 244, 255)"),
       },
@@ -157,14 +156,14 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
         },
       },
     ],
-    async script(desk) {
+    async apply(desk) {
       await desk.edit(
         "src/App.tsx",
-        `        <h2 className="text-lead font-semibold text-ink">Pricing</h2>
+        `        <h2 className="text-xl font-semibold text-ink">Pricing</h2>
         {yearlySaving > 0 && <span className="self-start rounded-pill bg-brand-50 px-2 py-0.5 text-caption text-brand-700">Save {yearlySaving}% yearly</span>}
 `,
         `        <div className="flex flex-col gap-4">
-          <h2 className="text-lead font-semibold text-ink">Pricing</h2>
+          <h2 className="text-xl font-semibold text-ink">Pricing</h2>
           {yearlySaving > 0 && <span className="self-start rounded-pill bg-brand-50 px-2 py-0.5 text-caption text-brand-700 max-sm:bg-brand-100">Save {yearlySaving}% yearly</span>}
         </div>
 `,
@@ -193,7 +192,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "style",
-        expect: "The second stat (5,000) is #E8F0FF; the first and the third stay white.",
+        expect: "The second stat (5,000) is #E8F0FF; the first and the third stay white. In `Stat.module.css` (for that usage alone, as by a prop), not Tailwind classes or inline styles.",
         checkable: true,
         shows: () => {
           const fills = [...document.querySelector('[data-testid="stats"]')!.children].map((stat) => getComputedStyle(stat).backgroundColor);
@@ -208,13 +207,13 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
       },
       {
         kind: "style",
-        expect: "Below 768px the stats are in 1 column; at 768px and up in 3.",
+        expect: "Below 768px the stats are in 1 column; at 768px and up in 3. In `page.module.css` (a media query, as the page writes its breakpoints), not Tailwind classes or inline styles.",
         checkable: true,
         widths: [390, 768, 1280],
         shows: ({ width }) => getComputedStyle(document.querySelector('[data-testid="stats"]')!).gridTemplateColumns.split(" ").length === (width < 768 ? 1 : 3),
       },
     ],
-    async script(desk) {
+    async apply(desk) {
       // This usage alone: a prop the Stat takes, and a rule of its CSS Module for it.
       await desk.edit("components/Stat.tsx", "export function Stat({ value, label }: { value: string; label: string }) {", "export function Stat({ value, label, highlight = false }: { value: string; label: string; highlight?: boolean }) {");
       await desk.edit("components/Stat.tsx", "<div className={styles.stat}>", "<div className={highlight ? `${styles.stat} ${styles.highlight}` : styles.stat}>");
@@ -229,12 +228,12 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
     id: "next-client-stack-breakpoint",
     example: "next-app-css-modules",
     title:
-      "On the Next.js + CSS Modules page's billing picker, a `'use client'` component: the Yearly option, picked now, filled #1C1917; the Two months free note, shown only while yearly is picked, with 12px corners and, in the phone view (below 768px only), hidden; the Billing heading and the options wrapped in a new Stack.",
+      "On the Next.js + CSS Modules page's billing picker, a `'use client'` component: the Yearly option, picked now, filled #DBEAFE; the Two months free note, shown only while yearly is picked, with 12px corners and, in the phone view (below 768px only), hidden; the Billing heading and the options wrapped in a new Stack.",
     async design(desk) {
       const { page } = desk;
       await enterEditMode(page);
       await selectUp(desk, "Yearly", 1);
-      await setField(page, "Fill color", "1c1917");
+      await setField(page, "Fill color", "dbeafe");
       await selectUp(desk, "Two months free", 1);
       await setField(page, "Corner radius", "12");
       await pickFrameOfText(page, phone(page), `${BILLING} > p`);
@@ -247,30 +246,30 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "style",
-        expect: "The Yearly option, picked as the round was made, is #1C1917; Monthly stays white. Changing the picked option's own rule (`.selected`) or Yearly's alone both show it: the page is looked at with Yearly picked, as the designer saw it.",
+        expect: "The Yearly option, picked as the round was made, is #DBEAFE, in the component's CSS Module (`BillingPicker.module.css`), not Tailwind classes or inline styles; Monthly stays white. Changing the picked option's own rule (`.selected`) or Yearly's alone both show it: the page is looked at with Yearly picked, as the designer saw it.",
         checkable: true,
         shows: () => {
           const [monthly, yearly] = [...document.querySelectorAll('[data-testid="billing"] button')].map((button) => getComputedStyle(button).backgroundColor);
-          return monthly === "rgb(255, 255, 255)" && yearly === "rgb(28, 25, 23)";
+          return monthly === "rgb(255, 255, 255)" && yearly === "rgb(219, 234, 254)";
         },
       },
       {
         kind: "style",
-        expect: "The Two months free note has 12px corners.",
+        expect: "The Two months free note has 12px corners, in `BillingPicker.module.css`, not Tailwind classes or inline styles.",
         checkable: true,
         // Hidden below 768px once the next change is applied: looked at where it shows.
         shows: () => getComputedStyle(document.querySelector('[data-testid="billing"] p')!).borderTopLeftRadius === "12px",
       },
       {
         kind: "style",
-        expect: "Below 768px the Two months free note is hidden; at 768px and up it shows.",
+        expect: "Below 768px the Two months free note is hidden; at 768px and up it shows. In `BillingPicker.module.css` (a media query, as the page writes its breakpoints), not Tailwind classes or inline styles.",
         checkable: true,
         widths: [390, 768, 1280],
         shows: ({ width }) => (getComputedStyle(document.querySelector('[data-testid="billing"] p')!).display === "none") === width < 768,
       },
       {
         kind: "stack",
-        expect: "The Billing heading and the options are in a new vertical Stack of their own, with a 12px gap, in the billing picker.",
+        expect: "The Billing heading and the options are in a new vertical Stack of their own, with a 12px gap, in the billing picker; its layout in `BillingPicker.module.css`, not Tailwind classes or inline styles.",
         checkable: false,
         shows: () => {
           const heading = document.querySelector('[data-testid="billing"] h2')!;
@@ -286,8 +285,8 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
         },
       },
     ],
-    async script(desk) {
-      await desk.edit("components/BillingPicker.module.css", "  background: rgb(239, 246, 255);\n", "  background: rgb(28, 25, 23);\n");
+    async apply(desk) {
+      await desk.edit("components/BillingPicker.module.css", "  background: rgb(239, 246, 255);\n", "  background: rgb(219, 234, 254);\n");
       await desk.edit("components/BillingPicker.module.css", "  border-radius: 4px;\n", "  border-radius: 12px;\n");
       await desk.edit("components/BillingPicker.module.css", ".options {", ".top {\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.options {");
       await desk.edit("components/BillingPicker.module.css", "  font-size: 14px;\n}\n", "  font-size: 14px;\n}\n\n@media (max-width: 767px) {\n  .saving {\n    display: none;\n  }\n}\n");
