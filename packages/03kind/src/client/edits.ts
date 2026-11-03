@@ -16,8 +16,8 @@ import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { isEndOffset, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS } from "./checkable";
-import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge } from "./checkable";
+import { absolute, cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
 import { endOffsetPlaces, pastShare, placedFrom, roomOf, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -218,8 +218,9 @@ export function createEditor(
     const along = SIZE_AXIS[property];
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
     const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centering ? { placedFrom: earlier?.placedFrom ?? centering.from } : {};
-    // Its `right` or `bottom` changed at every width: where the canvas places it otherwise, its `right` or `bottom` places nothing.
-    const placedOtherwiseAt = !earlier && !breakpoint && isEndOffset(property) ? viewsPlacingOtherwise(layer, PLACED_BY[property]!.axis) : [];
+    // Its X or Y, or its `right` or `bottom`, changed at every width: where the canvas places it otherwise, it places nothing.
+    const placedBy = PLACED_BY[property];
+    const placedOtherwiseAt = !earlier && !breakpoint && placedBy ? viewsPlacingOtherwise(layer, placedBy) : [];
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
@@ -277,16 +278,17 @@ export function createEditor(
 
   /**
    * The ranges of the views, but the one worked in, where the canvas places
-   * the layer otherwise than by its offset from its container's end edge
-   * along `axis` (`right`, `bottom`), that offset given a value at every
-   * width: in its container's layout there, or by its `left` or `top` too, as
-   * the page's breakpoints may have it (ticket 75). Read as each view shows
-   * the layer now, from its computed `position` and what is declared: no view
-   * is brought up to date or laid out (ADR 0011), as what places the layer
-   * there is not what the change changes. A view in the desktop view's range
-   * is the desktop view's, where the change is made.
+   * the layer otherwise than by the side that places it from its container's
+   * `edge` along `axis`, that side given a value at every width: in its
+   * container's layout there, for its X and Y (`left`, `top`, ticket 83), as
+   * the page's breakpoints may have it; for its offset from the end edge
+   * (`right`, `bottom`, ticket 75), so, or by its `left` or `top` too. Read as
+   * each view shows the layer now, from its computed `position` and what is
+   * declared: no view is brought up to date or laid out (ADR 0011), as what
+   * places the layer there is not what the change changes. A view in the
+   * desktop view's range is the desktop view's, where the change is made.
    */
-  const viewsPlacingOtherwise = (layer: Layer, axis: Axis): Breakpoint[] =>
+  const viewsPlacingOtherwise = (layer: Layer, { axis, edge }: { axis: Axis; edge: Edge }): Breakpoint[] =>
     views
       .list()
       .slice(1)
@@ -294,7 +296,8 @@ export function createEditor(
       .flatMap((view) => {
         const el = view.elementOf(layer.el);
         const range = working.breakpointAt(view.width);
-        return el && range && !endOffsetPlaces(el, axis) ? [range] : [];
+        const places = el && (edge === "end" ? endOffsetPlaces(el, axis) : absolute(el));
+        return el && range && !places ? [range] : [];
       });
 
   /** The layers a step was made to, as they are now. */
