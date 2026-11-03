@@ -83,13 +83,19 @@ export const CENTERING_SIGN = { start: "-", end: "" } as const satisfies Record<
 /** The axis each size is along: width across, height down. */
 export const SIZE_AXIS: Readonly<Partial<Record<string, Axis>>> = { width: "x", height: "y" };
 
+/** One CSS side of a layer: along `axis`, the one that places it from its container's `edge` (`SIDES`). */
+export interface Side {
+  axis: Axis;
+  edge: Edge;
+}
+
 /**
  * Of `PLACING`, those that place a layer along one axis by the CSS of one
  * side (`SIDES`): X by its `left`, Y by its `top`, and, for a layer placed
  * from its container's right or bottom edge, its offsets from that edge,
  * `right` and `bottom` (ticket 75).
  */
-export const PLACED_BY: Readonly<Partial<Record<string, { axis: Axis; edge: Edge }>>> = {
+export const PLACED_BY: Readonly<Partial<Record<string, Side>>> = {
   x: { axis: "x", edge: "start" },
   y: { axis: "y", edge: "start" },
   right: { axis: "x", edge: "end" },

@@ -6,13 +6,13 @@
 
 **Blocked by:** 无
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 先复现：脚本扮演的 Agent 照改动写对了 X，`done` 在画布不是自由定位的那个宽度报「没有显示」（定位线整线审查读代码时发现，还没有用剧本复现过）
-- [ ] 照 75 的做法（`placedOtherwiseAt`）：X、Y 改动第一次记下时，看画布在旁边的视图里是不是自由定位；不是的视图所代表的宽度，`done` 不看。按画布定，不按 Agent 改完后的页面定。所有核对的宽度都被跳过时，`done` 说没能核对，原因写明画布在那些宽度上不是自由定位，和 75 代定第 6 条一致
-- [ ] 不报虚假的 ✓（docs/goals.md）：画布在某个宽度是自由定位、页面上不是时，照旧报「没有显示」，按 80 的说法
-- [ ] 改动说明里「How the page checks」如有需要补一句；没有这种图层的场景，`claim`、`done`、`finish` 的输出逐字不变
-- [ ] 剧本或单元测试覆盖：只在 `md` 以上自由定位的图层，在桌面视图改 X
+- [x] 先复现：脚本扮演的 Agent 照改动写对了 X，`done` 在画布不是自由定位的那个宽度报「没有显示」（定位线整线审查读代码时发现，还没有用剧本复现过）
+- [x] 照 75 的做法（`placedOtherwiseAt`）：X、Y 改动第一次记下时，看画布在旁边的视图里是不是自由定位；不是的视图所代表的宽度，`done` 不看。按画布定，不按 Agent 改完后的页面定。所有核对的宽度都被跳过时，`done` 说没能核对，原因写明画布在那些宽度上不是自由定位，和 75 代定第 6 条一致
+- [x] 不报虚假的 ✓（docs/goals.md）：画布在某个宽度是自由定位、页面上不是时，照旧报「没有显示」，按 80 的说法
+- [x] 改动说明里「How the page checks」如有需要补一句；没有这种图层的场景，`claim`、`done`、`finish` 的输出逐字不变
+- [x] 剧本或单元测试覆盖：只在 `md` 以上自由定位的图层，在桌面视图改 X
 
 ## 背景
 
@@ -29,3 +29,205 @@
 - 先用剧本复现，再修。不跑真实 Agent。
 
 ## Comments
+
+**实现记录（2026-11-03）**
+
+*结论*
+
+验收项都做到了。照 75 的做法：X、Y 改动（在桌面视图改、作用于所有宽度）第一次记下时，看画布在平板、手机等旁边的视图里是不是自由定位；不是的视图，把它代表的宽度范围记进改动（`placedOtherwiseAt`），`done` 不看那些宽度，窗口宽度落在里面也不看。按画布定，不按 Agent 改完后的页面定，所以画布在某个宽度是自由定位、页面上不是时，照旧按 80 的说法报「没有显示」。改动说明（`claim`）没有变；没有这种图层的场景，`claim`、`done`、`finish` 的输出逐字不变。切换按钮的包逐字节相同。
+
+*先复现*
+
+用 e2e 剧本（`round.spec.ts` 新加的一条，脚本扮演 Agent，不跑真实 Agent）：示例项目 hero 里两个图层，一个 `md:absolute md:top-[30px] md:left-[40px]`（平板、桌面自由定位，手机在 hero 的排版里），一个 `absolute top-[90px] left-[40px]`（各宽度都自由定位）。在桌面视图的属性面板里，第一个 X 加 20、Y 加 10，第二个 X 加 20，共 3 条改动（1 X、2 Y 是第一个的，3 X 是第二个的）。`claim` 之后，Agent 把第一个照改动写成 `md:top-[40px] md:left-[60px]`；第二个写成 `md:absolute md:top-[90px] md:left-[60px]`，手机上变成在排版里，和画布不一样。然后 `done 1`、`done 2`、`done 3`、`finish`。
+
+在没改的代码（50d443b）上跑：第一个照改动写对了，`done 1`、`done 2` 却报「At 390px wide, the layer is not placed absolute … check its `position` and `left`」，复现了 ticket 说的毛病。
+
+*`done` 前后*
+
+`claim` 的输出前后逐字相同（同一个剧本在两份代码上各跑一次，逐行比过）。变了的是 `done 1`、`done 2`、`finish`；`done 3` 只有第一行的计数变了（另两条现在算显示了），第二行逐字不变。
+
+`done 1`，改前：
+```
+Change 1 done: 0 of 3 changes applied.
+Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its `position` and `left`, and that its container is its positioning reference, then run `npx 03kind done 1` again.
+```
+改后：
+```
+Change 1 done: 2 of 3 changes applied.
+Checked on the page: it shows the change.
+```
+
+`done 2`，改前：
+```
+Change 2 done: 0 of 3 changes applied.
+Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at Y 40px: check its `position` and `top`, and that its container is its positioning reference, then run `npx 03kind done 2` again.
+```
+改后：
+```
+Change 2 done: 2 of 3 changes applied.
+Checked on the page: it shows the change.
+```
+
+`done 3`（画布在各宽度都自由定位、页面在手机上不是：不报虚假的 ✓，照旧「没有显示」），改前：
+```
+Change 3 done: 0 of 3 changes applied.
+Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its `position` and `left`, and that its container is its positioning reference, then run `npx 03kind done 3` again.
+```
+改后：
+```
+Change 3 done: 2 of 3 changes applied.
+Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its `position` and `left`, and that its container is its positioning reference, then run `npx 03kind done 3` again.
+```
+
+`finish`（略去了末尾三条规则，前后相同），改前：
+```
+Round finished: 0 of 3 changes applied. The page does not show: 1, 2, 3.
+
+End your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.
+
+⚠️ Not applied 1:1
+- 1. X: <the layer>
+  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>
+  Instead: <what you did, or “left as it was”>
+- 2. Y: <the layer>
+  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>
+  Instead: <what you did, or “left as it was”>
+- 3. X: <the layer>
+  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>
+  Instead: <what you did, or “left as it was”>
+```
+改后：
+```
+Round finished: 2 of 3 changes applied. The page does not show: 3.
+
+End your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.
+
+✓ Applied
+- 1. X: <the layer, and what you changed>
+- 2. Y: <the layer, and what you changed>
+
+⚠️ Not applied 1:1
+- 3. X: <the layer>
+  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>
+  Instead: <what you did, or “left as it was”>
+```
+（报告外围的代码块标记略去了。）
+
+所有要看的宽度都被跳过时（窗口和各视图宽度都在画布不是自由定位的范围里，例如 Agent 的页面窗口窄到手机宽度），`done` 改后说：
+```
+Not checked on the page: at the widths the page is looked at, the canvas does not place the layer absolute. That is no error: go on.
+```
+改前这时在窗口宽度上看，说「The layer is not placed absolute, not absolute at X 60px: check its `position` and `left` …」。这一种只用单元测试测了页面的答案，命令行的拼法是原有的（「Not checked on the page: <原因>. That is no error: go on.」）。
+
+*做了什么*
+
+- **记下画布不是自由定位的宽度**（`client/edits.ts`）：75 加的「看旁边视图」原来只对 `right` / `bottom`，现在 X、Y 也看。X、Y 看的是图层在那个视图里是不是自由定位（`position` 是 `absolute` 或 `fixed`）；`right` / `bottom` 照旧，还看 `left` / `top` 有没有值。条件和 75 一样：这条改动第一次记下时、在所有宽度上改的；只读旁边视图里图层算出来的 `position`，不让旁边的视图追上、不排版（ADR 0011）。
+- **核对**（`client/check.ts`）：跳过哪些宽度原来就按 `placedOtherwiseAt` 定，不用改。只改了全都跳过时的原因：X、Y 说「the canvas does not place the layer absolute」，`right` / `bottom` 照旧说「places the layer otherwise than by its `right`」。
+- 改动单字段 `placedOtherwiseAt` 的说明（`client/changeset.ts`）、spec「核对」一节各补了一句。改动说明没有改（代定第 2 条）。
+
+*代定的事（待设计师确认）*
+
+我按「最贴近设计师决定」代定的：
+
+1. **只在画布上 `position: static` 的宽度跳过**（审查后修正，见文末）：`left` / `top` 在那里什么都不摆。`relative`、`sticky` 算 `left` / `top` 有作用（改 X 写的 `left` 在那里把图层从排版里的位置挪开），照常核对；`absolute`、`fixed` 照旧核对（钉在窗口上的 `fixed` 图层也算自由定位，和页面其他地方一样）。不看 X、Y 是不是「按这条边」定位：`right` / `bottom` 还要看 `left` / `top` 有没有值，X、Y 不用，改 X 写的是 `left` 加 `right: auto`（Y 同理），作用于所有宽度。
+2. **「How the page checks」不补句**。设计师选做法 1 时说过，做法 2 每次要多给 Agent 一段它用不上的话；75 跳过 `right` / `bottom` 的宽度时也没有在说明里补。被跳过的宽度上 `done` 不再说话，Agent 不需要知道。
+3. **全都跳过时的原因**照 75 代定第 6 条，写「在核对的宽度上，画布上的图层不是自由定位」（英文见上），不说「图层不在页面上」。
+4. **什么时候读旁边的视图**照 75 代定第 4 条：这条改动第一次记下时读一次。X、Y 改动不改 `position`，早读晚读一样。只读一次之所以成立，是因为 X、Y 的改动不碰 `position`，而让图层在所有宽度自由定位的只有结构上的移动（移动到自由定位），它会让各视图一起更新。
+
+*测试*
+
+接缝沿用 75 的选法（设计师和指挥不在场，没有当面商定）：编辑命令和页面核对、e2e 脚本扮演 Agent。都先在没改的代码上看着失败（第二条单测是不报虚假 ✓ 的护栏，改前改后都该过）。
+
+- **编辑命令** `edits.browser.test.ts` +2 条：
+  - 页面自己的媒体查询让画布的手机视图里图层在排版里：X、Y 两条改动都记下手机的宽度范围；照改动写后在手机宽度「显示了」；窗口在手机宽度时窗口宽度也不看，全都跳过时答没能核对和上面的原因。没改的代码记不下范围，失败。
+  - 画布各视图都自由定位：不记范围；页面在手机宽度上不是自由定位时「没有显示」，实际值是「没有」（80 的说法）。
+- **e2e** `round.spec.ts` +1 条：就是上面「先复现」的剧本，断言改动单的 `placedOtherwiseAt`（第一个的 X、Y 记下 768px 以下，第二个不记）、写之前三条都「没有显示」、照写后 1、2「显示了」、3 照 80 的说法「没有显示」。在没改的代码上失败（改动单里没有范围；`done 1` 报不是自由定位）。前后的输出是同一条剧本在两份代码上加了临时打印跑出来的，打印没有留在仓库里。
+- **其他场景逐字不变，怎么确认的**：
+  - 按代码看：只有画布在某个旁边视图里不是自由定位的图层，X、Y 改动才会多出 `placedOtherwiseAt`；没有这个字段，核对和以前完全一样。`claim` 和 `finish` 不读这个字段。
+  - 按测试看：原有的测试一条期望都没改，全部照旧通过，其中有 `cli.test.ts` 里 `claim` / `done` / `finish` 逐字比对的测试，和 e2e 里的落地剧本（round、claim、applying-bench、bench-scenarios、next-round、react18-round 等）。
+- **全量**：
+  - typecheck 通过。
+  - 单测 806 通过、1 跳过；node 测试 32 条通过（含旧名检查）。
+  - e2e（`TK_E2E_PORT=5800 pnpm test:e2e`）394 通过、1 跳过，一次跑过，没有重跑。切换按钮体积检查（install.spec、toggle-first.spec）在里面，通过。
+
+*前后数字（docs/goals.md「度量」）*
+
+包体积（gzip -9）：切换按钮 `react.dev.js` 822 B + 共用 chunk `chunk-UQJRS7YD.js` 9164 B，改前改后逐字节相同（同一个文件名，校验和相同）。编辑层延迟加载的部分 `editor.dev.js` 322868 → 322964 B（未压缩，+96 B），gzip 109685 → 109720 B（+35 B）。
+
+性能没有跑：多出来的只有一处，X、Y 改动第一次记下时，读旁边每个视图里这个图层算出来的 `position`（一个视图一次），之后的步子不读。性能测试里拖的是卡片（排版里的重排）、按住方向键改的是圆角和间距，都碰不到 X、Y，跑了也量不到这一下。旁边的视图在这一刻还没收到这一步（ADR 0011），样式是算好的，读 `position` 一般不用重算样式。
+
+*按 code-review 修正*
+
+（code-review 没有另外跑，由指挥审。）自己看了一遍：改动只在 75 原有的那条路径上加了 X、Y 一支，命名照周围的写法（`viewsPlacingOtherwise` 改为接受 `PLACED_BY` 的那一项，`edits.ts` 里新变量叫 `placedBy`，避开同一函数里已有的 `along`）。
+
+*遗留风险*
+
+1. **Agent 把图层在画布不是自由定位的宽度也设成自由定位，`done` 不管**。例如把 `md:absolute md:left-[40px]` 改成 `absolute left-[60px]`：手机宽度上页面和画布不一样，但那个宽度不看，X 照样报「显示了」。改前这时也报「显示了」（页面在各宽度都是自由定位、`left` 都对），不是本 ticket 带来的；75 的 `right` / `bottom` 同样。X、Y 的核对只看位置，不看 `position` 有没有被改到别的宽度。
+2. **读一次的记录会过时**（同 75 整线审查遗留风险第 1 条）：同一轮里先改了 X，之后又在手机视图里把这个图层改成自由定位（`absolute` 改动），记下的范围不跟着变，手机宽度仍不看 X。手机视图里那条改动自己会在手机宽度核对位置。
+3. **一个视图代表一整段宽度**（同 75 遗留风险第 3 条）：手机范围 0–767px 里项目还有 `sm` 断点、两段自由定位不同时，按手机视图那一个宽度算整段。
+4. 没跑真实 Agent。
+5. **relative、sticky 宽度上 `done` 的说法仍是「不是自由定位」**（审查后修正带来的，见文末）：画布在手机视图里是 `relative`（`relative md:absolute …`）时，那个宽度现在照常核对，但核对仍只认自由定位的图层：Agent 照改动写对了（`left-[60px]` 在所有宽度都有），`done` 也报「At 390px wide, the layer is not placed absolute … check its `position` and `left`」，正是 83 想消掉的那类错误引导；写错了（只写 `md:left-[…]`）也是这句，原因说对了一半（没挪到画布上的位置），引导仍是去改 `position`。比 8b3ef8e 的虚假 ✓ 好，和 83 以前（50d443b）一样。要改需要记下画布在哪些宽度是 relative / sticky、在那里比对 `left` / `top` 本身，以及新的 `done` / `finish` 说法，待设计师定（做法见文末）。
+6. **`right` / `bottom` 在 relative 宽度同样会跳过**（75 的做法，本次没改）：`endOffsetPlaces` 只认 `absolute` / `fixed`，画布在某个视图里是 `relative` 时那个宽度不看 `right` / `bottom`，可是 `left` 为 `auto` 时 `right` 在那里也挪动图层，可能出同样的虚假 ✓。要照第 5 条一起定。
+7. **全都跳过时的原因**仍写「the canvas does not place the layer absolute」：现在只在画布上 `static` 的宽度跳过，这句话仍然成立，但没说 relative 的宽度照看。没改，免得多一种说法。
+
+**审查后修正（2026-11-03）**
+
+*结论*
+
+审查发现第 1 条代定的条件太宽：跳过条件是旁边视图里「不是自由定位」（只认 `absolute` / `fixed`），可改 X 写的 `left: …; right: auto` 作用于所有宽度，图层在手机视图是 `relative`（常见的 `relative md:absolute md:left-[40px]`）或 `sticky` 时，画布上它在手机视图里也跟着挪了。那个宽度被跳过，Agent 只写 `md:left-[…]` 也报 ✓，是虚假的 ✓。设计师的决定是按画布定：画布上 `left` / `top` 在那个宽度有作用就核对，所以现在只在画布上 `position: static` 的宽度跳过。
+
+第二步（Agent 写对时让核对在 relative 宽度比对真实的偏移）没有做，停在这里：要记下画布在哪些宽度是 relative / sticky（改动单多一个字段），并且没显示时要新的 `done` / `finish` 说法，按指挥的要求不硬做。现状见遗留风险第 5 条，可选做法见下。
+
+*改了什么*
+
+- `client/placed-from.ts`：在 `endOffsetPlaces` 旁边加 `sidePlaces(el, side)`，判断一条边的值在这个元素上挪不挪它：`left` / `top` 是 `position` 不是 `static`，`right` / `bottom` 照旧用 `endOffsetPlaces`。
+- `client/edits.ts`：`viewsPlacingOtherwise` 改用 `sidePlaces`，原来按 start / end 的分支收进了这个函数；参数类型用 `checkable.ts` 新导出的 `Side`（`PLACED_BY` 的值类型，两边共用）；JSDoc 重写。
+- `client/check.ts`：装原因那段句子的变量改名为 `howTheCanvasPlacesIt`，注释改成「画布上 static 的宽度」。原因的文字没变。这里的 start / end 分支选的是两种说法，不是判断，没有收拢。
+- `client/changeset.ts`：`placedOtherwiseAt` 的说明重写。
+- spec「核对」一节 83 那句改成只在 static 的宽度跳过。
+
+*复现与前后 `done`*
+
+e2e 剧本（`round.spec.ts` 新加一条，脚本扮演 Agent）：示例项目 hero 里一个图层 `relative h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:left-[40px]`（平板、桌面自由定位，手机上 `relative`）。桌面视图里 X 加 20，一条改动（X 40 → 60）。`claim` 后，Agent 只写 `md:left-[60px]`，手机上页面不挪它，画布上挪了 60px。
+
+改前（8b3ef8e）改动单记下手机范围（`placedOtherwiseAt` 是 768px 以下），`done 1`：
+```
+Change 1 done: 1 of 1 change applied.
+Checked on the page: it shows the change.
+```
+改后改动单不记范围，`done 1`：
+```
+Change 1 done: 0 of 1 change applied.
+Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its `position` and `left`, and that its container is its positioning reference, then run `npx 03kind done 1` again.
+```
+
+再让 Agent 写对（加上 `left-[60px]`，所有宽度都挪到画布上的位置）：改前同样报 ✓；改后报的和上面写错时逐字相同（遗留风险第 5 条），`finish`：
+```
+Round finished: 0 of 1 change applied. The page does not show: 1.
+
+End your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.
+
+⚠️ Not applied 1:1
+- 1. X: <the layer>
+  Why: at 390px wide, the layer is not placed absolute on the page: <what keeps it so>
+  Instead: <what you did, or “left as it was”>
+```
+（末尾三条规则和报告外围的代码块标记略去了。写对这一步是临时加打印跑出来的，没有留在剧本里：不把已知不对的说法钉进测试。）
+
+*第二步的可选做法*
+
+1. **记下 relative / sticky 的宽度，在那里比对偏移，配新说法**（建议）：X、Y 改动第一次记下时，除了 static 的范围，再记下画布上 `relative` / `sticky` 的范围（改动单新字段）。在这些宽度上，页面上图层不是 static、`left`（`top`）等于改动的值，就算显示了（不算外边距：relative 的偏移是从排版里的位置算的）；没显示时新说法，例如页面上是 static 时说「At 390px wide, the layer is laid out static, so its `left` moves nothing, where the canvas moves it 60px from where its container lays it out: give it `left` 60px at this width too」，值不对时说它的 `left` 是多少、画布上挪多少，不提 `position` 和定位参照；`finish` 的 Why 一行也要相应的一句。要设计师定说法，新开 ticket。
+2. **只改显示了的那条路**：记下范围，写对时报 ✓，写错时沿用现在的说法。不用新说法，但写错时仍把 Agent 引去改 `position`，改动单照样多一个字段。
+3. **不改**：保持现状，写对也报没显示，靠遗留风险第 5 条记着。
+
+*测试*
+
+- `edits.browser.test.ts` +2 条（同一条按 `relative`、`sticky` 各跑一次）：页面自己的媒体查询让画布手机视图里图层是 relative / sticky，X、Y 两条改动都不记范围；页面只在 500px 以上给 `left` / `top` 时，手机宽度上「没有显示」。改前失败（记下了手机范围）。
+- `round.spec.ts` +1 条：上面的剧本，断言改动单不记范围、只写 `md:left-[…]` 时 `done` 在 390px 宽报没显示。改前失败（记下了范围；改掉那条断言后 `done` 报 ✓）。
+- 83 原有的单测和剧本（手机上 static 的图层）一条期望都没改，照旧通过：static 的宽度照旧跳过。
+
+- **全量**：typecheck 通过；单测 808 通过、1 跳过，node 测试 32 条通过（含旧名检查）；e2e（`TK_E2E_PORT=5800 pnpm test:e2e`）395 通过、1 跳过，一次跑过，没有重跑。
+
+*前后数字*
+
+包体积（gzip -9）：切换按钮 `react.dev.js` 822 B + 共用 chunk `chunk-UQJRS7YD.js` 9164 B，改前改后逐字节相同（同名、校验和相同；install / toggle-first 量到的发布体积 9993 B，上限 10240 B）。编辑层延迟加载的部分 `editor.dev.js` 322964 → 323018 B（未压缩，+54 B），gzip 109720 → 109733 B（+13 B）。性能没有跑：只是把读旁边视图的 `position` 的判断从「是不是 absolute / fixed」换成「是不是 static」，读的次数不变。

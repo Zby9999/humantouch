@@ -9,7 +9,7 @@
  * size alone, or how far past the share of its container it is centered on
  * (`calc(50% + 20px)`, ticket 79).
  */
-import { AXIS_SIZE, pxIn, SIDES, type Edge, type PlacedAlong, type PlacedFrom, type Share } from "./checkable";
+import { AXIS_SIZE, pxIn, SIDES, type Edge, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
 import { absolute, declaredValue, round } from "./property-table";
 import { split } from "./paint";
 import { insideBorder, marginsOf } from "./stacks";
@@ -45,6 +45,17 @@ export function placedFrom(el: Element, axis: Axis): PlacedFrom {
 export function endOffsetPlaces(el: Element, axis: Axis): boolean {
   const { start } = SIDES[axis];
   return absolute(el) && !pinnedOf(el).includes(start) && !declared(el, start);
+}
+
+/**
+ * Whether a value given to `el`'s `side` moves it, as its document lays it
+ * out: its `left` or `top` wherever it is not static, as placed relative it
+ * is moved from where its container lays it out, and placed sticky, kept that
+ * far in as the page scrolls (ticket 83, review); its `right` or `bottom` as
+ * `endOffsetPlaces` has it.
+ */
+export function sidePlaces(el: Element, { axis, edge }: Side): boolean {
+  return edge === "end" ? endOffsetPlaces(el, axis) : getComputedStyle(el).position !== "static";
 }
 
 /** Whether the page or an edit gives `el` a value for `property` other than `auto`. */

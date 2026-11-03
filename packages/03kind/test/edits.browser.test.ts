@@ -4059,6 +4059,70 @@ describe("changes to the structure are checked on the live page", () => {
     expect(widthsOf(right, changes.list(), 390, [390])).toEqual({ own: false, others: [] });
   });
 
+  /** The board as wide as the page, its tag placed freely from its top left; `phone`: CSS of the page's own at a phone's width, below 500px. */
+  const fromTheTopLeft = (phone = "") => fromTheRight(phone).replace("right: 12px", "left: 12px");
+
+  test("a layer the canvas lays out in its container in a view, as the page's breakpoints say: its X and Y place nothing there, and are not looked at in the view's range, the page's window there or not (ticket 83)", async () => {
+    const html = fromTheTopLeft("position: static");
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", 30);
+    editor.set(layer("tag"), "y", 20);
+    const [x, y] = changes.list();
+    // The phone's range, beside the desktop view's.
+    expect([x, y].map((change) => [change.property, change.placedOtherwiseAt])).toEqual([
+      ["x", [{ min: null, max: 800 }]],
+      ["y", [{ min: null, max: 800 }]],
+    ]);
+
+    // As the notes say, at every width; the page's own CSS lays it out in its container below 500px still.
+    page.getElementById("tag")!.setAttribute("style", "left: 30px; top: 20px");
+    const phone = pageAt(html.replace("</style>", "#tag { left: 30px; top: 20px } @media (max-width: 500px) { #tag { position: static } }</style>"), 390);
+    for (const change of [x, y]) expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown" });
+    // Looked at as wide as the page's window only; with the window in the phone's range too, at no width: not checked, and why.
+    expect(widthsOf(x, changes.list(), 800, [390])).toEqual({ own: true, others: [] });
+    expect(widthsOf(x, changes.list(), 390, [390])).toEqual({ own: false, others: [] });
+    expect(checkAcross(phone.doc, x, onCanvas(changes.list()), [390], () => null)).toEqual({
+      outcome: "unchecked",
+      reason: "at the widths the page is looked at, the canvas does not place the layer absolute",
+    });
+  });
+
+  test("a layer the canvas places absolute at every width: its X is looked at at every view's width, and the page laying it out in its container at the phone's width does not show it (ticket 83)", async () => {
+    const html = fromTheTopLeft();
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", 30);
+    const [x] = changes.list();
+    expect(x.placedOtherwiseAt).toBeUndefined();
+
+    // Right as wide as the window; at the phone's width, not placed absolute at all.
+    page.getElementById("tag")!.setAttribute("style", "left: 30px");
+    const phone = pageAt(html.replace("</style>", "#tag { left: 30px } @media (max-width: 500px) { #tag { position: static } }</style>"), 390);
+    expect(checkAcross(page, x, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+  });
+
+  test.each(["relative", "sticky"])("a layer the canvas places %s in a view, as the page's breakpoints say: its X and Y move it there too, and are looked at in the view's range; the page giving it its `left` and `top` from `md` up only does not show them (ticket 83, review)", async (position) => {
+    const html = fromTheTopLeft(`position: ${position}`);
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", 30);
+    editor.set(layer("tag"), "y", 20);
+    const [x, y] = changes.list();
+    expect([x.placedOtherwiseAt, y.placedOtherwiseAt]).toEqual([undefined, undefined]);
+
+    // Right as wide as the window; at the phone's width, its `left` and `top` as the page had them.
+    page.getElementById("tag")!.setAttribute("style", "left: 30px; top: 20px");
+    const phone = pageAt(html.replace("</style>", "@media (min-width: 501px) { #tag { left: 30px; top: 20px } }</style>"), 390);
+    for (const change of [x, y]) expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+  });
+
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
     const { page, editor, changes, layer } = open();
     editor.remove(layer("one"));
