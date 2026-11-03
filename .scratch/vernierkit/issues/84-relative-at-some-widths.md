@@ -11,7 +11,7 @@
 
 **Blocked by:** 无（83 已完成）
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 先复现，用剧本（脚本扮演 Agent，不跑真实 Agent）：(a) `relative md:absolute md:left-[40px]` 的图层，桌面视图改 X，Agent 写对，`done` 现在报「not placed absolute … check its `position`」；(b) 手机上 `relative`、平板桌面按右边定位的图层，桌面视图改 X（ADR 0014，写成 `right`），Agent 只写 `md:right-[…]`，`done` 现在报 ✓
 - [x] X、Y 改动和按右边、下边定位的改动第一次记下时，除了 83、75 已记的宽度，再记下画布在旁边视图里是 `relative` / `sticky` 的宽度范围（改动单新字段）。按画布定，不按 Agent 改完后的页面定；读法照 75 代定第 4 条（第一次记下时读一次，ADR 0011）
@@ -221,3 +221,14 @@ End your reply with this report. Each change is under the heading the page's che
   - `report-form.ts` 导出给 `done` 用的说法函数：同实现记录（`isUncentered` 同理）。
   - `movedBy` 的 `0 - value`、`offset ?? 0`：行为无误，没动。
 - **测试和数字**：typecheck 通过；单测 818 通过、1 跳过（多出的两条是上面的护栏）；`cli.test.ts` 188 条全过。e2e 没有重跑（改的说法只在值为 0 时出现，两条 e2e 剧本不碰它），留给指挥跑全量。包体积：改的说法在 `report-form.ts`，只进命令行的 `cli.js`，不进页面的包；重新构建后切换按钮 `react.dev.js` 1423 B（gzip 822 B）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B），sha256 前 16 位仍是 `c83849f1557e0b1b`、`cdd6f09dfeaf13fa`，逐字节相同；`editor.dev.js` 仍是 323972 B（gzip 110054 B）。
+
+**合并前全量（2026-11-03，指挥）**
+
+分支先同步了 main（4ea3284，带进 ticket 59 的 README、许可证和包信息，和本线不重叠），在同步后的代码上跑：
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：单测 818 通过、1 跳过；node 测试 32 条通过（含旧名检查）。
+- `TK_E2E_PORT=5800 pnpm test:e2e`：398 通过、1 跳过，一次跑过，没有重跑。切换按钮体积检查（install.spec、toggle-first.spec）在里面，通过。
+- 前后合上盖子的状态都是开着（`AppleClamshellState = No`）；没有跑计时的性能测试。
+
+`done` / `finish` 前后、包体积、代定的事和遗留风险见上面的实现记录和「审查后修正」：代定 8 条，遗留风险 7 条。遗留风险第 1 条（居中的 `relative` / `sticky` 图层仍说「check its `position`」）和第 2 条（`direction: rtl`）如果要做，另开 ticket，编号在 main 上给。
