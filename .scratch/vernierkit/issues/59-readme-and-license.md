@@ -84,3 +84,10 @@
 - `init` 改的两个文件前加 "such as"：`init` 也认别的扩展名的配置、`src/index.tsx` / `.jsx`、`src/app/layout.*`，这里只举例。
 - `e2e/tests/package.spec.ts`：仓库根目录的路径改为文件顶部的常量 `REPOSITORY`，和 `install-copy.ts` 的 `PACKAGE`、`install.spec.ts` 的 `EXAMPLE` 一样。
 - 测试：`pnpm typecheck` 通过；`pnpm test` 一次全部通过（vitest 34 个文件 804 条通过、1 条跳过；node:test 32 条通过，含旧名检查）；`pnpm build` 后 `TK_E2E_PORT=5600 pnpm exec playwright test -c e2e/playwright.config.ts e2e/tests/package.spec.ts` 7 条全部通过。
+
+**设计师审 README（2026-11-03）**
+
+- 「这里不要提别的产品」：开头两处去掉 Framer / Figma。第一行改为 "An editor layer for your project's local dev server: edit the page itself, visually, on a canvas, then have your Agent write the changes into the code."；第二段改为 "Click it, and the page freezes into a canvas, where you move, resize and restyle what is on it by hand, without touching the code."。后面点名 Claude Code、Cursor、Codex 的那句照旧。
+- Guide 一节的标题 "## Guide" 改为 "## For agents"，让读项目的 Agent 知道这一节是写给它的；开头的链接改为 "the short install steps under [For agents](#for-agents) below"。标题下那句 "Copy this to your Agent, …" 和四步原样不动。GLOSSARY 里的 Guide 这个概念不变，只是 README 上那一节的标题不再叫 Guide。风险里说的 npm 页面锚点现在是 `#for-agents`，同样没在 npm 上看过。
+- 测试和代码里没有引用这个标题或 `#guide` 的地方。全文对过 GLOSSARY 的 _Avoid_ 词和旧名，没有。
+- 测试：`pnpm typecheck` 通过；`pnpm test` 一次全部通过（vitest 34 个文件 804 条通过、1 条跳过；node:test 32 条通过，含旧名检查）；`pnpm build` 后 `TK_E2E_PORT=5600 pnpm exec playwright test -c e2e/playwright.config.ts e2e/tests/package.spec.ts` 7 条全部通过。
