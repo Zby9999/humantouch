@@ -5,7 +5,7 @@
  */
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
-import type { PlacedAlong, PlacedFrom, Share } from "./checkable";
+import type { InLayout, PlacedAlong, PlacedFrom, Share } from "./checkable";
 import type { Align, Padding } from "./property-table";
 import type { Axis } from "./snap";
 import type { StyleSource } from "./style-source";
@@ -290,13 +290,26 @@ export interface Change {
    * A change at every width to a layer's X or Y (ticket 83), or to its
    * `right` or `bottom` (ticket 75, line review): the ranges of the views
    * where the value moves nothing on the canvas. An X or Y moves nothing
-   * where the layer is static; a `right` or `bottom`, where the layer is not
-   * placed absolute, or is placed by its `left` or `top` (as the page's
-   * breakpoints may have it). The check does not look at those widths,
+   * where the layer is static; a `right` or `bottom`, where the layer is
+   * static, or is placed by its `left` or `top`, absolute or relative (as
+   * the page's breakpoints may have it). The check does not look at those widths,
    * whatever the page does once the Agent has changed it. Read as the change
    * is first made.
    */
   placedOtherwiseAt?: Breakpoint[];
+  /**
+   * The same changes (ticket 84): the ranges of the views where the canvas
+   * has the layer in its container's layout still, but moved by the value,
+   * and how (`InLayout`): placed relative, moved that far from where its
+   * container lays it out; placed sticky, kept that far in as the page
+   * scrolls. A `right` or `bottom` moves a layer placed relative only with no
+   * `left` or `top` declared (else it is placed otherwise there). The check
+   * looks at those widths by the value itself: the page is to place the layer
+   * so there too, its `left` or `top` (`right`, `bottom`) the change's value,
+   * its margins left out, as they are where its container lays it out. Read
+   * as the change is first made, as `placedOtherwiseAt` is.
+   */
+  offsetInLayoutAt?: { breakpoint: Breakpoint; position: InLayout }[];
   /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
@@ -332,7 +345,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "instance"
     > & {
       kind?: Change["kind"];
     },

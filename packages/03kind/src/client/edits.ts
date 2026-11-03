@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./la
 import { colorReader } from "./paint";
 import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Side } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { pastShare, placedFrom, roomOf, sidePlaces, sideShareOf } from "./placed-from";
+import { pastShare, placedFrom, roomOf, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -220,7 +220,7 @@ export function createEditor(
     const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centering ? { placedFrom: earlier?.placedFrom ?? centering.from } : {};
     // Its X or Y, or its `right` or `bottom`, changed at every width: where the canvas places it otherwise, the value moves nothing.
     const placedBy = PLACED_BY[property];
-    const placedOtherwiseAt = !earlier && !breakpoint && placedBy ? viewsPlacingOtherwise(layer, placedBy) : [];
+    const { placedOtherwiseAt, offsetInLayoutAt } = !earlier && !breakpoint && placedBy ? viewsMovedOtherwise(layer, placedBy, !!centering) : { placedOtherwiseAt: [], offsetInLayoutAt: [] };
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
@@ -246,6 +246,7 @@ export function createEditor(
         },
       }),
       ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
+      ...(offsetInLayoutAt.length ? { offsetInLayoutAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
     });
@@ -278,25 +279,34 @@ export function createEditor(
 
   /**
    * The ranges of the views, but the one worked in, where a value given to
-   * the layer's `side` at every width does not move it, as the page's
-   * breakpoints may have it: its `left` or `top` where the view shows it
-   * static (ticket 83); its `right` or `bottom` where the view does not place
-   * it absolute, or places it by its `left` or `top` (ticket 75). Read from
-   * each view's computed `position` and what is declared, as it shows the
-   * layer now: no view is brought up to date or laid out (ADR 0011), as the
-   * change does not change what places the layer there. A view in the
-   * desktop view's range is the desktop view's, where the change is made.
+   * the layer's `side` at every width does not move it as it places it in
+   * the view worked in, as the page's breakpoints may have it (`sideMoves`):
+   * where it moves it nothing, as its `left` or `top` where the view shows it
+   * static (ticket 83), its `right` or `bottom` where the view does not place
+   * it by that (ticket 75); and where it moves it in its container's layout
+   * still, placed relative or sticky, and how (ticket 84). A layer `centered`
+   * on where its side places it is placed so by a share of its container,
+   * which no layout moves it by: the check looks at it as placed absolute
+   * there, as before. Read from each view's computed `position` and what is
+   * declared, as it shows the layer now: no view is brought up to date or
+   * laid out (ADR 0011), as the change does not change what places the layer
+   * there. A view in the desktop view's range is the desktop view's, where
+   * the change is made.
    */
-  const viewsPlacingOtherwise = (layer: Layer, side: Side): Breakpoint[] =>
-    views
-      .list()
-      .slice(1)
-      .filter((view) => view !== working.beside())
-      .flatMap((view) => {
-        const el = view.elementOf(layer.el);
-        const range = working.breakpointAt(view.width);
-        return el && range && !sidePlaces(el, side) ? [range] : [];
-      });
+  const viewsMovedOtherwise = (layer: Layer, side: Side, centered: boolean) => {
+    const placedOtherwiseAt: Breakpoint[] = [];
+    const offsetInLayoutAt: NonNullable<Change["offsetInLayoutAt"]> = [];
+    for (const view of views.list().slice(1)) {
+      if (view === working.beside()) continue;
+      const el = view.elementOf(layer.el);
+      const range = working.breakpointAt(view.width);
+      if (!el || !range) continue;
+      const moves = sideMoves(el, side);
+      if (!moves) placedOtherwiseAt.push(range);
+      else if (moves !== "placed" && !centered) offsetInLayoutAt.push({ breakpoint: range, position: moves });
+    }
+    return { placedOtherwiseAt, offsetInLayoutAt };
+  };
 
   /** The layers a step was made to, as they are now. */
   const layersOf = (ids: string[]) => [...new Set(ids)].map(layerById).filter((layer) => layer !== null);
