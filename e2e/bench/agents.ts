@@ -139,6 +139,8 @@ export interface AgentSpec {
   model: string;
   /** The reasoning effort the arguments set, for the record. */
   effort: string;
+  /** The effort the run says the session ran at, from what it left in `folder`; null when it does not say. None for an Agent that never says. */
+  effortSeen?(folder: string): string | null;
   /** Done before the Agent starts: in the project, `dir`, and in the run's own folder. What it returns goes in the run's record. */
   prepare?(dir: string, folder: string): Pick<AgentRun, "headlessShell"> | void;
 }
@@ -149,6 +151,8 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     binary: () => process.env.TK_BENCH_CLAUDE ?? desktopClaudeCode(),
     model: "claude-sonnet-5-5",
     effort: "high (--effort high)",
+    // In its debug log only.
+    effortSeen: (folder) => /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(readOr(join(folder, "claude-debug.log")))?.[1] ?? null,
     args: (folder, prompt = PROMPT) => [
       "-p",
       prompt,
@@ -223,6 +227,8 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     // The provider and the model as the transcript's answers name them (metrics.ts, parsePi).
     model: "command-code/deepseek/deepseek-v4.1-flash",
     effort: "high (--thinking high)",
+    // On each answer in the transcript.
+    effortSeen: (folder) => /"thinkingLevel":"(\w+)"/.exec(readOr(join(folder, "transcript.jsonl")))?.[1] ?? null,
     // Project-only, as Claude's `--setting-sources project,local --strict-mcp-config`, in the designer's own agent
     // directory (~/.pi/agent): that is where pi keeps their login, and pi has no setting or variable that points at
     // a login elsewhere, so a directory of the bench's own (PI_CODING_AGENT_DIR) would need the credentials copied
@@ -230,8 +236,8 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     // MCP adapter, fff, web access, subagents and the rest) and pi's own MCP; every skill but the project's, named by
     // its path, so a project with no Skill (ticket 65) has none; prompt templates; themes. Their global AGENTS.md
     // has no switch of its own (`--no-context-files` would drop the project's too): the bench's extension keeps
-    // only the project's. Their settings.json still applies (compaction, for one): pi reads it from that directory
-    // with no way round it but another directory.
+    // only the project's. Their settings.json (compaction, for one) and models.json (their overrides of a model's
+    // settings) still apply: pi reads them from that directory with no way round it but another directory.
     args: (folder, prompt = PROMPT) => [
       "-p",
       prompt,
@@ -261,9 +267,11 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--no-themes",
       // Trusts the project, as it would be once the designer has opened it in pi.
       "--approve",
-      // pi's own tools, those of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode.
+      // pi's own tools, those of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode. Not
+      // its find either: it needs fd, which is not on the Agent's PATH, and --offline stops pi fetching it; the shell's
+      // find, ls and grep do as well.
       "--tools",
-      "read,bash,edit,write,grep,find,ls",
+      "read,bash,edit,write,grep,ls",
     ],
     prepare(_dir, folder) {
       // A copy in the run's folder: the command line is the same from any checkout, and the run keeps what it ran with.
@@ -368,15 +376,12 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
   return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed] };
 }
 
-/** The effort the run says the session ran at, if it says: Claude Code in its debug log, pi on each answer in the transcript. */
-export function effortSeen(agent: AgentName, folder: string): string | null {
+/** A file's text, or none when there is no such file. */
+function readOr(path: string): string {
   try {
-    if (agent === "pi") return /"thinkingLevel":"(\w+)"/.exec(readFileSync(join(folder, "transcript.jsonl"), "utf8"))?.[1] ?? null;
-    if (agent !== "claude") return null;
-    const log = readFileSync(join(folder, "claude-debug.log"), "utf8");
-    return /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(log)?.[1] ?? null;
+    return readFileSync(path, "utf8");
   } catch {
-    return null;
+    return "";
   }
 }
 
