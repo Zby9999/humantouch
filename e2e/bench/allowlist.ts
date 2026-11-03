@@ -13,7 +13,7 @@ export const DENIED = "Not run: the 03Kind bench allows";
 
 /** The reason a turned-away command is given, for the Agent to read. */
 export function deniedReason(command: string): string {
-  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${SHELL.join(", ")}, and cd. Turned away: ${command}`;
+  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${SHELL.join(", ")}, and cd to a folder in the project. Turned away: ${command}`;
 }
 
 /**
@@ -25,8 +25,8 @@ const RUNS_OR_WRITES: Record<string, RegExp> = {
   rg: /^--(pre|hostname-bin)(=|$)/,
   // git takes a long option by any prefix of it that names no other: `--outp=x` is `--output=x`.
   git: /^--ou(t(p(u(t)?)?)?)?(=|$)/,
-  // tsc reads its options in any case, and more of them from a file named after @.
-  "npx tsc": /^(--(outdir|outfile|out|generatetrace|tsbuildinfofile|build|declarationdir)(=|$)|-b$|@)/i,
+  // tsc reads its options in any case, and more of them from a file named after @; --init writes a tsconfig.json.
+  "npx tsc": /^(--(outdir|outfile|out|generatetrace|generatecpuprofile|tsbuildinfofile|build|declarationdir|init)(=|$)|-b$|@)/i,
 };
 
 /** A word of a command as bash passes it, and which of its characters bash still reads as more than text (unquoted, unescaped). */
@@ -38,7 +38,7 @@ interface Word {
 /**
  * Whether the bench lets `command` run: every command in it, split at `&&`,
  * `||`, `;`, `|` and new lines (outside quotes), is one of `allowed` (its
- * words, then any arguments) or a `cd`; none sets a variable first or uses an
+ * words, then any arguments) or a `cd` to one folder; none sets a variable first or uses an
  * option that runs another program or writes a file. Each is matched by the
  * words bash will pass, quotes taken out and backslashes read. Nothing runs a
  * command inside another (`$( )`, backticks, `<( )`, `>( )`), in a subshell
@@ -61,7 +61,8 @@ function allowedCommand(words: Word[], allowed: readonly string[]): boolean {
   const text = words.map((word) => word.text);
   if (words.some(expandsBraces)) return false;
   if (/^\w+=/.test(text[0])) return false;
-  if (text[0] === "cd") return words.length <= 2;
+  // One folder, no option: bare `cd` goes home, `cd -` back, and `-P` or `-L` are no folder.
+  if (text[0] === "cd") return words.length === 2 && !text[1].startsWith("-");
   const starts = (prefix: string) => prefix.split(" ").every((word, i) => text[i] === word);
   const options = Object.entries(RUNS_OR_WRITES).flatMap(([prefix, option]) => (starts(prefix) ? [option] : []));
   if (options.length && words.some((word) => options.some((option) => option.test(word.text)) || mayNameAnOption(word))) return false;

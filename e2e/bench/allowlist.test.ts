@@ -140,3 +140,17 @@ test("tsc with an option that writes files elsewhere, builds, or reads more opti
   assert.equal(shellAllowed("npx tsc"), true);
   assert.equal(shellAllowed("npx tsc --noEmit -p tsconfig.json"), true);
 });
+
+test("cd takes one folder, no option: bare cd, cd -, and cd -P or -L are turned away", () => {
+  for (const command of ["cd", "cd -", "cd -P", "cd \\-P && ls", "cd -L /t", "cd /a /b", "cd -P && cat .p?/agent/auth.json"]) {
+    assert.equal(shellAllowed(command), false, command);
+  }
+  assert.equal(shellAllowed("cd /t/run && npx 03kind claim 2>&1"), true);
+  assert.equal(shellAllowed("cd src"), true);
+});
+
+test("tsc's --generateCpuProfile writes a file and --init writes a tsconfig: turned away", () => {
+  assert.equal(shellAllowed("npx tsc --generateCpuProfile /tmp/p"), false);
+  assert.equal(shellAllowed("npx tsc --init"), false);
+  assert.equal(shellAllowed("npx tsc -p tsconfig.json --noEmit"), true);
+});

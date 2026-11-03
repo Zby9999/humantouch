@@ -85,6 +85,26 @@ test("in pi, no tool reaches pi's own folder, where the designer's login is: by 
   assert.equal(call("ls", { path: "~" }), undefined);
 });
 
+test("in pi, a cd stays in the project, its folder by its real path, following the cds before it on the line; so a search with no path stays there too", () => {
+  mkdirSync(join(scratch, "elsewhere"), { recursive: true });
+  symlinkSync(join(scratch, "elsewhere"), join(project, "link-away"));
+  for (const command of ["cd .. && ls", "cd /tmp && ls", "cd ~ && grep -r refresh", "cd src && cd ../.. && grep -rn x", "cd link-away && ls", `cd ${scratch} && grep -r key`]) {
+    assert.ok(blocked(call("bash", { command })), command);
+  }
+  for (const command of [`cd ${project} && npx 03kind claim 2>&1`, `cd ${realpathSync(project)} && npx 03kind done 1`, "cd src && ls", "cd src && cd .. && git diff"]) {
+    assert.equal(call("bash", { command }), undefined, command);
+  }
+});
+
+test("in pi, grep's and rg's pattern is no path: / or ~ as a pattern goes ahead; with -e, -f or their long forms every other word is a path, and -f's file is checked", () => {
+  for (const command of ['grep -rn "/" src', 'grep -rn "~" src', "rg -n ~ src", "grep -n -A 2 / src/App.tsx", "grep -rn ~", "rg -g '*.tsx' -r y / src", "grep -rn -e / src", "grep -rn --regexp=/ src", "rg --files-with-matches / src"]) {
+    assert.equal(call("bash", { command }), undefined, command);
+  }
+  for (const command of ["grep -rn -e x ~", "rg --regexp x ~", "grep -f ~/.pi/agent/auth.json src", "grep -rf /etc/x ~", "grep -rnf ~/.pi/agent/auth.json src", "rg --file=~/.pi/agent/auth.json src"]) {
+    assert.ok(blocked(call("bash", { command })), command);
+  }
+});
+
 test("in pi, a tool call the extension cannot check is blocked", () => {
   assert.ok(blocked(call("write", { path: 42 })));
   assert.ok(blocked(load().tool_call({ type: "tool_call", toolName: "read", toolCallId: "x", input: null }, ctx)));

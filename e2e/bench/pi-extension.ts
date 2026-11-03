@@ -3,7 +3,8 @@
  * a copy in the run's folder, with `allowlist.ts` beside it). A fence on the
  * Agent's behaviour, not a sandbox: it blocks the tool calls the bench does
  * not allow, and the Agent reads why. pi has no allowlist of its own for shell
- * commands: every `bash` call the bench's rule turns away is blocked. pi's
+ * commands: every `bash` call the bench's rule turns away is blocked, and
+ * any that cds out of the project. pi's
  * own tools are held to two path rules: `write` and `edit` stay in the
  * project (the folder pi runs in), and no tool or command reaches pi's own
  * folder (~/.pi), where the designer's login is; reading elsewhere goes
@@ -91,21 +92,67 @@ function partMatches(pattern: string, name: string): boolean {
   return new RegExp(`^${source}$`, "i").test(name);
 }
 
-/** Whether a command line the rule allows has an argument that names pi's folder (or, for a search, a folder above it), its `cd`s followed. */
-function shellReachesPi(command: string, cwd: string): boolean {
-  let here = cwd;
-  let before = cwd;
-  for (const words of shellWords(command) ?? []) {
-    if (words.some((word) => /(^|\/)\.pi(\/|$)/i.test(word))) return true;
-    const searches = SHELL_SEARCHES.includes(words[0]);
-    if (words.slice(1).some((word) => !word.startsWith("-") && reachesPi(resolve(here, withHome(word)), searches))) return true;
-    if (words[0] === "cd") {
-      const to = words[1] === undefined ? homedir() : words[1] === "-" ? before : resolve(here, withHome(words[1]));
-      before = here;
-      here = to;
+/** Options of grep and rg whose next word is their value, not a pattern or a path (grep's -r is recursive; rg's, a replacement). */
+const TAKES_VALUE: Record<string, RegExp> = {
+  grep: /^(-[ABCmdD]|--(context|after-context|before-context|max-count|directories|devices|include|exclude|exclude-dir))$/,
+  rg: /^(-[ABCmgtTMjEr]|--(context|after-context|before-context|max-count|glob|iglob|type|type-not|max-columns|threads|encoding|replace))$/,
+};
+
+/**
+ * The words of a command bash passes that may be paths: all but options (and
+ * their values, for grep and rg), and for grep and rg not the pattern, the
+ * first such word, unless `-e` or `-f` gives the pattern, when every one is a
+ * path; and `-f`'s file is one.
+ */
+function pathWords(words: string[]): string[] {
+  const takesValue = TAKES_VALUE[words[0]];
+  const paths: string[] = [];
+  let patternGiven = false;
+  let next: "value" | "file" | null = null;
+  for (const word of words.slice(1)) {
+    if (next) {
+      if (next === "file") paths.push(word);
+      next = null;
+      continue;
+    }
+    if (!word.startsWith("-")) paths.push(word);
+    else if (takesValue) {
+      // -e and -f, alone or last in a bunch of short ones, take the next word; with a value of their own (`-e/`, `--file=x`), it is in the word.
+      const pattern = /^(?:-[a-zA-Z]*e(.*)|--regexp(?:=(.*))?)$/.exec(word);
+      const file = /^(?:-[a-zA-Z]*f(.*)|--file(?:=(.*))?)$/.exec(word);
+      if (file) {
+        patternGiven = true;
+        const value = file[1] || file[2];
+        if (value) paths.push(value);
+        else next = "file";
+      } else if (pattern) {
+        patternGiven = true;
+        if (!(pattern[1] || pattern[2])) next = "value";
+      } else if (takesValue.test(word)) next = "value";
     }
   }
-  return false;
+  return takesValue && !patternGiven ? paths.slice(1) : paths;
+}
+
+/**
+ * Whether a command line the rule allows reaches out: an argument that names
+ * pi's folder (or, for a search, a folder above it), or a `cd` out of the
+ * project, `cd`s followed by the real path of their folder.
+ */
+function shellReaches(command: string, cwd: string): "pi" | "out" | null {
+  const project = realPath(cwd);
+  let here = cwd;
+  for (const words of shellWords(command) ?? []) {
+    if (words.some((word) => /(^|\/)\.pi(\/|$)/i.test(word))) return "pi";
+    const searches = SHELL_SEARCHES.includes(words[0]);
+    if (pathWords(words).some((word) => reachesPi(resolve(here, withHome(word)), searches))) return "pi";
+    if (words[0] === "cd") {
+      // The rule lets a cd have one folder only.
+      here = realPath(resolve(here, withHome(words[1] ?? "")));
+      if (here !== project && !here.startsWith(project + sep)) return "out";
+    }
+  }
+  return null;
 }
 
 function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string): { block: true; reason: string } | undefined {
@@ -115,7 +162,9 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
   if (toolName === "bash") {
     const command = String(input.command ?? "");
     if (!shellAllowed(command)) return block(deniedReason(command));
-    return shellReachesPi(command, cwd) ? intoPi(command) : undefined;
+    const reaches = shellReaches(command, cwd);
+    if (reaches === "out") return block(deniedReason(command));
+    return reaches === "pi" ? intoPi(command) : undefined;
   }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);
