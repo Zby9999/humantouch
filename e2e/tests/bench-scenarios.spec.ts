@@ -1,12 +1,10 @@
-import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { exampleOf, openObservers, shown, type Example } from "../bench/scenarios.ts";
 import { STANDARD_SCENARIOS } from "../bench/scenarios-other-examples.ts";
 import { DEV_URL, NEXT_URL, REACT18_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
-import { clearThirdKindFolder } from "./project-files";
+import { clearThirdKindFolder, npx03kindIn } from "./project-files";
 
 /**
  * The applying bench's standard scenarios (`e2e/bench/scenarios.ts`, and on
@@ -21,7 +19,6 @@ test.use({ keepRoundInMemory: false });
 // The Next.js dev server compiles the page as it is first asked for.
 test.setTimeout(120_000);
 
-const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
 const SERVED: Record<Example, string> = { "vite-react19-tw4": DEV_URL, "vite-react18-tw3": REACT18_URL, "next-app-css-modules": NEXT_URL };
 const folderOf = (example: Example) => fileURLToPath(new URL(`../../examples/${example}/`, import.meta.url));
 
@@ -50,7 +47,7 @@ for (const scenario of STANDARD_SCENARIOS) {
     await page.locator("main").waitFor();
     await scenario.design({
       page,
-      cli: async (...args) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: dir })).stdout,
+      cli: npx03kindIn(dir),
       edit: async (file, from, to) => {
         const path = `${dir}${file}`;
         const text = readFileSync(path, "utf8");

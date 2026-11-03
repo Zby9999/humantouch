@@ -19,9 +19,11 @@ export function clearThirdKindFolder(folder: string) {
 }
 
 /** Runs `npx 03kind …` in the example project, as an Agent would. */
-export async function npx03kind(...args: string[]): Promise<string> {
-  const { stdout } = await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: EXAMPLE });
-  return stdout;
+export const npx03kind = npx03kindIn(EXAMPLE);
+
+/** `npx 03kind …`, run in the project in `dir`, as an Agent would. */
+export function npx03kindIn(dir: string) {
+  return async (...args: string[]): Promise<string> => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: dir })).stdout;
 }
 
 /** A JSON file in `.03kind/`, or null when it is not there. */
