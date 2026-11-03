@@ -4212,6 +4212,101 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: -8 }, width: 390 });
   });
 
+  /** `html` laid out right to left, as an Arabic or Hebrew site is: `dir="rtl"` on its body (ticket 89). */
+  const rightToLeft = (html: string) => html.replace("<body", '<body dir="rtl"');
+
+  test.each([
+    ["left to right", (html: string) => html, [{ min: null, max: 800 }], undefined],
+    ["right to left", rightToLeft, undefined, [{ breakpoint: { min: null, max: 800 }, position: "relative" }]],
+  ] as const)(
+    "a layer placed from its right edge that the canvas places relative in a view by its `left` and its `right` both, %s: the browser goes by its `left` left to right, where its `right` moves nothing, and by its `right` right to left, where the check compares how far that moves it (ticket 89)",
+    async (_, laidOut, placedOtherwiseAt, offsetInLayoutAt) => {
+      const html = laidOut(fromTheRight("position: relative; left: 8px"));
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      expect([right.property, right.before, right.after, right.placedOtherwiseAt, right.offsetInLayoutAt]).toEqual(["right", 12, 32, placedOtherwiseAt, offsetInLayoutAt]);
+      if (!offsetInLayoutAt) return;
+
+      page.getElementById("tag")!.setAttribute("style", "right: 32px");
+      const at = (css: string) => pageAt(html.replace("</style>", `${css}</style>`), 390);
+      const check = (phone: PageWidth) => checkAcross(page, right, onCanvas(changes.list()), [390], () => phone);
+      // At every width, its `left` kept on phones: its `right` moves it 32px left.
+      expect(check(at("#tag { right: 32px }"))).toEqual({ outcome: "shown" });
+      // From `md` up only: on phones, its `right` as the page had it moves it 12px left.
+      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: 12 }, width: 390 });
+    },
+  );
+
+  test.each([
+    ["left to right", (html: string) => html, { outcome: "shown" }],
+    ["right to left", rightToLeft, { outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: -5 }, width: 390 }],
+  ] as const)(
+    "the page placing a layer relative by its `left` and its `right` both, %s: the browser goes by its `left` left to right, so an X of its `left` shows, and by its `right` right to left, so it does not (ticket 89)",
+    async (_, laidOut, result) => {
+      const html = laidOut(fromTheTopLeft("position: relative"));
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", 30);
+      const [x] = changes.list();
+      expect(x.offsetInLayoutAt).toEqual([{ breakpoint: { min: null, max: 800 }, position: "relative" }]);
+      page.getElementById("tag")!.setAttribute("style", "left: 30px");
+      // Its `left` as the change has it at every width; on phones, a `right` of the page's own too, which moves it 5px left right to left.
+      const phone = pageAt(html.replace("</style>", "#tag { left: 30px } @media (max-width: 500px) { #tag { right: 5px } }</style>"), 390);
+      expect(checkAcross(page, x, onCanvas(changes.list()), [390], () => phone)).toEqual(result);
+    },
+  );
+
+  test.each([
+    ["left to right", (html: string) => html, [{ min: null, max: 800 }]],
+    ["right to left", rightToLeft, undefined],
+  ] as const)(
+    "a layer placed from its right edge that the canvas places absolute in a view by its `left` and its `right` both, as wide as it is set, %s: its `right` places nothing there left to right, and places it right to left, where it is looked at (ticket 89)",
+    async (_, laidOut, placedOtherwiseAt) => {
+      const html = laidOut(fromTheRight("left: 8px"));
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      expect([right.property, right.after, right.placedOtherwiseAt]).toEqual(["right", 32, placedOtherwiseAt]);
+      if (placedOtherwiseAt) return;
+
+      page.getElementById("tag")!.setAttribute("style", "right: 32px");
+      const at = (css: string) => pageAt(html.replace("</style>", `${css}</style>`), 390);
+      const check = (phone: PageWidth) => checkAcross(page, right, onCanvas(changes.list()), [390], () => phone);
+      expect(check(at("#tag { right: 32px }"))).toEqual({ outcome: "shown" });
+      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "not shown", actual: { value: 12, margin: 0 }, width: 390 });
+    },
+  );
+
+  test.each([
+    ["left to right", (html: string) => html, "x", "start"],
+    ["right to left", rightToLeft, "right", "end"],
+  ] as const)(
+    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, %s: the browser places it from its left left to right, from its right right to left, so moved, that side changes, and resized, its left edge stays (ticket 89)",
+    (_, laidOut, property, edge) => {
+      const { doc, editor, changes, layer } = open(laidOut(fromTheRight().replace("right: 12px", "left: 8px; right: 12px")));
+      const tag = doc.getElementById("tag")!;
+      const left = () => tag.getBoundingClientRect().left;
+      const was = left();
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      expect(changes.list().map((change) => change.property)).toEqual([property]);
+      // Drawn 20px further left, as moved.
+      expect(left()).toBeCloseTo(was - 20, 1);
+
+      editor.set(layer("tag"), "width", { type: "fixed", value: 40 });
+      expect(changes.list().find((change) => change.property === "width")?.placedFrom).toEqual(edge === "end" ? { edge, centered: false } : undefined);
+      expect(left()).toBeCloseTo(was - 20, 1);
+    },
+  );
+
   test.each([
     ["left", "left: 50%; right: auto; translate: -50% 0", "x"],
     ["right", "right: 50%; translate: 50% 0", "right"],

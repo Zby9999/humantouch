@@ -292,7 +292,8 @@ export interface Change {
    * where the value moves nothing on the canvas. An X or Y moves nothing
    * where the layer is static; a `right` or `bottom`, where the layer is
    * static, or is placed by its `left` or `top`, absolute or relative (as
-   * the page's breakpoints may have it). The check does not look at those widths,
+   * the page's breakpoints may have it), where the browser goes by those
+   * (left to right, ticket 89). The check does not look at those widths,
    * whatever the page does once the Agent has changed it. Read as the change
    * is first made.
    */
@@ -303,7 +304,8 @@ export interface Change {
    * and how (`InLayout`): placed relative, moved that far from where its
    * container lays it out; placed sticky, kept that far in as the page
    * scrolls. A `right` or `bottom` moves a layer placed relative only with no
-   * `left` or `top` declared (else it is placed otherwise there). The check
+   * `left` or `top` declared, or a `right` laid out right to left, which the
+   * browser goes by then (ticket 89); else it is placed otherwise there. The check
    * looks at those widths by the value itself: the page is to place the layer
    * so there too, its `left` or `top` (`right`, `bottom`) the change's value,
    * its margins left out, as they are where its container lays it out. Read

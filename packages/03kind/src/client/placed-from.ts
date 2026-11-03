@@ -20,14 +20,16 @@ import { pinnedOf } from "./style-source";
  * How `el` is placed along `axis`, as it is laid out in its document (the
  * view worked in): by what the page and the edits declare. Placed by both
  * edges, or by neither, it is taken to be placed from its start (left, top),
- * as the browser places it; so is a layer the freezer pinned that way, which
- * the canvas places from its top whatever the page does. Not placed freely:
- * from its start. Centered from either edge, it is resized alike, on both sides.
+ * as the browser places it; but by both, as large as it is set along `axis`,
+ * from the edge the browser goes by (`edgeGoneBy`: its right, right to left,
+ * ticket 89). A layer the freezer pinned is taken to be placed from its
+ * start too, which the canvas places it from whatever the page does. Not
+ * placed freely: from its start. Centered from either edge, it is resized alike, on both sides.
  */
 export function placedFrom(el: Element, axis: Axis): PlacedFrom {
   const { start, end } = SIDES[axis];
   if (!absolute(el) || pinnedOf(el).includes(start)) return { edge: "start", centered: false };
-  const edge: Edge = declared(el, end) && !declared(el, start) ? "end" : "start";
+  const edge: Edge = declared(el, end) && (!declared(el, start) || endGoneBy(el, axis)) ? "end" : "start";
   // Moved back half its size from where it is placed (forward, placed from the end): centered there.
   const { width, height } = el.getBoundingClientRect();
   const half = (axis === "x" ? width : height) / 2;
@@ -39,12 +41,53 @@ export function placedFrom(el: Element, axis: Axis): PlacedFrom {
  * Whether a value given to `el`'s offset from its container's end edge along
  * `axis` (`right`, `bottom`) places it, as its document lays it out: placed
  * freely there, and not by its `left` or `top` too, which the browser goes by
- * then, nor pinned so by the freezer. Read from its computed `position` and
- * what is declared, with nothing laid out.
+ * then, nor pinned so by the freezer; with its `left` too, where it is as
+ * large as it is set across and the browser goes by its right (right to
+ * left, ticket 89). Read from computed styles and what is declared, with
+ * nothing laid out.
  */
 export function endOffsetPlaces(el: Element, axis: Axis): boolean {
   const { start } = SIDES[axis];
-  return absolute(el) && !pinnedOf(el).includes(start) && !declared(el, start);
+  return absolute(el) && !pinnedOf(el).includes(start) && (!declared(el, start) || endGoneBy(el, axis));
+}
+
+/**
+ * The edge the browser places `el` from along `axis` where it is given a
+ * value for the side from each, more than it can keep (ticket 89): down, its
+ * top; across, as its containing block runs, its left left to right, its
+ * right right to left (`direction: rtl`). The containing block's, not its
+ * own: so the browser goes (CSS 2.1, 9.3.2, 10.3.7), for a layer placed
+ * relative and one placed absolute alike. Read from computed styles alone.
+ */
+export function edgeGoneBy(el: Element, axis: Axis): Edge {
+  return axis === "x" && getComputedStyle(containingBlockOf(el)).direction === "rtl" ? "end" : "start";
+}
+
+/**
+ * Whether the browser places `el`, placed absolute and given both its sides
+ * along `axis`, from the end edge: as large as it is set there (else both
+ * place it, its size given by them), and gone by from that edge (`edgeGoneBy`).
+ */
+const endGoneBy = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) && edgeGoneBy(el, axis) === "end";
+
+/**
+ * The element whose box places `el`, by its computed `position` (ticket 89):
+ * in its container's layout, or relative or sticky, its parent; absolute, the
+ * nearest one placed otherwise than static, or transformed; fixed, the
+ * nearest one transformed; else the page's root, which stands for the window.
+ * Other ways an element becomes the box that places those in it (a `filter`,
+ * `contain`) are not read here.
+ */
+function containingBlockOf(el: Element): Element {
+  const root = el.ownerDocument.documentElement;
+  const { position } = getComputedStyle(el);
+  if (position !== "absolute" && position !== "fixed") return el.parentElement ?? root;
+  let at = el.parentElement;
+  for (; at && at !== root; at = at.parentElement) {
+    const style = getComputedStyle(at);
+    if (style.transform !== "none" || (position === "absolute" && style.position !== "static")) return at;
+  }
+  return root;
 }
 
 /**
@@ -52,15 +95,18 @@ export function endOffsetPlaces(el: Element, axis: Axis): boolean {
  * placed absolute by it (`placed`); still in its container's layout, but
  * moved from where that lays it out, placed `relative`, or kept that far in
  * as the page scrolls, placed `sticky` (ticket 84); not at all (null). Its
- * `left` or `top` moves it wherever it is not static (ticket 83, review). Its
- * `right` or `bottom` places it as `endOffsetPlaces` has it; relative, moves
- * it with no `left` or `top` declared, which the browser goes by instead;
- * sticky, keeps it in from that edge as well as from the other. Read from
- * its computed `position` and what is declared, with nothing laid out.
+ * `left` or `top` moves it wherever it is not static (ticket 83, review): an
+ * X or Y writes the other side `auto`. Its `right` or `bottom` places it as
+ * `endOffsetPlaces` has it; relative, moves it with no `left` or `top`
+ * declared, which the browser goes by instead, but right to left, where it
+ * goes by its `right` (`edgeGoneBy`, ticket 89); sticky, keeps it in from
+ * that edge as well as from the other. Read from computed styles and what
+ * is declared, with nothing laid out.
  */
 export function sideMoves(el: Element, { axis, edge }: Side): "placed" | InLayout | null {
   const { position } = getComputedStyle(el);
-  if (position === "relative" || position === "sticky") return edge === "start" || position === "sticky" || !declared(el, SIDES[axis].start) ? position : null;
+  if (position === "relative" || position === "sticky")
+    return edge === "start" || position === "sticky" || !declared(el, SIDES[axis].start) || edgeGoneBy(el, axis) === "end" ? position : null;
   if (edge === "end") return endOffsetPlaces(el, axis) ? "placed" : null;
   return position === "static" ? null : "placed";
 }

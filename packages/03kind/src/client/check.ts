@@ -15,7 +15,7 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { placedFrom, roomOf, sideShareOf } from "./placed-from";
+import { edgeGoneBy, placedFrom, roomOf, sideShareOf } from "./placed-from";
 import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
@@ -344,8 +344,9 @@ export interface OffsetInLayout {
  * itself, its margins left out, as they are where its container lays it out.
  * Relative, by how far the browser moves it, which it gives its `left` and
  * `top`: a `right` or `bottom` moves it the other way, but not with a `left`
- * or `top` declared too, which it goes by instead. Sticky, by its side's
- * value. Not shown: with the first that is not, and how (`OffsetInLayout`).
+ * or `top` declared too, which it goes by instead; right to left, it goes by
+ * the `right` (`edgeGoneBy`), and gives that how far it moves it, the other
+ * way (ticket 89). Sticky, by its side's value. Not shown: with the first that is not, and how (`OffsetInLayout`).
  */
 function lookOffset(els: Element[], property: Property, after: number, canvas: InLayout): [CheckResult, Element | null] {
   const { axis, edge } = PLACED_BY[property]!;
@@ -354,8 +355,10 @@ function lookOffset(els: Element[], property: Property, after: number, canvas: I
     const position = style.position as Position;
     // Sticky, as written: a percentage is not px, though it reads as a number.
     const written = style.getPropertyValue(SIDES[axis][edge]);
-    const offset =
-      position === "relative" ? movedBy(edge, rounded(parseFloat(style.getPropertyValue(SIDES[axis].start)) || 0)) : position === "sticky" && written.endsWith("px") ? rounded(parseFloat(written)) : null;
+    // Relative, moved by the side the browser goes by: its `left`, or right to left its `right`, which the browser gives how far it moves it the other way (ticket 89).
+    const by = position === "relative" ? edgeGoneBy(el, axis) : "start";
+    const moved = movedBy(by, rounded(parseFloat(style.getPropertyValue(SIDES[axis][by])) || 0));
+    const offset = position === "relative" ? movedBy(edge, moved) : position === "sticky" && written.endsWith("px") ? rounded(parseFloat(written)) : null;
     if (position !== canvas || offset === null || Math.abs(offset - after) > 0.5) {
       const actual: OffsetInLayout = { canvas, position, offset, ...(position === "sticky" && offset === null && { written }) };
       return [{ outcome: "not shown", actual }, el];
