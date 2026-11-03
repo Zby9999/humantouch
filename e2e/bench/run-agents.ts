@@ -19,7 +19,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
@@ -109,7 +109,8 @@ async function main(argv: string[]) {
   const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
   for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: ${Object.keys(AGENTS).join(", ")}`);
 
-  const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
+  // Absolute: the Agent runs in the project, and finds its own files in the run folder by this path.
+  const out = resolve(option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-")));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
   console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
 
