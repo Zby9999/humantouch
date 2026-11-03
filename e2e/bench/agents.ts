@@ -340,8 +340,8 @@ async function processTable(): Promise<ProcessRow[]> {
 
 /** How the install bench (ticket 91) runs an Agent otherwise than the applying bench: all of it optional. */
 export interface RunOptions {
-  /** Another binary and arguments in place of the Agent's: Claude's with the install lists, or the scripted Agent. */
-  spec?: Pick<AgentSpec, "binary" | "args">;
+  /** Another binary, arguments and preparing in place of the Agent's: Claude's with the install lists, pi's with its list, or the scripted Agent. */
+  spec?: Pick<AgentSpec, "binary" | "args" | "prepare">;
   /** The environment, in place of `cleanEnv()`. */
   env?: NodeJS.ProcessEnv;
   /** Told the Agent's process id, and when it started, as soon as it has started. */
@@ -357,7 +357,7 @@ export interface RunOptions {
  */
 export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number, prompt = PROMPT, options: RunOptions = {}): Promise<AgentRun> {
   const spec = { ...AGENTS[agent], ...options.spec };
-  const prepared = options.spec ? undefined : spec.prepare?.(dir, folder);
+  const prepared = spec.prepare?.(dir, folder);
   const startedAt = Date.now();
   const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: options.env ?? cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
   if (child.pid) options.onStart?.(child.pid, startedAt);

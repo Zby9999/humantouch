@@ -14,8 +14,8 @@
  *                      [--out <dir>]
  *   pnpm bench:install summary <dir>   judge the raw results in <dir> again, and sum them up
  *
- * `claude` runs as the applying bench runs it, with the install lists
- * (install-allowlist.ts); `pi` comes with ticket 85; `scripted` is
+ * `claude` and `pi` run as the applying bench runs them, with the install
+ * lists (install-allowlist.ts); `scripted` is
  * scripted-agent.ts, for walking the bench through before the package is
  * published. Runs go one after another, never side by side, each on the
  * start's default port (5173 or 3000), which must be free: the bench stops
@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 import { pack } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, cleanEnv, runAgent, type AgentRun, type AgentSpec } from "./agents.ts";
-import { installClaudeArgs } from "./install-allowlist.ts";
+import { installClaudeArgs, prepareInstallPi } from "./install-allowlist.ts";
 import { forAgents, judgeInstall, toldToLook, withLocalPackage, type Judged } from "./install-judge.ts";
 import { AgentProcesses, portTaken, type Server } from "./install-servers.ts";
 import { packageManagerPath, portInUse, scaffold, STARTS, type Start } from "./install-starts.ts";
@@ -55,15 +55,23 @@ const GRACE_MS = 15_000;
 /** The default ports of the starts' dev servers: free before each run. */
 const DEFAULT_PORTS = [5173, 3000];
 
-/** How each Agent is run: its binary and arguments, for the install. */
-function installSpec(agent: InstallAgent, plant: Plant | null): Pick<AgentSpec, "binary" | "args"> {
+/**
+ * How each Agent is run for the install: Claude and pi as the applying bench
+ * runs them, but for the install lists (install-allowlist.ts); the scripted
+ * Agent by node. Claude's lists are on its command line; pi's in a file
+ * beside the bench's extension, so its command line is the applying bench's.
+ */
+function installSpec(agent: InstallAgent, plant: Plant | null): Pick<AgentSpec, "binary" | "args" | "prepare"> {
   if (agent === "claude") return { binary: AGENTS.claude.binary, args: installClaudeArgs };
-  if (agent === "scripted") return { binary: () => process.execPath, args: (_folder, prompt = "") => [SCRIPTED, prompt, ...(plant ? ["--plant", plant] : [])] };
-  throw new Error("pi comes with ticket 85: the bench runs it once agents.ts has it, with the install lists of install-allowlist.ts given to its extension");
+  if (agent === "pi") return { binary: AGENTS.pi.binary, args: AGENTS.pi.args, prepare: prepareInstallPi };
+  return { binary: () => process.execPath, args: (_folder, prompt = "") => [SCRIPTED, prompt, ...(plant ? ["--plant", plant] : [])], prepare: undefined };
 }
 
+/** The Agent whose transcript form a run's is: the scripted Agent writes Claude Code's. */
+const transcriptForm = (agent: InstallAgent) => (agent === "pi" ? "pi" : "claude");
+
 /** The command line as a person would type it, for the record. */
-function commandLine(spec: Pick<AgentSpec, "binary" | "args">, prompt: string): string {
+function commandLine(spec: Pick<AgentSpec, "binary" | "args" | "prepare">, prompt: string): string {
   return [spec.binary(), ...spec.args("<run folder>", prompt)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
@@ -85,6 +93,9 @@ interface RawInstall {
   run: number;
   date: string;
   agentVersion: string;
+  /** The model the transcript names, and the effort the command line sets and the run shows (null for the scripted Agent). */
+  model: string | null;
+  effort: { set: string; seen: string | null } | null;
   /** What the start's scaffold and its packages resolved to. */
   versions: Record<string, string>;
   package: { source: "npm" | "local"; tarball: string | null };
@@ -131,7 +142,6 @@ async function main(argv: string[]) {
   const plant = (option("plant") ?? null) as Plant | null;
   if (plant && !PLANTS.includes(plant)) throw new Error(`No plant ${plant}: ${PLANTS.join(", ")}`);
   if (plant && agents.some((agent) => agent !== "scripted")) throw new Error("--plant is for the scripted Agent only: --agents scripted");
-  // Before anything is built: pi stops the bench here, not after a scaffold.
   const specs = Object.fromEntries(agents.map((agent) => [agent, installSpec(agent, plant)]));
 
   const packDir = source === "local" ? mkdtempSync(join(tmpdir(), "03kind-install-pack-")) : null;
@@ -143,7 +153,7 @@ async function main(argv: string[]) {
     console.log(`${agents.length * starts.length * runs} installs: ${agents.join(", ")} × ${starts.length} starts × ${runs}, 03kind from ${tarball ?? "npm (03kind@latest)"}${plant ? `, planted ${plant}` : ""}. Raw results in ${out}`);
 
     const versions: Partial<Record<InstallAgent, string>> = {};
-    for (const agent of agents) versions[agent] = agent === "scripted" ? `scripted-agent.ts, node ${process.version}` : await agentVersion(agent as "claude");
+    for (const agent of agents) versions[agent] = agent === "scripted" ? `scripted-agent.ts, node ${process.version}` : await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     if (existsSync(join(out, "meta.json"))) throw new Error(`${out} has a round of installs already: start one of its own`);
     const meta = { versions, package: { source, tarball }, prompt, plant, starts: starts.map((start) => start.id), commandLines: Object.fromEntries(agents.map((agent) => [agent, commandLine(specs[agent], prompt)])) };
@@ -259,7 +269,7 @@ async function installOnce({
   prompt: string;
   tarball: string | null;
   plant: Plant | null;
-  spec: Pick<AgentSpec, "binary" | "args">;
+  spec: Pick<AgentSpec, "binary" | "args" | "prepare">;
   agentVersion: string;
 }): Promise<RawInstall> {
   const log: string[] = [];
@@ -274,7 +284,7 @@ async function installOnce({
     // What the Agent starts after the toggle is found is its too: looked for as long as it runs.
     const tracking = setInterval(() => void servers.track().catch(() => {}), 500);
     try {
-      agentRun = await runAgent("claude", project.dir, folder, AGENT_TIMEOUT_MS, prompt, {
+      agentRun = await runAgent(agent === "pi" ? "pi" : "claude", project.dir, folder, AGENT_TIMEOUT_MS, prompt, {
         spec,
         env,
         leaveRunning: true,
@@ -288,7 +298,7 @@ async function installOnce({
       clearInterval(tracking);
     }
     const found = await watching;
-    const transcript = parseTranscript("claude", readFileSync(join(folder, "transcript.jsonl"), "utf8"));
+    const transcript = parseTranscript(transcriptForm(agent), readFileSync(join(folder, "transcript.jsonl"), "utf8"));
     const afterAgent = await gitState(project.dir);
     writeFileSync(join(folder, "status.txt"), afterAgent.status);
     writeFileSync(join(folder, "diff.patch"), afterAgent.diff);
@@ -315,6 +325,8 @@ async function installOnce({
       run,
       date: new Date(agentRun.startedAt).toISOString(),
       agentVersion,
+      model: transcript.model,
+      effort: agent === "scripted" ? null : { set: AGENTS[agent].effort, seen: AGENTS[agent].effortSeen?.(folder) ?? null },
       versions: project.versions,
       package: { source: tarball ? "local" : "npm", tarball },
       prompt,
@@ -362,7 +374,7 @@ function writeSummary(out: string) {
         if (!existsSync(join(folder, "raw.json"))) continue;
         const raw: RawInstall = JSON.parse(readFileSync(join(folder, "raw.json"), "utf8"));
         const read = (file: string) => readFileSync(join(folder, file), "utf8");
-        const transcript = parseTranscript("claude", read("transcript.jsonl"));
+        const transcript = parseTranscript(transcriptForm(raw.agent), read("transcript.jsonl"));
         const criteria = judgeInstall({ buttonMs: raw.buttonMs, transcript, doctor: read("doctor.txt"), status: read("status.txt"), diff: read("diff.patch"), afterRemove: { status: read("status-after-remove.txt"), diff: read("diff-after-remove.patch") } });
         installs.push({ ...raw, criteria, success: criteria.every((c) => c.pass), step3Told: toldToLook(transcript.finalText) });
       }
@@ -375,6 +387,8 @@ function writeSummary(out: string) {
     return {
       agent,
       versions: [...new Set(mine.map((raw) => raw.agentVersion))],
+      models: [...new Set(mine.map((raw) => raw.model ?? "?"))],
+      efforts: [...new Set(mine.map((raw) => (raw.effort ? `${raw.effort.set}${raw.effort.seen ? `, seen ${raw.effort.seen}` : ""}` : "–")))],
       packages: [...new Set(mine.map((raw) => raw.package.tarball ?? "03kind@latest"))],
       plants: [...new Set(mine.map((raw) => raw.plant ?? "none"))],
       runs: mine.length,
@@ -395,7 +409,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}：${agent.versions.join(", ")}，包 ${agent.packages.join(", ")}${agent.plants.some((plant) => plant !== "none") ? `，故意出错 ${agent.plants.join(", ")}` : ""}`,
+        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，包 ${agent.packages.join(", ")}${agent.plants.some((plant) => plant !== "none") ? `，故意出错 ${agent.plants.join(", ")}` : ""}`,
         "",
         `- 成功 ${agent.successes} / ${agent.runs}`,
         `- 到切换按钮出现（秒）：中位数 ${agent.buttonSeconds.median ?? "–"}，最长 ${agent.buttonSeconds.max ?? "–"}（找到 ${agent.buttonSeconds.found} 次）`,

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { installShellAllowed, installClaudeArgs, INSTALL_DENIED_SHELL } from "./install-allowlist.ts";
+import { parseTranscript } from "./metrics.ts";
 import { asksTheDesigner, forAgents, judgeInstall, NPX_INIT, sourceEdits, toldToLook, waitsOnAnswer, withLocalPackage } from "./install-judge.ts";
 
 const README = readFileSync(fileURLToPath(new URL("../../README.md", import.meta.url)), "utf8");
@@ -139,6 +140,8 @@ test("a third place, a file changed by more than an import and a line, and an un
 test("a rename or a lockfile of any package manager is counted rightly", () => {
   for (const lockfile of ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"]) assert.deepEqual(sourceEdits(status(` M ${lockfile}`), "").places, []);
   assert.deepEqual(sourceEdits(status("R  src/a.tsx -> src/b.tsx"), "").places, ["src/b.tsx"]);
+  // A dev server's output sent to a file in the project is no source; `remove` still leaves it.
+  assert.deepEqual(sourceEdits(status("?? dev.log", "?? logs/next.log"), "").places, []);
 });
 
 const passing = { buttonMs: 21_000, transcript: transcript("Done: there should be a round button at the page's bottom right."), doctor: "03Kind doctor (Vite, pnpm):\n✓ a\n✓ b\n\nAll good.\n", status: status(" M src/main.tsx", " M vite.config.ts"), diff: VITE_DIFF, afterRemove: { status: "", diff: "" } };
@@ -156,11 +159,14 @@ test("an install passes on every criterion, and fails each on its own", () => {
 });
 
 test("the install allowlist lets the four steps and a dev server by, and turns away rm, curl and git push", () => {
-  for (const command of [NPX_INIT, "npx -y file:/tmp/03kind-0.1.0.tgz init", "npx 03kind doctor", "npm run dev", "pnpm dev", "yarn dev", "bun run dev", "bunx vite", "npm install", "git status", "git diff --stat", "ls -la", "npm run dev > /dev/null 2>&1 &", "cat package.json | head -5"]) {
-    assert.ok(installShellAllowed(command), command);
+  const cwd = "/t/run";
+  for (const command of [NPX_INIT, "npx -y file:/tmp/03kind-0.1.0.tgz init", "npx 03kind doctor", "npm run dev", "pnpm dev", "yarn dev", "bun run dev", "bunx vite", "npm install", "git status", "git diff --stat", "ls -la", "cat package.json | head -5", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "nohup pnpm dev > dev.log 2>&1 &", "npx next dev --port 3000 &"]) {
+    assert.ok(installShellAllowed(command, cwd), command);
   }
-  for (const command of ["rm -rf node_modules", "curl https://example.com", "git push", "npm run dev && rm -rf src", "sudo npm install", "kill 123", "pkill -f vite", "open http://localhost:5173", "npm publish", "pnpm remove 03kind", "yarn", "git commit -am x", "python3 -c 1", "wget x", "osascript -e 1"]) {
-    assert.ok(!installShellAllowed(command), command);
+  for (const command of ["rm -rf node_modules", "curl https://example.com", "git push", "npm run dev && rm -rf src", "sudo npm install", "kill 123", "pkill -f vite", "open http://localhost:5173", "npm publish", "pnpm remove 03kind", "yarn", "git commit -am x", "python3 -c 1", "wget x", "osascript -e 1",
+    // In the background, only a dev server's forms, alone, with output in the project or nowhere.
+    "rm -rf src &", "curl https://example.com &", "npm run dev & rm -rf src", "npm run dev && sleep 5 &", "npm run dev > /tmp/dev.log &", "npm run dev > ../dev.log &", "ls &", "npm run dev $(rm -rf src) &", "git push &"]) {
+    assert.ok(!installShellAllowed(command, cwd), command);
   }
 });
 
@@ -174,4 +180,21 @@ test("Claude's install command line is the applying bench's with only the lists 
   assert.ok(list("--disallowedTools").includes("WebFetch"));
   for (const flag of ["--model", "--effort", "--setting-sources", "--strict-mcp-config", "--no-chrome", "--permission-mode"]) assert.ok(args.includes(flag), flag);
   assert.equal(args[1], "Install 03Kind");
+});
+
+test("pi's install transcript is judged by pi's own parser: its tool calls, its denials, and its last words", () => {
+  const text = readFileSync(fileURLToPath(new URL("./fixtures/pi-install.jsonl", import.meta.url)), "utf8");
+  const pi = parseTranscript("pi", text);
+  assert.deepEqual(
+    pi.toolCalls.map((call) => call.command),
+    ["npx -y file:/t/pack/03kind-0.0.0.tgz init", "npm run dev > /dev/null 2>&1 &", "kill %1", "npx 03kind doctor"],
+  );
+  assert.equal(pi.permissionDenials, 1);
+  assert.equal(asksTheDesigner(pi), null);
+  assert.ok(toldToLook(pi.finalText));
+
+  // The same run, ending on a question instead.
+  const asking = text.replace(/"text": "03Kind is installed[^"]*"/, '"text": "init is done and the dev server is up. Should I run doctor now?"');
+  assert.notEqual(asking, text);
+  assert.match(asksTheDesigner(parseTranscript("pi", asking))!, /Should I run doctor now\?/);
 });

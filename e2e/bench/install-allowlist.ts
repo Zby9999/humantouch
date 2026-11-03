@@ -2,11 +2,15 @@
  * What an Agent may do while it installs 03Kind (ticket 91): the applying
  * bench's allowlist turns away `npx -y 03kind@latest init` and starting a dev
  * server, so installing has a list of its own. Data first, so Claude's
- * command line and, later, pi's extension (ticket 85) are made from the same
- * list; then Claude's command line, made from the applying bench's own with
- * only its lists swapped, so a change to how Claude runs reaches both benches.
+ * command line and pi's extension (ticket 85) are made from the same list;
+ * then how each runs, made from the applying bench's own with only the lists
+ * swapped, so a change to how Claude or pi runs reaches both benches.
  */
+import { writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { AGENTS } from "./agents.ts";
+import { backgroundServer, shellAllowed } from "./allowlist.ts";
+import { INSTALL_LIST } from "./pi-extension.ts";
 
 /**
  * The tools that read, edit and search, as the applying bench has them, and
@@ -50,30 +54,44 @@ export const INSTALL_SHELL = [
   ...["install", "add", "run", "x", "dev"].map((sub) => `bun ${sub}`),
 ];
 
-/** Shell commands turned away even where a prefix above would let them by (`npx rm` is not `rm`, but `rm` after `&&` is). */
+/** Shell commands Claude is denied besides (deny wins there over a prefix allowed, as `rm` after `&&`); pi's rule lets by only what is listed. */
 export const INSTALL_DENIED_SHELL = ["rm", "sudo", "kill", "pkill", "curl", "wget", "ssh", "scp", "open", "osascript", "git push"];
 
 /** Tools turned away: the web. */
 export const INSTALL_DENIED_TOOLS = ["WebFetch", "WebSearch"];
 
-/** Whether `command` starts with `prefix` as a whole word: `git diff` takes `git diff --stat`, not `git difftool`. */
-const startsWith = (command: string, prefix: string) => command === prefix || command.startsWith(`${prefix} `);
+/**
+ * What may start a dev server in the background for pi (ticket 91): running
+ * a package script, or a package's binary. pi's bash waits for what it runs,
+ * and the applying bench's rule turns away `&` and redirects to a file; step 2
+ * asks the Agent to leave the server running and go on. Only these forms get
+ * the `&`, so no denied command can be sent to the background. (Claude Code
+ * runs a command in the background with its Bash tool's own option.)
+ */
+export const INSTALL_SERVERS = ["npm run", "npm exec", "pnpm run", "pnpm dev", "pnpm exec", "yarn run", "yarn dev", "yarn exec", "bun run", "bun dev", "bun x", "npx", "bunx"];
 
 /**
- * Whether the allowlist lets a shell command line by: each command in it
- * (split at `&&`, `||`, `;`, `|` and a `&` that sends one to the background) starts with an allowed prefix, and
- * none with a denied one. The same rule Claude Code applies to its
- * `Bash(<prefix>:*)` lists, for the unit tests and for an Agent the bench
- * enforces it on itself (pi's extension, ticket 85).
+ * Whether the bench's rule for pi (allowlist.ts, as its extension holds it to
+ * the install list) lets a shell command line by, in the project `cwd`: by
+ * the applying bench's rule with the install list, or as a dev server
+ * started in the background.
  */
-export function installShellAllowed(commandLine: string): boolean {
-  const commands = commandLine
-    // A redirect such as `2>&1` joins no commands.
-    .replace(/\d*>&\d*/g, ">")
-    .split(/&&|\|\||;|\||&/)
-    .map((part) => part.trim().replace(/^(?:\w+=\S*\s+)+/, ""))
-    .filter(Boolean);
-  return commands.length > 0 && commands.every((command) => !INSTALL_DENIED_SHELL.some((denied) => startsWith(command, denied)) && INSTALL_SHELL.some((allowed) => startsWith(command, allowed)));
+export function installShellAllowed(command: string, cwd = process.cwd()): boolean {
+  const inProject = (path: string) => resolve(cwd, path).startsWith(cwd + sep);
+  return shellAllowed(command, INSTALL_SHELL) || backgroundServer(command, INSTALL_SERVERS, inProject) !== null;
+}
+
+/**
+ * Done before pi installs: what the applying bench does before it runs pi
+ * (the extension copied into the run's folder), and the install list written
+ * beside that copy, which the extension reads in place of the applying one.
+ * The command line stays the applying bench's: the extension is found by it.
+ */
+export function prepareInstallPi(dir: string, folder: string): void {
+  AGENTS.pi.prepare!(dir, folder);
+  const extension = AGENTS.pi.args(folder).find((arg) => arg.endsWith("pi-extension.ts"));
+  if (!extension) throw new Error("pi's command line loads no pi-extension.ts: the install list has nowhere to go");
+  writeFileSync(join(dirname(extension), INSTALL_LIST), `${JSON.stringify({ shell: INSTALL_SHELL, servers: INSTALL_SERVERS }, null, 2)}\n`);
 }
 
 /** The flags of Claude's command line that carry its lists. */

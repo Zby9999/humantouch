@@ -77,6 +77,9 @@ export function toldToLook(text: string): boolean {
 /** 03Kind's own files, as `init` changes them: not the user's source. */
 const THIRD_KIND_FILES = /^(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|\.gitignore|AGENTS\.md|\.agents\/skills\/03kind\/.*|\.claude\/skills\/03kind\/.*)$/;
 
+/** What a dev server's output goes to, when the Agent sends it to a file in the project (pi, ticket 91): no source, but `remove` leaves it. */
+const LOGS = /(^|\/)[^/]*\.log$/;
+
 /** The files of a `git status --porcelain` listing, with whether git tracks them; a rename by its new name. */
 function statusFiles(status: string): { file: string; untracked: boolean }[] {
   return status
@@ -103,12 +106,12 @@ function diffLines(diff: string): Map<string, { added: string[]; removed: string
  * The places the user's source changed (docs/goals.md, Light: at most two,
  * the build config and the file that renders the app, each by an import plus
  * one line), from `git status --porcelain --untracked-files=all` and
- * `git diff HEAD`. 03Kind's own files are not counted; a new file is a place,
- * and more than an import and one line.
+ * `git diff HEAD`. 03Kind's own files are not counted, nor a log file; a new
+ * file is a place, and more than an import and one line.
  */
 export function sourceEdits(status: string, diff: string): { places: string[]; problems: string[] } {
   const lines = diffLines(diff);
-  const changed = statusFiles(status).filter(({ file }) => !THIRD_KIND_FILES.test(file));
+  const changed = statusFiles(status).filter(({ file }) => !THIRD_KIND_FILES.test(file) && !LOGS.test(file));
   const places = changed.map(({ file }) => file).sort();
   const problems: string[] = [];
   if (places.length > 2) problems.push(`${places.length} places changed: ${places.join(", ")}`);
