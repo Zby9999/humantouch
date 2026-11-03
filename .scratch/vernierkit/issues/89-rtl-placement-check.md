@@ -12,7 +12,7 @@
 - [x] 判断「这一边挪不挪它」（84 的 `relative`，75 的自由定位、左右都写了值并且宽度定死的情况）和核对「页面上挪了多少」时，按图层算出来的 `direction` 定哪一边说了算。代码里改文字对齐、找样式出处的地方已经这样读 `direction`，照着做
 - [x] 上下方向不受影响（`top` 总是说了算），不改
 - [x] 不报虚假的 ✓；没显示时的说法照 84 已确认的那套，不另起新说法（要是非起不可，记进代定）
-- [ ] 从左往右的页面上，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变
+- [ ] 从左往右的页面上，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变（包逐字节相同；输出有一种情况变了，见代定第 4 条，留给指挥定）
 - [x] spec「核对」一节补一句：哪一边说了算跟着图层的 `direction`
 
 ## 背景
@@ -31,7 +31,7 @@
 
 *结论*
 
-验收项基本都做到了，照设计师选的做法 1。图层左右两边都写了值时，哪一边说了算跟着浏览器的定法：看图层**包含块**的 `direction`（不是图层自己的，见「浏览器里看到的」），从左往右按 `left`，从右往左按 `right`；自由定位的图层只在宽度定死时才有一边说了算。「这一边挪不挪它」（84 的 `relative`，75 的自由定位）、「页面上挪了多少」（`lookOffset`），以及移动、改尺寸按哪一边（`placedFrom`）都照这个读。ticket 说的那条剧本在改前报虚假的 ✓，改后报没显示，写对了报 ✓。上下方向 `top` 总是说了算，没改。说法没起新的，都是 84 已确认的那套。从左往右的页面，`claim`、`done`、`finish` 只有一种情况变了：页面上自由定位的图层两边都写了值、宽度定死时，`right`（`bottom`）的改动原来按写的值核对、会报虚假的 ✓，现在按浏览器把它摆在哪里核对（审查时发现，见代定第 4 条）；别的逐字不变。切换按钮的包逐字节相同。
+验收项基本都做到了，照设计师选的做法 1。图层左右两边都写了值时，哪一边说了算跟着浏览器的定法：看图层**包含块**的 `direction`（不是图层自己的，见「浏览器里看到的」），从左往右按 `left`，从右往左按 `right`；自由定位的图层只在宽度定死时才有一边说了算。「这一边挪不挪它」（84 的 `relative`，75 的自由定位）、「页面上挪了多少」（`lookOffset`），以及移动、改尺寸按哪一边（`placedFrom`）都照这个读。ticket 说的那条剧本在改前报虚假的 ✓，改后报没显示，写对了报 ✓。上下方向 `top` 总是说了算，没改。说法没起新的，都是 84 已确认的那套。从左往右的页面，`claim` 不变，`done`、`finish` 只在一种情况变了：页面上自由定位的图层两边都写了值、尺寸定死（审查后按几何读）时的 `right`（`bottom`）改动，现在按浏览器把它摆在哪里核对，三种结果会变（见代定第 4 条，原来写成「只在原来报虚假的 ✓ 时」，不对，见「按审查修正」）；别的逐字不变。切换按钮的包逐字节相同。
 
 *先复现*
 
@@ -50,6 +50,7 @@
 - **`absolute`、两边都写、宽度定死**：从左往右、从右往左，算出来的 `left`、`right` 都是写的值（10px、30px），不是浏览器实际用的值；只写一边时另一边是实际的值（从右往左只写 `right: 30px`，`left` 读出 320px）。所以 **`lookPosition` 不是按几何核对的**：没说了算的那一边读出来是写的值，图层并不在那里。从右往左时按 `right` 定位的改动读到的是说了算的那边，是对的；X 的改动在页面两边都写的宽度上会报虚假的 ✓（从左往右的 `right` 改动同样，这是 75 起就有的）。审查时补上了，见「按 code-review 修正」。
 - **`sticky`**：两边的阈值照旧都算，和方向无关，没改。
 - **画布的视图保留页面的 `dir`**：`<html dir="rtl">` 的页面，桌面视图和旁边 390px 的视图里 `html` 都还有 `dir="rtl"`，图层的 `direction` 都是 `rtl`。冻结时整个根元素连属性一起复制，旁边的视图又照着复制，所以不是另一个更大的毛病。
+- **由窗口定位时看 `body` 的方向**（按审查修正时补看的）：没有定位参照的自由定位图层、固定在窗口上的图层，浏览器按 `body` 的 `direction` 定哪一边说了算，`<html dir="rtl"><body dir="ltr">` 按 `left`，`<html><body dir="rtl">` 按 `right`；`html` 自己定位了（`position: relative`）也一样看 `body`。和 CSS Writing Modes 说的根元素从 `body` 取方向一致。别的发现见「按审查修正」。
 
 *`claim` / `done` / `finish` 前后*
 
@@ -99,7 +100,7 @@ End your reply with this report. Each change is under the heading the page's che
 1. **按包含块的 `direction`，不按图层自己的**：ticket 写「跟着图层自己的 direction」，但浏览器看的是包含块的（`relative` 是父元素，自由定位是定位参照）。「哪一边说了算」照浏览器，spec 里写成「跟着图层的 `direction`，按浏览器的定法读它的包含块」。两者只在图层自己（或它和包含块之间的元素）设了 `dir` 时不同。包含块只认 `position` 和变换（`transform`、`translate`、`rotate`、`scale`、`perspective`），`filter`、`contain`、`will-change` 让元素成为包含块的情况不读，见遗留风险第 2 条。
 2. **自由定位的图层只在宽度（高度）定死时才有一边说了算**：宽度没写（`auto`）时两边都摆它（图层被拉宽），不是哪一边说了算，照旧按左边处理（75 的边界，`inset-x-0` 即 Figma 的 Left & Right）。「定死」按声明的 `width` 是不是 `auto` 读，`<img>` 这类自带尺寸的、`max-width` 卡住的不算，见遗留风险第 3 条。
 3. **`placedFrom` 一起改，碰了 ADR 0014 的「按左边处理」**：从右往左、宽度定死、两边都写的图层按右边处理（移动改 `right`，改尺寸时左边不动），因为浏览器按右边摆它；照旧按左边的话，在桌面视图里移动它写 `left` 并把 `right` 设成 `auto`，图层会从右边跳到左边，改尺寸时左边跟着动，和 Figma 相反。规则和上面是同一条，改动很小。ADR 0014 那句补了这个例外。属性面板里这种图层的 X 仍读写的 `left`，不是画出来的位置，见遗留风险第 1 条。
-4. **页面上的自由定位按浏览器把它摆在哪里核对（审查后修正，从左往右也变了）**：页面上自由定位的图层两边都写了值、宽度（高度）定死时，没说了算的那一边写的值不摆它，可算出来的值就是写的值。`done` 原来照读，从右往左的 X、从左往右的 `right`、上下方向的 `bottom` 都会报虚假的 ✓。现在那一边按浏览器把它摆在哪里算（包含块的宽度减去说了算的那一边、外边距和图层的宽度），没显示时用原来的说法（80、75 的「is drawn at …」），只是数是图层实际画在的地方。这条改了从左往右页面的 `done` / `finish` 输出，但只在原来报虚假的 ✓ 的这一种情况；上下方向哪一边说了算没变（`top`），只是 `bottom` 不再按写的值核对。不做的话，ticket 要的「不报虚假的 ✓」在从右往左的 X 上做不到；只修从右往左又会留下一条一样的从左往右的规则，所以一起修了。
+4. **页面上的自由定位按浏览器把它摆在哪里核对（审查后修正，从左往右也变了）**：页面上自由定位的图层两边都写了值、宽度（高度）定死时，没说了算的那一边写的值不摆它，可算出来的值就是写的值。`done` 原来照读，从右往左的 X、从左往右的 `right`、上下方向的 `bottom` 都会报虚假的 ✓。现在那一边按浏览器把它摆在哪里算（包含块的宽度减去说了算的那一边、外边距和图层的宽度），没显示时用原来的说法（80、75 的「is drawn at …」），只是数是图层实际画在的地方。这条改了从左往右页面的 `done` / `finish` 输出，在这种图层的 `right`（`bottom`）改动上有三种结果会变：(a) 原来报虚假的 ✓ 的（`right` 写对了，`left` 却把它摆在别处），现在报没显示；(b) 原来就没显示的，仍是没显示，只是「is drawn at …」后面的数从没说了算那一边写的值换成画出来的位置；(c) 原来报没显示的、其实是对的（`right` 过时，但 `left` 已经把它摆在画布那里），现在报 ✓。按审查修正后还多两处走这条：几何上定死的（`max-width`、`<canvas>`），和移动、新建图层的核对（`placedThere`，ticket 79、76）。ticket 说「上下方向不受影响」，指的是哪一边说了算（`top` 总是说了算），这一点没变；但上下方向的 `bottom` 改动在这种情况下的 `done` 也照上面三种变了。不做的话，ticket 要的「不报虚假的 ✓」在从右往左的 X 上做不到；只修从右往左又会留下一条一样的从左往右的规则，所以一起修了。
 5. **说法照 84 已确认的那套，不起新的**：从右往左时 `relative` 页面挪了多少，照样说「the page moves the layer 40px left」，按浏览器实际挪的方向和距离；自由定位照样说「is drawn at …」。
 6. **`sticky` 不分方向**：两边的阈值浏览器都用，照 84 代定第 3 条，没改。
 
@@ -146,9 +147,81 @@ End your reply with this report. Each change is under the heading the page's che
 *遗留风险*
 
 1. **属性面板里的 X**：从右往左、宽度定死、两边都写的自由定位图层，面板的 X 读的是写的 `left`，不是画出来的位置。移动、微移、拖拽按差值改 `right`，结果是对的；在面板里直接输一个 X 会差出写的 `left` 和实际位置之差。不报虚假的 ✓。要修得让 X 按画出来的位置读，牵动面板和改动单，没在这条线做。
-2. **包含块只认 `position` 和变换**：`filter`、`contain`、`will-change` 也让元素成为包含块；只有那个元素和再往上的定位参照方向不同时才会读错，很少见。
-3. **「宽度定死」按声明读**：`<img>` 这类自带尺寸的、`max-width` 卡住的图层，两边都写时浏览器也按一边摆，这里当成两边都摆它（按左边处理，`right` 在从右往左时仍进 `placedOtherwiseAt`、不看），可能漏看，报虚假的 ✓ 的可能和改前一样。
+2. **包含块读错时，核对的空间也错**（按审查修正后改写，原来说得太轻）：审查后 `placedAt` 用包含块的空间算没说了算的那一边，包含块找错了，不只方向会错，空间也错，一个从左往右本来对的 ✓ 会变成没显示。现在认 `position`（含定位了的 `html`）、所有变换、`filter`、`backdrop-filter`、`contain`、`will-change`，跳过 `display: contents`，和冻结时判断固定图层用的是同一条规则（`holdsPlacedLayers`）。还不认的：行内的定位参照（空间按它的外框量，折行时不准）、`<dialog>` 顶层这类，很少见。
+3. **画布那边「宽度定死」仍按声明读**：页面的核对审查后按几何判断（见「按审查修正」），画布那边（旁边视图第一次记下时、`placedFrom`）照 ADR 0011 不排版，仍按声明的宽度、高度：`<img>` / `<canvas>` 自带尺寸的、`max-width` 卡住的，从右往左两边都写时浏览器按右边摆，这里当成两边都摆它（按左边处理，`right` 仍进 `placedOtherwiseAt`、那个宽度不看），可能漏看，和改前一样。
 4. **84 的遗留风险第 6 条在从右往左时反过来**：页面 `relative` 两边都写、从右往左时，X 的改动没显示，`done` 说「give it `left` 30px at this width too」，可页面上 `left` 已经是 30px，真正要去掉的是 `right`。不报虚假的 ✓，等 ticket 88 的数据和 84 的第 6 条一起看。
 5. **读一次的记录会过时**、**一个视图代表一整段宽度**：同 75、83、84，不变。
 6. 没跑真实 Agent。
 
+**按审查修正（2026-11-03）**
+
+指挥另跑了独立审查（effort high），找到几条还会报虚假的 ✓（或把对的 ✓ 报成没显示）的路，在同一条分支上修了（分支先同步过 main，8180016，带进 ticket 85 的 bench，没有再合并）。每条都先写测试、在当时的分支（fd1469b 之后的 8180016）上看着失败，再改。
+
+*先在浏览器里看了*（Playwright 的 headless shell，临时的探测测试，没留在仓库里）。容器里图层 50px 宽，`left: 10px; right: 30px`：
+
+- 没有定位参照的自由定位图层、固定图层：按 `body` 的方向（见上面「浏览器里看到的」最后一条）。
+- 让元素成为定位参照的：`filter`、`backdrop-filter`、`contain: paint`、`will-change: transform`、`translate`、`transform` 都是（图层摆在那个 200px 的盒子里）；`container-type: inline-size`、`container-type: size` **不是**（自由定位、固定的图层都不摆在它里面）。冻结时判断固定图层的 `fixedToViewport` 原来把 `container-type` 也当成会接住固定图层，是错的。
+- `display: contents` 的元素定位了也不是定位参照。
+- `relative` 图层的父元素是 `display: contents` 或行内的 `<span>`、写了 `dir="ltr"`，外面是从右往左的块：浏览器按外面那个块的方向（按 `right` 挪）；父元素是 `inline-block` 时按它自己的方向（它自己是块）。
+- 从右往左只写 `inset-inline-start: 5px`：算出来 `right` 是 5px，图层贴右边。
+- 两边都写、宽度没写但 `max-width: 50px`，或 `<canvas>` 自带 50px 宽：从右往左都按 `right` 摆（宽度一样是定死的）。
+
+*找到的和改的*
+
+1. **`dir` 写在 `body` 上**（确认会报虚假的 ✓）：没有定位参照的、固定的图层，原来读 `html` 的方向。从右往左写在 `body` 上的页面，X 的改动 Agent 只写 `left: 30px`、页面手机上还有自己的 `right: 5px`，浏览器按 `right` 画在 335px，`done` 却报 ✓；`<html dir="rtl"><body dir="ltr">` 则反过来把对的报成没显示。改为包含块是窗口或根元素时读 `body` 的方向（`directionPlacing`，新文件 `client/containing-block.ts`），画布那边（`placedFrom`、`sideMoves`、`endOffsetPlaces`）和页面那边都照这个。
+2. **逻辑方向的边**（确认会报虚假的 ✓）：「写了 `left` / `right` 没有」原来经 `declaredValue` 和 `style-source.ts` 的 `SHORTHANDS`，`inset-inline`、`inset-inline-start` 不管方向都算 `left`，`right` 什么都不认（`inset` 也不认）。Tailwind v4 的 `start-[5px]` 在从右往左的页面上写的是 `right`，`inset-x-*` 写 `inset-inline`。改为在 `placed-from.ts` 自己读（`sideDeclared`）：编辑写的物理边优先；页面上按图层自己的方向把 `inset-inline-start` / `-end`、`inset-inline`（两个值分给两边）、`inset` 对到物理的边。`style-source.ts` 只在编辑层的包里，但它的 `SHORTHANDS` 也决定改动说明里「Currently set by」写什么，改它会让从左往右的 `claim` 变，所以没动它。
+3. **按几何判断「定死」**（`placedAt`）：页面那边不再看声明的宽度，而是看边、外边距和尺寸加起来和包含块的空间差不差 0.5px 以上，差就是有一边说了算。`max-width` 卡住的、`<canvas>` / `<img>` 自带尺寸的都认得了。画布那边照 ADR 0011 不排版，仍按声明的宽度、高度（见代定第 2 条、遗留风险第 3 条），原来的规则就这一处没改。
+4. **包含块找错，空间也错，把对的 ✓ 报成没显示**（确认）：从左往右，图层在一个 `filter: blur(0)`、200px 宽的盒子里，页面上 `right: 32px; left: 118px; width: 50px` 正好摆在画布那里，原来 ✓，第一轮审查修正后读成「not shown」、数是 222（按 390 的空间算）。改为一条共用的规则 `holdsPlacedLayers`：所有变换（`transform`、`translate`、`rotate`、`scale`、`perspective`）、`filter`、`backdrop-filter`、`contain`（`paint` / `layout` / `strict` / `content`）、`will-change`（`transform` / `perspective` / `filter`）；不含 `container-type`（探测过）。冻结时的 `fixedToViewport` 改用同一条，于是 `container-type` 盒子里的固定图层现在照窗口钉住（原来没钉，见代定第 7 条）。根元素自己定位了时，按它的空间算，不按窗口。这个模块只在编辑层的包里。
+5. **移动、新建图层的核对**（ticket 79、76 的 `placedThere`）：按某一边定位的那一边，原来比的是写的值，那个方向又不再按画出来的位置看，从左往右也会报虚假的 ✓（按右边定位的图层挪了，Agent 写 `right-[N]` 却留着 `left-…` 和定死的宽度）。改为 `placedAt` 读它被摆在哪里；按份额居中时乘的空间也改用包含块的空间（原来 `roomOf` 在两边都写时算的是写的值之和，`lookPosition` 居中那一支同样改了）。
+6. **`relative` / `sticky` 的包含块**：原来直接取父元素，父元素是 `display: contents` 或行内元素、方向和外面不同时读错（审查确认会报虚假的 ✓）。改为往上找到第一个排版用的块，跳过 `display: contents` 和 `display: inline`。spec 里「`relative` 的是父元素」的说法一并改了。
+7. **Standards**：`movedAcross` 改叫 `movedAlong`（across 在这里专指横向）；`TRANSFORMS` 没了，并进 `holdsPlacedLayers`；画布那边「尺寸定死并且按尾边说了算」合成一条 `endGoneBy`（`relative` 只看方向，自由定位还要尺寸定死），`sideMoves`、`endOffsetPlaces`、`placedFrom` 都用它；`placedOn` 只用一个取整（`rounded`）；`changeset.ts`、`edits.ts` 的说明重新折行。
+8. **补的测试**见下。
+
+*看了没改*
+
+- `sideMoves` 的 `left` / `top` 那一边：X、Y 的改动在所有宽度同时写 `right: auto` / `bottom: auto`，画布上那一边总是说了算，照旧算挪动；页面上没让出来的由 `placedAt`、`movedAlong` 核对。
+- 画布那边的「尺寸定死」不改成几何的：旁边视图第一次记下时不排版（ADR 0011）。
+- `style-source.ts` 的 `SHORTHANDS`：理由见上面第 2 条。
+- 行内的定位参照、顶层（`<dialog>`、popover）：很少见，写进遗留风险。
+
+*测试和数字*
+
+- `edits.browser.test.ts` +26 条（test.each 展开后算），都是先在当时的分支上失败、改后通过的，护栏和钉住现状的除外：
+  - 由窗口定位：自由定位、固定各一，`dir` 在 `body` 上，没显示、数是画出来的 335px；`<html dir="rtl"><body dir="ltr">` 显示了（原来没显示）。移动这种两边都写的图层：`body` 从右往左改 `right`，`html` 从右往左而 `body` 从左往右改 X。
+  - 逻辑方向：`inset-inline-start` 从右往左、`inset-inline` 两个方向，移动时改说了算的那一边，画出来往左挪 20px（从左往右那一条是护栏）。
+  - 几何上定死：`max-width` 卡住（从左往右，`right` 的改动，没显示、332px），`<canvas>` 自带尺寸（从右往左，X 的改动，没显示、335px）。
+  - 包含块的空间：`filter`、`backdrop-filter`、`contain: paint`、`will-change: transform`、`translate`、`transform`、`perspective` 的 200px 盒子里摆对了显示（原来前四种没显示）；`container-type: inline-size` 的盒子里浏览器按 board 摆，没显示、222px（钉住现状）。
+  - `relative` 的包含块：父元素 `display: contents` 写了 `dir="ltr"`、行内 `<span dir="ltr">`、图层自己写 `dir="ltr"`（代定第 1 条，钉住），从右往左的块里都按 `right`：记下 `offsetInLayoutAt`，写对了显示。
+  - `bottom`：从左往右、从右往左各一，页面上下都写、高度定死，按 `top` 说了算，没显示、72px（上下方向不分方向，钉住）。
+  - `placedAt` 的外边距、内边距、边框和 `box-sizing`：`content-box` 302px、`border-box` 312px，外边距 4px，包含块带 5px 边框。
+  - (c) 那种：从左往右 `right` 过时、`left` 已经把它摆在画布那里，显示了（钉住，第一轮审查修正后就是这样）。
+  - 移动的核对（ticket 79 那条）加一句：`right` 照改动写了、却留着 `left` 和定死的宽度，没显示（原来报 ✓）。
+- `freezer.browser.test.ts` +1 条：窗口上、`container-type` 盒子里的固定图层都钉住，`filter` 盒子里的不钉。在旧的 `freezer.ts` 上失败。
+- 全量（按审查修正之后的代码）：
+  - typecheck 通过。
+  - 单测 856 通过、1 跳过；node 测试 65 条通过（含 ticket 85 带进来的 bench 测试和旧名检查）。
+  - e2e（`TK_E2E_PORT=5800 pnpm test:e2e`）400 条：399 通过、1 跳过，一次跑过，没有重跑。切换按钮体积检查在里面，通过。
+- 包体积：切换按钮 `react.dev.js` 1423 B（gzip 822 B）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B），sha256 前 16 位仍是 `c83849f1557e0b1b`、`cdd6f09dfeaf13fa`，逐字节相同；`editor.dev.js` 324857 → 325260 B（+403 B），gzip 110357 → 110540 B（+183 B）。新文件 `containing-block.ts` 只进编辑层的包。
+
+*代定的事，更新后*（第 1、3、5、6 条同上，改写的是第 2、4 条，新加第 7 条）
+
+1. 按包含块的 `direction`，不按图层自己的；包含块是窗口或根元素时看 `body` 的方向（按审查修正补的，照浏览器）。
+2. 自由定位的图层只在尺寸定死时才有一边说了算：页面的核对按几何判断（`max-width`、自带尺寸都算）；画布那边按声明的宽度、高度，不排版（ADR 0011）。
+3. `placedFrom` 一起改，从右往左、宽度定死、两边都写的按右边处理。
+4. 页面上自由定位、两边都写、尺寸定死的图层，`done` 按浏览器把它摆在哪里核对，从左往右的 `right`、上下方向的 `bottom` 也一样，移动和新建图层的核对也一样。从左往右会变的三种结果见上面代定第 4 条的 (a)、(b)、(c)；上下方向哪一边说了算没变。指挥已按「代定」接受，条件是包含块那条（上面第 4 条）修好、不让对的从左往右的输出变，已修。
+5. 说法照 84 已确认的那套。
+6. `sticky` 不分方向。
+7. **冻结时 `container-type` 盒子里的固定图层照窗口钉住**（新加）：探测过浏览器不把 `container-type` 当成接住固定图层的盒子，原来的判断把这种图层当成不在窗口上、不钉。现在和浏览器一样，画布上它跟着窗口的位置冻结；只影响这一种页面。
+
+*遗留风险，更新后*
+
+1. 属性面板里的 X（同上）。
+2. 包含块读错时，核对的空间也错（已改写，见上面遗留风险第 2 条）：还不认行内的定位参照（空间按外框量）、顶层的 `<dialog>` / popover。
+3. 画布那边「尺寸定死」仍按声明读（已改写，见上面遗留风险第 3 条）。
+4. 84 的遗留风险第 6 条在从右往左时反过来（同上）。
+5. **一个块里同时写了逻辑的和物理的边**：`sideDeclared` 按声明顺序取第一个，同一条规则里 `inset-inline-start` 和 `left` 都写时只认前一个；还有 `writing-mode` 竖排时逻辑的边不对到左右，按横排算。很少见。
+6. 读一次的记录会过时、一个视图代表一整段宽度；没跑真实 Agent（同上）。
+
+**暂停于 2026-11-03**
+
+独立审查找到的 1–8 条都改完、补了测试（c4196a3），全量通过：typecheck、单测 856 通过 1 跳过、node 65 条、e2e 399 通过 1 跳过，没有重跑；切换按钮的包逐字节相同。还剩：「从左往右输出逐字不变」那一项留给指挥定（代定第 4 条），代定第 7 条和更新后的代定、遗留风险等设计师确认；按审查修正后没有再跑 code-review。
