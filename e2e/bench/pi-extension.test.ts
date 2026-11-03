@@ -85,7 +85,10 @@ test("in pi, no tool reaches pi's own folder, where the designer's login is: by 
   assert.equal(call("ls", { path: "~" }), undefined);
 });
 
-test("in pi, fff's search tools go ahead anywhere, the whole project or outside it, but never reach pi's own folder: by their path, a glob in it, or a folder above it (ticket 92)", () => {
+/** fff's tools under the names of pi's own, as override mode has them, and under their own, which fff falls back on. */
+const FFF_NAMES: Record<string, string[]> = { ffgrep: ["grep", "ffgrep"], fffind: ["find", "fffind"], "fff-multi-grep": ["multi_grep", "fff-multi-grep"] };
+
+test("in pi, fff's search tools go ahead anywhere, the whole project or outside it, but never reach pi's own folder: by their path, a glob in it, the folder fff indexes for it, or a folder above it; by either name (ticket 92)", () => {
   const pi = join(homedir(), ".pi");
   for (const [tool, input] of [
     ["ffgrep", { pattern: "Card" }],
@@ -103,7 +106,7 @@ test("in pi, fff's search tools go ahead anywhere, the whole project or outside 
     ["fff-multi-grep", { patterns: ["Card"], constraints: "*.{ts,tsx} !test/" }],
     ["fff-multi-grep", { patterns: ["Card"], constraints: "!~/.pi/" }],
   ] as const) {
-    assert.equal(call(tool, input), undefined, `${tool} ${JSON.stringify(input)}`);
+    for (const name of FFF_NAMES[tool]) assert.equal(call(name, input), undefined, `${name} ${JSON.stringify(input)}`);
   }
   for (const [tool, input] of [
     ["ffgrep", { pattern: "key", path: "~/.pi/agent" }],
@@ -126,10 +129,10 @@ test("in pi, fff's search tools go ahead anywhere, the whole project or outside 
     ["fff-multi-grep", { patterns: ["key"], constraints: "*.json ~/.pi/" }],
     ["fff-multi-grep", { patterns: ["key"], constraints: "~" }],
   ] as const) {
-    assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+    for (const name of FFF_NAMES[tool]) assert.ok(blocked(call(name, input)), `${name} ${JSON.stringify(input)}`);
   }
-  assert.ok(blocked(call("ffgrep", { pattern: "key", path: 42 })));
-  assert.ok(blocked(call("fff-multi-grep", { patterns: ["key"], constraints: ["~/.pi"] })));
+  assert.ok(blocked(call("grep", { pattern: "key", path: 42 })));
+  assert.ok(blocked(call("multi_grep", { patterns: ["key"], constraints: ["~/.pi"] })));
 });
 
 test("in pi, a cd stays in the project, its folder by its real path, following the cds before it on the line; so a search with no path stays there too", () => {

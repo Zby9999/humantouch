@@ -119,18 +119,18 @@ test("a pi transcript (--mode json) gives its provider and model, the model the 
   assert.equal(checkReport(transcript.finalText, [1, 2]).compliant, true);
 });
 
-test("a pi transcript with fff gives fff's tools among those it was given, and each fff search as a tool call with its path, counted as a search over the project unless held to one file (ticket 92)", () => {
+test("a pi transcript with fff gives fff's grep and find, under the names of pi's own, among the tools it was given, told apart by their parameters; each of their calls is fff's, with its path, counted as a search over the project unless held to one file (ticket 92)", () => {
   // PROVISIONAL: written by hand from pi-fff 0.11.0's source, not cut from a run (see its first line); to be replaced after the first real run with fff.
   const transcript = parseTranscript("pi", readFileSync(new URL("./fixtures/pi-fff.provisional.jsonl", import.meta.url), "utf8"));
 
-  assert.deepEqual(transcript.tools, ["read", "bash", "edit", "write", "ls", "ffgrep", "fffind"]);
+  assert.deepEqual(transcript.tools, ["read", "bash", "edit", "write", "ls", "grep", "find"]);
   assert.deepEqual(
-    transcript.toolCalls.filter((call) => call.name.startsWith("ff")).map(({ output, ...call }) => call),
+    transcript.toolCalls.filter((call) => call.fff).map(({ output, ...call }) => call),
     [
-      { name: "ffgrep" },
-      { name: "fffind" },
-      { name: "ffgrep", path: "src/components/Dialog.tsx" },
-      { name: "ffgrep", path: "*.css" },
+      { name: "grep", fff: true },
+      { name: "find", fff: true },
+      { name: "grep", fff: true, path: "src/components/Dialog.tsx" },
+      { name: "grep", fff: true, path: "*.css" },
     ],
   );
   assert.equal(transcript.toolCalls[2].output, "src/App.tsx  [modified in git]\n 24: Open dialog");
@@ -140,9 +140,17 @@ test("a pi transcript with fff gives fff's tools among those it was given, and e
   assert.deepEqual([stats.claims, stats.dones, stats.finished], [1, 1, true]);
 });
 
-test("fff's searches are over the project, or a folder of it, unless held to one file: with no path, a folder, a glob, several constraints or one left out, they are; with one file's path, they are not (ticket 92)", () => {
+test("fff's searches are over the project, or a folder of it, unless held to one file: with no path, a folder, a glob, several constraints or one left out, they are; with one file's path, they are not; pi's own grep with a path like a file's is as before (ticket 92)", () => {
   const search = (name: string, path?: string): ToolCall => ({ name, ...(path === undefined ? {} : { path }), output: "" });
+  const fff = (name: string, path?: string): ToolCall => ({ ...search(name, path), fff: true });
   for (const call of [
+    fff("grep"),
+    fff("grep", "src/"),
+    fff("grep", "*.tsx"),
+    fff("grep", "src/**/*.tsx"),
+    fff("find"),
+    fff("find", "src/components/"),
+    fff("find", "**/*.css"),
     search("ffgrep"),
     search("ffgrep", "src/"),
     search("ffgrep", "src"),
@@ -160,7 +168,17 @@ test("fff's searches are over the project, or a folder of it, unless held to one
   ]) {
     assert.ok(isRepoWideSearch(call), JSON.stringify(call));
   }
-  for (const call of [search("ffgrep", "src/App.tsx"), search("ffgrep", "App.tsx"), search("fffind", "/t/run/src/index.css"), search("fff-multi-grep", "src/App.tsx")]) {
+  for (const call of [
+    search("ffgrep", "src/App.tsx"),
+    search("ffgrep", "App.tsx"),
+    search("fffind", "/t/run/src/index.css"),
+    search("fff-multi-grep", "src/App.tsx"),
+    fff("grep", "src/App.tsx"),
+    fff("find", "App.tsx"),
+    // pi's own grep (the runs before ticket 92) takes no glob as path: one with an extension is a file.
+    search("grep", "*.tsx"),
+    search("grep", "/t/run/src/App.tsx"),
+  ]) {
     assert.equal(isRepoWideSearch(call), false, JSON.stringify(call));
   }
 });

@@ -24,6 +24,8 @@ export interface ToolCall {
   output: string;
   /** How long it was, when the transcript gives only that (Cursor, for a long file read). */
   size?: number;
+  /** For one of fff's searches in pi (pi-fff, ticket 92), by the parameters the system prompt declares for its tool: grep and find in override mode, under the names of pi's own. */
+  fff?: boolean;
 }
 
 export interface Transcript {
@@ -135,8 +137,10 @@ function parseCursor(all: Event[]): Transcript {
 /**
  * pi tells each message as it starts, as it streams and as it ends; only the
  * end is the whole of it. The first is the system prompt, with the skills it
- * lists and the tools it declares. The model is each answer's, as its provider and id: pi says nothing
- * of it before, and starts no subagent of its own (nor does the bench give it
+ * lists and the tools it declares, fff's told from pi's own grep and find,
+ * whose names they take in override mode, by their parameters: fff's have
+ * `exclude` and `cursor`, pi's neither. The model is each answer's, as its
+ * provider and id: pi says nothing of it before, and starts no subagent of its own (nor does the bench give it
  * an extension that does), so an answer on another model is a switch, and the
  * transcript names every model, which is no Agent's pinned one. Each tool
  * call is in the answer that makes it, and what it got back in the tool
@@ -148,6 +152,7 @@ function parsePi(all: Event[]): Transcript {
   const byId = new Map<string, ToolCall>();
   const models = new Set<string>();
   const responseModels = new Set<string>();
+  const fffTools = new Set<string>();
   let prompted = false;
   for (const event of all) {
     if (event.type === "auto_retry_start") transcript.apiRetries++;
@@ -158,6 +163,7 @@ function parsePi(all: Event[]): Transcript {
       const listed = /<available_skills>([\s\S]*?)<\/available_skills>/.exec(message.sections?.skills ?? "")?.[1] ?? "";
       transcript.skills = [...listed.matchAll(/<name>([\s\S]*?)<\/name>/g)].map((match) => unescapeXml(match[1].trim()));
       transcript.tools = (message.toolsAdded ?? []).map((tool: Event) => tool.name);
+      for (const tool of message.toolsAdded ?? []) if (tool.parameters?.properties?.exclude && tool.parameters?.properties?.cursor) fffTools.add(tool.name);
     }
     if (message.role === "assistant") {
       const model = message.provider ? `${message.provider}/${message.model}` : message.model;
@@ -167,7 +173,7 @@ function parsePi(all: Event[]): Transcript {
       if (text.trim()) transcript.finalText = text;
       for (const part of message.content ?? []) {
         if (part.type !== "toolCall") continue;
-        const call: ToolCall = { name: part.name, ...where(part.arguments ?? {}), output: "" };
+        const call: ToolCall = { name: part.name, ...where(part.arguments ?? {}), ...(fffTools.has(part.name) && { fff: true }), output: "" };
         byId.set(part.id, call);
         transcript.toolCalls.push(call);
       }
@@ -239,7 +245,7 @@ function thirdKindCommands(command: string): string[] {
 }
 
 const SEARCH_TOOLS = /^(grep|glob|search|codebase_?search|semantic_?search|file_?search|ripgrep|find)$/i;
-/** fff's search tools in pi (pi-fff, ticket 92), by the names they have beside pi's own (and fff-multi-grep's in pi-fff's override mode, where the other two take the names of pi's own grep and find). */
+/** fff's search tools in pi (pi-fff, ticket 92) by the names that are theirs alone: beside pi's own (when fff does not index the folder pi runs in), and multi_grep in override mode. */
 const FFF_TOOLS = /^(ffgrep|fffind|fff-multi-grep|multi_grep)$/;
 const SHELL_SEARCH = /(^|[\s;&|(])(rg|ag|ack|fd|find|git\s+grep)\s|(^|[\s;&|(])grep\s+(-\w*[rR]\w*|--recursive)\b/;
 
@@ -250,9 +256,10 @@ const ONE_FILE = /\.[a-z0-9]+$/i;
  * A search over the project or a folder of it: a search tool not given one
  * file, or a shell command that searches folders (`rg`, `find`, `git grep`,
  * `grep -r`). Goal: none (docs/goals.md, Light): the change notes say where
- * each change goes. fff's are judged alike, but their path may be a glob
- * (`*.tsx`, `src/**`), which names no one file: `ffgrep` or `fffind` with no
- * path, a folder or a glob, and `fff-multi-grep` with no constraint, or any
+ * each change goes. fff's (pi's grep and find with pi-fff, ffgrep, fffind,
+ * and the multi-greps) are judged alike, but their path may be a glob
+ * (`*.tsx`, `src/**`), which names no one file: grep or find with no path, a
+ * folder or a glob, and a multi-grep with no constraint, or any
  * but one file (`*.{ts,tsx} !test/`), search the project or a folder of it;
  * given one file, by a path with an extension and no glob, they do not
  * (a bare name, `App.tsx`, looks in every folder for it, as a search for
@@ -260,7 +267,7 @@ const ONE_FILE = /\.[a-z0-9]+$/i;
  */
 export function isRepoWideSearch(call: ToolCall): boolean {
   if (call.command !== undefined) return SHELL_SEARCH.test(call.command);
-  if (FFF_TOOLS.test(call.name)) {
+  if (call.fff || FFF_TOOLS.test(call.name)) {
     const path = call.path?.trim();
     // A glob, or more than one, or one left out.
     return path === undefined || /[*?[{\s!]/.test(path) || !ONE_FILE.test(path);

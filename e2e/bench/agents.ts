@@ -127,8 +127,8 @@ const DESIGNERS_PI = join(homedir(), ".npm-global/bin/pi");
 const COMMAND_CODE = join(homedir(), ".pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider");
 
 /**
- * pi-fff, another extension the designer installed in pi (ticket 92): fff's search tools, `fffind` and `ffgrep`,
- * in place of pi's own find and grep, which need fd and rg. Its finder is a native library its npm package brings
+ * pi-fff, another extension the designer installed in pi (ticket 92): fff's search tools in place of pi's own find
+ * and grep, which need fd and rg, by their names (its override mode). Its finder is a native library its npm package brings
  * along (`@ff-labs/fff-bin-<platform>`): nothing is fetched, on or off the Agent's PATH.
  */
 export const PI_FFF = join(homedir(), ".pi/agent/npm/node_modules/@ff-labs/pi-fff");
@@ -278,10 +278,10 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--no-extensions",
       "-e",
       COMMAND_CODE,
-      // fff's search tools, unrestricted, under their own names (`--fff-mode tools-only`: no file completion, which a
-      // run with no terminal has no use for), so a transcript tells them from pi's own grep. Pinned here, over the
-      // designer's pi-fff.json (~/.pi/agent, which pi-fff reads all the same: one it finds invalid stops pi before
-      // any model call).
+      // fff's search tools, unrestricted, as the designer's own pi has them: in override mode, under the names of pi's
+      // own grep and find, which they take the place of (a transcript tells them apart by the parameters its system
+      // prompt declares: metrics.ts, parsePi). Pinned here, over the designer's pi-fff.json (~/.pi/agent, which
+      // pi-fff reads all the same: one it finds invalid stops pi before any model call).
       // Each run's databases are its own, in its folder: none reads or writes the designer's (~/.pi/agent/fff), or
       // another run's. Following links into folders is pi-fff's default, pinned; its other settings (indexing the
       // home folder or the root) only tell on a search over a folder above ~/.pi, which the bench's extension blocks,
@@ -289,7 +289,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "-e",
       PI_FFF,
       "--fff-mode",
-      "tools-only",
+      "override",
       "--fff-frecency-db",
       fffDb(folder, "frecency"),
       "--fff-history-db",
@@ -306,12 +306,12 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--no-themes",
       // Trusts the project, as it would be once the designer has opened it in pi.
       "--approve",
-      // The tools of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode. fff's in place
-      // of pi's own grep and find (Claude's Grep and Glob), as pi-fff's override mode has them: pi's find needs fd,
-      // which is not on the Agent's PATH, and --offline stops pi fetching it. Not fff-multi-grep: pi-fff 0.11.0
-      // leaves it out unless PI_FFF_MULTIGREP=1, which the Agent's environment does not set (cleanEnv).
+      // The tools of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode. grep and find
+      // (Claude's Grep and Glob) are fff's: pi's own find would need fd, which is not on the Agent's PATH, and
+      // --offline stops pi fetching it. No multi_grep: pi-fff 0.11.0 leaves it out unless PI_FFF_MULTIGREP=1, which
+      // neither the designer's shell nor the Agent's environment (cleanEnv) sets.
       "--tools",
-      "read,bash,edit,write,ls,ffgrep,fffind",
+      "read,bash,edit,write,ls,grep,find",
     ],
     prepare(_dir, folder) {
       // A copy in the run's folder: the command line is the same from any checkout, and the run keeps what it ran with.

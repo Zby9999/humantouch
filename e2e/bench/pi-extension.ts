@@ -8,9 +8,9 @@
  * own tools are held to two path rules: `write` and `edit` stay in the
  * project (the folder pi runs in), and no tool or command reaches pi's own
  * folder (~/.pi), where the designer's login is; reading elsewhere goes
- * ahead, as Claude Code's Read does. fff's search tools (pi-fff, ticket 92)
- * are held to the second only: the designer let them search as they will,
- * with no broad-search guard. A call the extension cannot check is blocked.
+ * ahead, as Claude Code's Read does. The search tools, fff's (pi-fff,
+ * ticket 92), are held to the second only, by the folder they index: the
+ * designer let them search as they will, with no broad-search guard. A call the extension cannot check is blocked.
  * And pi has no switch for leaving out only the designer's global AGENTS.md:
  * this keeps the instructions files inside the project, as Claude Code's
  * `--setting-sources project,local` does.
@@ -26,16 +26,27 @@ interface PiExtensionApi {
   on(event: "tool_call" | "before_agent_start", handler: (event: any, ctx?: any) => unknown): void;
 }
 
-/** pi's own tools that work on a path, and those of them that search all below it. */
-const PATH_TOOLS = ["read", "grep", "find", "ls", "write", "edit"];
-const SEARCHES = ["grep", "find"];
+/** pi's own tools that work on a path, its searches aside. */
+const PATH_TOOLS = ["read", "ls", "write", "edit"];
 /**
- * fff's search tools (pi-fff), and the argument each is pointed with: a path
- * (a folder, a file or a glob, which may be outside the project: ~/ and ../
- * included), or for fff-multi-grep (on the project only, but checked all the
- * same) a line of them, `!` before those it leaves out.
+ * The search tools, and the argument each is pointed with. In the bench's
+ * runs grep and find are fff's (pi-fff in override mode, ticket 92); fff's
+ * own names are those it falls back on when it does not index the folder pi
+ * runs in, and multi_grep comes only with PI_FFF_MULTIGREP=1. Each is
+ * pointed by a path (a folder, a file or a glob, which may be outside the
+ * project: ~/ and ../ included), or the multi-greps (on the project only,
+ * but checked all the same) by a line of them, `!` before those they leave
+ * out. pi's own grep and find, were they run, take a folder or a file as
+ * path: the same check holds them, a file's folder for a file.
  */
-const FFF_SEARCHES: Record<string, "path" | "constraints"> = { ffgrep: "path", fffind: "path", "fff-multi-grep": "constraints" };
+const SEARCHES: Record<string, "path" | "constraints"> = {
+  grep: "path",
+  find: "path",
+  multi_grep: "constraints",
+  ffgrep: "path",
+  fffind: "path",
+  "fff-multi-grep": "constraints",
+};
 /** The shell commands of the list that can read all below a folder. */
 const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
 
@@ -75,7 +86,7 @@ function withHome(path: string): string {
  * a bare name matches that name in any folder there. So `~/{.pi,x}` and
  * `~/auth.json` both index all of ~.
  */
-function fffRoot(path: string): string {
+function searchRoot(path: string): string {
   const parts = path.split(sep);
   const glob = parts.findIndex((part) => /[*?[{]/.test(part));
   for (let dir = glob < 0 ? path : parts.slice(0, glob).join(sep) || sep; ; dir = dirname(dir)) {
@@ -195,17 +206,17 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
     if (reaches === "out") return block(deniedReason(command));
     return reaches === "pi" ? intoPi(command) : undefined;
   }
-  if (toolName in FFF_SEARCHES) {
-    // Each folder it searches, or with none the project; a folder above pi's own reaches it, as for grep.
-    const given = input[FFF_SEARCHES[toolName]];
+  if (Object.hasOwn(SEARCHES, toolName)) {
+    // Each folder it indexes, or with none the project; a folder above pi's own reaches it.
+    const given = input[SEARCHES[toolName]];
     if (given !== undefined && typeof given !== "string") throw new Error("An argument that is no string");
-    const words = FFF_SEARCHES[toolName] === "path" ? [given] : (given ?? "").split(/\s+/).filter((word) => word && !word.startsWith("!"));
+    const words = SEARCHES[toolName] === "path" ? [given] : (given ?? "").split(/\s+/).filter((word) => word && !word.startsWith("!"));
     const paths = words.length ? words : [undefined];
-    return paths.some((word) => reachesPi(fffRoot(toolPath(word, cwd)), true)) ? intoPi(`${toolName} ${given ?? "."}`) : undefined;
+    return paths.some((word) => reachesPi(searchRoot(toolPath(word, cwd)), true)) ? intoPi(`${toolName} ${given ?? "."}`) : undefined;
   }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);
-  if (reachesPi(path, SEARCHES.includes(toolName))) return intoPi(`${toolName} ${input.path ?? "."}`);
+  if (reachesPi(path, false)) return intoPi(`${toolName} ${input.path ?? "."}`);
   if ((toolName === "write" || toolName === "edit") && !realPath(path).startsWith(realPath(cwd) + sep)) {
     return block(`${DENIED} writing in the project only. Turned away: ${toolName} ${input.path}`);
   }

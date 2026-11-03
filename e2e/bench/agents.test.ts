@@ -110,9 +110,9 @@ test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, un
     process.env.TK_BENCH_PI = "/opt/pi";
     const line = commandLine("pi");
     assert.match(line, /^\/opt\/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek\/deepseek-v4\.1-flash --thinking high --no-session --offline /);
-    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '?\S+\/@ff-labs\/pi-fff'? --fff-mode tools-only --fff-frecency-db '<run folder>\/fff\/frecency' --fff-history-db '<run folder>\/fff\/history' --fff-follow-symlinks -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/03kind --no-prompt-templates --no-themes --approve /);
-    // fff's grep and find in place of pi's own (ticket 92).
-    assert.match(line, / --tools read,bash,edit,write,ls,ffgrep,fffind$/);
+    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '?\S+\/@ff-labs\/pi-fff'? --fff-mode override --fff-frecency-db '<run folder>\/fff\/frecency' --fff-history-db '<run folder>\/fff\/history' --fff-follow-symlinks -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/03kind --no-prompt-templates --no-themes --approve /);
+    // grep and find are fff's, in place of pi's own (ticket 92).
+    assert.match(line, / --tools read,bash,edit,write,ls,grep,find$/);
     assert.equal(AGENTS.pi.model, "command-code/deepseek/deepseek-v4.1-flash");
   } finally {
     if (saved === undefined) delete process.env.TK_BENCH_PI;
@@ -144,9 +144,9 @@ test("pi runs with pi-fff, the designer's installed copy, its databases in the r
   assert.equal(value("--fff-frecency-db"), join(folder, "fff/frecency"));
   assert.equal(value("--fff-history-db"), join(folder, "fff/history"));
   assert.ok(!args.some((arg) => /\.pi\/agent\/fff/.test(arg)));
-  assert.equal(value("--fff-mode"), "tools-only");
-  // pi's own grep and find are off: fff's stand in for them.
-  assert.deepEqual(value("--tools").split(",").sort(), ["bash", "edit", "fffind", "ffgrep", "ls", "read", "write"]);
+  // fff's grep and find under the names of pi's own, as the designer's pi has them; no multi_grep.
+  assert.equal(value("--fff-mode"), "override");
+  assert.deepEqual(value("--tools").split(",").sort(), ["bash", "edit", "find", "grep", "ls", "read", "write"]);
 
   const installed = mkdtempSync(join(scratch, "pi-fff-"));
   writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "@ff-labs/pi-fff", version: "0.11.0" }));
