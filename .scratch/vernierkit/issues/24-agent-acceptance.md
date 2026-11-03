@@ -4,7 +4,7 @@
 
 参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准（「Light」「Reversible」），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
-**Blocked by:** 88；包已发布到 npm（设计师自己操作，发布前把 GitHub 仓库设为公开）
+**Blocked by:** 88、91；包已发布到 npm（设计师自己操作，发布前把 GitHub 仓库设为公开）
 
 **Status:** ready-for-human
 
@@ -21,7 +21,7 @@
 
 - Agent 验收拆开：先跑落地验收（ticket 88），再发布到 npm（设计师自己操作），最后跑安装验收（本 ticket）。理由：落地验收不依赖发布，可能要改 Skill 措辞，改好再发布第一版；安装验收要照 For Agents 原文，第 1 步只有发布后才跑得通。
 - 这次只验 Claude（Sonnet，high）和无头 pi（command-code 的 DeepSeek v4.1 flash）：Cursor 没有额度。docs/goals.md 不改：Codex、Cursor 以后还要验，这次不算偏离。
-- 测量台接上 pi 在 ticket 85，标准场景补全在 86、87。
+- 测量台接上 pi 在 ticket 85，标准场景补全在 86、87，安装验收的测量台（命令名单、计时、判成功的办法）在 91。
 
 ## Comments
 

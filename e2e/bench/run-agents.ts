@@ -4,7 +4,7 @@
  * unattended, and the run is measured from what it left behind. Pages open in
  * Playwright's headless shell only: nothing takes the designer's focus.
  *
- *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
+ *   pnpm bench:agents [--agents claude,pi] [--scenarios id,…] [--runs 3] [--max-runs n]
  *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
  *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
@@ -19,10 +19,10 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
+import { agentVersion, AGENTS, commandLine, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
@@ -60,7 +60,7 @@ interface RawRun {
   commandLine: string;
   /** False for a run in a project with no Skill (`--no-skill`); missing in runs before ticket 65, which all had it. */
   skill?: boolean;
-  /** The effort the command line sets, and, for Claude Code, the one its debug log shows the session ran at. */
+  /** The effort the command line sets, and the one the session ran at, as Claude Code's debug log or pi's transcript shows it. */
   effort: { set: string; seen: string | null };
   exitCode: number | null;
   timedOut: boolean;
@@ -98,7 +98,7 @@ async function main(argv: string[]) {
     const at = argv.indexOf(`--${name}`);
     return at < 0 ? undefined : argv[at + 1];
   };
-  const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
+  const agents = (option("agents") ?? "claude,pi").split(",") as AgentName[];
   const scenarios = option("scenarios") ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : SCENARIOS;
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
@@ -107,9 +107,10 @@ async function main(argv: string[]) {
   const claimOut = option("claim-out");
   const skill = !argv.includes("--no-skill");
   const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
-  for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
+  for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: ${Object.keys(AGENTS).join(", ")}`);
 
-  const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
+  // Absolute: the Agent runs in the project, and finds its own files in the run folder by this path.
+  const out = resolve(option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-")));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
   console.log(dry ? `Setting up ${plan} scenarios, with no Agent.` : `${plan} Agent runs: ${agents.join(", ")} × ${scenarios.length} scenarios × ${runs}${skill ? "" : ", with no Skill"}. Raw results in ${out}`);
 
@@ -382,7 +383,7 @@ async function runOnce({
       version,
       commandLine: commandLine(agent, prompt),
       skill,
-      effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
+      effort: { set: AGENTS[agent].effort, seen: AGENTS[agent].effortSeen?.(folder) ?? null },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
       stalledNotices: times.stalledNotices.length,
@@ -439,6 +440,8 @@ export function measureFolder(folder: string) {
     version: raw.version,
     skill: raw.skill ?? true,
     model: transcript.model,
+    responseModels: transcript.responseModels,
+    skills: transcript.skills,
     changes: count,
     exitCode: raw.exitCode,
     timedOut: raw.timedOut,
@@ -546,6 +549,8 @@ function writeSummary(out: string) {
       agent,
       versions: [...new Set(mine.map((m) => m.version))],
       models: [...new Set(mine.map((m) => m.model))],
+      responseModels: [...new Set(mine.flatMap((m) => m.responseModels))],
+      skills: [...new Set(mine.flatMap((m) => m.skills))],
       subagentModels: [...new Set(mine.flatMap((m) => m.subagents.models))],
       efforts: [...new Set(mine.map((m) => (m.effort ? `${m.effort.set}${m.effort.seen ? `, seen ${m.effort.seen}` : ""}` : "?")))],
       skill: mine.every((m) => m.skill) ? "yes" : mine.some((m) => m.skill) ? "mixed" : "no",
@@ -572,7 +577,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
+        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}${agent.responseModels.length ? `（提供商回答的模型 ${agent.responseModels.join(", ")}）` : ""}，加载的 skills ${agent.skills.join(", ") || "记录里没有"}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
         "| 指标 | 中位数（范围） | 次数 |",
         "|---|---|---|",
