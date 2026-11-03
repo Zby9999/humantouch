@@ -8,6 +8,8 @@
  *
  * The scenarios drive the editor layer as a designer does; the e2e test
  * `bench-scenarios.spec.ts` checks they still make the changes they name.
+ * The scenarios on the other examples are in `scenarios-other-examples.ts`,
+ * with the helpers here.
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
 import type { Change } from "../../packages/03kind/src/client/changeset.ts";
@@ -36,9 +38,9 @@ export interface SavedChange {
   after?: any;
   /** A layer placed by its X and Y: the margins the canvas draws it past them by. */
   margins?: { x: number; y: number };
-  /** A change at a breakpoint: its range, and the parts of it the page was read in. */
+  /** A change at a breakpoint: its range, and the parts of it the page was read in (null: yet to be read; none: the range is one part). */
   breakpoint?: object;
-  parts?: object[];
+  parts?: object[] | null;
 }
 
 /**
@@ -63,40 +65,56 @@ export interface ScenarioChange {
   shows?: Shows;
 }
 
+/** The example projects a scenario can run on: folders of `examples/`. */
+export type Example = "vite-react19-tw4" | "vite-react18-tw3" | "next-app-css-modules";
+
 export interface Scenario {
   id: string;
+  /** The example project it runs on; the Vite + React 19 + Tailwind v4 one when not given. */
+  example?: Example;
   /** What the designer does, in words. */
   title: string;
   /** Makes the round in the editor layer, and waits until it is saved. */
   design(desk: Desk): Promise<void>;
   changes: ScenarioChange[];
+  /**
+   * Writes the code an Agent applying the round right would, through
+   * `desk.edit`, once the round is claimed: the bench's scripted pass
+   * (`--scripted`) plays the Agent with it, so the page must then show every
+   * change. That checks the scenario's own tests (`shows`) can tell a change
+   * applied, not only one not yet.
+   */
+  script?(desk: Desk): Promise<void>;
 }
 
-const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
-const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
-const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
-const layer = (page: Page, name: string, nth = 0) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).nth(nth);
+/** The example project a scenario runs on. */
+export const exampleOf = (scenario: Scenario): Example => scenario.example ?? "vite-react19-tw4";
 
-async function enterEditMode(page: Page) {
+export const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
+export const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
+export const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
+export const layer = (page: Page, name: string, nth = 0) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).nth(nth);
+
+export async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await desktop(page).contentFrame().locator("article").first().waitFor();
   await phone(page).contentFrame().locator("article").first().waitFor();
 }
 
-async function setField(page: Page, name: string, value: string) {
+export async function setField(page: Page, name: string, value: string) {
   const field = design(page).getByRole("textbox", { name, exact: true });
   await field.fill(value);
   await field.press("Enter");
 }
 
-async function boxOf(locator: Locator) {
+export async function boxOf(locator: Locator) {
   const box = await locator.boundingBox();
   if (!box) throw new Error(`Not on screen: ${locator}`);
   return box;
 }
 
 /** Selects, in a view, the deepest layer just inside the top left of what `selector` finds there: the view is the one worked in from then on. */
-async function pick(page: Page, view: Locator, selector: string) {
+export async function pick(page: Page, view: Locator, selector: string) {
   const box = await boxOf(view.contentFrame().locator(selector).first());
   await page.keyboard.down("ControlOrMeta");
   await page.mouse.click(box.x + 4, box.y + 4);
@@ -135,13 +153,13 @@ async function moveOffTheCanvas(page: Page, name: string, onCanvas: Locator) {
 }
 
 /** Waits until the round has `count` changes saved. */
-async function saved(desk: Desk, count: number) {
+export async function saved(desk: Desk, count: number) {
   for (let tries = 0; desk.changeSet()?.changes.length !== count; tries++) {
     if (tries > 100) throw new Error(`The round has ${desk.changeSet()?.changes.length ?? 0} changes saved, not ${count}`);
     await desk.page.waitForTimeout(100);
   }
-  // A style change at a breakpoint is saved again once the page is read in each part of its range (ticket 65): the example's ranges all have parts.
-  const unread = () => desk.changeSet()!.changes.filter((change) => change.kind === "style" && change.breakpoint && !(PLACING as readonly string[]).includes(change.property ?? "") && !change.parts);
+  // A style change at a breakpoint the project's breakpoints cut into parts is saved again once the page is read in each part of its range (ticket 65): till then its `parts` is null.
+  const unread = () => desk.changeSet()!.changes.filter((change) => change.kind === "style" && change.breakpoint && !(PLACING as readonly string[]).includes(change.property ?? "") && change.parts === null);
   for (let tries = 0; unread().length; tries++) {
     if (tries > 100) throw new Error(`Changes ${unread().map((change) => change.id).join(", ")} are saved with no parts of their range read`);
     await desk.page.waitForTimeout(100);
