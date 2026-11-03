@@ -213,3 +213,7 @@ End your reply with this report. Each change is under the heading the page's che
 （接实现记录的遗留风险）
 
 4. **只在某个宽度以上自由定位的图层，`done` 在窄的宽度叫 Agent 去设 `position`**。场景：图层只在 md 以上自由定位（例如 `md:absolute`，手机宽度在排版里），设计师在桌面视图改它的 X，作用于所有宽度。`done` 在 390px 宽度核对时，页面那里不是自由定位，说「At 390px wide, the layer is not placed absolute, not absolute at X …: check its `position` and `left` …」，要 Agent 在手机宽度也设成自由定位；但画布在那个宽度也不是自由定位，Agent 照做反而和画布不一样。这是 ticket 64（在页面窗口以外的宽度也核对）起就有的老问题，原来说的是「Something overrides your change」，80 的新说法让它更像一个明确的指令，更误导。这次没修，留给指挥开新 ticket、交设计师分诊。
+
+## 设计师确认（2026-11-03）
+
+上面「代定的事（待设计师确认）」全部确认，照现在的做法。
