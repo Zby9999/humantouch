@@ -10,11 +10,13 @@
  * (`calc(50% + 20px)`, ticket 79).
  */
 import { AXIS_SIZE, OTHER_EDGE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
+import { declaredByEdit } from "./canvas-style";
+import { containingBlockOf, directionPlacing } from "./containing-block";
 import { absolute, declaredValue, round } from "./property-table";
 import { split } from "./paint";
 import { insideBorder, marginsOf } from "./stacks";
 import type { Axis } from "./snap";
-import { pinnedOf } from "./style-source";
+import { declarationsOf, pinnedOf } from "./style-source";
 
 /**
  * How `el` is placed along `axis`, as it is laid out in its document (the
@@ -30,7 +32,7 @@ import { pinnedOf } from "./style-source";
 export function placedFrom(el: Element, axis: Axis): PlacedFrom {
   const { start, end } = SIDES[axis];
   if (!absolute(el) || pinnedOf(el).includes(start)) return { edge: "start", centered: false };
-  const edge: Edge = declared(el, end) && endOffsetPlaces(el, axis) ? "end" : "start";
+  const edge: Edge = sideDeclared(el, axis, "end") && endOffsetPlaces(el, axis) ? "end" : "start";
   // Moved back half its size from where it is placed (forward, placed from the end): centered there.
   const { width, height } = el.getBoundingClientRect();
   const half = (axis === "x" ? width : height) / 2;
@@ -49,71 +51,88 @@ export function placedFrom(el: Element, axis: Axis): PlacedFrom {
  */
 export function endOffsetPlaces(el: Element, axis: Axis): boolean {
   const { start } = SIDES[axis];
-  return absolute(el) && !pinnedOf(el).includes(start) && (!declared(el, start) || sizedFromEnd(el, axis));
+  return absolute(el) && !pinnedOf(el).includes(start) && (!sideDeclared(el, axis, "start") || endGoneBy(el, axis));
 }
 
 /**
  * The edge the browser places `el` from along `axis` where it is given a
  * value for the side from each, more than it can keep (ticket 89): down, its
- * top; across, as its containing block runs, its left left to right, its
- * right right to left (`direction: rtl`). The containing block's, not its
- * own: so the browser goes (CSS 2.1, 9.3.2, 10.3.7), for a layer placed
+ * top; across, as the box that places it runs (`directionPlacing`), its left
+ * left to right, its right right to left (`direction: rtl`). That box's, not
+ * its own: so the browser goes (CSS 2.1, 9.3.2, 10.3.7), for a layer placed
  * relative and one placed absolute alike. Read from computed styles alone.
  */
 export function edgeGoneBy(el: Element, axis: Axis): Edge {
-  return axis === "x" && getComputedStyle(containingBlockOf(el)).direction === "rtl" ? "end" : "start";
+  return axis === "x" && directionPlacing(el) === "rtl" ? "end" : "start";
 }
 
 /**
- * Whether the browser places `el`, placed absolute and given both its sides
- * along `axis`, from the end edge: as large as it is set there (else both
- * place it, its size given by them), and gone by from that edge (`edgeGoneBy`).
+ * Whether the browser goes by the side from the end edge along `axis` of
+ * `el`, given both its sides there, as it is placed (ticket 89): relative, as
+ * the box that places it runs (`edgeGoneBy`); absolute or fixed, so too, but
+ * only as large as it is set there, as declared, with nothing laid out (else
+ * both sides place it, its size given by them). The one rule the canvas goes by.
  */
-const sizedFromEnd = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) && edgeGoneBy(el, axis) === "end";
+const endGoneBy = (el: Element, axis: Axis) => edgeGoneBy(el, axis) === "end" && (!absolute(el) || declared(el, AXIS_SIZE[axis]));
 
 /**
- * How far from its containing block's `edge` along `axis` the browser
- * places `el`, placed absolute, in px, as laid out (ticket 89, review): its
- * side's value, as the browser computes it; but given both its sides, as
- * large as it is set there, the side the browser does not go by
- * (`edgeGoneBy`) keeps its value as given and places nothing, so it is how
- * much room is left past the other side, its margins and its size.
+ * How far from the edge of the box that places it along `axis` the browser
+ * places `el`, placed absolute or fixed, in px, as laid out (ticket 89,
+ * review): its side's value, as the browser computes it; but given more than
+ * it can keep, its sides, margins and size adding up to other than that
+ * box's room (a size set, held by `max-width`, or its own, as a `<canvas>`'s
+ * is), the side the browser does not go by (`edgeGoneBy`) keeps its value as
+ * given and places nothing, so it is the room left past the other side, its
+ * margins and its size.
  */
 export function placedAt(el: Element, axis: Axis, edge: Edge): number {
-  const style = getComputedStyle(el);
-  const side = SIDES[axis][edge];
-  const value = parseFloat(style.getPropertyValue(side)) || 0;
-  const other = SIDES[axis][OTHER_EDGE[edge]];
-  if (!declared(el, side) || !declared(el, other) || !declared(el, AXIS_SIZE[axis]) || edgeGoneBy(el, axis) === edge) return value;
-  const container = containingBlockOf(el);
-  const root = el.ownerDocument.documentElement;
-  // Placed by the window, or by the page's root as the window is: what its root does not scroll.
-  const room = container === root ? (axis === "x" ? root.clientWidth : root.clientHeight) : roomIn(container)[axis];
-  return room - (roomOf(el, axis) - value);
+  const value = parseFloat(getComputedStyle(el).getPropertyValue(SIDES[axis][edge])) || 0;
+  const room = roomPlacing(el)[axis];
+  const taken = roomOf(el, axis);
+  return Math.abs(room - taken) <= 0.5 || edgeGoneBy(el, axis) === edge ? value : room - (taken - value);
 }
 
-/** The properties that, set otherwise than `none`, make an element the box that places those absolute and fixed in it, as a `transform` does. */
-const TRANSFORMS = ["transform", "translate", "rotate", "scale", "perspective"];
+/**
+ * How much room the box that places `el`, placed absolute or fixed, gives it
+ * along each axis, as laid out (`containingBlockOf`): its size inside its
+ * border (`roomIn`); the window's, what the page's root does not scroll.
+ */
+export function roomPlacing(el: Element): Record<Axis, number> {
+  const block = containingBlockOf(el);
+  if (block) return roomIn(block);
+  const root = el.ownerDocument.documentElement;
+  return { x: root.clientWidth, y: root.clientHeight };
+}
+
+/** The logical sides along each axis, as `inset-inline-*` and `inset-block-*` write them. */
+const LOGICAL = { x: "inline", y: "block" } as const satisfies Record<Axis, string>;
 
 /**
- * The element whose box places `el`, by its computed `position` (ticket 89):
- * in its container's layout, or relative or sticky, its parent; absolute, the
- * nearest one placed otherwise than static, or transformed (`transform`,
- * `translate`, `rotate`, `scale`, `perspective`); fixed, the nearest one
- * transformed; else the page's root, which stands for the window. Other ways
- * an element becomes the box that places those in it (a `filter`,
- * `contain`, `will-change`) are not read here.
+ * Whether the page or an edit gives `el` a value other than `auto` for its
+ * side along `axis` from `edge` (ticket 89, review): the physical one
+ * (`left`, `right`, `top`, `bottom`), or one that sets it, `inset`, or a
+ * logical side that is it as `el`'s own text runs (`inset-inline-start` is
+ * its `right` right to left, `inset-inline` both). An edit writes the
+ * physical one, which stands; a logical one the page declares in the same
+ * block as the physical one is not told apart.
  */
-function containingBlockOf(el: Element): Element {
-  const root = el.ownerDocument.documentElement;
-  const { position } = getComputedStyle(el);
-  if (position !== "absolute" && position !== "fixed") return el.parentElement ?? root;
-  let at = el.parentElement;
-  for (; at && at !== root; at = at.parentElement) {
-    const style = getComputedStyle(at);
-    if (TRANSFORMS.some((property) => style.getPropertyValue(property) !== "none") || (position === "absolute" && style.position !== "static")) return at;
-  }
-  return root;
+function sideDeclared(el: Element, axis: Axis, edge: Edge): boolean {
+  const side = SIDES[axis][edge];
+  const edit = declaredByEdit(el, side);
+  if (edit) return edit !== "auto";
+  const logical = axis === "x" && getComputedStyle(el).direction === "rtl" ? OTHER_EDGE[edge] : edge;
+  const [physical, own, both, all] = declarationsOf(el, [side, `inset-${LOGICAL[axis]}-${logical}`, `inset-${LOGICAL[axis]}`, "inset"]);
+  const set = (declaration: string | null, part = 0) => {
+    if (!declaration) return false;
+    const values = split(declaration.slice(declaration.indexOf(":") + 1).trim(), " ");
+    return (values[Math.min(part, values.length - 1)] ?? "auto") !== "auto";
+  };
+  // Written as itself, else through a shorthand of its own, as the cascade has them.
+  const name = physical?.slice(0, physical.indexOf(":")).trim();
+  if (name === side) return set(physical);
+  // `inset`: top, right, bottom, left.
+  const at = { top: 0, right: 1, bottom: 2, left: 3 }[side];
+  return set(own) || set(both, logical === "start" ? 0 : 1) || set(all, at);
 }
 
 /**
@@ -132,7 +151,7 @@ function containingBlockOf(el: Element): Element {
 export function sideMoves(el: Element, { axis, edge }: Side): "placed" | InLayout | null {
   const { position } = getComputedStyle(el);
   if (position === "relative" || position === "sticky")
-    return edge === "start" || position === "sticky" || !declared(el, SIDES[axis].start) || edgeGoneBy(el, axis) === "end" ? position : null;
+    return edge === "start" || position === "sticky" || !sideDeclared(el, axis, "start") || endGoneBy(el, axis) ? position : null;
   if (edge === "end") return endOffsetPlaces(el, axis) ? "placed" : null;
   return position === "static" ? null : "placed";
 }

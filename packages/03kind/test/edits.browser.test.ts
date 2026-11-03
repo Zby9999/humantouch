@@ -4321,6 +4321,166 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: 332, margin: 0 }, width: 390 });
   });
 
+  /** A page with no element placed otherwise than static round its tag, so the window places it: `html`, `body` and `phone` as `fromTheRight` has them (ticket 89, review). */
+  const byTheWindow = (tag: string, phone: string, html = "<html>", body = "<body") => `<!DOCTYPE html>
+${html}${body} style="margin: 0">
+  <style>
+    #board { height: 100px }
+    #tag { ${tag}; top: 8px; width: 50px; height: 20px }
+    @media (max-width: 500px) { #tag { ${phone} } }
+  </style>
+  <div id="board" ${loc("13:5")}><span id="tag" ${loc("14:7")}>Tag</span></div>
+</body></html>`;
+
+  test.each([
+    ["absolute, `dir` on the body", "position: absolute; left: 12px", "<html>", '<body dir="rtl"', { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
+    ["fixed, `dir` on the body", "position: fixed; left: 12px", "<html>", '<body dir="rtl"', { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
+    ["absolute, right to left on the root but left to right on the body", "position: absolute; left: 12px", '<html dir="rtl">', '<body dir="ltr"', { outcome: "shown" }],
+  ] as const)(
+    "a layer the window places, %s: the browser goes by the body's direction for the window, so an X of its `left` with a `right` of the page's own too is drawn by the side that direction has (ticket 89, review)",
+    async (_, tag, root, body, result) => {
+      const html = byTheWindow(tag, "right: 5px", root, body);
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", 30);
+      const [x] = changes.list();
+      expect([x.property, x.placedOtherwiseAt]).toEqual(["x", undefined]);
+      page.getElementById("tag")!.setAttribute("style", "left: 30px");
+      // Its `left` as the change has it at every width; on phones, a `right` of the page's own too: 390 - 5 - 50 is 335px.
+      const phone = pageAt(html.replace("</style>", "#tag { left: 30px }</style>"), 390);
+      expect(checkAcross(page, x, onCanvas(changes.list()), [390], () => phone)).toEqual(result);
+    },
+  );
+
+  test.each([
+    ["the body right to left", "<html>", '<body dir="rtl"', "right"],
+    ["the root right to left, the body left to right", '<html dir="rtl">', '<body dir="ltr"', "x"],
+  ] as const)("a layer the window places by its `left` and its `right` both, as wide as it is set, %s: moved, it is moved by the side the browser goes by for the window (ticket 89, review)", (_, root, body, property) => {
+    const { editor, changes, layer } = open(byTheWindow("position: absolute; left: 8px; right: 12px", "", root, body));
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    expect(changes.list().map((change) => change.property)).toEqual([property]);
+  });
+
+  test.each([
+    ["`inset-inline-start`, right to left", "inset-inline-start: 12px", rightToLeft, "right", 32],
+    ["`inset-inline`, left to right", "inset-inline: 8px 12px", (html: string) => html, "x", -12],
+    ["`inset-inline`, right to left", "inset-inline: 8px 12px", rightToLeft, "right", 28],
+  ] as const)("a layer placed absolute by %s: the logical side places it from the edge the direction has, so moved, that side changes (ticket 89, review)", (_, inset, laidOut, property, after) => {
+    const { doc, editor, changes, layer } = open(laidOut(fromTheRight().replace("right: 12px", inset)));
+    const tag = doc.getElementById("tag")!;
+    const was = tag.getBoundingClientRect().left;
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    expect(changes.list().map((change) => [change.property, change.after])).toEqual([[property, after]]);
+    expect(tag.getBoundingClientRect().left).toBeCloseTo(was - 20, 1);
+  });
+
+  test.each([
+    ["held by `max-width`, left to right", "right", (html: string) => html, "#tag { right: 32px } @media (max-width: 500px) { #tag { left: 8px; width: auto; max-width: 50px } }", 332],
+    ["a canvas as wide as it draws, right to left", "x", rightToLeft, "#tag { left: 30px; width: auto } @media (max-width: 500px) { #tag { right: 5px } }", 335],
+  ] as const)("the page placing a layer absolute by both its sides, as large as %s, not as its `width` says: the check reads where the browser places it, by the side it goes by (ticket 89, review)", async (_, property, laidOut, css, value) => {
+    const html = laidOut(property === "x" ? fromTheTopLeft() : fromTheRight());
+    const { page, editor, changes, layer } = open(html);
+    if (property === "x") editor.set(layer("tag"), "x", 30);
+    else editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [change] = changes.list();
+    expect(change.property).toBe(property);
+    page.getElementById("tag")!.setAttribute("style", property === "x" ? "left: 30px" : "right: 32px");
+    const phoneHtml = html.replace("</style>", `${css}</style>`);
+    const phone = pageAt(property === "x" ? phoneHtml.replace(/<span id="tag" ([^>]*)>Tag<\/span>/, '<canvas id="tag" $1 width="50" height="20"></canvas>') : phoneHtml, 390);
+    expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value, margin: 0 }, width: 390 });
+  });
+
+  test.each([
+    ["filter: blur(0)", "shown"],
+    ["backdrop-filter: blur(0)", "shown"],
+    ["contain: paint", "shown"],
+    ["will-change: transform", "shown"],
+    ["translate: 0 0", "shown"],
+    ["transform: translateX(0)", "shown"],
+    ["perspective: 100px", "shown"],
+    ["container-type: inline-size", "not shown"],
+  ] as const)(
+    "the page placing a layer absolute by both its sides in a box with %s, 200px wide, in its positioned board: the browser places it in that box or the board as CSS has it, and the check measures the room there (ticket 89, review)",
+    (style, outcome) => {
+      const html = fromTheRight().replace(/<span id="tag" ([^>]*)>Tag<\/span>/, `<div style="${style}; width: 200px"><span id="tag" $1>Tag</span></div>`);
+      const { page, editor, changes, layer } = open(html);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      expect([right.property, right.after]).toEqual(["right", 32]);
+      page.getElementById("tag")!.setAttribute("style", "right: 32px");
+      // As wide as the box: 118 + 50 + 32 is 200, so drawn where the canvas has it; in the board, 390 - 118 - 50 is 222.
+      const phone = pageAt(html.replace("</style>", "@media (max-width: 500px) { #tag { right: 32px; left: 118px } }</style>"), 390);
+      expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual(
+        outcome === "shown" ? { outcome } : { outcome, actual: { value: 222, margin: 0 }, width: 390 },
+      );
+    },
+  );
+
+  test.each([
+    ["`display: contents`", '<div dir="ltr" style="display: contents">', "</div>", ""],
+    ["an inline `<span>`", '<span dir="ltr">', "</span>", ""],
+    ["none, the layer itself", "", "", ' dir="ltr"'],
+  ] as const)(
+    "right to left, a layer placed relative by its `left` and its `right` both, in a box left to right that holds no layout of its own, %s: the browser goes by the block that lays it out, so its `right` moves it (ticket 89, review)",
+    async (_, open1, close, own) => {
+      const html = rightToLeft(fromTheRight("position: relative; left: 8px"))
+        .replace(/<span id="tag" ([^>]*)>Tag<\/span>/, `${open1}<span id="tag"${own} $1>Tag</span>${close}`);
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      expect([right.property, right.placedOtherwiseAt, right.offsetInLayoutAt]).toEqual(["right", undefined, [{ breakpoint: { min: null, max: 800 }, position: "relative" }]]);
+      page.getElementById("tag")!.setAttribute("style", "right: 32px");
+      const phone = pageAt(html.replace("</style>", "#tag { right: 32px }</style>"), 390);
+      expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown" });
+    },
+  );
+
+  test.each([
+    ["left to right", (html: string) => html],
+    ["right to left", rightToLeft],
+  ] as const)("the page placing a layer absolute by its `top` and its `bottom` both, as tall as it is set, %s: the browser goes by its `top`, so a `bottom` of the change's value does not show, and the check says where its bottom edge is drawn (ticket 89, review)", (_, laidOut) => {
+    const html = laidOut(fromTheRight().replace("right: 12px; top: 8px", "left: 8px; bottom: 12px"));
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "y", editor.read(layer("tag"), "y")! - 20);
+    const [bottom] = changes.list();
+    expect([bottom.property, bottom.after]).toEqual(["bottom", 32]);
+    page.getElementById("tag")!.setAttribute("style", "bottom: 32px");
+    // On phones, a `top` of the page's own too: 100 - 8 - 20 is 72px.
+    const phone = pageAt(html.replace("</style>", "#tag { bottom: 32px } @media (max-width: 500px) { #tag { top: 8px } }</style>"), 390);
+    expect(checkAcross(page, bottom, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: 72, margin: 0 }, width: 390 });
+  });
+
+  test.each([
+    ["content-box", 302],
+    ["border-box", 312],
+  ] as const)("the page placing a layer absolute by its `left` and its `right` both, with margins, padding and a border, sized as %s, in a board with a border: the check reads its `right` as what is left of the board's room inside its border (ticket 89, review)", (box, value) => {
+    const html = fromTheRight();
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    page.getElementById("tag")!.setAttribute("style", "right: 32px");
+    // 390 less the board's border, 380; less its `left`, its margins, its size: 8, 6 and 4, 50 and, as content, 3 + 3 + 2 + 2 more.
+    const css = `#tag { right: 32px } #board { border: 5px solid } @media (max-width: 500px) { #tag { left: 8px; margin: 0 4px 0 6px; padding: 0 3px; border: 2px solid; box-sizing: ${box} } }`;
+    const phone = pageAt(html.replace("</style>", `${css}</style>`), 390);
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value, margin: 4 }, width: 390 });
+  });
+
+  test("the page placing a layer absolute by its `left` and its `right` both, as wide as it is set, left to right, its `right` not the change's but its `left` putting it where the canvas has it: shown, by where it is drawn (ticket 89, review)", () => {
+    const html = fromTheRight();
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    page.getElementById("tag")!.setAttribute("style", "right: 32px");
+    // 308 + 50 + 32 is 390: its stale `right` places nothing.
+    const phone = pageAt(html.replace("</style>", "@media (max-width: 500px) { #tag { right: 99px; left: 308px } }</style>"), 390);
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown" });
+  });
+
   test.each([
     ["left to right", (html: string) => html, "x", "start"],
     ["right to left", rightToLeft, "right", "end"],
@@ -6926,6 +7086,8 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     expect((moved.after as Place).absolute).toEqual({ x: 230, y: 8, placed: { x: { edge: "end", centered: false, percent: 0, px: 40 } } });
 
     expect(checkChange(pageWith(400, "#right { right: 40px !important }"), moved, onCanvas([moved])).outcome).toBe("shown");
+    // Its `right` as the change has it, but a `left` and its width too, which the browser goes by left to right (ticket 89, review).
+    expect(checkChange(pageWith(400, "#right { right: 40px !important; left: 5px !important }"), moved, onCanvas([moved])).outcome).toBe("not shown");
     // Placed by its left, where the canvas has it as wide as the canvas's board, not as wide as this one.
     expect(checkChange(pageWith(400, "#right { left: 230px !important; right: auto !important }"), moved, onCanvas([moved])).outcome).toBe("not shown");
   });

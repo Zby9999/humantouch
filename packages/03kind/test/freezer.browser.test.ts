@@ -334,3 +334,20 @@ describe("bringing the copy to rest", () => {
     await copied;
   });
 });
+
+describe("layers fixed to the window", () => {
+  test("pinned where the window holds them, also in a container for queries, which holds no placed layer; not in a box that holds them, as a filter does (ticket 89, review)", async () => {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html><body style="margin: 0">
+  <div style="container-type: inline-size"><div id="queried" style="position: fixed; top: 0; height: 10px"></div></div>
+  <div style="filter: blur(0)"><div id="filtered" style="position: fixed; top: 0; height: 10px"></div></div>
+  <div id="window" style="position: fixed; top: 0; height: 10px"></div>
+</body>`);
+    doc.close();
+    const canvas = await freeze(live.contentWindow!, iframe());
+    const pinned = (id: string) => canvas.document.getElementById(id)!.hasAttribute("data-tk-pinned");
+    expect([pinned("window"), pinned("queried"), pinned("filtered")]).toEqual([true, true, false]);
+  });
+});

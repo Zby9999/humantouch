@@ -305,11 +305,11 @@ export interface Change {
    * container lays it out; placed sticky, kept that far in as the page
    * scrolls. A `right` or `bottom` moves a layer placed relative only with no
    * `left` or `top` declared, or a `right` laid out right to left, which the
-   * browser goes by then (ticket 89); else it is placed otherwise there. The check
-   * looks at those widths by the value itself: the page is to place the layer
-   * so there too, its `left` or `top` (`right`, `bottom`) the change's value,
-   * its margins left out, as they are where its container lays it out. Read
-   * as the change is first made, as `placedOtherwiseAt` is.
+   * browser goes by then (ticket 89); else it is placed otherwise there. The
+   * check looks at those widths by the value itself: the page is to place
+   * the layer so there too, its `left` or `top` (`right`, `bottom`) the
+   * change's value, its margins left out, as they are where its container
+   * lays it out. Read as the change is first made, as `placedOtherwiseAt` is.
    */
   offsetInLayoutAt?: { breakpoint: Breakpoint; position: InLayout }[];
   /**

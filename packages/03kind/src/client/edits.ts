@@ -289,10 +289,9 @@ export function createEditor(
    * which no layout moves it by: the check looks at it as placed absolute
    * there, as before. Read from each view's computed `position`, the
    * direction the browser goes by there (ticket 89) and what is declared, as
-   * it shows the layer now: no view is brought up to date or
-   * laid out (ADR 0011), as the change does not change what places the layer
-   * there. A view in the desktop view's range is the desktop view's, where
-   * the change is made.
+   * it shows the layer now: no view is brought up to date or laid out (ADR
+   * 0011), as the change does not change what places the layer there. A view
+   * in the desktop view's range is the desktop view's, where the change is made.
    */
   const viewsMovedOtherwise = (layer: Layer, side: Side, centered: boolean) => {
     const placedOtherwiseAt: Breakpoint[] = [];
