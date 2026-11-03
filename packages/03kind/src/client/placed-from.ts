@@ -9,7 +9,7 @@
  * size alone, or how far past the share of its container it is centered on
  * (`calc(50% + 20px)`, ticket 79).
  */
-import { AXIS_SIZE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
+import { AXIS_SIZE, OTHER_EDGE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
 import { absolute, declaredValue, round } from "./property-table";
 import { split } from "./paint";
 import { insideBorder, marginsOf } from "./stacks";
@@ -24,12 +24,13 @@ import { pinnedOf } from "./style-source";
  * from the edge the browser goes by (`edgeGoneBy`: its right, right to left,
  * ticket 89). A layer the freezer pinned is taken to be placed from its
  * start too, which the canvas places it from whatever the page does. Not
- * placed freely: from its start. Centered from either edge, it is resized alike, on both sides.
+ * placed freely: from its start. Centered from either edge, it is resized
+ * alike, on both sides.
  */
 export function placedFrom(el: Element, axis: Axis): PlacedFrom {
   const { start, end } = SIDES[axis];
   if (!absolute(el) || pinnedOf(el).includes(start)) return { edge: "start", centered: false };
-  const edge: Edge = declared(el, end) && (!declared(el, start) || endGoneBy(el, axis)) ? "end" : "start";
+  const edge: Edge = declared(el, end) && endOffsetPlaces(el, axis) ? "end" : "start";
   // Moved back half its size from where it is placed (forward, placed from the end): centered there.
   const { width, height } = el.getBoundingClientRect();
   const half = (axis === "x" ? width : height) / 2;
@@ -48,7 +49,7 @@ export function placedFrom(el: Element, axis: Axis): PlacedFrom {
  */
 export function endOffsetPlaces(el: Element, axis: Axis): boolean {
   const { start } = SIDES[axis];
-  return absolute(el) && !pinnedOf(el).includes(start) && (!declared(el, start) || endGoneBy(el, axis));
+  return absolute(el) && !pinnedOf(el).includes(start) && (!declared(el, start) || sizedFromEnd(el, axis));
 }
 
 /**
@@ -68,15 +69,40 @@ export function edgeGoneBy(el: Element, axis: Axis): Edge {
  * along `axis`, from the end edge: as large as it is set there (else both
  * place it, its size given by them), and gone by from that edge (`edgeGoneBy`).
  */
-const endGoneBy = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) && edgeGoneBy(el, axis) === "end";
+const sizedFromEnd = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) && edgeGoneBy(el, axis) === "end";
+
+/**
+ * How far from its containing block's `edge` along `axis` the browser
+ * places `el`, placed absolute, in px, as laid out (ticket 89, review): its
+ * side's value, as the browser computes it; but given both its sides, as
+ * large as it is set there, the side the browser does not go by
+ * (`edgeGoneBy`) keeps its value as given and places nothing, so it is how
+ * much room is left past the other side, its margins and its size.
+ */
+export function placedAt(el: Element, axis: Axis, edge: Edge): number {
+  const style = getComputedStyle(el);
+  const side = SIDES[axis][edge];
+  const value = parseFloat(style.getPropertyValue(side)) || 0;
+  const other = SIDES[axis][OTHER_EDGE[edge]];
+  if (!declared(el, side) || !declared(el, other) || !declared(el, AXIS_SIZE[axis]) || edgeGoneBy(el, axis) === edge) return value;
+  const container = containingBlockOf(el);
+  const root = el.ownerDocument.documentElement;
+  // Placed by the window, or by the page's root as the window is: what its root does not scroll.
+  const room = container === root ? (axis === "x" ? root.clientWidth : root.clientHeight) : roomIn(container)[axis];
+  return room - (roomOf(el, axis) - value);
+}
+
+/** The properties that, set otherwise than `none`, make an element the box that places those absolute and fixed in it, as a `transform` does. */
+const TRANSFORMS = ["transform", "translate", "rotate", "scale", "perspective"];
 
 /**
  * The element whose box places `el`, by its computed `position` (ticket 89):
  * in its container's layout, or relative or sticky, its parent; absolute, the
- * nearest one placed otherwise than static, or transformed; fixed, the
- * nearest one transformed; else the page's root, which stands for the window.
- * Other ways an element becomes the box that places those in it (a `filter`,
- * `contain`) are not read here.
+ * nearest one placed otherwise than static, or transformed (`transform`,
+ * `translate`, `rotate`, `scale`, `perspective`); fixed, the nearest one
+ * transformed; else the page's root, which stands for the window. Other ways
+ * an element becomes the box that places those in it (a `filter`,
+ * `contain`, `will-change`) are not read here.
  */
 function containingBlockOf(el: Element): Element {
   const root = el.ownerDocument.documentElement;
@@ -85,7 +111,7 @@ function containingBlockOf(el: Element): Element {
   let at = el.parentElement;
   for (; at && at !== root; at = at.parentElement) {
     const style = getComputedStyle(at);
-    if (style.transform !== "none" || (position === "absolute" && style.position !== "static")) return at;
+    if (TRANSFORMS.some((property) => style.getPropertyValue(property) !== "none") || (position === "absolute" && style.position !== "static")) return at;
   }
   return root;
 }

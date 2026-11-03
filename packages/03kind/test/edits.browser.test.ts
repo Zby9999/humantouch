@@ -4287,6 +4287,41 @@ describe("changes to the structure are checked on the live page", () => {
   );
 
   test.each([
+    ["left to right", (html: string) => html, { outcome: "shown" }],
+    ["right to left", rightToLeft, { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
+  ] as const)(
+    "the page placing a layer absolute by its `left` and its `right` both, as wide as it is set, %s: an X of its `left` shows left to right; right to left, the browser places it by its `right`, so it does not, and the check says where its left edge is drawn (ticket 89, review)",
+    async (_, laidOut, result) => {
+      const html = laidOut(fromTheTopLeft());
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", 30);
+      const [x] = changes.list();
+      expect(x.placedOtherwiseAt).toBeUndefined();
+      page.getElementById("tag")!.setAttribute("style", "left: 30px");
+      // Its `left` as the change has it at every width; on phones, a `right` of the page's own too: 390 - 5 - 50 is 335px.
+      const at = (css: string) => pageAt(html.replace("</style>", `${css}</style>`), 390);
+      const check = (phone: PageWidth) => checkAcross(page, x, onCanvas(changes.list()), [390], () => phone);
+      expect(check(at("#tag { left: 30px } @media (max-width: 500px) { #tag { right: 5px } }"))).toEqual(result);
+      // As the notes say, its `right` let go: shown either way.
+      expect(check(at("#tag { left: 30px; right: auto }"))).toEqual({ outcome: "shown" });
+    },
+  );
+
+  test("the page placing a layer absolute by its `left` and its `right` both, as wide as it is set, left to right: the browser places it by its `left`, so a `right` of the change's value does not show, and the check says where its right edge is drawn (ticket 89, review)", async () => {
+    const html = fromTheRight();
+    const { page, editor, changes, layer } = open(html);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    page.getElementById("tag")!.setAttribute("style", "right: 32px");
+    // On phones, a `left` of the page's own too: 390 - 8 - 50 is 332px.
+    const phone = pageAt(html.replace("</style>", "#tag { right: 32px } @media (max-width: 500px) { #tag { left: 8px } }</style>"), 390);
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: 332, margin: 0 }, width: 390 });
+  });
+
+  test.each([
     ["left to right", (html: string) => html, "x", "start"],
     ["right to left", rightToLeft, "right", "end"],
   ] as const)(
