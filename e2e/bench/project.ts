@@ -154,11 +154,12 @@ export async function cloneBase(base: string): Promise<RunProject> {
 const READY_MS = { vite: 30_000, next: 180_000 };
 
 /** The project's dev server on `port`, once it answers: Vite's, or Next.js's (with Turbopack, its default) for the Next.js example. */
-export async function startDevServer(dir: string, port: number, example: Example = "vite-react19-tw4"): Promise<{ url: string; stop(): void }> {
+export async function startDevServer(dir: string, port: number, example: Example = "vite-react19-tw4"): Promise<{ url: string; stop(): Promise<void> }> {
   const next = example === "next-app-css-modules";
   // Next.js takes no other port when this one is taken: `--port` given, it fails (the bench picks a free one first).
-  const args = next ? ["node_modules/next/dist/bin/next", "dev", "--port", String(port)] : ["node_modules/vite/bin/vite.js", "--port", String(port), "--strictPort"];
-  const server = startServer(process.execPath, args, dir);
+  // On localhost only, as Vite serves, and sending Next.js no telemetry.
+  const args = next ? ["node_modules/next/dist/bin/next", "dev", "--port", String(port), "--hostname", "localhost"] : ["node_modules/vite/bin/vite.js", "--port", String(port), "--strictPort"];
+  const server = startServer(process.execPath, args, dir, next ? { NEXT_TELEMETRY_DISABLED: "1" } : {});
   const url = `http://localhost:${port}`;
   for (const until = Date.now() + READY_MS[next ? "next" : "vite"]; ; ) {
     try {
@@ -167,7 +168,7 @@ export async function startDevServer(dir: string, port: number, example: Example
       // Not up yet.
     }
     if (Date.now() > until || server.exitCode !== null) {
-      server.stop();
+      await server.stop();
       throw new Error(`The dev server did not start on port ${port}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
