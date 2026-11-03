@@ -126,8 +126,8 @@ async function main(argv: string[]) {
     // Runs added to a round of runs compare with it only on the same Agent, command line and extensions.
     const before = existsSync(join(out, "meta.json")) ? JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) : null;
     for (const agent of agents) {
-      const otherExtensions = JSON.stringify(before?.extensions?.[agent] ?? {}) !== JSON.stringify(extensions[agent]);
-      if (before?.commandLines?.[agent] && (before.commandLines[agent] !== meta.commandLines[agent] || before.versions[agent] !== versions[agent] || otherExtensions)) {
+      const extensionsDiffer = JSON.stringify(before?.extensions?.[agent] ?? {}) !== JSON.stringify(extensions[agent]);
+      if (before?.commandLines?.[agent] && (before.commandLines[agent] !== meta.commandLines[agent] || before.versions[agent] !== versions[agent] || extensionsDiffer)) {
         throw new Error(`${out} has ${agent} runs by another command line, version or extension: start a round of runs of their own`);
       }
     }

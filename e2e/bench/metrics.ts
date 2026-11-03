@@ -254,7 +254,9 @@ const ONE_FILE = /\.[a-z0-9]+$/i;
  * (`*.tsx`, `src/**`), which names no one file: `ffgrep` or `fffind` with no
  * path, a folder or a glob, and `fff-multi-grep` with no constraint, or any
  * but one file (`*.{ts,tsx} !test/`), search the project or a folder of it;
- * given one file, by a path with an extension and no glob, they do not.
+ * given one file, by a path with an extension and no glob, they do not
+ * (a bare name, `App.tsx`, looks in every folder for it, as a search for
+ * that one file).
  */
 export function isRepoWideSearch(call: ToolCall): boolean {
   if (call.command !== undefined) return SHELL_SEARCH.test(call.command);

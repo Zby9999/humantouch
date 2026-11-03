@@ -257,8 +257,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     // pi-fff (their MCP adapter, fff's broad-search guard, web access, subagents and the rest) and pi's own MCP;
     // every skill but the project's, named by its path, so a project with no Skill (ticket 65) has none; prompt
     // templates; themes. Their global AGENTS.md has no switch of its own (`--no-context-files` would drop the
-    // project's too): the bench's extension keeps only the project's. Their settings.json (compaction, for one) and models.json (their overrides of a model's
-    // settings) still apply: pi reads them from that directory with no way round it but another directory.
+    // project's too): the bench's extension keeps only the project's. Their settings.json (compaction, for one)
+    // and models.json (their overrides of a model's settings) still apply: pi reads them from that directory with
+    // no way round it but another directory.
     args: (folder, prompt = PROMPT) => [
       "-p",
       prompt,

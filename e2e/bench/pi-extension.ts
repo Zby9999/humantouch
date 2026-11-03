@@ -10,11 +10,12 @@
  * folder (~/.pi), where the designer's login is; reading elsewhere goes
  * ahead, as Claude Code's Read does. fff's search tools (pi-fff, ticket 92)
  * are held to the second only: the designer let them search as they will,
- * with no broad-search guard. A call the extension cannot check is blocked. And pi has no switch for leaving out only the designer's global
- * AGENTS.md: this keeps the instructions files inside the project, as Claude
- * Code's `--setting-sources project,local` does.
+ * with no broad-search guard. A call the extension cannot check is blocked.
+ * And pi has no switch for leaving out only the designer's global AGENTS.md:
+ * this keeps the instructions files inside the project, as Claude Code's
+ * `--setting-sources project,local` does.
  */
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,14 +68,23 @@ function withHome(path: string): string {
 }
 
 /**
- * The folder an fff search indexes for `path`: the part before the first
- * part with a glob in it (`*`, `?`, `[…]`, `{…}`), as pi-fff takes the folder
- * there is, and searches the rest below it. `~/{.pi,x}` indexes all of ~.
+ * The folder an fff search indexes for `path`, found as pi-fff finds it
+ * (aux-finders.ts, resolveAuxRoot): of the part before the first part with a
+ * glob in it (`*`, `?`, `[…]`, `{…}`), the nearest folder there is, or a
+ * file's own folder; the rest is a constraint searched for all below it, and
+ * a bare name matches that name in any folder there. So `~/{.pi,x}` and
+ * `~/auth.json` both index all of ~.
  */
 function fffRoot(path: string): string {
   const parts = path.split(sep);
   const glob = parts.findIndex((part) => /[*?[{]/.test(part));
-  return glob < 0 ? path : parts.slice(0, glob).join(sep) || sep;
+  for (let dir = glob < 0 ? path : parts.slice(0, glob).join(sep) || sep; ; dir = dirname(dir)) {
+    try {
+      return statSync(dir).isDirectory() ? dir : dirname(dir);
+    } catch {
+      if (dirname(dir) === dir) return dir;
+    }
+  }
 }
 
 /** pi's own folder, as written and as the file system has it. */
