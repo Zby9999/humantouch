@@ -684,6 +684,83 @@ test.describe("done checks the change on the page", () => {
     expect(await npx03kind("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
   });
 
+  /** A change's ranges as the changeset records them: where the canvas places the layer otherwise, and where it moves it in its container's layout (ticket 84). */
+  type Ranges = { placedOtherwiseAt?: { min: number | null; max: number | null }[]; offsetInLayoutAt?: { breakpoint: { min: number | null; max: number | null }; position: string }[] };
+  const rangesOf = ({ placedOtherwiseAt, offsetInLayoutAt }: Ranges) => [
+    placedOtherwiseAt?.map(({ min, max }) => [min, max]),
+    offsetInLayoutAt?.map(({ breakpoint: { min, max }, position }) => [min, max, position]),
+  ];
+
+  test("a layer the canvas places relative on phones, absolute from `md` up: at the phone's width, done compares its `left` itself; written from `md` up only, it says how far the canvas moves the layer there, not to check its `position`; written at every width, it shows (ticket 84)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="relative-below-md" className="relative h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:left-[40px]" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("relative-below-md")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const field = (name: string) => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+
+    // In the desktop view, 20px right, at every width: on the canvas, the phone view moves it 60px from where the hero lays it out.
+    await pickOnCanvas(page, "relative-below-md");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKindFile("changeset.json").changes;
+    expect([change.property, change.before, change.after, ...rangesOf(change)]).toEqual(["x", 40, 60, undefined, [[null, 768, "relative"]]]);
+    const id = String(change.id);
+    await npx03kind("claim");
+
+    // Written from `md` up only: on phones, the page does not move it from where the hero lays it out.
+    editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
+    expect(await npx03kind("done", id)).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 60px right of where its container lays it out: give it `left` 60px at this width too, then run `npx 03kind done 1` again.\n",
+    );
+    // Written at every width, as the notes say.
+    editSource(APP, "md:left-[60px]", "left-[60px]");
+    expect(await npx03kind("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(await npx03kind("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. X: <the layer, and what you changed>\n```\n");
+  });
+
+  test("a layer the canvas places relative on phones, from the right from `md` up, moved: at the phone's width its `right` moves it too, as it has no `left`, so done compares it there; written from `md` up only, it does not show, and finish says how far the canvas moves it (ticket 84)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="right-from-md" className="relative h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:right-[40px]" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("right-from-md")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const field = (name: string) => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+
+    // In the desktop view, 20px right, at every width: placed from the right, its `right` 20px less (ADR 0014); on the canvas, the phone view moves it 20px left of where the hero lays it out.
+    await pickOnCanvas(page, "right-from-md");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKindFile("changeset.json").changes;
+    expect([change.property, change.before, change.after, ...rangesOf(change)]).toEqual(["right", 40, 20, undefined, [[null, 768, "relative"]]]);
+    const id = String(change.id);
+    await npx03kind("claim");
+
+    // Written from `md` up only: on phones, the page does not move it from where the hero lays it out.
+    editSource(APP, "md:right-[40px]", "md:right-[20px]");
+    expect(await npx03kind("done", id)).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx 03kind done 1` again.\n",
+    );
+    expect(await npx03kind("finish")).toContain(
+      "Round finished: 0 of 1 change applied. The page does not show: 1.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n⚠️ Not applied 1:1\n" +
+        "- 1. Right: <the layer>\n  Why: at 390px wide, the page does not move the layer 20px left of where its container lays it out, as the canvas does: <what keeps it so>\n  Instead: <what you did, or “left as it was”>\n```\n",
+    );
+  });
+
   test("layers placed from the right, from the bottom and centered, moved, one resized first: they stay placed so, the notes say which value changes and how to write it, and done checks each, a centered one at every view's width (ticket 79)", async ({ page }) => {
     editSource(
       APP,

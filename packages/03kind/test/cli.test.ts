@@ -1863,6 +1863,64 @@ describe("done, checked on the page", () => {
     expect(report).not.toContain("null");
   });
 
+  test("for a layer's X, Y, right or bottom at a width where the canvas moves the layer in its container's layout, relative or sticky: says how far the canvas moves it there and what the page does, not to check its `position` (ticket 84)", async () => {
+    const offsets = [
+      // Relative on the canvas: the page leaving it, moving it otherwise, laying it out static, taking it out of the layout, or sticky.
+      { property: "x", after: 60, actual: { canvas: "relative", position: "relative", offset: 0 }, width: 390 },
+      { property: "y", after: 40, actual: { canvas: "relative", position: "relative", offset: 20 } },
+      { property: "right", after: 20, actual: { canvas: "relative", position: "static", offset: null }, width: 390 },
+      { property: "bottom", after: 12, actual: { canvas: "relative", position: "absolute", offset: null }, width: 390 },
+      { property: "x", after: 30, actual: { canvas: "relative", position: "sticky", offset: 30 }, width: 390 },
+      // Sticky on the canvas: the page with another value, none, relative, or static.
+      { property: "x", after: 30, actual: { canvas: "sticky", position: "sticky", offset: 12 }, width: 390 },
+      { property: "y", after: 20, actual: { canvas: "sticky", position: "sticky", offset: null }, width: 390 },
+      { property: "x", after: 30, actual: { canvas: "sticky", position: "relative", offset: 12 }, width: 390 },
+      { property: "y", after: 20, actual: { canvas: "sticky", position: "static", offset: null }, width: 390 },
+      { property: "y", after: 20, actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" }, width: 390 },
+      // Relative on the canvas, its X 0 there: the canvas leaves it where its container lays it out (review).
+      { property: "x", after: 0, actual: { canvas: "relative", position: "relative", offset: 12 }, width: 390 },
+    ];
+    saveRound(...offsets.map(({ property, after }, i) => ({ ...redFill, id: i + 1, property, before: 0, after, style: { [property === "x" ? "left" : property === "y" ? "top" : property]: `${after}px` }, margins: { x: 0, y: 0 } })));
+    await cli("claim");
+    closePage = openPage((id) => ({ outcome: "not shown", actual: offsets[id - 1].actual, ...(offsets[id - 1].width && { width: offsets[id - 1].width }) }));
+
+    const said = async (id: number) => (await cli("done", String(id))).output.split("\n")[1];
+    const shown = "Checked on the page: it does not show the change.";
+    const again = (id: number) => `then run \`npx 03kind done ${id}\` again.`;
+    expect(await said(1)).toBe(`${shown} At 390px wide, the page does not move the layer, where the canvas moves it 60px right of where its container lays it out: give it \`left\` 60px at this width too, ${again(1)}`);
+    expect(await said(2)).toBe(`${shown} The page moves the layer 20px down, where the canvas moves it 40px below where its container lays it out: give it \`top\` 40px at this width too, ${again(2)}`);
+    expect(await said(3)).toBe(
+      `${shown} At 390px wide, the layer is laid out static, so its \`right\` moves nothing, where the canvas moves it 20px left of where its container lays it out: have its \`right\` move it so at this width too, ${again(3)}`,
+    );
+    expect(await said(4)).toBe(
+      `${shown} At 390px wide, the layer is taken out of its container's layout, where the canvas moves it 12px above where its container lays it out: keep it in its container's layout at this width, and have its \`bottom\` move it so, ${again(4)}`,
+    );
+    expect(await said(5)).toBe(
+      `${shown} At 390px wide, the layer is placed sticky, so its \`left\` moves it only as the page scrolls, where the canvas moves it 30px right of where its container lays it out: have its \`left\` move it so at this width too, ${again(5)}`,
+    );
+    expect(await said(6)).toBe(`${shown} At 390px wide, the layer's \`left\` is 12px, where the canvas keeps it at least 30px from the left of what it scrolls in: give it \`left\` 30px at this width too, ${again(6)}`);
+    expect(await said(7)).toBe(`${shown} At 390px wide, the layer's \`top\` is \`auto\`, where the canvas keeps it at least 20px from the top of what it scrolls in: give it \`top\` 20px at this width too, ${again(7)}`);
+    expect(await said(8)).toBe(
+      `${shown} At 390px wide, the layer is placed relative, so its \`left\` moves it from where its container lays it out, not as the page scrolls, where the canvas keeps it at least 30px from the left of what it scrolls in: have its \`left\` keep it so at this width too, ${again(8)}`,
+    );
+    expect(await said(9)).toBe(
+      `${shown} At 390px wide, the layer is laid out static, so its \`top\` moves nothing, where the canvas keeps it at least 20px from the top of what it scrolls in: have its \`top\` keep it so at this width too, ${again(9)}`,
+    );
+    expect(await said(10)).toBe(`${shown} At 390px wide, the layer's \`top\` is \`20%\`, where the canvas keeps it at least 20px from the top of what it scrolls in: give it \`top\` 20px at this width too, ${again(10)}`);
+    expect(await said(11)).toBe(`${shown} At 390px wide, the page moves the layer 12px right, where the canvas leaves it unmoved in its container's layout: give it \`left\` 0px at this width too, ${again(11)}`);
+
+    const report = (await cli("finish")).output;
+    const why = (id: number, title: string, line: string) => `- ${id}. ${title}: <the layer>\n  Why: ${line}: <what keeps it so>\n`;
+    expect(report).toContain(why(1, "X", "at 390px wide, the page does not move the layer 60px right of where its container lays it out, as the canvas does"));
+    expect(report).toContain(why(2, "Y", "the page does not move the layer 40px below where its container lays it out, as the canvas does"));
+    expect(report).toContain(why(3, "Right", "at 390px wide, the page does not move the layer 20px left of where its container lays it out, as the canvas does"));
+    expect(report).toContain(why(4, "Bottom", "at 390px wide, the page does not move the layer 12px above where its container lays it out, as the canvas does"));
+    expect(report).toContain(why(6, "X", "at 390px wide, the page does not keep the layer at least 30px from the left of what it scrolls in, as the canvas does"));
+    expect(report).toContain(why(9, "Y", "at 390px wide, the page does not keep the layer at least 20px from the top of what it scrolls in, as the canvas does"));
+    expect(report).toContain(why(11, "X", "at 390px wide, the page does not leave the layer unmoved in its container's layout, as the canvas does"));
+    expect(report).not.toMatch(/null|`position`|positioning reference/);
+  });
+
   test("several changes at once: each marked done, each with how the page checked it", async () => {
     saveRound(redFill, smallRadius);
     await cli("claim");
