@@ -91,3 +91,5 @@
 - Guide 一节的标题 "## Guide" 改为 "## For agents"，让读项目的 Agent 知道这一节是写给它的；开头的链接改为 "the short install steps under [For agents](#for-agents) below"。标题下那句 "Copy this to your Agent, …" 和四步原样不动。GLOSSARY 里的 Guide 这个概念不变，只是 README 上那一节的标题不再叫 Guide。风险里说的 npm 页面锚点现在是 `#for-agents`，同样没在 npm 上看过。
 - 测试和代码里没有引用这个标题或 `#guide` 的地方。全文对过 GLOSSARY 的 _Avoid_ 词和旧名，没有。
 - 测试：`pnpm typecheck` 通过；`pnpm test` 一次全部通过（vitest 34 个文件 804 条通过、1 条跳过；node:test 32 条通过，含旧名检查）；`pnpm build` 后 `TK_E2E_PORT=5600 pnpm exec playwright test -c e2e/playwright.config.ts e2e/tests/package.spec.ts` 7 条全部通过。
+
+设计师决定（2026-11-03，经规划会话转达）标题写作 "For Agents"，大写 A，与 README 别处和 GLOSSARY 的 "Agent" 一致；页内链接仍为 `#for-agents`。

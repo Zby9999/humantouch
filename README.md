@@ -2,7 +2,7 @@
 
 An editor layer for your project's local dev server: edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.
 
-03Kind (say "Third Kind") is for designers. You give your Agent the short install steps under [For agents](#for-agents) below, and a round button appears at the bottom right of your page: the toggle. Click it, and the page freezes into a canvas, where you move, resize and restyle what is on it by hand, without touching the code. Every change is saved into the project as you make it. When you are done, tell your Agent "Apply my design changes": it writes them into the source code, the page checks that each one shows, and the Agent reports any it could not apply 1:1.
+03Kind (say "Third Kind") is for designers. You give your Agent the short install steps under [For Agents](#for-agents) below, and a round button appears at the bottom right of your page: the toggle. Click it, and the page freezes into a canvas, where you move, resize and restyle what is on it by hand, without touching the code. Every change is saved into the project as you make it. When you are done, tell your Agent "Apply my design changes": it writes them into the source code, the page checks that each one shows, and the Agent reports any it could not apply 1:1.
 
 There is no send button, nothing to copy and paste, and nothing to set up in your Agent. Any coding Agent that can read files, run commands and edit code can apply your changes, such as Claude Code, Cursor or Codex.
 
@@ -14,7 +14,7 @@ There is no send button, nothing to copy and paste, and nothing to set up in you
 
 03Kind runs only on your local dev server. It needs no account, and a production build has none of it in it: `npx 03kind doctor` checks that.
 
-## For agents
+## For Agents
 
 Copy this to your Agent, in the project you want to edit:
 
