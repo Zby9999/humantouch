@@ -93,3 +93,9 @@
 - 测试：`pnpm typecheck` 通过；`pnpm test` 一次全部通过（vitest 34 个文件 804 条通过、1 条跳过；node:test 32 条通过，含旧名检查）；`pnpm build` 后 `TK_E2E_PORT=5600 pnpm exec playwright test -c e2e/playwright.config.ts e2e/tests/package.spec.ts` 7 条全部通过。
 
 设计师决定（2026-11-03，经规划会话转达）标题写作 "For Agents"，大写 A，与 README 别处和 GLOSSARY 的 "Agent" 一致；页内链接仍为 `#for-agents`。
+
+**设计师决定（2026-11-03，合并后，规划会话）**
+
+- `package.json` 加 `repository`，指向 `github.com/Zby9999/03kind`（`directory` 为 `packages/03kind`），npm 页面上有 GitHub 链接。仓库现在是私有的；发布到 npm 之前由设计师自己把它设为公开（GitHub 设置，Agent 不动）。
+- 顺带把 `description` 换成 README 的第一行，不再写 "Framer-style"，照设计师审 README 时「这里不要提别的产品」，npm 搜索结果和包页面上显示的就是这一句。
+- `pnpm pack` 出的包里两项都在；`package.spec.ts` 7 条通过，旧名检查通过。
