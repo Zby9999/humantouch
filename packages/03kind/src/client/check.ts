@@ -16,8 +16,8 @@ import { changeKey, isReorder, type Change, type Created, type Margins, type Pla
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { placedFrom, roomOf, sideShareOf } from "./placed-from";
-import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, SIDES, whereMade, type Edge, type InLayout, type Unfound } from "./checkable";
-import { absolute, readValue, sourcesFor, type Property, type Stroke } from "./property-table";
+import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
+import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
 import type { Axis } from "./snap";
@@ -326,12 +326,14 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
  * ticket 84): placed `canvas`, as the canvas places it; placed `position` on
  * the page; and `offset`, how far its side moves it there, in px, as the
  * side's value goes. Null where the side moves it nothing (laid out static),
- * places it (absolute, fixed), or is `auto` (sticky).
+ * places it (absolute, fixed), or is not in px (sticky: `auto`, a
+ * percentage), as the browser computes it then (`written`).
  */
 export interface OffsetInLayout {
   canvas: InLayout;
-  position: string;
+  position: Position;
   offset: number | null;
+  written?: string;
 }
 
 /**
@@ -349,11 +351,13 @@ function lookOffset(els: Element[], property: Property, after: number, canvas: I
   const { axis, edge } = PLACED_BY[property]!;
   for (const el of els) {
     const style = getComputedStyle(el);
-    const px = (side: string) => (style.getPropertyValue(side) === "auto" ? null : Math.round((parseFloat(style.getPropertyValue(side)) || 0) * 100) / 100);
-    const moved = style.position === "relative" ? px(SIDES[axis].start) : null;
-    const offset = style.position === "sticky" ? px(SIDES[axis][edge]) : moved === null ? null : edge === "start" ? moved : 0 - moved;
-    if (style.position !== canvas || offset === null || Math.abs(offset - after) > 0.5) {
-      const actual: OffsetInLayout = { canvas, position: style.position, offset };
+    const position = style.position as Position;
+    // Sticky, as written: a percentage is not px, though it reads as a number.
+    const written = style.getPropertyValue(SIDES[axis][edge]);
+    const offset =
+      position === "relative" ? movedBy(edge, rounded(parseFloat(style.getPropertyValue(SIDES[axis].start)) || 0)) : position === "sticky" && written.endsWith("px") ? rounded(parseFloat(written)) : null;
+    if (position !== canvas || offset === null || Math.abs(offset - after) > 0.5) {
+      const actual: OffsetInLayout = { canvas, position, offset, ...(position === "sticky" && offset === null && { written }) };
       return [{ outcome: "not shown", actual }, el];
     }
   }

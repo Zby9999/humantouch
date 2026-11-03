@@ -9,11 +9,11 @@ import { changes as changesWord, container as containerOf, describeChanges, shar
 import { breakpointName } from "./client/breakpoints";
 import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
-import { AXIS_SIZE, CENTERING_SIGN, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
+import { AXIS_SIZE, CENTERING_SIGN, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { canvasOffset, isOffsetInLayout, reportFor } from "./report-form";
+import { canvasOffset, isOffsetInLayout, movedWords, reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
@@ -446,9 +446,6 @@ function notPlacedAbsolute(property: string, to: number, again: string, width?: 
   return `${sentenceAt(width)} layer is not placed absolute, not absolute at ${where}: check its \`position\` and \`${side}\`, and that its container is its positioning reference, then ${again}.`;
 }
 
-/** Which way the page moves a layer placed relative along each axis, as it moves it more (first) or less (second). */
-const WAY = { x: ["right", "left"], y: ["down", "up"] } as const;
-
 /**
  * A layer's X or Y, or its right or bottom position, `to` px, at a width
  * where the canvas has the layer in its container's layout still, moved by
@@ -460,23 +457,22 @@ const WAY = { x: ["right", "left"], y: ["down", "up"] } as const;
  * Agent to change how the page lays it out there.
  * `property`: one of `PLACED_BY`.
  */
-function offsetNotShown(property: string, to: number, { canvas, position, offset }: OffsetInLayout, again: string, width?: number): string {
+function offsetNotShown(property: string, to: number, { canvas, position, offset, written }: OffsetInLayout, again: string, width?: number): string {
   const { axis, edge } = PLACED_BY[property]!;
   const side = SIDES[axis][edge];
-  const { did, does, how } = canvasOffset(property, to, canvas);
-  const there = `where the canvas ${did} it ${how}`;
+  const { toDo, does, how } = canvasOffset(property, to, canvas);
+  const there = `where the canvas ${does} it ${how}`;
   const giveIt = `give it \`${side}\` ${to}px at this width too, then ${again}.`;
-  const haveIt = `have its \`${side}\` ${does} it so at this width too, then ${again}.`;
+  const haveIt = `have its \`${side}\` ${toDo} it so at this width too, then ${again}.`;
   if (position === canvas && canvas === "relative") {
-    const moved = edge === "start" ? offset! : 0 - offset!;
-    const page = moved ? `moves the layer ${Math.abs(moved)}px ${WAY[axis][moved > 0 ? 0 : 1]}` : "does not move the layer";
-    return `${sentenceAt(width)} page ${page}, ${there}: ${giveIt}`;
+    const moved = movedBy(edge, offset ?? 0);
+    return `${sentenceAt(width)} page ${moved ? `moves the layer ${movedWords(axis, moved)}` : "does not move the layer"}, ${there}: ${giveIt}`;
   }
-  if (position === canvas) return `${sentenceAt(width)} layer's \`${side}\` is ${offset === null ? "`auto`" : `${offset}px`}, ${there}: ${giveIt}`;
+  if (position === canvas) return `${sentenceAt(width)} layer's \`${side}\` is ${offset === null ? `\`${written ?? "auto"}\`` : `${offset}px`}, ${there}: ${giveIt}`;
   if (position === "static") return `${sentenceAt(width)} layer is laid out static, so its \`${side}\` moves nothing, ${there}: ${haveIt}`;
   if (position === "relative") return `${sentenceAt(width)} layer is placed relative, so its \`${side}\` moves it from where its container lays it out, not as the page scrolls, ${there}: ${haveIt}`;
   if (position === "sticky") return `${sentenceAt(width)} layer is placed sticky, so its \`${side}\` moves it only as the page scrolls, ${there}: ${haveIt}`;
-  return `${sentenceAt(width)} layer is taken out of its container's layout, ${there}: keep it in its container's layout at this width, and have its \`${side}\` ${does} it so, then ${again}.`;
+  return `${sentenceAt(width)} layer is taken out of its container's layout, ${there}: keep it in its container's layout at this width, and have its \`${side}\` ${toDo} it so, then ${again}.`;
 }
 
 /**

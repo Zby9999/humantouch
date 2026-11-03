@@ -4154,6 +4154,19 @@ describe("changes to the structure are checked on the live page", () => {
     },
   );
 
+  test("a layer the canvas places sticky in a view: the page giving it its `top` there as a share is not the px given, though the number is the same (ticket 84, review)", async () => {
+    const html = fromTheTopLeft("position: sticky");
+    const { views, page, editor, changes, layer } = open(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "y", 20);
+    const [y] = changes.list();
+    page.getElementById("tag")!.setAttribute("style", "top: 20px");
+    const phone = pageAt(html.replace("</style>", "#tag { top: 20% }</style>"), 390);
+    expect(checkAcross(page, y, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" }, width: 390 });
+  });
+
   test.each(["relative", "sticky"] as const)(
     "a layer placed from its right edge that the canvas places %s in a view, with no `left` there: its `right` moves it there, so the change records that range, where the check compares the value itself (ticket 84)",
     async (position) => {

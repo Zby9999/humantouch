@@ -8,7 +8,8 @@
  */
 import type { Change } from "./client/changeset";
 import type { OffsetInLayout } from "./client/check";
-import { PLACED_BY, SIDES, type InLayout } from "./client/checkable";
+import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
+import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
 import { changeTitle, otherUsagesWords, listed, otherUsagesWord, propertyName, value } from "./design-values";
 
@@ -60,8 +61,8 @@ function pageShows(change: Change, check: CheckResult): string {
   if (change.kind === "create") return `${at}the page does not have it where the change puts it`;
   // Where the canvas moves it in its container's layout still, by the value itself (ticket 84).
   if (PLACED_BY[change.property] && isOffsetInLayout(check.actual)) {
-    const { does, how } = canvasOffset(change.property, change.after as number, check.actual.canvas);
-    return `${at}the page does not ${does} the layer ${how}, as the canvas does`;
+    const { toDo, how } = canvasOffset(change.property, change.after as number, check.actual.canvas);
+    return `${at}the page does not ${toDo} the layer ${how}, as the canvas does`;
   }
   // Not placed absolute, the layer has no X, Y, right or bottom on the page to tell (ticket 80).
   if (PLACED_BY[change.property] && check.actual === null) return `${at}the layer is not placed absolute on the page`;
@@ -72,21 +73,24 @@ function pageShows(change: Change, check: CheckResult): string {
 /** Whether the page's check answered how it has a layer in its container's layout, where the canvas moves it there (`OffsetInLayout`, ticket 84). */
 export const isOffsetInLayout = (actual: unknown): actual is OffsetInLayout => actual !== null && typeof actual === "object" && "canvas" in actual;
 
-/** Which way each axis goes from where a layer is laid out, as a value moves it more (first) or less (second): across, down. */
-const TOWARD = { x: ["right of", "left of"], y: ["below", "above"] } as const;
+/** Which way a layer placed relative is moved along each axis, as it is moved more across or down (first) or less: the way, and the way from where its container lays it out. */
+const MOVED_WAY = { x: [["right", "right of"], ["left", "left of"]], y: [["down", "below"], ["up", "above"]] } as const;
+
+/** How far a layer placed relative is moved, `moved` px across or down (`movedBy`), in words: `20px right`; `from` where its container lays it out, `20px right of` (ticket 84). */
+export const movedWords = (axis: Axis, moved: number, from = false) => `${Math.abs(moved)}px ${MOVED_WAY[axis][moved > 0 ? 0 : 1][from ? 1 : 0]}`;
 
 /**
  * What the canvas does with a layer by its X or Y, `right` or `bottom`, `to`
  * px, at a width where it has the layer in its container's layout still
  * (`canvas`, ticket 84), in words: the verb, with the layer to follow it
- * (`does`: "move"; `did`, said of the canvas: "moves"), and how far.
+ * (`toDo`: "move"; `does`, said of the canvas: "moves"), and how far.
  * Relative, it moves it from where its container lays it out, a `right` or
  * `bottom` the other way; sticky, keeps it that far in from that edge of what it scrolls in.
  */
-export function canvasOffset(property: string, to: number, canvas: InLayout): { does: string; did: string; how: string } {
+export function canvasOffset(property: string, to: number, canvas: InLayout): { toDo: string; does: string; how: string } {
   const { axis, edge } = PLACED_BY[property]!;
-  if (canvas === "sticky") return { does: "keep", did: "keeps", how: `at least ${to}px from the ${SIDES[axis][edge]} of what it scrolls in` };
-  const moved = edge === "start" ? to : 0 - to;
-  if (!moved) return { does: "leave", did: "leaves", how: "where its container lays it out" };
-  return { does: "move", did: "moves", how: `${Math.abs(moved)}px ${TOWARD[axis][moved > 0 ? 0 : 1]} where its container lays it out` };
+  if (canvas === "sticky") return { toDo: "keep", does: "keeps", how: `at least ${to}px from the ${SIDES[axis][edge]} of what it scrolls in` };
+  const moved = movedBy(edge, to);
+  if (!moved) return { toDo: "leave", does: "leaves", how: "where its container lays it out" };
+  return { toDo: "move", does: "moves", how: `${movedWords(axis, moved, true)} where its container lays it out` };
 }

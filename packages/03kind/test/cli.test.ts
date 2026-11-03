@@ -1876,6 +1876,7 @@ describe("done, checked on the page", () => {
       { property: "y", after: 20, actual: { canvas: "sticky", position: "sticky", offset: null }, width: 390 },
       { property: "x", after: 30, actual: { canvas: "sticky", position: "relative", offset: 12 }, width: 390 },
       { property: "y", after: 20, actual: { canvas: "sticky", position: "static", offset: null }, width: 390 },
+      { property: "y", after: 20, actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" }, width: 390 },
     ];
     saveRound(...offsets.map(({ property, after }, i) => ({ ...redFill, id: i + 1, property, before: 0, after, style: { [property === "x" ? "left" : property === "y" ? "top" : property]: `${after}px` }, margins: { x: 0, y: 0 } })));
     await cli("claim");
@@ -1903,6 +1904,7 @@ describe("done, checked on the page", () => {
     expect(await said(9)).toBe(
       `${shown} At 390px wide, the layer is laid out static, so its \`top\` moves nothing, where the canvas keeps it at least 20px from the top of what it scrolls in: have its \`top\` keep it so at this width too, ${again(9)}`,
     );
+    expect(await said(10)).toBe(`${shown} At 390px wide, the layer's \`top\` is \`20%\`, where the canvas keeps it at least 20px from the top of what it scrolls in: give it \`top\` 20px at this width too, ${again(10)}`);
 
     const report = (await cli("finish")).output;
     const why = (id: number, title: string, line: string) => `- ${id}. ${title}: <the layer>\n  Why: ${line}: <what keeps it so>\n`;

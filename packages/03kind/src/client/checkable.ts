@@ -91,6 +91,16 @@ export const SIZE_AXIS: Readonly<Partial<Record<string, Axis>>> = { width: "x", 
  */
 export type InLayout = "relative" | "sticky";
 
+/** How a layer is placed, as the browser computes its `position`. */
+export type Position = "static" | InLayout | "absolute" | "fixed";
+
+/**
+ * How far a value given to a layer's side from `edge` moves it, placed
+ * relative, across or down (ticket 84): a `left` or `top` as far, a `right`
+ * or `bottom` as far the other way; and so the value, of how far it is moved.
+ */
+export const movedBy = (edge: Edge, value: number) => (edge === "start" ? value : 0 - value);
+
 /** One CSS side of a layer: along `axis`, the one that places it from its container's `edge` (`SIDES`). */
 export interface Side {
   axis: Axis;
