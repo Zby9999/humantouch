@@ -6,7 +6,8 @@
  *
  *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
  *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
- *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
+ *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65);
+ *                                    scenarios with an ask of their own (`prompt`, an undo) are left out then, having no round to claim
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
  *                     [--claim-out <dir>]   and write what `claim` prints for each to <dir>/<scenario>.md, to compare two versions word for word
  *   pnpm bench:agents --scripted [--scenarios id,…]
@@ -15,8 +16,13 @@
  *                                     `finish`, and fill in the report `finish` lays out. Each change must show by the scenario's own test at
  *                                     its widths, and get the page's check of it as shown; one with a Variable must write it (as `usesVariable`
  *                                     counts it); one `notOneToOne` must be in the report under ⚠️ alone, with why and instead (`checkReport`).
+ *                                     The scenario's own checks must hold. With no changes (an undo), only `apply` runs: no claim, no finish, no report.
  *                                     With `--dry` or `--scripted`, BENCH_DEBUG=1 prints a scenario's error whole, not its first line only.
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
+ *
+ * A scenario with an ask of its own (`prompt`) tells the Agent that, in the designer's words, instead of `PROMPT`; its own checks
+ * (`checks`: the page, and the source as at the round's start) are measured as 场景整体检查成立. With no changes to apply (an undo), what
+ * is measured by the round, the report or per change is null, not 0.
  *
  * Runs go one after another, never side by side, so their times compare,
  * run 1 of every scenario first; `--max-runs` stops after that many Agent
@@ -30,10 +36,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
-import { checkReport, measureRun, parseTranscript, reportedAsExpected, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { checkReport, measureRun, parseTranscript, reportedAsExpected, scenarioChecksHold, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
-import { designProblems, openObservers, SCENARIOS, shown, type SavedChange, type Scenario } from "./scenarios.ts";
+import { designProblems, held, openObservers, SCENARIOS, shown, type Desk, type SavedChange, type Scenario } from "./scenarios.ts";
 
 /** Whether something answers on `port` of this machine, as a dev server there would. */
 function answers(port: number): Promise<boolean> {
@@ -78,6 +84,8 @@ interface RawRun {
   /** Browsers that came up under the Agent with a window. */
   headedBrowsers: string[];
   changes: { id: number; kind: string; checkable: boolean; variable?: string[]; notOneToOne?: true; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
+  /** The scenario's own checks (ticket 86): whether each held before the Agent started and at the end, and whether it is to hold before too. Missing in runs before. */
+  scenarioChecks?: { kept: boolean; before: boolean; atEnd: boolean }[];
   /**
    * How many times, from the Agent's start on, the designer's page showed the
    * notice that the code is changing but no Agent has claimed the changes
@@ -110,7 +118,7 @@ async function main(argv: string[]) {
   // The scripted pass takes the scenarios with scripted code, unless named.
   const scenarios = option("scenarios")
     ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id))
-    : SCENARIOS.filter((scenario) => !scripted || scenario.apply);
+    : SCENARIOS.filter((scenario) => (!scripted || scenario.apply) && (argv.includes("--no-skill") ? !scenario.prompt : true));
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
@@ -225,7 +233,7 @@ async function withScenario<T>(
   base: string,
   port: number,
   scenario: Scenario,
-  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page>; designer: Page }) => Promise<T>,
+  work: (round: { project: RunProject; saved: SavedChange[]; observers: Map<number, Page>; designer: Page; desk: Desk }) => Promise<T>,
 ): Promise<T> {
   const project = await cloneBase(base);
   let server: Awaited<ReturnType<typeof startDevServer>> | null = null;
@@ -240,8 +248,10 @@ async function withScenario<T>(
     await page.goto(server.url);
     await page.locator("main").waitFor();
     observers = await openObservers(browser, scenario, server.url);
-    await scenario.design({ page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
-    return await work({ project, saved: project.changeSet()!.changes, observers: observers.pages, designer: page });
+    const desk: Desk = { page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet, shell: (command) => sh("/bin/sh", ["-c", command], project.dir) };
+    await scenario.design(desk);
+    // An undo has no round to apply: no ChangeSet.
+    return await work({ project, saved: project.changeSet()?.changes ?? [], observers: observers.pages, designer: page, desk });
   } finally {
     await observers?.close().catch(() => {});
     await context?.close().catch(() => {});
@@ -264,6 +274,7 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
       if (notices) problems.push(`a notice of the code changing showed ${notices} times as it was set up`);
       problems.push(...designProblems(scenario, saved));
       (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
+      problems.push(...checksBefore(scenario, await checksHold(observers, scenario, project.dir, await project.head())));
       if (claimTo) {
         mkdirSync(join(claimTo, ".."), { recursive: true });
         writeFileSync(claimTo, await project.cli("claim"));
@@ -273,6 +284,30 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
   } catch (error) {
     return [problemOf(error)];
   }
+}
+
+/**
+ * Whether each of the scenario's own checks (`checks`) holds now: the page's
+ * test at its widths, and the project's source as at `head` (the commit the
+ * round starts from), each where the check has it.
+ */
+async function checksHold(observers: Map<number, Page>, scenario: Scenario, dir: string, head: string): Promise<boolean[]> {
+  const onPage = await held(observers, scenario);
+  const source = scenario.checks?.some((check) => check.sourceAsAtStart) ? await sourceAsAt(dir, head) : true;
+  return (scenario.checks ?? []).map((check, i) => onPage[i] !== false && (!check.sourceAsAtStart || source));
+}
+
+/** Whether the source in `dir`, `.03kind/` aside, is as at commit `head`: no file changed, gone or new. Stages nothing, so the Agent sees the project as it left it. */
+async function sourceAsAt(dir: string, head: string): Promise<boolean> {
+  const outside = ["--", ".", ":(exclude).03kind"];
+  const changed = await sh("git", ["diff", "--name-only", head, ...outside], dir);
+  const added = await sh("git", ["ls-files", "--others", "--exclude-standard", ...outside], dir);
+  return !changed.trim() && !added.trim();
+}
+
+/** What is wrong with the scenario's own checks before the Agent starts: one that holds and is not to, or one kept that does not. */
+function checksBefore(scenario: Scenario, before: boolean[]): string[] {
+  return (scenario.checks ?? []).flatMap((check, i) => (before[i] === !!check.kept ? [] : [`check ${i + 1} ${before[i] ? "holds" : "does not hold"} before the Agent starts: ${check.expect}`]));
 }
 
 /** A scenario that could not be set up or applied, as its error's first line; whole too, with BENCH_DEBUG=1. */
@@ -292,23 +327,27 @@ function problemOf(error: unknown): string {
 async function applyScripted(browser: Browser, base: string, port: number, scenario: Scenario): Promise<string[]> {
   if (!scenario.apply) return ["no scripted code (`apply`)"];
   try {
-    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
+    return await withScenario(browser, base, port, scenario, async ({ project, saved, observers, desk }) => {
       const problems = designProblems(scenario, saved);
       if (problems.length) return problems;
       (await shown(observers, scenario, saved)).forEach((shows, i) => shows && problems.push(`change ${i + 1} shows before it is applied`));
       const head = await project.head();
+      problems.push(...checksBefore(scenario, await checksHold(observers, scenario, project.dir, head)));
       const history = join(project.dir, ".03kind/history");
       const rounds = () => (existsSync(history) ? readdirSync(history).sort() : []);
       const roundsBefore = rounds().length;
 
-      await project.cli("claim");
-      await scenario.apply!({ page: designer, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet });
+      // A round to apply: claimed, applied, done and finished. An undo (no changes): only what `apply` does, as the Skill says.
+      const applying = scenario.changes.length > 0;
+      if (applying) await project.cli("claim");
+      await scenario.apply!(desk);
       const applied = saved.filter((_, i) => !scenario.changes[i].notOneToOne).map((change) => change.id);
       if (applied.length) await project.cli("done", ...applied.map(String));
-      const report = fillInReport(await project.cli("finish"), scenario, saved);
+      const report = applying ? fillInReport(await project.cli("finish"), scenario, saved) : null;
 
       await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
       const atEnd = await shown(observers, scenario, saved);
+      (await checksHold(observers, scenario, project.dir, head)).forEach((holds, i) => holds || problems.push(`check ${i + 1} does not hold: ${scenario.checks![i].expect}`));
       const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
       await sh("git", ["add", "-A"], project.dir);
       const diff = await sh("git", ["diff", "--cached", head], project.dir);
@@ -320,6 +359,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
         if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
         if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code writes none of ${change.variable.join(", ")}`);
       });
+      if (!report) return problems;
       const check = checkReport(report, saved.map((change) => change.id));
       if (!check.compliant) problems.push(`the report: ${check.problems.join("; ")}`);
       const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne).map((change) => change.id);
@@ -390,11 +430,12 @@ async function runOnce({
   folder: string;
   skill: boolean;
 }) {
-  const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
+  const prompt = skill ? (scenario.prompt ?? PROMPT) : NO_SKILL_PROMPT;
   await withScenario(browser, base, port, scenario, async ({ project, saved, observers, designer }) => {
     const head = await project.head();
     writeFileSync(join(folder, "changeset.json"), `${JSON.stringify({ changes: saved }, null, 2)}\n`);
     const before = await shown(observers, scenario, saved);
+    const checksBeforeAgent = await checksHold(observers, scenario, project.dir, head);
 
     // While the Agent works: the claim, each done and the finish from the round's files; each source edit; each change newly shown on the page.
     const times: RawRun["times"] = { claim: null, dones: [], finish: null, shown: [], edits: [] };
@@ -465,6 +506,7 @@ async function runOnce({
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
     const atEnd = await shown(observers, scenario, saved);
+    const checksAtEnd = await checksHold(observers, scenario, project.dir, head);
     const result = archived();
     const checks = result?.checks ?? readJson("checks.json")?.results ?? {};
     if (result) writeFileSync(join(folder, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
@@ -493,6 +535,7 @@ async function runOnce({
         shownBefore: before[i],
         shownAtEnd: atEnd[i],
       })),
+      ...(scenario.checks && { scenarioChecks: scenario.checks.map((check, i) => ({ kept: !!check.kept, before: checksBeforeAgent[i], atEnd: checksAtEnd[i] })) }),
       times,
       checks: Object.fromEntries(Object.entries(checks).map(([id, check]) => [id, { outcome: (check as { outcome: string }).outcome }])),
     };
@@ -521,8 +564,10 @@ export function measureFolder(folder: string) {
   const diff = readFileSync(join(folder, "diff.patch"), "utf8");
   const withVariable = raw.changes.filter((change) => change.variable);
   const usedVariable = withVariable.filter((change) => usesVariable(diff, change.variable!));
+  // A scenario with no changes to apply (an undo) has no round: what is measured by the round, the report or per change is null.
+  const applying = count > 0;
   const round =
-    raw.times.claim === null
+    raw.times.claim === null || !applying
       ? null
       : measureRun({
           changes: raw.changes.map((change) => ({ id: change.id, checkable: change.checkable, shown: change.shownAtEnd })),
@@ -542,12 +587,12 @@ export function measureFolder(folder: string) {
     exitCode: raw.exitCode,
     timedOut: raw.timedOut,
     agentMs: raw.endedAt - raw.startedAt,
-    claimed: raw.times.claim !== null,
-    ranDone: stats.dones > 0,
-    ranFinish: raw.times.finish !== null,
+    claimed: applying ? raw.times.claim !== null : null,
+    ranDone: applying ? stats.dones > 0 : null,
+    ranFinish: applying ? raw.times.finish !== null : null,
     dones: stats.dones,
     toolCalls: stats.toolCalls,
-    toolCallsPerChange: stats.toolCalls / count,
+    toolCallsPerChange: applying ? stats.toolCalls / count : null,
     repoWideSearches: stats.repoWideSearches,
     packageReads: stats.packageReads,
     charsRead: stats.charsRead,
@@ -569,13 +614,17 @@ export function measureFolder(folder: string) {
     unclaimedNoticesAtMs: raw.times.unclaimedNotices?.map((at) => at - raw.startedAt) ?? null,
     stalledNotices: raw.stalledNotices ?? null,
     stalledNoticesAtMs: raw.times.stalledNotices?.map((at) => at - raw.startedAt) ?? null,
-    reportCompliant: report.compliant,
-    reportProblems: report.problems,
+    reportCompliant: applying ? report.compliant : null,
+    reportProblems: applying ? report.problems : [],
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
     /** Of the changes that cannot be applied 1:1 (ticket 86), the share the report lists under ⚠️, with why and instead; null with none. */
     reportedAsExpected: reportedAsExpected(report, raw.changes.filter((change) => change.notOneToOne).map((change) => change.id)),
+    /** Of the scenario's own checks (ticket 86: an earlier round's changes kept, a round undone), the share that hold at the end; null with none. */
+    scenarioChecksHold: scenarioChecksHold(raw.scenarioChecks),
     /** A scenario test that held before the Agent started is a broken test, not a change applied. */
     shownBefore: raw.changes.filter((change) => change.shownBefore).map((change) => change.id),
+    /** Likewise a scenario check that held before when it is not to, or did not when it is (by number, from 1). */
+    checksWrongBefore: (raw.scenarioChecks ?? []).flatMap((check, i) => (check.before === check.kept ? [] : [i + 1])),
   };
 }
 
@@ -585,8 +634,13 @@ type Measures = ReturnType<typeof measureFolder>;
 function oneLine(m: Measures): string {
   const seconds = (ms: number | null) => (ms === null ? "–" : `${Math.round(ms / 1000)}s`);
   const percent = (rate: number | null) => (rate === null ? "–" : `${Math.round(rate * 100)}%`);
-  return `round ${seconds(m.applyMs)}, ${m.toolCalls} tool calls, 1:1 ${percent(m.oneToOneByPage)} (checks ${percent(m.oneToOneByChecks)}), done ${m.ranDone ? "✓" : "✗"}, finish ${m.ranFinish ? "✓" : "✗"}, report ${m.reportCompliant ? "✓" : "✗"}`;
+  const mark = (yes: boolean | null) => (yes === null ? "–" : yes ? "✓" : "✗");
+  const checks = m.scenarioChecksHold === null ? "" : `, scenario checks ${percent(m.scenarioChecksHold)}`;
+  return `round ${seconds(m.applyMs)}, ${m.toolCalls} tool calls, 1:1 ${percent(m.oneToOneByPage)} (checks ${percent(m.oneToOneByChecks)}), done ${mark(m.ranDone)}, finish ${mark(m.ranFinish)}, report ${mark(m.reportCompliant)}${checks}`;
 }
+
+/** A yes or no as 1 or 0; null where it does not apply (a scenario with no round to apply). */
+const yesNo = (value: boolean | null) => (value === null ? null : Number(value));
 
 /** The numbers each Agent is compared by, from a run's measures. */
 const METRICS: [string, (m: Measures) => number | null][] = [
@@ -601,12 +655,13 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["读入字数：全部工具输出", (m) => m.charsRead.total],
   ["1:1 落地率（页面预期）", (m) => m.oneToOneByPage],
   ["1:1 落地率（done 核对）", (m) => m.oneToOneByChecks],
-  ["虚假的 ✓（条）", (m) => m.falseChecks.length],
-  ["跑了 done（比例）", (m) => Number(m.ranDone)],
-  ["跑了 finish（比例）", (m) => Number(m.ranFinish)],
-  ["报告格式合规（比例）", (m) => Number(m.reportCompliant)],
+  ["虚假的 ✓（条）", (m) => (m.changes ? m.falseChecks.length : null)],
+  ["跑了 done（比例）", (m) => yesNo(m.ranDone)],
+  ["跑了 finish（比例）", (m) => yesNo(m.ranFinish)],
+  ["报告格式合规（比例）", (m) => yesNo(m.reportCompliant)],
   ["设计变量使用率", (m) => m.variableUse],
   ["落地不了 1:1 的改动报在 ⚠️ 下（比例）", (m) => m.reportedAsExpected],
+  ["场景整体检查成立（比例）", (m) => m.scenarioChecksHold],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
   ["没认领就改代码的提示（次）", (m) => m.unclaimedNotices],
@@ -655,7 +710,9 @@ function writeSummary(out: string) {
       dates: [...new Set(mine.map((m) => m.date.slice(0, 10)))],
       overall: sum(mine),
       scenarios: Object.fromEntries([...new Set(mine.map((m) => m.scenario))].map((scenario) => [scenario, sum(mine.filter((m) => m.scenario === scenario))])),
-      brokenTests: mine.filter((m) => m.shownBefore.length).map((m) => `${m.scenario} #${m.run}: ${m.shownBefore.join(", ")}`),
+      brokenTests: mine
+        .filter((m) => m.shownBefore.length || m.checksWrongBefore.length)
+        .map((m) => `${m.scenario} #${m.run}: ${[...m.shownBefore.map(String), ...m.checksWrongBefore.map((n) => `check ${n}`)].join(", ")}`),
       /** Each run whose designer's page showed a notice, and when, in seconds from the Agent's start. */
       notices: mine
         .filter((m) => m.unclaimedNotices || m.stalledNotices)

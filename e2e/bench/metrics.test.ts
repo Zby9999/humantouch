@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkReport, measureRun, parseTranscript, reportedAsExpected, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, measureRun, parseTranscript, reportedAsExpected, scenarioChecksHold, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -289,4 +289,11 @@ test("changes that cannot be applied 1:1 are counted as reported right when the 
   assert.equal(reportedAsExpected(report, [1, 2]), 0.5);
   assert.equal(reportedAsExpected(report, [4]), 0);
   assert.equal(reportedAsExpected(report, []), null);
+});
+
+test("a scenario's own checks are counted by the share that hold at the end; a scenario with none, or a run from before them, has no rate (ticket 86)", () => {
+  assert.equal(scenarioChecksHold([{ atEnd: true }, { atEnd: false }]), 0.5);
+  assert.equal(scenarioChecksHold([{ atEnd: true }]), 1);
+  assert.equal(scenarioChecksHold([]), null);
+  assert.equal(scenarioChecksHold(undefined), null);
 });

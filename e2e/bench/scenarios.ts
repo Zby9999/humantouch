@@ -26,6 +26,8 @@ export interface Desk {
   settle(message: string): Promise<void>;
   /** The round's ChangeSet as saved in `.03kind/`, or null. */
   changeSet(): { changes: SavedChange[] } | null;
+  /** Runs a shell command line in the project, as an Agent would: the bench's copy only (the e2e test has none), for `apply`. */
+  shell?(command: string): Promise<string>;
 }
 
 /** A change as the ChangeSet saves it; the bench reads only these. */
@@ -72,13 +74,40 @@ export interface ScenarioChange {
   notOneToOne?: string;
 }
 
+/**
+ * What holds of the scenario as a whole once the Agent is through, apart from
+ * its changes (ticket 86): what an earlier round applied staying applied, or
+ * a round undone. One the page tests (`shows`), the project's source, or both.
+ */
+export interface ScenarioCheck {
+  /** What holds, in words. */
+  expect: string;
+  /** Whether it holds before the Agent starts too (what the Agent must leave as it is); else it must not hold yet. */
+  kept?: true;
+  /** The page widths `shows` runs at; 1280 when not given. */
+  widths?: number[];
+  /** Whether the page shows it: run in the page as a change's `shows` is, self-contained. */
+  shows?: (arg: { width: number }) => boolean;
+  /**
+   * Whether the project's source, `.03kind/` aside, is as at the commit the
+   * round starts from (`git diff` shows nothing, and no file is new). The
+   * bench's copy only: the e2e test checks the page alone.
+   */
+  sourceAsAtStart?: true;
+}
+
 export interface Scenario {
   id: string;
   /** What the designer does, in words. */
   title: string;
   /** Makes the round in the editor layer, and waits until it is saved. */
   design(desk: Desk): Promise<void>;
+  /** The changes the Agent is to apply; none for a scenario whose ask is other than applying a round (an undo). */
   changes: ScenarioChange[];
+  /** What the designer says to the Agent, when not the bench's own ask to apply the round (`PROMPT`): in the designer's words. */
+  prompt?: string;
+  /** What holds of the scenario as a whole at the end, apart from its changes. */
+  checks?: ScenarioCheck[];
   /**
    * Writes the round into the code as an Agent applying it right would,
    * once it is claimed (`desk.edit`), for the bench's scripted pass
@@ -191,6 +220,24 @@ async function pickHero(page: Page) {
   await page.keyboard.down("ControlOrMeta");
   await page.mouse.click(hero.x + hero.width / 2, hero.y + hero.height - 20);
   await page.keyboard.up("ControlOrMeta");
+}
+
+/**
+ * Ends the round being applied as a designer does, the Agent stopped halfway:
+ * presses and holds the locked toggle (ticket 68). What the page shows is
+ * archived as applied; the rest is left to the next round.
+ */
+async function endTheRound(page: Page) {
+  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
+  await page.mouse.down();
+  await page.waitForTimeout(1200);
+  await page.mouse.up();
+  await page.getByRole("button", { name: TOGGLE_LABEL }).waitFor();
+}
+
+/** Waits until the designer's page, out of edit mode, shows the title at `size` (the dev server has brought an edit in). */
+async function titleAt(page: Page, size: string) {
+  await page.waitForFunction((px) => getComputedStyle(document.querySelector("main h1")!).fontSize === px, size);
 }
 
 // The tests below run in the page: each stands on its own, with no names from here.
@@ -1089,6 +1136,101 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", '<Surface className="grid', '<Surface className="bg-stone-100 grid');
     },
   },
+  // Ticket 86, the flow: rounds over more than one turn of the Agent's.
+  {
+    id: "flow-end-halfway",
+    title:
+      "Set up by a round before, ended halfway: the designer made the title 48px, the hero's corners 16px and the header's gap 20px; an Agent applied the title alone, and the designer ended the round by pressing and holding the toggle. Now the Agent is asked to apply the round again: the two changes left over.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "48");
+      await pickHero(page);
+      await setField(page, "Corner radius", "16");
+      await layer(page, "Header").click();
+      await setField(page, "Gap", "20");
+      await saved(desk, 3);
+      // The round before, applied as far as the title, as the Skill says; then the Agent stops.
+      await desk.cli("claim");
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-5xl");
+      await titleAt(page, "48px");
+      await desk.cli("done", "1");
+      await endTheRound(page);
+      // Left over: the corners and the gap, numbered 1 and 2.
+      await saved(desk, 2);
+      await desk.settle("The round before, ended halfway: the title at 48px");
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The hero has 16px corners.",
+        checkable: true,
+        variable: ["rounded-2xl", "--radius-2xl"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"]')!).borderTopLeftRadius === "16px",
+      },
+      {
+        kind: "style",
+        expect: "The header's gap, between the title and the badge, is 20px.",
+        checkable: true,
+        variable: ["gap-5", "gap-x-5"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "20px",
+      },
+    ],
+    checks: [
+      {
+        expect: "The title stays 48px, as the round before applied it.",
+        kept: true,
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "48px",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<section className="flex h-screen', '<section className="flex h-screen rounded-2xl');
+      await desk.edit("src/App.tsx", '<header className="flex items-center gap-3">', '<header className="flex items-center gap-5">');
+    },
+  },
+  {
+    id: "flow-undo-last",
+    title:
+      "Set up by a round before, applied and finished, not committed: the title 48px and the header's gap 20px. Now the designer asks the Agent to undo that round (`npx 03kind last`).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "48");
+      await layer(page, "Header").click();
+      await setField(page, "Gap", "20");
+      await saved(desk, 2);
+      // The round before, applied in full as the Skill says, and finished; its code left uncommitted, as `git diff` shows it.
+      await desk.cli("claim");
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-5xl");
+      await desk.edit("src/App.tsx", '<header className="flex items-center gap-3">', '<header className="flex items-center gap-5">');
+      await titleAt(page, "48px");
+      await desk.cli("done", "1", "2");
+      await desk.cli("finish");
+      await page.getByRole("button", { name: TOGGLE_LABEL }).waitFor();
+    },
+    changes: [],
+    // The designer's words for the Skill's undo ("undo the last round of design changes").
+    prompt: "撤销上一轮的设计改动",
+    checks: [
+      {
+        expect: "The title is 36px again and the header's gap 12px, as before the round.",
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "36px" && getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "12px",
+      },
+      {
+        expect: "The project's source is as before the round: `git diff` shows nothing of it (`.03kind/` aside).",
+        sourceAsAtStart: true,
+      },
+    ],
+    async apply(desk) {
+      // As the Skill says: `last` prints the round before and the command that takes its code back out.
+      const last = await desk.cli("last");
+      const command = /To undo the round, take them back out: `([^`]+)`/.exec(last)?.[1];
+      if (!command) throw new Error(`\`last\` gives no command to undo the round by:\n${last}`);
+      await desk.shell!(command);
+    },
+  },
 ];
 
 /**
@@ -1131,9 +1273,26 @@ export async function shown(pages: Map<number, Page>, scenario: Scenario, saved:
   );
 }
 
-/** The widths a scenario's tests run at. */
+/** Whether the page shows each of the scenario's own checks (`checks`), at each width they run at; null for one the page does not test. */
+export async function held(pages: Map<number, Page>, scenario: Scenario): Promise<(boolean | null)[]> {
+  return Promise.all(
+    (scenario.checks ?? []).map(async (check) => {
+      if (!check.shows) return null;
+      for (const width of check.widths ?? [1280]) {
+        const shows = await pages
+          .get(width)!
+          .evaluate(check.shows, { width })
+          .catch(() => false);
+        if (!shows) return false;
+      }
+      return true;
+    }),
+  );
+}
+
+/** The widths a scenario's tests run at, its changes' and its own checks'. */
 export function widthsOf(scenario: Scenario): number[] {
-  return [...new Set(scenario.changes.flatMap((change) => (change.shows ? (change.widths ?? [1280]) : [])))];
+  return [...new Set([...scenario.changes, ...(scenario.checks ?? [])].flatMap((test) => (test.shows ? (test.widths ?? [1280]) : [])))];
 }
 
 /**

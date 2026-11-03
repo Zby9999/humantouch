@@ -366,3 +366,12 @@ export function usesVariable(diff: string, variables: string[]): boolean {
   };
   return variables.some((name) => count("+", name) > count("-", name));
 }
+
+/**
+ * Of a scenario's own checks (ticket 86: an earlier round's changes kept, a
+ * round undone), the share that hold at the end; null with none.
+ */
+export function scenarioChecksHold(checks: { atEnd: boolean }[] | undefined): number | null {
+  if (!checks?.length) return null;
+  return checks.filter((check) => check.atEnd).length / checks.length;
+}

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { designProblems, openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
+import { designProblems, held, openObservers, SCENARIOS, shown } from "../bench/scenarios.ts";
 import { DEV_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
@@ -43,7 +43,8 @@ for (const scenario of SCENARIOS) {
       settle: async () => {},
       changeSet: () => readThirdKindFile("changeset.json"),
     });
-    const saved = readThirdKindFile("changeset.json").changes;
+    // An undo has no round to apply: no ChangeSet.
+    const saved = readThirdKindFile("changeset.json")?.changes ?? [];
     expect(saved.map((change: { kind: string }) => change.kind)).toEqual(scenario.changes.map((change) => change.kind));
     // What the page can check, and which values are Variables, as the scenario names them.
     expect(designProblems(scenario, saved)).toEqual([]);
@@ -52,6 +53,8 @@ for (const scenario of SCENARIOS) {
     const observers = await openObservers(browser, scenario, DEV_URL);
     try {
       expect(await shown(observers.pages, scenario, saved)).toEqual(scenario.changes.map((change) => (change.shows ? false : null)));
+      // The scenario's own checks the page tests: those kept hold already, the others not yet. The source's (`sourceAsAtStart`) the bench checks, in a copy of its own: the example here is in this repository, with no commit of its own to compare with.
+      expect(await held(observers.pages, scenario)).toEqual((scenario.checks ?? []).map((check) => (check.shows ? !!check.kept : null)));
     } finally {
       await observers.close();
     }
