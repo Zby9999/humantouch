@@ -2,8 +2,12 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "./fixtures";
 import { pack, sh } from "./install-copy";
+
+/** The repository's root, where its README and LICENSE are. */
+const REPOSITORY = fileURLToPath(new URL("../../", import.meta.url));
 
 // Packed once for the file: under `fullyParallel`, each worker would pack it again. The checks stay
 // independent: one failing does not skip the rest.
@@ -16,6 +20,7 @@ let files: string[];
 let pkg: {
   name: string;
   private?: boolean;
+  license?: string;
   bin: Record<string, string>;
   exports: Record<string, string | Record<string, string>>;
   dependencies?: Record<string, string>;
@@ -111,6 +116,15 @@ test("the package has nothing but what is built and the Skill: no example projec
   expect(others.filter((file) => !/^(package\.json|(readme|copying|license|licence)(\.[^/]*[^~$/])?)$/i.test(file))).toEqual([]);
   // Nor in what is built.
   expect(files.filter((file) => /fixtures|\.(test|spec)\.|\.tsx?$/.test(file) && !file.endsWith(".d.ts"))).toEqual([]);
+});
+
+test("the package has the repository's README and LICENSE, as they are: the npm page shows the README GitHub does (ticket 59)", () => {
+  expect(files).toContain("README.md");
+  expect(files).toContain("LICENSE");
+  expect(read("README.md")).toBe(readFileSync(join(REPOSITORY, "README.md"), "utf8"));
+  expect(read("LICENSE")).toBe(readFileSync(join(REPOSITORY, "LICENSE"), "utf8"));
+  expect(read("LICENSE")).toContain("Copyright (c) 2026 Zby9999");
+  expect(pkg.license).toBe("MIT");
 });
 
 test("the package has no source map, nor code pointing to one: a project's dev server has none to warn is missing", () => {
