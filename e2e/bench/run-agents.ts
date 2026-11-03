@@ -32,7 +32,7 @@ import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, use
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { exampleOf, openObservers, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
-import { STANDARD_SCENARIOS as SCENARIOS } from "./scenarios-other-examples.ts";
+import { STANDARD_SCENARIOS } from "./scenarios-other-examples.ts";
 
 /** Whether something answers on `port` of this machine, as a dev server there would. */
 function answers(port: number): Promise<boolean> {
@@ -105,7 +105,7 @@ async function main(argv: string[]) {
     return at < 0 ? undefined : argv[at + 1];
   };
   const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
-  const scenarios = option("scenarios") ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : SCENARIOS;
+  const scenarios = option("scenarios") ? STANDARD_SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : STANDARD_SCENARIOS;
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
@@ -462,7 +462,7 @@ async function runOnce({
 export function measureFolder(folder: string) {
   const saved: RawRun = JSON.parse(readFileSync(join(folder, "raw.json"), "utf8"));
   // What the page can check, and the Variables, as the scenario has them now: a rule fixed since is measured by.
-  const scenario = SCENARIOS.find((s) => s.id === saved.scenario);
+  const scenario = STANDARD_SCENARIOS.find((s) => s.id === saved.scenario);
   const raw: RawRun = {
     ...saved,
     changes: saved.changes.map((change, i) => {

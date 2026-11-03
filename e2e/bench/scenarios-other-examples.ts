@@ -5,7 +5,7 @@
  * Server Component and a `'use client'` one. Their changes fall on code
  * written as real projects write it: class names joined with `cn()`, a
  * component's variant picked by a prop, one component used several times and
- * one usage of it changed, an element rendered on a condition.
+ * one usage of it changed, a layer rendered on a condition.
  *
  * Each has a script that writes the code an Agent applying it right would
  * (`--scripted`), as the Skill's notes ask for it: the class or rule that
@@ -15,18 +15,18 @@
 import type { Locator, Page } from "@playwright/test";
 import { SCENARIOS, boxOf, design, desktop, enterEditMode, layer, phone, pick, saved, setField, type Desk, type Scenario } from "./scenarios.ts";
 
-/** Selects a layer from the Layers panel by its name, then its parent `up` times (Esc), as a designer climbs from words to their box. */
+/** Selects a layer from the Layers panel by its name, then its parent `up` times (Esc), as a designer climbs from a Text Layer to the Frame it is in. */
 async function selectUp(desk: Desk, name: string, up: number) {
   await layer(desk.page, name).click();
   for (let i = 0; i < up; i++) await desk.page.keyboard.press("Escape");
 }
 
 /**
- * Selects, in a view, the box a short text is in (what `selector` finds
- * there): its words first, in their middle, then their parent (Esc). The
- * view is the one worked in from then on.
+ * Selects, in a view, the Frame a short Text Layer is in (what `selector`
+ * finds there): the Text Layer first, in its middle, then its parent (Esc).
+ * The view is the one worked in from then on.
  */
-async function pickBoxOfText(page: Page, view: Locator, selector: string) {
+async function pickFrameOfText(page: Page, view: Locator, selector: string) {
   const box = await boxOf(view.contentFrame().locator(selector).first());
   await page.keyboard.down("ControlOrMeta");
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -64,7 +64,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "style",
-        expect: "The Pricing heading is 44px.",
+        expect: "The Pricing heading is 44px (with the project's `display` size, its line height and letter spacing come along: the Variable's own).",
         checkable: true,
         variable: ["text-display"],
         shows: () => getComputedStyle(document.querySelector('[data-testid="pricing"] h2')!).fontSize === "44px",
@@ -123,7 +123,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
     async design(desk) {
       const { page } = desk;
       await enterEditMode(page);
-      await pickBoxOfText(page, phone(page), `${PRICING} > span`);
+      await pickFrameOfText(page, phone(page), `${PRICING} > span`);
       await setField(page, "Fill color", "dbe6ff");
       await selectUp(desk, "Save 20% yearly", 1);
       await layer(page, "Pricing").click({ modifiers: ["Shift"] });
@@ -237,7 +237,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
       await setField(page, "Fill color", "1c1917");
       await selectUp(desk, "Two months free", 1);
       await setField(page, "Corner radius", "12");
-      await pickBoxOfText(page, phone(page), `${BILLING} > p`);
+      await pickFrameOfText(page, phone(page), `${BILLING} > p`);
       await design(page).getByRole("checkbox", { name: "Visible" }).uncheck();
       await selectUp(desk, "Monthly", 2);
       await layer(page, "Billing").click({ modifiers: ["Shift"] });
@@ -247,7 +247,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
     changes: [
       {
         kind: "style",
-        expect: "The Yearly option is #1C1917; Monthly stays white.",
+        expect: "The Yearly option, picked as the round was made, is #1C1917; Monthly stays white. Changing the picked option's own rule (`.selected`) or Yearly's alone both show it: the page is looked at with Yearly picked, as the designer saw it.",
         checkable: true,
         shows: () => {
           const [monthly, yearly] = [...document.querySelectorAll('[data-testid="billing"] button')].map((button) => getComputedStyle(button).backgroundColor);
