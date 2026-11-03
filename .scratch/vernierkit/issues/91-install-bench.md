@@ -31,3 +31,9 @@
 - 开这张 ticket，先做测量台，24 等它和 88 都做完、并且包已发布再跑。
 - 安装要单独一份命令名单；Agent 中途停下来问人算失败；第 3 步「能开浏览器」那一支这次不测（无头的 Agent 都走开不了浏览器的那一支，那一支更难）。
 - yarn、bun 都装：yarn 用 Node 自带的 corepack 启用，bun 用官方安装脚本装进用户目录（`~/.bun`），不碰系统目录。动手装之前先在对话里问设计师一次，同意了再装；装了什么、装在哪、怎么删，记进 Comments。
+
+## Comments
+
+**暂停于 2026-11-03**：测量台、10 个起点、pi 都已做好（0a568c4、2d00ee5、1094142），脚本 Agent 走查 9/10 过（没过的 next-webpack-bun-tw4 是起点自己把依赖写乱了序，已改）；代码审查的修改做了一半（323ff0d，typecheck 现在不过）。明天先让 `install-judge.ts`、`run-install.ts` 跟上新的 `install-servers.ts` / `install-allowlist.ts`，再做完审查剩下的 1、3、4、5、7、10、11 等项，然后重跑 10 个起点和故意出错的几种、全套测试，再合并。
+
+**装了什么（2026-11-03，设计师在对话里同意后装的）**：yarn 1.22.22 用 `corepack enable yarn` 启用（node 目录里加了 `yarn`、`yarnpkg` 两个链接，本体在 `~/.cache/node/corepack/v1/yarn`）；bun 1.4.4 用官方脚本（先读过）以 `SHELL=/bin/sh` 装进 `~/.bun`，没改任何 shell 配置，另手动加了 `~/.bun/bin/bunx -> bun`（正常安装会有，`doctor` 在 bun 项目里要用）。用的时候顺带产生：`~/.config/yarn`、`~/.yarn/bin`（`yarn create` 全局装的脚手架）、`~/Library/Caches/Yarn`（约 3.3G）、`~/.bun/install/cache`。删除：`corepack disable yarn`，再 `rm -rf ~/.bun ~/.config/yarn ~/.yarn ~/Library/Caches/Yarn ~/.cache/node/corepack/v1/yarn`。
