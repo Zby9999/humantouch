@@ -22,7 +22,7 @@ import { connect } from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
+import { agentVersion, AGENTS, commandLine, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
@@ -383,7 +383,7 @@ async function runOnce({
       version,
       commandLine: commandLine(agent, prompt),
       skill,
-      effort: { set: AGENTS[agent].effort, seen: effortSeen(agent, folder) },
+      effort: { set: AGENTS[agent].effort, seen: AGENTS[agent].effortSeen?.(folder) ?? null },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
       stalledNotices: times.stalledNotices.length,
@@ -440,6 +440,8 @@ export function measureFolder(folder: string) {
     version: raw.version,
     skill: raw.skill ?? true,
     model: transcript.model,
+    responseModels: transcript.responseModels,
+    skills: transcript.skills,
     changes: count,
     exitCode: raw.exitCode,
     timedOut: raw.timedOut,
@@ -547,6 +549,8 @@ function writeSummary(out: string) {
       agent,
       versions: [...new Set(mine.map((m) => m.version))],
       models: [...new Set(mine.map((m) => m.model))],
+      responseModels: [...new Set(mine.flatMap((m) => m.responseModels))],
+      skills: [...new Set(mine.flatMap((m) => m.skills))],
       subagentModels: [...new Set(mine.flatMap((m) => m.subagents.models))],
       efforts: [...new Set(mine.map((m) => (m.effort ? `${m.effort.set}${m.effort.seen ? `, seen ${m.effort.seen}` : ""}` : "?")))],
       skill: mine.every((m) => m.skill) ? "yes" : mine.some((m) => m.skill) ? "mixed" : "no",
@@ -573,7 +577,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
+        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}${agent.responseModels.length ? `（提供商回答的模型 ${agent.responseModels.join(", ")}）` : ""}，加载的 skills ${agent.skills.join(", ") || "记录里没有"}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
         "| 指标 | 中位数（范围） | 次数 |",
         "|---|---|---|",
