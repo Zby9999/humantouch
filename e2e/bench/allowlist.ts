@@ -13,95 +13,157 @@ export const DENIED = "Not run: the 03Kind bench allows";
 
 /** The reason a turned-away command is given, for the Agent to read. */
 export function deniedReason(command: string): string {
-  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most): ${SHELL.join(", ")}, and cd. Turned away: ${command}`;
+  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${SHELL.join(", ")}, and cd. Turned away: ${command}`;
 }
 
-/** Options of a listed command that run another program or write a file. */
+/**
+ * Options of a listed command that run another program or write a file, by
+ * the command's first words, matched against each word as bash passes it.
+ */
 const RUNS_OR_WRITES: Record<string, RegExp> = {
   find: /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/,
-  rg: /^--pre(=|$)/,
-  git: /^--output(=|$)/,
+  rg: /^--(pre|hostname-bin)(=|$)/,
+  // git takes a long option by any prefix of it that names no other: `--outp=x` is `--output=x`.
+  git: /^--ou(t(p(u(t)?)?)?)?(=|$)/,
+  // tsc reads its options in any case, and more of them from a file named after @.
+  "npx tsc": /^(--(outdir|outfile|out|generatetrace|tsbuildinfofile|build|declarationdir)(=|$)|-b$|@)/i,
 };
+
+/** A word of a command as bash passes it, and which of its characters bash still reads as more than text (unquoted, unescaped). */
+interface Word {
+  text: string;
+  bare: boolean[];
+}
 
 /**
  * Whether the bench lets `command` run: every command in it, split at `&&`,
- * `||`, `;`, `|`, `&` and new lines (outside quotes), is one of `allowed` (its
+ * `||`, `;`, `|` and new lines (outside quotes), is one of `allowed` (its
  * words, then any arguments) or a `cd`; none sets a variable first or uses an
- * option that runs another program or writes a file; nothing runs a command
- * inside another (`$( )`, backticks, `<( )`, `>( )`); and output is redirected
- * only to /dev/null or another stream. What the rule cannot read is turned away.
+ * option that runs another program or writes a file. Each is matched by the
+ * words bash will pass, quotes taken out and backslashes read. Nothing runs a
+ * command inside another (`$( )`, backticks, `<( )`, `>( )`), in a subshell
+ * or in the background (a lone `&`); no word has an expansion bash fills in
+ * (`$name`, `${ }`, `$'…'`, `$"…"`, braces), or a pattern that could name an
+ * option of a command that has one of those; and output is redirected only to
+ * /dev/null or another stream. What the rule cannot read is turned away.
  */
 export function shellAllowed(command: string, allowed: readonly string[] = SHELL): boolean {
-  const commands = split(command);
-  if (!commands) return false;
-  const words = commands.map((part) => part.trim().split(/\s+/)).filter((part) => part[0] !== "");
-  return words.length > 0 && words.every((part) => allowedCommand(part, allowed));
+  const commands = parse(command)?.filter((words) => words.length > 0);
+  return !!commands && commands.length > 0 && commands.every((words) => allowedCommand(words, allowed));
 }
 
-function allowedCommand(words: string[], allowed: readonly string[]): boolean {
-  if (/^\w+=/.test(words[0])) return false;
-  if (words[0] === "cd") return words.length <= 2;
-  const options = RUNS_OR_WRITES[words[0]];
-  if (options && words.some((word) => options.test(word))) return false;
-  return allowed.some((entry) => entry.split(" ").every((word, i) => words[i] === word));
+/** The words of each command in a command line, as bash passes them; null when the rule turns the line away. */
+export function shellWords(command: string): string[][] | null {
+  return parse(command)?.map((words) => words.map((word) => word.text)) ?? null;
+}
+
+function allowedCommand(words: Word[], allowed: readonly string[]): boolean {
+  const text = words.map((word) => word.text);
+  if (words.some(expandsBraces)) return false;
+  if (/^\w+=/.test(text[0])) return false;
+  if (text[0] === "cd") return words.length <= 2;
+  const starts = (prefix: string) => prefix.split(" ").every((word, i) => text[i] === word);
+  const options = Object.entries(RUNS_OR_WRITES).flatMap(([prefix, option]) => (starts(prefix) ? [option] : []));
+  if (options.length && words.some((word) => options.some((option) => option.test(word.text)) || mayNameAnOption(word))) return false;
+  return allowed.some(starts);
+}
+
+/** `{a,b}` or `{a..b}`, its braces bare: bash makes several words of it. */
+function expandsBraces({ text, bare }: Word): boolean {
+  const open = [...text].findIndex((char, i) => char === "{" && bare[i]);
+  const close = [...text].findLastIndex((char, i) => char === "}" && bare[i]);
+  if (open < 0 || close < open) return false;
+  return [...text.slice(open + 1, close)].some((char, i) => {
+    const at = open + 1 + i;
+    return bare[at] && (char === "," || (char === "." && text[at + 1] === "." && bare[at + 1]));
+  });
+}
+
+/** A pattern bash fills in from the file names there are, which could give a word that starts with `-`. */
+function mayNameAnOption({ text, bare }: Word): boolean {
+  const pattern = [...text].some((char, i) => bare[i] && "*?[".includes(char));
+  return pattern && (text[0] === "-" || (bare[0] && "*?[".includes(text[0])));
 }
 
 /**
- * The commands of a command line, quotes kept as written and the allowed
+ * The commands of a command line, each the words bash will pass, the allowed
  * redirections taken out; null when it holds something the rule turns away.
  */
-function split(line: string): string[] | null {
-  const commands: string[] = [];
-  let current = "";
+function parse(line: string): Word[][] | null {
+  const commands: Word[][] = [];
+  let words: Word[] = [];
+  let word: Word | null = null;
   let quote: "'" | '"' | null = null;
-  const next = () => {
-    commands.push(current);
-    current = "";
+  const add = (char: string, bare: boolean) => {
+    word ??= { text: "", bare: [] };
+    word.text += char;
+    word.bare.push(bare);
+  };
+  const endWord = () => {
+    if (word) words.push(word);
+    word = null;
+  };
+  const endCommand = () => {
+    endWord();
+    commands.push(words);
+    words = [];
   };
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
-    const ahead = line[i + 1];
+    const ahead = line[i + 1] ?? "";
     if (quote === "'") {
       if (char === "'") quote = null;
-      current += char;
+      else add(char, false);
+      continue;
+    }
+    if (char === "`") return null;
+    // `$( )`, `$name`, `${ }`, `$[ ]` and the special parameters: what bash fills in is not in the line.
+    if (char === "$" && /[\w({[@*#?!$-]/.test(ahead)) return null;
+    if (quote === '"') {
+      if (char === '"') quote = null;
+      // In double quotes a backslash escapes only these; before anything else it is text.
+      else if (char === "\\" && '$`"\\\n'.includes(ahead) && ahead) {
+        if (ahead !== "\n") add(ahead, false);
+        i++;
+      } else add(char, false);
       continue;
     }
     if (char === "\\") {
-      current += char + (ahead ?? "");
+      if (!ahead) return null;
+      // A backslash and a new line join two lines.
+      if (ahead !== "\n") add(ahead, false);
       i++;
-      continue;
-    }
-    if (char === "`" || (char === "$" && ahead === "(")) return null;
-    if (quote === '"') {
-      if (char === '"') quote = null;
-      current += char;
-      continue;
-    }
-    if (char === "'" || char === '"') {
+    } else if (char === "'" || char === '"') {
+      word ??= { text: "", bare: [] };
       quote = char;
-      current += char;
-      continue;
-    }
-    if ((char === "<" || char === ">") && ahead === "(") return null;
-    if (char === ";" || char === "\n") next();
+    } else if (char === "$" && (ahead === "'" || ahead === '"')) return null;
+    else if (char === "(" || char === ")") return null;
+    else if (char === "#" && word === null) {
+      // A comment, to the end of the line.
+      while (i + 1 < line.length && line[i + 1] !== "\n") i++;
+    } else if (char === " " || char === "\t") endWord();
+    else if (char === ";" || char === "\n") endCommand();
     else if ((char === "&" && ahead === "&") || (char === "|" && (ahead === "|" || ahead === "&"))) {
-      next();
+      endCommand();
       i++;
-    } else if (char === "|" || (char === "&" && ahead !== ">")) next();
+    } else if (char === "|") endCommand();
+    else if (char === "&" && ahead !== ">") return null;
     else if (char === ">" || char === "<" || char === "&") {
-      // A redirection: `[n]>`, `[n]>>`, `&>`, `[n]>&m`, with what it goes to.
-      const match = /^(&>|>>|>&|<&|>|<)\s*([^\s;&|<>]*)/.exec(line.slice(i));
+      // A redirection: `[n]>`, `[n]>>`, `&>`, `[n]>&m`, with what it goes to, a whole word.
+      const match = /^(&>|>>|>&|<&|>|<)[ \t]*([\w/.-]*)(?=$|[\s;&|<>])/.exec(line.slice(i));
       if (!match) return null;
       const [whole, operator, target] = match;
       const toStream = (operator === ">&" || operator === "<&") && /^(\d+|-)$/.test(target);
       const toNothing = (operator === ">" || operator === ">>" || operator === "&>") && target === "/dev/null";
       if (!toStream && !toNothing) return null;
       // The stream's number, written just before it, goes too.
-      current = current.replace(/(^|\s)\d+$/, "$1");
+      const current: Word | null = word;
+      if (current && /^\d+$/.test(current.text) && current.bare.every(Boolean)) word = null;
+      else endWord();
       i += whole.length - 1;
-    } else current += char;
+    } else add(char, true);
   }
   if (quote) return null;
-  next();
+  endCommand();
   return commands;
 }

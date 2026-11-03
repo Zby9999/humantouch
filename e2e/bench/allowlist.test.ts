@@ -59,3 +59,84 @@ test("a listed command with an option that runs another program or writes a file
 test("a variable set before a command is turned away: it could change what the command runs", () => {
   assert.equal(shellAllowed("NODE_OPTIONS=--require=./x.js npx 03kind claim"), false);
 });
+
+test("a command is matched by the words bash will run, its quotes taken out and its backslashes read: quoting an option does not hide it", () => {
+  for (const command of [
+    `find . "-delete"`,
+    `find . '-exec' sh -c 'echo PWNED' ';'`,
+    "find . -exe\\c echo PWNED ';'",
+    `find . -de""lete`,
+    `git diff "--output=/tmp/x"`,
+    `rg "--pre=sh" x`,
+    `r"m" -rf src`,
+  ]) {
+    assert.equal(shellAllowed(command), false, command);
+  }
+  assert.equal(shellAllowed(`npx "03kind" claim`), true);
+  assert.equal(shellAllowed(`git diff -- "src/App.tsx"`), true);
+  assert.equal(shellAllowed(`grep -n "a \\"b\\"" src/App.tsx`), true);
+});
+
+test("a word bash would expand into others is turned away: brace expansion, and a pattern that could name an option of a command that has one that runs or writes", () => {
+  for (const command of ["find . {-exec,} echo PWNED ';'", "find . -de{l,}ete", "ls {a..c}", "find . -de*", "find . *", "find . -exe?", "rg --pr[e] sh x"]) {
+    assert.equal(shellAllowed(command), false, command);
+  }
+  assert.equal(shellAllowed("find src -name '*.tsx'"), true);
+  assert.equal(shellAllowed("cat src/*.css"), true);
+  assert.equal(shellAllowed("grep -n Card src/*.tsx"), true);
+  assert.equal(shellAllowed("git log --format='{a,b}'"), true);
+});
+
+test("a long option is known by any prefix git takes for it: --outp= is --output=", () => {
+  assert.equal(shellAllowed("git diff --outp=/tmp/x"), false);
+  assert.equal(shellAllowed("git log --ou /tmp/x"), false);
+  assert.equal(shellAllowed("git log --oneline"), true);
+  assert.equal(shellAllowed("git diff --output-indicator-new=+"), true);
+});
+
+test("$'…', $\"…\", and a variable or other expansion bash fills in are turned away; a $ that is plain text goes ahead", () => {
+  for (const command of [`ls $'a\\'b' ; echo PWNED #'`, `ls $"x"`, "find . -de${X}lete", "cat $HOME/.pi/agent/auth.json", 'cat "$HOME/x"', "ls $1", "cat $[1]"]) {
+    assert.equal(shellAllowed(command), false, command);
+  }
+  assert.equal(shellAllowed("grep -n 'x$' src/App.tsx"), true);
+  assert.equal(shellAllowed(`grep -nE "a$" src/App.tsx`), true);
+  assert.equal(shellAllowed("grep -n '$HOME' src/App.tsx"), true);
+});
+
+test("a comment is read as bash reads it: a quote in it opens nothing", () => {
+  assert.equal(shellAllowed("ls #'\nrm -rf src\n#'"), false);
+  assert.equal(shellAllowed("ls # what is here"), true);
+  assert.equal(shellAllowed("grep -n a#b src/App.tsx"), true);
+});
+
+test("a subshell or group is turned away", () => {
+  assert.equal(shellAllowed("(rm -rf src)"), false);
+  assert.equal(shellAllowed("ls && (npx 03kind claim)"), false);
+});
+
+test("rg's --hostname-bin runs a program: turned away", () => {
+  assert.equal(shellAllowed("rg --hostname-bin=./x Card"), false);
+  assert.equal(shellAllowed("rg --hostname-bin ./x Card"), false);
+});
+
+test("a lone & runs a command in the background: turned away; && and the redirections with & go ahead", () => {
+  assert.equal(shellAllowed("npx 03kind claim & npx 03kind finish"), false);
+  assert.equal(shellAllowed("npx 03kind claim &"), false);
+  assert.equal(shellAllowed("npx 03kind claim && npx 03kind finish"), true);
+  assert.equal(shellAllowed("npx 03kind claim 2>&1"), true);
+  assert.equal(shellAllowed("npx 03kind claim >&2"), true);
+  assert.equal(shellAllowed("npx 03kind claim &>/dev/null"), true);
+});
+
+test("a redirection goes to /dev/null itself, not to a name that only starts with it", () => {
+  assert.equal(shellAllowed(`ls >/dev/null"x"`), false);
+  assert.equal(shellAllowed("ls >/dev/null\\x"), false);
+});
+
+test("tsc with an option that writes files elsewhere, builds, or reads more options from a file is turned away; plain tsc goes ahead, as on Claude's list", () => {
+  for (const option of ["--outDir dist", "--outFile out.js", "--out out.js", "--generateTrace /tmp/t", "--tsBuildInfoFile /tmp/b", "-b", "--build", "--declarationDir /tmp/d", "--OUTDIR dist", "@args.txt"]) {
+    assert.equal(shellAllowed(`npx tsc ${option}`), false, option);
+  }
+  assert.equal(shellAllowed("npx tsc"), true);
+  assert.equal(shellAllowed("npx tsc --noEmit -p tsconfig.json"), true);
+});
