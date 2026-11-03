@@ -368,10 +368,10 @@ export function usesVariable(diff: string, variables: string[]): boolean {
 }
 
 /**
- * Of a scenario's own checks (ticket 86: an earlier round's changes kept, a
+ * Of a scenario's own expectations (ticket 86: an earlier round's changes kept, a
  * round undone), the share that hold at the end; null with none.
  */
-export function scenarioChecksHold(checks: { atEnd: boolean }[] | undefined): number | null {
-  if (!checks?.length) return null;
-  return checks.filter((check) => check.atEnd).length / checks.length;
+export function scenarioExpectationsHold(expectations: { atEnd: boolean }[] | undefined): number | null {
+  if (!expectations?.length) return null;
+  return expectations.filter((expectation) => expectation.atEnd).length / expectations.length;
 }

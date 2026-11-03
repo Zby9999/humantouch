@@ -79,7 +79,7 @@ export interface ScenarioChange {
  * its changes (ticket 86): what an earlier round applied staying applied, or
  * a round undone. One the page tests (`shows`), the project's source, or both.
  */
-export interface ScenarioCheck {
+export interface ScenarioExpectation {
   /** What holds, in words. */
   expect: string;
   /** Whether it holds before the Agent starts too (what the Agent must leave as it is); else it must not hold yet. */
@@ -106,8 +106,8 @@ export interface Scenario {
   changes: ScenarioChange[];
   /** What the designer says to the Agent, when not the bench's own ask to apply the round (`PROMPT`): in the designer's words. */
   prompt?: string;
-  /** What holds of the scenario as a whole at the end, apart from its changes. */
-  checks?: ScenarioCheck[];
+  /** What holds of the scenario as a whole at the end, apart from its changes: its own expectations, not the page's checks (核对). */
+  expectations?: ScenarioExpectation[];
   /**
    * Writes the round into the code as an Agent applying it right would,
    * once it is claimed (`desk.edit`), for the bench's scripted pass
@@ -1177,7 +1177,7 @@ export const SCENARIOS: Scenario[] = [
         shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "20px",
       },
     ],
-    checks: [
+    expectations: [
       {
         expect: "The title stays 48px, as the round before applied it.",
         kept: true,
@@ -1213,7 +1213,7 @@ export const SCENARIOS: Scenario[] = [
     changes: [],
     // The designer's words for the Skill's undo ("undo the last round of design changes").
     prompt: "撤销上一轮的设计改动",
-    checks: [
+    expectations: [
       {
         expect: "The title is 36px again and the header's gap 12px, as before the round.",
         shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "36px" && getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "12px",
@@ -1256,43 +1256,36 @@ export function designProblems(scenario: Scenario, saved: SavedChange[]): string
   return problems;
 }
 
+/** Whether a test holds on the page of each of `widths` (1280 when none): `run` gives the test, and what it is run with, at a width. */
+async function showsAtEach<Arg extends object>(pages: Map<number, Page>, widths: number[] | undefined, run: (width: number) => [(arg: Arg) => boolean, Arg]): Promise<boolean> {
+  for (const width of widths ?? [1280]) {
+    const [test, arg] = run(width);
+    const shows = await pages
+      .get(width)!
+      .evaluate(test as (arg: unknown) => boolean, arg)
+      .catch(() => false);
+    if (!shows) return false;
+  }
+  return true;
+}
+
 /** Whether the page shows each change, by the scenario's tests, on a page of each width they run at; null for a change with none. */
 export async function shown(pages: Map<number, Page>, scenario: Scenario, saved: SavedChange[]): Promise<(boolean | null)[]> {
   return Promise.all(
-    scenario.changes.map(async (change, i) => {
-      if (!change.shows) return null;
-      for (const width of change.widths ?? [1280]) {
-        const shows = await pages
-          .get(width)!
-          .evaluate(change.shows, { change: saved[i], width })
-          .catch(() => false);
-        if (!shows) return false;
-      }
-      return true;
-    }),
+    scenario.changes.map((change, i) => (change.shows ? showsAtEach(pages, change.widths, (width) => [change.shows!, { change: saved[i], width }]) : null)),
   );
 }
 
-/** Whether the page shows each of the scenario's own checks (`checks`), at each width they run at; null for one the page does not test. */
+/** Whether the page shows each of the scenario's own expectations (`expectations`), at each width they run at; null for one the page does not test. */
 export async function held(pages: Map<number, Page>, scenario: Scenario): Promise<(boolean | null)[]> {
   return Promise.all(
-    (scenario.checks ?? []).map(async (check) => {
-      if (!check.shows) return null;
-      for (const width of check.widths ?? [1280]) {
-        const shows = await pages
-          .get(width)!
-          .evaluate(check.shows, { width })
-          .catch(() => false);
-        if (!shows) return false;
-      }
-      return true;
-    }),
+    (scenario.expectations ?? []).map((expectation) => (expectation.shows ? showsAtEach(pages, expectation.widths, (width) => [expectation.shows!, { width }]) : null)),
   );
 }
 
-/** The widths a scenario's tests run at, its changes' and its own checks'. */
+/** The widths a scenario's tests run at, its changes' and its own expectations'. */
 export function widthsOf(scenario: Scenario): number[] {
-  return [...new Set([...scenario.changes, ...(scenario.checks ?? [])].flatMap((test) => (test.shows ? (test.widths ?? [1280]) : [])))];
+  return [...new Set([...scenario.changes, ...(scenario.expectations ?? [])].flatMap((test) => (test.shows ? (test.widths ?? [1280]) : [])))];
 }
 
 /**

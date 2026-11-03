@@ -53,8 +53,10 @@ for (const scenario of SCENARIOS) {
     const observers = await openObservers(browser, scenario, DEV_URL);
     try {
       expect(await shown(observers.pages, scenario, saved)).toEqual(scenario.changes.map((change) => (change.shows ? false : null)));
-      // The scenario's own checks the page tests: those kept hold already, the others not yet. The source's (`sourceAsAtStart`) the bench checks, in a copy of its own: the example here is in this repository, with no commit of its own to compare with.
-      expect(await held(observers.pages, scenario)).toEqual((scenario.checks ?? []).map((check) => (check.shows ? !!check.kept : null)));
+      // The scenario's own expectations the page tests: those kept hold already, the others not yet. The
+      // source's (`sourceAsAtStart`) the bench checks, in a copy of its own: the example here is in this
+      // repository, with no commit of its own to compare with.
+      expect(await held(observers.pages, scenario)).toEqual((scenario.expectations ?? []).map((expectation) => (expectation.shows ? !!expectation.kept : null)));
     } finally {
       await observers.close();
     }
