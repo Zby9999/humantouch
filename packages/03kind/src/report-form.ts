@@ -7,7 +7,9 @@
  * the Skill gives its form, and its rules in the very words `finish` does.
  */
 import type { Change } from "./client/changeset";
-import { PLACED_BY } from "./client/checkable";
+import type { OffsetInLayout } from "./client/check";
+import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
+import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
 import { changeTitle, otherUsagesWords, listed, otherUsagesWord, propertyName, value } from "./design-values";
 
@@ -57,8 +59,39 @@ function pageShows(change: Change, check: CheckResult): string {
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;
   // A new layer, not found where its change puts it, or found placed elsewhere (ticket 76).
   if (change.kind === "create") return `${at}the page does not have it where the change puts it`;
+  // Where the canvas moves it in its container's layout still, by the value itself (ticket 84).
+  if (PLACED_BY[change.property] && isOffsetInLayout(check.actual)) {
+    const { toDo, how } = canvasOffset(change.property, change.after as number, check.actual.canvas);
+    return `${at}the page does not ${toDo} the layer ${how}, as the canvas does`;
+  }
   // Not placed absolute, the layer has no X, Y, right or bottom on the page to tell (ticket 80).
   if (PLACED_BY[change.property] && check.actual === null) return `${at}the layer is not placed absolute on the page`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
+}
+
+/** Whether the page's check answered how it has a layer in its container's layout, where the canvas moves it there (`OffsetInLayout`, ticket 84). */
+export const isOffsetInLayout = (actual: unknown): actual is OffsetInLayout => actual !== null && typeof actual === "object" && "canvas" in actual;
+
+/** Which way a layer placed relative is moved along each axis, as it is moved more across or down (first) or less: the way, and the way from where its container lays it out. */
+const MOVED_WAY = { x: [["right", "right of"], ["left", "left of"]], y: [["down", "below"], ["up", "above"]] } as const;
+
+/** How far a layer placed relative is moved, `moved` px across or down (`movedBy`), in words: `20px right`; `from` where its container lays it out, `20px right of` (ticket 84). */
+export const movedWords = (axis: Axis, moved: number, from = false) => `${Math.abs(moved)}px ${MOVED_WAY[axis][moved > 0 ? 0 : 1][from ? 1 : 0]}`;
+
+/**
+ * What the canvas does with a layer by its X or Y, `right` or `bottom`, `to`
+ * px, at a width where it has the layer in its container's layout still
+ * (`canvas`, ticket 84), in words: the verb, with the layer to follow it
+ * (`toDo`: "move"; `does`, said of the canvas: "moves"), and how far.
+ * Relative, it moves it from where its container lays it out, a `right` or
+ * `bottom` the other way, or, by 0px, leaves it unmoved there; sticky, keeps
+ * it that far in from that edge of what it scrolls in.
+ */
+export function canvasOffset(property: string, to: number, canvas: InLayout): { toDo: string; does: string; how: string } {
+  const { axis, edge } = PLACED_BY[property]!;
+  if (canvas === "sticky") return { toDo: "keep", does: "keeps", how: `at least ${to}px from the ${SIDES[axis][edge]} of what it scrolls in` };
+  const moved = movedBy(edge, to);
+  if (!moved) return { toDo: "leave", does: "leaves", how: "unmoved in its container's layout" };
+  return { toDo: "move", does: "moves", how: `${movedWords(axis, moved, true)} where its container lays it out` };
 }

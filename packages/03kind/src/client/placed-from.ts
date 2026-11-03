@@ -9,7 +9,7 @@
  * size alone, or how far past the share of its container it is centered on
  * (`calc(50% + 20px)`, ticket 79).
  */
-import { AXIS_SIZE, pxIn, SIDES, type Edge, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
+import { AXIS_SIZE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
 import { absolute, declaredValue, round } from "./property-table";
 import { split } from "./paint";
 import { insideBorder, marginsOf } from "./stacks";
@@ -48,14 +48,21 @@ export function endOffsetPlaces(el: Element, axis: Axis): boolean {
 }
 
 /**
- * Whether a value given to `el`'s `side` moves it, as its document lays it
- * out: its `left` or `top` wherever it is not static, as placed relative it
- * is moved from where its container lays it out, and placed sticky, kept that
- * far in as the page scrolls (ticket 83, review); its `right` or `bottom` as
- * `endOffsetPlaces` has it.
+ * How a value given to `el`'s `side` moves it, as its document lays it out:
+ * placed absolute by it (`placed`); still in its container's layout, but
+ * moved from where that lays it out, placed `relative`, or kept that far in
+ * as the page scrolls, placed `sticky` (ticket 84); not at all (null). Its
+ * `left` or `top` moves it wherever it is not static (ticket 83, review). Its
+ * `right` or `bottom` places it as `endOffsetPlaces` has it; relative, moves
+ * it with no `left` or `top` declared, which the browser goes by instead;
+ * sticky, keeps it in from that edge as well as from the other. Read from
+ * its computed `position` and what is declared, with nothing laid out.
  */
-export function sidePlaces(el: Element, { axis, edge }: Side): boolean {
-  return edge === "end" ? endOffsetPlaces(el, axis) : getComputedStyle(el).position !== "static";
+export function sideMoves(el: Element, { axis, edge }: Side): "placed" | InLayout | null {
+  const { position } = getComputedStyle(el);
+  if (position === "relative" || position === "sticky") return edge === "start" || position === "sticky" || !declared(el, SIDES[axis].start) ? position : null;
+  if (edge === "end") return endOffsetPlaces(el, axis) ? "placed" : null;
+  return position === "static" ? null : "placed";
 }
 
 /** Whether the page or an edit gives `el` a value for `property` other than `auto`. */
