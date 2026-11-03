@@ -145,7 +145,8 @@ export async function cloneBase(base: string): Promise<RunProject> {
       const text = read(".03kind/changeset.json");
       return text === null ? null : JSON.parse(text);
     },
-    remove: () => rmSync(dir, { recursive: true, force: true }),
+    // The dev server, just stopped, may still be writing into it (its service, `.03kind/`): the removal is tried again for that.
+    remove: () => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }),
   };
 }
 
