@@ -263,16 +263,29 @@ async function processTable(): Promise<ProcessRow[]> {
   });
 }
 
+/** How the install bench (ticket 91) runs an Agent otherwise than the applying bench: all of it optional. */
+export interface RunOptions {
+  /** Another binary and arguments in place of the Agent's: Claude's with the install lists, or the scripted Agent. */
+  spec?: Pick<AgentSpec, "binary" | "args">;
+  /** The environment, in place of `cleanEnv()`. */
+  env?: NodeJS.ProcessEnv;
+  /** Told the Agent's process id, and when it started, as soon as it has started. */
+  onStart?(pid: number, startedAt: number): void;
+  /** Leaves what the Agent started running once it exits (its dev server), for the bench to stop itself; still stopped on a timeout. */
+  leaveRunning?: boolean;
+}
+
 /**
  * Runs the Agent in `dir`, told `prompt`, its transcript to `transcript` and what else it
  * prints to `log`, its own files in `folder`; stopped after `timeoutMs`. What
- * it leaves running once it exits (Cursor's worker server) goes with it.
+ * it leaves running once it exits (Cursor's worker server) goes with it, unless `options.leaveRunning`.
  */
-export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number, prompt = PROMPT): Promise<AgentRun> {
-  const spec = AGENTS[agent];
-  const prepared = spec.prepare?.(dir, folder);
+export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number, prompt = PROMPT, options: RunOptions = {}): Promise<AgentRun> {
+  const spec = { ...AGENTS[agent], ...options.spec };
+  const prepared = options.spec ? undefined : spec.prepare?.(dir, folder);
   const startedAt = Date.now();
-  const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: options.env ?? cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  if (child.pid) options.onStart?.(child.pid, startedAt);
   // Only looked at, never stopped: a window that came up is for the record.
   const headed = new Set<string>();
   let looking: Promise<void> = Promise.resolve();
@@ -297,7 +310,7 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
   clearTimeout(timer);
   clearInterval(watch);
   await looking;
-  stopAll();
+  if (!options.leaveRunning) stopAll();
   return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed] };
 }
 
