@@ -154,7 +154,8 @@ function parsePi(all: Event[]): Transcript {
       if (message.isError && output.startsWith(DENIED)) transcript.permissionDenials++;
     }
   }
-  transcript.subagents = { calls: transcript.toolCalls.filter((call) => /^(subagent|task|agent)$/i.test(call.name)).length, models: [...others] };
+  // pi starts no subagent of its own, and the bench gives it no extension that does: only the models are looked for.
+  transcript.subagents.models = [...others];
   return transcript;
 }
 

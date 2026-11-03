@@ -125,8 +125,9 @@ test("pi's run gets the bench's extension, and the rule it holds shell commands 
 
   AGENTS.pi.prepare!(dir, folder);
 
-  const extension = AGENTS.pi.args(folder)[AGENTS.pi.args(folder).indexOf("-e", AGENTS.pi.args(folder).indexOf("-e") + 1) + 1];
-  assert.equal(extension, join(folder, "pi-extension/pi-extension.ts"));
+  const args = AGENTS.pi.args(folder);
+  const extensions = args.flatMap((arg, i) => (arg === "-e" ? [args[i + 1]] : []));
+  assert.equal(extensions[1], join(folder, "pi-extension/pi-extension.ts"));
   assert.deepEqual(readdirSync(join(folder, "pi-extension")).sort(), ["allowlist.ts", "pi-extension.ts"]);
   assert.deepEqual(readdirSync(dir), []);
 });

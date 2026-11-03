@@ -17,7 +17,7 @@ interface PiExtensionApi {
 }
 
 /** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike. */
-function real(path: string): string {
+function realPath(path: string): string {
   try {
     return realpathSync(path);
   } catch {
@@ -33,7 +33,7 @@ export default function benchExtension(pi: PiExtensionApi) {
   });
   pi.on("before_agent_start", (event: { systemPromptOptions: { cwd: string; contextFiles: { path: string }[] } }) => {
     const options = event.systemPromptOptions;
-    const project = real(options.cwd) + sep;
-    options.contextFiles = options.contextFiles.filter((file) => real(file.path).startsWith(project));
+    const project = realPath(options.cwd) + sep;
+    options.contextFiles = options.contextFiles.filter((file) => realPath(file.path).startsWith(project));
   });
 }

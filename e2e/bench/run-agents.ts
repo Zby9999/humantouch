@@ -107,7 +107,7 @@ async function main(argv: string[]) {
   const claimOut = option("claim-out");
   const skill = !argv.includes("--no-skill");
   const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
-  for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude, pi or cursor`);
+  for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: ${Object.keys(AGENTS).join(", ")}`);
 
   const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
