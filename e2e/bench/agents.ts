@@ -4,16 +4,18 @@
  * Measuring). Each runs unattended in the run's project, on the model its
  * arguments pin, in an environment with nothing of the shell it was started
  * from (no gateway, no model setting), as the designer's own login.
- * TK_BENCH_CLAUDE and TK_BENCH_CURSOR name another binary; TK_BENCH_CURSOR_MODEL
+ * TK_BENCH_CLAUDE, TK_BENCH_CURSOR and TK_BENCH_PI name another binary; TK_BENCH_CURSOR_MODEL
  * another id of Cursor's model, which must name the same model (its command
  * line, in meta.json, shows the id; a run on another model stops the bench).
  */
 import { execFile, spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
+import { SHELL } from "./allowlist.ts";
 import type { AgentName } from "./metrics.ts";
 
 const execFileAsync = promisify(execFile);
@@ -114,8 +116,19 @@ type BrowserPlugin = (typeof BROWSER_PLUGINS)[number];
 /** Where a run's own copy of a browser plugin goes, in its folder: out of the project the Agent sees. */
 const pluginDir = (folder: string, name: string) => join(folder, "cursor-plugins", name);
 
-/** The shell commands an Agent may run: the command line, and reading the project. */
-const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
+/** The pi the designer installed with npm. */
+const DESIGNERS_PI = join(homedir(), ".npm-global/bin/pi");
+
+/**
+ * The Command Code provider, an extension the designer installed in pi
+ * (`pi install`, in their agent directory): pi's `command-code` models come
+ * from it, and the designer's login to it is in that directory's auth.json.
+ */
+const COMMAND_CODE = join(homedir(), ".pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider");
+
+/** The bench's extension for pi, and the rule it holds shell commands to, by their names here and in the run's folder. */
+const PI_EXTENSION = ["pi-extension.ts", "allowlist.ts"];
+const piExtensionDir = (folder: string) => join(folder, "pi-extension");
 
 export interface AgentSpec {
   /** Where the Agent's binary is; an environment variable names another. */
@@ -202,6 +215,60 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
         writeFileSync(join(pluginDir(folder, name), "mcp.json"), `${JSON.stringify({ mcpServers }, null, 2)}\n`);
       }
       return { headlessShell: headlessShellPath };
+    },
+  },
+  pi: {
+    // The designer's pi, run with no terminal: `-p` prints and exits, and nothing of it opens a window.
+    binary: () => process.env.TK_BENCH_PI ?? DESIGNERS_PI,
+    // The provider and the model as the transcript's answers name them (metrics.ts, parsePi).
+    model: "command-code/deepseek/deepseek-v4.1-flash",
+    effort: "high (--thinking high)",
+    // Project-only, as Claude's `--setting-sources project,local --strict-mcp-config`, in the designer's own agent
+    // directory (~/.pi/agent): that is where pi keeps their login, and pi has no setting or variable that points at
+    // a login elsewhere, so a directory of the bench's own (PI_CODING_AGENT_DIR) would need the credentials copied
+    // into it. What that directory would bring in is switched off instead: every extension but the provider (their
+    // MCP adapter, fff, web access, subagents and the rest) and pi's own MCP; every skill but the project's, named by
+    // its path, so a project with no Skill (ticket 65) has none; prompt templates; themes. Their global AGENTS.md
+    // has no switch of its own (`--no-context-files` would drop the project's too): the bench's extension keeps
+    // only the project's. Their settings.json still applies (compaction, for one): pi reads it from that directory
+    // with no way round it but another directory.
+    args: (folder, prompt = PROMPT) => [
+      "-p",
+      prompt,
+      "--mode",
+      "json",
+      // Pinned: neither the designer's default provider and model nor their default thinking level.
+      "--provider",
+      "command-code",
+      "--model",
+      "deepseek/deepseek-v4.1-flash",
+      "--thinking",
+      "high",
+      "--no-session",
+      // No version check or model catalog refresh: on the network, only the model (and the provider's model list).
+      "--offline",
+      "--no-extensions",
+      "-e",
+      COMMAND_CODE,
+      // Blocks every shell command off the bench's list, and keeps the designer's global AGENTS.md out (pi-extension.ts).
+      "-e",
+      join(piExtensionDir(folder), "pi-extension.ts"),
+      "--no-mcp",
+      "--no-skills",
+      "--skill",
+      ".agents/skills/03kind",
+      "--no-prompt-templates",
+      "--no-themes",
+      // Trusts the project, as it would be once the designer has opened it in pi.
+      "--approve",
+      // pi's own tools, those of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode.
+      "--tools",
+      "read,bash,edit,write,grep,find,ls",
+    ],
+    prepare(_dir, folder) {
+      // A copy in the run's folder: the command line is the same from any checkout, and the run keeps what it ran with.
+      mkdirSync(piExtensionDir(folder), { recursive: true });
+      for (const file of PI_EXTENSION) copyFileSync(fileURLToPath(new URL(file, import.meta.url)), join(piExtensionDir(folder), file));
     },
   },
 };
@@ -301,9 +368,11 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
   return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed] };
 }
 
-/** The effort the run's debug log says the session ran at, if it says. */
-export function effortSeen(folder: string): string | null {
+/** The effort the run says the session ran at, if it says: Claude Code in its debug log, pi on each answer in the transcript. */
+export function effortSeen(agent: AgentName, folder: string): string | null {
   try {
+    if (agent === "pi") return /"thinkingLevel":"(\w+)"/.exec(readFileSync(join(folder, "transcript.jsonl"), "utf8"))?.[1] ?? null;
+    if (agent !== "claude") return null;
     const log = readFileSync(join(folder, "claude-debug.log"), "utf8");
     return /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(log)?.[1] ?? null;
   } catch {

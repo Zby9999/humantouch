@@ -4,7 +4,7 @@
  * unattended, and the run is measured from what it left behind. Pages open in
  * Playwright's headless shell only: nothing takes the designer's focus.
  *
- *   pnpm bench:agents [--agents claude,cursor] [--scenarios id,…] [--runs 3] [--max-runs n]
+ *   pnpm bench:agents [--agents claude,pi] [--scenarios id,…] [--runs 3] [--max-runs n]
  *                     [--out <dir> --first-run n]   add runs n onward to the raw results in <dir>, as more of the same round of runs
  *                     [--no-skill]   a project with no Skill, the Agent told only to run `claim` and apply as it says (ticket 65)
  *   pnpm bench:agents --dry           set the scenarios up, run no Agent: each must make its changes, none shown yet
@@ -60,7 +60,7 @@ interface RawRun {
   commandLine: string;
   /** False for a run in a project with no Skill (`--no-skill`); missing in runs before ticket 65, which all had it. */
   skill?: boolean;
-  /** The effort the command line sets, and, for Claude Code, the one its debug log shows the session ran at. */
+  /** The effort the command line sets, and the one the session ran at, as Claude Code's debug log or pi's transcript shows it. */
   effort: { set: string; seen: string | null };
   exitCode: number | null;
   timedOut: boolean;
@@ -98,7 +98,7 @@ async function main(argv: string[]) {
     const at = argv.indexOf(`--${name}`);
     return at < 0 ? undefined : argv[at + 1];
   };
-  const agents = (option("agents") ?? "claude,cursor").split(",") as AgentName[];
+  const agents = (option("agents") ?? "claude,pi").split(",") as AgentName[];
   const scenarios = option("scenarios") ? SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : SCENARIOS;
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
@@ -107,7 +107,7 @@ async function main(argv: string[]) {
   const claimOut = option("claim-out");
   const skill = !argv.includes("--no-skill");
   const prompt = skill ? PROMPT : NO_SKILL_PROMPT;
-  for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude or cursor`);
+  for (const agent of agents) if (!AGENTS[agent]) throw new Error(`No Agent ${agent}: claude, pi or cursor`);
 
   const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
   const plan = dry ? scenarios.length : Math.min(maxRuns, agents.length * scenarios.length * runs);
@@ -382,7 +382,7 @@ async function runOnce({
       version,
       commandLine: commandLine(agent, prompt),
       skill,
-      effort: { set: AGENTS[agent].effort, seen: agent === "claude" ? effortSeen(folder) : null },
+      effort: { set: AGENTS[agent].effort, seen: effortSeen(agent, folder) },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
       stalledNotices: times.stalledNotices.length,

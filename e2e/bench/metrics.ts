@@ -4,9 +4,10 @@
  * archived, and when the page and the command line moved. Pure functions, so
  * a run's raw results can be measured again later, by a newer rule.
  */
+import { DENIED } from "./allowlist.ts";
 
 /** The Agents the bench runs. */
-export type AgentName = "claude" | "cursor";
+export type AgentName = "claude" | "cursor" | "pi";
 
 /** One tool call the Agent made, and what it got back. */
 export interface ToolCall {
@@ -31,11 +32,11 @@ export interface Transcript {
   toolCalls: ToolCall[];
   /** The Agent's last words: where the report is. */
   finalText: string;
-  /** Tool calls the bench's permissions turned away. */
+  /** Tool calls the bench's permissions (or, in pi, its extension) turned away. */
   permissionDenials: number;
-  /** Subagents the Agent started (Claude Code's Task, Cursor's explore), and the models other than its own they ran on. */
+  /** Subagents the Agent started (Claude Code's Task, Cursor's explore; pi has none of its own), and the models other than its own they ran on. */
   subagents: { calls: number; models: string[] };
-  /** Times the API did not answer and was asked again (Claude Code says so; Cursor does not): a wait that is no Agent's doing. */
+  /** Times the API did not answer and was asked again (Claude Code and pi say so; Cursor does not): a wait that is no Agent's doing. */
   apiRetries: number;
 }
 
@@ -53,7 +54,7 @@ function events(text: string): Event[] {
 }
 
 export function parseTranscript(agent: AgentName, text: string): Transcript {
-  return agent === "claude" ? parseClaudeCode(events(text)) : parseCursor(events(text));
+  return agent === "claude" ? parseClaudeCode(events(text)) : agent === "pi" ? parsePi(events(text)) : parseCursor(events(text));
 }
 
 function parseClaudeCode(all: Event[]): Transcript {
@@ -115,6 +116,45 @@ function parseCursor(all: Event[]): Transcript {
     else transcript.toolCalls.push({ name, ...where(args), output: text || JSON.stringify(success ?? result) });
   }
   transcript.subagents.models = [...others];
+  return transcript;
+}
+
+/**
+ * pi tells each message as it starts, as it streams and as it ends; only the
+ * end is the whole of it. The model is the first answer's, as its provider and
+ * id: pi says nothing of it before. Each tool call is in the answer that makes
+ * it, and what it got back in the tool result after; one the bench's
+ * extension blocked is a tool result in error, its text the bench's reason.
+ */
+function parsePi(all: Event[]): Transcript {
+  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
+  const byId = new Map<string, ToolCall>();
+  const others = new Set<string>();
+  for (const event of all) {
+    if (event.type === "auto_retry_start") transcript.apiRetries++;
+    if (event.type !== "message_end") continue;
+    const message: Event = event.message ?? {};
+    if (message.role === "assistant") {
+      const model = message.provider ? `${message.provider}/${message.model}` : (message.model ?? null);
+      if (transcript.model === null) transcript.model = model;
+      else if (model && model !== transcript.model) others.add(model);
+      const text = textOf(message.content);
+      if (text.trim()) transcript.finalText = text;
+      for (const part of message.content ?? []) {
+        if (part.type !== "toolCall") continue;
+        const call: ToolCall = { name: part.name, ...where(part.arguments ?? {}), output: "" };
+        byId.set(part.id, call);
+        transcript.toolCalls.push(call);
+      }
+    }
+    if (message.role === "toolResult") {
+      const output = textOf(message.content);
+      const call = byId.get(message.toolCallId);
+      if (call) call.output = output;
+      if (message.isError && output.startsWith(DENIED)) transcript.permissionDenials++;
+    }
+  }
+  transcript.subagents = { calls: transcript.toolCalls.filter((call) => /^(subagent|task|agent)$/i.test(call.name)).length, models: [...others] };
   return transcript;
 }
 

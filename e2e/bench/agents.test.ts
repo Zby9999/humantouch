@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, PROMPT } from "./agents.ts";
+import { AGENTS, commandLine, effortSeen, headedBrowsers, headlessShell, NO_SKILL_PROMPT, PROMPT } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
@@ -96,12 +96,47 @@ test("of the processes under the Agent, the browsers that came up with a window 
 });
 
 test("with no Skill, each Agent is asked only to run claim and apply as it says, by a command line of its own (ticket 65)", () => {
-  for (const agent of ["claude", "cursor"] as const) {
+  for (const agent of ["claude", "cursor", "pi"] as const) {
     const args = AGENTS[agent].args("/run", NO_SKILL_PROMPT);
     assert.equal(args[args.indexOf("-p") + 1], "运行 `npx 03kind claim`，照输出落地");
     assert.equal(AGENTS[agent].args("/run")[1], PROMPT);
     assert.notEqual(commandLine(agent, NO_SKILL_PROMPT), commandLine(agent));
   }
+});
+
+test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless TK_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions, MCP, prompt templates or themes", () => {
+  const saved = process.env.TK_BENCH_PI;
+  try {
+    process.env.TK_BENCH_PI = "/opt/pi";
+    const line = commandLine("pi");
+    assert.match(line, /^\/opt\/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek\/deepseek-v4\.1-flash --thinking high --no-session --offline /);
+    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/03kind --no-prompt-templates --no-themes --approve /);
+    assert.match(line, / --tools read,bash,edit,write,grep,find,ls$/);
+    assert.equal(AGENTS.pi.model, "command-code/deepseek/deepseek-v4.1-flash");
+  } finally {
+    if (saved === undefined) delete process.env.TK_BENCH_PI;
+    else process.env.TK_BENCH_PI = saved;
+  }
+});
+
+test("pi's run gets the bench's extension, and the rule it holds shell commands to, in its own folder, where its command line loads it from; the project is left as before", () => {
+  const dir = mkdtempSync(join(scratch, "project-"));
+  const folder = mkdtempSync(join(scratch, "run-"));
+
+  AGENTS.pi.prepare!(dir, folder);
+
+  const extension = AGENTS.pi.args(folder)[AGENTS.pi.args(folder).indexOf("-e", AGENTS.pi.args(folder).indexOf("-e") + 1) + 1];
+  assert.equal(extension, join(folder, "pi-extension/pi-extension.ts"));
+  assert.deepEqual(readdirSync(join(folder, "pi-extension")).sort(), ["allowlist.ts", "pi-extension.ts"]);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("the effort pi ran at is the thinking level its answers name in the transcript", () => {
+  const folder = mkdtempSync(join(scratch, "run-"));
+  writeFileSync(join(folder, "transcript.jsonl"), `${JSON.stringify({ type: "message_end", message: { role: "assistant", thinkingLevel: "high" } })}\n`);
+
+  assert.equal(effortSeen("pi", folder), "high");
+  assert.equal(effortSeen("cursor", folder), null);
 });
 
 test("Cursor runs on grok-4.7-high unless TK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {

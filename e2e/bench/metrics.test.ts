@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
@@ -74,6 +75,43 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     subagents: { calls: 0, models: [] },
     apiRetries: 0,
   });
+});
+
+test("a pi transcript (--mode json) gives its provider and model, each tool call with what it got back, the calls the bench turned away, the API's retries, and the last words", () => {
+  // PROVISIONAL: the fixture is built by hand from pi 1.4.0's documented shapes, not recorded; to be replaced by a cut from a real run.
+  const transcript = parseTranscript("pi", readFileSync(new URL("./fixtures/pi.jsonl", import.meta.url), "utf8"));
+
+  assert.deepEqual(transcript, {
+    model: "command-code/deepseek/deepseek-v4.1-flash",
+    toolCalls: [
+      { name: "read", path: "/t/run/.agents/skills/03kind/SKILL.md", output: "# Applying design changes\n" },
+      { name: "bash", command: "npx 03kind claim", output: "# Design changes\n" },
+      { name: "grep", path: "src", output: "src/App.tsx:3" },
+      { name: "bash", command: "rm -rf dist", output: "Not run: the 03Kind bench allows only these shell commands … Turned away: rm -rf dist" },
+      { name: "edit", path: "src/App.tsx", output: "Successfully replaced 1 block(s) in src/App.tsx." },
+      { name: "bash", command: "npx 03kind done 1 && npx 03kind finish", output: "Round finished" },
+    ],
+    finalText: "✓ Applied\n- 1. Fill: the cards, white → red",
+    permissionDenials: 1,
+    subagents: { calls: 0, models: [] },
+    apiRetries: 1,
+  });
+  assert.deepEqual(
+    { ...toolCallStats(transcript.toolCalls), charsRead: undefined },
+    { toolCalls: 6, repoWideSearches: 1, claims: 1, dones: 1, finished: true, packageReads: 0, charsRead: undefined },
+  );
+  assert.equal(toolCallStats(transcript.toolCalls).charsRead.skill, "# Applying design changes\n".length);
+  assert.equal(checkReport(transcript.finalText, [1]).compliant, true);
+});
+
+test("a pi transcript with an answer from another model than its first names that one as a subagent's", () => {
+  const assistant = (model: string, text: string) => ({ type: "message_end", message: { role: "assistant", provider: "command-code", model, content: [{ type: "text", text }], stopReason: "stop" } });
+
+  const transcript = parseTranscript("pi", lines(assistant("main", "a"), assistant("other", "b"), assistant("main", "c")));
+
+  assert.equal(transcript.model, "command-code/main");
+  assert.deepEqual(transcript.subagents, { calls: 0, models: ["command-code/other"] });
+  assert.equal(transcript.finalText, "c");
 });
 
 test("tool calls are counted: searches over the project, the command line's commands, and what the Agent read, the Skill (loaded, read, or printed in the shell) and claim apart", () => {
