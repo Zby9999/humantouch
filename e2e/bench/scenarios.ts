@@ -13,6 +13,7 @@ import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
 import type { Bindings, Change } from "../../packages/03kind/src/client/changeset.ts";
 import { checkable as pageChecks, PLACING } from "../../packages/03kind/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
+import type { VariableNames } from "./metrics.ts";
 
 /** What a scenario's designer works with: the page, and the project behind it. */
 export interface Desk {
@@ -59,17 +60,22 @@ export interface ScenarioChange {
   expect: string;
   /** Whether the editor layer's page check can tell it (the Skill's list): not a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief; a new layer is, by its place (ticket 76). */
   checkable: boolean;
-  /** The Variable the notes name for it, as the code may write it (its Tailwind class, or its CSS variable): the bench looks for one of these in the lines the Agent added. */
-  variable?: string[];
+  /**
+   * The Variable the notes name for it, as the code may write it (its Tailwind class, or its CSS variable): the bench looks for one of these
+   * in the lines the Agent added. For a value of several parts each its own Variable (a padding of four sides), a list of parts, each one of
+   * its own names, all of them to be written (`VariableNames`).
+   */
+  variable?: VariableNames;
   /** The page widths `shows` runs at; 1280 when not given. */
   widths?: number[];
-  /** None for a brief: what it takes is the Agent's to work out, and the report's to say. None for a change `notOneToOne` either. */
+  /** None for a brief: what it takes is the Agent's to work out, and the report's to say. A change `notOneToOne` has one: an Agent that finds a way after all is right to list it under ✓, and one that lists it there with the page not showing it gives a false ✓. */
   shows?: Shows;
   /**
    * Why the change cannot be applied 1:1 (ticket 86), in words: an Agent
    * applying the round right lists it under ⚠️ in its report, with why and
-   * what instead, and never under ✓. The bench counts how often it is
-   * (`reportedAsExpected`).
+   * what instead, or under ✓ only when the page shows it all the same. The
+   * bench counts how often it is (`reportedAsExpected`), and leaves it out of
+   * the 1:1 rates.
    */
   notOneToOne?: string;
 }
@@ -749,7 +755,8 @@ export const SCENARIOS: Scenario[] = [
         kind: "style",
         expect: "The Get started button's padding is 12px top, 24px right, 4px bottom, 8px left.",
         checkable: true,
-        variable: ["pt-3", "pr-6", "pb-1", "pl-2"],
+        // Four sides, each its own Variable: all four written.
+        variable: [["pt-3"], ["pr-6"], ["pb-1"], ["pl-2"]],
         shows: () => {
           const style = getComputedStyle(document.querySelector('[data-testid="hero"] button')!);
           return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].join() === "12px,24px,4px,8px";
@@ -761,9 +768,19 @@ export const SCENARIOS: Scenario[] = [
         checkable: true,
         shows: () => {
           const shadow = getComputedStyle(document.querySelector('[data-testid="hero"] button')!).boxShadow;
+          // Each shadow's color through a pixel: `shadow-black/25` is a color-mix() in oklab, computed as an oklab() color.
+          const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+          const shadows = (shadow === "none" ? [] : shadow.split(/,(?![^(]*\))/)).map((one) => {
+            const [, color, lengths] = /^(.*?)\s*((?:-?[\d.]+px\s*){2,4}(?:inset)?)$/.exec(one.trim()) ?? [];
+            context.clearRect(0, 0, 1, 1);
+            context.fillStyle = color ?? "transparent";
+            context.fillRect(0, 0, 1, 1);
+            return { pixel: [...context.getImageData(0, 0, 1, 1).data], lengths: lengths?.trim() };
+          });
           // Tailwind writes transparent shadows of its own beside one: those are none.
-          const shadows = shadow === "none" ? [] : shadow.split(/,(?![^(]*\))/).map((one) => one.trim()).filter((one) => one !== "rgba(0, 0, 0, 0) 0px 0px 0px 0px");
-          return shadows.join() === "rgba(0, 0, 0, 0.25) 0px 8px 16px 0px";
+          const drawn = shadows.filter(({ pixel }) => pixel[3] > 0);
+          // Black at 25%: an alpha of 64 of 255, give or take rounding.
+          return drawn.length === 1 && drawn[0].lengths === "0px 8px 16px 0px" && drawn[0].pixel.slice(0, 3).every((channel) => channel <= 2) && Math.abs(drawn[0].pixel[3] - 64) <= 2;
         },
       },
       {
@@ -958,7 +975,8 @@ export const SCENARIOS: Scenario[] = [
         expect: "From 768px to 1279px the title is 30px; below, and at 1280px, it stays 36px.",
         checkable: true,
         variable: ["text-3xl", "--text-3xl"],
-        widths: [390, 800, 1100, 1280],
+        // 700: between Tailwind's `sm` (640) and `md` (768), where a breakpoint one off shows.
+        widths: [390, 700, 800, 1100, 1280],
         shows: ({ width }) => getComputedStyle(document.querySelector("h1")!).fontSize === (width >= 768 && width < 1280 ? "30px" : "36px"),
       },
     ],
@@ -985,7 +1003,8 @@ export const SCENARIOS: Scenario[] = [
         expect: "Below 768px the title is 24px.",
         checkable: true,
         variable: ["text-2xl", "--text-2xl"],
-        widths: [390, 1280],
+        // 700: between Tailwind's `sm` (640) and `md` (768), where a breakpoint one off shows.
+        widths: [390, 700, 1280],
         shows: ({ width }) => (getComputedStyle(document.querySelector("h1")!).fontSize === "24px") === width < 768,
       },
       {
@@ -993,7 +1012,7 @@ export const SCENARIOS: Scenario[] = [
         expect: "From 768px up the title is 48px; below 768px it is not (the phone's 24px holds there).",
         checkable: true,
         variable: ["text-5xl", "--text-5xl"],
-        widths: [390, 800, 1280],
+        widths: [390, 700, 800, 1280],
         shows: ({ width }) => (getComputedStyle(document.querySelector("h1")!).fontSize === "48px") === width >= 768,
       },
     ],
@@ -1032,6 +1051,8 @@ export const SCENARIOS: Scenario[] = [
       await setField(page, "X", String((await numberIn(page, "X")) + 40));
       await saved(desk, 5);
     },
+    // The round saves the move as the `right` or `bottom` it ends at (the size typed after it moved that edge back: 64px, then 40px),
+    // and the size alone: so each test holds after its own change, the other left out.
     changes: [
       {
         kind: "style",
@@ -1130,6 +1151,9 @@ export const SCENARIOS: Scenario[] = [
         // A Locked Layer: drawn by a dependency, it has no source marker of its own, so the page cannot find it to check.
         checkable: false,
         notOneToOne: "acme-ui's Badge sets its size itself and passes no class or style on from its usage; the dependency is never changed.",
+        // Not shown when left as it was; an Agent that makes it 90px all the same (from the header, say) is right to list it under ✓.
+        widths: [390, 1280],
+        shows: () => Math.abs(document.querySelector('[data-testid="acme-badge"]')!.getBoundingClientRect().width - 90) <= 0.5,
       },
     ],
     async apply(desk) {

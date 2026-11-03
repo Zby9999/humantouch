@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLI, copyWithoutThirdKind, pack, replaceIn, sh, startServer } from "../tests/install-copy.ts";
+import { BENCH_FILES } from "./agents.ts";
 
 const EXAMPLE = fileURLToPath(new URL("../../examples/vite-react19-tw4/", import.meta.url));
 const COMMIT = ["-c", "user.name=bench", "-c", "user.email=bench@example.com", "commit", "-qm"];
@@ -90,13 +91,13 @@ export interface RunProject {
 /**
  * A clone of the base, its dependencies linked from the store, in the
  * system's temporary folder (beside the base, so the package's relative path
- * holds). `.cursor/` is kept out of git: the bench writes Cursor's
- * permissions there.
+ * holds). What the bench puts there for an Agent (`BENCH_FILES`: Cursor's
+ * permissions in `.cursor/`) is kept out of git.
  */
 export async function cloneBase(base: string): Promise<RunProject> {
   const dir = mkdtempSync(join(tmpdir(), "03kind-bench-run-"));
   await sh("git", ["clone", "-q", base, dir], tmpdir());
-  writeFileSync(join(dir, ".git/info/exclude"), ".cursor/\n");
+  writeFileSync(join(dir, ".git/info/exclude"), BENCH_FILES.map((path) => `/${path}\n`).join(""));
   await sh("pnpm", ["install", "--offline", "--frozen-lockfile"], dir);
   const read = (file: string) => {
     try {

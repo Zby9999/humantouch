@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkReport, measureRun, parseTranscript, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -213,6 +213,20 @@ test("a Variable counts as used when the lines the Agent added write its class, 
   assert.equal(usesVariable(diff, ["text-5"]), false);
 });
 
+test("a rate over runs is pooled: their parts over their wholes, not a run's rate in the middle; runs with none are left out", () => {
+  assert.deepEqual(pooled([{ part: 1, whole: 4 }, { part: 1, whole: 1 }, { part: 2, whole: 2 }, null]), { rate: 4 / 7, part: 4, whole: 7 });
+  assert.deepEqual(pooled([null, { part: 0, whole: 0 }]), { rate: null, part: 0, whole: 0 });
+});
+
+test("a value of several parts, each its own Variable, counts as using them when every part is written, each by one of its names; a flat list is any one of it", () => {
+  const diff = ['-  <button className="px-4 py-2">', '+  <button className="pt-3 pr-6 pb-1 pl-[8px]">'].join("\n");
+  const padding = [["pt-3"], ["pr-6"], ["pb-1"], ["pl-2", "--spacing-2"]];
+
+  assert.equal(usesVariable(diff, padding), false);
+  assert.equal(usesVariable(diff.replace("pl-[8px]", "pl-2"), padding), true);
+  assert.equal(usesVariable(diff, ["pt-3", "pl-2"]), true);
+});
+
 test("a Variable only carried along in a line the Agent rewrote for another change is not counted as used", () => {
   const diff = ['-  <h1 className="text-stone-900">Title</h1>', "+  <div>", '+    <h1 className="text-stone-900">Title</h1>', '+  <p className="text-[#1c1917]">'].join("\n");
 
@@ -283,12 +297,35 @@ test("changes that cannot be applied 1:1 are counted as reported right when the 
     [1, 2, 3, 4],
   );
 
-  assert.equal(reportedAsExpected(report, [2]), 1);
-  // Under ⚠️ without both lines, or under ✓, or not listed at all, it is not.
-  assert.equal(reportedAsExpected(report, [3]), 0);
-  assert.equal(reportedAsExpected(report, [1, 2]), 0.5);
-  assert.equal(reportedAsExpected(report, [4]), 0);
+  const notShown = (...ids: number[]) => ids.map((id) => ({ id, shown: false }));
+  assert.equal(reportedAsExpected(report, notShown(2)), 1);
+  // Under ⚠️ without both lines, or under ✓ with the page not showing it, or not listed at all, it is not.
+  assert.equal(reportedAsExpected(report, notShown(3)), 0);
+  assert.equal(reportedAsExpected(report, notShown(1, 2)), 0.5);
+  assert.equal(reportedAsExpected(report, notShown(4)), 0);
   assert.equal(reportedAsExpected(report, []), null);
+});
+
+test("a change that cannot be applied 1:1 listed under ✓ is reported right when the page shows it after all, and a false ✓ when it does not; it is in no 1:1 rate (ticket 86)", () => {
+  const report = checkReport(["✓ Applied", "- 1. Fill: the Grid, stone-100", "- 2. Width: Badge, 90px by its parent"].join("\n"), [1, 2]);
+
+  assert.equal(reportedAsExpected(report, [{ id: 2, shown: true }]), 1);
+  assert.equal(reportedAsExpected(report, [{ id: 2, shown: false }]), 0);
+  // A run from before the change had a test of its own: not shown is not known.
+  assert.equal(reportedAsExpected(report, [{ id: 2, shown: null }]), 0);
+
+  const run = (shown: boolean) =>
+    measureRun({
+      changes: [
+        { id: 1, checkable: true, shown: true },
+        { id: 2, checkable: false, shown, notOneToOne: true },
+      ],
+      checks: { 1: { outcome: "shown" } },
+      report,
+      times: { claim: 0, finish: 1000, end: 1000, progress: [], edits: [] },
+    });
+  assert.deepEqual([run(false).falseChecks, run(false).oneToOneByPage, run(false).oneToOneByChecks], [[2], 1, 1]);
+  assert.deepEqual([run(true).falseChecks, run(true).oneToOneByPage, run(true).oneToOneByChecks], [[], 1, 1]);
 });
 
 test("a scenario's own expectations are counted by the share that hold at the end; a scenario with none, or a run from before them, has no rate (ticket 86)", () => {

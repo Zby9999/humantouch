@@ -15,14 +15,17 @@ import { clearThirdKindFolder, EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, np
 test.use({ keepRoundInMemory: false });
 test.setTimeout(90_000);
 
-/** The example's files a round before edited, as they were: put back after each test. */
+/** The example's files a round before edited, by path from its root, as they were: put back after each test. */
 const originals = new Map<string, string>();
 
 test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 test.afterEach(async () => {
-  for (const [file, text] of originals) if (readFileSync(file, "utf8") !== text) writeFileSync(file, text);
+  for (const [file, text] of originals) {
+    if (readFileSync(`${EXAMPLE}${file}`, "utf8") !== text) writeFileSync(`${EXAMPLE}${file}`, text);
+    // Until the dev server has each file back as it was (`?raw`: its text as a string, untransformed, with or without a `;` after), so the next test's page loads it so.
+    await expect.poll(async () => (await fetch(`${DEV_URL}/${file}?raw`)).text()).toContain(`export default ${JSON.stringify(text)}`);
+  }
   originals.clear();
-  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("font-display text-4xl")).toBe(true);
 });
 test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
 
@@ -35,7 +38,7 @@ for (const scenario of SCENARIOS) {
       cli: npx03kind,
       edit: async (file, from, to) => {
         const text = readFileSync(`${EXAMPLE}${file}`, "utf8");
-        if (!originals.has(`${EXAMPLE}${file}`)) originals.set(`${EXAMPLE}${file}`, text);
+        if (!originals.has(file)) originals.set(file, text);
         expect(text).toContain(from);
         writeFileSync(`${EXAMPLE}${file}`, text.replace(from, to));
       },

@@ -35,8 +35,8 @@ import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
-import { checkReport, measureRun, parseTranscript, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { agentVersion, AGENTS, BENCH_FILES, commandLine, effortSeen, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
+import { checkReport, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, variableParts, type AgentName, type VariableNames } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { designProblems, held, openObservers, SCENARIOS, shown, type Desk, type SavedChange, type Scenario } from "./scenarios.ts";
@@ -62,6 +62,8 @@ const AGENT_TIMEOUT_MS = 20 * 60_000;
 /** How often the page is looked at for a change newly shown, and the round's files for a claim, a `done`, a finish. */
 const SHOWN_POLL_MS = 1000;
 const FILES_POLL_MS = 250;
+/** Longest the scripted pass waits for the page to show its end state: the dev server bringing the last edit in. */
+const SCRIPTED_END_MS = 15_000;
 
 /** What a run leaves for measuring, besides the transcript, the diff and the Agent's other output. */
 interface RawRun {
@@ -83,7 +85,7 @@ interface RawRun {
   headlessShell?: string | null;
   /** Browsers that came up under the Agent with a window. */
   headedBrowsers: string[];
-  changes: { id: number; kind: string; checkable: boolean; variable?: string[]; notOneToOne?: true; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
+  changes: { id: number; kind: string; checkable: boolean; variable?: VariableNames; notOneToOne?: true; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
   /** The scenario's own expectations (ticket 86): whether each held before the Agent started and at the end, and whether it is to hold before too. Missing in runs before. */
   scenarioExpectations?: { kept: boolean; before: boolean; atEnd: boolean }[];
   /**
@@ -138,13 +140,18 @@ async function main(argv: string[]) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
-    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each((agent) => commandLine(agent, prompt)), skill: each(() => skill) };
-    // Runs added to a round of runs compare with it only on the same Agent and command line.
+    // A scenario with an ask of its own runs by the command line with that ask: its own, by scenario.
+    const prompts = Object.fromEntries(scenarios.filter((scenario) => scenario.prompt).map((scenario) => [scenario.id, scenario.prompt!]));
+    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each((agent) => commandLine(agent, prompt)), skill: each(() => skill), prompts };
+    // Runs added to a round of runs compare with it only on the same Agent and command line, and the same ask of a scenario's own.
     const before = existsSync(join(out, "meta.json")) ? JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) : null;
     for (const agent of agents) {
       if (before?.commandLines?.[agent] && (before.commandLines[agent] !== meta.commandLines[agent] || before.versions[agent] !== versions[agent])) {
         throw new Error(`${out} has ${agent} runs by another command line or version: start a round of runs of their own`);
       }
+    }
+    for (const [scenario, ask] of Object.entries(prompts)) {
+      if (before?.prompts?.[scenario] !== undefined && before.prompts[scenario] !== ask) throw new Error(`${out} has ${scenario} runs by another ask: start a round of runs of their own`);
     }
     const merged = before ? Object.fromEntries(Object.entries(meta).map(([key, value]) => [key, { ...before[key], ...value }])) : meta;
     writeFileSync(join(out, "meta.json"), `${JSON.stringify(merged, null, 2)}\n`);
@@ -297,9 +304,15 @@ async function expectationsHold(observers: Map<number, Page>, scenario: Scenario
   return (scenario.expectations ?? []).map((expectation, i) => onPage[i] !== false && (!expectation.sourceAsAtStart || source));
 }
 
-/** Whether the source in `dir`, `.03kind/` aside, is as at commit `head`: no file changed, gone or new. Stages nothing, so the Agent sees the project as it left it. */
+/**
+ * Whether the source in `dir` is as at commit `head`: no file changed, gone or
+ * new. Not the source: `.03kind/`, and what the bench itself puts in the
+ * project for an Agent (`BENCH_FILES`: Cursor's permissions in `.cursor/`, and
+ * whatever another Agent's `prepare` names). Stages nothing, so the Agent sees
+ * the project as it left it.
+ */
 async function sourceAsAt(dir: string, head: string): Promise<boolean> {
-  const outside = ["--", ".", ":(exclude).03kind"];
+  const outside = ["--", ".", ":(exclude).03kind", ...BENCH_FILES.map((path) => `:(exclude)${path}`)];
   const changed = await sh("git", ["diff", "--name-only", head, ...outside], dir);
   const added = await sh("git", ["ls-files", "--others", "--exclude-standard", ...outside], dir);
   return !changed.trim() && !added.trim();
@@ -345,9 +358,9 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       if (applied.length) await project.cli("done", ...applied.map(String));
       const report = applying ? fillInReport(await project.cli("finish"), scenario, saved) : null;
 
-      await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
-      const atEnd = await shown(observers, scenario, saved);
-      (await expectationsHold(observers, scenario, project.dir, head)).forEach((holds, i) => holds || problems.push(`expectation ${i + 1} does not hold: ${scenario.expectations![i].expect}`));
+      // The end, once the dev server has brought the last edit in: an undo has no `done` or `finish` to wait for it by.
+      const { atEnd, expectations } = await endState(observers, scenario, saved, project.dir, head);
+      expectations.forEach((holds, i) => holds || problems.push(`expectation ${i + 1} does not hold: ${scenario.expectations![i].expect}`));
       const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
       await sh("git", ["add", "-A"], project.dir);
       const diff = await sh("git", ["diff", "--cached", head], project.dir);
@@ -357,18 +370,35 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
         if (atEnd[i] === false) problems.push(`change ${i + 1} does not show: ${change.expect}`);
         if (atEnd[i] === null && change.kind !== "brief") problems.push(`change ${i + 1} has no test of its own (\`shows\`) to show it by`);
         if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
-        if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code writes none of ${change.variable.join(", ")}`);
+        if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code does not write ${variableParts(change.variable).map((names) => names.join(" or ")).join(", and ")}`);
       });
       if (!report) return problems;
       const check = checkReport(report, saved.map((change) => change.id));
       if (!check.compliant) problems.push(`the report: ${check.problems.join("; ")}`);
       const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne).map((change) => change.id);
       if (check.notApplied.join() !== warned.join()) problems.push(`the report has ${check.notApplied.join(", ") || "none"} under ⚠️, not ${warned.join(", ") || "none"}`);
-      if (reportedAsExpected(check, warned) !== (warned.length ? 1 : null)) problems.push("the report has the changes that cannot be applied 1:1 elsewhere than under ⚠️ alone, with why and instead");
+      if (reportedAsExpected(check, warned.map((id) => ({ id, shown: atEnd[saved.findIndex((change) => change.id === id)] }))) !== (warned.length ? 1 : null)) problems.push("the report has the changes that cannot be applied 1:1 elsewhere than under ⚠️ alone, with why and instead");
       return problems;
     });
   } catch (error) {
     return [problemOf(error)];
+  }
+}
+
+/**
+ * The page's end state, looked at afresh until each change applied shows and
+ * each of the scenario's own expectations holds, or for `SCRIPTED_END_MS`:
+ * the dev server brings an edit in a moment after it is made.
+ */
+async function endState(observers: Map<number, Page>, scenario: Scenario, saved: SavedChange[], dir: string, head: string) {
+  const until = Date.now() + SCRIPTED_END_MS;
+  for (;;) {
+    await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
+    const atEnd = await shown(observers, scenario, saved);
+    const expectations = await expectationsHold(observers, scenario, dir, head);
+    const holds = scenario.changes.every((change, i) => change.notOneToOne || atEnd[i] !== false) && expectations.every(Boolean);
+    if (holds || Date.now() > until) return { atEnd, expectations };
+    await new Promise((resolve) => setTimeout(resolve, SHOWN_POLL_MS));
   }
 }
 
@@ -570,7 +600,7 @@ export function measureFolder(folder: string) {
     raw.times.claim === null || !applying
       ? null
       : measureRun({
-          changes: raw.changes.map((change) => ({ id: change.id, checkable: change.checkable, shown: change.shownAtEnd })),
+          changes: raw.changes.map((change) => ({ id: change.id, checkable: change.checkable, shown: change.shownAtEnd, notOneToOne: change.notOneToOne })),
           checks: raw.checks,
           report,
           times: { claim: raw.times.claim, finish: raw.times.finish, end: raw.endedAt, progress: [...raw.times.dones, ...raw.times.shown.map((event) => event.at)], edits: raw.times.edits ?? [] },
@@ -616,15 +646,22 @@ export function measureFolder(folder: string) {
     stalledNoticesAtMs: raw.times.stalledNotices?.map((at) => at - raw.startedAt) ?? null,
     reportCompliant: applying ? report.compliant : null,
     reportProblems: applying ? report.problems : null,
+    /** The changes with a Variable, and how many of them the diff writes it for: summed up over runs, not run by run (`pooled`). Measured from the diff, so runs from before it was recorded have it too. */
+    variables: { whole: withVariable.length, part: usedVariable.length },
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
-    /** Of the changes that cannot be applied 1:1 (ticket 86), the share the report lists under ⚠️, with why and instead; null with none. */
-    reportedAsExpected: reportedAsExpected(report, raw.changes.filter((change) => change.notOneToOne).map((change) => change.id)),
+    /** Of the changes that cannot be applied 1:1 (ticket 86), the share the report gives right: under ⚠️ with why and instead, or under ✓ and shown; null with none. */
+    reportedAsExpected: reportedAsExpected(
+      report,
+      raw.changes.filter((change) => change.notOneToOne).map((change) => ({ id: change.id, shown: change.shownAtEnd })),
+    ),
     /** Of the scenario's own expectations (ticket 86: an earlier round's changes kept, a round undone), the share that hold at the end; null with none. */
     scenarioExpectationsHold: scenarioExpectationsHold(raw.scenarioExpectations),
     /** A scenario test that held before the Agent started is a broken test, not a change applied. */
     shownBefore: raw.changes.filter((change) => change.shownBefore).map((change) => change.id),
-    /** Likewise a scenario expectation that held before when it is not to, or did not when it is (by number, from 1). */
-    expectationsWrongBefore: (raw.scenarioExpectations ?? []).flatMap((expectation, i) => (expectation.before === expectation.kept ? [] : [i + 1])),
+    /** Likewise a scenario expectation that held before when it is not to (by number, from 1). */
+    expectationsHeldBefore: (raw.scenarioExpectations ?? []).flatMap((expectation, i) => (expectation.before && !expectation.kept ? [i + 1] : [])),
+    /** And one to be kept that did not hold before the Agent started: the scenario set up wrong, or its test. */
+    keptNotHeldBefore: (raw.scenarioExpectations ?? []).flatMap((expectation, i) => (!expectation.before && expectation.kept ? [i + 1] : [])),
   };
 }
 
@@ -671,8 +708,27 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["API 重试", (m) => m.apiRetries],
 ];
 
-/** The numbers the table by scenario shows. */
-const BY_SCENARIO = ["整轮用时每条（秒）", "每条平均工具调用", "1:1 落地率（页面预期）", "虚假的 ✓（条）", "两次进度最长间隔（秒）", "没进度也没改源码的最长时间（秒）"];
+/**
+ * The rates summed up over the runs' changes, not run by run (`pooled`): the
+ * goals' rate is of all the changes, and a run's rate in the middle of the
+ * others' is not that.
+ */
+const POOLED: Record<string, (m: Measures) => { part: number; whole: number } | null> = {
+  "设计变量使用率": (m) => m.variables,
+};
+
+/** The numbers the table by scenario shows: 88 lists the misses by scenario from it. */
+const BY_SCENARIO = [
+  "整轮用时每条（秒）",
+  "每条平均工具调用",
+  "1:1 落地率（页面预期）",
+  "虚假的 ✓（条）",
+  "设计变量使用率",
+  "落地不了 1:1 的改动报在 ⚠️ 下（比例）",
+  "场景整体预期成立（比例）",
+  "两次进度最长间隔（秒）",
+  "没进度也没改源码的最长时间（秒）",
+];
 
 /** Measures every run in `out` again, and writes `summary.json` and `summary.md` beside them. */
 function writeSummary(out: string) {
@@ -693,7 +749,8 @@ function writeSummary(out: string) {
         // A yes or no is summed up by how often it is yes.
         const share = name.endsWith("（比例）") && s.n ? values.reduce((total: number, value) => total + (value ?? 0), 0) / s.n : null;
         const total = values.reduce((sum: number, value) => sum + (value ?? 0), 0);
-        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share), total: round(total) }];
+        const all = POOLED[name] ? pooled(some.map(POOLED[name])) : null;
+        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share), total: round(total), pooled: all && { rate: round(all.rate), part: all.part, whole: all.whole } }];
       }),
     );
   const agents = [...new Set(measures.map((m) => m.agent))];
@@ -711,8 +768,9 @@ function writeSummary(out: string) {
       overall: sum(mine),
       scenarios: Object.fromEntries([...new Set(mine.map((m) => m.scenario))].map((scenario) => [scenario, sum(mine.filter((m) => m.scenario === scenario))])),
       brokenTests: mine
-        .filter((m) => m.shownBefore.length || m.expectationsWrongBefore.length)
-        .map((m) => `${m.scenario} #${m.run}: ${[...m.shownBefore.map(String), ...m.expectationsWrongBefore.map((n) => `expectation ${n}`)].join(", ")}`),
+        .filter((m) => m.shownBefore.length || m.expectationsHeldBefore.length)
+        .map((m) => `${m.scenario} #${m.run}: ${[...m.shownBefore.map(String), ...m.expectationsHeldBefore.map((n) => `expectation ${n}`)].join(", ")}`),
+      keptNotHeld: mine.filter((m) => m.keptNotHeldBefore.length).map((m) => `${m.scenario} #${m.run}: ${m.keptNotHeldBefore.map((n) => `expectation ${n}`).join(", ")}`),
       /** Each run whose designer's page showed a notice, and when, in seconds from the Agent's start. */
       notices: mine
         .filter((m) => m.unclaimedNotices || m.stalledNotices)
@@ -726,14 +784,14 @@ function writeSummary(out: string) {
   writeFileSync(join(out, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
   /** A count's total over the runs that have it; – when none does (runs before it was counted). */
   const sumOf = (s: { n: number; total: number | null }) => (s.n ? s.total : "–");
-  const cell = (s: { median: number | null; min: number | null; max: number | null; share: number | null }) =>
-    s.share !== null ? `${Math.round(s.share * 100)}%` : s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`;
+  const cell = (s: { median: number | null; min: number | null; max: number | null; share: number | null; pooled: { rate: number | null; part: number; whole: number } | null }) =>
+    s.pooled ? (s.pooled.rate === null ? "–" : `${Math.round(s.pooled.rate * 100)}%（${s.pooled.part}/${s.pooled.whole} 条）`) : s.share !== null ? `${Math.round(s.share * 100)}%` : s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`;
   const md = summary
     .map((agent) =>
       [
         `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
-        "| 指标 | 中位数（范围） | 次数 |",
+        "| 指标 | 中位数（范围）；比例；合计 | 次数 |",
         "|---|---|---|",
         ...METRICS.map(([name]) => `| ${name} | ${cell(agent.overall[name])} | ${agent.overall[name].n} |`),
         "",
@@ -741,6 +799,7 @@ function writeSummary(out: string) {
         `|---|${"---|".repeat(BY_SCENARIO.length)}`,
         ...Object.entries(agent.scenarios).map(([scenario, s]) => `| ${scenario} | ${BY_SCENARIO.map((name) => cell(s[name])).join(" | ")} |`),
         ...(agent.brokenTests.length ? ["", `场景的预期在 Agent 开始前就成立（测试有误）：${agent.brokenTests.join("; ")}`] : []),
+        ...(agent.keptNotHeld.length ? ["", `该保留的场景预期在 Agent 开始前就不成立（场景搭错了，或测试有误）：${agent.keptNotHeld.join("; ")}`] : []),
         // Counted from the Agent's start: the Agent at work, each is a false one (tickets 66, 67).
         "",
         `提示合计（从 Agent 开始算）：没认领就改代码 ${sumOf(agent.overall["没认领就改代码的提示（次）"])} 次，Agent 好像停了 ${sumOf(agent.overall["Agent 好像停了的提示（次）"])} 次${agent.notices.length ? `：${agent.notices.join("; ")}` : ""}`,

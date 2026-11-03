@@ -128,6 +128,13 @@ export interface AgentSpec {
   effort: string;
   /** Done before the Agent starts: in the project, `dir`, and in the run's own folder. What it returns goes in the run's record. */
   prepare?(dir: string, folder: string): Pick<AgentRun, "headlessShell"> | void;
+  /**
+   * What `prepare` puts in the project, by path from its root (a folder ends
+   * in `/`): the bench's, not the Agent's work. Kept out of git in each run's
+   * copy (so out of the diff), and out of the source a scenario's expectation
+   * compares with the round's start (`sourceAsAtStart`).
+   */
+  files?: string[];
 }
 
 export const AGENTS: Record<AgentName, AgentSpec> = {
@@ -190,6 +197,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "enabled",
       ...BROWSER_PLUGINS.flatMap((name) => ["--plugin-dir", pluginDir(folder, name)]),
     ],
+    files: [".cursor/"],
     prepare(dir, folder) {
       mkdirSync(join(dir, ".cursor"), { recursive: true });
       const shell = [...new Set(SHELL.map((command) => command.split(" ")[0]))].map((command) => `Shell(${command})`);
@@ -205,6 +213,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     },
   },
 };
+
+/** What the bench puts in a run's project for any of the Agents (`AgentSpec.files`). */
+export const BENCH_FILES = [...new Set(Object.values(AGENTS).flatMap((spec) => spec.files ?? []))];
 
 /** The command line as a person would type it, for the record. */
 export function commandLine(agent: AgentName, prompt = PROMPT): string {
