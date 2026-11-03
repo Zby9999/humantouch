@@ -60,6 +60,8 @@ interface RawRun {
   commandLine: string;
   /** False for a run in a project with no Skill (`--no-skill`); missing in runs before ticket 65, which all had it. */
   skill?: boolean;
+  /** The extensions of others the Agent ran with, by name, and the version installed (pi's pi-fff); missing for an Agent with none, and in runs before ticket 92. */
+  extensions?: Record<string, string | null>;
   /** The effort the command line sets, and the one the session ran at, as Claude Code's debug log or pi's transcript shows it. */
   effort: { set: string; seen: string | null };
   exitCode: number | null;
@@ -119,12 +121,14 @@ async function main(argv: string[]) {
     for (const agent of agents) versions[agent] = await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     const each = <T,>(of: (agent: AgentName) => T) => Object.fromEntries(agents.map((agent) => [agent, of(agent)]));
-    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each((agent) => commandLine(agent, prompt)), skill: each(() => skill) };
-    // Runs added to a round of runs compare with it only on the same Agent and command line.
+    const extensions = each((agent) => AGENTS[agent].extensions?.() ?? {});
+    const meta = { versions, models: each((agent) => AGENTS[agent].model), efforts: each((agent) => AGENTS[agent].effort), commandLines: each((agent) => commandLine(agent, prompt)), skill: each(() => skill), extensions };
+    // Runs added to a round of runs compare with it only on the same Agent, command line and extensions.
     const before = existsSync(join(out, "meta.json")) ? JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) : null;
     for (const agent of agents) {
-      if (before?.commandLines?.[agent] && (before.commandLines[agent] !== meta.commandLines[agent] || before.versions[agent] !== versions[agent])) {
-        throw new Error(`${out} has ${agent} runs by another command line or version: start a round of runs of their own`);
+      const otherExtensions = JSON.stringify(before?.extensions?.[agent] ?? {}) !== JSON.stringify(extensions[agent]);
+      if (before?.commandLines?.[agent] && (before.commandLines[agent] !== meta.commandLines[agent] || before.versions[agent] !== versions[agent] || otherExtensions)) {
+        throw new Error(`${out} has ${agent} runs by another command line, version or extension: start a round of runs of their own`);
       }
     }
     const merged = before ? Object.fromEntries(Object.entries(meta).map(([key, value]) => [key, { ...before[key], ...value }])) : meta;
@@ -383,6 +387,7 @@ async function runOnce({
       version,
       commandLine: commandLine(agent, prompt),
       skill,
+      ...(AGENTS[agent].extensions && { extensions: AGENTS[agent].extensions() }),
       effort: { set: AGENTS[agent].effort, seen: AGENTS[agent].effortSeen?.(folder) ?? null },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
@@ -442,6 +447,8 @@ export function measureFolder(folder: string) {
     model: transcript.model,
     responseModels: transcript.responseModels,
     skills: transcript.skills,
+    tools: transcript.tools,
+    extensions: raw.extensions ?? {},
     changes: count,
     exitCode: raw.exitCode,
     timedOut: raw.timedOut,
@@ -551,6 +558,9 @@ function writeSummary(out: string) {
       models: [...new Set(mine.map((m) => m.model))],
       responseModels: [...new Set(mine.flatMap((m) => m.responseModels))],
       skills: [...new Set(mine.flatMap((m) => m.skills))],
+      tools: [...new Set(mine.flatMap((m) => m.tools))],
+      /** Each extension of others the runs had, as `name version` (ticket 92). */
+      extensions: [...new Set(mine.flatMap((m) => Object.entries(m.extensions).map(([name, version]) => `${name} ${version ?? "（没装）"}`)))],
       subagentModels: [...new Set(mine.flatMap((m) => m.subagents.models))],
       efforts: [...new Set(mine.map((m) => (m.effort ? `${m.effort.set}${m.effort.seen ? `, seen ${m.effort.seen}` : ""}` : "?")))],
       skill: mine.every((m) => m.skill) ? "yes" : mine.some((m) => m.skill) ? "mixed" : "no",
@@ -577,7 +587,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}${agent.responseModels.length ? `（提供商回答的模型 ${agent.responseModels.join(", ")}）` : ""}，加载的 skills ${agent.skills.join(", ") || "记录里没有"}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
+        `## ${agent.agent}${agent.skill === "yes" ? "" : agent.skill === "no" ? "（不加载 Skill）" : "（加载与不加载 Skill 的运行混在一起）"}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}${agent.responseModels.length ? `（提供商回答的模型 ${agent.responseModels.join(", ")}）` : ""}，加载的 skills ${agent.skills.join(", ") || "记录里没有"}${agent.extensions.length ? `，带 ${agent.extensions.join(", ")}` : ""}${agent.tools.length ? `，工具 ${agent.tools.join(", ")}` : ""}，effort ${agent.efforts.join("; ")}，子 Agent 模型 ${agent.subagentModels.join(", ") || "无"}，${agent.runs} 次，${agent.dates.join(", ")}`,
         "",
         "| 指标 | 中位数（范围） | 次数 |",
         "|---|---|---|",

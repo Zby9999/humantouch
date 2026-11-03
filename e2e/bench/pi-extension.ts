@@ -8,8 +8,9 @@
  * own tools are held to two path rules: `write` and `edit` stay in the
  * project (the folder pi runs in), and no tool or command reaches pi's own
  * folder (~/.pi), where the designer's login is; reading elsewhere goes
- * ahead, as Claude Code's Read does. A call the extension cannot check is
- * blocked. And pi has no switch for leaving out only the designer's global
+ * ahead, as Claude Code's Read does. fff's search tools (pi-fff, ticket 92)
+ * are held to the second only: the designer let them search as they will,
+ * with no broad-search guard. A call the extension cannot check is blocked. And pi has no switch for leaving out only the designer's global
  * AGENTS.md: this keeps the instructions files inside the project, as Claude
  * Code's `--setting-sources project,local` does.
  */
@@ -27,6 +28,13 @@ interface PiExtensionApi {
 /** pi's own tools that work on a path, and those of them that search all below it. */
 const PATH_TOOLS = ["read", "grep", "find", "ls", "write", "edit"];
 const SEARCHES = ["grep", "find"];
+/**
+ * fff's search tools (pi-fff), and the argument each is pointed with: a path
+ * (a folder, a file or a glob, which may be outside the project: ~/ and ../
+ * included), or for fff-multi-grep (on the project only, but checked all the
+ * same) a line of them, `!` before those it leaves out.
+ */
+const FFF_SEARCHES: Record<string, "path" | "constraints"> = { ffgrep: "path", fffind: "path", "fff-multi-grep": "constraints" };
 /** The shell commands of the list that can read all below a folder. */
 const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
 
@@ -56,6 +64,17 @@ function toolPath(path: unknown, cwd: string): string {
 function withHome(path: string): string {
   if (path === "~" || path.startsWith("~/")) return homedir() + path.slice(1);
   return path.startsWith("~") ? join(dirname(homedir()), path.slice(1)) : path;
+}
+
+/**
+ * The folder an fff search indexes for `path`: the part before the first
+ * part with a glob in it (`*`, `?`, `[…]`, `{…}`), as pi-fff takes the folder
+ * there is, and searches the rest below it. `~/{.pi,x}` indexes all of ~.
+ */
+function fffRoot(path: string): string {
+  const parts = path.split(sep);
+  const glob = parts.findIndex((part) => /[*?[{]/.test(part));
+  return glob < 0 ? path : parts.slice(0, glob).join(sep) || sep;
 }
 
 /** pi's own folder, as written and as the file system has it. */
@@ -165,6 +184,14 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
     const reaches = shellReaches(command, cwd);
     if (reaches === "out") return block(deniedReason(command));
     return reaches === "pi" ? intoPi(command) : undefined;
+  }
+  if (toolName in FFF_SEARCHES) {
+    // Each folder it searches, or with none the project; a folder above pi's own reaches it, as for grep.
+    const given = input[FFF_SEARCHES[toolName]];
+    if (given !== undefined && typeof given !== "string") throw new Error("An argument that is no string");
+    const words = FFF_SEARCHES[toolName] === "path" ? [given] : (given ?? "").split(/\s+/).filter((word) => word && !word.startsWith("!"));
+    const paths = words.length ? words : [undefined];
+    return paths.some((word) => reachesPi(fffRoot(toolPath(word, cwd)), true)) ? intoPi(`${toolName} ${given ?? "."}`) : undefined;
   }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);

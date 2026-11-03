@@ -33,6 +33,8 @@ export interface Transcript {
   responseModels: string[];
   /** The skills the Agent was given at the start, by name, as it says (Claude Code's init, pi's system prompt; Cursor says none). */
   skills: string[];
+  /** The tools pi was given at the start, by name, as its system prompt declares them: fff's among them (ticket 92). None for the others. */
+  tools: string[];
   toolCalls: ToolCall[];
   /** The Agent's last words: where the report is. */
   finalText: string;
@@ -47,7 +49,7 @@ export interface Transcript {
 type Event = Record<string, any>;
 
 function emptyTranscript(): Transcript {
-  return { model: null, responseModels: [], skills: [], toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
+  return { model: null, responseModels: [], skills: [], tools: [], toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
 }
 
 /** The events of a transcript; a line that is no JSON (a stray warning) is left out. */
@@ -133,7 +135,7 @@ function parseCursor(all: Event[]): Transcript {
 /**
  * pi tells each message as it starts, as it streams and as it ends; only the
  * end is the whole of it. The first is the system prompt, with the skills it
- * lists. The model is each answer's, as its provider and id: pi says nothing
+ * lists and the tools it declares. The model is each answer's, as its provider and id: pi says nothing
  * of it before, and starts no subagent of its own (nor does the bench give it
  * an extension that does), so an answer on another model is a switch, and the
  * transcript names every model, which is no Agent's pinned one. Each tool
@@ -155,6 +157,7 @@ function parsePi(all: Event[]): Transcript {
       prompted = true;
       const listed = /<available_skills>([\s\S]*?)<\/available_skills>/.exec(message.sections?.skills ?? "")?.[1] ?? "";
       transcript.skills = [...listed.matchAll(/<name>([\s\S]*?)<\/name>/g)].map((match) => unescapeXml(match[1].trim()));
+      transcript.tools = (message.toolsAdded ?? []).map((tool: Event) => tool.name);
     }
     if (message.role === "assistant") {
       const model = message.provider ? `${message.provider}/${message.model}` : message.model;
@@ -194,11 +197,11 @@ function modelsIn(value: unknown): string[] {
   return Object.entries(value).flatMap(([key, inner]) => (key === "model" && typeof inner === "string" ? [inner] : modelsIn(inner)));
 }
 
-/** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on. */
+/** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on (fff-multi-grep's: the files it is held to). */
 function where(input: Event): Pick<ToolCall, "command" | "path" | "skill" | "folder"> {
   if (typeof input.command === "string") return { command: input.command };
   if (typeof input.skill === "string") return { skill: input.skill };
-  const path = input.file_path ?? input.path;
+  const path = input.file_path ?? input.path ?? input.constraints;
   if (typeof path === "string") return { path };
   // Cursor's glob names the folder it looks in as its target.
   return typeof input.targetDirectory === "string" ? { folder: input.targetDirectory } : {};
@@ -236,18 +239,32 @@ function thirdKindCommands(command: string): string[] {
 }
 
 const SEARCH_TOOLS = /^(grep|glob|search|codebase_?search|semantic_?search|file_?search|ripgrep|find)$/i;
+/** fff's search tools in pi (pi-fff, ticket 92), by the names they have beside pi's own (and fff-multi-grep's in pi-fff's override mode, where the other two take the names of pi's own grep and find). */
+const FFF_TOOLS = /^(ffgrep|fffind|fff-multi-grep|multi_grep)$/;
 const SHELL_SEARCH = /(^|[\s;&|(])(rg|ag|ack|fd|find|git\s+grep)\s|(^|[\s;&|(])grep\s+(-\w*[rR]\w*|--recursive)\b/;
+
+/** A path that names one file: by its extension. */
+const ONE_FILE = /\.[a-z0-9]+$/i;
 
 /**
  * A search over the project or a folder of it: a search tool not given one
  * file, or a shell command that searches folders (`rg`, `find`, `git grep`,
  * `grep -r`). Goal: none (docs/goals.md, Light): the change notes say where
- * each change goes.
+ * each change goes. fff's are judged alike, but their path may be a glob
+ * (`*.tsx`, `src/**`), which names no one file: `ffgrep` or `fffind` with no
+ * path, a folder or a glob, and `fff-multi-grep` with no constraint, or any
+ * but one file (`*.{ts,tsx} !test/`), search the project or a folder of it;
+ * given one file, by a path with an extension and no glob, they do not.
  */
 export function isRepoWideSearch(call: ToolCall): boolean {
   if (call.command !== undefined) return SHELL_SEARCH.test(call.command);
+  if (FFF_TOOLS.test(call.name)) {
+    const path = call.path?.trim();
+    // A glob, or more than one, or one left out.
+    return path === undefined || /[*?[{\s!]/.test(path) || !ONE_FILE.test(path);
+  }
   if (!SEARCH_TOOLS.test(call.name)) return false;
-  return call.path === undefined || !/\.[a-z0-9]+$/i.test(call.path);
+  return call.path === undefined || !ONE_FILE.test(call.path);
 }
 
 /** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/03kind/skill/SKILL.md`), which an Agent with none in the project may find. */

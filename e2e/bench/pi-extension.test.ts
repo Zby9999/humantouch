@@ -85,6 +85,46 @@ test("in pi, no tool reaches pi's own folder, where the designer's login is: by 
   assert.equal(call("ls", { path: "~" }), undefined);
 });
 
+test("in pi, fff's search tools go ahead anywhere, the whole project or outside it, but never reach pi's own folder: by their path, a glob in it, or a folder above it (ticket 92)", () => {
+  const pi = join(homedir(), ".pi");
+  for (const [tool, input] of [
+    ["ffgrep", { pattern: "Card" }],
+    ["ffgrep", { pattern: "Card", path: "src/" }],
+    ["ffgrep", { pattern: "Card", path: "*.tsx", exclude: "test/" }],
+    ["ffgrep", { pattern: "Card", path: "src/**/*.tsx" }],
+    ["ffgrep", { pattern: "key", path: "/etc" }],
+    ["ffgrep", { pattern: "key", path: "../" }],
+    ["fffind", { pattern: "App" }],
+    ["fffind", { pattern: "", path: "{src,lib}/**" }],
+    ["fffind", { pattern: "auth", path: "~/Desktop" }],
+    ["fff-multi-grep", { patterns: ["Card", "card"] }],
+    ["fff-multi-grep", { patterns: ["Card"], constraints: "*.{ts,tsx} !test/" }],
+    ["fff-multi-grep", { patterns: ["Card"], constraints: "!~/.pi/" }],
+  ] as const) {
+    assert.equal(call(tool, input), undefined, `${tool} ${JSON.stringify(input)}`);
+  }
+  for (const [tool, input] of [
+    ["ffgrep", { pattern: "key", path: "~/.pi/agent" }],
+    ["ffgrep", { pattern: "key", path: `${pi}/agent/auth.json` }],
+    ["ffgrep", { pattern: "key", path: "~/.PI/" }],
+    ["ffgrep", { pattern: "key", path: "~" }],
+    ["ffgrep", { pattern: "key", path: "/" }],
+    ["ffgrep", { pattern: "key", path: "~/.p*/agent" }],
+    ["ffgrep", { pattern: "key", path: "~/{.pi,x}/agent" }],
+    ["ffgrep", { pattern: "key", path: "~/**/*.json" }],
+    ["ffgrep", { pattern: "key", path: "../../../../../../../../../.." + pi }],
+    ["fffind", { pattern: "auth", path: "~/.pi" }],
+    ["fffind", { pattern: "auth", path: homedir() }],
+    ["fffind", { pattern: "auth", path: `file://${pi}` }],
+    ["fff-multi-grep", { patterns: ["key"], constraints: "*.json ~/.pi/" }],
+    ["fff-multi-grep", { patterns: ["key"], constraints: "~" }],
+  ] as const) {
+    assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+  }
+  assert.ok(blocked(call("ffgrep", { pattern: "key", path: 42 })));
+  assert.ok(blocked(call("fff-multi-grep", { patterns: ["key"], constraints: ["~/.pi"] })));
+});
+
 test("in pi, a cd stays in the project, its folder by its real path, following the cds before it on the line; so a search with no path stays there too", () => {
   mkdirSync(join(scratch, "elsewhere"), { recursive: true });
   symlinkSync(join(scratch, "elsewhere"), join(project, "link-away"));
