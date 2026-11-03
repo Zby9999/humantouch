@@ -147,8 +147,8 @@ End your reply with this report. Each change is under the heading the page's che
 1. **页面要和画布同一种**：画布那里是 `relative`，页面那里也要 `relative`；`sticky` 同理。换成另一种也算没显示（两种挪法不一样，`relative` 的 `top: 20px` 一定挪 20px，`sticky` 的可能不挪），所以改动单每段范围记下是哪一种。
 2. **比什么**：`relative` 比浏览器把它挪了多远（`right` / `bottom` 反过来算），所以页面同时写了 `left: 8px` 和 `right: 32px` 时，`right` 是对的数但不挪它，不算显示了（「比对偏移本身」）；`sticky` 比这一边写的值，写成百分比的不算（数字一样也不算，见「按 code-review 修正」）。都不算外边距。
 3. **`right` / `bottom` 在 `sticky` 宽度**：不管写没写 `left` / `top` 都记、都看（浏览器两边的阈值都用）；`relative` 的照指挥给的，写了 `left` / `top` 的照旧记进 `placedOtherwiseAt`、不看（那里 `right` 确实不挪它）。
-4. **居中的图层不记这种范围**：`relative` 的居中图层（`left: calc(50% + 20px)` 加 translate）在排版里按容器宽度的份额挪，和改动记下的 px 对不上，要另做份额的换算；很少见，照旧按自由定位核对（那个宽度仍是 80 的说法，不会报虚假的 ✓）。见遗留风险第 1 条。
-5. **`done` 的说法**（照 80 的口吻：「At 390px wide, the layer …: <该做什么>, then run `npx 03kind done 1` again.」，从 83 起草的那句出发）。画布那里是 `relative` 时，后半句是「where the canvas moves it 60px right of where its container lays it out」（`right` / `bottom` 说 left of / above，值为 0 时说 leaves it where its container lays it out）；`sticky` 时是「where the canvas keeps it at least 40px from the top of what it scrolls in」。前半句按页面：
+4. **居中的图层不记这种范围**：`relative` 的居中图层（`left: calc(50% + 20px)` 加 translate）在排版里按容器宽度的份额挪，和改动记下的 px 对不上，要另做份额的换算；很少见，按自由定位核对（那个宽度仍是 80 的说法，不会报虚假的 ✓）。从左边居中的照旧；从右边居中的（`right: 50%` 加 translate）原来记进 `placedOtherwiseAt`、那个宽度不看，现在也按自由定位核对，不再可能报虚假的 ✓（见「审查后修正」）。见遗留风险第 1 条。
+5. **`done` 的说法**（照 80 的口吻：「At 390px wide, the layer …: <该做什么>, then run `npx 03kind done 1` again.」，从 83 起草的那句出发）。画布那里是 `relative` 时，后半句是「where the canvas moves it 60px right of where its container lays it out」（`right` / `bottom` 说 left of / above，值为 0 时说「where the canvas leaves it unmoved in its container's layout」，见「审查后修正」）；`sticky` 时是「where the canvas keeps it at least 40px from the top of what it scrolls in」。前半句按页面：
    - 同样 `relative`、挪得不对：「At 390px wide, the page moves the layer 20px down, …」，没挪：「the page does not move the layer, …」；结尾「give it `left` 60px at this width too」。
    - 同样 `sticky`、值不对：「the layer's `top` is 20px, …」（没写：is `auto`；百分比：is `20%`）；结尾同上。
    - 页面那里 static：「the layer is laid out static, so its `left` moves nothing, …: have its `left` move it so at this width too」（83 的草稿；结尾改成「让它的 `left` 照样挪它」，因为 static 时只给 `left` 没用）。
@@ -163,14 +163,15 @@ End your reply with this report. Each change is under the heading the page's che
 
 接缝沿用 75、83 的选法（设计师和指挥不在场，没有当面商定）：编辑命令和页面核对、命令行、e2e 脚本扮演 Agent。都先写、先在没改的代码上看着失败，再实现（「写了 `left` 的 relative，`right` 不看」那条是不变的护栏，改前改后都该过）。
 
-- **编辑命令和页面核对** `edits.browser.test.ts` +7 条（test.each 展开后算）：
+- **编辑命令和页面核对** `edits.browser.test.ts` +9 条（test.each 展开后算，含审查后加的 2 条）：
   - `relative`、`sticky` 各一：X、Y 都记下手机的范围和那里的 `position`，不进 `placedOtherwiseAt`；照改动写在所有宽度显示了；页面那里 static、自由定位，或 `top` 是别的值，没显示，给出页面的样子。
   - 按右边定位的图层，`relative`、`sticky` 各一，没写 `left`：`right` 记下范围；写对显示了，只在 `md` 以上写没显示。
   - `relative` 写了 `left`：`right` 照旧进 `placedOtherwiseAt`。
   - 页面 `relative` 同时写 `left` 和 `right`：`right` 数对也不算。
   - `sticky` 的 `top` 写成 `20%`：不算 20px（code-review 后加的，在前一个提交上失败）。
+  - 居中的图层，从左边、从右边各一，画布在手机视图 `relative`：两个范围都不记，那个宽度按自由定位核对，照改动写了也是没显示（实际值 null），不跳过（审查后加的护栏，钉住遗留风险第 1 条现在的样子）。
   - **改了一条原有的期望**：83 审查后修正加的那条（`relative` / `sticky`，只在 500px 以上给 `left` / `top`）原来断言实际值是 null，也就是会说「not placed absolute」，正是本 ticket 要改掉的说法；现在断言新的实际值（`{ canvas, position, offset: 12 }` 和 `8`），结果仍是没显示、宽度 390。其余原有测试一条期望都没改。
-- **命令行** `cli.test.ts` +1 条：十种页面答案的 `done` 逐字、`finish` 六行 Why 逐字，输出里没有 `null`、`` `position` ``、positioning reference。
+- **命令行** `cli.test.ts` +1 条：十一种页面答案的 `done` 逐字、`finish` 七行 Why 逐字（第十一种是审查后加的，值为 0），输出里没有 `null`、`` `position` ``、positioning reference。
 - **e2e** `round.spec.ts` +2 条：就是上面「先复现」的 (a)、(b)，断言改动单的两个范围和 `done` / `finish` 的逐字输出。改前都失败。
 - **其他场景逐字不变，怎么确认的**：按代码看，只有画布在旁边视图里 `relative` / `sticky`、这一边挪动它的图层，才会多出 `offsetInLayoutAt`，核对、`done`、`finish` 只在拿到这个字段的范围、页面答出新的实际值时才走新路；`claim` 不读它。按测试看，原有测试除上面那一条外期望都没改，全部通过，其中有 `cli.test.ts` 的逐字比对和 e2e 的落地剧本（round、claim、applying-bench、bench-scenarios、next-round、react18-round 等）。
 - **全量**（code-review 修正之后的代码）：
@@ -196,9 +197,27 @@ End your reply with this report. Each change is under the heading the page's che
 
 *遗留风险*
 
-1. **居中的 `relative` 图层**（代定第 4 条）：画布在某个宽度 `relative` 居中的图层，那个宽度仍按自由定位核对，写对了也说「not placed absolute … check its `position`」，就是 83 遗留风险第 5 条的那种误导，只留在这一小类。不报虚假的 ✓。
+1. **居中的 `relative` 图层**（代定第 4 条）：画布在某个宽度 `relative`（或 `sticky`）居中的图层，从左边、从右边居中都一样，那个宽度按自由定位核对，写对了也说「not placed absolute … check its `position`」，就是 83 遗留风险第 5 条的那种误导，只留在这一小类。不报虚假的 ✓。为什么没在这条线修，见「审查后修正」。
 2. **从右往左排的页面**（`direction: rtl`）：`relative` 两边都写时浏览器按 `right` 挪，`sideMoves` 和 `lookOffset` 都按从左往右算。画布上这种图层的 `right` 会被当成不挪它、跳过那个宽度，可能报虚假的 ✓。很少见，没处理。
 3. **页面那里排法不同时的说法**（代定第 5 条）：页面在那里 static、自由定位、或换成另一种时，光给这一边一个值不够，要改回画布那样的排法，说法只说「have its `left` move it so」「keep it in its container's layout」，不点名 `position`。Agent 能不能看懂，要等真实 Agent 跑过才知道。
 4. **`sticky` 在画布上常常看不出挪动**：视图不滚动，阈值多半不推它，设计师在手机视图里可能看不出改了什么，`done` 仍要页面那里的值一样。只会多报「没有显示」，不会报虚假的 ✓。
 5. **读一次的记录会过时**、**一个视图代表一整段宽度**：同 75、83 的遗留风险，不变。
-6. 没跑真实 Agent。
+6. **页面 `relative` 同时写了 `left` 和 `right`**：`right` 的改动在那里比的是浏览器把它挪了多远（`left` 说了算），没显示时 `done` 说「the page moves the layer 8px right, …: give it `right` 32px at this width too」，可页面上 `right` 已经是 32px，真正要去掉的是 `left`。不报虚假的 ✓；很少见，说法没点出 `left`，Agent 可能要多跑一轮（审查时发现）。
+7. 没跑真实 Agent。
+
+**审查后修正（2026-11-03）**
+
+独立审查跑了 code-review（Standards、Spec 两个子 agent 并行），自己又对着 ticket 一条条看了要多看的地方：
+
+- **没找到会报虚假的 ✓ 的路**：页面 `relative` 同时写了 `left`，`right` 比的是浏览器挪了多远，不算显示了；`sticky` 写的不是 px 不算；页面窗口落在范围里照样比；页面 `relative`、画布 `sticky`（或反过来）不算；Y、`bottom` 和 X、`right` 走同一套（`movedBy`、`MOVED_WAY`）。
+- **值为 0 时 `done` 的说法别扭**：画布那里 `relative`、改成 0 时，原来说「where the canvas leaves it where its container lays it out」，两个 where 连着。改成「where the canvas leaves it unmoved in its container's layout」；`finish` 那句随之从「the page does not leave the layer where its container lays it out, as the canvas does」变成「the page does not leave the layer unmoved in its container's layout, as the canvas does」。只有值为 0 的这一种变了，别的逐字不变。先在 `cli.test.ts` 加了这一种（第十一种），在改前看着失败。
+- **居中的图层（遗留风险第 1 条）留着，没在这条线修**：ticket 说「这种宽度上 … 不提 `position`」，按字面这一类也在范围里。但要修，页面那边得在 `relative` 的宽度读出它的包含块有多宽、减去份额再比 px（现有的 `roomOf` 量的是自由定位时的空间，`relative` 时 `left` 和 `right` 互为相反数，加起来是 0，用不上），`sticky` 还要解析写的 `calc(50% + 20px)`；说法也要再起一套「画布把它挪到容器宽度的 50% 再往右 20px」，又是一批要设计师确认的代定。这不是小改动，而且很少见（画布在旁边视图里要 `relative`，而桌面视图里是居中的自由定位）。现在这一类不会报虚假的 ✓，只是说法会把 Agent 引去看 `position`。建议另开一张 ticket（编号在 main 上给）。
+- **审查还发现，居中的图层从右边居中时行为变了，记录原来没写对**：83 的 `sidePlaces` 对 `right` / `bottom` 只认自由定位，所以画布在旁边视图 `relative` 的、从右边居中的图层，那个宽度原来记进 `placedOtherwiseAt`、不看，就是 ticket 说的 `right` 的那种虚假的 ✓；现在 `sideMoves` 答 `relative`，`!centered` 又不记 `offsetInLayoutAt`，两份都不进，按自由定位核对。不再可能报虚假的 ✓，换成了第 1 条的误导，按 docs/goals.md 这样更好，代码没改。实现记录原来说「照旧按自由定位核对」，对从右边居中的不对，代定第 4 条和遗留风险第 1 条已改正。加了一条护栏测试（从左边、从右边居中各一）：两个范围都不记，照改动写了也是没显示，不跳过。按代码看，这条在 ccb4599 上从右边居中的那一种会失败（那里记了 `placedOtherwiseAt`）。
+- **新记一条遗留风险（第 6 条）**：页面 `relative` 同时写了 `left` 和 `right` 时，没显示的说法叫 Agent 给 `right` 一个它已经有的值，没点出是 `left` 在起作用。不报虚假的 ✓，没改。
+- **看了没改**：
+  - Standards 说 `Status:` 没改成 done：照指挥的意思留给指挥。
+  - 新概念没进 GLOSSARY：`InLayout` 是代码里的词，设计师看不到，同实现记录。
+  - `relative` / `sticky` 的分支在四处各写一遍（`placed-from.ts`、`check.ts`、`cli.ts`、`report-form.ts`）：每处问的不一样（这一边挪不挪它、页面上挪了多少、该怎么说、Why 怎么说），合成一张表反而要每处去查表再分支，没合。
+  - `report-form.ts` 导出给 `done` 用的说法函数：同实现记录（`isUncentered` 同理）。
+  - `movedBy` 的 `0 - value`、`offset ?? 0`：行为无误，没动。
+- **测试和数字**：typecheck 通过；单测 818 通过、1 跳过（多出的两条是上面的护栏）；`cli.test.ts` 188 条全过。e2e 没有重跑（改的说法只在值为 0 时出现，两条 e2e 剧本不碰它），留给指挥跑全量。包体积：改的说法在 `report-form.ts`，只进命令行的 `cli.js`，不进页面的包；重新构建后切换按钮 `react.dev.js` 1423 B（gzip 822 B）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B），sha256 前 16 位仍是 `c83849f1557e0b1b`、`cdd6f09dfeaf13fa`，逐字节相同；`editor.dev.js` 仍是 323972 B（gzip 110054 B）。

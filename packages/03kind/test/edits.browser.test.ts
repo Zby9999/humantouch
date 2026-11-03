@@ -4212,6 +4212,28 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: -8 }, width: 390 });
   });
 
+  test.each([
+    ["left", "left: 50%; right: auto; translate: -50% 0", "x"],
+    ["right", "right: 50%; translate: 50% 0", "right"],
+  ])(
+    "a layer centered on where its %s places it that the canvas places relative in a view: no range is recorded, so the check looks at it there as placed absolute, not shown though written right, and never skipped (ticket 84, review: leftover risk)",
+    async (_, centered, property) => {
+      const html = fromTheRight("position: relative").replace("right: 12px", centered);
+      const { views, page, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [change] = changes.list();
+      expect([change.property, !!change.centeredOn, change.placedOtherwiseAt, change.offsetInLayoutAt]).toEqual([property, true, undefined, undefined]);
+
+      const css = Object.entries(change.style).map(([name, value]) => `${name}: ${value}`).join("; ");
+      page.getElementById("tag")!.setAttribute("style", css);
+      const phone = pageAt(html.replace("</style>", `#tag { ${css} }</style>`), 390);
+      expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+    },
+  );
+
   test("a deletion is checked while its container is on the page; a sibling come to its place in the source is not it", async () => {
     const { page, editor, changes, layer } = open();
     editor.remove(layer("one"));

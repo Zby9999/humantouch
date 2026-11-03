@@ -1877,6 +1877,8 @@ describe("done, checked on the page", () => {
       { property: "x", after: 30, actual: { canvas: "sticky", position: "relative", offset: 12 }, width: 390 },
       { property: "y", after: 20, actual: { canvas: "sticky", position: "static", offset: null }, width: 390 },
       { property: "y", after: 20, actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" }, width: 390 },
+      // Relative on the canvas, its X 0 there: the canvas leaves it where its container lays it out (review).
+      { property: "x", after: 0, actual: { canvas: "relative", position: "relative", offset: 12 }, width: 390 },
     ];
     saveRound(...offsets.map(({ property, after }, i) => ({ ...redFill, id: i + 1, property, before: 0, after, style: { [property === "x" ? "left" : property === "y" ? "top" : property]: `${after}px` }, margins: { x: 0, y: 0 } })));
     await cli("claim");
@@ -1905,6 +1907,7 @@ describe("done, checked on the page", () => {
       `${shown} At 390px wide, the layer is laid out static, so its \`top\` moves nothing, where the canvas keeps it at least 20px from the top of what it scrolls in: have its \`top\` keep it so at this width too, ${again(9)}`,
     );
     expect(await said(10)).toBe(`${shown} At 390px wide, the layer's \`top\` is \`20%\`, where the canvas keeps it at least 20px from the top of what it scrolls in: give it \`top\` 20px at this width too, ${again(10)}`);
+    expect(await said(11)).toBe(`${shown} At 390px wide, the page moves the layer 12px right, where the canvas leaves it unmoved in its container's layout: give it \`left\` 0px at this width too, ${again(11)}`);
 
     const report = (await cli("finish")).output;
     const why = (id: number, title: string, line: string) => `- ${id}. ${title}: <the layer>\n  Why: ${line}: <what keeps it so>\n`;
@@ -1914,6 +1917,7 @@ describe("done, checked on the page", () => {
     expect(report).toContain(why(4, "Bottom", "at 390px wide, the page does not move the layer 12px above where its container lays it out, as the canvas does"));
     expect(report).toContain(why(6, "X", "at 390px wide, the page does not keep the layer at least 30px from the left of what it scrolls in, as the canvas does"));
     expect(report).toContain(why(9, "Y", "at 390px wide, the page does not keep the layer at least 20px from the top of what it scrolls in, as the canvas does"));
+    expect(report).toContain(why(11, "X", "at 390px wide, the page does not leave the layer unmoved in its container's layout, as the canvas does"));
     expect(report).not.toMatch(/null|`position`|positioning reference/);
   });
 

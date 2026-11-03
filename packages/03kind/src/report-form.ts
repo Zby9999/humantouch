@@ -85,12 +85,13 @@ export const movedWords = (axis: Axis, moved: number, from = false) => `${Math.a
  * (`canvas`, ticket 84), in words: the verb, with the layer to follow it
  * (`toDo`: "move"; `does`, said of the canvas: "moves"), and how far.
  * Relative, it moves it from where its container lays it out, a `right` or
- * `bottom` the other way; sticky, keeps it that far in from that edge of what it scrolls in.
+ * `bottom` the other way, or, by 0px, leaves it unmoved there; sticky, keeps
+ * it that far in from that edge of what it scrolls in.
  */
 export function canvasOffset(property: string, to: number, canvas: InLayout): { toDo: string; does: string; how: string } {
   const { axis, edge } = PLACED_BY[property]!;
   if (canvas === "sticky") return { toDo: "keep", does: "keeps", how: `at least ${to}px from the ${SIDES[axis][edge]} of what it scrolls in` };
   const moved = movedBy(edge, to);
-  if (!moved) return { toDo: "leave", does: "leaves", how: "where its container lays it out" };
+  if (!moved) return { toDo: "leave", does: "leaves", how: "unmoved in its container's layout" };
   return { toDo: "move", does: "moves", how: `${movedWords(axis, moved, true)} where its container lays it out` };
 }
