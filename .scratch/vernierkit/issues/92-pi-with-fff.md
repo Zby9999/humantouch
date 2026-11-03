@@ -25,3 +25,11 @@
 
 - 测量台里的 pi 带上 fff 的搜索工具，不限制；只加载这一个扩展。
 - 交给 85 那条线接着做（它熟悉这块代码），不另开新线。
+
+## Comments
+
+**暂停于 2026-11-03**（设计师额度快用完，明天继续）
+
+已做：pi 按路径只加载 pi-fff 0.11.0，`--fff-mode override`（和设计师自己的 pi 一样，`grep`/`find` 由 fff 提供，`multi_grep` 不开），两个库放在每次跑自己的目录（8b7d103、e98bd61、ce47910）；`--dry` 10 个场景过，typecheck、`pnpm test` 过。pi 真实跑 1 次（设计师同意的，`button-over-rule`，`bench-results/agents/92-real-pi`）：claim→finish 14.36 秒，每条 4 次工具调用，1:1 100%，虚假的 ✓ 0，报告合规；fff 的 `grep`/`find` 声明给了模型，但 Agent 没调用（它用 shell 里的 `grep -rn`）；设计师的 `~/.pi/agent/fff` 修改时间没变。
+
+下一步：代码审查（跑到一半停了，要重跑）；问设计师要不要再跑 1 次 pi（换个要找文件的场景）证明 fff 被用上，再用真实记录换掉 `fixtures/pi-fff.provisional.jsonl`；全量测试；记命令行前后、全仓搜索判法、代定和风险；合并。
