@@ -10,7 +10,7 @@
  * `bench-scenarios.spec.ts` checks they still make the changes they name.
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
-import type { Change } from "../../packages/03kind/src/client/changeset.ts";
+import type { Bindings, Change } from "../../packages/03kind/src/client/changeset.ts";
 import { checkable as pageChecks, PLACING } from "../../packages/03kind/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 
@@ -40,7 +40,7 @@ export interface SavedChange {
   breakpoint?: object;
   parts?: object[];
   /** Which part of its value is which Variable (null: none has it), for a value that is or could be one. */
-  variables?: Record<string, { name: string } | null>;
+  variables?: Bindings;
 }
 
 /**
@@ -903,8 +903,8 @@ export const SCENARIOS: Scenario[] = [
         kind: "style",
         expect: "From 768px to 1279px the cards' Grid has 2 columns; below, 1 (and 3 from 640px to 767px, as before); at 1280px, 3.",
         checkable: true,
-        widths: [390, 800, 1100, 1280],
-        shows: ({ width }) => getComputedStyle(document.querySelector("article")!.parentElement!).gridTemplateColumns.split(" ").length === (width < 768 ? 1 : width < 1280 ? 2 : 3),
+        widths: [390, 700, 800, 1100, 1280],
+        shows: ({ width }) => getComputedStyle(document.querySelector("article")!.parentElement!).gridTemplateColumns.split(" ").length === (width < 640 ? 1 : width < 768 ? 3 : width < 1280 ? 2 : 3),
       },
       {
         kind: "style",
@@ -1080,7 +1080,7 @@ export const SCENARIOS: Scenario[] = [
       {
         kind: "style",
         expect: "The Beta badge stays as it was; the report lists the change under ⚠️, why (acme-ui's Badge sets its own size and takes no class or style from its usage) and what instead.",
-        // A layer a dependency draws has no source marker of its own: the page cannot find it to check.
+        // A Locked Layer: drawn by a dependency, it has no source marker of its own, so the page cannot find it to check.
         checkable: false,
         notOneToOne: "acme-ui's Badge sets its size itself and passes no class or style on from its usage; the dependency is never changed.",
       },

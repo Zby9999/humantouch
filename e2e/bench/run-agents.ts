@@ -14,7 +14,7 @@
  *                                     Agent applying it right, with no Agent run: claim, write that code, `done` for the changes it applies,
  *                                     `finish`, and fill in the report `finish` lays out. Each change must show by the scenario's own test at
  *                                     its widths, and get the page's check of it as shown; one with a Variable must write it (as `usesVariable`
- *                                     counts it); one `notOneToOne` must be in the report under ⚠️ alone, with why and instead (`checkReport`)
+ *                                     counts it); one `notOneToOne` must be in the report under ⚠️ alone, with why and instead (`checkReport`).
  *                                     With `--dry` or `--scripted`, BENCH_DEBUG=1 prints a scenario's error whole, not its first line only.
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
  *
@@ -271,9 +271,14 @@ async function setUp(browser: Browser, base: string, port: number, scenario: Sce
       return problems;
     });
   } catch (error) {
-    if (process.env.BENCH_DEBUG) console.error(error);
-    return [(error as Error).message.split("\n")[0]];
+    return [problemOf(error)];
   }
+}
+
+/** A scenario that could not be set up or applied, as its error's first line; whole too, with BENCH_DEBUG=1. */
+function problemOf(error: unknown): string {
+  if (process.env.BENCH_DEBUG) console.error(error);
+  return (error as Error).message.split("\n")[0];
 }
 
 /**
@@ -311,6 +316,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
         if (change.notOneToOne) return;
         const id = saved[i].id;
         if (atEnd[i] === false) problems.push(`change ${i + 1} does not show: ${change.expect}`);
+        if (atEnd[i] === null && change.kind !== "brief") problems.push(`change ${i + 1} has no test of its own (\`shows\`) to show it by`);
         if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
         if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code writes none of ${change.variable.join(", ")}`);
       });
@@ -322,8 +328,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       return problems;
     });
   } catch (error) {
-    if (process.env.BENCH_DEBUG) console.error(error);
-    return [(error as Error).message.split("\n")[0]];
+    return [problemOf(error)];
   }
 }
 
