@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "./fixtures";
 import { pack, sh } from "./install-copy";
 
+/** The repository's root, where its README and LICENSE are. */
+const REPOSITORY = fileURLToPath(new URL("../../", import.meta.url));
+
 // Packed once for the file: under `fullyParallel`, each worker would pack it again. The checks stay
 // independent: one failing does not skip the rest.
 test.describe.configure({ mode: "default" });
@@ -118,9 +121,8 @@ test("the package has nothing but what is built and the Skill: no example projec
 test("the package has the repository's README and LICENSE, as they are: the npm page shows the README GitHub does (ticket 59)", () => {
   expect(files).toContain("README.md");
   expect(files).toContain("LICENSE");
-  const repository = fileURLToPath(new URL("../../", import.meta.url));
-  expect(read("README.md")).toBe(readFileSync(join(repository, "README.md"), "utf8"));
-  expect(read("LICENSE")).toBe(readFileSync(join(repository, "LICENSE"), "utf8"));
+  expect(read("README.md")).toBe(readFileSync(join(REPOSITORY, "README.md"), "utf8"));
+  expect(read("LICENSE")).toBe(readFileSync(join(REPOSITORY, "LICENSE"), "utf8"));
   expect(read("LICENSE")).toContain("Copyright (c) 2026 Zby9999");
   expect(pkg.license).toBe("MIT");
 });

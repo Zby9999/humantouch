@@ -27,7 +27,7 @@ Install 03Kind, an editor layer for this project's dev server, so I can edit the
 4. Run `npx 03kind doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 ```
 
-`init` edits two files of your project's source, an import and a line in each: the build config (`vite.config.ts` or `next.config.ts`), and the file that renders the app (`src/main.tsx` or `app/layout.tsx`), which puts the toggle on the page. It also installs `03kind` as a dev dependency, adds a Skill for your Agent in `.agents/skills/03kind/` and `.claude/skills/03kind/`, a line in `AGENTS.md` pointing to it, and a line in `.gitignore` for `.03kind/`, the folder your changes are saved in.
+`init` edits two files of your project's source, an import and a line in each: the build config (such as `vite.config.ts` or `next.config.ts`), and the file that renders the app (such as `src/main.tsx` or `app/layout.tsx`), which puts the toggle on the page. It also installs `03kind` as a dev dependency, adds a Skill for your Agent in `.agents/skills/03kind/` and `.claude/skills/03kind/`, a line in `AGENTS.md` pointing to it, and a line in `.gitignore` for `.03kind/`, the folder your changes are saved in.
 
 ## One round
 
@@ -39,9 +39,9 @@ Use the page as you always do, and bring it to the state you want to change: ope
 
 Click the toggle. The page freezes into a canvas, shown side by side in the Desktop, Tablet and Phone views, with the Layers panel on the left and the Design panel on the right.
 
-- Drag layers to move them, or out of the canvas to set them aside for later. Select a few and press ⇧A to make a Stack.
+- Drag layers to move them, or move them off the canvas: they stay beside it as off-canvas layers, for you to put back later. Select a few and press ⇧A to make a Stack.
 - Set Position, Size, Stack, Padding, Fill, Stroke, Appearance, Effects and Text in the Design panel. Draw a new Frame (F) or Text (T) on the canvas.
-- A change made in the Desktop view applies at every width; one made in the Tablet or Phone view applies only at that view's breakpoint.
+- A change made in the Desktop view applies at every width, except at a breakpoint where you have already changed that property in its own view; one made in the Tablet or Phone view applies only at that view's breakpoint.
 - When the Design panel cannot say what you want, add a Brief to the layer: "What should the Agent achieve here?"
 - Click Play to see the canvas at full size; press Esc to come back.
 
@@ -82,7 +82,7 @@ Tell your Agent to remove 03Kind, or run this in the project's root folder:
 npx 03kind remove
 ```
 
-It takes back out everything `init` added, uninstalls the package and deletes `.03kind/`, with any layers you set aside off the canvas, leaving `git diff` empty. In a project that uses npm, it prints:
+It takes back out everything `init` added, uninstalls the package and deletes `.03kind/`, with any off-canvas layers, leaving `git diff` empty. In a project that uses npm and has no off-canvas layers, it prints:
 
 ```text
 03Kind removed:
@@ -90,6 +90,8 @@ It takes back out everything `init` added, uninstalls the package and deletes `.
 - Deleted .03kind/
 - Uninstalled 03kind (`npm uninstall 03kind`)
 ```
+
+With two off-canvas layers, the second item reads "Deleted .03kind/, with the 2 layers the designer had moved off the canvas" instead.
 
 If the lines `init` added have been changed since, it leaves them as they are and prints "Finish by hand" with what to take out. It does not remove anything while you have design changes not applied yet, or while your Agent is applying a round: apply them or discard them first.
 

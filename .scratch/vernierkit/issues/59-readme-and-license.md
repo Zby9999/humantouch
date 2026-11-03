@@ -75,3 +75,12 @@
 - README 里 "Next.js 16 or later" 照 `init` 的检查写；Webpack 只由 `next-install.spec.ts` 覆盖，全新 `create-next-app` 只按默认的 Turbopack 走过。
 - README 写的是现在界面上的字，编辑层改字（例如切换按钮的名字）时 README 和 Guide 要跟着改，目前没有测试把两者绑在一起。
 - npm 页面上 README 里的 `#guide` 锚点按 npm 自己的规则生成，没有在 npm 上实际看过（不发布就看不到）；LICENSE 只写文件名、不放相对链接，因为 package.json 没有 `repository`，npm 上相对链接会坏。
+
+**按 code-review 修正（2026-11-03）**
+
+- README 去掉 GLOSSARY「画布外的图层」「让位」_Avoid_ 里的 "aside"：编辑一节改为 "move them off the canvas: they stay beside it as off-canvas layers, for you to put back later"，Remove 一节改为 "with any off-canvas layers"。全文对过 GLOSSARY 的英文 _Avoid_ 词，别的只有 `git diff` 这条命令里的 diff，不算。
+- 「桌面视图中的改动作用于所有断点」补上 GLOSSARY 断点和 ADR 0008 的例外：已在某个断点的视图里单独改过该属性的，那个断点不跟着变。
+- Remove 一节：示例输出注明是没有画布外图层的 npm 项目；另加一句，有画布外的图层时第二项是 "Deleted .03kind/, with the 2 layers the designer had moved off the canvas"（照 `install.ts` 的原字，以两个为例）。
+- `init` 改的两个文件前加 "such as"：`init` 也认别的扩展名的配置、`src/index.tsx` / `.jsx`、`src/app/layout.*`，这里只举例。
+- `e2e/tests/package.spec.ts`：仓库根目录的路径改为文件顶部的常量 `REPOSITORY`，和 `install-copy.ts` 的 `PACKAGE`、`install.spec.ts` 的 `EXAMPLE` 一样。
+- 测试：`pnpm typecheck` 通过；`pnpm test` 一次全部通过（vitest 34 个文件 804 条通过、1 条跳过；node:test 32 条通过，含旧名检查）；`pnpm build` 后 `TK_E2E_PORT=5600 pnpm exec playwright test -c e2e/playwright.config.ts e2e/tests/package.spec.ts` 7 条全部通过。
