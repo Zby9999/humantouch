@@ -7,7 +7,7 @@
  */
 import { asShown, declaredByEdit } from "./canvas-style";
 import type { Change, Fragment, Place } from "./changeset";
-import { OTHER_EDGE, shareCss, SIDES as PLACING_SIDES } from "./checkable";
+import { centeringSides, OTHER_EDGE, shareCss, SIDES as PLACING_SIDES } from "./checkable";
 import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
@@ -339,8 +339,9 @@ export function absoluteAt({ x, y, placed }: NonNullable<Place["absolute"]>): Re
     const how = placed?.[axis];
     if (!how) continue;
     if (how.margins) {
-      css[PLACING_SIDES[axis].start] = shareCss({ percent: how.percent - 50, px: how.px });
-      css[PLACING_SIDES[axis].end] = shareCss({ percent: 50 - how.percent, px: 0 - how.px });
+      const sides = centeringSides(how);
+      css[PLACING_SIDES[axis].start] = shareCss(sides.start);
+      css[PLACING_SIDES[axis].end] = shareCss(sides.end);
       continue;
     }
     css[PLACING_SIDES[axis][how.edge]] = shareCss(how);
