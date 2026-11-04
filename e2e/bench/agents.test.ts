@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, PROMPT } from "./agents.ts";
+import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piFffVersion, PROMPT, runAgent } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
@@ -104,14 +104,15 @@ test("with no Skill, each Agent is asked only to run claim and apply as it says,
   }
 });
 
-test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless TK_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions, MCP, prompt templates or themes", () => {
+test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless TK_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions but pi-fff, nor MCP, prompt templates or themes", () => {
   const saved = process.env.TK_BENCH_PI;
   try {
     process.env.TK_BENCH_PI = "/opt/pi";
     const line = commandLine("pi");
     assert.match(line, /^\/opt\/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek\/deepseek-v4\.1-flash --thinking high --no-session --offline /);
-    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/03kind --no-prompt-templates --no-themes --approve /);
-    assert.match(line, / --tools read,bash,edit,write,grep,ls$/);
+    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '?\S+\/@ff-labs\/pi-fff'? --fff-mode override --fff-frecency-db '<run folder>\/fff\/frecency' --fff-history-db '<run folder>\/fff\/history' --fff-follow-symlinks -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/03kind --no-prompt-templates --no-themes --approve /);
+    // grep and find are fff's, in place of pi's own (ticket 92).
+    assert.match(line, / --tools read,bash,edit,write,ls,grep,find$/);
     assert.equal(AGENTS.pi.model, "command-code/deepseek/deepseek-v4.1-flash");
   } finally {
     if (saved === undefined) delete process.env.TK_BENCH_PI;
@@ -127,9 +128,38 @@ test("pi's run gets the bench's extension, and the rule it holds shell commands 
 
   const args = AGENTS.pi.args(folder);
   const extensions = args.flatMap((arg, i) => (arg === "-e" ? [args[i + 1]] : []));
-  assert.equal(extensions[1], join(folder, "pi-extension/pi-extension.ts"));
+  assert.equal(extensions.at(-1), join(folder, "pi-extension/pi-extension.ts"));
   assert.deepEqual(readdirSync(join(folder, "pi-extension")).sort(), ["allowlist.ts", "pi-extension.ts"]);
   assert.deepEqual(readdirSync(dir), []);
+});
+
+test("pi runs with pi-fff, the designer's installed copy, its databases in the run's own folder and not the designer's; the record has its version (ticket 92)", () => {
+  const folder = mkdtempSync(join(scratch, "run-"));
+  const args = AGENTS.pi.args(folder);
+  const value = (flag: string) => args[args.indexOf(flag) + 1];
+
+  const extensions = args.flatMap((arg, i) => (arg === "-e" ? [args[i + 1]] : []));
+  assert.equal(extensions.length, 3);
+  assert.match(extensions[1], /\/\.pi\/agent\/npm\/node_modules\/@ff-labs\/pi-fff$/);
+  assert.equal(value("--fff-frecency-db"), join(folder, "fff/frecency"));
+  assert.equal(value("--fff-history-db"), join(folder, "fff/history"));
+  assert.ok(!args.some((arg) => /\.pi\/agent\/fff/.test(arg)));
+  // fff's grep and find under the names of pi's own, as the designer's pi has them; no multi_grep.
+  assert.equal(value("--fff-mode"), "override");
+  assert.deepEqual(value("--tools").split(",").sort(), ["bash", "edit", "find", "grep", "ls", "read", "write"]);
+
+  const installed = mkdtempSync(join(scratch, "pi-fff-"));
+  writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "@ff-labs/pi-fff", version: "0.11.0" }));
+  assert.equal(piFffVersion(installed), "0.11.0");
+  assert.equal(piFffVersion(join(scratch, "nowhere")), null);
+  assert.deepEqual(Object.keys(AGENTS.pi.extensions!()), ["pi-fff"]);
+});
+
+test("Claude's and Cursor's command lines have nothing of fff, and their runs record no extension", () => {
+  for (const agent of ["claude", "cursor"] as const) {
+    assert.doesNotMatch(commandLine(agent), /fff/);
+    assert.equal(AGENTS[agent].extensions, undefined);
+  }
 });
 
 test("the effort pi ran at is the thinking level its answers name in the transcript; Claude Code says it in its debug log, Cursor nowhere", () => {
@@ -216,4 +246,26 @@ test("Claude may run the Skill's undo and its viewing command for the run's own 
   const line = commandLine("claude");
   assert.match(line, /Bash\(git -C "<project>" diff:\*\),Bash\(git -C <project> diff:\*\),Bash\(git -C "<project>" apply\),Bash\(git -C <project> apply\),Bash\(git apply\)/);
   assert.doesNotMatch(line, new RegExp(project));
+});
+
+test("an Agent that leaves a process running with its output ends when it exits, not when its output closes (the install bench)", async () => {
+  const folder = mkdtempSync(join(scratch, "left-running-"));
+  // The Agent prints its last words, starts a process that keeps its stdout, and exits.
+  const agent = `console.log('{"type":"result","result":"done"}'); require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "inherit" }); setTimeout(() => process.exit(0), 100);`;
+  let group = 0;
+  const began = Date.now();
+  try {
+    const run = await runAgent("claude", folder, folder, 20_000, "", { spec: { binary: () => process.execPath, args: () => ["-e", agent] }, leaveRunning: true, onStart: (pid) => void (group = pid) });
+    assert.equal(run.exitCode, 0);
+    assert.equal(run.timedOut, false);
+    assert.ok(Date.now() - began < 10_000, `took ${Date.now() - began} ms`);
+    assert.match(readFileSync(join(folder, "transcript.jsonl"), "utf8"), /"result":"done"/);
+  } finally {
+    // What this test started: the Agent's own process group.
+    try {
+      if (group) process.kill(-group, "SIGKILL");
+    } catch {
+      // Gone already.
+    }
+  }
 });

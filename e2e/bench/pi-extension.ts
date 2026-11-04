@@ -4,29 +4,85 @@
  * Agent's behaviour, not a sandbox: it blocks the tool calls the bench does
  * not allow, and the Agent reads why. pi has no allowlist of its own for shell
  * commands: every `bash` call the bench's rule turns away is blocked, and
- * any that cds out of the project. pi's
- * own tools are held to two path rules: `write` and `edit` stay in the
- * project (the folder pi runs in), and no tool or command reaches pi's own
- * folder (~/.pi), where the designer's login is; reading elsewhere goes
- * ahead, as Claude Code's Read does. A call the extension cannot check is
- * blocked. And pi has no switch for leaving out only the designer's global
- * AGENTS.md: this keeps the instructions files inside the project, as Claude
- * Code's `--setting-sources project,local` does.
+ * any that cds out of the project. pi's own tools are held to two path
+ * rules: `write` and `edit` stay in the project (the folder pi runs in), and
+ * no tool or command reaches pi's own folder (~/.pi), where the designer's
+ * login is, by any name for it (the file system's: device and inode);
+ * reading elsewhere goes ahead, as Claude Code's Read does. The search
+ * tools, fff's (pi-fff, ticket 92), are held to the second only, by the
+ * folder they index: the designer let them search as they will, with no
+ * broad-search guard. A call the extension cannot check is blocked: a path
+ * with blanks around it among them, which pi-fff trims. And pi has no
+ * switch for leaving out only the designer's global AGENTS.md: this keeps
+ * the instructions files inside the project, as Claude Code's
+ * `--setting-sources project,local` does.
+ *
+ * The install bench (ticket 91) writes `install-list.json` beside the copy:
+ * then the shell commands allowed are its `shell` in place of the applying
+ * bench's, one of its `servers` may start a dev server in the background
+ * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
+ * `pnpm exec`…) may run only the programs listed for it, past only its
+ * `flags`, and no word may be one of its `options` (allowlist.ts,
+ * runsAllowed). With no such file, nothing changes. Under the install list,
+ * "nothing reaches ~/.pi" holds at the command line only: `npm run <script>`,
+ * `npx vite` and `npx next` run code the Agent may have written with write or
+ * edit (a package.json script, vite.config), which this does not read
+ * (install-allowlist.ts says so too).
  */
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DENIED, deniedReason, realPath, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
+import { backgroundServer, DENIED, deniedReason, realPath, runsAllowed, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
 
 /** As much of pi's extension API as the bench uses (`@earendil-works/pi-coding-agent`, which the repository does not install). */
 interface PiExtensionApi {
   on(event: "tool_call" | "before_agent_start", handler: (event: any, ctx?: any) => unknown): void;
 }
 
-/** pi's own tools that work on a path, and those of them that search all below it. */
-const PATH_TOOLS = ["read", "grep", "find", "ls", "write", "edit"];
-const SEARCHES = ["grep", "find"];
+/** The file the install bench writes beside the extension's copy, and what it holds. */
+export const INSTALL_LIST = "install-list.json";
+export interface ShellList {
+  shell: readonly string[];
+  servers: readonly string[];
+  runners: Readonly<Record<string, readonly string[]>>;
+  flags: readonly string[];
+  options: readonly string[];
+}
+
+/** The applying bench's list, what pi is held to with no install list beside the extension. */
+const APPLYING: ShellList = { shell: SHELL, servers: [], runners: {}, flags: [], options: [] };
+
+/** The applying bench's list, or the install bench's when `file` is there. */
+function shellList(file: string): ShellList {
+  if (!existsSync(file)) return APPLYING;
+  const list = JSON.parse(readFileSync(file, "utf8"));
+  for (const key of ["shell", "servers", "flags", "options"]) if (!Array.isArray(list[key])) throw new Error(`${file} has no ${key} list`);
+  if (typeof list.runners !== "object" || !Object.values(list.runners).every(Array.isArray)) throw new Error(`${file} has no runners`);
+  return list;
+}
+
+/** pi's own tools that work on a path, its searches aside. */
+const PATH_TOOLS = ["read", "ls", "write", "edit"];
+/**
+ * The search tools, and the argument each is pointed with. In the bench's
+ * runs grep and find are fff's (pi-fff in override mode, ticket 92); fff's
+ * own names are those it falls back on when it does not index the folder pi
+ * runs in, and multi_grep comes only with PI_FFF_MULTIGREP=1. Each is
+ * pointed by a path (a folder, a file or a glob, which may be outside the
+ * project: ~/ and ../ included), or the multi-greps (on the project only,
+ * but checked all the same) by a line of them, `!` before those they leave
+ * out. pi's own grep and find, were they run, take a folder or a file as
+ * path: the same check holds them, a file's folder for a file.
+ */
+const SEARCHES: Record<string, "path" | "constraints"> = {
+  grep: "path",
+  find: "path",
+  multi_grep: "constraints",
+  ffgrep: "path",
+  fffind: "path",
+  "fff-multi-grep": "constraints",
+};
 /** The shell commands of the list that can read all below a folder. */
 const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
 
@@ -34,6 +90,8 @@ const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
 function toolPath(path: unknown, cwd: string): string {
   if (path === undefined) return cwd;
   if (typeof path !== "string") throw new Error("A path that is no string");
+  // pi-fff trims (aux-finders.ts, routePathConstraint): ` ~` would index the home folder.
+  if (path !== path.trim()) throw new Error("A path with blanks around it");
   const given = path.replace(/^@/, "");
   if (/^file:\/\//.test(given)) return resolve(fileURLToPath(given));
   return resolve(cwd, withHome(given));
@@ -45,17 +103,82 @@ function withHome(path: string): string {
   return path.startsWith("~") ? join(dirname(homedir()), path.slice(1)) : path;
 }
 
-/** pi's own folder, as written and as the file system has it. */
-const piFolders = () => [join(homedir(), ".pi"), realPath(join(homedir(), ".pi"))];
+/**
+ * The folder an fff search indexes for `path`, found as pi-fff finds it
+ * (aux-finders.ts, resolveAuxRoot): of the part before the first part with a
+ * glob in it (`*`, `?`, `[…]`, `{…}`), the nearest folder there is, or a
+ * file's own folder; the rest is a constraint searched for all below it, and
+ * a bare name matches that name in any folder there. So `~/{.pi,x}` and
+ * `~/auth.json` both index all of ~.
+ */
+function searchRoot(path: string): string {
+  const parts = path.split(sep);
+  const glob = parts.findIndex((part) => /[*?[{]/.test(part));
+  for (let dir = glob < 0 ? path : parts.slice(0, glob).join(sep) || sep; ; dir = dirname(dir)) {
+    try {
+      return statSync(dir).isDirectory() ? dir : dirname(dir);
+    } catch {
+      if (dirname(dir) === dir) return dir;
+    }
+  }
+}
+
+/** What the file system has at `path`, following links; null when nothing. */
+function statOr(path: string): Stats | null {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
+}
+
+const sameFile = (a: Stats | null, b: Stats | null) => !!a && !!b && a.dev === b.dev && a.ino === b.ino;
+
+/** macOS's other name for every folder of the Data volume (a firmlink): `/System/Volumes/Data/Users/…` is `/Users/…`. */
+const DATA_VOLUME = "/System/Volumes/Data";
+
+/**
+ * pi's own folder, as written, as the file system has it, and by macOS's
+ * name for it on the Data volume, when that is the same folder: a pattern
+ * (a glob, a folder that is not there) is matched against each by name.
+ */
+function piFolders(): string[] {
+  const folder = join(homedir(), ".pi");
+  const real = realPath(folder);
+  return [folder, real, ...(sameFile(statOr(DATA_VOLUME + real), statOr(folder)) ? [DATA_VOLUME + real] : [])];
+}
+
+/**
+ * Whether `path`, or a folder it is in, is pi's own folder by the file
+ * system's identity of it (device and inode), whatever the name; or (with
+ * `above`) whether `path` is one of the folders above it, so.
+ */
+function sameAsPi(path: string, above: boolean): boolean {
+  const pi = statOr(join(homedir(), ".pi"));
+  if (!pi) return false;
+  for (let dir = path; ; dir = dirname(dir)) {
+    if (sameFile(statOr(dir), pi)) return true;
+    if (dirname(dir) === dir) break;
+  }
+  if (!above) return false;
+  const here = statOr(path);
+  for (let dir = dirname(join(homedir(), ".pi")); ; dir = dirname(dir)) {
+    if (sameFile(here, statOr(dir))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
 
 /**
  * Whether `path`, a pattern bash may fill in, names something in pi's folder,
- * or (with `above`) a folder above it, which a search reads all of. Compared
- * part by part, in any case (as macOS finds names): `*`, `?` and `[…]` match
- * as in bash, a dot first only by a dot.
+ * or (with `above`) a folder above it, which a search reads all of: by the
+ * file system's identity of the folders there are (sameAsPi), and by name,
+ * part by part, against each name of pi's folder, in any case (as macOS
+ * finds names): `*`, `?` and `[…]` match as in bash, a dot first only by a
+ * dot.
  */
 function reachesPi(path: string, above: boolean): boolean {
   const parts = (p: string) => p.split(sep).filter(Boolean);
+  if (sameAsPi(path, above)) return true;
   return [path, realPath(path)].some((candidate) =>
     piFolders().some((folder) => {
       const want = parts(folder);
@@ -146,27 +269,46 @@ function shellReaches(command: string, cwd: string): "pi" | "out" | null {
 const intoPi = (what: string) => `${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`;
 
 /**
- * Why the bench turns a shell command line away, run in the project `cwd`;
- * null when it goes ahead. pi's `bash` calls are held to it, and the
- * scripted pass's commands (run-agents.ts).
+ * Why the bench turns a shell command line away, run in the project `cwd`
+ * under `list`; null when it goes ahead. pi's `bash` calls are held to it,
+ * and the scripted pass's commands (run-agents.ts). The Skill's undo (`git
+ * apply`, `git -C` of the project, ticket 86) goes ahead on the applying list
+ * only: the install bench's has no reason to undo a round.
  */
-export function shellDenied(command: string, cwd: string): string | null {
-  if (!shellAllowed(command, SHELL, cwd)) return deniedReason(command);
-  const reaches = shellReaches(command, cwd);
-  if (reaches === "out") return deniedReason(command);
+export function shellDenied(command: string, cwd: string, list: ShellList = APPLYING): string | null {
+  const denied = deniedReason(command, list.shell, list.servers);
+  const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
+  const project = list.shell === SHELL ? cwd : undefined;
+  // A dev server in the background is checked as the command it runs, the paths in it too.
+  const checked = shellAllowed(command, list.shell, project) ? command : backgroundServer(command, list.servers, inProject);
+  if (checked === null) return denied;
+  if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
+    const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
+    return `${DENIED} npx and the like to run only these (${runners.join("; ")}), 03kind by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`;
+  }
+  const reaches = shellReaches(checked, cwd);
+  if (reaches === "out") return denied;
   return reaches === "pi" ? intoPi(command) : null;
 }
 
-function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string): { block: true; reason: string } | undefined {
+function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string, list: ShellList): { block: true; reason: string } | undefined {
   const { toolName, input } = event;
   const block = (reason: string) => ({ block: true as const, reason });
   if (toolName === "bash") {
-    const reason = shellDenied(String(input.command ?? ""), cwd);
+    const reason = shellDenied(String(input.command ?? ""), cwd, list);
     return reason === null ? undefined : block(reason);
+  }
+  if (Object.hasOwn(SEARCHES, toolName)) {
+    // Each folder it indexes, or with none the project; a folder above pi's own reaches it.
+    const given = input[SEARCHES[toolName]];
+    if (given !== undefined && typeof given !== "string") throw new Error("An argument that is no string");
+    const words = SEARCHES[toolName] === "path" ? [given] : (given ?? "").split(/\s+/).filter((word) => word && !word.startsWith("!"));
+    const paths = words.length ? words : [undefined];
+    return paths.some((word) => reachesPi(searchRoot(toolPath(word, cwd)), true)) ? block(intoPi(`${toolName} ${given ?? "."}`)) : undefined;
   }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);
-  if (reachesPi(path, SEARCHES.includes(toolName))) return block(intoPi(`${toolName} ${input.path ?? "."}`));
+  if (reachesPi(path, false)) return block(intoPi(`${toolName} ${input.path ?? "."}`));
   if ((toolName === "write" || toolName === "edit") && !realPath(path).startsWith(realPath(cwd) + sep)) {
     return block(`${DENIED} writing in the project only. Turned away: ${toolName} ${input.path}`);
   }
@@ -183,10 +325,18 @@ function inProject(file: { path: string }, project: string): boolean {
   }
 }
 
-export default function benchExtension(pi: PiExtensionApi) {
+/** pi calls it with its API alone; `listFile` is for the tests. A list there that cannot be read blocks every tool call. */
+export default function benchExtension(pi: PiExtensionApi, listFile = join(dirname(fileURLToPath(import.meta.url)), INSTALL_LIST)) {
+  let list: ShellList | null;
+  try {
+    list = shellList(listFile);
+  } catch {
+    list = null;
+  }
   pi.on("tool_call", (event: { toolName: string; input: Record<string, unknown> }, ctx?: { cwd?: string }) => {
     try {
-      return check(event, ctx?.cwd ?? process.cwd());
+      if (!list) throw new Error("No list");
+      return check(event, ctx?.cwd ?? process.cwd(), list);
     } catch {
       return { block: true, reason: `${DENIED} only the tool calls it can check. Turned away: ${event?.toolName}` };
     }
