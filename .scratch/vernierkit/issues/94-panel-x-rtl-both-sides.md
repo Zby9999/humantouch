@@ -67,7 +67,7 @@ ticket 的例子：改前 X = 10，改后 X = 320（图层画在 320）。Y 前�
 - **移动的改前位置**（`structure-edits.ts` 的 `placeOf`）：读 `definitionOf("x")`，跟着改了；原来从右往左这种图层记的改前 `right` 是 400 - 10 - 50 = 340，现在是 30，对了。只影响从右往左这种图层。
 - **微移的起点**（`freePlaceOf`）：原来读算出来的 `left`，改后 X 读画出来的位置，两者不再一致，微移就会错，所以改成同样按 `offsetPlacing` 读（审查后两个方向都这样读，Y 照旧是 `top`）。
 - **拖动**（`drag.ts` 的 `findDrop`）：给的是画出来的位置，本来就对；错在编辑命令拿它和 X 相减，X 改了就对了。
-- **改尺寸**（`canvas-resize.ts`）：按右边定位时用 `right`，不用 X，不受影响。
+- **改尺寸**（`canvas-resize.ts`）：按右边定位时用 `right`，不用 X，不受影响。（审查后更正：按左边定位、浏览器却按右边画的图层从左边控制点改尺寸时用 X，是修好了，见「按 code-review 修正」第 5 条。）
 - **LayerInfo**：不显示位置。**按 ⌥ 量距离**：按画出来的框量，本来就对。
 - **页面核对**（`check.ts` 的 `placedOn`）：89 已经用 `offsetPlacing`，和面板现在读的是同一个式子。
 - **冻结时钉住**（`freezer.ts` 的 `pinToViewport`）：页面横向滚过时把固定图层的 `left` 钉成算出来的 `left` 加滚动量，从右往左两边都写、宽度定死时钉的是写的 `left`，不是画出来的位置。不是面板的读数，没改，记进遗留风险。
@@ -118,3 +118,50 @@ ticket 的例子：改前 X = 10，改后 X = 320（图层画在 320）。Y 前�
 1. 代定第 2 条那种（`max-width` 卡住宽度、从右往左两边都写）改动单记 X 而不是 `right`，Agent 会写 `left` 并去掉 `right`，图层在别的宽度可能就不再按右边摆了。和 89 的遗留风险第 3 条同一个根源（画布那边按声明判断「定死」）。
 2. 冻结时横向滚过的页面上，从右往左两边都写、宽度定死的固定图层，钉住的是写的 `left`（见「别处看了的」）。很少见。
 3. 读一次的记录会过时；一个视图代表一整段宽度；没跑真实 Agent（同 75、83、84、89）。
+
+**按 code-review 修正（2026-11-04）**
+
+指挥另跑了独立审查（effort high），在同一条分支上修（指挥先把 main 合进来，40db7d4，只有 ticket 文件）。每条源码修正都先写测试、看着失败再改；钉住 94 已修好的那几条，在 94 之前的源码（cef746d）上跑过，确认失败。
+
+*找到的和改的*
+
+1. **从右往左、外边距 `auto` 居中的图层**（中，确认；毛病在 89 的代码里）：`left: 0; right: 0; margin-inline: auto; width: 50px`（Tailwind `inset-x-0 mx-auto w-12`）在 400px 的容器里画在 175。X 读 0，输 X = 300 记成 `right` 0 → -300，图层画到 325。原因：`endWins` 按声明读，宽度定死就当成右边说了算；浏览器其实没有对不上空间，多出来的地方被两边的 `auto` 外边距吃掉了。按指挥的代定改：那个方向上有一边外边距是 `auto`，`endWins` 为假，和宽度没定死一样，`placedFrom` 说按左边。`auto` 用 `computedStyleMap()` 读：它给的是算出来的值，保留 `auto` 这个关键字（`getComputedStyle` 给的是用掉的 px，175），`margin`、`margin-inline`、`mx-auto` 怎么写都认得，不排版（ADR 0011）。先在浏览器里探过：`margin-inline: auto`、`margin: 0 auto` 都读出 `auto`，`margin-left: 4px` 读出 `4px`。改后输 X = 300 记 X 0 → 300（写 `left: 300px; right: auto`），画在 300，和从左往右今天一样。
+   - **X 读、输、微移、拖动对得上**：X 读 0（`left`，外边距另算，和从左往右一样）；输 300、拖到 300 都记 X 0 → 300，画在 300；微移 -20 记 X 0 → -20，画在 -20（`right` 变成 `auto` 后 `auto` 外边距算成 0，图层跳到 `left` 处）。微移这一跳从左往右在 main 上就这样，见遗留风险。
+   - **`sideMoves` / `endOffsetPlaces` / `done`**：`endOffsetPlaces`、`sideMoves` 都经 `endWins`，自由定位的图层在旁边的视图里这样居中时，`right` 不再算摆它，记进 `placedOtherwiseAt`，那个宽度 `done` 不看 `right`。浏览器那里两边加外边距一起摆它，不是哪一边说了算，和 75 的边界（两边都摆它时按左边处理）一样。`relative` 的不看外边距，没变。页面核对（`offsetPlacing`）按几何读：外边距吃掉了空间时不算对不上空间，读算出来的值，没变。只有从右往左会变（`endWins` 只在从右往左时为真）。
+2. **性能：`overConstrained` 先比几何再走层叠**：先看 `Math.abs(roomPlacing − extentOf) > 0.5`，对得上就不再走 `sideDeclared`（层叠）。结果不变（与运算换了次序，两边都是只读），原有测试全过；这条没法先写会失败的测试。
+   - 临时的计时测试（headless，没留下）：读一次 X，main 都在 0.8–0.9µs；现在从左往右 5–7µs（多找一次包含块读 `direction`），从右往左只写 `right` 的 19µs（多量一次包含块），从右往左两边都写、对不上空间的 52µs（还要走层叠）。
+   - 每一步多读什么：拖动的路上不读（拖动时只挪画出来的框，`findDrop` 按框量，放下时 `editor.move` 才读一次 X）。按住方向键时每一步：微移的起点（`freePlaceOf` 两个方向各一次 `offsetPlacing`）、`setValue` 读一次 X 算差值、面板重画再读一次 X；main 那里是三次读算出来的值。所以多出来的是每步约三次找包含块（从右往左再加量包含块），从左往右每步多十几 µs，没有新的排版：`placedFrom` 在 main 上每步本来就量图层的框。只有自由定位的图层才读 X，性能测试里的图层都在 Stack 里，走不到。
+3. **从左往右的 NaN**（低，确认）：`left` 算出来是 `auto`（祖先 `display: none`）时 main 读 NaN，94 读 0（`offsetPlacing` 的 `|| 0`）。`offsetOf` 先看算出来的值，读不出数就照 main 给 NaN，Y 一样；`offsetPlacing` 没动（`check.ts` 靠它）。加了一条护栏测试：在 main 上过，在 94 第一版上失败。
+4. **代定第 2 条、遗留风险第 1 条只说了 `max-width`**：是一类，见下面更新后的代定第 2 条、遗留风险第 1 条（`min-width`、宽度 `auto` 加 `aspect-ratio`），以及改动说明里 X 的「改前」和源码对不上。
+5. **改尺寸**（`canvas-resize.ts:138`）：原记录说改尺寸不受影响，不对。按左边定位、浏览器却按右边画的图层（`max-width` 那类），从左边控制点改尺寸时 X 从画出来的位置算（320 + dx）；main 从写的 `left` 算（10 + dx），图层会跳。这是修好了，但上次没记。加了测试：左边控制点往右拖 20，记 `{ width: 30, x: 340 }`，画在 340、宽 30；在 cef746d 上是 `x: 30`。
+6. **拖进别的 Frame 再撤回**（`placeOf`）：改前位置现在是 X 320、按右边 30，撤回后画在 320。加了测试钉住（宽度定死、从右往左）；在 cef746d 上失败（改前位置记成 X 10、`right` 340，撤回后画在 10）。原地复制（`duplicate`）也用 `placeOf` 的位置，副本同样落在 320（原来在 10）。
+7. **说明的用词**：`offsetOf` 的说明「too large for them to both place it」对 ticket 自己的例子不对，改用 placed-from.ts 的说法「more than it can keep」，顺带写明 NaN 那一条。
+
+*测试*
+
+`edits.browser.test.ts` 这次 +6 条（test.each 展开后算）：外边距 `auto` 居中，从左往右、从右往左各一（读、输、微移、拖动、撤销；从左往右是护栏）；旁边视图里这样居中时 `right` 记进 `placedOtherwiseAt`；左边控制点改尺寸；拖进别的 Frame 再撤回；NaN 护栏。在 381fb5a（修正前）上失败的：外边距两条、NaN 一条；在 cef746d 上失败的：外边距两条、改尺寸、撤回（NaN 那条在 main 上过）。原有测试期望一条没改。
+
+*代定的事，更新后*
+
+1. 面板的 X 按几何读，和页面核对同一条（同上）。
+2. **按左边定位、浏览器却按右边画的图层，X 显示画出来的位置，输 X 写成 X（`left`，`right` 设成 `auto`），不写 `right`**：画布那边「宽度定死」照 89 代定第 2 条按声明读，读数按几何，两者对不上。这是一类：宽度没写、被 `max-width` 卡住（测试钉住），被 `min-width` 撑大（审查给的：从右往左画在 -30，X 读 -30，输 X 写 X；没另写测试），宽度 `auto` 加 `aspect-ratio`。都落在输的位置，只是改动单里是 X 不是 `right`。
+3. 拖动一起修了（同上）。
+4. **（新）那个方向上有一边外边距是 `auto`，就不是哪一边说了算**（指挥代定）：按左边处理，和宽度没定死一样；输 X 写 X，`right` 的改动在那种宽度不看。浏览器在那里本来也是两边加外边距一起摆它。
+
+*遗留风险，更新后*
+
+1. **代定第 2 条那一类**（`max-width`、`min-width`、`aspect-ratio`）改动单记 X 不记 `right`：Agent 会写 `left` 并去掉 `right`，图层在别的宽度可能不再按右边摆。另外改动说明给 Agent 的是「Change the X from 320 to 300」（`change-notes.ts:193`），源码里却是 `left: 10px`，Agent 可能找不到 320 从哪来。根源同 89 的遗留风险第 3 条。
+2. **外边距 `auto` 居中的图层，微移一下会跳**：输 X、拖动落在给的位置，微移从 X（`left`）算，`right` 变成 `auto` 后外边距算成 0，图层从 175 跳到 -20。从左往右在 main 上就这样，从右往左现在和它一样；没修，不在这条线的范围。
+3. 冻结时横向滚过的页面上，钉住的是写的 `left`（同上）。
+4. 读一次的记录会过时；一个视图代表一整段宽度；没跑真实 Agent。
+
+*全量（最后的代码，2bfa1ec）*
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：单测 907 通过、1 跳过；node 测试 121 条通过。
+- `TK_E2E_PORT=5800 pnpm test:e2e`：page 一组 283 通过、2 条失败（`layout.spec.ts:184` 播放时看新尺寸那条的 `toHaveCSS`，`next-install.spec`，都是起得慢一类），project files 一组因此没跑；两条单独重跑都通过（连 next-install 的 4 条共 5 条）。再用 `--project="project files" --no-deps` 跑 project files 一组：130 通过、1 跳过。切换按钮体积检查在里面，通过。
+- 性能（`TK_PERF_HEADLESS=1 TK_PERF_PORT=5810 pnpm test:perf`，headless，只作参考）：14 通过、1 失败，失败的仍是改前就失败的 `flex.perf.ts:836`（⌘Z 时旁边视图是否等着）。中位数 / p95：改一个值 圆角 work 35.2 / 74.8ms、间距 58.9 / 189.6ms（这次机器忙，同一套代码上一次是 19.9 / 25.7、25.9 / 46.4，这两项走不到 X 的读法）；按住方向键 圆角 10.0 / 12.8ms、间距 10.9 / 12.8ms；拖动卡片 58.8 fps；拖控制点改尺寸 47.4 fps；核对认领的一轮最长一段 12.4 / 17.2ms；进入编辑模式 112.0ms（保存的一轮）、122.0ms（带过来的一轮）。
+
+*包体积（最后的代码）*
+
+切换按钮 `react.dev.js` 1423 B（gzip 822 B，sha256 前 16 位 `c83849f1557e0b1b`）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B，`cdd6f09dfeaf13fa`），逐字节相同。`editor.dev.js` 327661 → 327809 B（和 ticket 94 开始前比 +148 B），gzip -9 111387 → 111461 B（+74 B）。
