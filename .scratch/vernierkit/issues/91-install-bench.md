@@ -6,7 +6,7 @@
 
 **Blocked by:** 无
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 单独一条命令启动（和 `bench:agents` 一样，`pnpm test:e2e` 不会带起它），能选 Agent（`claude`、`pi`，以及只用脚本扮演 Agent 的模式）、选起点、选包的来源（npm 上的 `03kind@latest`，或本地打的包）。Agent 的跑法和落地测量台同一套（Claude 的模型、effort、配置隔离，pi 用 ticket 85 接上的那套），只有命令名单不同（见下一条）
 - [ ] **安装用的命令名单**：落地的名单（`npx 03kind`、`git diff` 等）挡得住 `npx -y 03kind@latest init` 和起开发服务器的命令，安装要单独一份。放行：读、改、搜索的工具，`npx`，四种包管理器的安装、运行脚本和执行命令，起开发服务器，`git status` / `git diff`。仍然挡：`rm`、`sudo`、`kill` / `pkill`、`curl`、`wget`、`ssh`、`scp`、`open`、`osascript`、`git push`，以及网页搜索、抓取工具。包管理器访问 npm 源要上网，这是放行的
@@ -79,6 +79,39 @@ pnpm bench:install summary <dir>
 | next-webpack-bun-tw4 | Next.js App Router，webpack | bun | Tailwind v4 | 没有 `src/` |
 | next-turbo-pnpm-tw3 | Next.js App Router，Turbopack | pnpm | Tailwind v3 | 没有 `src/` |
 
-**脚本 Agent 走查**（`--agents scripted --package local`，8e4f02f）：到按钮出现的秒数，vite-ts-npm-css 4.8、vite-js-pnpm-tw4 6.8、vite-ts-yarn-tw3 6.9、vite-ts-bun-css 3.5、vite-ts-npm-react18-tw4 6.0、next-turbo-npm-tw4 10.9、next-webpack-src-pnpm-modules 115.7 ✗（当时负载均值约 17，单独重跑 13.9 ✓）、next-turbo-src-yarn-modules 12.6、next-webpack-bun-tw4 9.9、next-turbo-pnpm-tw3 8.1。除那一次超时外六条全过，单独重跑后 10/10；10 次都告诉了设计师看右下角的按钮。之前两轮：11-03 9/10（next-webpack-bun-tw4 的 `remove` 后 package.json 有改动：起点自己把 `@tailwindcss/postcss` 写在末尾，bun `remove` 时重新排序；已改成由包管理器添加），deb134c 上 10/10。
+**脚本 Agent 走查，最后一轮**（`--agents scripted --package local`，55b312c，同步 92 之后，负载均值约 4–6）：10/10 六条全过，10 次都告诉了设计师看右下角的按钮、Agent 都自己结束（退出码 0）。到按钮出现的秒数：vite-ts-npm-css 5.5、vite-js-pnpm-tw4 5.3、vite-ts-yarn-tw3 5.0、vite-ts-bun-css 3.6、vite-ts-npm-react18-tw4 4.8、next-turbo-npm-tw4 6.7、next-webpack-src-pnpm-modules 10.0、next-turbo-src-yarn-modules 7.0、next-webpack-bun-tw4 7.6、next-turbo-pnpm-tw3 7.5（中位数约 5.9，最长 10.0）。故意出错四种在这一轮也都判对，结果和下面那段一样。
+
+**之前一轮**（8e4f02f）：到按钮出现的秒数，vite-ts-npm-css 4.8、vite-js-pnpm-tw4 6.8、vite-ts-yarn-tw3 6.9、vite-ts-bun-css 3.5、vite-ts-npm-react18-tw4 6.0、next-turbo-npm-tw4 10.9、next-webpack-src-pnpm-modules 115.7 ✗（当时负载均值约 17，单独重跑 13.9 ✓）、next-turbo-src-yarn-modules 12.6、next-webpack-bun-tw4 9.9、next-turbo-pnpm-tw3 8.1。除那一次超时外六条全过，单独重跑后 10/10；10 次都告诉了设计师看右下角的按钮。之前两轮：11-03 9/10（next-webpack-bun-tw4 的 `remove` 后 package.json 有改动：起点自己把 `@tailwindcss/postcss` 写在末尾，bun `remove` 时重新排序；已改成由包管理器添加），deb134c 上 10/10。
 
 **故意出错**（都判对）：没起开发服务器（next-turbo-npm-tw4）只挂 `toggle`；多改一处源码（vite-js-pnpm-tw4，改 `src/App.jsx`）挂 `source`（"neither the build config nor the file that renders the app"）和 `removed`（`remove` 收不回 Agent 自己的改动，本该如此）；中途停下来问人（next-turbo-src-yarn-modules，"Should I run `npx 03kind doctor` now…"）只挂 `unattended`；`remove` 后留下东西（vite-ts-bun-css，在 `.gitignore` 多加一行）只挂 `removed`。留下一个新文件的情形由单元测试覆盖。
+
+**pi 和 ticket 92**：pi 的跑法完全取自落地测量台的 `AGENTS.pi`（85 那套），92 合进 main 后已同步（5dc2b27、cf6f798、55b312c），安装测量台的 pi 也带上 pi-fff（`fffind`、`ffgrep`、`fff-multi-grep`，frecency 和 history 库在每次 run 自己的目录里，不进项目）。fff 的工具是读、搜索工具，安装名单下和落地名单下一样放行、一样挡 `~/.pi`。对话记录的模型不对、或带了 pi-fff 却没声明 fff 的 grep / find，测量台都会停下，和落地测量台一样。
+
+**全套测试**（同步 92 后的分支）：`pnpm typecheck` 过；`pnpm test` 包 818 过（1 skipped）、测量台 105 过；`TK_E2E_PORT=5300 pnpm test:e2e` 401 过 1 挂，挂的是 `applying-bench.spec.ts:241`（已知会抖的停住提示），单独重跑过。同步 92 之前那一遍挂的 `undo.spec.ts:80` 单独重跑也过，因它没跑的「项目文件」组用 `--no-deps` 补跑 114 过。91 没有改 `e2e/tests` 和 `packages` 里的任何文件。
+
+**代定的事（待设计师确认）**
+
+1. **10 个起点**就是上面那张表（ticket 24 真实跑之前给设计师看）。React 18 只放在 Vite 上（Next 16 要 React 19）；Tailwind v3 是在不带 Tailwind 的脚手架上照 v3 官方指南加的；Vite 的 Tailwind v4 照官方 Vite 指南加。
+2. **脚手架每次取最新版**，跑之前用 `npm view` 查出版本号钉在命令行上（yarn 1 的 `yarn create` 不能带版本，只记下查到的版本），版本记进每次的 raw.json。
+3. **webpack 起点**：create-next-app 16.4 已经没有 webpack 选项，照它自己代码里 webpack 那条路写出的样子改（`next dev --webpack`、`next build --webpack`，Tailwind v4 用 `@tailwindcss/postcss`，由包管理器自己加，免得 `package.json` 的顺序不是包管理器写的）。
+4. **create-next-app 的其余选项**：保留 AGENTS.md（它的默认），不要 linter、React Compiler、Cache Components，`--disable-git --skip-install`，测量台自己装依赖、以 `bench` 的名义提交一次；每个选项都写在命令行上，不用设计师机器上存的偏好。Vite 用 create-vite 默认的 oxlint。
+5. **本地包**：`--package local` 时第 1 步换成 `npx -y file:<.tgz> init`（npx 不认裸路径，要 `file:`），Agent 环境带 `TK_INSTALL_FROM`；只有这一处和 README 原文不同。
+6. **顺序**：Agent 结束后先关它的开发服务器，再跑测量台自己的 `doctor`（Next 的 dev 会盯着 `doctor` 构建时改写又放回的文件），再 `remove`。
+7. **`removed` 是第六条之一**（ticket 原文写在「卸载」一节）；`ended`（不超时、退出码 0）是复审时加的，对应背景里的「卡住了算没成功」；11-04 之前的记录重新汇总时 `ended` 不判。
+8. **问人的判法**：问人的工具调用一律算；最后一条消息里的问句，只在 Agent 还没跑出 `doctor` 的 "All good." 之前才算要人工介入。装完以后再问「要不要帮你提交」之类，不算失败，记为 `trailingQuestion` 给设计师看。第 3 步那句只在请设计师看按钮在不在时豁免。
+9. **命令名单的细节**：包管理器只放行安装、运行脚本、执行；`npx` 这类后面只能跑 `03kind`、`vite`、`next`（复审时从「挡危险的」改成只放行这三个，因为挡的写法总能绕过去）；Claude 多放行 `TaskStop`（停它自己的后台 shell），不放行 `Monitor`；`BROWSER=none`。
+10. **pi 起开发服务器**：只有起服务器的几种写法可以加 `&` 放后台，输出只到 `/dev/null` 或项目里的 `.log`；留下的 `.log` 不算源码改动、也不算 `remove` 没收干净，单独列为「留下的日志文件」。`--skill .agents/skills/03kind` 照落地测量台留着（pi 1.4.0 对不存在的路径只警告）。
+11. **时限**：Agent 最长 10 分钟；Agent 结束后再等 15 秒找按钮；建起点不计时（计时从 Agent 进程启动算起）。
+12. **起点之外**：yarn 1 的 `yarn create` 会把脚手架装到全局（`~/.config/yarn`），这是 yarn 的正常行为，没有绕开。
+
+**剩下的风险**
+
+1. **机器忙时会超 60 秒**：最后一轮走查里 next-webpack-src-pnpm-modules 在负载均值约 17 时用了 115.7 秒，单独重跑 13.9 秒。ticket 24 真实跑时要看负载（和 88 一样看 `ioreg` 合盖状态），超时的先单独重跑。
+2. **名单关不住的**：Agent 能用 Write / Edit 写一个脚本、或在 `package.json` 里加一条 script，再用 `npm run` 跑；`npx vite` / `npx next` 也会执行它写进配置的代码。这些会出现在 diff 里，`source` 会判失败。
+3. **Claude 的 `--open`** 只挡写在固定位置的几种，真正挡窗口的是 `BROWSER=none`。
+4. **Claude 的后台 shell**：不跑真实 Agent 不知道 Claude Code 在 `-p` 下退出时会不会关掉它起的开发服务器、能不能 Read 它在 `/private/tmp/claude-*` 的输出文件。服务器在测量台找到按钮之前就没了，会记成没找到按钮。
+5. **pi 起开发服务器后能不能接着做**：pi 的 bash 等命令结束；没把输出重定向的 `npm run dev &` 可能让它一直等，到 10 分钟超时，判 `ended` 失败。这本身是 24 要看的「For Agents 好不好用」。
+6. **pi 需要别的写法时会被挡**：`npx` 后面跑 `03kind` / `vite` / `next` 以外的东西会被挡，对话记录里能看到。
+7. **`package.json` 的顺序**：设计师手排的 `package.json`，bun / npm 装、卸之后会重新排序，`remove` 后会有只差顺序的 diff；10 个起点都是包管理器写出的顺序，所以没出现。
+8. **只有脚本 Agent 走过**：真实 Agent 的对话记录形状（尤其 pi 的最后一条消息、fff 的调用）只用录下来的片段测过，`fffProblem` 那条停下只由 92 的测试证明。
+9. **在建起点时按 Ctrl-C**：会删掉正在建的临时目录，但没有真的按过 Ctrl-C 验证。
