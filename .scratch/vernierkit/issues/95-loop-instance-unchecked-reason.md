@@ -174,11 +174,12 @@ Not checked on the page: the change is to the data the loop goes through, and th
 4. **循环里的一项没有源码标记时**，`done` 说没有标记，`claim` 说是循环里的一项（见代定第 9 条），两边说法不同，都不算错。
 5. **跑基线时的两次环境问题**：改前的 `--scripted` 第一遍 `variables` 等 locator 超时、`r18-phone-and-stack` 时 Node 的 socket 报 `setTypeOfService EINVAL` 整个进程退出（机器忙，别的线也在跑），剩下 4 个单独重跑全过。
 
-**合并前全量（2026-11-04，指挥，同步 main 981cbe6 后的 d4ac8c0，含审查修正 5fe6045）**
+**合并前全量（2026-11-04，指挥）**
+
+第一次在同步 main 981cbe6 后的 d4ac8c0 上跑（含审查修正 5fe6045）：typecheck 通过；vitest 904 passed、1 skipped；e2e 420 passed、1 skipped；`--scripted` 15 个一遍全过（审查修正后第一次跑）。跑完 main 合进了 ticket 94（e1f1db7，改了 `placed-from.ts`、`property-table.ts`、`structure-edits.ts` 和同一个测试文件），又同步一次（9a359b1，自动合并没有冲突），全部重跑：
 
 - `pnpm typecheck` 通过。
-- `pnpm test`：vitest 34 个文件，904 passed、1 skipped；node 测试全过。
+- `pnpm test`：vitest 34 个文件，913 passed、1 skipped；node 测试 121 个全过。
 - `TK_E2E_PORT=5400 pnpm test:e2e`：420 passed、1 skipped，没有失败。
-- `TK_BENCH_PORT=5440 node e2e/bench/run-agents.ts --scripted`：15 个有脚本的场景一遍全过（审查修正后第一次跑 `--scripted`）。
-- 切换按钮的包：`react.dev.js`（c83849f1…）、`chunk-UQJRS7YD.js`（cdd6f09d…）sha256 和 cef746d 相同。
-
+- `TK_BENCH_PORT=5440 node e2e/bench/run-agents.ts --scripted`：15 个有脚本的场景一遍全过。
+- 切换按钮的包：`react.dev.js`（c83849f1…）、`chunk-UQJRS7YD.js`（cdd6f09d…）sha256 和 cef746d 相同，逐字节不变。
