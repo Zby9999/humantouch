@@ -89,7 +89,7 @@ for (const field of FIELDS) {
     await page.keyboard.type(first.slice(0, -1));
     await expect(arrivedButton(page)).toHaveCount(0);
 
-    // The Variables come in as the last key is typed, and after it, as all of it is selected.
+    // The Variables come in somewhere around the last key and the select-all: before, between or after them.
     release();
     await page.keyboard.type(first.slice(-1));
     await page.keyboard.press("ControlOrMeta+a");

@@ -1471,6 +1471,8 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
   const [open, setOpen] = useState<HTMLElement | null>(null);
   const lower = name.toLowerCase();
   const offered = variable && catalog?.of("color").length ? variable : undefined;
+  // With Variables offered the system picker is gone, swapped for the swatch button as they came in, perhaps mid-drag: what it went through ends there (ticket 98).
+  if (offered) picking.current = false;
   const system = (
     <input
       type="color"
