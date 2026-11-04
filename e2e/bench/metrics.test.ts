@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { DENIED } from "./allowlist.ts";
-import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, fffProblem, isRepoWideSearch, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -24,6 +24,8 @@ test("a Claude Code transcript gives its model, the skills it was given, each to
     model: "claude-test-1",
     responseModels: [],
     skills: ["03kind", "debug"],
+    tools: [],
+    fffTools: [],
     toolCalls: [
       { name: "Bash", command: "npx 03kind claim", output: "# Design changes\n" },
       { name: "Read", path: "/p/src/App.tsx", output: "export function App" },
@@ -69,6 +71,8 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     model: "Composer Test",
     responseModels: [],
     skills: [],
+    tools: [],
+    fffTools: [],
     toolCalls: [
       { name: "shell", command: "npx 03kind claim", output: "# Design changes\n" },
       { name: "read", path: "src/App.tsx", output: "export function App" },
@@ -89,6 +93,8 @@ test("a pi transcript (--mode json) gives its provider and model, the model the 
   assert.equal(transcript.model, "command-code/deepseek/deepseek-v4.1-flash");
   assert.deepEqual(transcript.responseModels, ["deepseek/deepseek-v4.1-flash-1017-cm"]);
   assert.deepEqual(transcript.skills, ["03kind"]);
+  // That run's tools, before the review took find out (ticket 85) and before fff (ticket 92).
+  assert.deepEqual(transcript.tools, ["read", "bash", "edit", "write", "grep", "find", "ls"]);
   assert.deepEqual(
     transcript.toolCalls.map(({ output, ...call }) => call),
     [
@@ -113,6 +119,141 @@ test("a pi transcript (--mode json) gives its provider and model, the model the 
   );
   assert.equal(toolCallStats(transcript.toolCalls).charsRead.skill, transcript.toolCalls[0].output.length);
   assert.equal(checkReport(transcript.finalText, [1, 2]).compliant, true);
+});
+
+test("a pi transcript with fff (--fff-mode override) declares fff's grep and find under the names of pi's own, told apart by their parameters; calls to other tools are not fff's (ticket 92)", () => {
+  // Cut from a real run (92-real-pi, button-over-rule), its long texts shortened, its run folder made /t/run, pi's docs and rules left out.
+  // The Agent called no search tool of fff's: claim says where each change goes.
+  const transcript = parseTranscript("pi", readFileSync(new URL("./fixtures/pi-fff.jsonl", import.meta.url), "utf8"));
+
+  assert.deepEqual(transcript.tools, ["read", "bash", "edit", "write", "ls", "grep", "find"]);
+  assert.deepEqual(transcript.fffTools, ["grep", "find"]);
+  assert.equal(transcript.model, "command-code/deepseek/deepseek-v4.1-flash");
+  assert.deepEqual(transcript.skills, ["03kind"]);
+  assert.deepEqual(
+    transcript.toolCalls.map(({ output, ...call }) => call),
+    [
+      { name: "read", path: "/t/run/.agents/skills/03kind/SKILL.md" },
+      { name: "bash", command: "cd /t/run && npx 03kind claim 2>&1" },
+      { name: "read", path: "/t/run/src/App.tsx" },
+      { name: "read", path: "/t/run/src/index.css" },
+      { name: "bash", command: 'cd /t/run && grep -rn "<button" src/ | head -20' },
+      { name: "edit", path: "/t/run/src/App.tsx" },
+      { name: "bash", command: "cd /t/run && npx 03kind done 1 2 2>&1" },
+      { name: "bash", command: "cd /t/run && npx 03kind finish 2>&1" },
+    ],
+  );
+  const stats = toolCallStats(transcript.toolCalls);
+  // The shell's grep -r, the one search over the project.
+  assert.deepEqual([stats.toolCalls, stats.repoWideSearches, stats.claims, stats.dones, stats.finished], [8, 1, 1, 1, true]);
+  assert.equal(fffProblem({ "pi-fff": "0.11.0" }, transcript), null);
+});
+
+test("fff's calls in a pi transcript are fff's, with their path, and count as searches over the project unless held to one file (ticket 92)", () => {
+  // SYNTHETIC: no real run has called fff's tools yet. The declarations and arguments follow pi-fff 0.11.0's source
+  // (src/index.ts: grepSchema, findSchema, in override mode), the events pi.jsonl.
+  const fffGrep = { name: "grep", description: "Grep file contents. Smart-case, auto-detects regex vs literal, git-aware.", parameters: { type: "object", required: ["pattern"], properties: { pattern: {}, path: {}, exclude: {}, caseSensitive: {}, context: {}, limit: {}, cursor: {} } } };
+  const fffFind = { name: "find", description: "Fuzzy path search and glob search.", parameters: { type: "object", required: ["pattern"], properties: { pattern: {}, path: {}, exclude: {}, limit: {}, cursor: {} } } };
+  const calls = [
+    ["grep", { pattern: "Open dialog" }],
+    ["find", { pattern: "Dialog" }],
+    ["grep", { pattern: "rounded-lg", path: "src/components/Dialog.tsx", context: 1 }],
+    ["grep", { pattern: "--color-brand", path: "*.css" }],
+    ["find", { pattern: "", path: "src/v1.2", exclude: "test/" }],
+  ] as const;
+  const transcript = parseTranscript(
+    "pi",
+    lines(
+      { type: "message_end", message: { role: "system", content: "", sections: {}, toolsAdded: [{ name: "read", parameters: { properties: { path: {} } } }, fffGrep, fffFind] } },
+      ...calls.map(([name, args], i) => ({ type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: `c${i}`, name, arguments: args }] } })),
+    ),
+  );
+
+  assert.deepEqual(transcript.fffTools, ["grep", "find"]);
+  assert.deepEqual(
+    transcript.toolCalls.map(({ output, ...call }) => call),
+    [
+      { name: "grep", fff: true },
+      { name: "find", fff: true },
+      { name: "grep", fff: true, path: "src/components/Dialog.tsx" },
+      { name: "grep", fff: true, path: "*.css" },
+      { name: "find", fff: true, path: "src/v1.2" },
+    ],
+  );
+  assert.deepEqual(transcript.toolCalls.map(isRepoWideSearch), [true, true, false, true, true]);
+});
+
+test("a run that had pi-fff whose transcript declares grep or find not as fff's (or no tool of fff's) is a problem the bench stops on; a run with no pi-fff (before ticket 92) is none", () => {
+  const declared = (...tools: [string, string[]][]) =>
+    parseTranscript("pi", lines({ type: "message_end", message: { role: "system", content: "", sections: {}, toolsAdded: tools.map(([name, keys]) => ({ name, parameters: { properties: Object.fromEntries(keys.map((key) => [key, {}])) } })) } }));
+  const piOwn: [string, string[]][] = [["grep", ["pattern", "path", "glob", "ignoreCase", "literal", "context", "limit"]], ["find", ["pattern", "path", "limit"]]];
+  const fff: [string, string[]][] = [["grep", ["pattern", "path", "exclude", "caseSensitive", "context", "limit", "cursor"]], ["find", ["pattern", "path", "exclude", "limit", "cursor"]]];
+
+  assert.equal(fffProblem({ "pi-fff": "0.11.0" }, declared(["read", ["path"]], ...fff)), null);
+  assert.match(fffProblem({ "pi-fff": "0.11.0" }, declared(["read", ["path"]], ...piOwn))!, /pi-fff 0\.11\.0.*grep, find/);
+  assert.match(fffProblem({ "pi-fff": "0.11.0" }, declared(fff[0], piOwn[1]))!, /find/);
+  assert.match(fffProblem({ "pi-fff": "0.11.0" }, declared(["read", ["path"]]))!, /no tool of fff's/);
+  assert.equal(fffProblem({}, declared(...piOwn)), null);
+  assert.equal(fffProblem(undefined, declared(...piOwn)), null);
+  // fff's own names, which it falls back on, are its own.
+  assert.equal(fffProblem({ "pi-fff": "0.11.0" }, declared(["ffgrep", ["pattern", "path", "exclude", "cursor"]], ["fffind", ["pattern", "path"]])), null);
+});
+
+test("fff's searches are over the project, or a folder of it, unless held to one file: with no path, a folder, a glob, several constraints or one left out, they are; with one file's path, they are not; pi's own grep with a path like a file's is as before (ticket 92)", () => {
+  const search = (name: string, path?: string): ToolCall => ({ name, ...(path === undefined ? {} : { path }), output: "" });
+  const fff = (name: string, path?: string): ToolCall => ({ ...search(name, path), fff: true });
+  for (const call of [
+    fff("grep"),
+    fff("grep", "src/"),
+    fff("grep", "*.tsx"),
+    fff("grep", "src/**/*.tsx"),
+    fff("find"),
+    fff("find", "src/components/"),
+    fff("find", "**/*.css"),
+    // A folder to fff, whose file names end in a letter, then letters or digits.
+    fff("find", "src/v1.2"),
+    fff("grep", "src/2024.10"),
+    search("ffgrep"),
+    search("ffgrep", "src/"),
+    search("ffgrep", "src"),
+    search("ffgrep", "*.tsx"),
+    search("ffgrep", "src/**/*.tsx"),
+    search("ffgrep", "{src,lib}/**"),
+    search("ffgrep", "~/Desktop"),
+    search("fffind"),
+    search("fffind", "src/components/"),
+    search("fff-multi-grep"),
+    search("fff-multi-grep", "*.{ts,tsx} !test/"),
+    search("fff-multi-grep", "src/App.tsx src/index.css"),
+    search("fff-multi-grep", "!src/App.tsx"),
+    search("multi_grep"),
+  ]) {
+    assert.ok(isRepoWideSearch(call), JSON.stringify(call));
+  }
+  for (const call of [
+    search("ffgrep", "src/App.tsx"),
+    search("ffgrep", "App.tsx"),
+    search("fffind", "/t/run/src/index.css"),
+    search("fff-multi-grep", "src/App.tsx"),
+    fff("grep", "src/App.tsx"),
+    fff("find", "App.tsx"),
+    fff("grep", "config.json5"),
+    // pi's own grep (the runs before ticket 92) takes no glob as path: one with an extension is a file.
+    search("grep", "*.tsx"),
+    search("grep", "/t/run/src/App.tsx"),
+  ]) {
+    assert.equal(isRepoWideSearch(call), false, JSON.stringify(call));
+  }
+});
+
+test("fff-multi-grep's constraints are the path it searches, as far as the bench looks: one into the 03Kind package reads it", () => {
+  const transcript = parseTranscript(
+    "pi",
+    lines({ type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: "a", name: "fff-multi-grep", arguments: { patterns: ["claim"], constraints: "node_modules/03kind/" } }] } }),
+  );
+
+  assert.deepEqual(transcript.toolCalls.map(({ output, ...call }) => call), [{ name: "fff-multi-grep", path: "node_modules/03kind/" }]);
+  assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });
 
 test("in a pi transcript, a call the bench's extension blocked is a permission denial, and a retry of the API is counted", () => {
