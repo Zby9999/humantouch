@@ -250,7 +250,7 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
       )}
       {offered && open && (
         <Popover label={`${label} variables`} anchor={open} onClose={() => setOpen(null)}>
-          <VariableList group={offered.group} bound={offered.bound} onPick={pick} />
+          <VariableList group={offered.group} bound={bound ?? null} onPick={pick} />
         </Popover>
       )}
     </div>

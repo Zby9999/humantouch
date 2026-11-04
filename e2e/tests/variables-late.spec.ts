@@ -2,7 +2,7 @@ import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test, type Page } from "./fixtures";
 
 /**
- * The project's Variables in after the canvas (ticket 98): a field of the
+ * The project's Variables coming in after the canvas (ticket 98): a field of the
  * Design panel typed into meanwhile keeps the focus, what is typed, what is
  * selected in it, and the Enter pressed, whatever moment they come in. On the
  * React 18 + Tailwind v3 example, whose Variables include spacing, radii,
