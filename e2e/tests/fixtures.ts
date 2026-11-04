@@ -1,4 +1,4 @@
-import { expect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { expect, test as base, type BrowserContext, type Locator, type Page, type Request } from "@playwright/test";
 
 export { expect } from "@playwright/test";
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
@@ -15,6 +15,7 @@ export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolea
   keepRoundInMemory: [true, { option: true }],
   showLayers: [true, { option: true }],
   context: async ({ context, keepRoundInMemory, showLayers }, use) => {
+    watchVariables(context);
     if (keepRoundInMemory) await keepRoundIn(context);
     if (showLayers) await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
     await use(context);
@@ -64,6 +65,48 @@ export async function keepRoundIn(context: BrowserContext) {
  */
 export async function canvasInPlace(page: Page) {
   await page.locator(".tk-viewport.is-travelling").waitFor({ state: "detached" });
+  await variablesIn(page);
+}
+
+/** Per page, the requests for the project's Variables made, and those not yet answered. */
+const variablesAsked = new WeakMap<Page, { made: number; open: number }>();
+
+const asksForVariables = (url: string) => {
+  const { hostname, pathname } = new URL(url);
+  return hostname === "127.0.0.1" && pathname === "/variables";
+};
+
+function watchVariables(context: BrowserContext) {
+  const count = (url: string, page: Page | null, made: number, open: number) => {
+    if (!page || !asksForVariables(url)) return;
+    const seen = variablesAsked.get(page) ?? { made: 0, open: 0 };
+    variablesAsked.set(page, { made: seen.made + made, open: seen.open + open });
+  };
+  const pageOf = (request: Request) => {
+    try {
+      return request.frame().page();
+    } catch {
+      return null;
+    }
+  };
+  context.on("request", (request) => count(request.url(), pageOf(request), 1, 1));
+  context.on("requestfinished", (request) => count(request.url(), pageOf(request), 0, -1));
+  context.on("requestfailed", (request) => count(request.url(), pageOf(request), 0, -1));
+}
+
+/**
+ * Waits for the project's Variables to be in, once edit mode has asked for
+ * them. They come in after the canvas; the Design panel's fields are then
+ * drawn anew, each beside its Variables button, and a field filled or clicked
+ * before that loses it: an Enter pressed next applies nothing. On a busy
+ * machine they took seconds (ticket 93).
+ */
+async function variablesIn(page: Page) {
+  const seen = () => variablesAsked.get(page) ?? { made: 0, open: 0 };
+  if (!seen().made) return;
+  await expect.poll(() => seen().open, { message: "the project's Variables are in" }).toBe(0);
+  // Then drawn with them.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;

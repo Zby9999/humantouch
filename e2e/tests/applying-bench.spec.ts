@@ -386,7 +386,8 @@ async function panCanvas(page: Page) {
 async function within(ms: number, test: () => Promise<boolean>): Promise<number | null> {
   const start = Date.now();
   while (Date.now() - start < ms) {
-    if (await test()) return Date.now() - start;
+    // A read as the canvas is frozen afresh can land on the frame going away: not there yet (ticket 93).
+    if (await test().catch((error: Error) => (/Frame was detached/.test(error.message) ? false : Promise.reject(error)))) return Date.now() - start;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return null;
