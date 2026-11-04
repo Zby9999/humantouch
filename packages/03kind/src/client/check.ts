@@ -54,7 +54,7 @@ export function uncheckable(change: Change, round: Change[]): string | null {
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
   if (change.kind === "style") return "the layer's container cannot be found on the page";
   // Found by its marker, new words are checked but on one of a loop's instances alone (ticket 90).
-  if (change.kind === "text") return "the words come from the data the loop goes through, and the page cannot tell its instances apart";
+  if (change.kind === "text") return "the words come from the data the loop goes through, and the page cannot tell the loop's instances apart";
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
 }
@@ -187,9 +187,19 @@ function spaced(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own. New text is found by these, and new words are checked by them (ticket 90). */
+/** What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as. New text is found by these, and new words are checked by them (ticket 90). */
 export function wordsOn(el: Element): string {
-  return spaced(el.textContent ?? "");
+  if (!el.querySelector("br")) return spaced(el.textContent ?? "");
+  let text = "";
+  const walk = (node: Node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) text += (child as Text).data;
+      else if ((child as Element).localName === "br") text += " ";
+      else walk(child);
+    }
+  };
+  walk(el);
+  return spaced(text);
 }
 
 /** An element as the Agent finds it: its opening tag, and its words. */

@@ -249,7 +249,7 @@ const HOW_CHECKED: HowChecked[] = [
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text",
-    text: "new words by what the layer reads, its bold runs, links and other pieces with it, white space as one space, in every instance",
+    text: "new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text" && forOneUsage(change),

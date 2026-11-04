@@ -721,6 +721,58 @@ describe("new words, looked at in every instance and at the component's other us
     checks.stop();
   });
 
+  test("the loop's second card deleted this round, a data change: the loop's usage is not looked at, so the Agent's delete is no leak (review)", async () => {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
+    editor.remove(layerOf(cards[1]));
+    const round = changes.list();
+    expect(round.map((change) => [change.kind, !!change.data])).toEqual([
+      ["text", false],
+      ["delete", true],
+    ]);
+    const { page, titles } = livePage();
+    const { checks, reports, last, noted } = watch(page, round);
+    await expect.poll(() => noted.size).toBe(1);
+    expect(noted.get(1)!.seen).toEqual([]);
+
+    // The Agent takes the second item out of the data, and writes the words at the fourth card's usage.
+    page.querySelectorAll("article")[1].remove();
+    titles[3].textContent = "Your move";
+
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+    expect(reports.some((r) => "otherUsages" in r)).toBe(false);
+    checks.stop();
+  });
+
+  test("its own element gone from the page, another usage reading the new words is not taken for it: not checked, never shown (review)", () => {
+    const round = yourMove();
+    const { page, titles } = livePage();
+    page.querySelectorAll("article")[3].remove();
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "unchecked", reason: "the layer is not on the page now" });
+    for (const title of titles.slice(0, 3)) title.textContent = "Your move";
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "unchecked", reason: "the layer is not on the page now" });
+  });
+
+  test("the Card edited above its title, every usage's markers moving with it: the layer is found where it moved to", () => {
+    const round = yourMove();
+    const { page, titles } = livePage();
+    for (const title of titles) title.setAttribute("data-tk-loc", "src/Card.tsx:6:7");
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "not shown", actual: "Your turn" });
+    titles[3].textContent = "Your move";
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "shown" });
+  });
+
+  test("a line break the Agent writes as `<br>` reads as the space it is: shown (review)", () => {
+    const round = yourMove();
+    const { page, titles } = livePage();
+    titles[3].innerHTML = "Your<br>move";
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "shown" });
+    titles[3].innerHTML = "Your<br/><b>mo</b>ve";
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "shown" });
+    titles[3].innerHTML = "Your<br>mo<br>ve";
+    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "not shown", actual: "Your mo ve" });
+  });
+
   test("noted as the code begins to change with no claim (ticket 78): what the other usages read", () => {
     const round = yourMove();
     const { page } = livePage();

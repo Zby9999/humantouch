@@ -72,7 +72,10 @@ export function noteOtherUsages(doc: Document, change: Change, round: Change[], 
   if (!looksAtOtherUsages(change)) return null;
   const component = change.target.chain[0].component;
   if (round.some((other) => other.scope === "component" && other.target.chain[0]?.component === component && changesTheSame(change, other))) return null;
-  const changedThere = new Set(round.filter((other) => other.scope === "usage" && changesTheSame(change, other)).map((other) => JSON.stringify(other.target.chain)));
+  // New words: nor a usage whose instances the round changes the data of (deleted, copied, moved, given words of their own), whose words then change, or shift from one instance to the next (review).
+  const changedThere = new Set(
+    round.filter((other) => other.scope === "usage" && (changesTheSame(change, other) || (change.kind === "text" && !!other.data))).map((other) => JSON.stringify(other.target.chain)),
+  );
   const seen: OtherUsagesNoted["seen"] = [];
   for (const [key, els] of otherUsagesOf(doc, change.target)) {
     const { chain } = originOf(els[0], readUsageChain(els[0]));

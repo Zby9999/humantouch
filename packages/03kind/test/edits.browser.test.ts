@@ -6865,7 +6865,7 @@ describe("new words, as the page checks them (ticket 90)", () => {
 
     const loop = openCanvas();
     loop.editor.setText(loop.layerOf(loop.cards[1].querySelector("h3")!), "Second");
-    expect(reason(loop.changes.list()[0], loop.changes.list())).toBe("the words come from the data the loop goes through, and the page cannot tell its instances apart");
+    expect(reason(loop.changes.list()[0], loop.changes.list())).toBe("the words come from the data the loop goes through, and the page cannot tell the loop's instances apart");
 
     const moves = openCanvas(MOVES);
     const run = find(moves.editor.tree().root, (l) => l.name === "more")!;

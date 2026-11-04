@@ -379,7 +379,7 @@ describe("claim, how to write the changes (ticket 65)", () => {
       const checks = rule((await cli("claim")).output, "How the page checks");
 
       expect(checks).toBe(
-        "the page reads new words by what the layer reads, its bold runs, links and other pieces with it, white space as one space, in every instance. " +
+        "the page reads new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance. " +
           "Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks.",
       );
     });

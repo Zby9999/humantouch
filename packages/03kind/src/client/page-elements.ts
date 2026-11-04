@@ -63,7 +63,9 @@ export function otherUsagesOf(doc: Document, target: Target): Map<string, Elemen
 /**
  * A layer whose markers no longer match, found among the elements of the same
  * tag written in the same file, by the same components: the one whose
- * locations moved least. None when two are as near.
+ * locations moved least. None when two are as near. Not one written at the
+ * layer's very location in another usage: that is another usage that stayed
+ * put, not this one moved (review of ticket 90).
  */
 function movedElementsOf(doc: Document, target: Target): Element[] {
   const at = parseLoc(target.loc);
@@ -74,6 +76,7 @@ function movedElementsOf(doc: Document, target: Target): Element[] {
   for (const el of doc.querySelectorAll(`${tag}[${LOC_ATTR}^="${CSS.escape(at.file)}:"]`)) {
     const { loc, chain } = originOf(el, readUsageChain(el));
     if (!loc || JSON.stringify(chain.map(({ component, thirdParty }) => [component, thirdParty])) !== components) continue;
+    if (loc === target.loc && usageKey(loc, chain) !== usageKey(target.loc, target.chain)) continue;
     const distance = [distanceOf(target.loc, loc), ...chain.map((level, i) => distanceOf(target.chain[i].usage, level.usage))].reduce((a, b) => a + b, 0);
     if (!Number.isFinite(distance)) continue;
     const key = usageKey(loc, chain);

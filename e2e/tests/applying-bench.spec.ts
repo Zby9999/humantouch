@@ -1712,13 +1712,16 @@ test.describe("a text change (ticket 90)", () => {
     await leaveEditMode(page);
   }
 
-  /** The round claimed, `edits` made to the source as the Agent writes it (once `shows` says the page has them), `done` for every change, and `finish`: what each said, and the round's checks. */
-  async function applyTheWords(page: Page, edits: [string, string, string][], shows: () => Promise<boolean>) {
+  /**
+   * The round claimed, `edits` made to the source as the Agent writes it (once `shows` says the page has them), `done` for every change, and `finish`: what each said, and the round's checks.
+   * Before it edits, as a real Agent that reads the notes first, it waits for the page to have begun to check (`first`: its first look at change 1; `note`: what the other usages read noted too, kept with the claim), or for nothing more than the claim (`none`: a change it cannot check it never looks at by itself).
+   */
+  async function applyTheWords(page: Page, waitFor: "first" | "note" | "none", edits: [string, string, string][], shows: () => Promise<boolean>) {
     const ids = changesNow().map((change) => change.id);
     const claim = await npx03kind("claim");
-    // As a real Agent, which reads the notes before it edits: the page has begun to check, and has noted what the other usages show. A change it cannot check it never looks at by itself.
     await expect(ring(page)).toBeVisible();
-    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[ids[0]]?.outcome, { timeout: 5000 }).toBeTruthy().catch(() => {});
+    if (waitFor === "first") await expect.poll(() => readThirdKindFile("checks.json")?.results?.[ids[0]]?.outcome).toBeTruthy();
+    if (waitFor === "note") await expect.poll(() => !!readThirdKindFile("other-usages.json")?.otherUsages?.[ids[0]]).toBe(true);
     for (const [file, from, to] of edits) {
       const text = readFileSync(file, "utf8");
       expect(text).toContain(from);
@@ -1739,7 +1742,7 @@ test.describe("a text change (ticket 90)", () => {
 
   test("playbook: the title's words changed; the Agent writes them right", async ({ page }) => {
     await changeWords(page, [[title, "Third Kind Studio"]]);
-    const result = await applyTheWords(page, [[APP, ">Third Kind</h1>", ">Third Kind Studio</h1>"]], async () => (await page.locator("h1").textContent()) === "Third Kind Studio");
+    const result = await applyTheWords(page, "first", [[APP, ">Third Kind</h1>", ">Third Kind Studio</h1>"]], async () => (await page.locator("h1").textContent()) === "Third Kind Studio");
     record("text-title-right", kept(result));
     expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
     expect(result.checks.outcomes[1]).toBe("shown");
@@ -1749,7 +1752,7 @@ test.describe("a text change (ticket 90)", () => {
 
   test("playbook: the title's words changed; the Agent writes other words", async ({ page }) => {
     await changeWords(page, [[title, "Third Kind Studio"]]);
-    const result = await applyTheWords(page, [[APP, ">Third Kind</h1>", ">Third Kind Studios</h1>"]], async () => (await page.locator("h1").textContent()) === "Third Kind Studios");
+    const result = await applyTheWords(page, "first", [[APP, ">Third Kind</h1>", ">Third Kind Studios</h1>"]], async () => (await page.locator("h1").textContent()) === "Third Kind Studios");
     record("text-title-wrong", kept(result));
     expect(result.done).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
@@ -1762,7 +1765,7 @@ test.describe("a text change (ticket 90)", () => {
 
   test("playbook: the fourth card's title changed, that usage alone; the Agent writes it at the usage", async ({ page }) => {
     await changeWords(page, [[fourthTitle, "Your move"]]);
-    const result = await applyTheWords(page, [[APP, 'title="Your turn"', 'title="Your move"']], async () => (await titlesOnThePage(page))[3] === "Your move");
+    const result = await applyTheWords(page, "note", [[APP, 'title="Your turn"', 'title="Your move"']], async () => (await titlesOnThePage(page))[3] === "Your move");
     record("text-usage-only", { ...kept(result), titles: await titlesOnThePage(page) });
     expect(await titlesOnThePage(page)).toEqual(["Freeze", "Arrange", "Apply", "Your move"]);
     expect(result.checks.outcomes[1]).toBe("shown");
@@ -1771,7 +1774,7 @@ test.describe("a text change (ticket 90)", () => {
 
   test("playbook: the same; the Agent writes the words into the Card itself, so every card reads them", async ({ page }) => {
     await changeWords(page, [[fourthTitle, "Your move"]]);
-    const result = await applyTheWords(page, [[CARD, "{title}</h3>", "Your move</h3>"]], async () => (await titlesOnThePage(page)).every((words) => words === "Your move"));
+    const result = await applyTheWords(page, "note", [[CARD, "{title}</h3>", "Your move</h3>"]], async () => (await titlesOnThePage(page)).every((words) => words === "Your move"));
     record("text-usage-leak", { ...kept(result), titles: await titlesOnThePage(page) });
     expect(result.done).toMatch(
       /^Change 1 done: 0 of 1 change applied\.\nChecked on the page: it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`, its words from “Freeze” to “Your move” since the round was claimed\. The change is for this usage only \(Scope\): make it at the usage, put the other usage back as it was, and run `npx 03kind done 1` again\.\n$/,
@@ -1788,6 +1791,7 @@ test.describe("a text change (ticket 90)", () => {
     ]);
     const result = await applyTheWords(
       page,
+      "none",
       [
         [APP, '{ title: "Freeze",', '{ title: "Thaw",'],
         [APP, "          Get started\n", "          Start now\n"],
@@ -1797,7 +1801,7 @@ test.describe("a text change (ticket 90)", () => {
     record("text-unchecked", { ...kept(result), outcomes: result.checks.outcomes });
     expect(result.done).toBe(
       "Changes 1 and 2 done: 2 of 2 changes applied.\n" +
-        "Change 1: not checked on the page: the words come from the data the loop goes through, and the page cannot tell its instances apart. That is no error: go on.\n" +
+        "Change 1: not checked on the page: the words come from the data the loop goes through, and the page cannot tell the loop's instances apart. That is no error: go on.\n" +
         "Change 2: not checked on the page: the text has no element of its own on the page. That is no error: go on.\n",
     );
   });
