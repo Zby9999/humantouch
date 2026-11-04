@@ -116,6 +116,16 @@ export function autoMarginsPlacing(el: Element, axis: Axis): Edge | "both" | nul
 }
 
 /**
+ * Whether a margin of `el`'s along `axis` at its `edge` is `auto` and takes
+ * up room (`autoMarginsPlacing`), so its side from that edge does not place
+ * it where it gives it (ticket 96, review).
+ */
+export function autoMarginTakesRoom(el: Element, axis: Axis, edge: Edge): boolean {
+  const by = autoMarginsPlacing(el, axis);
+  return by !== null && by !== edge;
+}
+
+/**
  * How much room a margin of `el`'s before it along `axis` (its left, its
  * top) takes up, in px, as laid out, when it is `auto` (ticket 96): where
  * it is drawn past its side, which X and Y count, as they do not its other

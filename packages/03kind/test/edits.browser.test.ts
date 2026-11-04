@@ -7318,6 +7318,23 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     ]);
   });
 
+  test("centered by `translate`, its X set or moved out and back, the page centering it by auto margins instead, its translate gone, or kept with auto margins added: the page draws it elsewhere, so it is not shown (ticket 96, review)", () => {
+    const setting = open(UNCHAINED);
+    setting.editor.set(setting.layer("v4"), "x", setting.editor.read(setting.layer("v4"), "x")! + 20);
+    const [x] = setting.changes.list();
+    // As wide as the canvas's board: the canvas draws it at 150, the page at 170.
+    expect(checkChange(pageWith(300, "#v4 { left: 80px !important; right: 0 !important; margin-inline: auto !important; translate: none !important }"), x, onCanvas([x])).outcome).toBe("not shown");
+    iframe?.remove();
+    const moving = open(WITH_OTHER.replace(/ data-tk-chain='[^']*'/g, ""));
+    moving.editor.move(moving.layer("v4"), { parent: moving.layer("other"), x: 100, y: 10 });
+    moving.editor.move(moving.layer("v4"), { parent: moving.layer("board"), x: 150, y: 40 });
+    const [moved] = moving.changes.list();
+    // Its board 400px wide: the canvas draws it at 200; the page at 290, its translate gone, and at 270, kept.
+    expect(checkChange(pageWith(400, "#v4 { left: calc(50% + 20px) !important; right: 0 !important; margin-inline: auto !important; translate: none !important }"), moved, onCanvas([moved])).outcome).toBe("not shown");
+    expect(checkChange(pageWith(400, "#v4 { left: calc(50% + 20px) !important; right: 0 !important; margin-inline: auto !important }"), moved, onCanvas([moved])).outcome).toBe("not shown");
+    expect(checkChange(pageWith(400, "#v4 { left: calc(50% + 20px) !important }"), moved, onCanvas([moved])).outcome).toBe("shown");
+  });
+
   test("placed from its left and top, moved: as before, its X and Y", () => {
     const { editor, layer, recorded } = open();
 
@@ -7449,15 +7466,58 @@ describe("a layer centered by auto margins (ticket 96)", () => {
     expect((changes.list()[0].after as Place).absolute).toEqual({ x: 350, y: 8, placed: { x: { edge: "end", centered: false, percent: 0, px: 0 } } });
   });
 
+  test.each([
+    ["left to right", (html: string) => html],
+    ["right to left", (html: string) => html.replace("<body", '<body dir="rtl"')],
+  ] as const)(
+    "centered across in the desktop view, placed from its left in the phone view by the page's breakpoint, moved, %s: it stays centered where it is, and in the phone view only its `left` changes, as an X does, its `right` not written; the page is checked there by its `left` (ticket 96, review)",
+    async (_, laidOut) => {
+      const html = laidOut(AUTO_MARGINS.replace("</style>", "@media (max-width: 500px) { #tag { right: auto; left: 16px; margin-inline: 0 } }</style>"));
+      const { editor, layer, changes, drawn } = await open(html);
+      expect(drawn("tag", "x")).toEqual([175, 16]);
+      editor.set(layer("tag"), "x", 195);
+      // Its middle 20px past the board's: its `left` twice as far, its `right` as each view has it.
+      expect(drawn("tag", "x")).toEqual([195, 40]);
+      const [x] = changes.list();
+      expect([x.style, x.centeredOn, x.uncenteredAt]).toEqual([{ left: "40px" }, { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, [{ min: null, max: 800 }]]);
+      const at = (width: number, css: string) => checkChange(pageAt(width, css, html), x, onCanvas([x]));
+      expect(at(1000, "#tag { left: 40px }")).toEqual({ outcome: "shown" });
+      // As a phone: the page's own `left` there still, 16px, not the canvas's 40px; then as the canvas has it.
+      expect(at(390, "#tag { left: 40px } @media (max-width: 500px) { #tag { left: 16px } }")).toMatchObject({ outcome: "not shown", actual: { value: 16, at: 40 } });
+      expect(at(390, "#tag { left: 40px } @media (max-width: 500px) { #tag { left: 40px } }")).toEqual({ outcome: "shown" });
+    },
+  );
+
+  test.each([
+    ["across, left to right", (html: string) => html, "tag", "x", "#tag { width: 250px }", "#tag { left: 20px; right: -20px }"],
+    ["across, right to left", (html: string) => html.replace("<body", '<body dir="rtl"'), "tag", "x", "#tag { width: 250px }", "#tag { left: 20px; right: -20px }"],
+    ["down", (html: string) => html, "bar", "y", "#bar { height: 250px }", "#bar { top: 20px; bottom: -20px }"],
+  ] as const)(
+    "centered %s, larger than its container leaves it room for in the phone's width, moved: the page drawing it as the canvas does there is shown, where the browser does not center it (ticket 96, review)",
+    async (_, laidOut, id, axis, size, written) => {
+      const html = laidOut(AUTO_MARGINS.replace("</style>", `${size}</style>`));
+      const { editor, layer, changes, drawn } = await open(html);
+      editor.set(layer(id), axis, editor.read(layer(id), axis)! + 20);
+      const [moved] = changes.list();
+      const phone = drawn(id, axis)[1];
+      const page = pageAt(390, written, html);
+      const r = page.getElementById(id)!.getBoundingClientRect();
+      const p = page.getElementById("board")!.getBoundingClientRect();
+      expect(axis === "x" ? r.left - p.left : r.top - p.top).toBeCloseTo(phone, 1);
+      expect(checkChange(page, moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
+      expect(checkChange(pageAt(1000, written, html), moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
+    },
+  );
+
   /** The page `width` px wide, its board half that, as the check shows it at a view's width; `css`: the code as the Agent writes it. */
-  const pageAt = (width: number, css = "") => {
+  const pageAt = (width: number, css = "", html = AUTO_MARGINS) => {
     const frame = document.createElement("iframe");
     frame.style.width = `${width}px`;
     document.body.append(frame);
     copies.push(frame);
     const doc = frame.contentDocument!;
     doc.open();
-    doc.write(AUTO_MARGINS.replace("</style>", `${css}</style>`));
+    doc.write(html.replace("</style>", `${css}</style>`));
     doc.close();
     return doc;
   };

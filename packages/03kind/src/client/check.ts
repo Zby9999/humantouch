@@ -15,8 +15,8 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import { stayedPutOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { edgeGoneBy, offsetPlacing, placedFrom, roomAlong, sideShareOf, sizeAlong } from "./placed-from";
-import { checkable, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
+import { autoMarginTakesRoom, edgeGoneBy, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
+import { checkable, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -365,7 +365,11 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
     : notAbsolute
       ? [{ outcome: "not shown", actual: null }, notAbsolute]
       : placing && margins
-        ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins, change.centeredOn, !!change.placedFrom?.margins)
+        ? lookPosition(els, property, change.after as number | { x: number; y: number }, margins, {
+            centered: change.centeredOn,
+            ...(change.placedFrom?.margins && { byMargins: change.style }),
+            uncentered: !!change.uncenteredAt?.some((range) => within(range, at.width)),
+          })
         : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
@@ -539,13 +543,14 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
     if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
     const at = placedOn(el);
     // Centered, its translate gone or turned over: drawn half its size aside, whatever its side gives it.
-    if ((["x", "y"] as const).some((axis) => placed[axis]?.centered && !placed[axis]!.margins && !stillCentered(el, axis, placed[axis]!.edge))) return { outcome: "not shown", actual: { ...at, centered: false } };
-    // Along an axis placed otherwise than from the start (ticket 79): how far its side places it, what the share and px of its container that side is to give it come to there.
-    // Centered by its auto margins (ticket 96): its middle, where the share puts it there.
+    if ((["x", "y"] as const).some((axis) => placed[axis]?.centered && !placed[axis]!.margins && !centeredByTranslate(el, axis, placed[axis]!.edge))) return { outcome: "not shown", actual: { ...at, centered: false } };
+    // Along an axis placed otherwise than from the start (ticket 79): how far its side places it, what the share and px of its container that side is to give it come to there;
+    // not with an auto margin there taking up room, which draws it elsewhere (ticket 96, review). Centered by its auto margins: its middle, where its sides put it there.
     const sideOff = (["x", "y"] as const).some((axis) => {
       const how = placed[axis];
-      if (how?.margins) return !!offMiddle(el, axis, how);
-      return how && Math.abs(offsetPlacing(el, axis, how.edge) - pxIn(how, roomAlong(el, axis))) > 0.5;
+      if (!how) return false;
+      if (how.margins) return !!offMiddle(el, axis, centeringSides(how));
+      return autoMarginTakesRoom(el, axis, how.edge) || Math.abs(offsetPlacing(el, axis, how.edge) - pxIn(how, roomAlong(el, axis))) > 0.5;
     });
     if (sideOff || !drawnThere(at, { ...(!placed.x && { x }), ...(!placed.y && { y }) }, margins)) return { outcome: "not shown", actual: at };
   }
@@ -565,17 +570,20 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
  * that puts it there, as its container is (`at` in `actual`, with what its
  * side is written as now, `share`); and centered still, its translate kept
  * (`centered: false` in `actual` when not, line review). `byMargins`:
- * centered by its auto margins between its sides (ticket 96), the share
- * where its middle is: at each width, its middle is drawn where that puts it
- * there, whatever places it so (`offMiddle`).
+ * centered by its auto margins between its sides (ticket 96), the sides the
+ * canvas gives it (`style`): at each width, it is drawn where those put it
+ * there, whatever places it so (`offMiddle`); where the canvas has it not
+ * centered so (`uncentered`, review), where its side from the start puts it
+ * (`offSide`). Along that axis an auto margin taking up room at the edge the
+ * side is from draws it elsewhere than the side does (review): not shown,
+ * at any width, for any other.
  */
 function lookPosition(
   els: Element[],
   property: Property,
   after: number | { x: number; y: number },
   margins: CanvasMargins,
-  centered?: Change["centeredOn"],
-  byMargins = false,
+  { centered, byMargins, uncentered = false }: { centered?: Change["centeredOn"]; byMargins?: Record<string, string>; uncentered?: boolean } = {},
 ): [CheckResult, Element | null] {
   const placedBy = PLACED_BY[property];
   for (const el of els) {
@@ -585,50 +593,96 @@ function lookPosition(
       continue;
     }
     const { axis, edge } = placedBy!;
-    if (!centered) {
-      if (!drawnThere(placed, { [axis]: after }, margins)) return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
+    if (byMargins && centered) {
+      const off = uncentered ? offSide(el, axis, byMargins) : offMiddle(el, axis, canvasSides(byMargins, axis, centered.after));
+      if (off) return [{ outcome: "not shown", actual: off }, el];
       continue;
     }
-    if (byMargins) {
-      const off = offMiddle(el, axis, centered.after);
-      if (off) return [{ outcome: "not shown", actual: off }, el];
+    const aside = autoMarginTakesRoom(el, axis, edge);
+    if (!centered) {
+      if (aside || !drawnThere(placed, { [axis]: after }, margins)) return [{ outcome: "not shown", actual: { value: placed[axis], margin: placed.margins[axis] } }, el];
       continue;
     }
     // Where the canvas centers it at this width, and what its side is written as now: a share, or else px.
     const at = rounded(pxIn(centered.after, roomAlong(el, axis)));
     const off = { value: placed[axis], margin: placed.margins[axis], at, share: sideShareOf(el, axis, edge) ?? { percent: 0, px: placed[axis] } };
     // Its translate gone or turned over: drawn half its size aside, whatever its side gives it.
-    if (!stillCentered(el, axis, edge)) return [{ outcome: "not shown", actual: { ...off, centered: false } }, el];
-    if (!drawnThere(placed, { [axis]: at }, margins)) return [{ outcome: "not shown", actual: off }, el];
+    if (!centeredByTranslate(el, axis, edge)) return [{ outcome: "not shown", actual: { ...off, centered: false } }, el];
+    if (aside || !drawnThere(placed, { [axis]: at }, margins)) return [{ outcome: "not shown", actual: off }, el];
   }
   return [{ outcome: "shown" }, null];
 }
 
 /**
- * Where the page draws `el`, along `axis`, the canvas centering it there by
- * its auto margins (ticket 96), when not where `middle`, a share of its
- * container, puts its middle as large as its container is at this width:
- * as an X or Y (`value`, its side and its margin before it, as laid out,
- * whatever that margin is: not only one `auto`, as `startOffsetOf` reads it,
- * so a px margin written instead is where it is drawn too),
- * and where the canvas has it (`at`), both from its container's start edge,
- * as the panel reads them. Drawn there, null: so, whether its auto margins
- * or its sides alone place it there, and only so, as wide as its container
- * is (a px right at one width is not at another; its margins gone, it is
- * drawn at its side). A `translate` is no part of it, as of an X or Y.
+ * The sides the canvas gives a layer centered along `axis` by its auto
+ * margins (ticket 96), as a change writes them (`style`): each a share of its
+ * container and px past it. One not written there, as a move where a view
+ * beside does not center it so leaves its side from the end (review), is
+ * the one that puts its middle at `middle` with the other.
  */
-function offMiddle(el: Element, axis: Axis, middle: Share): { value: number; at: number; margins: true } | null {
-  const style = getComputedStyle(el);
-  const side = SIDES[axis].start;
-  const drawn = offsetPlacing(el, axis, "start") + (parseFloat(style.getPropertyValue(`margin-${side}`)) || 0);
-  const at = pxIn(middle, roomAlong(el, axis)) - sizeAlong(el, axis) / 2;
+function canvasSides(style: Record<string, string>, axis: Axis, middle: Share): Record<Edge, Share> {
+  const written = (edge: Edge) => (style[SIDES[axis][edge]] ? shareOf(style[SIDES[axis][edge]]) : null);
+  const [start, end] = [written("start"), written("end")];
+  if (start && end) return { start, end };
+  if (start) return { start, end: { percent: 100 + start.percent - 2 * middle.percent, px: start.px - 2 * middle.px } };
+  return centeringSides(middle);
+}
+
+/** Where the page draws `el` along `axis` from its container's start edge, as an X or Y reads it: its side there and its margin, as laid out, whatever that margin is. */
+function drawnFrom(el: Element, axis: Axis): number {
+  return offsetPlacing(el, axis, "start") + (parseFloat(getComputedStyle(el).getPropertyValue(`margin-${SIDES[axis].start}`)) || 0);
+}
+
+/**
+ * Where the page draws `el`, along `axis`, the canvas centering it there by
+ * its auto margins between `sides` (ticket 96), when not where those put it
+ * as large as its container is at this width, as the browser places it (CSS
+ * 2.1, 10.3.7, 10.6.4): the room they and its size leave, split between its
+ * margins; across, where there is none, all of it taken from the margin past
+ * its end, left to right, or before its start, right to left (review), as
+ * the box that places it runs (`edgeGoneBy`). As an X or Y (`value`,
+ * `drawnFrom`: so a px margin written instead is where it is drawn too), and
+ * where the canvas has it (`at`), both from its container's start edge.
+ * Drawn there, null: so, whether its auto margins or its sides alone place it
+ * there, and only so, as wide as its container is (a px right at one width
+ * is not at another; its margins gone, it is drawn at its side). A
+ * `translate` is no part of it, as of an X or Y.
+ */
+function offMiddle(el: Element, axis: Axis, sides: Record<Edge, Share>): { value: number; at: number; margins: true } | null {
+  const room = roomAlong(el, axis);
+  const [start, end] = [pxIn(sides.start, room), pxIn(sides.end, room)];
+  const left = room - start - end - sizeAlong(el, axis);
+  const at = start + (left >= 0 || axis === "y" ? left / 2 : edgeGoneBy(el, axis) === "end" ? left : 0);
+  const drawn = drawnFrom(el, axis);
   return Math.abs(drawn - at) <= 0.5 ? null : { value: rounded(drawn), at: rounded(at), margins: true };
 }
 
-/** Whether the page still centers `el` along `axis` on where its side from `edge` places it: moved back (forward) half its size, by a translate nothing turns or scales. */
-function stillCentered(el: Element, axis: Axis, edge: Edge): boolean {
+/**
+ * Where the page draws `el` along `axis`, at a width the canvas has it not
+ * centered by its auto margins (`Change.uncenteredAt`, ticket 96, review),
+ * when not where its side from the start, as the change writes it (`style`),
+ * puts it there: by that side, as an X or Y is, its margin there kept or not,
+ * as at a width the canvas's margins are not known (`drawnThere`). `side`:
+ * so in `actual`.
+ */
+function offSide(el: Element, axis: Axis, style: Record<string, string>): { value: number; at: number; margins: true; side: true } | null {
+  const share = shareOf(style[SIDES[axis].start] ?? "");
+  if (!share) return null;
+  const at = pxIn(share, roomAlong(el, axis));
+  const drawn = drawnFrom(el, axis);
+  if (Math.abs(drawn - at) <= 0.5 || Math.abs(offsetPlacing(el, axis, "start") - at) <= 0.5) return null;
+  return { value: rounded(drawn), at: rounded(at), margins: true, side: true };
+}
+
+/**
+ * Whether the page still centers `el` along `axis` on where its side from
+ * `edge` places it by a translate: moved back (forward) half its size, by a
+ * translate nothing turns or scales; not centered by its auto margins, which
+ * is no translate (ticket 96, review).
+ */
+function centeredByTranslate(el: Element, axis: Axis, edge: Edge): boolean {
   const from = placedFrom(el, axis);
-  return from.centered && from.edge === edge;
+  return from.centered && !from.margins && from.edge === edge;
 }
 
 /**

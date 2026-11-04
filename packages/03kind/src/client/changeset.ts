@@ -313,6 +313,16 @@ export interface Change {
    */
   offsetInLayoutAt?: { breakpoint: Breakpoint; position: InLayout }[];
   /**
+   * A change at every width to the X or Y of a layer centered by its auto
+   * margins in the view worked in (ticket 96, review): the ranges of the
+   * views where it is not centered so, as the page's breakpoints may have it.
+   * Moved, it keeps its side from the end edge there as it is, and is placed
+   * by the side from its start, which alone the change gives, twice as far:
+   * the check looks at those widths by that side, as the canvas has it.
+   * Read as the change is first made, as `placedOtherwiseAt` is.
+   */
+  uncenteredAt?: Breakpoint[];
+  /**
    * A reorder: the layers of the container in their order now, by what they
    * look like (`signs`: tag and words, which survive the Agent moving the
    * JSX); what the check measures the live page by. `self`: which of them the
@@ -347,7 +357,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
     > & {
       kind?: Change["kind"];
     },

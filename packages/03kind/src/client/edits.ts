@@ -179,22 +179,48 @@ export function createEditor(
    * so, moved as far, its sides given as much more and less, each keeping
    * its share of its container (`left: 0; right: 0` to `left: 20px; right:
    * -20px`), so as wide as its container is, its middle is as far past where
-   * it was; where its middle was and is now. Null for any other.
+   * it was; where its middle was and is now. Where a view beside does not
+   * center it so (`uncentered`, the ranges of those, as `viewsUncentered`
+   * reads them, review), its side from the end is left as each view has it,
+   * which would place it there otherwise, and its side from the start alone
+   * goes twice as far. Null for any other.
    */
-  const marginsCentering = (el: Element, property: Property, value: number, before: number) => {
+  const marginsCentering = (el: Element, property: Property, value: number, before: number, uncentered: (axis: Axis) => Breakpoint[]) => {
     const along = PLACED_BY[property];
     if (!along || along.edge !== "start") return null;
     const from = placedFrom(el, along.axis);
     if (!from.margins) return null;
     const by = value - before;
+    const uncenteredAt = uncentered(along.axis);
     const { start, end } = SIDES[along.axis];
     const [from0, to0] = [computedShareOf(el, start), computedShareOf(el, end)];
-    const sides: Record<Edge, Share> = { start: { percent: from0.percent, px: round(from0.px + by) }, end: { percent: to0.percent, px: round(to0.px - by) } };
+    const sides: Record<Edge, Share> = uncenteredAt.length
+      ? { start: { percent: from0.percent, px: round(from0.px + 2 * by) }, end: to0 }
+      : { start: { percent: from0.percent, px: round(from0.px + by) }, end: { percent: to0.percent, px: round(to0.px - by) } };
     return {
       from,
-      declarations: { [start]: shareCss(sides.start), [end]: shareCss(sides.end) },
+      declarations: { [start]: shareCss(sides.start), ...(!uncenteredAt.length && { [end]: shareCss(sides.end) }) },
       middle: { before: middleShareOf(el, along.axis), after: middleOf(sides) },
+      uncenteredAt,
     };
+  };
+
+  /**
+   * The ranges of the views, but the one worked in, where the layer is not
+   * centered along `axis` by its auto margins (`placedFrom`), as the page's
+   * breakpoints may have it (ticket 96, review): read from each view's
+   * computed style as it shows the layer now, as `viewsMovedOtherwise` reads
+   * them (ADR 0011). A view in the desktop view's range is the desktop view's.
+   */
+  const viewsUncentered = (layer: Layer, axis: Axis) => {
+    const ranges: Breakpoint[] = [];
+    for (const view of views.list().slice(1)) {
+      if (view === working.beside()) continue;
+      const el = view.elementOf(layer.el);
+      const range = working.breakpointAt(view.width);
+      if (el && range && !placedFrom(el, axis).margins) ranges.push(range);
+    }
+    return ranges;
   };
 
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
@@ -218,12 +244,14 @@ export function createEditor(
     const centering = typeof value === "number" ? asShown(el, () => centeringSide(el, property, earlier)) : null;
     const offCenter = centering && pastShare(value as number, centering.share.percent, centering.room);
     // Centered by its auto margins (ticket 96): its sides move it, as much one way as the other, so it stays so.
-    const byMargins = typeof value === "number" && typeof before === "number" ? asShown(el, () => marginsCentering(el, property, value, before)) : null;
+    // Not centered so in a view beside: as when first changed (review).
+    const uncentered = (axis: Axis) => (breakpoint ? [] : earlier ? (earlier.uncenteredAt ?? []) : viewsUncentered(layer, axis));
+    const byMargins = typeof value === "number" && typeof before === "number" ? asShown(el, () => marginsCentering(el, property, value, before, uncentered)) : null;
     const declarations = asShown(el, () => ({
       ...(asStack && { display: "flex", "flex-direction": stackOf(el).direction === "horizontal" ? "row" : "column" }),
-      ...definition.write(value, el),
+      // Centered by its auto margins: its sides as they keep it so, in place of its X written from its left alone.
+      ...(byMargins ? byMargins.declarations : definition.write(value, el)),
       ...(centering && { [centering.side]: shareCss({ percent: centering.share.percent, px: offCenter! }) }),
-      ...byMargins?.declarations,
       // Placed freely at a breakpoint and placed anew there: as large as it was when first taken out of the layout.
       ...(property === "absolute" && value && earlier?.style.width && { width: earlier.style.width, height: earlier.style.height }),
     }));
@@ -275,6 +303,7 @@ export function createEditor(
         },
       }),
       ...(byMargins && { centeredOn: { before: earlier?.centeredOn?.before ?? byMargins.middle.before, after: byMargins.middle.after } }),
+      ...(byMargins?.uncenteredAt.length && { uncenteredAt: byMargins.uncenteredAt }),
       ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       ...(offsetInLayoutAt.length ? { offsetInLayoutAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
