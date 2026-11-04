@@ -6,7 +6,7 @@
 
 **Blocked by:** 90（设计师定的排期：等它合进 main 再开线，不是代码上的依赖）
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 先复现，用单元测试或剧本（脚本扮演 Agent，不跑真实 Agent）：上面那个例子，在桌面视图选中图层，面板 X 显示 10；在面板输 X，图层没落在输的位置
 - [x] 面板的 X 显示图层画出来的位置（照 Figma：离父容器左边多远），算法和 ticket 89 在页面核对里用的一样（两边都写了值、排出来对不上空间时，按浏览器把它摆在哪里算），不另起一套
@@ -165,3 +165,16 @@ ticket 的例子：改前 X = 10，改后 X = 320（图层画在 320）。Y 前�
 *包体积（最后的代码）*
 
 切换按钮 `react.dev.js` 1423 B（gzip 822 B，sha256 前 16 位 `c83849f1557e0b1b`）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B，`cdd6f09dfeaf13fa`），逐字节相同。`editor.dev.js` 327661 → 327809 B（和 ticket 94 开始前比 +148 B），gzip -9 111387 → 111461 B（+74 B）。
+
+**合并前（2026-11-04，指挥）**
+
+两轮都跑了：实现时的 code-review（Standards、Spec），和指挥另跑的独立审查（effort high），后者找到的 7 条都已改或记下（见上一节）。审查第 1 条（外边距 `auto` 居中）的做法是指挥代定的，记作代定第 4 条。我看了改后的 `endWins`、`overConstrained`、`offsetOf`：`endWins` 只在从右往左时才可能为真，`autoMargin` 只在那时才读；`computedStyleMap` 编辑层的 `typography.ts` 原来就在用，不是新的浏览器要求；`offsetOf` 在从左往右时等于 main 的读法（`edgeGoneBy` 答 start，`offsetPlacing` 直接给算出来的值），读不出数时照 main 给 NaN。
+
+分支在 40db7d4 同步了 main（带进 86 的确认、88 的两条检查，只有 ticket 文件，和本线不重叠），之后 main 没有新提交；上一节的全量就是在同步后的代码（2bfa1ec）上跑的：typecheck 通过；单测 907 通过、1 跳过，node 121 条通过；e2e page 一组 283 通过、2 条已知起得慢的单独重跑通过，project files 一组 `--no-deps` 130 通过、1 跳过。性能 headless 14 通过、1 失败（`flex.perf.ts:836`，改前就失败，和本线无关）。切换按钮的包逐字节相同。
+
+摘要：
+
+- 面板的 X（ticket 的例子，从右往左，容器 400px，`left: 10px; right: 30px; width: 50px`）：改前 10，改后 320（画在哪里）；Y 前后都是 8。
+- 输 X = 300：改前记 `right` 30 → -260，图层画到 610（甩出容器）；改后记 `right` 30 → 50，画在 300。微移、拖到 300 也都记 `right` 30 → 50。拖动原来也是错的（ticket 写的「拖拽是对的」不对），一起修了。
+- 代定 4 条、遗留风险 4 条见上一节「代定的事，更新后」「遗留风险，更新后」。
+
