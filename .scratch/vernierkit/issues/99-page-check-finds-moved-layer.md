@@ -11,7 +11,7 @@
 
 **Blocked by:** 无
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] 先复现：拿 `next-server-usage-text`（`Stat.tsx` 的参数拆成多行）和 `third-party`（Surface 上面多了几行，比如给 Badge 包一层）做脚本剧本（`apply`）或单元测试，在没改的代码上看着核错
 - [ ] 两处都修：上面多了行时挑的是图层本身；只带 `data-tk-usage` 的第三方组件元素也在候选里
@@ -23,3 +23,9 @@
 - ticket 88 真实跑（2026-11-05）：Claude 按核对少的 2 条、核对覆盖率少的 1 条、进度差 1 的 1 次，还有 pi 用时、调用、读入字数最大的那次（`next-server-usage-text` run-2：整轮 122 秒，读 `node_modules/03kind` 14 次），都是这个。Agent 为了让核对认出来，把代码排回了原样。原始记录在 88 线的 `bench-results/agents/88-real/`。
 - 原因是读代码推出来的，复现时确认。
 - 顺带看到的：页面核对分不出 `w` 和 `max-w`（Claude put-back-and-new-text run-1 用 `max-w-[649.5px]` 代替固定宽度，核成显示；它在 ⚠️ 下说明了，不算虚假的 ✓）。分诊时定要不要一起做。
+
+## 设计师决定（2026-11-05，分诊）
+
+- 选做法 1：ready-for-agent，现在开线，和 97、98 并排跑。先复现再修，不跑真实 Agent。
+- 「顺带看到的」`w` / `max-w` 分不出这次不做：各视图宽度下页面一样，不算虚假的 ✓，那次 Claude 也在 ⚠️ 下说明了。
+- 考虑过的别的做法：等 97、98 合完再开线；先不做。
