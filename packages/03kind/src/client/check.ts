@@ -57,7 +57,7 @@ export function uncheckable(change: Change, round: Change[]): string | null {
   if (change.data) return change.kind === "text" ? "the words come from the data the loop goes through, and the page cannot tell the loop's instances apart" : LOOP_DATA;
   // Text with no element of its own, moved in its container: the page cannot find it, as it cannot a run of text (ticket 95).
   if (textMovedInPlace(change)) return "the text has no element of its own on the page";
-  // A reorder or a placement in the same container, which the page checks, but in a container it cannot find (ticket 95).
+  // A placement absolute in the same container, or a reorder there the page can tell the order of: what the page checks, but in a container it cannot find (ticket 95).
   const unfound = change.kind === "move" && containerUnfound(change, round);
   if (unfound) return unfound;
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
@@ -68,23 +68,25 @@ export function uncheckable(change: Change, round: Change[]): string | null {
 const LOOP_DATA = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
 
 /**
- * Of a move in the same container, why the page does not check it there
- * (ticket 95): a container with no source marker, one made in a round before,
- * or this round otherwise than as a Frame, or as a Frame in a container the
- * page cannot find. Made this round as a Frame it finds, the page checks only
- * the layers made in it. Null for a container it finds by its marker, and for
- * a move into another container.
+ * Of a move the page would check were its container found (`checkable`): a
+ * placement absolute in the same container, or a reorder there among layers
+ * with no text running on (`Change.order`), why it does not (ticket 95): a
+ * container with no source marker, one made in a round before, or this round
+ * otherwise than as a Frame, or as a Frame in a container the page cannot
+ * find; a Frame made this round, which the page checks no move in. Null for
+ * any other move, and for a container it finds by its marker.
  */
 function containerUnfound(change: Change, round: Change[]): string | null {
   const [before, after] = [change.before, change.after] as Place[];
   const { target } = after.container;
   if (before.container.layer !== after.container.layer) return null;
+  if (!after.absolute && (before.absolute || !change.order)) return null;
   if (!target.made) return target.loc ? null : CONTAINER_UNFOUND.unmarked;
   const where = whereMade(target.made, round);
   if ("layer" in where) return CONTAINER_UNFOUND[where.layer];
   // A new Frame in a container the page cannot find, as deep as layers made this round go: the page cannot find the Frame either.
   if ("container" in where) return "its container is new this round, in a container the page cannot find";
-  return "of the changes in a container made this round, the page checks only the layers made in it";
+  return "its container is new this round, and the page checks no move in it";
 }
 
 /**

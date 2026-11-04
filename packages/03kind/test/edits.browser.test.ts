@@ -7325,7 +7325,17 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
     const unmarked = openCanvas(MOVES.replace(`<div id="list" ${at("5:5")}`, '<div id="list"'));
     const own = (id: string) => find(unmarked.editor.tree().root, (l) => l.el === unmarked.doc.getElementById(id) && !l.text)!;
     unmarked.editor.move(own("c"), { parent: own("list"), index: 0 });
-    expect(reasonOf(unmarked.changes)).toBe("its container has no source marker, so the page cannot find it");
+    const unmarkedMove = unmarked.changes.list()[0];
+    expect(unmarkedMove.order).toBeTruthy();
+    expect(uncheckable(unmarkedMove, [unmarkedMove])).toBe("its container has no source marker, so the page cannot find it");
+    const placedThere: Change = { ...unmarkedMove, after: { ...(unmarkedMove.after as Place), absolute: { x: 10, y: 20 } }, order: undefined };
+    expect(uncheckable(placedThere, [placedThere])).toBe("its container has no source marker, so the page cannot find it");
+
+    // Not what the page would check were the container found: as before, text running on among its layers, and a move back into its layout.
+    const amongText: Change = { ...unmarkedMove, order: null };
+    expect(uncheckable(amongText, [amongText])).toBe("text runs on among the layers of its container, so the page cannot tell their order");
+    const intoLayout: Change = { ...unmarkedMove, before: { ...(unmarkedMove.before as Place), absolute: { x: 10, y: 20 } } };
+    expect(uncheckable(intoLayout, [intoLayout])).toBe(STRUCTURE);
 
     // One made in a round before.
     const [reorder] = (() => {
@@ -7338,13 +7348,13 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
     const inMadeBefore = { ...reorder, before: { ...(reorder.before as Place), container: before }, after: { ...(reorder.after as Place), container: before } };
     expect(uncheckable(inMadeBefore, [inMadeBefore])).toBe("its container was made in a round before, and the page cannot find it");
 
-    // A new Frame, as a round carried over may have one a layer was moved into in the round before: the page finds it, but checks only the layers made in it.
+    // A new Frame, as a round carried over may have one a layer was moved into in the round before: the page finds it, but checks no move in it.
     const framed = openCanvas(MOVES);
     framed.editor.create("frame", { parent: find(framed.editor.tree().root, (l) => l.el.id === "row")!, index: 1 });
     const [maker] = framed.changes.list();
     const frame = { layer: maker.layer, target: { ...maker.target, loc: null, made: maker.layer } };
     const inFrame = { ...reorder, id: 2, before: { ...(reorder.before as Place), container: frame }, after: { ...(reorder.after as Place), container: frame } };
-    expect(uncheckable(inFrame, [maker, inFrame])).toBe("of the changes in a container made this round, the page checks only the layers made in it");
+    expect(uncheckable(inFrame, [maker, inFrame])).toBe("its container is new this round, and the page checks no move in it");
 
     // The same new Frame, in a container with no source marker: the page cannot find the Frame either.
     const unmarkedRow = { ...maker, after: { ...(maker.after as Created), place: { ...(maker.after as Created).place, container: { ...(maker.after as Created).place.container, target: { ...(maker.after as Created).place.container.target, loc: null } } } } };
@@ -7358,12 +7368,18 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
 
     editor.move(button.children[0], { parent: button, x: 10, y: 20 });
 
-    expect(changes.list()[0]).toMatchObject({ kind: "move", wrap: true, after: { absolute: { x: 10, y: 20 } } });
+    expect(changes.list()[0]).toMatchObject({ kind: "move", wrap: true, target: { onlyText: true }, after: { absolute: { x: 10, y: 20 } } });
     expect(changes.list()[0].target.run).toBeUndefined();
+    expect(reasonOf(changes)).toBe("the text has no element of its own on the page");
+
+    // Dragged again, now in the `<span>` the canvas wrapped it in: still the one move, as first recorded.
+    editor.move(find(editor.tree().root, (l) => l.el.parentElement?.id === "button" && l.el.localName === "span")!, { parent: button, x: 30, y: 40 });
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ wrap: true, target: { onlyText: true }, after: { absolute: { x: 30, y: 40 } } });
     expect(reasonOf(changes)).toBe("the text has no element of its own on the page");
   });
 
-  test("where the reason for the structure is right, it stays word for word: a copy, a Stack made or dissolved, a move into another container, into a layout from a place of its own", () => {
+  test("where the reason for the structure is right, it stays word for word: a copy, a layer put back, a Stack made or dissolved, a move into another container, into a layout from a place of its own", () => {
     const moves = () => {
       const canvas = openCanvas(MOVES);
       const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
@@ -7389,13 +7405,16 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
     elsewhere.editor.move(elsewhere.layer("b"), { parent: elsewhere.layer("row"), index: 1 });
     expect(reasonOf(elsewhere.changes)).toBe(STRUCTURE);
 
+    // A layer put back, as the editor records one (a layer off the canvas, back at a place of its own).
+    const [moved] = copied.changes.list();
+    const putBack: Change = { ...moved, id: 2, kind: "putBack", property: "put back", before: null, after: { place: moved.after, layer: { id: "a1" } } };
+    expect(uncheckable(putBack, [putBack])).toBe(STRUCTURE);
+
     const elsewhereFree = moves();
     elsewhereFree.editor.move(elsewhereFree.layer("b"), { parent: elsewhereFree.layer("board"), x: 40, y: 30 });
     expect(reasonOf(elsewhereFree.changes)).toBe(STRUCTURE);
 
-    const intoLayout = moves();
-    intoLayout.editor.move(intoLayout.layer("b"), { parent: intoLayout.layer("board"), x: 40, y: 30 });
-    const [free] = intoLayout.changes.list();
+    const [free] = elsewhereFree.changes.list();
     const back: Change = { ...free, before: { ...(free.after as Place), nth: 1 }, after: { ...(free.after as Place), absolute: null, nth: 1 }, order: { signs: ["div B"], self: 0, others: [] } };
     expect(uncheckable(back, [back])).toBe(STRUCTURE);
   });

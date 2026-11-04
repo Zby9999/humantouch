@@ -153,14 +153,14 @@ export function checkable(change: Change, round: Change[]): boolean {
 }
 
 /**
- * Whether the change moves a Frame's only text, as a button's words are,
- * which has no element of its own, in the same container: placed freely in
- * that Frame (ticket 95). The canvas wraps it in a `<span>` to move it, which
- * the page does not have: it cannot find it, as it cannot a run of text.
+ * Whether the change moves a Frame's only text, as a button's words are
+ * (`Target.onlyText`), in the same container: placed freely in that Frame
+ * (ticket 95). It has no element of its own: the canvas wraps it in a
+ * `<span>` to move it, which the page does not have, so it cannot find it,
+ * as it cannot a run of text.
  */
 export function textMovedInPlace(change: Change): boolean {
-  // Loose text beside other layers is found by which run of text it is (`Target.run`): the page cannot find that either, said so already.
-  if (change.kind !== "move" || !change.wrap || change.target.run !== undefined) return false;
+  if (change.kind !== "move" || !change.target.onlyText) return false;
   const [before, after] = [change.before, change.after] as Place[];
   return before.container.layer === after.container.layer;
 }

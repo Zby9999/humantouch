@@ -466,7 +466,7 @@ describe("claim, how to write the changes (ticket 65)", () => {
     });
 
     test("a Frame's only text placed freely in that Frame is named a change to a layer the page cannot find, as `done` says it has no element of its own: not a move into another container (ticket 95)", async () => {
-      const onlyText = change("move", { before: place(1), after: { ...place(1), absolute: at(10, 20) }, wrap: true });
+      const onlyText = change("move", { before: place(1), after: { ...place(1), absolute: at(10, 20) }, wrap: true, target: { ...inApp, onlyText: true } });
       saveRound(onlyText);
 
       const checks = rule((await cli("claim")).output, "How the page checks");
