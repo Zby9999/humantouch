@@ -4594,6 +4594,31 @@ ${html}${body} style="margin: 0">
     },
   );
 
+  test.each([
+    ["left to right", (html: string) => html],
+    ["right to left", rightToLeft],
+  ] as const)(
+    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, centered by auto margins (`inset-x-0 mx-auto`), %s: the margins take up the room, so neither side wins, it is placed from its left, and an X typed, a nudge or a drag lands it there (ticket 94, review)",
+    (_, laidOut) => {
+      const { doc, editor, changes, layer } = open(laidOut(bothSides.replace("left: 10px; right: 30px", "left: 0; right: 0; margin-inline: auto")));
+      const tag = doc.getElementById("tag")!;
+      const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+      expect([drawn(), editor.read(layer("tag"), "x")]).toEqual([expect.closeTo(175, 1), 0]);
+      const moves = [
+        ["typed", () => editor.set(layer("tag"), "x", 300), 300],
+        ["nudged", () => editor.nudge([layer("tag")], -20, 0), -20],
+        ["dragged", () => editor.move(layer("tag"), { parent: layer("board"), x: 300, y: 8 }), 300],
+      ] as const;
+      for (const [how, move, x] of moves) {
+        move();
+        expect([how, changes.list().map((change) => [change.property, change.before, change.after])]).toEqual([how, [["x", 0, x]]]);
+        expect([how, drawn()]).toEqual([how, expect.closeTo(x, 1)]);
+        editor.undo();
+        expect([how, drawn()]).toEqual([how, expect.closeTo(175, 1)]);
+      }
+    },
+  );
+
   test("a layer placed absolute by its `left` and its `right` both, held 50px wide by its `max-width`, right to left: its X reads where the browser draws it, and an X typed lands it there, written as X, as the canvas reads its width from what is declared (ticket 94, ticket 89's 代定 2)", () => {
     const { doc, editor, changes, layer } = open(rightToLeft(bothSides.replace("width: 50px", "max-width: 50px")));
     const tag = doc.getElementById("tag")!;
