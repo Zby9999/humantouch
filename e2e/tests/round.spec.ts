@@ -851,6 +851,54 @@ test.describe("done checks the change on the page", () => {
     expect(await npx03kind("done", centered)).toContain("Checked on the page: it shows the change.");
   });
 
+  test("a layer centered by its auto margins, moved: it stays centered so, the notes say to give its sides as much more and less, and done checks where its middle is at every view's width, not a px from one side (ticket 96)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="by-margins" className="absolute inset-x-0 top-[120px] mx-auto h-[40px] w-[80px] bg-stone-300" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("by-margins")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    const hero = await page.getByTestId("hero").evaluate((el) => el.clientWidth);
+    await enterEditMode(page);
+    const x = () => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "X", exact: true }).inputValue();
+
+    // Its X where it is drawn, half its width left of the middle; 40 px right, still centered.
+    await pickOnCanvas(page, "by-margins");
+    expect(Number(await x())).toBe(hero / 2 - 40);
+    await setField(page, "X", String(Number(await x()) + 40));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKindFile("changeset.json").changes;
+    expect([change.property, change.before, change.after, change.placedFrom, change.centeredOn, change.style]).toEqual([
+      "x",
+      hero / 2 - 40,
+      hero / 2,
+      { edge: "start", centered: true, margins: true },
+      { before: { percent: 50, px: 0 }, after: { percent: 50, px: 40 } },
+      { left: "40px", right: "-40px" },
+    ]);
+
+    const notes = await npx03kind("claim");
+    expect(notes).toContain("Give its `left` and `right` as much more and less, `left: 40px; right: -40px` (Tailwind's `left-[40px] right-[-40px]`), keeping both and its auto margins.");
+    expect(notes).toContain("- **Placement:** the layer is centered across between its `left` and `right` by its auto margins (`margin-inline: auto`, Tailwind's `mx-auto`)");
+    expect(notes).toMatch(/- \*\*Centered by auto margins:\*\* .*moved, keep both sides and the auto margins/);
+    expect(notes).not.toMatch(/- \*\*Centered:\*\*/);
+
+    const id = String(change.id);
+    expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at");
+    // Not as the notes say: in px from its left, right as wide as the window only.
+    editSource(APP, "absolute inset-x-0 top-[120px] mx-auto", `absolute left-[${hero / 2}px] top-[120px] mx-auto`);
+    expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer is drawn at");
+    editSource(APP, `absolute left-[${hero / 2}px] top-[120px] mx-auto`, "absolute left-[40px] right-[-40px] top-[120px] mx-auto");
+    expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
+    // Its auto margins gone: drawn at its `left`.
+    editSource(APP, "right-[-40px] top-[120px] mx-auto", "right-[-40px] top-[120px]");
+    expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at 40px");
+  });
+
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
     await page.goto(DEV_URL);
     await page.getByRole("button", { name: TOGGLE_LABEL }).click();
