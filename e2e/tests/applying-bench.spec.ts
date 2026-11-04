@@ -402,11 +402,21 @@ const typedApart = (text: string) =>
 const TITLE = { from: "text-lg font-semibold", to: "text-xl font-semibold", shows: "20px", was: "18px" };
 const TEXT = { from: "mt-2 text-sm", to: "mt-2 text-base", shows: "16px", was: "14px" };
 /** The first card's title and text size on the canvas, and its fill. */
-const canvasCard = (page: Page) =>
-  canvas(page)
-    .locator("article")
-    .first()
-    .evaluate((card) => ({ title: getComputedStyle(card.querySelector("h3")!).fontSize, text: getComputedStyle(card.querySelector("p")!).fontSize, fill: getComputedStyle(card).backgroundColor }));
+const canvasCard = async (page: Page) => {
+  const start = Date.now();
+  for (;;) {
+    try {
+      return await canvas(page)
+        .locator("article")
+        .first()
+        .evaluate((card) => ({ title: getComputedStyle(card.querySelector("h3")!).fontSize, text: getComputedStyle(card.querySelector("p")!).fontSize, fill: getComputedStyle(card).backgroundColor }));
+    } catch (error) {
+      // A read as the canvas is frozen afresh can land on the frame going away: read again, for up to 5 s (ticket 93).
+      if (!/Frame was detached/.test((error as Error).message) || Date.now() - start >= 5000) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+};
 
 test("playbook: the Agent lands the designer's changes with no claim, while the designer is in edit mode", async ({ page }) => {
   await designTheRound(page);
