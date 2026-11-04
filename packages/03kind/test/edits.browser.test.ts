@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
-import { createChangeSet, type Change, type Place } from "../src/client/changeset";
+import { createChangeSet, type Change, type Created, type Place } from "../src/client/changeset";
 import { placedOnCanvas } from "../src/client/moves";
 import { checkAcross, checkChange, uncheckable, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
@@ -7330,8 +7330,8 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
     // One made in a round before.
     const [reorder] = (() => {
       const opened = openCanvas(MOVES);
-      const at = (id: string) => find(opened.editor.tree().root, (l) => l.el === opened.doc.getElementById(id) && !l.text)!;
-      opened.editor.move(at("c"), { parent: at("list"), index: 0 });
+      const layer = (id: string) => find(opened.editor.tree().root, (l) => l.el === opened.doc.getElementById(id) && !l.text)!;
+      opened.editor.move(layer("c"), { parent: layer("list"), index: 0 });
       return opened.changes.list();
     })();
     const before = { ...(reorder.before as Place).container, target: { ...(reorder.before as Place).container.target, loc: null, made: "9" } };
@@ -7345,6 +7345,10 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
     const frame = { layer: maker.layer, target: { ...maker.target, loc: null, made: maker.layer } };
     const inFrame = { ...reorder, id: 2, before: { ...(reorder.before as Place), container: frame }, after: { ...(reorder.after as Place), container: frame } };
     expect(uncheckable(inFrame, [maker, inFrame])).toBe("of the changes in a container made this round, the page checks only the layers made in it");
+
+    // The same new Frame, in a container with no source marker: the page cannot find the Frame either.
+    const unmarkedRow = { ...maker, after: { ...(maker.after as Created), place: { ...(maker.after as Created).place, container: { ...(maker.after as Created).place.container, target: { ...(maker.after as Created).place.container.target, loc: null } } } } };
+    expect(uncheckable(inFrame, [unmarkedRow, inFrame])).toBe("its container is new this round, in a container the page cannot find");
   });
 
   test("a Frame's only text, as a button's words are, placed freely in that Frame: it has no element of its own on the page", () => {

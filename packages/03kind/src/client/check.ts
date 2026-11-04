@@ -68,11 +68,12 @@ export function uncheckable(change: Change, round: Change[]): string | null {
 const LOOP_DATA = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
 
 /**
- * Of a move in the same container, why the page cannot find that container,
- * when it cannot (ticket 95): one with no source marker, or one made in a round
- * before, or this round otherwise than as a Frame. Made this round as a Frame,
- * the page finds it, but checks only the layers made in it. Null for a move
- * into another container.
+ * Of a move in the same container, why the page does not check it there
+ * (ticket 95): a container with no source marker, one made in a round before,
+ * or this round otherwise than as a Frame, or as a Frame in a container the
+ * page cannot find. Made this round as a Frame it finds, the page checks only
+ * the layers made in it. Null for a container it finds by its marker, and for
+ * a move into another container.
  */
 function containerUnfound(change: Change, round: Change[]): string | null {
   const [before, after] = [change.before, change.after] as Place[];
@@ -80,7 +81,10 @@ function containerUnfound(change: Change, round: Change[]): string | null {
   if (before.container.layer !== after.container.layer) return null;
   if (!target.made) return target.loc ? null : CONTAINER_UNFOUND.unmarked;
   const where = whereMade(target.made, round);
-  return "layer" in where ? CONTAINER_UNFOUND[where.layer] : "of the changes in a container made this round, the page checks only the layers made in it";
+  if ("layer" in where) return CONTAINER_UNFOUND[where.layer];
+  // A new Frame in a container the page cannot find, as deep as layers made this round go: the page cannot find the Frame either.
+  if ("container" in where) return "its container is new this round, in a container the page cannot find";
+  return "of the changes in a container made this round, the page checks only the layers made in it";
 }
 
 /**
