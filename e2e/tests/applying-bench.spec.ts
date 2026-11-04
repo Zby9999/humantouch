@@ -120,6 +120,24 @@ async function watchFor(notice: ReturnType<typeof stalledNotice>, ms: number): P
   }
 }
 
+/**
+ * Ticket 93: the page has heard the last move before its clock is run on. `done` answers once the page's
+ * check is in (a layout effect), but the stall watch hears the ask in an effect after it: under load that
+ * may run after `fastForward`, start the while again from the new time, and the notice never shows.
+ * Two of the page's turns, each a posted message and a frame, let it run first.
+ */
+async function pageHeardTheLastMove(page: Page) {
+  await page.evaluate(async () => {
+    for (let turn = 0; turn < 2; turn++) {
+      await new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => requestAnimationFrame(() => resolve());
+        channel.port2.postMessage(null);
+      });
+    }
+  });
+}
+
 /** Keeps a playbook's numbers: in `bench-results/playbooks/<id>.json`, and in the output. */
 function record(id: string, metrics: Record<string, unknown>) {
   mkdirSync(RESULTS, { recursive: true });
@@ -232,6 +250,7 @@ async function noticeAfterStop(page: Page, stoppedAt: number, real = STALL_REAL)
   const ranOn = real ? 0 : STALL_MS - 2000;
   if (!real) {
     await expect(stalledNotice(page)).toHaveCount(0);
+    await pageHeardTheLastMove(page);
     await page.clock.fastForward(ranOn);
   }
   const shown = await watchFor(stalledNotice(page), stoppedAt + STALL_MS - ranOn + NOTICE_LATE_MS + WATCH_PAST_MS - Date.now());
@@ -590,6 +609,8 @@ test("playbook: the Agent sits still a long time between two changes, then goes 
   const noticeDuringPauseAfterMs = await watchFor(stalledNotice(page), 5000);
   await apply(page, 2);
   await npx03kind("done", "2");
+  await expect(ring(page)).toHaveAttribute("aria-valuenow", "2");
+  await pageHeardTheLastMove(page);
   // Still past the threshold, then on again: the notice shows, and goes as the code comes in.
   await page.clock.fastForward(STALL_MS);
   const noticePastThreshold = (await watchFor(stalledNotice(page), NOTICE_LATE_MS)) !== null;
