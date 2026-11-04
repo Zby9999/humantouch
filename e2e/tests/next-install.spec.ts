@@ -55,7 +55,7 @@ test("init installs 03Kind into a Next.js project: with webpack, the toggle is o
     await expect(page.locator('iframe[title="Canvas"]').contentFrame().locator("h1")).toBeVisible();
     expect(await loaded.has(EXIT_LABEL)).toBe(true);
   } finally {
-    server.stop();
+    await server.stop();
   }
 });
 
