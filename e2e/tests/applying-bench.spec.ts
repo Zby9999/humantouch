@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /**
@@ -1922,4 +1922,43 @@ test.describe("a loop's instance deleted, copied or moved (ticket 95)", () => {
     expect(result.checks.outcomes).toEqual({ 1: `unchecked: ${LOOP}` });
     expect(result.ticked).toEqual([1]);
   });
+});
+
+test.describe("a layer whose markers the Agent's edit moves (ticket 99)", () => {
+  /** The cards' Grid, acme-ui's Surface (it passes its props on to its div), as the Agent fills it. */
+  const FILLED = '<Surface className="grid';
+  test.afterEach(async () => {
+    if (readFileSync(APP, "utf8") === originalApp) return;
+    writeFileSync(APP, originalApp);
+    await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/App.tsx`)).text(), originalApp)).toBe(true);
+  });
+
+  for (const wrapper of ["span", "div"]) {
+    test(`playbook: the cards' Grid, acme-ui's Surface, filled; the Agent fills it, then writes a <${wrapper}> around the Badge above it, the Surface two lines down: the page checks the Surface (third-party, Claude runs 1 and 2 of ticket 88)`, async ({ page }) => {
+      await page.goto(DEV_URL);
+      await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+      await expect(canvas(page).locator("h1")).toBeVisible();
+      await canvasInPlace(page);
+      await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true }).click();
+      // The Grid has no fill of its own yet.
+      await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
+      const box = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Fill color", exact: true });
+      await box.fill("f5f5f4");
+      await box.press("Enter");
+      await expect.poll(() => changesNow().map((change) => change.property)).toEqual(["fill"]);
+      await leaveEditMode(page);
+
+      await npx03kind("claim");
+      await expect(ring(page)).toBeVisible();
+      const grid = page.locator("article").first().locator("..");
+      // Each edit brought into the page before the next, as an Agent's come one by one.
+      writeFileSync(APP, readFileSync(APP, "utf8").replace(FILLED, '<Surface className="bg-[#f5f5f4] grid'));
+      await expect(grid).toHaveCSS("background-color", "rgb(245, 245, 244)");
+      writeFileSync(APP, readFileSync(APP, "utf8").replace("<Badge>Beta</Badge>", `<${wrapper} className="contents">\n            <Badge>Beta</Badge>\n          </${wrapper}>`));
+      await expect(page.locator(`header > ${wrapper}.contents`)).toHaveCount(1);
+      const done = await npx03kind("done", "1");
+      expect(done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+      expect(checksOf([1]).outcomes[1]).toBe("shown");
+    });
+  }
 });

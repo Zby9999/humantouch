@@ -6,7 +6,7 @@
 import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
-import { otherUsagesThere } from "./page-elements";
+import { savedCanvas, type SavedCanvas } from "./page-elements";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -102,7 +102,7 @@ export type RoundOnCanvas = ChangeOnCanvas[] & { readonly [onCanvas]: true };
  * it checks, never saved with the ChangeSet, which the Agent may read: an
  * Agent that did went looking in the package for what it was. A round with
  * no new layer is as it is, its canvas not read: kept, to be read only if
- * the page needs it later (`stayedPutOf`).
+ * the page needs it later (`canvasOf`).
  */
 export function placedOnCanvas(changes: Change[], canvas: string): RoundOnCanvas {
   if (!canvas) return changes as RoundOnCanvas;
@@ -113,33 +113,27 @@ export function placedOnCanvas(changes: Change[], canvas: string): RoundOnCanvas
 
 /** `round`, its canvas kept with it (`canvases`), and the canvas read already, if it is. */
 function kept(round: RoundOnCanvas, canvas: string, doc?: Document): RoundOnCanvas {
-  canvases.set(round, { canvas, doc, stayedPut: new Map() });
+  canvases.set(round, { canvas, doc });
   return round;
 }
 
-/** Each round placed on its canvas, with the canvas as saved, read once it is needed, and the other usages read off it by change id. */
-const canvases = new WeakMap<RoundOnCanvas, { canvas: string; doc?: Document; stayedPut: Map<number, string[]> }>();
+/** Each round placed on its canvas, with the canvas as saved, read once it is needed. */
+const canvases = new WeakMap<RoundOnCanvas, { canvas: string; doc?: Document; read?: SavedCanvas }>();
 
 const parse = (canvas: string) => new DOMParser().parseFromString(canvas, "text/html");
 
 /**
- * Of a change of `round` to a layer in a component's usage, the usage keys
- * of the component's other usages at its location on the round's canvas
- * (`otherUsagesThere`), which the page does not take for it where its
- * markers move (review of ticket 90). The canvas is read the first time a
- * change of the round asks, a large one taking a while: only where the
- * layer's markers have moved and its own element is not found.
+ * The canvas of `round`, as saved: what the page goes by to find a layer
+ * whose markers an edit to its files has moved (`elementsOf`, ticket 99).
+ * Its markers read off it as a change of the round first asks; parsed, a
+ * large one taking a while, only where a layer's markers have moved. None
+ * for a round placed on no canvas.
  */
-export function stayedPutOf(round: RoundOnCanvas, change: Change): string[] {
+export function canvasOf(round: RoundOnCanvas): SavedCanvas | null {
   const saved = canvases.get(round);
-  if (!saved || !change.target.loc || !change.target.chain.length) return [];
-  let keys = saved.stayedPut.get(change.id);
-  if (!keys) {
-    saved.doc ??= parse(saved.canvas);
-    keys = otherUsagesThere(saved.doc, change.target);
-    saved.stayedPut.set(change.id, keys);
-  }
-  return keys;
+  if (!saved) return null;
+  saved.read ??= savedCanvas(saved.canvas, () => (saved.doc ??= parse(saved.canvas)));
+  return saved.read;
 }
 
 /**

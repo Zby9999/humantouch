@@ -9,7 +9,7 @@ import { serializeCanvas } from "../src/client/freezer";
 import { revertSaved } from "../src/client/saved-round";
 import type { Layer } from "../src/client/layers";
 import { createViews } from "../src/client/views";
-import { placedOnCanvas, stayedPutOf } from "../src/client/moves";
+import { placedOnCanvas } from "../src/client/moves";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "../src/client/other-usages";
 
 /** A round as the page checks it, placed on its canvas: with no new layer, no canvas to read. */
@@ -748,9 +748,7 @@ describe("new words, looked at in every instance and at the component's other us
   function yourMoveOnCanvas() {
     const { editor, changes, cards, layerOf, doc } = openCanvas();
     editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
-    const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
-    expect(stayedPutOf(round, round[0])).toEqual([expect.stringContaining("src/App.tsx:6:9")]);
-    return round;
+    return placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
   }
 
   test("its own element gone from the page, another usage reading the new words is not taken for it: not checked, never shown (review)", () => {
@@ -771,7 +769,7 @@ describe("new words, looked at in every instance and at the component's other us
     expect(checkChange(page, round[0], round)).toEqual({ outcome: "shown" });
   });
 
-  test("the round's canvas is read only once a layer's markers have moved, its own element is not found and an element at its location is to be told apart, and once a round (perf review)", () => {
+  test("the round's canvas is read only once a layer's markers have moved and its own element is not found, and once a round (perf review; ticket 99)", () => {
     const { editor, changes, cards, layerOf, doc } = openCanvas();
     editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
     const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
@@ -779,14 +777,14 @@ describe("new words, looked at in every instance and at the component's other us
       const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
       const { page, titles } = livePage();
       expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
-      // The Card edited above the title, every usage's markers moving with it: none at the layer's location to tell apart.
-      for (const title of titles) title.setAttribute("data-tk-loc", "src/Card.tsx:6:7");
-      expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
       expect(parse).not.toHaveBeenCalled();
-      // This usage moved alone: the other usages there are read off the canvas, once.
+      // The Card edited above the title, every usage's markers moving with it: where they went is told by the canvas, read once.
+      for (const title of titles) title.setAttribute("data-tk-loc", "src/Card.tsx:6:7");
+      checkChange(page, round[0], round);
+      expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
+      // This usage moved alone: the canvas read already.
       live!.remove();
       const moved = livePage(PAGE, "src/App.tsx:10:7");
-      checkChange(moved.page, round[0], round);
       expect(checkChange(moved.page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
       expect(parse).toHaveBeenCalledTimes(1);
     } finally {
