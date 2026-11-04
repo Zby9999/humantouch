@@ -611,3 +611,121 @@ describe("a change for one usage, looked at on the component's other usages (tic
     });
   });
 });
+
+describe("new words, looked at in every instance and at the component's other usages (ticket 90)", () => {
+  /** The live page, as React renders `html`: each Card and its title with the Card's usage known, the loop's three and "Your turn". */
+  function livePage(html = PAGE) {
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(html);
+    page.close();
+    function App() {}
+    function Card() {}
+    const app = { type: App, memoizedProps: {}, _debugOwner: null };
+    [...page.querySelectorAll("article")].forEach((card, i) => {
+      const usage = i < 3 ? "src/App.tsx:6:9" : "src/App.tsx:8:7";
+      const fiber = { _debugOwner: { type: Card, memoizedProps: { "data-tk-usage": usage }, _debugOwner: app } };
+      for (const el of [card, card.querySelector("h3")!]) Object.assign(el, { __reactFiber$words: fiber });
+    });
+    const titles = [...page.querySelectorAll("h3")];
+    return { page, titles };
+  }
+  function watch(page: Document, round: Change[], otherUsages?: Map<number, OtherUsagesNoted | null>) {
+    const reports: CheckReport[] = [];
+    const noted = new Map<number, OtherUsagesNoted | null>();
+    const checks = watchPage({
+      window: page.defaultView!,
+      changes: onCanvas(round),
+      report: (r) => reports.push(r),
+      onShown() {},
+      viewWidths: () => [],
+      copiesIn: () => document.body,
+      otherUsages,
+      onNoted: (id, one) => noted.set(id, one),
+    });
+    const last = (id: number) => reports.filter((r) => r.id === id).at(-1);
+    return { checks, reports, last, noted };
+  }
+  /** "Your turn" given new words on the canvas, for that usage of the Card alone: the round. */
+  function yourMove() {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
+    const round = changes.list();
+    expect(round).toMatchObject([{ kind: "text", property: "text", scope: "usage", before: "Your turn", after: "Your move" }]);
+    return round;
+  }
+
+  test("the loop's title, the same in its three instances, given new words: shown once every instance reads them, as a reader takes them", () => {
+    const html = PAGE.replace(/>Card \d</g, ">Card<");
+    const { editor, changes, cards, layerOf } = openCanvas(html);
+    editor.setText(layerOf(cards[0].querySelector("h3")!), "Plan ahead");
+    const { page, titles } = livePage(html);
+    const check = () => checkChange(page, changes.list()[0], onCanvas(changes.list()));
+
+    expect(check()).toEqual({ outcome: "not shown", actual: "Card" });
+    titles[0].textContent = "Plan ahead";
+    titles[1].textContent = "Plan ahead";
+    // One of the three still reads as it did.
+    expect(check()).toEqual({ outcome: "not shown", actual: "Card" });
+    titles[2].innerHTML = "\n  Plan <b>ahead</b>\n";
+    expect(check()).toEqual({ outcome: "shown" });
+    titles[1].textContent = "Plan Ahead";
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan Ahead" });
+  });
+
+  test("written into the Card itself, every card reads the new words: not shown, the page says where and from what to what; put back, shown", async () => {
+    const round = yourMove();
+    const { page, titles } = livePage();
+    const { checks, last } = watch(page, round);
+    await expect.poll(() => last(1)).toEqual(expect.objectContaining({ outcome: "not shown", actual: "Your turn" }));
+
+    for (const title of titles) title.textContent = "Your move";
+
+    await expect.poll(() => last(1)).toMatchObject({ outcome: "not shown", otherUsages: [{ chain: cardAt("src/App.tsx:6:9"), was: "Card 1", is: "Your move" }] });
+    titles.slice(0, 3).forEach((title, i) => (title.textContent = `Card ${i + 1}`));
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+    expect(last(1)).not.toHaveProperty("otherUsages");
+    checks.stop();
+  });
+
+  test("written at the usage alone, the loop's cards read as they did: shown", async () => {
+    const round = yourMove();
+    const { page, titles } = livePage();
+    const { checks, reports, last } = watch(page, round);
+    await expect.poll(() => last(1)?.outcome).toBe("not shown");
+
+    titles[3].textContent = "Your move";
+
+    await expect.poll(() => last(1)?.outcome).toBe("shown");
+    expect(reports.some((r) => "otherUsages" in r)).toBe(false);
+    checks.stop();
+  });
+
+  test("kept with the claim (ticket 82): the page reloaded once the Agent wrote the words into the Card itself, the leak is found by what the other usages read at the claim", async () => {
+    const round = yourMove();
+    const first = livePage();
+    const { checks: firstChecks, noted } = watch(first.page, round);
+    await expect.poll(() => noted.size).toBe(1);
+    firstChecks.stop();
+    const kept = JSON.parse(JSON.stringify(keptOf(noted))) as ReturnType<typeof keptOf>;
+    live!.remove();
+    expect(kept[1]!.seen.map(({ chain, value }) => ({ chain, value }))).toEqual([1, 2, 3].map((n) => ({ chain: cardAt("src/App.tsx:6:9"), value: `Card ${n}` })));
+
+    const { page, titles } = livePage();
+    for (const title of titles) title.textContent = "Your move";
+    const { checks, last } = watch(page, round, notedFrom(kept));
+    await expect.poll(() => last(1)).toMatchObject({ outcome: "not shown", otherUsages: [{ chain: cardAt("src/App.tsx:6:9"), was: "Card 1", is: "Your move" }] });
+    checks.stop();
+  });
+
+  test("noted as the code begins to change with no claim (ticket 78): what the other usages read", () => {
+    const round = yourMove();
+    const { page } = livePage();
+    const noted = noteRound(page, round, 800);
+    expect([...noted.keys()]).toEqual([1]);
+    expect(noted.get(1)!.seen.map(({ value }) => value)).toEqual(["Card 1", "Card 2", "Card 3"]);
+  });
+});

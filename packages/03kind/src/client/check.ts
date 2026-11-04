@@ -45,12 +45,16 @@ export function uncheckable(change: Change, round: Change[]): string | null {
   if (change.kind === "brief") return BRIEF_UNCHECKED;
   if (change.kind === "create" || change.target.made) {
     const where = whereMade(change.kind === "create" ? change.layer : change.target.made!, round);
-    if (change.kind !== "create" && !("layer" in where) && change.kind !== "style") return "of the changes to a layer made this round, the page checks only the layer itself and its styles";
+    // New words of a layer made this round are those of the change that makes it, which the page checks them with (ticket 90).
+    if (change.kind === "text" && "maker" in where) return `the layer is new this round: the page checks its words with the change that makes it (change ${where.maker.id})`;
+    if (change.kind !== "create" && !("layer" in where) && change.kind !== "style" && change.kind !== "text") return "of the changes to a layer made this round, the page checks only the layer itself and its styles";
     if (!("maker" in where)) return "layer" in where ? MADE_UNFOUND[where.layer] : CONTAINER_UNFOUND[where.container];
   }
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
   if (change.kind === "style") return "the layer's container cannot be found on the page";
+  // Found by its marker, new words are checked but on one of a loop's instances alone (ticket 90).
+  if (change.kind === "text") return "the words come from the data the loop goes through, and the page cannot tell its instances apart";
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
 }
@@ -105,7 +109,8 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
     const parts = change.parts?.map((part) => part.breakpoint) ?? [breakpoint];
     return { own: parts.some((part) => within(part, pageWidth)), others: parts.filter((part) => !within(part, pageWidth)).map(widthIn) };
   }
-  if (change.kind === "move" && !(change.after as Place).absolute) return { own: true, others: [] };
+  // A layer's words, as its order among its container's layers, are the same at every width.
+  if (change.kind === "text" || (change.kind === "move" && !(change.after as Place).absolute)) return { own: true, others: [] };
   // A new layer in its container's layout is there or not at every width alike; placed absolute, it is placed at each.
   if (change.kind === "create" && !placeOfMade(change, round).absolute) return { own: true, others: [] };
   const { loc, chain, made: madeAs } = change.target;
@@ -160,7 +165,7 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
     const counts = new Map<string, number>();
     for (const el of layers) counts.set(signOf(el), (counts.get(signOf(el)) ?? 0) + 1);
     for (const sign of among?.signs ?? []) counts.set(sign, (counts.get(sign) ?? 0) - 1);
-    const matches = (el: Element) => (words === undefined || spaced(el.textContent ?? "") === words) && counts.get(signOf(el))! > 0;
+    const matches = (el: Element) => (words === undefined || wordsOn(el) === words) && counts.get(signOf(el))! > 0;
     const here = range ? layers.slice(range[0], range[1] + 1).filter(matches) : layers.filter((el) => matches(el) && /^(absolute|fixed)$/.test(getComputedStyle(el).position));
     if (!here.length) {
       const there = range ? layers[range[0]] : undefined;
@@ -180,6 +185,11 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
 /** Words as a reader takes them, white space run together. */
 function spaced(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+/** What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own. New text is found by these, and new words are checked by them (ticket 90). */
+export function wordsOn(el: Element): string {
+  return spaced(el.textContent ?? "");
 }
 
 /** An element as the Agent finds it: its opening tag, and its words. */
@@ -293,6 +303,7 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
   if (change.kind === "delete") return lookDeleted(doc, change, at);
   if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, at) : lookOrder(doc, change);
   if (change.kind === "create") return lookMade(doc, change, round, at);
+  if (change.kind === "text") return lookWords(doc, change);
   const property = change.property as Property;
   let els: Element[];
   if (change.target.made) {
@@ -425,6 +436,21 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
     .map((el) => at.of(el))
     .filter((el): el is Element => !!el);
   return placedThere(els, (change.after as Place).absolute!, marginsFor(change, at));
+}
+
+/**
+ * New words (ticket 90): the layer, found by its source marker, reads the
+ * words last typed, in every instance, as new text is found by its words
+ * (`findMade`): as a reader takes them, white space run together, the words
+ * of its bold runs, links and other pieces with its own. `actual`, not shown:
+ * what the first instance that does not reads instead.
+ */
+function lookWords(doc: Document, change: Change): CheckResult {
+  const els = elementsOf(doc, change.target);
+  if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
+  const words = spaced(change.after as string);
+  const wrong = els.find((el) => wordsOn(el) !== words);
+  return wrong ? { outcome: "not shown", actual: wordsOn(wrong) } : { outcome: "shown" };
 }
 
 /**

@@ -1661,3 +1661,144 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     });
   });
 });
+
+/**
+ * Ticket 90: a change to the words of a layer that is there (a text change),
+ * which the page did not check before: `done` said it was a change to the
+ * structure. The page finds the layer by its source marker and reads its
+ * words, in every instance, as it reads new text's (ticket 76); for one usage
+ * alone, its component's other usages are to read as they did (tickets 77,
+ * 82). Where it cannot check, it says why.
+ */
+test.describe("a text change (ticket 90)", () => {
+  /** What the Agent wrote, and what the next test's page must not open on. */
+  const WRITTEN = /Third Kind Studio|Your move|Thaw|Start now/;
+  test.afterEach(async () => {
+    // Run before the file's own hooks, which wait on the classes alone: words put back are waited for here.
+    if (readFileSync(APP, "utf8") !== originalApp) writeFileSync(APP, originalApp);
+    if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
+    for (const file of ["src/App.tsx", "src/components/Card.tsx"]) {
+      await expect.poll(async () => WRITTEN.test(await (await fetch(`${DEV_URL}/${file}`)).text())).toBe(false);
+    }
+  });
+
+  /** In edit mode, the words of each of `edits` typed in: what is double-clicked on the canvas, and the words. Back in preview mode, the changes saved. */
+  async function changeWords(page: Page, edits: [(page: Page) => Locator, string][]) {
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(canvas(page).locator("h1")).toBeVisible();
+    for (const [where, words] of edits) {
+      // Selected first, the deepest layer there (as a designer does with ⌘), then double-clicked to type in it.
+      await page.keyboard.down("ControlOrMeta");
+      await where(page).click();
+      await page.keyboard.up("ControlOrMeta");
+      await where(page).dblclick();
+      // Typed once the caret is in its words: on a busy machine, keys pressed before would go nowhere.
+      await expect
+        .poll(() =>
+          where(page).evaluate((el) => {
+            const doc = el.ownerDocument;
+            const at = doc.getSelection()?.anchorNode;
+            return doc.hasFocus() && !!(doc.activeElement as HTMLElement | null)?.isContentEditable && !!at && el.contains(at);
+          }),
+        )
+        .toBe(true);
+      await page.keyboard.type(words);
+      await page.keyboard.press("Enter");
+      await expect(where(page)).toHaveText(words);
+    }
+    await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(edits.map(() => "text"));
+    await leaveEditMode(page);
+  }
+
+  /** The round claimed, `edits` made to the source as the Agent writes it (once `shows` says the page has them), `done` for every change, and `finish`: what each said, and the round's checks. */
+  async function applyTheWords(page: Page, edits: [string, string, string][], shows: () => Promise<boolean>) {
+    const ids = changesNow().map((change) => change.id);
+    const claim = await npx03kind("claim");
+    // As a real Agent, which reads the notes before it edits: the page has begun to check, and has noted what the other usages show. A change it cannot check it never looks at by itself.
+    await expect(ring(page)).toBeVisible();
+    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[ids[0]]?.outcome, { timeout: 5000 }).toBeTruthy().catch(() => {});
+    for (const [file, from, to] of edits) {
+      const text = readFileSync(file, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(file, text.replace(from, to));
+    }
+    await expect.poll(shows).toBe(true);
+    const done = await npx03kind("done", ...ids.map(String));
+    const finished = await npx03kind("finish");
+    return { claim, done, finished, checks: checksOf(ids), ticked: tickedIn(finished), applied: appliedInArchive() };
+  }
+
+  /** What a playbook keeps: the outcome, the report's ✓, the archive's applied, and what `claim`, `done` and `finish` said, word for word. */
+  const kept = ({ claim, done, finished, checks, ticked, applied }: Awaited<ReturnType<typeof applyTheWords>>) => ({ outcome: checks.outcomes[1], ticked, applied, claim, done, finished });
+
+  const title = (page: Page) => canvas(page).locator("h1");
+  const fourthTitle = (page: Page) => canvas(page).locator("article h3").nth(3);
+  const titlesOnThePage = (page: Page) => page.locator("article h3").allTextContents();
+
+  test("playbook: the title's words changed; the Agent writes them right", async ({ page }) => {
+    await changeWords(page, [[title, "Third Kind Studio"]]);
+    const result = await applyTheWords(page, [[APP, ">Third Kind</h1>", ">Third Kind Studio</h1>"]], async () => (await page.locator("h1").textContent()) === "Third Kind Studio");
+    record("text-title-right", kept(result));
+    expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(result.checks.outcomes[1]).toBe("shown");
+    expect(result.ticked).toEqual([1]);
+    expect(result.applied).toEqual([1]);
+  });
+
+  test("playbook: the title's words changed; the Agent writes other words", async ({ page }) => {
+    await changeWords(page, [[title, "Third Kind Studio"]]);
+    const result = await applyTheWords(page, [[APP, ">Third Kind</h1>", ">Third Kind Studios</h1>"]], async () => (await page.locator("h1").textContent()) === "Third Kind Studios");
+    record("text-title-wrong", kept(result));
+    expect(result.done).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. The layer reads “Third Kind Studios” on the page, not “Third Kind Studio” as on the canvas: change its words in the JSX, or where they are given when they come from a prop or a variable, and run `npx 03kind done 1` again.\n",
+    );
+    expect(result.finished).toMatch(/^Round finished: 0 of 1 change applied\. The page does not show: 1\./);
+    expect(result.finished).toContain("- 1. Text: <the layer>\n  Why: the layer reads “Third Kind Studios” on the page, not “Third Kind Studio”: <what keeps it so>\n");
+    expect(result.applied).toEqual([]);
+  });
+
+  test("playbook: the fourth card's title changed, that usage alone; the Agent writes it at the usage", async ({ page }) => {
+    await changeWords(page, [[fourthTitle, "Your move"]]);
+    const result = await applyTheWords(page, [[APP, 'title="Your turn"', 'title="Your move"']], async () => (await titlesOnThePage(page))[3] === "Your move");
+    record("text-usage-only", { ...kept(result), titles: await titlesOnThePage(page) });
+    expect(await titlesOnThePage(page)).toEqual(["Freeze", "Arrange", "Apply", "Your move"]);
+    expect(result.checks.outcomes[1]).toBe("shown");
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the same; the Agent writes the words into the Card itself, so every card reads them", async ({ page }) => {
+    await changeWords(page, [[fourthTitle, "Your move"]]);
+    const result = await applyTheWords(page, [[CARD, "{title}</h3>", "Your move</h3>"]], async () => (await titlesOnThePage(page)).every((words) => words === "Your move"));
+    record("text-usage-leak", { ...kept(result), titles: await titlesOnThePage(page) });
+    expect(result.done).toMatch(
+      /^Change 1 done: 0 of 1 change applied\.\nChecked on the page: it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`, its words from “Freeze” to “Your move” since the round was claimed\. The change is for this usage only \(Scope\): make it at the usage, put the other usage back as it was, and run `npx 03kind done 1` again\.\n$/,
+    );
+    expect(result.finished).toMatch(/^Round finished: 0 of 1 change applied\. Shown at other usages of its component too: 1\./);
+    expect(result.finished).toMatch(/\n {2}Why: the page shows it at another usage of Card too, Card used at `src\/App\.tsx:\d+:\d+`, its words from “Freeze” to “Your move”: <what keeps it so>\n/);
+    expect(result.applied).toEqual([]);
+  });
+
+  test("playbook: a loop card's title and the button's words changed; the Agent writes both: the page says why it cannot check either", async ({ page }) => {
+    await changeWords(page, [
+      [(page) => canvas(page).locator("article h3").first(), "Thaw"],
+      [(page) => canvas(page).locator('[data-testid="hero"] > button'), "Start now"],
+    ]);
+    const result = await applyTheWords(
+      page,
+      [
+        [APP, '{ title: "Freeze",', '{ title: "Thaw",'],
+        [APP, "          Get started\n", "          Start now\n"],
+      ],
+      async () => (await titlesOnThePage(page))[0] === "Thaw" && (await page.locator("button").first().textContent())?.trim() === "Start now",
+    );
+    record("text-unchecked", { ...kept(result), outcomes: result.checks.outcomes });
+    expect(result.done).toBe(
+      "Changes 1 and 2 done: 2 of 2 changes applied.\n" +
+        "Change 1: not checked on the page: the words come from the data the loop goes through, and the page cannot tell its instances apart. That is no error: go on.\n" +
+        "Change 2: not checked on the page: the text has no element of its own on the page. That is no error: go on.\n",
+    );
+  });
+});
