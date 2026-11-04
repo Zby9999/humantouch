@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piFffVersion, PROMPT, runAgent } from "./agents.ts";
+import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piConfigFingerprints, piFffVersion, PROMPT, runAgent } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
@@ -153,6 +153,17 @@ test("pi runs with pi-fff, the designer's installed copy, its databases in the r
   assert.equal(piFffVersion(installed), "0.11.0");
   assert.equal(piFffVersion(join(scratch, "nowhere")), null);
   assert.deepEqual(Object.keys(AGENTS.pi.extensions!()), ["pi-fff"]);
+});
+
+test("pi's runs record a fingerprint of the designer's settings.json and models.json, which still apply to them: a digest of each file's bytes, not the file, null for one absent (ticket 88)", () => {
+  const agentDir = mkdtempSync(join(scratch, "pi-agent-"));
+  writeFileSync(join(agentDir, "settings.json"), "abc");
+  // sha256 of the three bytes "abc" (FIPS 180-2's example).
+  assert.deepEqual(piConfigFingerprints(agentDir), { "settings.json": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "models.json": null });
+  assert.deepEqual(piConfigFingerprints(join(scratch, "nowhere")), { "settings.json": null, "models.json": null });
+  // The real one reads the designer's ~/.pi/agent: here only that pi has it.
+  assert.equal(typeof AGENTS.pi.configFingerprints, "function");
+  for (const agent of ["claude", "cursor"] as const) assert.equal(AGENTS[agent].configFingerprints, undefined);
 });
 
 test("Claude's and Cursor's command lines have nothing of fff, and their runs record no extension", () => {

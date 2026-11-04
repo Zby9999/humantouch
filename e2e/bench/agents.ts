@@ -9,6 +9,7 @@
  * line, in meta.json, shows the id; a run on another model stops the bench).
  */
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
@@ -142,6 +143,24 @@ export function piFffVersion(dir = PI_FFF): string | null {
   }
 }
 
+/** The designer's pi agent directory, where pi reads their settings.json and models.json from (`AGENTS.pi`'s note). */
+const PI_AGENT_DIR = join(homedir(), ".pi/agent");
+
+/**
+ * A fingerprint of each of the designer's pi files that still apply to the bench's runs, by name: the sha256 of its
+ * bytes, never the bytes; null for one absent. Read in place, nothing printed or copied (ticket 88).
+ */
+export function piConfigFingerprints(dir = PI_AGENT_DIR): Record<"settings.json" | "models.json", string | null> {
+  const fingerprint = (name: string) => {
+    try {
+      return `sha256:${createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")}`;
+    } catch {
+      return null;
+    }
+  };
+  return { "settings.json": fingerprint("settings.json"), "models.json": fingerprint("models.json") };
+}
+
 /** Where a run's own fff databases go, in its folder: what files it found often, and which files its queries led to. */
 const fffDb = (folder: string, name: "frecency" | "history") => join(folder, "fff", name);
 
@@ -175,6 +194,8 @@ export interface AgentSpec {
   files?: string[];
   /** The extensions of others the Agent runs with whose version the record keeps (pi-fff's), by name: the version installed, or null with none. */
   extensions?(): Record<string, string | null>;
+  /** Fingerprints of the Agent's own config files that apply to its runs all the same (pi's settings.json and models.json), by name: recorded, never scored. */
+  configFingerprints?(): Record<string, string | null>;
 }
 
 /** The run's project, in a command line for the record: each run has its own (`commandLine`). */
@@ -349,6 +370,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       for (const file of PI_EXTENSION) copyFileSync(fileURLToPath(new URL(file, import.meta.url)), join(piExtensionDir(folder), file));
     },
     extensions: () => ({ "pi-fff": piFffVersion() }),
+    configFingerprints: () => piConfigFingerprints(),
   },
 };
 
