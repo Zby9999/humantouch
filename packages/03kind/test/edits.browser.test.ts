@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CHECK_SETTLE_MS, CODE_EVENT, CODE_GLOBAL, type CheckReport, type CodeUpdates } from "../src/service-protocol";
 import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
-import { createChangeSet, type Change, type Place } from "../src/client/changeset";
+import { createChangeSet, type Change, type Created, type Place } from "../src/client/changeset";
 import { placedOnCanvas } from "../src/client/moves";
 import { checkAcross, checkChange, uncheckable, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
@@ -12,7 +12,9 @@ import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
-import type { Fill, PropertyValues, Shadow, Stroke } from "../src/client/property-table";
+import { definitionOf, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/property-table";
+import { resizeStep, type ResizeSession } from "../src/client/canvas-resize";
+import type { Shown } from "../src/client/view-layout";
 import { breakpointMarks } from "../src/client/BreakpointMark";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
@@ -4286,6 +4288,16 @@ describe("changes to the structure are checked on the live page", () => {
     },
   );
 
+  test("a layer placed from its right edge that the canvas places absolute in a view by its `left` and its `right` both, as wide as it is set, centered there by auto margins, right to left: neither side wins there, so its `right` is taken to place nothing there, as left to right (ticket 94, review)", async () => {
+    const { views, editor, changes, layer } = open(rightToLeft(fromTheRight("left: 8px; margin-inline: auto")));
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    expect([right.property, right.after, right.placedOtherwiseAt]).toEqual(["right", 32, [{ min: null, max: 800 }]]);
+  });
+
   test.each([
     ["left to right", (html: string) => html, { outcome: "shown" }],
     ["right to left", rightToLeft, { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
@@ -4556,6 +4568,110 @@ ${html}${body} style="margin: 0">
       expect(left()).toBeCloseTo(was - 20, 1);
     },
   );
+
+  /** The ticket's example: a board 400px wide, its tag placed by its `left` and its `right` both, 50px wide (ticket 94). */
+  const bothSides = `<!DOCTYPE html>
+<body style="margin: 0">
+  <style>
+    #board { position: relative; width: 400px; height: 100px }
+    #tag { position: absolute; left: 10px; right: 30px; top: 8px; width: 50px; height: 20px }
+  </style>
+  <div id="board" ${loc("13:5")}><span id="tag" ${loc("14:7")}>Tag</span></div>
+</body>`;
+
+  test.each([
+    ["left to right", (html: string) => html, 10, [["x", 10, 300]]],
+    ["right to left", rightToLeft, 320, [["right", 30, 50]]],
+  ] as const)(
+    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, %s: its X reads where the browser draws it from its container's left, and an X typed, a nudge or a drag lands it there, by the side the browser goes by (ticket 94)",
+    (_, laidOut, x, changed) => {
+      const { doc, editor, changes, layer } = open(laidOut(bothSides));
+      const tag = doc.getElementById("tag")!;
+      const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+      expect(drawn()).toBeCloseTo(x, 1);
+      expect([editor.read(layer("tag"), "x"), editor.read(layer("tag"), "y"), editor.read(layer("tag"), "absolute")]).toEqual([x, 8, { x, y: 8 }]);
+      const moves = [
+        ["typed", () => editor.set(layer("tag"), "x", 300)],
+        ["nudged", () => editor.nudge([layer("tag")], 300 - x, 0)],
+        ["dragged", () => editor.move(layer("tag"), { parent: layer("board"), x: 300, y: 8 })],
+      ] as const;
+      for (const [how, move] of moves) {
+        move();
+        expect([how, changes.list().map((change) => [change.property, change.before, change.after])]).toEqual([how, changed]);
+        expect([how, drawn()]).toEqual([how, expect.closeTo(300, 1)]);
+        expect([how, editor.read(layer("tag"), "x")]).toEqual([how, 300]);
+        editor.undo();
+        expect([how, drawn()]).toEqual([how, expect.closeTo(x, 1)]);
+      }
+    },
+  );
+
+  test.each([
+    ["left to right", (html: string) => html],
+    ["right to left", rightToLeft],
+  ] as const)(
+    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, centered by auto margins (`inset-x-0 mx-auto`), %s: the margins take up the room, so neither side wins, it is placed from its left, and an X typed, a nudge or a drag lands it there (ticket 94, review)",
+    (_, laidOut) => {
+      const { doc, editor, changes, layer } = open(laidOut(bothSides.replace("left: 10px; right: 30px", "left: 0; right: 0; margin-inline: auto")));
+      const tag = doc.getElementById("tag")!;
+      const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+      expect([drawn(), editor.read(layer("tag"), "x")]).toEqual([expect.closeTo(175, 1), 0]);
+      const moves = [
+        ["typed", () => editor.set(layer("tag"), "x", 300), 300],
+        ["nudged", () => editor.nudge([layer("tag")], -20, 0), -20],
+        ["dragged", () => editor.move(layer("tag"), { parent: layer("board"), x: 300, y: 8 }), 300],
+      ] as const;
+      for (const [how, move, x] of moves) {
+        move();
+        expect([how, changes.list().map((change) => [change.property, change.before, change.after])]).toEqual([how, [["x", 0, x]]]);
+        expect([how, drawn()]).toEqual([how, expect.closeTo(x, 1)]);
+        editor.undo();
+        expect([how, drawn()]).toEqual([how, expect.closeTo(175, 1)]);
+      }
+    },
+  );
+
+  test("a layer placed absolute by its `left` and its `right` both, held 50px wide by its `max-width`, right to left: resized from its left handle, its left edge goes as far as the handle, from where it is drawn (ticket 94, review)", () => {
+    const { doc, editor, layer } = open(rightToLeft(bothSides.replace("width: 50px", "max-width: 50px")));
+    const tag = doc.getElementById("tag")!;
+    const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+    const view = { boxOf: (l: Layer) => l.el.getBoundingClientRect(), elementOf: (el: Element) => el };
+    const session: ResizeSession = { pointerId: 1, layer: layer("tag"), in: { view } as unknown as Shown, handle: "w", from: { clientX: 0, clientY: 0 }, begun: null, stepped: false, set: new Set(), release: () => {} };
+    const step = resizeStep(session, editor, { clientX: 20, clientY: 0, metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }, 1, 0)!;
+    expect(step.to).toEqual({ width: 30, x: 340 });
+    editor.resize(layer("tag"), step.to);
+    expect([drawn(), tag.getBoundingClientRect().width]).toEqual([expect.closeTo(340, 1), expect.closeTo(30, 1)]);
+  });
+
+  test("a layer placed absolute by its `left` and its `right` both, as wide as it is set, right to left, moved into another Frame: its place before is where it is drawn, so the move taken back puts it there again (ticket 94, review)", () => {
+    const html = rightToLeft(bothSides.replace("</div>", `</div><div id="other" ${loc("15:5")} style="position: relative; width: 200px; height: 100px"></div>`));
+    const { doc, editor, changes, layer } = open(html);
+    const tag = () => doc.getElementById("tag")!;
+    const drawn = () => tag().getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+    editor.move(layer("tag"), { parent: layer("other"), x: 10, y: 10 });
+    const [moved] = changes.list();
+    expect((moved.before as Place).absolute).toMatchObject({ x: 320, y: 8, placed: { x: { edge: "end", px: 30 } } });
+    editor.revert(moved.id);
+    expect(tag().parentElement!.id).toBe("board");
+    expect(drawn()).toBeCloseTo(320, 1);
+  });
+
+  test("a layer placed absolute whose `left` computes to `auto`, under an element not shown: its X reads as no number, as before ticket 94 (ticket 94, review)", () => {
+    const { doc } = open(bothSides.replace('<span id="tag"', '<div style="display: none"><span id="hidden" style="position: absolute">Hidden</span></div><span id="tag"'));
+    const hidden = doc.getElementById("hidden")!;
+    expect(getComputedStyle(hidden).left).toBe("auto");
+    expect([definitionOf("x").read(hidden, undefined as never), definitionOf("y").read(hidden, undefined as never)]).toEqual([NaN, NaN]);
+  });
+
+  test("a layer placed absolute by its `left` and its `right` both, held 50px wide by its `max-width`, right to left: its X reads where the browser draws it, and an X typed lands it there, written as X, as the canvas reads its width from what is declared (ticket 94, ticket 89's 代定 2)", () => {
+    const { doc, editor, changes, layer } = open(rightToLeft(bothSides.replace("width: 50px", "max-width: 50px")));
+    const tag = doc.getElementById("tag")!;
+    const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+    expect([drawn(), editor.read(layer("tag"), "x")]).toEqual([expect.closeTo(320, 1), 320]);
+    editor.set(layer("tag"), "x", 300);
+    expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual([["x", 320, 300]]);
+    expect(drawn()).toBeCloseTo(300, 1);
+  });
 
   test.each([
     ["left", "left: 50%; right: auto; translate: -50% 0", "x"],
@@ -7257,3 +7373,166 @@ describe("new words, as the page checks them (ticket 90)", () => {
     expect(uncheckable(words, [maker, words])).toBe("the layer is new this round: the page checks its words with the change that makes it (change 1)");
   });
 });
+
+/**
+ * Ticket 95: the changes the page does not check that fell to the reason for
+ * the structure ("of the changes to the structure, only reorders, …"): each
+ * where that reason is wrong for it gets one of its own; where it is right, it
+ * stays word for word. The page checks none of them more than before.
+ */
+describe("why the page cannot check a change to the structure (ticket 95)", () => {
+  const STRUCTURE = "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
+  const LOOP = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
+  const item = `data-tk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+  const LIST = `<!DOCTYPE html>
+    <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column; position: relative; width: 200px; height: 200px">
+      <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
+    </ul>
+    <div id="board" ${at("13:5")} style="width: 300px; height: 200px"></div>`;
+  /** The reason of the round's only change, or of its last. */
+  const reasonOf = (changes: { list(): Change[] }) => uncheckable(changes.list().at(-1)!, changes.list());
+
+  test("one of a loop's instances alone deleted, copied or moved: the change is to the data, and the page cannot tell the instances apart", () => {
+    const deleted = openCanvas();
+    deleted.editor.remove(deleted.layerOf(deleted.cards[1]));
+    expect(deleted.changes.list()[0]).toMatchObject({ kind: "delete", data: true });
+    expect(reasonOf(deleted.changes)).toBe(LOOP);
+
+    const copied = openCanvas();
+    copied.editor.duplicate(copied.layerOf(copied.cards[0]));
+    expect(copied.changes.list()[0]).toMatchObject({ kind: "duplicate", data: true });
+    expect(reasonOf(copied.changes)).toBe(LOOP);
+
+    const reordered = openCanvas(LIST);
+    const li = (canvas: typeof reordered, n: number) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.querySelectorAll("li")[n])!;
+    const list = (canvas: typeof reordered) => find(canvas.editor.tree().root, (l) => l.el.id === "list")!;
+    reordered.editor.move(li(reordered, 1), { parent: list(reordered), index: 0 });
+    expect(reordered.changes.list()[0]).toMatchObject({ kind: "move", data: true });
+    expect(reasonOf(reordered.changes)).toBe(LOOP);
+
+    const placed = openCanvas(LIST);
+    placed.editor.move(li(placed, 2), { parent: list(placed), x: 20, y: 30 });
+    expect(placed.changes.list()[0]).toMatchObject({ kind: "move", data: true, after: { absolute: { x: 20, y: 30 } } });
+    expect(reasonOf(placed.changes)).toBe(LOOP);
+  });
+
+  test("one of a loop's instances moved into another container, or among text that runs on: still the data's reason", () => {
+    const { changes, editor, doc } = openCanvas(LIST);
+    editor.move(find(editor.tree().root, (l) => l.el === doc.querySelectorAll("li")[0])!, { parent: find(editor.tree().root, (l) => l.el.id === "list")!, index: 2 });
+    const reorder = changes.list()[0];
+    const elsewhere = { ...reorder, after: { ...(reorder.after as Place), container: { layer: "other", target: { ...(reorder.after as Place).container.target, loc: "src/App.tsx:13:5" } } } };
+    expect(uncheckable(elsewhere, [elsewhere])).toBe(LOOP);
+    const amongText = { ...reorder, order: null };
+    expect(uncheckable(amongText, [amongText])).toBe(LOOP);
+  });
+
+  test("a reorder in a container the page cannot find: why it cannot find the container", () => {
+    // A new Stack: no marker to find it by.
+    const stacked = openCanvas(MOVES);
+    const layer = (id: string) => find(stacked.editor.tree().root, (l) => l.el === stacked.doc.getElementById(id) && !l.text)!;
+    stacked.editor.stack([layer("a"), layer("b")]);
+    const stack = layer("a").parent!;
+    stacked.editor.move(layer("b"), { parent: stack, index: 0 });
+    const move = stacked.changes.list().at(-1)!;
+    expect(move).toMatchObject({ kind: "move", before: { container: { layer: stack.el.getAttribute("data-tk-layer") } } });
+    expect(reasonOf(stacked.changes)).toBe("its container is new this round (a copy, a layer put back or a new Stack), so the page has no marker to find it by");
+
+    // A container with no source marker.
+    const unmarked = openCanvas(MOVES.replace(`<div id="list" ${at("5:5")}`, '<div id="list"'));
+    const own = (id: string) => find(unmarked.editor.tree().root, (l) => l.el === unmarked.doc.getElementById(id) && !l.text)!;
+    unmarked.editor.move(own("c"), { parent: own("list"), index: 0 });
+    const unmarkedMove = unmarked.changes.list()[0];
+    expect(unmarkedMove.order).toBeTruthy();
+    expect(uncheckable(unmarkedMove, [unmarkedMove])).toBe("its container has no source marker, so the page cannot find it");
+    const placedThere: Change = { ...unmarkedMove, after: { ...(unmarkedMove.after as Place), absolute: { x: 10, y: 20 } }, order: undefined };
+    expect(uncheckable(placedThere, [placedThere])).toBe("its container has no source marker, so the page cannot find it");
+
+    // Not what the page would check were the container found: as before, text running on among its layers, and a move back into its layout.
+    const amongText: Change = { ...unmarkedMove, order: null };
+    expect(uncheckable(amongText, [amongText])).toBe("text runs on among the layers of its container, so the page cannot tell their order");
+    const intoLayout: Change = { ...unmarkedMove, before: { ...(unmarkedMove.before as Place), absolute: { x: 10, y: 20 } } };
+    expect(uncheckable(intoLayout, [intoLayout])).toBe(STRUCTURE);
+
+    // One made in a round before.
+    const [reorder] = (() => {
+      const opened = openCanvas(MOVES);
+      const layer = (id: string) => find(opened.editor.tree().root, (l) => l.el === opened.doc.getElementById(id) && !l.text)!;
+      opened.editor.move(layer("c"), { parent: layer("list"), index: 0 });
+      return opened.changes.list();
+    })();
+    const before = { ...(reorder.before as Place).container, target: { ...(reorder.before as Place).container.target, loc: null, made: "9" } };
+    const inMadeBefore = { ...reorder, before: { ...(reorder.before as Place), container: before }, after: { ...(reorder.after as Place), container: before } };
+    expect(uncheckable(inMadeBefore, [inMadeBefore])).toBe("its container was made in a round before, and the page cannot find it");
+
+    // A new Frame, as a round carried over may have one a layer was moved into in the round before: the page finds it, but checks no move in it.
+    const framed = openCanvas(MOVES);
+    framed.editor.create("frame", { parent: find(framed.editor.tree().root, (l) => l.el.id === "row")!, index: 1 });
+    const [maker] = framed.changes.list();
+    const frame = { layer: maker.layer, target: { ...maker.target, loc: null, made: maker.layer } };
+    const inFrame = { ...reorder, id: 2, before: { ...(reorder.before as Place), container: frame }, after: { ...(reorder.after as Place), container: frame } };
+    expect(uncheckable(inFrame, [maker, inFrame])).toBe("its container is new this round, and the page checks no move in it");
+
+    // The same new Frame, in a container with no source marker: the page cannot find the Frame either.
+    const unmarkedRow = { ...maker, after: { ...(maker.after as Created), place: { ...(maker.after as Created).place, container: { ...(maker.after as Created).place.container, target: { ...(maker.after as Created).place.container.target, loc: null } } } } };
+    expect(uncheckable(inFrame, [unmarkedRow, inFrame])).toBe("its container is new this round, in a container the page cannot find");
+  });
+
+  test("a Frame's only text, as a button's words are, placed freely in that Frame: it has no element of its own on the page", () => {
+    const { editor, changes } = openCanvas(`<!DOCTYPE html><body style="margin: 0"><div id="button" ${at("3:5")} style="width: 200px; height: 100px; background-color: rgb(255, 0, 0)">Go</div></body>`);
+    const button = find(editor.tree().root, (l) => l.el.id === "button" && !l.text)!;
+    expect(button.framesText).toBe(true);
+
+    editor.move(button.children[0], { parent: button, x: 10, y: 20 });
+
+    expect(changes.list()[0]).toMatchObject({ kind: "move", wrap: true, target: { onlyText: true }, after: { absolute: { x: 10, y: 20 } } });
+    expect(changes.list()[0].target.run).toBeUndefined();
+    expect(reasonOf(changes)).toBe("the text has no element of its own on the page");
+
+    // Dragged again, now in the `<span>` the canvas wrapped it in: still the one move, as first recorded.
+    editor.move(find(editor.tree().root, (l) => l.el.parentElement?.id === "button" && l.el.localName === "span")!, { parent: button, x: 30, y: 40 });
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ wrap: true, target: { onlyText: true }, after: { absolute: { x: 30, y: 40 } } });
+    expect(reasonOf(changes)).toBe("the text has no element of its own on the page");
+  });
+
+  test("where the reason for the structure is right, it stays word for word: a copy, a layer put back, a Stack made or dissolved, a move into another container, into a layout from a place of its own", () => {
+    const moves = () => {
+      const canvas = openCanvas(MOVES);
+      const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+      return { ...canvas, layer };
+    };
+
+    const copied = moves();
+    copied.editor.duplicate(copied.layer("a"));
+    expect(copied.changes.list()[0]).toMatchObject({ kind: "duplicate" });
+    expect(copied.changes.list()[0].data).toBeUndefined();
+    expect(reasonOf(copied.changes)).toBe(STRUCTURE);
+
+    const stacked = moves();
+    stacked.editor.stack([stacked.layer("a"), stacked.layer("b")]);
+    expect(reasonOf(stacked.changes)).toBe(STRUCTURE);
+
+    const dissolved = moves();
+    dissolved.editor.unstack(dissolved.layer("list"));
+    expect(dissolved.changes.list()[0]).toMatchObject({ kind: "unstack" });
+    expect(reasonOf(dissolved.changes)).toBe(STRUCTURE);
+
+    const elsewhere = moves();
+    elsewhere.editor.move(elsewhere.layer("b"), { parent: elsewhere.layer("row"), index: 1 });
+    expect(reasonOf(elsewhere.changes)).toBe(STRUCTURE);
+
+    // A layer put back, as the editor records one (a layer off the canvas, back at a place of its own).
+    const [moved] = copied.changes.list();
+    const putBack: Change = { ...moved, id: 2, kind: "putBack", property: "put back", before: null, after: { place: moved.after, layer: { id: "a1" } } };
+    expect(uncheckable(putBack, [putBack])).toBe(STRUCTURE);
+
+    const elsewhereFree = moves();
+    elsewhereFree.editor.move(elsewhereFree.layer("b"), { parent: elsewhereFree.layer("board"), x: 40, y: 30 });
+    expect(reasonOf(elsewhereFree.changes)).toBe(STRUCTURE);
+
+    const [free] = elsewhereFree.changes.list();
+    const back: Change = { ...free, before: { ...(free.after as Place), nth: 1 }, after: { ...(free.after as Place), absolute: null, nth: 1 }, order: { signs: ["div B"], self: 0, others: [] } };
+    expect(uncheckable(back, [back])).toBe(STRUCTURE);
+  });
+});
+
