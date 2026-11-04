@@ -114,10 +114,10 @@ async function watchVariables(context: BrowserContext) {
 
 /**
  * Waits for the project's Variables to be in, once edit mode has been entered.
- * They come in after the canvas; the Design panel's fields are then drawn
- * anew, each beside its Variables button, and a field filled or clicked before
- * that loses it: an Enter pressed next applies nothing. On a busy machine they
- * took seconds (ticket 93).
+ * They come in after the canvas; until then the Design panel shows no
+ * Variables buttons and typing offers no Variables. A field typed into as they
+ * come in keeps what is typed (ticket 98). On a busy machine they took seconds
+ * (ticket 93).
  *
  * The Shell asks for them as it mounts (`useState(loadVariables)`), when the
  * dev server set up the local service: the request is made before the canvas

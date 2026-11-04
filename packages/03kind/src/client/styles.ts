@@ -849,6 +849,8 @@ export const styles = /* css */ `
   min-width: 0;
 }
 .tk-variable-slot > .tk-field { min-width: 0; }
+/* A field with no Variables to offer (yet): laid out as if it were where its slot is, so the slot stays around it as they come in. */
+.tk-variable-slot.is-alone { display: contents; }
 .tk-variable-button { width: 20px; color: var(--tk-text-muted); }
 .tk-variable-chip { gap: 4px; padding-right: 0; }
 .tk-variable-chip-name {
