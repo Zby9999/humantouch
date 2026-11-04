@@ -6,14 +6,14 @@
 
 **Blocked by:** 无
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 先复现，用剧本（脚本扮演 Agent，不跑真实 Agent）：测量台的 `data-and-text` 场景（删掉 Arrange 卡片、复制 Freeze 卡片），`done` 现在对这两条说的是兜底那句
-- [ ] 循环里的一项被删除、复制、调换顺序或挪走时，`done` 说它自己的一句原因（说清是循环所用的数据、页面分不清循环里的每一份），`finish` 报告里相应的地方跟着用；说法由这条线代定，等设计师确认
-- [ ] 把所有落到兜底那句的情况列一遍：兜底那句对它说得对的（例如复制一个不在循环里的图层），照旧；说得不对的，各给准确的原因，照现有原因的口吻
-- [ ] 改动说明（`claim`）「How the page checks」一节里核不了的名目，和新的原因说法对得上（已有「a change to one of a loop's instances alone」，看要不要跟着改）
-- [ ] 没有这类改动的一轮，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变
-- [ ] 测量台的标准场景跑 `--dry` / `--scripted`：只有含这类改动的场景（`data-and-text` 等）那几行变了，别的逐字不变
+- [x] 先复现，用剧本（脚本扮演 Agent，不跑真实 Agent）：测量台的 `data-and-text` 场景（删掉 Arrange 卡片、复制 Freeze 卡片），`done` 现在对这两条说的是兜底那句
+- [x] 循环里的一项被删除、复制、调换顺序或挪走时，`done` 说它自己的一句原因（说清是循环所用的数据、页面分不清循环里的每一份），`finish` 报告里相应的地方跟着用；说法由这条线代定，等设计师确认
+- [x] 把所有落到兜底那句的情况列一遍：兜底那句对它说得对的（例如复制一个不在循环里的图层），照旧；说得不对的，各给准确的原因，照现有原因的口吻
+- [x] 改动说明（`claim`）「How the page checks」一节里核不了的名目，和新的原因说法对得上（已有「a change to one of a loop's instances alone」，看要不要跟着改）
+- [x] 没有这类改动的一轮，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变
+- [x] 测量台的标准场景跑 `--dry` / `--scripted`：只有含这类改动的场景（`data-and-text` 等）那几行变了，别的逐字不变
 
 ## 背景
 
@@ -173,3 +173,12 @@ Not checked on the page: the change is to the data the loop goes through, and th
 3. **散字（一段字里的一截）在同一个容器里挪动**，`claim` 照旧同时归进「a change to a layer the page cannot find」和「a move into another container, or into a layout from a place of its own」两项（原来就这样，没动，免得别的一轮的 `claim` 变）。审查找到的同类一例：先在手机视图里把按钮里的字自由定位（编辑层给它包上 `<span>`，记成样式改动），再回桌面视图把这个 `<span>` 拖到按钮里别的位置；这条移动的 `target.run` 是 0、没有 `wrap`、没有 `onlyText`，`done` 说「the text has no element of its own on the page」（对），`claim` 却同时列进上面两项。改法是 `writing-rules.ts` 的 `movedUnchecked` 排除 `target.run !== undefined`，但这会让所有有散字移动的一轮 `claim` 都变，留给设计师定。
 4. **循环里的一项没有源码标记时**，`done` 说没有标记，`claim` 说是循环里的一项（见代定第 9 条），两边说法不同，都不算错。
 5. **跑基线时的两次环境问题**：改前的 `--scripted` 第一遍 `variables` 等 locator 超时、`r18-phone-and-stack` 时 Node 的 socket 报 `setTypeOfService EINVAL` 整个进程退出（机器忙，别的线也在跑），剩下 4 个单独重跑全过。
+
+**合并前全量（2026-11-04，指挥，同步 main 981cbe6 后的 d4ac8c0，含审查修正 5fe6045）**
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：vitest 34 个文件，904 passed、1 skipped；node 测试全过。
+- `TK_E2E_PORT=5400 pnpm test:e2e`：420 passed、1 skipped，没有失败。
+- `TK_BENCH_PORT=5440 node e2e/bench/run-agents.ts --scripted`：15 个有脚本的场景一遍全过（审查修正后第一次跑 `--scripted`）。
+- 切换按钮的包：`react.dev.js`（c83849f1…）、`chunk-UQJRS7YD.js`（cdd6f09d…）sha256 和 cef746d 相同。
+
