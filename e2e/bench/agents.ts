@@ -11,11 +11,11 @@
 import { execFile, spawn } from "node:child_process";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
-import { SHELL } from "./allowlist.ts";
+import { realPath, SHELL } from "./allowlist.ts";
 import type { AgentName } from "./metrics.ts";
 
 const execFileAsync = promisify(execFile);
@@ -152,8 +152,12 @@ const piExtensionDir = (folder: string) => join(folder, "pi-extension");
 export interface AgentSpec {
   /** Where the Agent's binary is; an environment variable names another. */
   binary(): string;
-  /** The arguments, after the binary: the same for every run but where the run's own files go, in `folder`, and what the Agent is told. */
-  args(folder: string, prompt?: string): string[];
+  /**
+   * The arguments, after the binary: the same for every run but where the
+   * run's own files go, in `folder`, what the Agent is told, and the run's
+   * project (`project`, the placeholder `PROJECT` for the record).
+   */
+  args(folder: string, prompt?: string, project?: string): string[];
   /** The model every run is to be on, as the transcript names it: a run on another stops the bench. */
   model: string;
   /** The reasoning effort the arguments set, for the record. */
@@ -162,8 +166,32 @@ export interface AgentSpec {
   effortSeen?(folder: string): string | null;
   /** Done before the Agent starts: in the project, `dir`, and in the run's own folder. What it returns goes in the run's record. */
   prepare?(dir: string, folder: string): Pick<AgentRun, "headlessShell"> | void;
+  /**
+   * What `prepare` puts in the project, by path from its root (a folder ends
+   * in `/`): the bench's, not the Agent's work. Kept out of git in each run's
+   * copy (so out of the diff), and out of the source a scenario's expectation
+   * compares with the round's start (`sourceAsAtStart`).
+   */
+  files?: string[];
   /** The extensions of others the Agent runs with whose version the record keeps (pi-fff's), by name: the version installed, or null with none. */
   extensions?(): Record<string, string | null>;
+}
+
+/** The run's project, in a command line for the record: each run has its own (`commandLine`). */
+export const PROJECT = "<project>";
+
+/**
+ * Claude's rules for the Skill's own undo and its viewing command, as
+ * `npx 03kind last` prints them (`git -C "<repo>" diff …`, `… | git -C
+ * "<repo>" apply`, the repository by its real path), for the run's own
+ * project only: by that path and as the bench names it, quoted and not;
+ * `apply` as it is, the patch on its input, not by prefix. No bare `git
+ * apply`: it applies wherever the shell is, `.git` too after a `cd`.
+ */
+function undoRules(project: string): string[] {
+  const dirs = [...new Set([isAbsolute(project) ? realPath(project) : project, project])];
+  const gits = dirs.flatMap((dir) => [`git -C "${dir}"`, `git -C ${dir}`]);
+  return [...gits.map((git) => `Bash(${git} diff:*)`), ...gits.map((git) => `Bash(${git} apply)`)];
 }
 
 export const AGENTS: Record<AgentName, AgentSpec> = {
@@ -174,7 +202,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     effort: "high (--effort high)",
     // In its debug log only.
     effortSeen: (folder) => /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(readOr(join(folder, "claude-debug.log")))?.[1] ?? null,
-    args: (folder, prompt = PROMPT) => [
+    args: (folder, prompt = PROMPT, project = PROJECT) => [
       "-p",
       prompt,
       "--output-format",
@@ -198,7 +226,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--permission-mode",
       "acceptEdits",
       "--allowedTools",
-      ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "TodoWrite", "Skill", ...SHELL.map((command) => `Bash(${command}:*)`)].join(","),
+      ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "TodoWrite", "Skill", ...SHELL.map((command) => `Bash(${command}:*)`), ...undoRules(project)].join(","),
       "--disallowedTools",
       "WebFetch,WebSearch",
     ],
@@ -228,6 +256,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "enabled",
       ...BROWSER_PLUGINS.flatMap((name) => ["--plugin-dir", pluginDir(folder, name)]),
     ],
+    files: [".cursor/"],
     prepare(dir, folder) {
       mkdirSync(join(dir, ".cursor"), { recursive: true });
       const shell = [...new Set(SHELL.map((command) => command.split(" ")[0]))].map((command) => `Shell(${command})`);
@@ -322,10 +351,13 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
   },
 };
 
+/** What the bench puts in a run's project for any of the Agents (`AgentSpec.files`). */
+export const BENCH_FILES = [...new Set(Object.values(AGENTS).flatMap((spec) => spec.files ?? []))];
+
 /** The command line as a person would type it, for the record; `spec`, another way of running it (the install bench's). */
 export function commandLine(agent: AgentName, prompt = PROMPT, spec: Pick<AgentSpec, "binary" | "args"> = AGENTS[agent]): string {
   const { binary, args } = spec;
-  return [binary(), ...args("<run folder>", prompt)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
+  return [binary(), ...args("<run folder>", prompt, PROJECT)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
 export async function agentVersion(agent: AgentName): Promise<string> {
@@ -414,7 +446,7 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
   const spec = { ...AGENTS[agent], ...options.spec };
   const prepared = spec.prepare?.(dir, folder);
   const startedAt = Date.now();
-  const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: options.env ?? cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const child = spawn(spec.binary(), spec.args(folder, prompt, dir), { cwd: dir, env: options.env ?? cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
   if (child.pid) options.onStart?.(child.pid);
   // Only looked at, never stopped: a window that came up is for the record.
   const headed = new Set<string>();

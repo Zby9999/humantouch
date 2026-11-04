@@ -372,10 +372,26 @@ export function checkReport(text: string, ids: number[]): ReportCheck {
   const problems: string[] = [];
   const timesListed = (id: number) => listed.filter((item) => item.id === id).length;
   for (const id of new Set(listed.map((item) => item.id))) if (timesListed(id) > 1) problems.push(`change ${id} listed more than once`);
-  for (const item of listed) if (item.warned && item.notes < 2) problems.push(`change ${item.id} under ⚠️ without both why and instead`);
+  for (const item of listed) if (item.warned && item.notes < 2) problems.push(unexplained(item.id));
   for (const id of ids) if (!timesListed(id)) problems.push(`change ${id} not listed`);
   const unique = (warnedOnes: boolean) => [...new Set(listed.filter((item) => item.warned === warnedOnes).map((item) => item.id))];
   return { compliant: !problems.length, applied: unique(false), notApplied: unique(true), problems };
+}
+
+/** The problem of a change listed under ⚠️ without both lines, why and instead. */
+const unexplained = (id: number) => `change ${id} under ⚠️ without both why and instead`;
+
+/**
+ * Of the changes a scenario knows cannot be applied 1:1 (ticket 86), the
+ * share the report gives right: under ⚠️ alone, with why and instead; or
+ * under ✓ alone with the page showing it (`shown`, by the scenario's own
+ * test), an Agent that found a way after all. Null when the run has none.
+ */
+export function reportedAsExpected(report: ReportCheck, expected: { id: number; shown: boolean | null }[]): number | null {
+  if (!expected.length) return null;
+  const warned = (id: number) => report.notApplied.includes(id) && !report.applied.includes(id) && !report.problems.includes(unexplained(id));
+  const applied = (id: number, shown: boolean | null) => report.applied.includes(id) && !report.notApplied.includes(id) && shown === true;
+  return expected.filter(({ id, shown }) => warned(id) || applied(id, shown)).length / expected.length;
 }
 
 /** A change of the scenario, as the run left it. */
@@ -385,6 +401,8 @@ export interface ChangeOutcome {
   checkable: boolean;
   /** Whether the page shows it at the end, by the scenario's own expectation; null when the scenario has none (a brief). */
   shown: boolean | null;
+  /** One the scenario knows cannot be applied 1:1 (ticket 86): in no 1:1 rate, but a false ✓ all the same when listed under ✓ and not shown. */
+  notOneToOne?: boolean;
 }
 
 export interface RunInput {
@@ -406,10 +424,12 @@ export interface RunMeasures {
   applyMsPerChange: number;
   /** Changes the page can check that got a check (shown or not) before the round ended. */
   checked: number;
-  /** 1:1 applied, by the page's checks (goals: the `done` check, not the Agent's word), of the changes the page can check; null with none. */
+  /** 1:1 applied, by the page's checks (goals: the `done` check, not the Agent's word), of the changes the page can check and that can be applied 1:1; null with none. */
   oneToOneByChecks: number | null;
-  /** 1:1 applied, by what the page shows at the end, of the changes the scenario has an expectation for; null with none. */
+  /** 1:1 applied, by what the page shows at the end, of the changes the scenario has an expectation for and that can be applied 1:1; null with none. */
   oneToOneByPage: number | null;
+  /** The two 1:1 rates' parts and wholes, to be summed up over runs (`pooled`), not taken run by run. */
+  oneToOneCounts: { byChecks: { part: number; whole: number }; byPage: { part: number; whole: number } };
   /** Changes the report lists as applied that the page does not show (by the expectation; else by the last check). */
   falseChecks: number[];
   /** The longest wait between two bits of progress; null with fewer than two. */
@@ -424,9 +444,10 @@ export interface RunMeasures {
 export function measureRun({ changes, checks, report, times }: RunInput): RunMeasures {
   const end = times.finish ?? times.end;
   const applyMs = end - times.claim;
-  const checkable = changes.filter((change) => change.checkable);
+  const oneToOne = changes.filter((change) => !change.notOneToOne);
+  const checkable = oneToOne.filter((change) => change.checkable);
   const outcome = (id: number) => checks[id]?.outcome;
-  const expected = changes.filter((change) => change.shown !== null);
+  const expected = oneToOne.filter((change) => change.shown !== null);
   const rate = (part: number, whole: number) => (whole ? part / whole : null);
   const notShown = (id: number) => {
     const change = changes.find((c) => c.id === id);
@@ -437,12 +458,15 @@ export function measureRun({ changes, checks, report, times }: RunInput): RunMea
     const sorted = [...moments].sort((a, b) => a - b);
     return sorted.length < 2 ? null : Math.max(...sorted.slice(1).map((t, i) => t - sorted[i]));
   };
+  const byChecks = { part: checkable.filter((change) => outcome(change.id) === "shown").length, whole: checkable.length };
+  const byPage = { part: expected.filter((change) => change.shown).length, whole: expected.length };
   return {
     applyMs,
     applyMsPerChange: applyMs / changes.length,
     checked: checkable.filter((change) => ["shown", "not shown"].includes(outcome(change.id) ?? "")).length,
-    oneToOneByChecks: rate(checkable.filter((change) => outcome(change.id) === "shown").length, checkable.length),
-    oneToOneByPage: rate(expected.filter((change) => change.shown).length, expected.length),
+    oneToOneByChecks: rate(byChecks.part, byChecks.whole),
+    oneToOneByPage: rate(byPage.part, byPage.whole),
+    oneToOneCounts: { byChecks, byPage },
     falseChecks: report.applied.filter(notShown),
     maxProgressGapMs: longestGap(within(times.progress)),
     maxStillMs: longestGap([times.claim, ...within([...times.progress, ...times.edits]), end])!,
@@ -459,16 +483,52 @@ export function summarize(values: (number | null)[]): { median: number | null; m
 }
 
 /**
- * Whether the Agent's diff writes one of `variables` (a Variable's class or
- * CSS variable) as a whole word (`md:text-5xl!` writes `text-5xl`; `text-5xl`
- * does not write `text-5`), more often in the lines it adds than in those it
- * takes out: a line rewritten for another change carries its classes along.
+ * A rate pooled over runs: the parts of each run summed, over their wholes
+ * summed (goals: of all the changes with a Variable, the share that use it),
+ * not a run's rate in the middle of the others'. Runs with none are left out;
+ * null when none has any.
  */
-export function usesVariable(diff: string, variables: string[]): boolean {
+export function pooled(counts: ({ part: number; whole: number } | null)[]): { rate: number | null; part: number; whole: number } {
+  const part = counts.reduce((total, count) => total + (count?.part ?? 0), 0);
+  const whole = counts.reduce((total, count) => total + (count?.whole ?? 0), 0);
+  return { rate: whole ? part / whole : null, part, whole };
+}
+
+/**
+ * The Variables a change is to write, as its scenario names them: one of a
+ * list (`["text-brand", "--color-brand"]`: its class or its CSS variable),
+ * or, for a value of several parts each its own Variable, a list of parts,
+ * every one of them written, each one of its own list
+ * (`[["pt-3"], ["pr-6"], …]`: a padding of four sides).
+ */
+export type VariableNames = string[] | string[][];
+
+/** A change's Variables as the parts that must all be written, each one of its names. */
+export function variableParts(variables: VariableNames): string[][] {
+  return variables.every(Array.isArray) ? (variables as string[][]) : [variables as string[]];
+}
+
+/**
+ * Whether the Agent's diff writes `variables` (see `VariableNames`): a name
+ * counts as written as a whole word (`md:text-5xl!` writes `text-5xl`;
+ * `text-5xl` does not write `text-5`), more often in the lines it adds than
+ * in those it takes out: a line rewritten for another change carries its
+ * classes along.
+ */
+export function usesVariable(diff: string, variables: VariableNames): boolean {
   const lines = diff.split("\n").filter((line) => !line.startsWith("+++") && !line.startsWith("---"));
   const count = (sign: string, name: string) => {
     const word = new RegExp(`(^|[^\\w-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\w-])`, "g");
     return lines.filter((line) => line.startsWith(sign)).reduce((total, line) => total + (line.slice(1).match(word)?.length ?? 0), 0);
   };
-  return variables.some((name) => count("+", name) > count("-", name));
+  return variableParts(variables).every((names) => names.some((name) => count("+", name) > count("-", name)));
+}
+
+/**
+ * Of a scenario's own expectations (ticket 86: an earlier round's changes kept, a
+ * round undone), the share that hold at the end; null with none.
+ */
+export function scenarioExpectationsHold(expectations: { atEnd: boolean }[] | undefined): number | null {
+  if (!expectations?.length) return null;
+  return expectations.filter((expectation) => expectation.atEnd).length / expectations.length;
 }

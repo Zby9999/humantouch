@@ -23,7 +23,10 @@
  * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
  * `pnpm exec`…) may run only the programs listed for it, past only its
  * `flags`, and no word may be one of its `options` (allowlist.ts,
- * runsAllowed). With no such file, nothing changes. Under the install list,
+ * runsAllowed), and the Skill's undo (`git -C` of the project, ticket 86)
+ * is not among them: it goes ahead only where a list says `undo`, as the
+ * applying list does. With no such
+ * file, nothing changes. Under the install list,
  * "nothing reaches ~/.pi" holds at the command line only: `npm run <script>`,
  * `npx vite` and `npx next` run code the Agent may have written with write or
  * edit (a package.json script, vite.config), which this does not read
@@ -31,9 +34,9 @@
  */
 import { existsSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backgroundServer, DENIED, deniedReason, runsAllowed, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
+import { backgroundServer, DENIED, deniedReason, realPath, runsAllowed, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
 
 /** As much of pi's extension API as the bench uses (`@earendil-works/pi-coding-agent`, which the repository does not install). */
 interface PiExtensionApi {
@@ -48,11 +51,16 @@ export interface ShellList {
   runners: Readonly<Record<string, readonly string[]>>;
   flags: readonly string[];
   options: readonly string[];
+  /** Whether the Skill's undo goes ahead (`git -C` of the project, ticket 86): off unless a list asks for it. */
+  undo?: boolean;
 }
+
+/** The applying bench's list, what pi is held to with no install list beside the extension. */
+const APPLYING: ShellList = { shell: SHELL, servers: [], runners: {}, flags: [], options: [], undo: true };
 
 /** The applying bench's list, or the install bench's when `file` is there. */
 function shellList(file: string): ShellList {
-  if (!existsSync(file)) return { shell: SHELL, servers: [], runners: {}, flags: [], options: [] };
+  if (!existsSync(file)) return APPLYING;
   const list = JSON.parse(readFileSync(file, "utf8"));
   for (const key of ["shell", "servers", "flags", "options"]) if (!Array.isArray(list[key])) throw new Error(`${file} has no ${key} list`);
   if (typeof list.runners !== "object" || !Object.values(list.runners).every(Array.isArray)) throw new Error(`${file} has no runners`);
@@ -82,19 +90,6 @@ const SEARCHES: Record<string, "path" | "constraints"> = {
 };
 /** The shell commands of the list that can read all below a folder. */
 const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
-
-/** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike: the real path of the nearest folder there is, and the rest. */
-function realPath(path: string): string {
-  const rest: string[] = [];
-  for (let dir = path; ; dir = dirname(dir)) {
-    try {
-      return join(realpathSync(dir), ...rest);
-    } catch {
-      if (dirname(dir) === dir) return path;
-      rest.unshift(basename(dir));
-    }
-  }
-}
 
 /** A path given to one of pi's tools, made absolute as pi does: an @ before it dropped, ~ for the home folder, a file:// URL. */
 function toolPath(path: unknown, cwd: string): string {
@@ -275,24 +270,41 @@ function shellReaches(command: string, cwd: string): "pi" | "out" | null {
   return null;
 }
 
+/** Why pi's tools or commands may not reach pi's own folder: `what` turned away. */
+const intoPi = (what: string) => `${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`;
+
+/**
+ * Why the bench turns a shell command line away, run in the project `cwd`
+ * under `list`; null when it goes ahead. pi's `bash` calls are held to it,
+ * and the scripted pass's commands (run-agents.ts). The Skill's undo (`git
+ * -C` of the project, ticket 86) goes ahead only on a list with `undo`, the
+ * applying one: the install bench's has no reason to undo a round. It keeps
+ * the shell's undo out of `.git`; it does not stop pi's write or edit from
+ * writing `.git/config` in the project directly (ticket 85: the fence is not
+ * a sandbox).
+ */
+export function shellDenied(command: string, cwd: string, list: ShellList = APPLYING): string | null {
+  const denied = deniedReason(command, list.shell, list.servers, list.undo === true);
+  const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
+  const project = list.undo === true ? cwd : undefined;
+  // A dev server in the background is checked as the command it runs, the paths in it too.
+  const checked = shellAllowed(command, list.shell, project) ? command : backgroundServer(command, list.servers, inProject);
+  if (checked === null) return denied;
+  if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
+    const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
+    return `${DENIED} npx and the like to run only these (${runners.join("; ")}), 03kind by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`;
+  }
+  const reaches = shellReaches(checked, cwd);
+  if (reaches === "out") return denied;
+  return reaches === "pi" ? intoPi(command) : null;
+}
+
 function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string, list: ShellList): { block: true; reason: string } | undefined {
   const { toolName, input } = event;
   const block = (reason: string) => ({ block: true as const, reason });
-  const intoPi = (what: string) => block(`${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`);
   if (toolName === "bash") {
-    const command = String(input.command ?? "");
-    const denied = () => block(deniedReason(command, list.shell, list.servers));
-    const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
-    // A dev server in the background is checked as the command it runs, the paths in it too.
-    const checked = shellAllowed(command, list.shell) ? command : backgroundServer(command, list.servers, inProject);
-    if (checked === null) return denied();
-    if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
-      const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
-      return block(`${DENIED} npx and the like to run only these (${runners.join("; ")}), 03kind by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`);
-    }
-    const reaches = shellReaches(checked, cwd);
-    if (reaches === "out") return denied();
-    return reaches === "pi" ? intoPi(command) : undefined;
+    const reason = shellDenied(String(input.command ?? ""), cwd, list);
+    return reason === null ? undefined : block(reason);
   }
   if (Object.hasOwn(SEARCHES, toolName)) {
     // Each folder it indexes, or with none the project; a folder above pi's own reaches it.
@@ -300,11 +312,11 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
     if (given !== undefined && typeof given !== "string") throw new Error("An argument that is no string");
     const words = SEARCHES[toolName] === "path" ? [given] : (given ?? "").split(/\s+/).filter((word) => word && !word.startsWith("!"));
     const paths = words.length ? words : [undefined];
-    return paths.some((word) => reachesPi(searchRoot(toolPath(word, cwd)), true)) ? intoPi(`${toolName} ${given ?? "."}`) : undefined;
+    return paths.some((word) => reachesPi(searchRoot(toolPath(word, cwd)), true)) ? block(intoPi(`${toolName} ${given ?? "."}`)) : undefined;
   }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);
-  if (reachesPi(path, false)) return intoPi(`${toolName} ${input.path ?? "."}`);
+  if (reachesPi(path, false)) return block(intoPi(`${toolName} ${input.path ?? "."}`));
   if ((toolName === "write" || toolName === "edit") && !realPath(path).startsWith(realPath(cwd) + sep)) {
     return block(`${DENIED} writing in the project only. Turned away: ${toolName} ${input.path}`);
   }

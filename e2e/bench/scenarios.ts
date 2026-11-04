@@ -1,6 +1,8 @@
 /**
- * The bench's standard scenarios: rounds a designer makes in the editor layer
- * on the Vite + React 19 + Tailwind v4 example, for an Agent to apply. Every
+ * The bench's standard scenarios on the Vite + React 19 + Tailwind v4
+ * example (`SCENARIOS`; with those on the other examples, `STANDARD_SCENARIOS`
+ * in `scenarios-other-examples.ts`): rounds a designer makes in the editor
+ * layer, for an Agent to apply. Every
  * kind of change is in one at least, breakpoint changes and layers moved off
  * the canvas and put back included. Each change says what the page shows once
  * it is applied, in words (for a person running the round by hand, ticket 24)
@@ -12,9 +14,10 @@
  * with the helpers here.
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
-import type { Change } from "../../packages/03kind/src/client/changeset.ts";
-import { PLACING } from "../../packages/03kind/src/client/checkable.ts";
+import type { Bindings, Change } from "../../packages/03kind/src/client/changeset.ts";
+import { checkable as pageChecks, PLACING } from "../../packages/03kind/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
+import type { VariableNames } from "./metrics.ts";
 
 /** What a scenario's designer works with: the page, and the project behind it. */
 export interface Desk {
@@ -28,6 +31,8 @@ export interface Desk {
   settle(message: string): Promise<void>;
   /** The round's ChangeSet as saved in `.03kind/`, or null. */
   changeSet(): { changes: SavedChange[] } | null;
+  /** Runs a shell command line in the project, as an Agent would: the bench's copy only (the e2e test has none), for `apply`. */
+  shell?(command: string): Promise<string>;
 }
 
 /** A change as the ChangeSet saves it; the bench reads only these. */
@@ -41,6 +46,8 @@ export interface SavedChange {
   /** A change at a breakpoint: its range, and the parts of it the page was read in (null: yet to be read; none: the range is one part). */
   breakpoint?: object;
   parts?: object[] | null;
+  /** Which part of its value is which Variable (null: none has it), for a value that is or could be one. */
+  variables?: Bindings;
 }
 
 /**
@@ -57,12 +64,46 @@ export interface ScenarioChange {
   expect: string;
   /** Whether the editor layer's page check can tell it (the Skill's list): not a Stack made or dissolved, a move into another container, a copy, a layer put back, a brief; a new layer is, by its place (ticket 76), and new words, by what the layer reads (ticket 90). */
   checkable: boolean;
-  /** The Variable the notes name for it, as the code may write it (its Tailwind class, or its CSS variable): the bench looks for one of these in the lines the Agent added. */
-  variable?: string[];
+  /**
+   * The Variable the notes name for it, as the code may write it (its Tailwind class, or its CSS variable): the bench looks for one of these
+   * in the lines the Agent added. For a value of several parts each its own Variable (a padding of four sides), a list of parts, each one of
+   * its own names, all of them to be written (`VariableNames`).
+   */
+  variable?: VariableNames;
   /** The page widths `shows` runs at; 1280 when not given. */
   widths?: number[];
-  /** None for a brief: what it takes is the Agent's to work out, and the report's to say. */
+  /** None for a brief: what it takes is the Agent's to work out, and the report's to say. A change `notOneToOne` has one: an Agent that finds a way after all is right to list it under ✓, and one that lists it there with the page not showing it gives a false ✓. */
   shows?: Shows;
+  /**
+   * Why the change cannot be applied 1:1 (ticket 86), in words: an Agent
+   * applying the round right lists it under ⚠️ in its report, with why and
+   * what instead, or under ✓ only when the page shows it all the same. The
+   * bench counts how often it is (`reportedAsExpected`), and leaves it out of
+   * the 1:1 rates.
+   */
+  notOneToOne?: string;
+}
+
+/**
+ * What holds of the scenario as a whole once the Agent is through, apart from
+ * its changes (ticket 86): what an earlier round applied staying applied, or
+ * a round undone. One the page tests (`shows`), the project's source, or both.
+ */
+export interface ScenarioExpectation {
+  /** What holds, in words. */
+  expect: string;
+  /** Whether it holds before the Agent starts too (what the Agent must leave as it is); else it must not hold yet. */
+  kept?: true;
+  /** The page widths `shows` runs at; 1280 when not given. */
+  widths?: number[];
+  /** Whether the page shows it: run in the page as a change's `shows` is, self-contained. */
+  shows?: (arg: { width: number }) => boolean;
+  /**
+   * Whether the project's source, `.03kind/` aside, is as at the commit the
+   * round starts from (`git diff` shows nothing, and no file is new). The
+   * bench's copy only: the e2e test checks the page alone.
+   */
+  sourceAsAtStart?: true;
 }
 
 /** The example projects a scenario can run on: folders of `examples/`. */
@@ -76,12 +117,18 @@ export interface Scenario {
   title: string;
   /** Makes the round in the editor layer, and waits until it is saved. */
   design(desk: Desk): Promise<void>;
+  /** The changes the Agent is to apply; none for a scenario whose ask is other than applying a round (an undo). */
   changes: ScenarioChange[];
+  /** What the designer says to the Agent, when not the bench's own ask to apply the round (`PROMPT`): in the designer's words. */
+  prompt?: string;
+  /** What holds of the scenario as a whole at the end, apart from its changes: its own expectations, not the page's checks (核对). */
+  expectations?: ScenarioExpectation[];
   /**
    * Writes the round into the code as an Agent applying it right would,
    * once it is claimed (`desk.edit`), for the bench's scripted pass
    * (`pnpm bench:agents --scripted`): every change shows by its own test then,
    * so a test that cannot hold is found before an Agent is measured by it.
+   * Changes `notOneToOne` are left as they were.
    */
   apply?(desk: Desk): Promise<void>;
 }
@@ -91,6 +138,7 @@ export const exampleOf = (scenario: Scenario): Example => scenario.example ?? "v
 
 export const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 export const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
+export const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]');
 export const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 export const layer = (page: Page, name: string, nth = 0) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).nth(nth);
 
@@ -104,6 +152,21 @@ export async function setField(page: Page, name: string, value: string) {
   const field = design(page).getByRole("textbox", { name, exact: true });
   await field.fill(value);
   await field.press("Enter");
+}
+
+/** What a field of the Design panel has in it now, as a number. */
+async function numberIn(page: Page, name: string) {
+  return Number(await design(page).getByRole("textbox", { name, exact: true }).inputValue());
+}
+
+/** Picks the color Variable `name` for a color field (`Fill color`), as a designer finds it by typing its name in the field. */
+async function pickColorVariable(page: Page, field: string, name: string) {
+  const hex = design(page).getByRole("textbox", { name: field, exact: true });
+  await hex.click();
+  await hex.press("ControlOrMeta+a");
+  await hex.pressSequentially(name);
+  await page.getByRole("listbox", { name: "Matching variables" }).getByRole("option", { selected: true, name, exact: true }).waitFor();
+  await hex.press("Enter");
 }
 
 export async function boxOf(locator: Locator) {
@@ -166,6 +229,34 @@ export async function saved(desk: Desk, count: number) {
 }
 
 const HERO = '[data-testid="hero"]';
+/** The intro paragraph's layer, by its words. */
+const INTRO = "A Framer-style editor layer for any page.";
+
+/** Selects the hero, in the desktop view, by its empty space below the button: the deepest layer there. */
+async function pickHero(page: Page) {
+  const hero = await boxOf(desktop(page).contentFrame().getByTestId("hero"));
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(hero.x + hero.width / 2, hero.y + hero.height - 20);
+  await page.keyboard.up("ControlOrMeta");
+}
+
+/**
+ * Ends the round being applied as a designer does, the Agent stopped halfway:
+ * presses and holds the locked toggle (ticket 68). What the page shows is
+ * archived as applied; the rest is left to the next round.
+ */
+async function endTheRound(page: Page) {
+  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
+  await page.mouse.down();
+  await page.waitForTimeout(1200);
+  await page.mouse.up();
+  await page.getByRole("button", { name: TOGGLE_LABEL }).waitFor();
+}
+
+/** Waits until the designer's page, out of edit mode, shows the title at `size` (the dev server has brought an edit in). */
+async function titleAt(page: Page, size: string) {
+  await page.waitForFunction((px) => getComputedStyle(document.querySelector("main h1")!).fontSize === px, size);
+}
 
 // The tests below run in the page: each stands on its own, with no names from here.
 
@@ -660,28 +751,592 @@ export const SCENARIOS: Scenario[] = [
       },
     ],
   },
+  // Ticket 86: the common cases the scenarios above leave out, each scenario a category of change of its own.
+  {
+    id: "panel-padding-effects-opacity",
+    title: "The Get started button's padding made 12px top, 24px right, 4px bottom, 8px left, and a drop shadow added to it (8px down, 16px blur, black at 25%); the title at 60% opacity.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Button").click();
+      await setField(page, "Padding top", "12");
+      await setField(page, "Padding right", "24");
+      await setField(page, "Padding bottom", "4");
+      await setField(page, "Padding left", "8");
+      const effects = design(page).getByRole("group", { name: "Effects" });
+      await effects.getByRole("button", { name: "Add effect" }).click();
+      await setField(page, "Shadow 1 Y", "8");
+      await setField(page, "Shadow 1 blur", "16");
+      await layer(page, "Third Kind").click();
+      await setField(page, "Opacity", "60");
+      await saved(desk, 3);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Get started button's padding is 12px top, 24px right, 4px bottom, 8px left.",
+        checkable: true,
+        // Four sides, each its own Variable: all four written.
+        variable: [["pt-3"], ["pr-6"], ["pb-1"], ["pl-2"]],
+        shows: () => {
+          const style = getComputedStyle(document.querySelector('[data-testid="hero"] button')!);
+          return [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].join() === "12px,24px,4px,8px";
+        },
+      },
+      {
+        kind: "style",
+        expect: "The Get started button casts one drop shadow, 8px down with a 16px blur, black at 25%.",
+        checkable: true,
+        shows: () => {
+          const shadow = getComputedStyle(document.querySelector('[data-testid="hero"] button')!).boxShadow;
+          // Each shadow's color through a pixel: `shadow-black/25` is a color-mix() in oklab, computed as an oklab() color.
+          const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+          const shadows = (shadow === "none" ? [] : shadow.split(/,(?![^(]*\))/)).map((one) => {
+            const [, color, lengths] = /^(.*?)\s*((?:-?[\d.]+px\s*){2,4}(?:inset)?)$/.exec(one.trim()) ?? [];
+            context.clearRect(0, 0, 1, 1);
+            // A color the canvas cannot read leaves the one before: none, then.
+            context.fillStyle = "transparent";
+            context.fillStyle = color ?? "transparent";
+            context.fillRect(0, 0, 1, 1);
+            return { pixel: [...context.getImageData(0, 0, 1, 1).data], lengths: lengths?.trim() };
+          });
+          // Tailwind writes transparent shadows of its own beside one: those are none.
+          const drawn = shadows.filter(({ pixel }) => pixel[3] > 0);
+          // Black at 25%: an alpha of 64 of 255, give or take rounding.
+          return drawn.length === 1 && drawn[0].lengths === "0px 8px 16px 0px" && drawn[0].pixel.slice(0, 3).every((channel) => channel <= 2) && Math.abs(drawn[0].pixel[3] - 64) <= 2;
+        },
+      },
+      {
+        kind: "style",
+        expect: "The title is at 60% opacity.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector("h1")!).opacity === "0.6",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "self-start pt-3 pr-6 pb-1 pl-2 text-white shadow-[0_8px_16px_rgba(0,0,0,0.25)]");
+      await desk.edit("src/App.tsx", "font-bold text-stone-900", "font-bold text-stone-900 opacity-60");
+    },
+  },
+  {
+    id: "panel-text",
+    title: "The intro paragraph's text: bold, line height 24px, letter spacing 1px, centered.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, INTRO).click();
+      const text = design(page).getByRole("group", { name: "Text" });
+      await text.getByRole("combobox", { name: "Font weight" }).selectOption("700");
+      await setField(page, "Line height", "24px");
+      await setField(page, "Letter spacing", "1px");
+      await text.getByRole("radio", { name: "Align center" }).click();
+      await saved(desk, 4);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The intro paragraph is bold (700).",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).fontWeight === "700",
+      },
+      {
+        kind: "style",
+        expect: "The intro paragraph's line height is 24px (the page's body sets 1.8).",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).lineHeight === "24px",
+      },
+      {
+        kind: "style",
+        expect: "The intro paragraph's letter spacing is 1px (the page's body sets 0.02em).",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).letterSpacing === "1px",
+      },
+      {
+        kind: "style",
+        expect: "The intro paragraph's text is centered.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).textAlign === "center",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 text-center font-bold leading-6 tracking-[1px] text-stone-600">');
+    },
+  },
+  {
+    id: "panel-size",
+    title: "The Get started button made Fixed, 200px wide and 40px tall; the intro paragraph's width made Hug (it fills the hero's width now).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Button").click();
+      await setField(page, "Width", "200");
+      await setField(page, "Height", "40");
+      await layer(page, INTRO).click();
+      await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("hug");
+      await saved(desk, 3);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Get started button is 200px wide.",
+        checkable: true,
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 200) <= 0.5,
+      },
+      {
+        kind: "style",
+        expect: "The Get started button is 40px tall.",
+        checkable: true,
+        variable: ["h-10"],
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().height - 40) <= 0.5,
+      },
+      {
+        kind: "style",
+        expect: "The intro paragraph is as wide as its words, no wider (it stays on one line, at the hero's left).",
+        checkable: true,
+        shows: () => {
+          const paragraph = document.querySelector('[data-testid="hero"] > p')!;
+          const words = document.createRange();
+          words.selectNodeContents(paragraph);
+          const width = paragraph.getBoundingClientRect().width;
+          return width < document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().width - 20 && Math.abs(width - words.getBoundingClientRect().width) <= 2;
+        },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "h-10 w-[200px] self-start px-4 py-2 text-white");
+      await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 w-fit text-stone-600">');
+    },
+  },
+  {
+    id: "variables",
+    title:
+      "Set up by a round before: the project's own color brand (#2563EB) in its `@theme`. Now: the intro paragraph's text brand (picked as the Variable), the header's gap 20px, the hero's corners 16px, the title 30px: each a Variable's value; the intro paragraph 17px, which no Variable has.",
+    async design(desk) {
+      const { page } = desk;
+      // The page takes the edit in by a hot update of the stylesheet, or reloads for it (Tailwind's plugin, at times): the editor layer opened before that would be gone.
+      const takenIn = Promise.race([page.waitForEvent("load"), page.waitForEvent("console", (message) => /hot updated: \/src\/index\.css/.test(message.text()))]);
+      await desk.edit("src/index.css", '  --font-display: "Space Grotesk", sans-serif;\n', '  --font-display: "Space Grotesk", sans-serif;\n  --color-brand: #2563eb;\n');
+      await desk.settle("The round before: the project's own brand color");
+      await takenIn;
+      await page.locator("main").waitFor();
+
+      await enterEditMode(page);
+      await layer(page, INTRO).click();
+      await pickColorVariable(page, "Fill color", "brand");
+      await layer(page, "Header").click();
+      await setField(page, "Gap", "20");
+      await pickHero(page);
+      await setField(page, "Corner radius", "16");
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "30");
+      await layer(page, INTRO).click();
+      await setField(page, "Font size", "17");
+      await saved(desk, 5);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The intro paragraph's text is the project's brand color, #2563EB.",
+        checkable: true,
+        variable: ["text-brand", "--color-brand"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).color === "rgb(37, 99, 235)",
+      },
+      {
+        kind: "style",
+        expect: "The header's gap, between the title and the badge, is 20px.",
+        checkable: true,
+        variable: ["gap-5", "gap-x-5"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "20px",
+      },
+      {
+        kind: "style",
+        expect: "The hero has 16px corners.",
+        checkable: true,
+        variable: ["rounded-2xl", "--radius-2xl"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"]')!).borderTopLeftRadius === "16px",
+      },
+      {
+        kind: "style",
+        expect: "The title is 30px.",
+        checkable: true,
+        variable: ["text-3xl", "--text-3xl"],
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "30px",
+      },
+      {
+        kind: "style",
+        // No Variable has 17px: written as it is, not as a size close to it.
+        expect: "The intro paragraph is 17px.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).fontSize === "17px",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 text-[17px] text-brand">');
+      await desk.edit("src/App.tsx", '<header className="flex items-center gap-3">', '<header className="flex items-center gap-5">');
+      await desk.edit("src/App.tsx", '<section className="flex h-screen', '<section className="flex h-screen rounded-2xl');
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-3xl");
+    },
+  },
+  {
+    id: "tablet-breakpoint",
+    title: "In the tablet view (768px up to the desktop's 1280px): the cards' Grid 2 columns, and the title 30px.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pickGrid(page, tablet(page));
+      await setField(page, "Columns", "2");
+      await pick(page, tablet(page), "h1");
+      await setField(page, "Font size", "30");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "From 768px to 1279px the cards' Grid has 2 columns; below, 1 (and 3 from 640px to 767px, as before); at 1280px, 3.",
+        checkable: true,
+        widths: [390, 700, 800, 1100, 1280],
+        shows: ({ width }) => getComputedStyle(document.querySelector("article")!.parentElement!).gridTemplateColumns.split(" ").length === (width < 640 ? 1 : width < 768 ? 3 : width < 1280 ? 2 : 3),
+      },
+      {
+        kind: "style",
+        expect: "From 768px to 1279px the title is 30px; below, and at 1280px, it stays 36px.",
+        checkable: true,
+        variable: ["text-3xl", "--text-3xl"],
+        // 700: between Tailwind's `sm` (640) and `md` (768), where a breakpoint one off shows.
+        widths: [390, 700, 800, 1100, 1280],
+        shows: ({ width }) => getComputedStyle(document.querySelector("h1")!).fontSize === (width >= 768 && width < 1280 ? "30px" : "36px"),
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "sm:grid-cols-3", "sm:grid-cols-3 md:max-xl:grid-cols-2");
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-4xl md:max-xl:text-3xl");
+    },
+  },
+  {
+    id: "breakpoint-kept",
+    title: "The title 24px in the phone view (below 768px only); then 48px in the desktop view, at all breakpoints but the phone's, which keeps its own (ADR 0008).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, phone(page), "h1");
+      await setField(page, "Font size", "24");
+      await pick(page, desktop(page), "h1");
+      await setField(page, "Font size", "48");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "Below 768px the title is 24px.",
+        checkable: true,
+        variable: ["text-2xl", "--text-2xl"],
+        // 700: between Tailwind's `sm` (640) and `md` (768), where a breakpoint one off shows.
+        widths: [390, 700, 1280],
+        shows: ({ width }) => (getComputedStyle(document.querySelector("h1")!).fontSize === "24px") === width < 768,
+      },
+      {
+        kind: "style",
+        expect: "From 768px up the title is 48px; below 768px it is not (the phone's 24px holds there).",
+        checkable: true,
+        variable: ["text-5xl", "--text-5xl"],
+        widths: [390, 700, 800, 1280],
+        shows: ({ width }) => (getComputedStyle(document.querySelector("h1")!).fontSize === "48px") === width >= 768,
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-5xl max-md:text-2xl");
+    },
+  },
+  {
+    id: "placement-kept",
+    title:
+      "Set up by a round before: three tags placed absolute in the hero, one from its top right corner, one from its bottom left, one centered across it. Now the top right one is moved 40px left and made 120px wide, the bottom left one moved 40px up and made 64px tall, in the panel (X, Y, then W, H: a size typed keeps the layer's left and top edges, so its `right` or `bottom` changes with it); the centered one moved 40px right. Each stays placed as it was (ADR 0014).",
+    async design(desk) {
+      const { page } = desk;
+      // The round before, as an Agent applied it: the tags are in the code, and the hero is their positioning reference.
+      await desk.edit("src/App.tsx", '<section className="flex h-screen', '<section className="relative flex h-screen');
+      await desk.edit(
+        "src/App.tsx",
+        "        </button>\n      </section>\n",
+        "        </button>\n" +
+          '        <div className="absolute top-6 right-6 h-10 w-24 rounded-lg bg-amber-200" data-testid="corner-tag" />\n' +
+          '        <div className="absolute bottom-8 left-6 h-10 w-24 rounded-lg bg-stone-200" data-testid="foot-tag" />\n' +
+          '        <div className="absolute bottom-24 left-1/2 h-10 w-24 -translate-x-1/2 rounded-lg bg-sky-200" data-testid="center-tag" />\n' +
+          "      </section>\n",
+      );
+      await desk.settle("The round before: three tags in the hero");
+      await page.getByTestId("center-tag").waitFor();
+
+      await enterEditMode(page);
+      await pick(page, desktop(page), '[data-testid="corner-tag"]');
+      await setField(page, "X", String((await numberIn(page, "X")) - 40));
+      await setField(page, "Width", "120");
+      await pick(page, desktop(page), '[data-testid="foot-tag"]');
+      await setField(page, "Y", String((await numberIn(page, "Y")) - 40));
+      await setField(page, "Height", "64");
+      await pick(page, desktop(page), '[data-testid="center-tag"]');
+      await setField(page, "X", String((await numberIn(page, "X")) + 40));
+      await saved(desk, 5);
+    },
+    // The round saves the move as the `right` or `bottom` it ends at (the size typed after it moved that edge back: 64px, then 40px),
+    // and the size alone: so each test holds after its own change, the other left out.
+    changes: [
+      {
+        kind: "style",
+        expect: "The top right tag is 40px from the hero's right edge (24px before), at every width: still placed from the right.",
+        checkable: true,
+        widths: [390, 1280],
+        shows: () => {
+          const tag = document.querySelector('[data-testid="corner-tag"]')!.getBoundingClientRect();
+          return Math.abs(document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().right - tag.right - 40) <= 1;
+        },
+      },
+      {
+        kind: "style",
+        expect: "The top right tag is 120px wide, and still placed from the right: its right edge 24px from the hero's (or 40px, its `right` changed too), at every width.",
+        checkable: true,
+        widths: [390, 1280],
+        shows: () => {
+          const tag = document.querySelector('[data-testid="corner-tag"]')!.getBoundingClientRect();
+          const right = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().right - tag.right;
+          return Math.abs(tag.width - 120) <= 1 && (Math.abs(right - 24) <= 1 || Math.abs(right - 40) <= 1);
+        },
+      },
+      {
+        kind: "style",
+        expect: "The bottom left tag is 48px from the hero's bottom edge (32px before), at every width: still placed from the bottom.",
+        checkable: true,
+        widths: [390, 1280],
+        shows: () => {
+          const tag = document.querySelector('[data-testid="foot-tag"]')!.getBoundingClientRect();
+          return Math.abs(document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().bottom - tag.bottom - 48) <= 1;
+        },
+      },
+      {
+        kind: "style",
+        expect: "The bottom left tag is 64px tall, and still placed from the bottom: its bottom edge 32px from the hero's (or 48px, its `bottom` changed too), at every width.",
+        checkable: true,
+        variable: ["h-16"],
+        widths: [390, 1280],
+        shows: () => {
+          const tag = document.querySelector('[data-testid="foot-tag"]')!.getBoundingClientRect();
+          const bottom = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().bottom - tag.bottom;
+          return Math.abs(tag.height - 64) <= 1 && (Math.abs(bottom - 32) <= 1 || Math.abs(bottom - 48) <= 1);
+        },
+      },
+      {
+        kind: "style",
+        expect: "The centered tag's middle is 40px right of the hero's middle, at every width: still centered, 40px off (`calc(50% + 40px)`).",
+        checkable: true,
+        widths: [390, 1280],
+        shows: () => {
+          const tag = document.querySelector('[data-testid="center-tag"]')!.getBoundingClientRect();
+          const hero = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect();
+          return Math.abs((tag.left + tag.right) / 2 - (hero.left + hero.right) / 2 - 40) <= 1;
+        },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "absolute top-6 right-6 h-10 w-24", "absolute top-6 right-10 h-10 w-[120px]");
+      await desk.edit("src/App.tsx", "absolute bottom-8 left-6 h-10 w-24", "absolute bottom-12 left-6 h-16 w-24");
+      await desk.edit("src/App.tsx", "absolute bottom-24 left-1/2", "absolute bottom-24 left-[calc(50%+40px)]");
+    },
+  },
+  {
+    id: "third-party",
+    title: "The cards' Grid, acme-ui's Surface (it passes its props on), filled stone-100 (picked as the Variable); the Beta badge, acme-ui's Badge (it takes no class or style), made 90px wide.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pickGrid(page, desktop(page));
+      await design(page).getByRole("button", { name: "Add fill" }).click();
+      await pickColorVariable(page, "Fill color", "stone-100");
+      await layer(page, "Badge").click();
+      await setField(page, "Width", "90");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The cards' Grid is filled stone-100 (#F5F5F4, give or take rounding).",
+        checkable: true,
+        variable: ["bg-stone-100", "--color-stone-100"],
+        shows: () => {
+          // Through a pixel: Tailwind v4's stone-100 is an oklch() color.
+          const context = document.createElement("canvas").getContext("2d")!;
+          const fill = getComputedStyle(document.querySelector("article")!.parentElement!).backgroundColor;
+          if (fill === "rgba(0, 0, 0, 0)") return false;
+          context.fillStyle = fill;
+          context.fillRect(0, 0, 1, 1);
+          const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+          return Math.abs(r - 245) <= 2 && Math.abs(g - 245) <= 2 && Math.abs(b - 244) <= 2;
+        },
+      },
+      {
+        kind: "style",
+        expect: "The Beta badge stays as it was; the report lists the change under ⚠️, why (acme-ui's Badge sets its own size and takes no class or style from its usage) and what instead.",
+        // A Locked Layer: drawn by a dependency, it has no source marker of its own, so the page cannot find it to check.
+        checkable: false,
+        notOneToOne: "acme-ui's Badge sets its size itself and passes no class or style on from its usage; the dependency is never changed.",
+        // Not shown when left as it was; an Agent that makes it 90px all the same (from the header, say) is right to list it under ✓.
+        widths: [390, 1280],
+        shows: () => Math.abs(document.querySelector('[data-testid="acme-badge"]')!.getBoundingClientRect().width - 90) <= 0.5,
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<Surface className="grid', '<Surface className="bg-stone-100 grid');
+    },
+  },
+  // Ticket 86, the flow: rounds over more than one turn of the Agent's.
+  {
+    id: "flow-end-halfway",
+    title:
+      "Set up by a round before, ended halfway: the designer made the title 48px, the hero's corners 16px and the header's gap 20px; an Agent applied the title alone, and the designer ended the round by pressing and holding the toggle. Now the Agent is asked to apply the round again: the two changes left over.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "48");
+      await pickHero(page);
+      await setField(page, "Corner radius", "16");
+      await layer(page, "Header").click();
+      await setField(page, "Gap", "20");
+      await saved(desk, 3);
+      // The round before, applied as far as the title, as the Skill says; then the Agent stops.
+      await desk.cli("claim");
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-5xl");
+      await titleAt(page, "48px");
+      await desk.cli("done", "1");
+      await endTheRound(page);
+      // Left over: the corners and the gap, numbered 1 and 2.
+      await saved(desk, 2);
+      await desk.settle("The round before, ended halfway: the title at 48px");
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The hero has 16px corners.",
+        checkable: true,
+        variable: ["rounded-2xl", "--radius-2xl"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"]')!).borderTopLeftRadius === "16px",
+      },
+      {
+        kind: "style",
+        expect: "The header's gap, between the title and the badge, is 20px.",
+        checkable: true,
+        variable: ["gap-5", "gap-x-5"],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "20px",
+      },
+    ],
+    expectations: [
+      {
+        expect: "The title stays 48px, as the round before applied it.",
+        kept: true,
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "48px",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<section className="flex h-screen', '<section className="flex h-screen rounded-2xl');
+      await desk.edit("src/App.tsx", '<header className="flex items-center gap-3">', '<header className="flex items-center gap-5">');
+    },
+  },
+  {
+    id: "flow-undo-last",
+    title:
+      "Set up by a round before, applied and finished, not committed: the title 48px and the header's gap 20px. Now the designer asks the Agent to undo that round (`npx 03kind last`).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "48");
+      await layer(page, "Header").click();
+      await setField(page, "Gap", "20");
+      await saved(desk, 2);
+      // The round before, applied in full as the Skill says, and finished; its code left uncommitted, as `git diff` shows it.
+      await desk.cli("claim");
+      await desk.edit("src/App.tsx", "font-display text-4xl", "font-display text-5xl");
+      await desk.edit("src/App.tsx", '<header className="flex items-center gap-3">', '<header className="flex items-center gap-5">');
+      await titleAt(page, "48px");
+      await desk.cli("done", "1", "2");
+      await desk.cli("finish");
+      await page.getByRole("button", { name: TOGGLE_LABEL }).waitFor();
+    },
+    changes: [],
+    // The designer's words for the Skill's undo ("undo the last round of design changes").
+    prompt: "撤销上一轮的设计改动",
+    expectations: [
+      {
+        expect: "The title is 36px again and the header's gap 12px, as before the round.",
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "36px" && getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "12px",
+      },
+      {
+        expect: "The project's source is as before the round: `git diff` shows nothing of it (`.03kind/` aside).",
+        sourceAsAtStart: true,
+      },
+    ],
+    async apply(desk) {
+      // As the Skill says: `last` prints the round before and the command that takes its code back out.
+      const last = await desk.cli("last");
+      const command = /To undo the round, take them back out: `([^`]+)`/.exec(last)?.[1];
+      if (!command) throw new Error(`\`last\` gives no command to undo the round by:\n${last}`);
+      await desk.shell!(command);
+    },
+  },
 ];
+
+/**
+ * What is wrong with a scenario as designed, by the round it saved: changes
+ * not of the kinds it names; one the page's check can tell, or cannot,
+ * otherwise than its `checkable` says; one whose value is a Variable its
+ * `variable` does not name, or one that names a Variable its value is not.
+ */
+export function designProblems(scenario: Scenario, saved: SavedChange[]): string[] {
+  const kinds = saved.map((change) => change.kind).join(", ");
+  const named = scenario.changes.map((change) => change.kind).join(", ");
+  if (kinds !== named) return [`changes are ${kinds}, not ${named}`];
+  const problems: string[] = [];
+  scenario.changes.forEach((change, i) => {
+    const checks = pageChecks(saved[i] as unknown as Change, saved as unknown as Change[]);
+    if (checks !== change.checkable) problems.push(`change ${i + 1}: the page ${checks ? "can" : "cannot"} check it, but \`checkable\` says otherwise`);
+    // Not applied, it writes no Variable either.
+    if (change.notOneToOne) return;
+    const bound = Object.values(saved[i].variables ?? {}).some(Boolean);
+    if (bound && !change.variable) problems.push(`change ${i + 1}: its value is a Variable, ${Object.values(saved[i].variables!).filter(Boolean).map((v) => v!.name).join(", ")}, which \`variable\` does not name`);
+    if (!bound && change.variable) problems.push(`change ${i + 1}: \`variable\` names a Variable, but its value is none`);
+  });
+  return problems;
+}
+
+/** Whether a test holds on the page of each of `widths` (1280 when none): `run` gives the test, and what it is run with, at a width. */
+async function showsAtEach<Arg extends object>(pages: Map<number, Page>, widths: number[] | undefined, run: (width: number) => [(arg: Arg) => boolean, Arg]): Promise<boolean> {
+  for (const width of widths ?? [1280]) {
+    const [test, arg] = run(width);
+    const shows = await pages
+      .get(width)!
+      .evaluate(test as (arg: unknown) => boolean, arg)
+      .catch(() => false);
+    if (!shows) return false;
+  }
+  return true;
+}
 
 /** Whether the page shows each change, by the scenario's tests, on a page of each width they run at; null for a change with none. */
 export async function shown(pages: Map<number, Page>, scenario: Scenario, saved: SavedChange[]): Promise<(boolean | null)[]> {
   return Promise.all(
-    scenario.changes.map(async (change, i) => {
-      if (!change.shows) return null;
-      for (const width of change.widths ?? [1280]) {
-        const shows = await pages
-          .get(width)!
-          .evaluate(change.shows, { change: saved[i], width })
-          .catch(() => false);
-        if (!shows) return false;
-      }
-      return true;
-    }),
+    scenario.changes.map((change, i) => (change.shows ? showsAtEach(pages, change.widths, (width) => [change.shows!, { change: saved[i], width }]) : null)),
   );
 }
 
-/** The widths a scenario's tests run at. */
+/** Whether the page shows each of the scenario's own expectations (`expectations`), at each width they run at; null for one the page does not test. */
+export async function held(pages: Map<number, Page>, scenario: Scenario): Promise<(boolean | null)[]> {
+  return Promise.all(
+    (scenario.expectations ?? []).map((expectation) => (expectation.shows ? showsAtEach(pages, expectation.widths, (width) => [expectation.shows!, { width }]) : null)),
+  );
+}
+
+/** The widths a scenario's tests run at, its changes' and its own expectations'. */
 export function widthsOf(scenario: Scenario): number[] {
-  return [...new Set(scenario.changes.flatMap((change) => (change.shows ? (change.widths ?? [1280]) : [])))];
+  return [...new Set([...scenario.changes, ...(scenario.expectations ?? [])].flatMap((test) => (test.shows ? (test.widths ?? [1280]) : [])))];
 }
 
 /**

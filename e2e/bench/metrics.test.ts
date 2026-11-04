@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { DENIED } from "./allowlist.ts";
-import { checkReport, fffProblem, isRepoWideSearch, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, fffProblem, isRepoWideSearch, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -381,6 +381,7 @@ test("a run is measured from claim to finish: per change, against the page's che
     checked: 2,
     oneToOneByChecks: 2 / 3,
     oneToOneByPage: 2 / 3,
+    oneToOneCounts: { byChecks: { part: 2, whole: 3 }, byPage: { part: 2, whole: 3 } },
     falseChecks: [2],
     maxProgressGapMs: 18000,
     maxStillMs: 10000,
@@ -395,7 +396,7 @@ test("with no finish, the round is measured to the Agent's end; with nothing to 
     times: { claim: 0, finish: null, end: 9000, progress: [], edits: [] },
   });
 
-  assert.deepEqual(run, { applyMs: 9000, applyMsPerChange: 9000, checked: 0, oneToOneByChecks: null, oneToOneByPage: null, falseChecks: [], maxProgressGapMs: null, maxStillMs: 9000 });
+  assert.deepEqual(run, { applyMs: 9000, applyMsPerChange: 9000, checked: 0, oneToOneByChecks: null, oneToOneByPage: null, oneToOneCounts: { byChecks: { part: 0, whole: 0 }, byPage: { part: 0, whole: 0 } }, falseChecks: [], maxProgressGapMs: null, maxStillMs: 9000 });
 });
 
 test("runs are summed up by their median and range; a run with no value is left out", () => {
@@ -418,6 +419,20 @@ test("a Variable counts as used when the lines the Agent added write its class, 
   assert.equal(usesVariable(diff, ["text-4xl"]), false);
   assert.equal(usesVariable(diff, ["gap-3"]), false);
   assert.equal(usesVariable(diff, ["text-5"]), false);
+});
+
+test("a rate over runs is pooled: their parts over their wholes, not a run's rate in the middle; runs with none are left out", () => {
+  assert.deepEqual(pooled([{ part: 1, whole: 4 }, { part: 1, whole: 1 }, { part: 2, whole: 2 }, null]), { rate: 4 / 7, part: 4, whole: 7 });
+  assert.deepEqual(pooled([null, { part: 0, whole: 0 }]), { rate: null, part: 0, whole: 0 });
+});
+
+test("a value of several parts, each its own Variable, counts as using them when every part is written, each by one of its names; a flat list is any one of it", () => {
+  const diff = ['-  <button className="px-4 py-2">', '+  <button className="pt-3 pr-6 pb-1 pl-[8px]">'].join("\n");
+  const padding = [["pt-3"], ["pr-6"], ["pb-1"], ["pl-2", "--spacing-2"]];
+
+  assert.equal(usesVariable(diff, padding), false);
+  assert.equal(usesVariable(diff.replace("pl-[8px]", "pl-2"), padding), true);
+  assert.equal(usesVariable(diff, ["pt-3", "pl-2"]), true);
 });
 
 test("a Variable only carried along in a line the Agent rewrote for another change is not counted as used", () => {
@@ -482,4 +497,63 @@ test("Cursor's glob in a folder of the package is a call there, by its target fo
 
   assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/03kind");
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
+});
+
+test("changes that cannot be applied 1:1 are counted as reported right when the report lists them under ⚠️ with why and instead; none expected, no rate (ticket 86)", () => {
+  const report = checkReport(
+    ["✓ Applied", "- 1. Fill: the Grid, stone-100", "", "⚠️ Not applied 1:1", "- 2. Width: Badge", "  Why: acme-ui sets it", "  Instead: left as it was", "- 3. Width: Badge", "  Why: acme-ui sets it"].join("\n"),
+    [1, 2, 3, 4],
+  );
+
+  const notShown = (...ids: number[]) => ids.map((id) => ({ id, shown: false }));
+  assert.equal(reportedAsExpected(report, notShown(2)), 1);
+  // Under ⚠️ without both lines, or under ✓ with the page not showing it, or not listed at all, it is not.
+  assert.equal(reportedAsExpected(report, notShown(3)), 0);
+  assert.equal(reportedAsExpected(report, notShown(1, 2)), 0.5);
+  assert.equal(reportedAsExpected(report, notShown(4)), 0);
+  assert.equal(reportedAsExpected(report, []), null);
+});
+
+test("a change that cannot be applied 1:1 listed under ✓ is reported right when the page shows it after all, and a false ✓ when it does not; it is in no 1:1 rate (ticket 86)", () => {
+  const report = checkReport(["✓ Applied", "- 1. Fill: the Grid, stone-100", "- 2. Width: Badge, 90px by its parent"].join("\n"), [1, 2]);
+
+  assert.equal(reportedAsExpected(report, [{ id: 2, shown: true }]), 1);
+  assert.equal(reportedAsExpected(report, [{ id: 2, shown: false }]), 0);
+  // A run from before the change had a test of its own: not shown is not known.
+  assert.equal(reportedAsExpected(report, [{ id: 2, shown: null }]), 0);
+
+  const run = (shown: boolean) =>
+    measureRun({
+      changes: [
+        { id: 1, checkable: true, shown: true },
+        { id: 2, checkable: false, shown, notOneToOne: true },
+      ],
+      checks: { 1: { outcome: "shown" } },
+      report,
+      times: { claim: 0, finish: 1000, end: 1000, progress: [], edits: [] },
+    });
+  assert.deepEqual([run(false).falseChecks, run(false).oneToOneByPage, run(false).oneToOneByChecks], [[2], 1, 1]);
+  assert.deepEqual([run(true).falseChecks, run(true).oneToOneByPage, run(true).oneToOneByChecks], [[], 1, 1]);
+  assert.deepEqual(run(true).oneToOneCounts, { byChecks: { part: 1, whole: 1 }, byPage: { part: 1, whole: 1 } });
+});
+
+test("the 1:1 rates pool over runs as the Variable rate does: a run of one change and a run of three weigh as their changes, not as two runs", () => {
+  const run = (shown: boolean[]) =>
+    measureRun({
+      changes: shown.map((s, i) => ({ id: i + 1, checkable: true, shown: s })),
+      checks: Object.fromEntries(shown.map((s, i) => [i + 1, { outcome: s ? "shown" : "not shown" }])),
+      report: { compliant: true, applied: [], notApplied: [], problems: [] },
+      times: { claim: 0, finish: 1000, end: 1000, progress: [], edits: [] },
+    });
+  const runs = [run([false]), run([true, true, true])];
+  assert.deepEqual(pooled(runs.map((r) => r.oneToOneCounts.byPage)), { rate: 0.75, part: 3, whole: 4 });
+  assert.deepEqual(pooled(runs.map((r) => r.oneToOneCounts.byChecks)), { rate: 0.75, part: 3, whole: 4 });
+  assert.equal(summarize(runs.map((r) => r.oneToOneByPage)).median, 0.5);
+});
+
+test("a scenario's own expectations are counted by the share that hold at the end; a scenario with none, or a run from before them, has no rate (ticket 86)", () => {
+  assert.equal(scenarioExpectationsHold([{ atEnd: true }, { atEnd: false }]), 0.5);
+  assert.equal(scenarioExpectationsHold([{ atEnd: true }]), 1);
+  assert.equal(scenarioExpectationsHold([]), null);
+  assert.equal(scenarioExpectationsHold(undefined), null);
 });

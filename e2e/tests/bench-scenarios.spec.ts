@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { exampleOf, openObservers, shown, type Example } from "../bench/scenarios.ts";
+import { designProblems, exampleOf, held, openObservers, shown, type Example } from "../bench/scenarios.ts";
 import { STANDARD_SCENARIOS } from "../bench/scenarios-other-examples.ts";
 import { DEV_URL, NEXT_URL, REACT18_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
@@ -14,7 +14,7 @@ import { clearThirdKindFolder, npx03kindIn } from "./project-files";
  * Agent. Each runs on its own example's dev server.
  */
 
-/** These tests save into the example projects' `.03kind/` for real; one scenario edits the source, as a round before it. */
+/** These tests save into the example projects' `.03kind/` for real; some scenarios edit the source, as a round before them. */
 test.use({ keepRoundInMemory: false });
 // The Next.js dev server compiles the page as it is first asked for.
 test.setTimeout(120_000);
@@ -22,14 +22,27 @@ test.setTimeout(120_000);
 const SERVED: Record<Example, string> = { "vite-react19-tw4": DEV_URL, "vite-react18-tw3": REACT18_URL, "next-app-css-modules": NEXT_URL };
 const folderOf = (example: Example) => fileURLToPath(new URL(`../../examples/${example}/`, import.meta.url));
 
-/** The source files a scenario edited, as they were: put back after it. */
-const touched = new Map<string, string>();
+/**
+ * What the example's dev server serves of `file`: its module as the page loads it, with no hot update's timestamp in it. Not
+ * `?raw`: that request puts a module of its own in the dev server's module graph, and from then on an edit to the stylesheet
+ * reloads the page whole, so a later test's page is gone as `done` checks it. Vite's examples only: no scenario on the Next.js
+ * one edits the source as it is designed.
+ */
+async function served(example: Example, file: string): Promise<string> {
+  if (example === "next-app-css-modules") throw new Error(`No scenario on ${example} is to edit its source as it is designed (${file}): the test cannot wait for Next.js to serve it`);
+  return (await (await fetch(`${SERVED[example]}/${file}`)).text()).replace(/[?&]t=\d+/g, "");
+}
+
+/** The source files a round before edited, by their paths: as they were, and as the dev server served them then. Written back after each test. */
+const originals = new Map<string, { example: Example; file: string; text: string; served: string }>();
 
 test.afterEach(async () => {
-  for (const [file, original] of touched) if (readFileSync(file, "utf8") !== original) writeFileSync(file, original);
-  touched.clear();
-  // The React 19 example's App.tsx, put back, served as it is again before the next test opens a page.
-  await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("font-display text-4xl")).toBe(true);
+  for (const [path, original] of originals) {
+    if (readFileSync(path, "utf8") !== original.text) writeFileSync(path, original.text);
+    // So the next test's page loads it as it was. The design waits for its page to take an edit in, by what the page shows.
+    await expect.poll(() => served(original.example, original.file)).toBe(original.served);
+  }
+  originals.clear();
 });
 test.afterAll(() => {
   for (const example of Object.keys(SERVED) as Example[]) clearThirdKindFolder(`${folderOf(example)}.03kind/`);
@@ -52,20 +65,27 @@ for (const scenario of STANDARD_SCENARIOS) {
         const path = `${dir}${file}`;
         const text = readFileSync(path, "utf8");
         expect(text).toContain(from);
-        if (!touched.has(path)) touched.set(path, text);
+        if (!originals.has(path)) originals.set(path, { example, file, text, served: await served(example, file) });
         writeFileSync(path, text.replace(from, to));
       },
       // The example's code is no commit of its own: the round before is taken back out after the test.
       settle: async () => {},
       changeSet,
     });
-    const saved = changeSet().changes;
+    // An undo has no round to apply: no ChangeSet.
+    const saved = changeSet()?.changes ?? [];
     expect(saved.map((change: { kind: string }) => change.kind)).toEqual(scenario.changes.map((change) => change.kind));
+    // What the page can check, and which values are Variables, as the scenario names them.
+    expect(designProblems(scenario, saved)).toEqual([]);
 
     // Pages of their own, kept from the local service as the bench keeps them.
     const observers = await openObservers(browser, scenario, SERVED[example]);
     try {
       expect(await shown(observers.pages, scenario, saved)).toEqual(scenario.changes.map((change) => (change.shows ? false : null)));
+      // The scenario's own expectations the page tests: those kept hold already, the others not yet. The
+      // source's (`sourceAsAtStart`) the bench checks, in a copy of its own: the example here is in this
+      // repository, with no commit of its own to compare with.
+      expect(await held(observers.pages, scenario)).toEqual((scenario.expectations ?? []).map((expectation) => (expectation.shows ? !!expectation.kept : null)));
     } finally {
       await observers.close();
     }
