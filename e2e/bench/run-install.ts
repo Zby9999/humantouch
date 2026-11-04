@@ -89,8 +89,11 @@ function installEnv(tarball: string | null): NodeJS.ProcessEnv {
  * the browser. Undone last first, and the bench exits failing.
  */
 const underWay = new Set<() => unknown>();
+/** Set by a Ctrl-C or a kill: no run starts, and no start is built, after it. */
+let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
+    stopping = true;
     console.error(`\n${signal}: stopping the run's Agent and its dev servers, deleting its project`);
     for (const undo of [...underWay].reverse()) await Promise.resolve().then(undo).catch(() => {});
     process.exit(signal === "SIGINT" ? 130 : 143);
@@ -187,6 +190,7 @@ async function main(argv: string[]) {
       for (let run = 1; run <= runs; run++) {
         for (const start of starts) {
           for (const agent of agents) {
+            if (stopping) return;
             // Never stopped by the bench: it did not start it.
             for (const port of DEFAULT_PORTS) if (await portInUse(port)) throw new Error(`Port ${port} is in use, and the Agent's dev server would take another: free it, then run the bench again`);
             const folder = join(out, agent, start.id, `run-${run}`);
@@ -297,10 +301,17 @@ async function installOnce({
   agentVersion: string;
 }): Promise<RawInstall> {
   const log: string[] = [];
-  const project = await scaffold(start, (line) => log.push(line)).finally(() => writeFileSync(join(folder, "scaffold.log"), `${log.join("\n")}\n`));
+  let removeFolder: (() => void) | null = null;
+  const project = await scaffold(start, (line) => log.push(line), (remove) => underWay.add((removeFolder = remove))).finally(() => writeFileSync(join(folder, "scaffold.log"), `${log.join("\n")}\n`));
+  underWay.delete(removeFolder!);
+  if (stopping) {
+    project.remove();
+    throw new Error("stopped");
+  }
   const servers = new AgentProcesses(project.dir);
   let agentGroup: number | null = null;
-  // On a Ctrl-C: the Agent runs in a process group of its own, which the terminal's signal does not reach.
+  // On a Ctrl-C: the Agent runs in a process group of its own, which the terminal's signal does not reach;
+  // signalled only while the Agent runs, as its group's id may be taken again once it has exited.
   const undo = async () => {
     if (agentGroup !== null) {
       try {
@@ -337,8 +348,8 @@ async function installOnce({
     } finally {
       endedAt = Date.now();
       clearInterval(tracking);
-      // Its pid may be taken again by another process.
-      servers.agentPid = null;
+      // Its pid, and its group's, may be taken again by another process.
+      servers.agentPid = agentGroup = null;
     }
     const found = await watching;
     const transcript = parseTranscript(runAs(agent), readFileSync(join(folder, "transcript.jsonl"), "utf8"));
@@ -429,6 +440,8 @@ function writeSummary(out: string) {
         const read = (file: string) => readFileSync(join(folder, file), "utf8");
         const transcript = parseTranscript(runAs(raw.agent), read("transcript.jsonl"));
         const afterRemove = { status: read("status-after-remove.txt"), diff: read("diff-after-remove.patch") };
+        // Runs before the toggle's name was used have `buttonMs`.
+        raw.toggleMs ??= (raw as { buttonMs?: number | null }).buttonMs ?? null;
         const criteria = judgeInstall({ framework: raw.start.framework, toggleMs: raw.toggleMs, exitCode: raw.exitCode, timedOut: raw.timedOut, transcript, doctor: read("doctor.txt"), status: read("status.txt"), diff: read("diff.patch"), afterRemove });
         const steps = stepsReached(transcript);
         installs.push({ ...raw, criteria, success: criteria.every((c) => c.pass), steps, lastStep: steps.at(-1) ?? null, trailingQuestion: intervention(transcript).trailingQuestion, logsLeft: logsLeft(afterRemove.status), step3Told: toldToLook(transcript.finalText) });

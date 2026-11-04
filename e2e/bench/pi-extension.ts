@@ -17,9 +17,9 @@
  * then the shell commands allowed are its `shell` in place of the applying
  * bench's, one of its `servers` may start a dev server in the background
  * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
- * `pnpm exec`…) may run no program of its `programs` and no word may be one
- * of its `options` (allowlist.ts, runsAllowed). With no such file, nothing
- * changes.
+ * `pnpm exec`…) may run only the programs listed for it, past only its
+ * `flags`, and no word may be one of its `options` (allowlist.ts,
+ * runsAllowed). With no such file, nothing changes.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -37,16 +37,17 @@ export const INSTALL_LIST = "install-list.json";
 export interface ShellList {
   shell: readonly string[];
   servers: readonly string[];
-  runners: readonly string[];
-  programs: readonly string[];
+  runners: Readonly<Record<string, readonly string[]>>;
+  flags: readonly string[];
   options: readonly string[];
 }
 
 /** The applying bench's list, or the install bench's when `file` is there. */
 function shellList(file: string): ShellList {
-  if (!existsSync(file)) return { shell: SHELL, servers: [], runners: [], programs: [], options: [] };
+  if (!existsSync(file)) return { shell: SHELL, servers: [], runners: {}, flags: [], options: [] };
   const list = JSON.parse(readFileSync(file, "utf8"));
-  for (const key of ["shell", "servers", "runners", "programs", "options"]) if (!Array.isArray(list[key])) throw new Error(`${file} has no ${key} list`);
+  for (const key of ["shell", "servers", "flags", "options"]) if (!Array.isArray(list[key])) throw new Error(`${file} has no ${key} list`);
+  if (typeof list.runners !== "object" || !Object.values(list.runners).every(Array.isArray)) throw new Error(`${file} has no runners`);
   return list;
 }
 
@@ -192,8 +193,9 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
     // A dev server in the background is checked as the command it runs, the paths in it too.
     const checked = shellAllowed(command, list.shell) ? command : backgroundServer(command, list.servers, inProject);
     if (checked === null) return denied();
-    if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.programs, list.options))) {
-      return block(`${DENIED} npx and the like (${list.runners.join(", ")}) to run no ${list.programs.join(", ")}, with no -c, --call or --shell-mode, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`);
+    if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
+      const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
+      return block(`${DENIED} npx and the like to run only these (${runners.join("; ")}), 03kind by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`);
     }
     const reaches = shellReaches(checked, cwd);
     if (reaches === "out") return denied();

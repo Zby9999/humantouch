@@ -33,16 +33,20 @@ test("before pi installs, the extension is copied as for the applying bench and 
   assert.deepEqual(list.shell, INSTALL_SHELL);
   assert.deepEqual(list.servers, INSTALL_SERVERS);
   assert.deepEqual(list.options, ["--open"]);
+  assert.deepEqual(list.runners.npx, ["03kind", "vite", "next"]);
+  assert.ok(!list.flags.includes("-p") && !list.flags.includes("-c"));
   const args = AGENTS.pi.args(folder, "Install 03Kind");
   for (const flag of ["--provider", "--model", "--thinking", "--offline", "--no-extensions", "--no-mcp", "--no-skills", "--skill", "--no-prompt-templates", "--no-themes", "--approve", "--tools"]) assert.ok(args.includes(flag), flag);
   assert.equal(args[1], "Install 03Kind");
 });
 
 test("under the install list, pi may run the steps and start a dev server in the background, and nothing denied", () => {
-  for (const command of ["npx -y 03kind@latest init", "npx -y file:/tmp/03kind-0.0.0.tgz init", "npx 03kind doctor", "npm install", "pnpm add -D 03kind", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "pnpm dev > dev.log 2>&1 &", "nohup yarn dev > src/../dev.log 2>&1 &", "git status"]) {
+  for (const command of ["npx -y 03kind@latest init", "npx -y file:/tmp/03kind-0.0.0.tgz init", "npx 03kind doctor", "npm install", "pnpm add -D 03kind", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "pnpm dev > dev.log 2>&1 &", "nohup yarn dev > src/../dev.log 2>&1 &", "git status", "npx vite > vite.log 2>&1 &"]) {
     assert.equal(bash(command), undefined, command);
   }
-  for (const command of ["rm -rf node_modules", "curl https://example.com", "git push", "kill 123", "pkill -f vite", "sudo npm install", "open http://localhost:5173", "rm -rf src &", "kill 123 &", "npm run dev & rm -rf src", "npm run dev > /tmp/dev.log &", "npm run dev > ../dev.log &", "npm publish", "npm run dev `rm x` &"]) {
+  for (const command of ["rm -rf node_modules", "curl https://example.com", "git push", "kill 123", "pkill -f vite", "sudo npm install", "open http://localhost:5173", "rm -rf src &", "kill 123 &", "npm run dev & rm -rf src", "npm run dev > /tmp/dev.log &", "npm run dev > ../dev.log &", "npm publish", "npm run dev `rm x` &",
+    // Output only to /dev/null or a .log file: the judge holds no other file left against remove.
+    "pnpm dev > dev.out 2>&1 &", "npm run dev > src/server.txt &"]) {
     const result = bash(command);
     assert.ok(blocked(result), command);
     assert.match(result.reason, /a dev server started in the background/);
@@ -67,8 +71,10 @@ test("with no install list beside it, the extension holds pi to the applying ben
 /** What the steps and a designer's install need: every Agent may run these. */
 const ALLOWED = [
   "npx -y 03kind@latest init",
-  "npx -y file:/tmp/03kind-0.1.0.tgz init",
+  "npx -y file:/x/03kind-0.0.0.tgz init",
   "npx 03kind doctor",
+  "pnpm exec vite",
+  "npx next dev",
   "npm run dev",
   "pnpm dev",
   "yarn dev",
@@ -82,7 +88,7 @@ const ALLOWED = [
   "cat package.json | head -5",
   "npx vite --port 5174",
 ];
-/** Turned away for every Agent: the denied commands, and the ways round them through npx and the like (the review's bypasses). */
+/** Turned away for every Agent: the denied commands, and the ways round them through npx and the like (both reviews). */
 const DENIED_ALL = [
   "rm -rf node_modules",
   "curl https://example.com",
@@ -104,11 +110,24 @@ const DENIED_ALL = [
   "npx --call 'kill 1'",
   "pnpm dlx bash -c x",
   "npx vite --open",
+  // A runner inside a runner, a wrapper, any program on PATH, an option with a value (the re-review).
+  "pnpm exec npx -c 'kill 1'",
+  "pnpm exec npm exec -c 'kill 1'",
+  "pnpm exec nice kill 1",
+  "pnpm exec nohup rm -rf src",
+  "pnpm exec killall node",
+  "pnpm exec find src -delete",
+  "pnpm exec mv src /tmp/x",
+  "pnpm exec bun -e 1",
+  "npx -p typescript python3 -c 1",
+  "pnpm exec security find-generic-password",
+  "pnpm exec git --no-pager push",
+  "npx -p typescript --loglevel silent kill 123",
 ];
 
 test("pi, under the install list, runs the steps and turns away the denied commands and every bypass of the review", () => {
   for (const command of ALLOWED) assert.equal(bash(command), undefined, command);
-  for (const command of [...DENIED_ALL, "npm exec -- rm -rf src", "npx -p cowsay sh", "yarn exec /bin/rm x", "npm publish", "pnpm remove 03kind", "yarn", "git commit -am x", "python3 -c 1", "npm run dev -- --open &"]) {
+  for (const command of [...DENIED_ALL, "npm exec -- rm -rf src", "npx -p cowsay sh", "yarn exec /bin/rm x", "npm publish", "pnpm remove 03kind", "yarn", "git commit -am x", "python3 -c 1", "npm run dev -- --open &", "npx 03kindx", "npx --version"]) {
     assert.ok(blocked(bash(command)), command);
   }
 });
@@ -116,12 +135,14 @@ test("pi, under the install list, runs the steps and turns away the denied comma
 /**
  * Claude Code's permission rules as the tests take them, an approximation:
  * a command line is split at `&&`, `||`, `;`, `|` and a lone `&`, and each
- * command must start with an allowed `Bash(<prefix>:*)`, word by word, and
- * with no denied one; deny wins. Claude Code's own matching parses the shell
+ * command must start with an allowed `Bash(<prefix>:*)` and with no denied
+ * one, by whole words, as 2.1.309 matches a prefix (the command is the prefix,
+ * or starts with it and a space); deny wins. Claude Code's own matching parses the shell
  * further (it is not in this repository), so this checks the lists, not it.
  */
 function claudeAllows(command: string): boolean {
-  const args = installClaudeArgs("/run", "x");
+  // Told as with --package local: the packed file step 1 names is allowed by its own path.
+  const args = installClaudeArgs("/run", "1. Run `npx -y file:/x/03kind-0.0.0.tgz init`.");
   const prefixes = (flag: string) => args[args.indexOf(flag) + 1].split(",").flatMap((rule) => /^Bash\((.*):\*\)$/.exec(rule)?.[1] ?? []);
   const [allow, deny] = [prefixes("--allowedTools"), prefixes("--disallowedTools")];
   const starts = (part: string, prefix: string) => part === prefix || part.startsWith(`${prefix} `);
@@ -141,11 +162,12 @@ test("Claude, by its install lists, runs the steps and is denied the denied comm
 test("Claude's install command line is the applying bench's with only the lists swapped", () => {
   const args = installClaudeArgs("/run", "Install 03Kind");
   const list = (flag: string) => args[args.indexOf(flag) + 1].split(",");
-  assert.ok(list("--allowedTools").includes("Bash(npx:*)"));
   assert.ok(list("--allowedTools").includes("Bash(pnpm dev:*)"));
   assert.ok(list("--allowedTools").includes("TaskStop"));
   for (const command of INSTALL_DENIED_SHELL) assert.ok(list("--disallowedTools").includes(`Bash(${command}:*)`), command);
-  for (const rule of ["Bash(pnpm exec kill:*)", "Bash(npm exec -c:*)", "Bash(npx -y rm:*)", "Bash(bunx node:*)", "Bash(npx vite --open:*)"]) assert.ok(list("--disallowedTools").includes(rule), rule);
+  for (const rule of ["Bash(npx 03kind:*)", "Bash(npx -y 03kind@latest:*)", "Bash(npx vite:*)", "Bash(pnpm exec vite:*)", "Bash(npx next:*)"]) assert.ok(list("--allowedTools").includes(rule), rule);
+  for (const broad of ["Bash(npx:*)", "Bash(bunx:*)", "Bash(npm exec:*)", "Bash(pnpm exec:*)", "Bash(pnpm dlx:*)", "Bash(yarn dlx:*)", "Bash(bun x:*)"]) assert.ok(!list("--allowedTools").includes(broad), broad);
+  assert.ok(list("--disallowedTools").includes("Bash(npx vite --open:*)"));
   assert.equal(list("--disallowedTools").length, 2 + claudeDenied().length);
   assert.ok(list("--disallowedTools").includes("WebFetch"));
   const applying = AGENTS.claude.args("/run", "Install 03Kind");

@@ -60,6 +60,11 @@ test("an Agent that ends on a question before the steps are done, or asks with a
     "init printed an error about the lockfile. How would you like me to proceed",
     "Should I install the missing peer dependency?",
     "我已经运行了 init。要不要我接着启动开发服务器？",
+    // About the toggle, but asking the designer to decide: not step 3's ask.
+    "Should I use 5174 for the toggle page?",
+    "Want me to also add a button to the header?",
+    "Which port should the toggle's page be on?",
+    "要不要我把按钮放到左下角？",
   ];
   for (const ending of endings) {
     assert.ok(intervention(transcript(ending, [INIT, DEV])).asked, ending);
@@ -87,6 +92,8 @@ test("waitsOnAnswer names the sentence that waits, and never splits an address",
 test("step 3 is told when the last message names the round button at the bottom right, a terminal mentioned or not", () => {
   assert.ok(toldToLook("The next time you open the page there should be a round button at its bottom right."));
   assert.ok(toldToLook("You'll find the 03Kind toggle in the bottom-right corner of the page."));
+  assert.ok(toldToLook("There should be a round button in the lower right of the page."));
+  assert.ok(toldToLook("Look for the 03Kind toggle in the lower-right corner."));
   assert.ok(toldToLook("下次打开页面，右下角应该有一个圆形按钮。"));
   assert.ok(toldToLook("The dev server runs in a terminal; open the page and look for the round button at its bottom right."));
   assert.ok(toldToLook("开发服务器在终端里跑着；打开页面，右下角会有一个圆形按钮。"));
@@ -97,6 +104,10 @@ test("step 3 is told when the last message names the round button at the bottom 
 test("the steps reached are read from the transcript, for where an Agent got stuck", () => {
   assert.deepEqual(stepsReached(transcript("Installed; the round button should be at the page's bottom right.")), ["ran init", "started a dev server", "ran doctor", "doctor All good", "told to look"]);
   assert.deepEqual(stepsReached(transcript("Stopped.", [INIT])), ["ran init"]);
+  // doctor as --package local's step 1 has npx run it: by the packed file.
+  const localDoctor: ToolCall = { name: "Bash", command: "npx -y file:/t/pack/03kind-0.0.0.tgz doctor", output: "All good.\n" };
+  assert.deepEqual(stepsReached(transcript("", [localDoctor])), ["ran doctor", "doctor All good"]);
+  assert.equal(intervention(transcript("Shall I commit?", [INIT, DEV, localDoctor])).asked, null);
   assert.deepEqual(stepsReached(transcript("", [{ name: "Bash", command: "npx -y file:/t/03kind-0.0.0.tgz init", output: "" }, { name: "Bash", command: "pnpm dev > dev.log 2>&1 &", output: "" }, DOCTOR_BAD])), ["ran init", "started a dev server", "ran doctor"]);
   assert.deepEqual(stepsReached(transcript("", [{ name: "Bash", command: "npx vite build", output: "" }])), []);
 });
@@ -212,6 +223,10 @@ test("an install passes on every criterion, and fails each on its own", () => {
   assert.deepEqual(verdicts({ ...passing, afterRemove: { status: " M .gitignore\n", diff: "diff --git a/.gitignore b/.gitignore\n+*.log\n" } }), allBut("removed"));
   assert.match(judgeInstall({ ...passing, toggleMs: null }).find((c) => !c.pass)!.why, /never found/);
   assert.match(judgeInstall({ ...passing, timedOut: true }).find((c) => !c.pass)!.why, /time limit/);
+  // A run recorded before the criterion: not judged on it.
+  const before = judgeInstall({ ...passing, exitCode: undefined, timedOut: undefined }).find((c) => c.criterion === "ended")!;
+  assert.equal(before.pass, true);
+  assert.match(before.why, /not judged/);
 });
 
 test("after remove, an untracked file left fails removed, but a log file is only listed", () => {

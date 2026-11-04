@@ -60,17 +60,25 @@ export const INSTALL_DENIED_SHELL = ["rm", "sudo", "kill", "pkill", "curl", "wge
 const INSTALL_DENIED_TOOLS = ["WebFetch", "WebSearch"];
 
 /**
- * The commands of the list that run a program of their own choosing. The
- * spec lets an installing Agent run commands (执行命令), so they stay; but
- * not a denied command through them (`pnpm exec kill 123`), nor a shell or an
- * interpreter, which would run anything (`npm exec -c 'kill 123'`,
- * `pnpm exec sh -c …`).
+ * The commands of the list that run a package's program, and the programs
+ * each may run (ticket 91 re-review, 代定): an allowlist, as a list of what to
+ * turn away leaks (a runner inside a runner, `nice`, `nohup`, any program on
+ * PATH). The runners that fetch a package may run 03Kind (by a version, or
+ * the packed file step 1 names with `--package local`) and the two dev
+ * servers; those that run the project's own binaries, 03Kind and the servers.
+ *
+ * What no allowlist closes: with Write or Edit and a run-script form, an
+ * Agent can write a script, or a `scripts` entry in package.json, that does
+ * anything, and run it (`npm run x`). The bench keeps run-script forms, as
+ * step 2 starts a dev server by one; it would show in the diff.
  */
-const INSTALL_RUNNERS = ["npx", "bunx", "npm exec", "pnpm exec", "pnpm dlx", "yarn exec", "yarn dlx", "bun x"];
-const INSTALL_DENIED_PROGRAMS = [...INSTALL_DENIED_SHELL, "sh", "bash", "zsh", "dash", "fish", "node", "env", "xargs"];
+const FETCHING_RUNNERS = ["npx", "bunx", "pnpm dlx", "yarn dlx", "bun x"];
+const EXEC_RUNNERS = ["npm exec", "pnpm exec", "yarn exec"];
+const RUNNABLE = ["03kind", "vite", "next"];
+const INSTALL_RUNNERS: Record<string, string[]> = Object.fromEntries([...FETCHING_RUNNERS, ...EXEC_RUNNERS].map((runner) => [runner, RUNNABLE]));
 
-/** Runner options that run a command line of their own. */
-const RUNS_A_LINE = ["-c", "--call", "--shell-mode"];
+/** Options a runner may have before its program: those that take no value, and none that runs a command line of its own (`-c`, `--call`, `--shell-mode`). */
+const INSTALL_FLAGS = ["-y", "--yes", "--no-install", "--prefer-offline", "--prefer-online", "--offline", "--silent", "-s", "--quiet", "-q", "--"];
 
 /** Options turned away in any command: `--open` opens a browser window on the designer's screen. */
 const INSTALL_DENIED_OPTIONS = ["--open"];
@@ -96,30 +104,43 @@ export function prepareInstallPi(dir: string, folder: string): void {
   AGENTS.pi.prepare!(dir, folder);
   const extension = AGENTS.pi.args(folder).find((arg) => arg.endsWith("pi-extension.ts"));
   if (!extension) throw new Error("pi's command line loads no pi-extension.ts: the install list has nowhere to go");
-  const list: ShellList = { shell: INSTALL_SHELL, servers: INSTALL_SERVERS, runners: INSTALL_RUNNERS, programs: INSTALL_DENIED_PROGRAMS, options: INSTALL_DENIED_OPTIONS };
+  const list: ShellList = { shell: INSTALL_SHELL, servers: INSTALL_SERVERS, runners: INSTALL_RUNNERS, flags: INSTALL_FLAGS, options: INSTALL_DENIED_OPTIONS };
   writeFileSync(join(dirname(extension), INSTALL_LIST), `${JSON.stringify(list, null, 2)}\n`);
 }
 
 /**
- * The commands Claude is denied, as `Bash(<prefix>:*)` rules. Claude Code
- * matches a rule by the start of each command, so a runner's denied program
- * is denied right after the runner, and after `npx -y`, the way step 1 runs
- * npx; one after other options (`npx -p x rm`) is not caught, nor `--open`
- * but in the forms below. For a window, `BROWSER=none` in the Agent's
- * environment is the guard that holds (run-install.ts): Vite opens none with it.
+ * Claude's runner rules, in place of the list's bare runners: each program a
+ * runner may run, as its own `Bash(<prefix>:*)`. Claude Code matches a prefix
+ * by whole words (`npx 03kind` is not `npx 03kind@latest`), so the versions
+ * step 1 and a designer's install use are named too, after `-y` and `--yes`
+ * as well; and the packed file step 1 names with `--package local`, read from
+ * what the Agent is told.
+ */
+function claudeRunners(prompt: string): string[] {
+  const fetched = FETCHING_RUNNERS.flatMap((runner) => ["", "-y ", "--yes "].flatMap((flag) => [...RUNNABLE, "03kind@latest"].map((program) => `${runner} ${flag}${program}`)));
+  const exec = EXEC_RUNNERS.flatMap((runner) => RUNNABLE.map((program) => `${runner} ${program}`));
+  const packed = /`(npx -y file:\S+\.tgz) init`/.exec(prompt)?.[1];
+  return [...fetched, ...exec, ...(packed ? [packed] : [])];
+}
+
+/**
+ * The commands Claude is denied, as `Bash(<prefix>:*)` rules (deny wins): the
+ * denied commands, which a prefix allowed would let by after `&&`, and
+ * `--open` where a prefix can name it. For a window, `BROWSER=none` in the
+ * Agent's environment is the guard that holds (run-install.ts): Vite opens
+ * none with it.
  */
 export function claudeDenied(): string[] {
-  const runners = [...INSTALL_RUNNERS, "npx -y", "npx --yes"];
   return [
     ...INSTALL_DENIED_SHELL,
-    ...runners.flatMap((runner) => [...INSTALL_DENIED_PROGRAMS, ...RUNS_A_LINE].map((program) => `${runner} ${program}`)),
-    ...["npx vite", "bunx vite", "pnpm exec vite", "npm exec vite", "yarn exec vite", "npx next dev", "npm run dev --", "pnpm dev", "yarn dev", "bun run dev", "bun dev"].map((server) => `${server} --open`),
+    ...["npx vite", "npx -y vite", "bunx vite", "pnpm exec vite", "npm exec vite", "yarn exec vite", "npm run dev --", "pnpm dev", "yarn dev", "bun run dev", "bun dev"].map((server) => `${server} --open`),
   ];
 }
 
 /** The flags of Claude's command line that carry its lists. */
 const LISTS = {
-  "--allowedTools": () => [...INSTALL_TOOLS, ...INSTALL_SHELL.map((command) => `Bash(${command}:*)`)].join(","),
+  "--allowedTools": (prompt: string) =>
+    [...INSTALL_TOOLS, ...INSTALL_SHELL.filter((command) => !(command in INSTALL_RUNNERS)), ...claudeRunners(prompt)].map((rule) => (INSTALL_TOOLS.includes(rule) ? rule : `Bash(${rule}:*)`)).join(","),
   "--disallowedTools": () => [...INSTALL_DENIED_TOOLS, ...claudeDenied().map((command) => `Bash(${command}:*)`)].join(","),
 };
 
@@ -133,7 +154,7 @@ export function installClaudeArgs(folder: string, prompt: string): string[] {
   for (const [flag, list] of Object.entries(LISTS)) {
     const at = args.indexOf(flag);
     if (at < 0) throw new Error(`Claude's command line has no ${flag}: the install lists have nowhere to go`);
-    args[at + 1] = list();
+    args[at + 1] = list(prompt);
   }
   return args;
 }

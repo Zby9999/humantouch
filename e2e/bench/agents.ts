@@ -346,6 +346,9 @@ export async function processTable(): Promise<ProcessRow[]> {
   });
 }
 
+/** How long, once an Agent that leaves things running has exited, its output still gets to come in. */
+const LEFT_RUNNING_DRAIN_MS = 2000;
+
 /** How the install bench (ticket 91) runs an Agent otherwise than the applying bench: all of it optional. */
 export interface RunOptions {
   /** Another binary, arguments and preparing in place of the Agent's: Claude's with the install lists, pi's with its list, or the scripted Agent. */
@@ -354,7 +357,10 @@ export interface RunOptions {
   env?: NodeJS.ProcessEnv;
   /** Told the Agent's process id as soon as it has started. */
   onStart?(pid: number): void;
-  /** Leaves what the Agent started running once it exits (its dev server), for the bench to stop itself; still stopped on a timeout. */
+  /**
+   * Leaves what the Agent started running once it exits (its dev server), for the bench to stop itself; still
+   * stopped on a timeout. The Agent's end is then its own exit, not its output closing, which a server can hold.
+   */
   leaveRunning?: boolean;
 }
 
@@ -389,7 +395,11 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
     timedOut = true;
     stopAll();
   }, timeoutMs);
-  const exitCode = await new Promise<number | null>((resolve) => child.on("close", resolve));
+  const closed = new Promise<number | null>((resolve) => child.on("close", resolve));
+  // What it leaves running may hold its output open (a dev server started with its stdout): its end is
+  // its own exit, then what it printed gets a short while to come in.
+  const exitCode = options.leaveRunning ? await new Promise<number | null>((resolve) => child.on("exit", resolve)) : await closed;
+  if (options.leaveRunning) await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, LEFT_RUNNING_DRAIN_MS))]);
   clearTimeout(timer);
   clearInterval(watch);
   await looking;

@@ -36,8 +36,18 @@ const ASKING_TOOLS = /^(AskUserQuestion|ask_?user|ask_?followup_?question|reques
 /** A sentence asking the designer to decide or answer before the Agent goes on. */
 const ASKS = /\b(should I|shall I|do you want( me)? to|would you like( me)? to|how would you like|which (?:one|option|port|command) (?:do|would|should)|please (?:confirm|choose|decide)|let me know (?:whether|which|how|if (?:I should|you(?:'d| would)? (?:like|want) me to)))\b|要不要|是否需要|需要我|请确认|请选择|你希望/i;
 
-/** The toggle, as an Agent names it: step 3's ask (look for it, tell me if it is not there) is about it. */
+/** The toggle, as an Agent names it. */
 const ABOUT_THE_TOGGLE = /\b(button|toggle)\b|按钮|切换/i;
+
+/**
+ * Step 3's own ask: look whether the toggle is there (can you see it, tell
+ * me if it is not there). Never a sentence that asks the designer to decide
+ * (should I, would you like me to, which, 要不要): "Should I use 5174 for the
+ * toggle page?" or "Want me to add a button to the header?" wait on them.
+ */
+const LOOK_FOR_IT = /\b(see|seen|look|appear|appears|there|visible|show|shows)\b|在不在|看到|看见|出现/i;
+const DECIDE = /\b(should I|shall I|want me|would you like me|which)\b|要不要|是否需要/i;
+const stepThreeAsk = (sentence: string) => ABOUT_THE_TOGGLE.test(sentence) && LOOK_FOR_IT.test(sentence) && !DECIDE.test(sentence);
 
 /** The sentences of `text`; an address is never split, its `?` and `.` being no sentence's end. */
 function sentences(text: string): string[] {
@@ -49,15 +59,14 @@ function sentences(text: string): string[] {
 /**
  * The sentence of `text` that asks the designer something, or null: a
  * question (ending in ? or ？), or a sentence asking them to decide; but not
- * one about the toggle, which is step 3's own ask (tell me if it is not there,
- * can you see it).
+ * step 3's own ask.
  */
 export function waitsOnAnswer(text: string): string | null {
-  return sentences(text).find((sentence) => (/[?？]$/.test(sentence) || ASKS.test(sentence)) && !ABOUT_THE_TOGGLE.test(sentence)) ?? null;
+  return sentences(text).find((sentence) => (/[?？]$/.test(sentence) || ASKS.test(sentence)) && !stepThreeAsk(sentence)) ?? null;
 }
 
-/** `doctor` as the Agent runs it: by npx, by the package manager, or by the project's copy. */
-const DOCTOR = /\b03kind(?:\/dist\/cli\.js)?["']?\s+doctor\b/;
+/** `doctor` as the Agent runs it: by npx (by name, a version or the packed file), by the package manager, or by the project's copy. */
+const DOCTOR = /(?:03kind\S*|\.tgz)["']?\s+doctor\b/;
 
 /** Whether the transcript shows `doctor` run and saying "All good.": the steps are done. */
 function doctorAllGood(transcript: Pick<Transcript, "toolCalls">): boolean {
@@ -88,7 +97,7 @@ export function intervention(transcript: Pick<Transcript, "toolCalls" | "finalTe
 
 /** Whether the last message tells the designer to look for the round button at the page's bottom right (step 3, headless). */
 export function toldToLook(text: string): boolean {
-  return /bottom[\s-]*right|右下/i.test(text) && ABOUT_THE_TOGGLE.test(text) && /\b(page|round|03Kind)\b|页面|圆/i.test(text);
+  return /(?:bottom|lower)[\s-]*right|右下/i.test(text) && ABOUT_THE_TOGGLE.test(text) && /\b(page|round|03Kind)\b|页面|圆/i.test(text);
 }
 
 /** The steps, in order, as the transcript shows the Agent reached them. */
@@ -199,9 +208,9 @@ export interface InstallOutcome {
   framework: Framework;
   /** From the Agent's start to the toggle found on its dev server's page, or null when it never was. */
   toggleMs: number | null;
-  /** How the Agent's session ended. */
-  exitCode: number | null;
-  timedOut: boolean;
+  /** How the Agent's session ended; undefined in runs recorded before the `ended` criterion, which is then not judged. */
+  exitCode: number | null | undefined;
+  timedOut: boolean | undefined;
   transcript: Pick<Transcript, "toolCalls" | "finalText">;
   /** What the bench's own `doctor` printed, once the Agent had ended. */
   doctor: string;
@@ -233,11 +242,13 @@ export function judgeInstall(outcome: InstallOutcome): Judged[] {
       why: toggleMs === null ? "the toggle was never found on a page of a dev server the Agent started" : `the toggle showed ${(toggleMs / 1000).toFixed(1)}s from the Agent's start (≤ ${TOGGLE_BUDGET_MS / 1000}s)`,
     },
     // Stuck is a failure (ticket 91, 背景).
-    {
-      criterion: "ended",
-      pass: !timedOut && exitCode === 0,
-      why: timedOut ? "the Agent was stopped at the bench's time limit" : exitCode === 0 ? "the Agent's session ended on its own" : `the Agent exited with code ${exitCode}`,
-    },
+    timedOut === undefined
+      ? { criterion: "ended", pass: true, why: "not recorded (a run from before this criterion): not judged" }
+      : {
+          criterion: "ended",
+          pass: !timedOut && exitCode === 0,
+          why: timedOut ? "the Agent was stopped at the bench's time limit" : exitCode === 0 ? "the Agent's session ended on its own" : `the Agent exited with code ${exitCode}`,
+        },
     { criterion: "unattended", pass: !asked, why: asked ?? "no tool asked the designer, and the last message waits on no answer" },
     {
       criterion: "doctor",

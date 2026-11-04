@@ -304,10 +304,13 @@ async function run(command: string[], cwd: string, log: (line: string) => void):
  * Builds the start fresh, from its official scaffold, in the system's temporary
  * folder: dependencies installed, `git init`, everything committed.
  * `versions` is what the scaffold resolved to, and the package manager's own.
+ * `made` is told how to delete the folder as soon as there is one.
  */
-export async function scaffold(start: Start, log: (line: string) => void): Promise<{ dir: string; versions: Record<string, string>; remove(): void }> {
+export async function scaffold(start: Start, log: (line: string) => void, made?: (remove: () => void) => void): Promise<{ dir: string; versions: Record<string, string>; remove(): void }> {
   const folder = mkdtempSync(join(tmpdir(), "03kind-install-"));
   const remove = () => rmSync(folder, { recursive: true, force: true });
+  // Told at once, so a bench stopped mid-scaffold can delete it (run-install.ts).
+  made?.(remove);
   try {
     const dir = join(folder, start.id);
     const scaffolder = start.framework === "vite" ? "create-vite" : "create-next-app";
