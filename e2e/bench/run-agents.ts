@@ -85,6 +85,8 @@ interface RawRun {
   skill?: boolean;
   /** The extensions of others the Agent ran with, by name, and the version installed (pi's pi-fff); missing for an Agent with none, and in runs before ticket 92. */
   extensions?: Record<string, string | null>;
+  /** pi's: fingerprints of the designer's settings.json and models.json, which apply to its runs (`sha256:<hex>`, null for one absent); recorded, never scored. Missing in runs before ticket 88. */
+  piConfig?: Record<string, string | null>;
   /** The effort the command line sets, and the one the session ran at, as Claude Code's debug log or pi's transcript shows it. */
   effort: { set: string; seen: string | null };
   exitCode: number | null;
@@ -618,6 +620,8 @@ async function runOnce({
       }
     }, FILES_POLL_MS);
     const pageTimer = setInterval(lookAtThePage, SHOWN_POLL_MS);
+    // As the run starts: pi may write its settings.json as it goes.
+    const piConfig = AGENTS[agent].configFingerprints?.();
     let agentRun: AgentRun;
     try {
       agentRun = await runAgent(agent, project.dir, folder, AGENT_TIMEOUT_MS, prompt);
@@ -649,6 +653,7 @@ async function runOnce({
       commandLine: commandLine(agent, prompt),
       skill,
       ...(AGENTS[agent].extensions && { extensions: AGENTS[agent].extensions() }),
+      ...(piConfig && { piConfig }),
       effort: { set: AGENTS[agent].effort, seen: AGENTS[agent].effortSeen?.(folder) ?? null },
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,

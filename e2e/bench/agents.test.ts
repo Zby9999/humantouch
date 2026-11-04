@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piFffVersion, PROMPT, runAgent } from "./agents.ts";
+import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piConfigFingerprints, piFffVersion, PROMPT, runAgent } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
@@ -155,6 +155,17 @@ test("pi runs with pi-fff, the designer's installed copy, its databases in the r
   assert.deepEqual(Object.keys(AGENTS.pi.extensions!()), ["pi-fff"]);
 });
 
+test("pi's runs record a fingerprint of the designer's settings.json and models.json, which still apply to them: a digest of each file's bytes, not the file, null for one absent (ticket 88)", () => {
+  const agentDir = mkdtempSync(join(scratch, "pi-agent-"));
+  writeFileSync(join(agentDir, "settings.json"), "abc");
+  // sha256 of the three bytes "abc" (FIPS 180-2's example).
+  assert.deepEqual(piConfigFingerprints(agentDir), { "settings.json": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "models.json": null });
+  assert.deepEqual(piConfigFingerprints(join(scratch, "nowhere")), { "settings.json": null, "models.json": null });
+  // The real one reads the designer's ~/.pi/agent: here only that pi has it.
+  assert.equal(typeof AGENTS.pi.configFingerprints, "function");
+  for (const agent of ["claude", "cursor"] as const) assert.equal(AGENTS[agent].configFingerprints, undefined);
+});
+
 test("Claude's and Cursor's command lines have nothing of fff, and their runs record no extension", () => {
   for (const agent of ["claude", "cursor"] as const) {
     assert.doesNotMatch(commandLine(agent), /fff/);
@@ -162,14 +173,25 @@ test("Claude's and Cursor's command lines have nothing of fff, and their runs re
   }
 });
 
-test("the effort pi ran at is the thinking level its answers name in the transcript; Claude Code says it in its debug log, Cursor nowhere", () => {
+test("Claude runs on Sonnet 5.5 at effort medium, pinned (ticket 88, the designer's decision of 2026-11-05), and its record says so", () => {
+  assert.match(commandLine("claude"), / --model claude-sonnet-5-5 --effort medium /);
+  assert.equal(AGENTS.claude.model, "claude-sonnet-5-5");
+  assert.equal(AGENTS.claude.effort, "medium (--effort medium)");
+});
+
+test("the effort pi ran at is the thinking level its answers name in the transcript; Claude Code says it in its debug log only when it lowers it, Cursor nowhere", () => {
   const folder = mkdtempSync(join(scratch, "run-"));
   writeFileSync(join(folder, "transcript.jsonl"), `${JSON.stringify({ type: "message_end", message: { role: "assistant", thinkingLevel: "high" } })}\n`);
 
   assert.equal(AGENTS.pi.effortSeen!(folder), "high");
   assert.equal(AGENTS.claude.effortSeen!(folder), null);
-  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] effort: high\n");
-  assert.equal(AGENTS.claude.effortSeen!(folder), "high");
+  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] effort: medium\n");
+  assert.equal(AGENTS.claude.effortSeen!(folder), "medium");
+  // Lowered: the level it used, not the one asked for.
+  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] [effort] Effort 'high' exceeds the cap for claude-sonnet-5-5; using 'medium'.\n");
+  assert.equal(AGENTS.claude.effortSeen!(folder), "medium");
+  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] [effort] the API refused effort 'high' for this model: no more than 'low'\n");
+  assert.equal(AGENTS.claude.effortSeen!(folder), "low");
   assert.equal(AGENTS.cursor.effortSeen, undefined);
 });
 
