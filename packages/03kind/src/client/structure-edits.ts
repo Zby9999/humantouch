@@ -11,6 +11,7 @@ import type { WorkingView } from "./breakpoint-edits";
 import type { Breakpoint } from "./breakpoints";
 import {
   AS_STACK_ATTR,
+  asShown,
   BRIEF_ATTR,
   changesOn,
   DELETED_ATTR,
@@ -266,8 +267,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   const keptSize = (el: Element): Record<string, string> => {
     const size = sizeOf(el);
     const shown = working.shown(el);
-    if (heldCentered(shown, "x")) delete size.width;
-    if (heldCentered(shown, "y")) delete size.height;
+    asShown(shown, () => {
+      if (heldCentered(shown, "x")) delete size.width;
+      if (heldCentered(shown, "y")) delete size.height;
+    });
     return size;
   };
 

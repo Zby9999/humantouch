@@ -7662,6 +7662,16 @@ describe("layers whose auto margins take up room do not jump (ticket 97)", () =>
     ]);
   });
 
+  test("held by its maximum, centered across by its auto margins, its width typed in the panel: its maximum is what changes, as a resize sets it, so it still fills a container narrower than it", async () => {
+    const { editor, layer, drawn, changes } = await open(HELD.replace("max-width: 50px", "max-width: 300px"));
+    editor.set(layer("tag"), "width", { type: "fixed", value: 260 });
+    expect(drawn("tag", "x")).toEqual([
+      [70, 260],
+      [0, 195],
+    ]);
+    expect(changes.list().map((change) => [change.property, change.after])).toEqual([["maxWidth", 260]]);
+  });
+
   test("held by its maximum, centered across by its auto margins, resized by its right handle on the canvas: its maximum does not stop it, and it grows on both sides alike", async () => {
     const { editor, layer, doc } = await open();
     const view = { boxOf: (l: Layer) => l.el.getBoundingClientRect(), elementOf: (el: Element) => el };

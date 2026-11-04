@@ -17,7 +17,7 @@ import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
 import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
-import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
+import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -535,6 +535,9 @@ export function createEditor(
    */
   const setValue = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], { continues = false, step = false, variables, sizeAlone = false }: SetOptions & { sizeAlone?: boolean } = {}) => {
     if (!editor.can(layer, property, value)) throw new Error(`03Kind: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
+    // A Fixed size of one centered by its auto margins, held by a maximum: that maximum, its size `auto` still, so it goes on filling what room its sides leave where less (ticket 97).
+    const held = heldMaxOf(layer, property, value);
+    if (held) return setValue(layer, held, (value as Size & { type: "fixed" }).value, { continues, step, variables });
     // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
     views.lagBeside(working.beside, step || stepping, () => {
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
@@ -559,6 +562,19 @@ export function createEditor(
         editHere(layer, end, round(from - (size() - was)), true);
       }, continues);
     });
+  };
+
+  /**
+   * The maximum a Fixed width or height (`value`) of `property` sets in its
+   * place, `layer` centered by its auto margins that way, its size there
+   * `auto`, held by that maximum, in the view worked in (`heldCentered`,
+   * ticket 97). Null otherwise.
+   */
+  const heldMaxOf = (layer: Layer, property: Property, value: unknown): "maxWidth" | "maxHeight" | null => {
+    const axis = SIZE_AXIS[property];
+    if (!axis || layer.text || (value as Size | null)?.type !== "fixed") return null;
+    const el = working.shown(layer.el);
+    return asShown(el, () => heldCentered(el, axis)) ? (axis === "x" ? "maxWidth" : "maxHeight") : null;
   };
 
   /** Set while edits that are steps of a run (`SetOptions.step`) are under way: each value set then is one. */
@@ -625,12 +641,10 @@ export function createEditor(
         group(
           () => {
             // Each edge where the handle has it: no size keeps an edge of its own accord.
-            // Centered by its auto margins, held by a maximum: that maximum, so it still fills what room its sides leave where less (ticket 97).
-            const held = (axis: Axis) => asShown(working.shown(layer.el), () => heldCentered(working.shown(layer.el), axis));
-            if (width !== undefined) held("x") ? setValue(layer, "maxWidth", width) : setValue(layer, "width", { type: "fixed", value: width }, { sizeAlone: true });
+            if (width !== undefined) setValue(layer, "width", { type: "fixed", value: width }, { sizeAlone: true });
             if (x !== undefined) setValue(layer, "x", x);
             if (right !== undefined) setValue(layer, "right", right);
-            if (height !== undefined) held("y") ? setValue(layer, "maxHeight", height) : setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
+            if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
             if (y !== undefined) setValue(layer, "y", y);
             if (bottom !== undefined) setValue(layer, "bottom", bottom);
           },

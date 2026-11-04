@@ -306,6 +306,9 @@ export function shareWords({ percent, px }: Share, axis: Axis, edge: Edge, conta
   return `${percent}% of ${container}'s ${AXIS_SIZE[axis]} ${where ?? `from its ${SIDES[axis][edge]} edge`}${past}`;
 }
 
+/** Of a layer centered by its auto margins along `axis`, its size there `auto`, held by a maximum (`PlacedFrom.held`, ticket 97): that, after a comma; nothing otherwise. */
+export const heldWords = (axis: Axis, held?: boolean) => (held ? `, its ${AXIS_SIZE[axis]} \`auto\`, held by its \`${AXIS_MAX[axis]}\`` : "");
+
 /** What keeps a layer placed from its container's right or bottom edge along `axis` so: its `left` or `top` left alone. */
 const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` instead`;
 
@@ -327,9 +330,7 @@ function placementLine({ property, placedFrom }: Change): string {
       : sized
         ? `only its ${property} changes, on both sides alike`
         : "keep both sides and the auto margins, only how far past the middle it is changes";
-    // Its size `auto`, held by a maximum (ticket 97): kept so.
-    const held = placedFrom!.held ? `, its ${size} \`auto\`, held by its \`${AXIS_MAX[axis]}\`` : "";
-    return `**Placement:** the layer is centered ${AXIS_WAY[axis]} between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`)${held}, and stays so: ${only}.`;
+    return `**Placement:** the layer is centered ${AXIS_WAY[axis]} between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`)${heldWords(axis, placedFrom!.held)}, and stays so: ${only}.`;
   }
   if (placedFrom!.centered) {
     // On where the side it is placed by places it: moved back half its size from a `left` or `top`, forward from a `right` or `bottom`.
@@ -571,7 +572,7 @@ function absoluteWhere({ x, y, placed }: NonNullable<Place["absolute"]>, whose: 
       const sides = centeringSides(how);
       return (
         `centered ${AXIS_WAY[axis]} between \`${start}: ${shareCss(sides.start)}\` and \`${end}: ${shareCss(sides.end)}\` by its auto margins ` +
-        `(its middle at ${shareWords(how, axis, "start", `the ${whose}`)}, with its \`${AUTO_MARGINS[axis]}\` kept${how.held ? `, its ${AXIS_SIZE[axis]} \`auto\`, held by its \`${AXIS_MAX[axis]}\`` : ""}, as the layer is now)`
+        `(its middle at ${shareWords(how, axis, "start", `the ${whose}`)}, with its \`${AUTO_MARGINS[axis]}\` kept${heldWords(axis, how.held)}, as the layer is now)`
       );
     }
     const side = SIDES[axis][how.edge];

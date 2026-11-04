@@ -114,8 +114,9 @@ export function heldByMax(el: Element, axis: Axis): boolean {
  * it is not as large as it is set there (`sized`), where the browser takes
  * them for none; but both, its size `auto`, held by a maximum (`heldByMax`,
  * ticket 97), "both": where its sides leave it less room than that, it fills
- * it, its middle between them still. As its style computes them (`computedStyleMap`, which keeps
- * the keyword where `getComputedStyle` gives the px it takes up), however
+ * it, its middle between them still. As its style computes them
+ * (`computedStyleMap`, which keeps the keyword where `getComputedStyle`
+ * gives the px it takes up), however
  * they are written (`margin`, `margin-inline`, `mx-auto`), with nothing laid
  * out (ADR 0011); left to right and right to left alike.
  */
@@ -134,12 +135,12 @@ export function autoMarginsPlacing(el: Element, axis: Axis): Edge | "both" | nul
 
 /**
  * Whether `el` is centered along `axis` by its auto margins, its size there
- * held by a maximum (`heldByMax`, ticket 97): what a resize sets of it is
- * that maximum, its size `auto` still, so it goes on filling what room its
- * sides leave where less.
+ * held by a maximum (`heldByMax`, ticket 97), as `placedFrom` has it
+ * (`held`), from styles alone: what a resize sets of it is that maximum, its
+ * size `auto` still, so it goes on filling what room its sides leave where less.
  */
 export function heldCentered(el: Element, axis: Axis): boolean {
-  return !!placedFrom(el, axis).held;
+  return autoMarginsPlacing(el, axis) === "both" && heldByMax(el, axis);
 }
 
 /**
@@ -164,7 +165,6 @@ export function autoMarginBefore(el: Element, axis: Axis): number {
   if (!absolute(el) || String(el.computedStyleMap().get(margin)) !== "auto") return 0;
   return parseFloat(getComputedStyle(el).getPropertyValue(margin)) || 0;
 }
-
 
 /**
  * Where `el`, placed absolute or fixed, is placed along `axis` from its
