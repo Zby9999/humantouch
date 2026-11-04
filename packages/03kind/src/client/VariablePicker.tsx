@@ -197,20 +197,25 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
  * Variable's name shows in its place, to pick another or detach it; without,
  * the field, and beside it a button that lists the group's Variables. With no
  * Variables in the group, the field alone.
+ *
+ * The field is in the same element whether the Variables are in or not: they
+ * can come in after the panel is up, as the field is typed into, and it keeps
+ * its focus, what is typed and what is selected in it (ticket 98). With no
+ * button beside it, that element lays out as if the field were in its place.
  */
 export function VariableSlot({ label, slot, children }: { label: string; slot: Slot | undefined; children: ComponentChildren }) {
   const catalog = useCatalog();
   const [open, setOpen] = useState<HTMLElement | null>(null);
-  if (!slot || !catalog?.of(slot.group).length) return <>{children}</>;
-  const { group, bound, onPick } = slot;
+  const offered = slot && catalog?.of(slot.group).length ? slot : undefined;
   const pick = (entry: Resolved | null) => {
     setOpen(null);
-    onPick(entry);
+    offered!.onPick(entry);
   };
   const lower = label.toLowerCase();
-  const typing: Typing = { group, selection: slot.selection, read: readLength, naming: namesLength, onPick: pick };
+  const typing: Typing | null = offered ? { group: offered.group, selection: offered.selection, read: readLength, naming: namesLength, onPick: pick } : null;
+  const bound = offered?.bound;
   return (
-    <div class="tk-variable-slot">
+    <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"}>
       {bound ? (
         <div class="tk-field tk-variable-chip">
           <Icon name="variable" />
@@ -229,23 +234,23 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
           </button>
         </div>
       ) : (
-        <>
-          <TypingProvider value={typing}>{children}</TypingProvider>
-          <button
-            type="button"
-            class="tk-icon-button tk-variable-button"
-            aria-label={`${label} variables`}
-            aria-haspopup="dialog"
-            title="Apply variable"
-            onClick={(event) => setOpen(open ? null : event.currentTarget)}
-          >
-            <Icon name="variable" />
-          </button>
-        </>
+        <TypingProvider value={typing}>{children}</TypingProvider>
       )}
-      {open && (
+      {offered && !bound && (
+        <button
+          type="button"
+          class="tk-icon-button tk-variable-button"
+          aria-label={`${label} variables`}
+          aria-haspopup="dialog"
+          title="Apply variable"
+          onClick={(event) => setOpen(open ? null : event.currentTarget)}
+        >
+          <Icon name="variable" />
+        </button>
+      )}
+      {offered && open && (
         <Popover label={`${label} variables`} anchor={open} onClose={() => setOpen(null)}>
-          <VariableList group={group} bound={bound} onPick={pick} />
+          <VariableList group={offered.group} bound={offered.bound} onPick={pick} />
         </Popover>
       )}
     </div>

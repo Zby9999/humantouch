@@ -1487,24 +1487,25 @@ function ColorField({ name, color, onChange, variable }: { name: string; color: 
   const hex = <TextField label={`${name} color`} value={color.color.slice(1)} parse={parseHex} onChange={(hex) => onChange({ color: hex, opacity: color.opacity })} />;
   const typed = (
     <>
-      {offered ? (
-        <TypingProvider
-          value={{
-            group: "color",
-            selection: offered.selection,
-            read: (text) => {
-              const hex = parseHex(text);
-              return hex ? { color: hex, opacity: color.opacity } : null;
-            },
-            naming: namesColor,
-            onPick: offered.onPick,
-          }}
-        >
-          {hex}
-        </TypingProvider>
-      ) : (
-        hex
-      )}
+      {/* Around the hex whether the Variables are in or not: they can come in as it is typed into, and it keeps what is typed (ticket 98). */}
+      <TypingProvider
+        value={
+          offered
+            ? {
+                group: "color",
+                selection: offered.selection,
+                read: (text) => {
+                  const hex = parseHex(text);
+                  return hex ? { color: hex, opacity: color.opacity } : null;
+                },
+                naming: namesColor,
+                onPick: offered.onPick,
+              }
+            : null
+        }
+      >
+        {hex}
+      </TypingProvider>
       <TextField
         label={`${name} opacity`}
         class="tk-opacity"
