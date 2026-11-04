@@ -19,12 +19,13 @@ prepareInstallPi(project, folder);
 const extension = AGENTS.pi.args(folder).find((arg) => arg.endsWith("pi-extension.ts"))!;
 const listFile = join(dirname(extension), INSTALL_LIST);
 
-/** The extension's tool_call handler, as pi would load it, from `file` for its list. */
-function bash(command: string, file = listFile) {
+/** The extension's tool_call handler, as pi would load it, from `file` for its list: a call of `toolName`. */
+function call(toolName: string, input: object, file = listFile) {
   const handlers: Record<string, (event: any, ctx?: any) => any> = {};
   benchExtension({ on: (event, handler) => void (handlers[event] = handler) }, file);
-  return handlers.tool_call({ type: "tool_call", toolName: "bash", toolCallId: "x", input: { command } }, { cwd: project });
+  return handlers.tool_call({ type: "tool_call", toolName, toolCallId: "x", input }, { cwd: project });
 }
+const bash = (command: string, file = listFile) => call("bash", { command }, file);
 const blocked = (result: any) => result?.block === true && result.reason.startsWith(DENIED);
 
 test("before pi installs, the extension is copied as for the applying bench and the install list written beside it; pi's command line is the applying bench's", () => {
@@ -38,6 +39,10 @@ test("before pi installs, the extension is copied as for the applying bench and 
   const args = AGENTS.pi.args(folder, "Install 03Kind");
   for (const flag of ["--provider", "--model", "--thinking", "--offline", "--no-extensions", "--no-mcp", "--no-skills", "--skill", "--no-prompt-templates", "--no-themes", "--approve", "--tools"]) assert.ok(args.includes(flag), flag);
   assert.equal(args[1], "Install 03Kind");
+  // pi-fff as the applying bench has it, its databases in the run's folder: nothing of fff in the project, for remove to leave.
+  assert.ok(args.includes("--fff-mode"));
+  for (const flag of ["--fff-frecency-db", "--fff-history-db"]) assert.ok(args[args.indexOf(flag) + 1].startsWith(folder), flag);
+  assert.deepEqual(args, AGENTS.pi.args(folder, "Install 03Kind"));
 });
 
 test("under the install list, pi may run the steps and start a dev server in the background, and nothing denied", () => {
@@ -173,4 +178,32 @@ test("Claude's install command line is the applying bench's with only the lists 
   const applying = AGENTS.claude.args("/run", "Install 03Kind");
   // Everything else as the applying bench has it.
   for (const [i, arg] of applying.entries()) if (!["--allowedTools", "--disallowedTools"].includes(applying[i - 1])) assert.equal(args[i], arg);
+});
+
+test("fff's search tools (ticket 92) go ahead in the project under the install list as under the applying one, and never reach pi's own folder", () => {
+  const none = join(scratch, "nothing-here.json");
+  // grep and find are fff's in override mode; ffgrep, fffind and fff-multi-grep its own names.
+  const inProject: [string, object][] = [
+    ["grep", { pattern: "ThirdKind" }],
+    ["grep", { pattern: "ThirdKind", path: "src/" }],
+    ["find", { pattern: "vite.config" }],
+    ["ffgrep", { pattern: "Card", path: "src/**/*.tsx" }],
+    ["fffind", { pattern: "layout", path: "app" }],
+    ["fff-multi-grep", { patterns: ["ThirdKind"], constraints: "*.tsx" }],
+  ];
+  const intoPi: [string, object][] = [
+    ["grep", { pattern: "key", path: "~/.pi/agent" }],
+    ["ffgrep", { pattern: "key", path: "~" }],
+    ["fffind", { pattern: "auth", path: "~/.pi" }],
+    ["find", { pattern: "auth", path: " ~/.pi " }],
+    ["fff-multi-grep", { patterns: ["key"], constraints: "~/.pi/" }],
+  ];
+  for (const [tool, input] of inProject) {
+    assert.equal(call(tool, input), undefined, `${tool} ${JSON.stringify(input)}`);
+    assert.equal(call(tool, input, none), undefined, `${tool} ${JSON.stringify(input)}, applying list`);
+  }
+  for (const [tool, input] of intoPi) {
+    assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+    assert.ok(blocked(call(tool, input, none)), `${tool} ${JSON.stringify(input)}, applying list`);
+  }
 });

@@ -35,7 +35,7 @@ import { installClaudeArgs, prepareInstallPi } from "./install-allowlist.ts";
 import { forAgents, intervention, judgeInstall, logsLeft, stepsReached, toldToLook, withLocalPackage, type Judged, type Step } from "./install-judge.ts";
 import { AgentProcesses, type Server } from "./install-servers.ts";
 import { packageManagerPath, portInUse, scaffold, STARTS, type Start } from "./install-starts.ts";
-import { parseTranscript, summarize } from "./metrics.ts";
+import { fffProblem, parseTranscript, summarize } from "./metrics.ts";
 import { PLANTS, type Plant } from "./scripted-agent.ts";
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/install/", import.meta.url));
@@ -110,6 +110,10 @@ interface RawInstall {
   /** The model the transcript names, and the effort the command line sets and the run shows (null for the scripted Agent). */
   model: string | null;
   effort: { set: string; seen: string | null } | null;
+  /** The extensions of others the Agent ran with, by name, and the version installed (pi's pi-fff, ticket 92); none for Claude and the scripted Agent. */
+  extensions: Record<string, string | null>;
+  /** A pi run with pi-fff whose transcript does not show fff's tools as such: the bench stops on it, as the applying bench does. */
+  fffProblem: string | null;
   /** What the start's scaffold and its packages resolved to. */
   versions: Record<string, string>;
   package: { source: "npm" | "local"; tarball: string | null };
@@ -179,7 +183,8 @@ async function main(argv: string[]) {
     for (const agent of agents) versions[agent] = agent === "scripted" ? `scripted-agent.ts, node ${process.version}` : await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     if (existsSync(join(out, "meta.json"))) throw new Error(`${out} has a round of installs already: start one of its own`);
-    const meta = { versions, package: { source, tarball }, prompt, plant, starts: starts.map((start) => start.id), commandLines: Object.fromEntries(agents.map((agent) => [agent, commandLine(runAs(agent), prompt, specs[agent])])) };
+    const extensions = Object.fromEntries(agents.map((agent) => [agent, agent === "scripted" ? {} : (AGENTS[agent].extensions?.() ?? {})]));
+    const meta = { versions, extensions, package: { source, tarball }, prompt, plant, starts: starts.map((start) => start.id), commandLines: Object.fromEntries(agents.map((agent) => [agent, commandLine(runAs(agent), prompt, specs[agent])])) };
     writeFileSync(join(out, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
 
     const browser = await chromium.launch();
@@ -200,11 +205,12 @@ async function main(argv: string[]) {
               const raw = await installOnce({ browser, start, agent, run, folder, prompt, tarball, plant, spec: specs[agent], agentVersion: versions[agent]! });
               console.log(`${raw.success ? "✓" : "✗"} ${agent} ${start.id} #${run}: ${Math.round((Date.now() - began) / 1000)}s, ${oneLine(raw)}`);
               if (raw.portsLeft.length) throw new Error(`port ${raw.portsLeft.join(", ")} still taken after the Agent's servers were stopped: stopped`);
+              if (raw.fffProblem) throw new Error(`${agent} ${raw.fffProblem}: stopped`);
             } catch (error) {
               failures.push(`${agent} ${start.id} #${run}: ${(error as Error).message}`);
               console.log(`✗ ${agent} ${start.id} #${run}: ${(error as Error).message}`);
               writeFileSync(join(folder, "error.txt"), `${(error as Error).stack}\n`);
-              if (!browser.isConnected() || /still taken/.test((error as Error).message)) throw error;
+              if (!browser.isConnected() || /: stopped$/.test((error as Error).message)) throw error;
             }
           }
         }
@@ -374,6 +380,7 @@ async function installOnce({
     const toggleMs = found ? found.at - agentRun.startedAt : null;
     const criteria = judgeInstall({ framework: start.framework, toggleMs, exitCode: agentRun.exitCode, timedOut: agentRun.timedOut, transcript, doctor, ...afterAgent, afterRemove });
     const steps = stepsReached(transcript);
+    const extensions = agent === "scripted" ? {} : (AGENTS[agent].extensions?.() ?? {});
     const raw: RawInstall = {
       agent,
       start,
@@ -381,6 +388,8 @@ async function installOnce({
       date: new Date(agentRun.startedAt).toISOString(),
       agentVersion,
       model: transcript.model,
+      extensions,
+      fffProblem: fffProblem(extensions, transcript),
       effort: agent === "scripted" ? null : { set: AGENTS[agent].effort, seen: AGENTS[agent].effortSeen?.(folder) ?? null },
       versions: project.versions,
       package: { source: tarball ? "local" : "npm", tarball },
@@ -444,7 +453,7 @@ function writeSummary(out: string) {
         raw.toggleMs ??= (raw as { buttonMs?: number | null }).buttonMs ?? null;
         const criteria = judgeInstall({ framework: raw.start.framework, toggleMs: raw.toggleMs, exitCode: raw.exitCode, timedOut: raw.timedOut, transcript, doctor: read("doctor.txt"), status: read("status.txt"), diff: read("diff.patch"), afterRemove });
         const steps = stepsReached(transcript);
-        installs.push({ ...raw, criteria, success: criteria.every((c) => c.pass), steps, lastStep: steps.at(-1) ?? null, trailingQuestion: intervention(transcript).trailingQuestion, logsLeft: logsLeft(afterRemove.status), step3Told: toldToLook(transcript.finalText) });
+        installs.push({ ...raw, fffProblem: fffProblem(raw.extensions, transcript), criteria, success: criteria.every((c) => c.pass), steps, lastStep: steps.at(-1) ?? null, trailingQuestion: intervention(transcript).trailingQuestion, logsLeft: logsLeft(afterRemove.status), step3Told: toldToLook(transcript.finalText) });
       }
   }
   const seconds = (ms: number | null) => (ms === null ? null : Math.round(ms / 100) / 10);
@@ -456,6 +465,7 @@ function writeSummary(out: string) {
       agent,
       versions: [...new Set(mine.map((raw) => raw.agentVersion))],
       models: [...new Set(mine.map((raw) => raw.model ?? "?"))],
+      extensions: [...new Set(mine.flatMap((raw) => Object.entries(raw.extensions ?? {}).map(([name, version]) => `${name} ${version ?? "（没装）"}`)))],
       efforts: [...new Set(mine.map((raw) => (raw.effort ? `${raw.effort.set}${raw.effort.seen ? `, seen ${raw.effort.seen}` : ""}` : "–")))],
       packages: [...new Set(mine.map((raw) => raw.package.tarball ?? "03kind@latest"))],
       plants: [...new Set(mine.map((raw) => raw.plant ?? "none"))],
@@ -482,7 +492,7 @@ function writeSummary(out: string) {
   const md = summary
     .map((agent) =>
       [
-        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，包 ${agent.packages.join(", ")}${agent.plants.some((plant) => plant !== "none") ? `，故意出错 ${agent.plants.join(", ")}` : ""}`,
+        `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}${agent.extensions.length ? `，带 ${agent.extensions.join(", ")}` : ""}，effort ${agent.efforts.join("; ")}，包 ${agent.packages.join(", ")}${agent.plants.some((plant) => plant !== "none") ? `，故意出错 ${agent.plants.join(", ")}` : ""}`,
         "",
         `- 成功 ${agent.successes} / ${agent.runs}`,
         `- 到切换按钮出现（秒）：中位数 ${agent.toggleSeconds.median ?? "–"}，最长 ${agent.toggleSeconds.max ?? "–"}（找到 ${agent.toggleSeconds.found} 次）`,
