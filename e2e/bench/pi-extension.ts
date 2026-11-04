@@ -16,16 +16,47 @@
  * switch for leaving out only the designer's global AGENTS.md: this keeps
  * the instructions files inside the project, as Claude Code's
  * `--setting-sources project,local` does.
+ *
+ * The install bench (ticket 91) writes `install-list.json` beside the copy:
+ * then the shell commands allowed are its `shell` in place of the applying
+ * bench's, one of its `servers` may start a dev server in the background
+ * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
+ * `pnpm exec`…) may run only the programs listed for it, past only its
+ * `flags`, and no word may be one of its `options` (allowlist.ts,
+ * runsAllowed). With no such file, nothing changes. Under the install list,
+ * "nothing reaches ~/.pi" holds at the command line only: `npm run <script>`,
+ * `npx vite` and `npx next` run code the Agent may have written with write or
+ * edit (a package.json script, vite.config), which this does not read
+ * (install-allowlist.ts says so too).
  */
-import { realpathSync, statSync, type Stats } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DENIED, deniedReason, shellAllowed, shellWords } from "./allowlist.ts";
+import { backgroundServer, DENIED, deniedReason, runsAllowed, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
 
 /** As much of pi's extension API as the bench uses (`@earendil-works/pi-coding-agent`, which the repository does not install). */
 interface PiExtensionApi {
   on(event: "tool_call" | "before_agent_start", handler: (event: any, ctx?: any) => unknown): void;
+}
+
+/** The file the install bench writes beside the extension's copy, and what it holds. */
+export const INSTALL_LIST = "install-list.json";
+export interface ShellList {
+  shell: readonly string[];
+  servers: readonly string[];
+  runners: Readonly<Record<string, readonly string[]>>;
+  flags: readonly string[];
+  options: readonly string[];
+}
+
+/** The applying bench's list, or the install bench's when `file` is there. */
+function shellList(file: string): ShellList {
+  if (!existsSync(file)) return { shell: SHELL, servers: [], runners: {}, flags: [], options: [] };
+  const list = JSON.parse(readFileSync(file, "utf8"));
+  for (const key of ["shell", "servers", "flags", "options"]) if (!Array.isArray(list[key])) throw new Error(`${file} has no ${key} list`);
+  if (typeof list.runners !== "object" || !Object.values(list.runners).every(Array.isArray)) throw new Error(`${file} has no runners`);
+  return list;
 }
 
 /** pi's own tools that work on a path, its searches aside. */
@@ -244,15 +275,23 @@ function shellReaches(command: string, cwd: string): "pi" | "out" | null {
   return null;
 }
 
-function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string): { block: true; reason: string } | undefined {
+function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string, list: ShellList): { block: true; reason: string } | undefined {
   const { toolName, input } = event;
   const block = (reason: string) => ({ block: true as const, reason });
   const intoPi = (what: string) => block(`${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`);
   if (toolName === "bash") {
     const command = String(input.command ?? "");
-    if (!shellAllowed(command)) return block(deniedReason(command));
-    const reaches = shellReaches(command, cwd);
-    if (reaches === "out") return block(deniedReason(command));
+    const denied = () => block(deniedReason(command, list.shell, list.servers));
+    const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
+    // A dev server in the background is checked as the command it runs, the paths in it too.
+    const checked = shellAllowed(command, list.shell) ? command : backgroundServer(command, list.servers, inProject);
+    if (checked === null) return denied();
+    if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
+      const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
+      return block(`${DENIED} npx and the like to run only these (${runners.join("; ")}), 03kind by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`);
+    }
+    const reaches = shellReaches(checked, cwd);
+    if (reaches === "out") return denied();
     return reaches === "pi" ? intoPi(command) : undefined;
   }
   if (Object.hasOwn(SEARCHES, toolName)) {
@@ -282,10 +321,18 @@ function inProject(file: { path: string }, project: string): boolean {
   }
 }
 
-export default function benchExtension(pi: PiExtensionApi) {
+/** pi calls it with its API alone; `listFile` is for the tests. A list there that cannot be read blocks every tool call. */
+export default function benchExtension(pi: PiExtensionApi, listFile = join(dirname(fileURLToPath(import.meta.url)), INSTALL_LIST)) {
+  let list: ShellList | null;
+  try {
+    list = shellList(listFile);
+  } catch {
+    list = null;
+  }
   pi.on("tool_call", (event: { toolName: string; input: Record<string, unknown> }, ctx?: { cwd?: string }) => {
     try {
-      return check(event, ctx?.cwd ?? process.cwd());
+      if (!list) throw new Error("No list");
+      return check(event, ctx?.cwd ?? process.cwd(), list);
     } catch {
       return { block: true, reason: `${DENIED} only the tool calls it can check. Turned away: ${event?.toolName}` };
     }

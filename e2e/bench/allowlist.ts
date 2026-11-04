@@ -11,9 +11,52 @@ export const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git sh
 /** How a tool result turned away by the bench starts: what the transcript is counted by. */
 export const DENIED = "Not run: the 03Kind bench allows";
 
-/** The reason a turned-away command is given, for the Agent to read. */
-export function deniedReason(command: string): string {
-  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${SHELL.join(", ")}, and cd to a folder in the project. Turned away: ${command}`;
+/** The reason a turned-away command is given, for the Agent to read; `allowed` and `servers` as the install bench gives them (ticket 91). */
+export function deniedReason(command: string, allowed: readonly string[] = SHELL, servers: readonly string[] = []): string {
+  const background = servers.length ? `; and a dev server started in the background, one command of these alone, its output to /dev/null or to a .log file in the project, ending in &: ${servers.join(", ")}` : "";
+  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${allowed.join(", ")}, and cd to a folder in the project${background}. Turned away: ${command}`;
+}
+
+/**
+ * The install bench's one way past the rule below (ticket 91): starting a dev
+ * server and going on, as step 2 asks, in a shell that waits for what it runs.
+ * A command line that is one command of `servers` (by the rule below, so no
+ * `$`, subshell or option that runs another program), `nohup` before it at
+ * most, its output redirected only to /dev/null, another stream or a `.log`
+ * file `inProject` says is in the project (the judge lists logs left, and
+ * holds no other file against `remove`), and a single `&` at its end. What it
+ * returns is that command, with no redirect and no `&`, for the paths in it
+ * to be checked as any other's; null when the line is not of that form.
+ */
+export function backgroundServer(command: string, servers: readonly string[], inProject: (path: string) => boolean): string | null {
+  const form = /^\s*(?:nohup\s+)?([^&|;<>\n]*?)((?:\s*(?:\d?>>?|&>)\s*[\w./-]+|\s*\d?>&\d)*)\s*&\s*$/.exec(command);
+  if (!form || !servers.length) return null;
+  const [, inner, redirects] = form;
+  const targets = [...redirects.matchAll(/(?:\d?>>?|&>)\s*([\w./-]+)/g)].map((match) => match[1]);
+  if (!targets.every((target) => target === "/dev/null" || (/\.log$/.test(target) && inProject(target)))) return null;
+  return shellWords(inner)?.length === 1 && shellAllowed(inner, servers) ? inner.trim() : null;
+}
+
+/**
+ * The install bench's check of a command that runs a package's program
+ * (ticket 91 re-review): `npx`, `bunx`, `pnpm exec` and the like, by an
+ * allowlist, as no list of what to turn away closes them (a runner inside a
+ * runner, `nice`, `nohup`, any program on PATH). `runners` names, for each
+ * runner, the programs it may run: by name, or a version of it (`03kind@latest`);
+ * and for `03kind`, a packed file of it (`file:…/03kind-x.tgz`) too. Between
+ * the runner and its program only `flags` may come, options that take no
+ * value (so no `-c`, `--call`, `-p <package>`). No word anywhere is one of
+ * `options` (`--open`, which opens a window). Commands of no runner pass.
+ */
+export function runsAllowed(words: readonly string[], runners: Readonly<Record<string, readonly string[]>>, flags: readonly string[] = [], options: readonly string[] = []): boolean {
+  if (words.some((word) => options.some((option) => word === option || word.startsWith(`${option}=`)))) return false;
+  const runner = Object.keys(runners).find((prefix) => prefix.split(" ").every((word, i) => words[i] === word));
+  if (!runner) return true;
+  let at = runner.split(" ").length;
+  while (at < words.length && flags.includes(words[at])) at++;
+  const program = words[at];
+  if (program === undefined || program.startsWith("-")) return program === undefined;
+  return runners[runner].some((name) => program === name || program.startsWith(`${name}@`) || (name === "03kind" && /^file:\S+\.tgz$/.test(program)));
 }
 
 /**

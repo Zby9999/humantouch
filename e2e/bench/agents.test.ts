@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piFffVersion, PROMPT } from "./agents.ts";
+import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piFffVersion, PROMPT, runAgent } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
@@ -224,4 +224,26 @@ test("a project with no Skill: init's record of its line in AGENTS.md is taken o
     edits: [config, { file: ".gitignore", before: "", after: ".03kind/\n" }],
     created: [],
   });
+});
+
+test("an Agent that leaves a process running with its output ends when it exits, not when its output closes (the install bench)", async () => {
+  const folder = mkdtempSync(join(scratch, "left-running-"));
+  // The Agent prints its last words, starts a process that keeps its stdout, and exits.
+  const agent = `console.log('{"type":"result","result":"done"}'); require("node:child_process").spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "inherit" }); setTimeout(() => process.exit(0), 100);`;
+  let group = 0;
+  const began = Date.now();
+  try {
+    const run = await runAgent("claude", folder, folder, 20_000, "", { spec: { binary: () => process.execPath, args: () => ["-e", agent] }, leaveRunning: true, onStart: (pid) => void (group = pid) });
+    assert.equal(run.exitCode, 0);
+    assert.equal(run.timedOut, false);
+    assert.ok(Date.now() - began < 10_000, `took ${Date.now() - began} ms`);
+    assert.match(readFileSync(join(folder, "transcript.jsonl"), "utf8"), /"result":"done"/);
+  } finally {
+    // What this test started: the Agent's own process group.
+    try {
+      if (group) process.kill(-group, "SIGKILL");
+    } catch {
+      // Gone already.
+    }
+  }
 });

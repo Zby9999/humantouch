@@ -322,9 +322,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
   },
 };
 
-/** The command line as a person would type it, for the record. */
-export function commandLine(agent: AgentName, prompt = PROMPT): string {
-  const { binary, args } = AGENTS[agent];
+/** The command line as a person would type it, for the record; `spec`, another way of running it (the install bench's). */
+export function commandLine(agent: AgentName, prompt = PROMPT, spec: Pick<AgentSpec, "binary" | "args"> = AGENTS[agent]): string {
+  const { binary, args } = spec;
   return [binary(), ...args("<run folder>", prompt)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
 
@@ -347,15 +347,14 @@ export interface AgentRun {
 export interface ProcessRow {
   pid: number;
   ppid: number;
+  /** Its process group, as `processTable` lists it. */
+  pgid?: number;
   command: string;
 }
 
-/** A browser's own executable, as a command line starts (its helpers carry `--type=`). */
-const BROWSER = /(?:^|\/)(?:Google Chrome(?: for Testing| Canary| Beta| Dev)?|Chromium|chrome|chromium|Microsoft Edge|msedge|firefox)(?:\s|$)/;
-
-/** The command lines of the browsers under process `root` that run with a window: neither Playwright's headless shell nor started `--headless`. */
-export function headedBrowsers(processes: ProcessRow[], root: number): string[] {
-  const under = new Set([root]);
+/** The processes under `roots`, the roots among them. */
+export function descendants(processes: Pick<ProcessRow, "pid" | "ppid">[], roots: Iterable<number>): Set<number> {
+  const under = new Set(roots);
   for (let grew = true; grew; ) {
     grew = false;
     for (const { pid, ppid } of processes) {
@@ -365,30 +364,58 @@ export function headedBrowsers(processes: ProcessRow[], root: number): string[] 
       }
     }
   }
+  return under;
+}
+
+/** A browser's own executable, as a command line starts (its helpers carry `--type=`). */
+const BROWSER = /(?:^|\/)(?:Google Chrome(?: for Testing| Canary| Beta| Dev)?|Chromium|chrome|chromium|Microsoft Edge|msedge|firefox)(?:\s|$)/;
+
+/** The command lines of the browsers under process `root` that run with a window: neither Playwright's headless shell nor started `--headless`. */
+export function headedBrowsers(processes: ProcessRow[], root: number): string[] {
+  const under = descendants(processes, [root]);
   return processes
     .filter(({ pid, command }) => under.has(pid) && BROWSER.test(command) && !/--type=|chrome-headless-shell/.test(command) && !/(?:^|\s)--?headless(?:=\S*)?(?:\s|$)/.test(command))
     .map(({ command }) => command);
 }
 
 /** Every process on the machine, as `ps` lists it. */
-async function processTable(): Promise<ProcessRow[]> {
-  const { stdout } = await execFileAsync("ps", ["-axww", "-o", "pid=,ppid=,command="], { maxBuffer: 64 * 1024 * 1024 });
+export async function processTable(): Promise<ProcessRow[]> {
+  const { stdout } = await execFileAsync("ps", ["-axww", "-o", "pid=,ppid=,pgid=,command="], { maxBuffer: 64 * 1024 * 1024 });
   return stdout.split("\n").flatMap((line) => {
-    const [, pid, ppid, command] = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line) ?? [];
-    return pid ? [{ pid: Number(pid), ppid: Number(ppid), command }] : [];
+    const [, pid, ppid, pgid, command] = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line) ?? [];
+    return pid ? [{ pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), command }] : [];
   });
+}
+
+/** How long, once an Agent that leaves things running has exited, its output still gets to come in. */
+const LEFT_RUNNING_DRAIN_MS = 2000;
+
+/** How the install bench (ticket 91) runs an Agent otherwise than the applying bench: all of it optional. */
+export interface RunOptions {
+  /** Another binary, arguments and preparing in place of the Agent's: Claude's with the install lists, pi's with its list, or the scripted Agent. */
+  spec?: Pick<AgentSpec, "binary" | "args" | "prepare">;
+  /** The environment, in place of `cleanEnv()`. */
+  env?: NodeJS.ProcessEnv;
+  /** Told the Agent's process id as soon as it has started. */
+  onStart?(pid: number): void;
+  /**
+   * Leaves what the Agent started running once it exits (its dev server), for the bench to stop itself; still
+   * stopped on a timeout. The Agent's end is then its own exit, not its output closing, which a server can hold.
+   */
+  leaveRunning?: boolean;
 }
 
 /**
  * Runs the Agent in `dir`, told `prompt`, its transcript to `transcript` and what else it
  * prints to `log`, its own files in `folder`; stopped after `timeoutMs`. What
- * it leaves running once it exits (Cursor's worker server) goes with it.
+ * it leaves running once it exits (Cursor's worker server) goes with it, unless `options.leaveRunning`.
  */
-export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number, prompt = PROMPT): Promise<AgentRun> {
-  const spec = AGENTS[agent];
+export async function runAgent(agent: AgentName, dir: string, folder: string, timeoutMs: number, prompt = PROMPT, options: RunOptions = {}): Promise<AgentRun> {
+  const spec = { ...AGENTS[agent], ...options.spec };
   const prepared = spec.prepare?.(dir, folder);
   const startedAt = Date.now();
-  const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const child = spawn(spec.binary(), spec.args(folder, prompt), { cwd: dir, env: options.env ?? cleanEnv(), stdio: ["ignore", "pipe", "pipe"], detached: true });
+  if (child.pid) options.onStart?.(child.pid);
   // Only looked at, never stopped: a window that came up is for the record.
   const headed = new Set<string>();
   let looking: Promise<void> = Promise.resolve();
@@ -409,11 +436,15 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
     timedOut = true;
     stopAll();
   }, timeoutMs);
-  const exitCode = await new Promise<number | null>((resolve) => child.on("close", resolve));
+  const closed = new Promise<number | null>((resolve) => child.on("close", resolve));
+  // What it leaves running may hold its output open (a dev server started with its stdout): its end is
+  // its own exit, then what it printed gets a short while to come in.
+  const exitCode = options.leaveRunning ? await new Promise<number | null>((resolve) => child.on("exit", resolve)) : await closed;
+  if (options.leaveRunning) await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, LEFT_RUNNING_DRAIN_MS))]);
   clearTimeout(timer);
   clearInterval(watch);
   await looking;
-  stopAll();
+  if (!options.leaveRunning) stopAll();
   return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed] };
 }
 
