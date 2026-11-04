@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { AGENTS } from "./agents.ts";
 import { DENIED, SHELL } from "./allowlist.ts";
-import { claudeDenied, INSTALL_DENIED_SHELL, INSTALL_SERVERS, INSTALL_SHELL, installClaudeArgs, prepareInstallPi } from "./install-allowlist.ts";
+import { claudeDenied, INSTALL_DENIED_SHELL, INSTALL_SERVERS, INSTALL_SHELL, installClaudeArgs, installSpec, prepareInstallPi } from "./install-allowlist.ts";
 import benchExtension, { INSTALL_LIST } from "./pi-extension.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-install-allowlist-test-"));
@@ -42,7 +42,17 @@ test("before pi installs, the extension is copied as for the applying bench and 
   // pi-fff as the applying bench has it, its databases in the run's folder: nothing of fff in the project, for remove to leave.
   assert.ok(args.includes("--fff-mode"));
   for (const flag of ["--fff-frecency-db", "--fff-history-db"]) assert.ok(args[args.indexOf(flag) + 1].startsWith(folder), flag);
-  assert.deepEqual(args, AGENTS.pi.args(folder, "Install 03Kind"));
+});
+
+test("the install bench runs pi by the applying bench's command line, and Claude by it with only its two lists other", () => {
+  const prompt = "1. Run `npx -y file:/x/03kind-0.0.0.tgz init`.";
+  assert.deepEqual(installSpec("pi", null).args(folder, prompt), AGENTS.pi.args(folder, prompt));
+  assert.equal(installSpec("pi", null).binary(), AGENTS.pi.binary());
+  const claude = installSpec("claude", null).args(folder, prompt);
+  const applying = AGENTS.claude.args(folder, prompt);
+  assert.equal(claude.length, applying.length);
+  const differ = applying.flatMap((arg, i) => (claude[i] === arg ? [] : [applying[i - 1]]));
+  assert.deepEqual(differ, ["--allowedTools", "--disallowedTools"]);
 });
 
 test("under the install list, pi may run the steps and start a dev server in the background, and nothing denied", () => {

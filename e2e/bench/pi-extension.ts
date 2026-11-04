@@ -23,7 +23,11 @@
  * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
  * `pnpm exec`…) may run only the programs listed for it, past only its
  * `flags`, and no word may be one of its `options` (allowlist.ts,
- * runsAllowed). With no such file, nothing changes.
+ * runsAllowed). With no such file, nothing changes. Under the install list,
+ * "nothing reaches ~/.pi" holds at the command line only: `npm run <script>`,
+ * `npx vite` and `npx next` run code the Agent may have written with write or
+ * edit (a package.json script, vite.config), which this does not read
+ * (install-allowlist.ts says so too).
  */
 import { existsSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { homedir } from "node:os";

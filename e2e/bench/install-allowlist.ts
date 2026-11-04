@@ -8,8 +8,10 @@
  */
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { AGENTS } from "./agents.ts";
+import { fileURLToPath } from "node:url";
+import { AGENTS, type AgentSpec } from "./agents.ts";
 import { INSTALL_LIST, type ShellList } from "./pi-extension.ts";
+import type { Plant } from "./scripted-agent.ts";
 
 /**
  * The tools that read, edit and search, as the applying bench has them, and
@@ -158,3 +160,21 @@ export function installClaudeArgs(folder: string, prompt: string): string[] {
   }
   return args;
 }
+
+/** The Agents the install bench knows: the scripted one stands in for a real one before the package is published. */
+export type InstallAgent = "claude" | "pi" | "scripted";
+
+const SCRIPTED = fileURLToPath(new URL("./scripted-agent.ts", import.meta.url));
+
+/**
+ * How each Agent is run for the install: Claude and pi as the applying bench
+ * runs them, but for the install lists (install-allowlist.ts); the scripted
+ * Agent by node. Claude's lists are on its command line; pi's in a file
+ * beside the bench's extension, so its command line is the applying bench's.
+ */
+export function installSpec(agent: InstallAgent, plant: Plant | null): Pick<AgentSpec, "binary" | "args" | "prepare"> {
+  if (agent === "claude") return { binary: AGENTS.claude.binary, args: installClaudeArgs };
+  if (agent === "pi") return { binary: AGENTS.pi.binary, args: AGENTS.pi.args, prepare: prepareInstallPi };
+  return { binary: () => process.execPath, args: (_folder, prompt = "") => [SCRIPTED, prompt, ...(plant ? ["--plant", plant] : [])], prepare: undefined };
+}
+

@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 import { pack } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, cleanEnv, commandLine, runAgent, type AgentRun, type AgentSpec } from "./agents.ts";
-import { installClaudeArgs, prepareInstallPi } from "./install-allowlist.ts";
+import { installSpec, type InstallAgent } from "./install-allowlist.ts";
 import { forAgents, intervention, judgeInstall, logsLeft, stepsReached, toldToLook, withLocalPackage, type Judged, type Step } from "./install-judge.ts";
 import { AgentProcesses, type Server } from "./install-servers.ts";
 import { packageManagerPath, portInUse, scaffold, STARTS, type Start } from "./install-starts.ts";
@@ -40,10 +40,7 @@ import { PLANTS, type Plant } from "./scripted-agent.ts";
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/install/", import.meta.url));
 const README = fileURLToPath(new URL("../../README.md", import.meta.url));
-const SCRIPTED = fileURLToPath(new URL("./scripted-agent.ts", import.meta.url));
 
-/** The Agents the install bench knows: the scripted one stands in for a real one before the package is published. */
-type InstallAgent = "claude" | "pi" | "scripted";
 const INSTALL_AGENTS: InstallAgent[] = ["claude", "pi", "scripted"];
 
 /** Longest an Agent gets for an install. */
@@ -54,18 +51,6 @@ const LOOK_MS = 250;
 const GRACE_MS = 15_000;
 /** The default ports of the starts' dev servers: free before each run. */
 const DEFAULT_PORTS = [5173, 3000];
-
-/**
- * How each Agent is run for the install: Claude and pi as the applying bench
- * runs them, but for the install lists (install-allowlist.ts); the scripted
- * Agent by node. Claude's lists are on its command line; pi's in a file
- * beside the bench's extension, so its command line is the applying bench's.
- */
-function installSpec(agent: InstallAgent, plant: Plant | null): Pick<AgentSpec, "binary" | "args" | "prepare"> {
-  if (agent === "claude") return { binary: AGENTS.claude.binary, args: installClaudeArgs };
-  if (agent === "pi") return { binary: AGENTS.pi.binary, args: AGENTS.pi.args, prepare: prepareInstallPi };
-  return { binary: () => process.execPath, args: (_folder, prompt = "") => [SCRIPTED, prompt, ...(plant ? ["--plant", plant] : [])], prepare: undefined };
-}
 
 /** The Agent a run is run as, and whose transcript form it writes: the scripted Agent writes Claude Code's. */
 const runAs = (agent: InstallAgent) => (agent === "pi" ? "pi" : "claude");
@@ -205,6 +190,8 @@ async function main(argv: string[]) {
               const raw = await installOnce({ browser, start, agent, run, folder, prompt, tarball, plant, spec: specs[agent], agentVersion: versions[agent]! });
               console.log(`${raw.success ? "✓" : "✗"} ${agent} ${start.id} #${run}: ${Math.round((Date.now() - began) / 1000)}s, ${oneLine(raw)}`);
               if (raw.portsLeft.length) throw new Error(`port ${raw.portsLeft.join(", ")} still taken after the Agent's servers were stopped: stopped`);
+              // As the applying bench: a run on another model than the Agent's pinned one, or with fff's tools not shown as such, stops them all.
+              if (agent !== "scripted" && raw.model !== AGENTS[agent].model) throw new Error(`${agent} ran on ${raw.model}, not ${AGENTS[agent].model}: stopped`);
               if (raw.fffProblem) throw new Error(`${agent} ${raw.fffProblem}: stopped`);
             } catch (error) {
               failures.push(`${agent} ${start.id} #${run}: ${(error as Error).message}`);
@@ -433,7 +420,7 @@ const ending = (raw: RawInstall) => `${raw.timedOut ? "timed out" : `exit ${raw.
 function oneLine(raw: RawInstall): string {
   const failed = raw.criteria.filter((c) => !c.pass);
   const toggle = raw.toggleMs === null ? "no toggle" : `toggle at ${(raw.toggleMs / 1000).toFixed(1)}s`;
-  const notes = [raw.trailingQuestion && `ended on a question after doctor: "${raw.trailingQuestion}"`, raw.logsLeft.length && `logs left: ${raw.logsLeft.join(", ")}`].filter(Boolean);
+  const notes = [raw.trailingQuestion && `ended on a question after doctor: "${raw.trailingQuestion}"`, raw.logsLeft.length && `logs left: ${raw.logsLeft.join(", ")}`, raw.fffProblem].filter(Boolean);
   return `${toggle}, session ${Math.round((raw.endedAt - raw.startedAt) / 1000)}s (${ending(raw)}), step 3 ${raw.step3Told ? "told" : "not told"}${[...failed.map((c) => `✗ ${c.criterion}: ${c.why}`), ...notes].map((line) => `\n    ${line}`).join("")}`;
 }
 
@@ -479,6 +466,7 @@ function writeSummary(out: string) {
       stuck: mine.filter((raw) => !raw.success).map((raw) => ({ start: raw.start.id, run: raw.run, exitCode: raw.exitCode, timedOut: raw.timedOut, lastStep: raw.lastStep })),
       trailingQuestions: mine.filter((raw) => raw.trailingQuestion).map((raw) => ({ start: raw.start.id, run: raw.run, question: raw.trailingQuestion })),
       logsLeft: mine.filter((raw) => raw.logsLeft.length).map((raw) => ({ start: raw.start.id, run: raw.run, files: raw.logsLeft })),
+      fffProblems: mine.filter((raw) => raw.fffProblem).map((raw) => ({ start: raw.start.id, run: raw.run, problem: raw.fffProblem })),
       step3Told: mine.filter((raw) => raw.step3Told).length,
       byStart: Object.fromEntries(
         [...new Set(mine.map((raw) => raw.start.id))].map((id) => {
@@ -504,6 +492,7 @@ function writeSummary(out: string) {
         ...Object.entries(agent.byStart).map(([id, s]) => `| ${id} | ${s.successes} / ${s.runs} | ${s.toggleSeconds.map((value) => value ?? "–").join(", ")} | ${s.sessionSeconds.join(", ")} | ${s.endings.join("; ")} |`),
         ...(agent.failures.length ? ["", "没过的：", ...agent.failures.map((f) => `- ${f.criterion}，${f.start} #${f.run}：${f.why}`)] : []),
         ...(agent.trailingQuestions.length ? ["", "doctor 全部 ✓ 之后最后还问了设计师（不算人工介入）：", ...agent.trailingQuestions.map((q) => `- ${q.start} #${q.run}：${q.question}`)] : []),
+        ...(agent.fffProblems.length ? ["", "fff 的工具在记录里认不出（测量台因此停下）：", ...agent.fffProblems.map((f) => `- ${f.start} #${f.run}：${f.problem}`)] : []),
         ...(agent.logsLeft.length ? ["", "留下的日志文件（不算 remove 没删干净）：", ...agent.logsLeft.map((l) => `- ${l.start} #${l.run}：${l.files.join(", ")}`)] : []),
       ].join("\n"),
     )
