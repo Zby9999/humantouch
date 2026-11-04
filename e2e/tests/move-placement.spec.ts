@@ -1,11 +1,14 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 /**
  * Ticket 79 (ADR 0014): layers placed freely from their container's right or
  * bottom edge, or centered by `translate: -50%`, stay placed so as they are
  * moved: dragged on the canvas, nudged, or given an X or Y in the panel. So
- * does one centered by auto margins between its sides (ticket 96).
+ * does one centered by auto margins between its sides (ticket 96), its
+ * width set or held by its `max-width` (ticket 97). Layers centered by auto
+ * margins do not jump as they are dragged out of a layout or their Frame is
+ * ungrouped either (ticket 97).
  */
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
@@ -42,7 +45,7 @@ async function enterEditMode(page: Page) {
 
 /** Selects the layer under the middle of the tag in a view (the desktop view), the deepest there: the view is the one worked in from then on. */
 async function pickTag(page: Page, view = desktop(page)) {
-  const box = (await view.contentFrame().locator("#tag").first().boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator("#tag").first());
   await page.keyboard.down(mod);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.up(mod);
@@ -59,7 +62,7 @@ function zoomOf(view: Locator) {
  */
 async function dragTag(page: Page, by: { x: number; y: number }, { drop = true, view = desktop(page) } = {}) {
   const zoom = await zoomOf(view);
-  const box = (await view.contentFrame().locator("#tag").first().boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator("#tag").first());
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -93,6 +96,19 @@ async function expectInEveryView(page: Page, gaps: Partial<Awaited<ReturnType<ty
 }
 
 const number = async (page: Page, name: string) => Number(await field(page, name).inputValue());
+
+/** How wide the tag is drawn in a view. */
+const widthIn = (view: Locator) => view.contentFrame().locator("#tag").evaluate((el) => el.getBoundingClientRect().width);
+
+/** Drags a handle of the selection in the desktop view `by` px of the view across. */
+async function dragHandle(page: Page, name: string, by: number) {
+  const zoom = await zoomOf(desktop(page));
+  const edge = await steadyBox(handle(page, name));
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 + by * zoom, edge.y + edge.height / 2, { steps: 6 });
+  await page.mouse.up();
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto(DEV_URL);
@@ -201,16 +217,16 @@ test("centered by auto margins (`inset-x-0 mx-auto`): its X reads where it is dr
   await expectInEveryView(page, { off: 0, top: 60 });
   const start = await gapsIn(desktop(page));
   // Its X: where it is drawn, not its `left`, 0.
-  expect(await number(page, "X")).toBe(start.left);
+  await expect(field(page, "X")).toHaveValue(String(start.left));
 
   // Midway, where the pointer has taken it; let go, there, centered as far past the middle in every view.
   await dragTag(page, { x: 100, y: 0 }, { drop: false });
-  expect(Math.abs((await gapsIn(desktop(page))).left - start.left - 100)).toBeLessThanOrEqual(1);
+  await expect.poll(async () => Math.abs((await gapsIn(desktop(page))).left - start.left - 100)).toBeLessThanOrEqual(1);
   await page.mouse.up();
   await page.keyboard.up(mod);
+  await expect.poll(async () => Math.abs((await number(page, "X")) - start.left - 100)).toBeLessThanOrEqual(1);
   const dragged = (await number(page, "X")) - start.left;
-  expect(Math.abs(dragged - 100)).toBeLessThanOrEqual(1);
-  expect((await gapsIn(desktop(page))).left - start.left).toBe(dragged);
+  await expect.poll(async () => (await gapsIn(desktop(page))).left - start.left).toBe(dragged);
   await expectInEveryView(page, { off: dragged, top: 60 });
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 
@@ -224,16 +240,92 @@ test("centered by auto margins (`inset-x-0 mx-auto`): its X reads where it is dr
   await expectInEveryView(page, { off: -30, top: 60 });
 
   // Its right edge 20 px out: it grows on both sides alike, its middle where it was.
-  const zoom = await zoomOf(desktop(page));
-  const edge = (await handle(page, "e").boundingBox())!;
-  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(edge.x + edge.width / 2 + 20 * zoom, edge.y + edge.height / 2, { steps: 6 });
-  await page.mouse.up();
+  await dragHandle(page, "e", 20);
   await expectInEveryView(page, { off: -30, top: 60 });
-  for (const view of everyView(page)) await expect.poll(() => view.contentFrame().locator("#tag").evaluate((el) => el.getBoundingClientRect().width)).toBe(120);
+  for (const view of everyView(page)) await expect.poll(() => widthIn(view)).toBe(120);
   // Its X and its width: never a `right` of its own.
   await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
+});
+
+test("centered by auto margins, its width `auto`, held by its `max-width` (`inset-x-0 mx-auto max-w-*`), filling the phone's board: dragged, nudged, given an X or resized, it stays centered in every view, past the middle by as much, and never narrower (ticket 97)", async ({ page }) => {
+  // 400 px at most: centered in the desktop's board, 848 px, and the tablet's, 720; filling the phone's, 342.
+  await addBoard(page, "top: 60px; left: 0; right: 0; margin-inline: auto; width: auto; max-width: 400px");
+  await enterEditMode(page);
+  await pickTag(page);
+  const widths = (...each: number[]) => Promise.all(everyView(page).map(async (view, i) => expect.poll(() => widthIn(view)).toBe(each[i])));
+  await expectInEveryView(page, { off: 0, top: 60 });
+  await widths(400, 400, 342);
+  // Its X: where it is drawn, (848 - 400) / 2.
+  await expect(field(page, "X")).toHaveValue("224");
+
+  await page.keyboard.press("ArrowLeft");
+  await expectInEveryView(page, { off: -1 });
+  await widths(400, 400, 342);
+  await expect(field(page, "X")).toHaveValue("223");
+
+  await field(page, "X").fill("244");
+  await field(page, "X").press("Enter");
+  await expectInEveryView(page, { off: 20, top: 60 });
+  await widths(400, 400, 342);
+
+  await dragTag(page, { x: 100, y: 0 });
+  await expect.poll(async () => Math.abs((await number(page, "X")) - 344)).toBeLessThanOrEqual(1);
+  const dragged = (await number(page, "X")) - 224;
+  await expectInEveryView(page, { off: dragged, top: 60 });
+  await widths(400, 400, 342);
+  // Its X, one change, however it is moved.
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+
+  // Its right edge 20 px out: its maximum 40 px more, on both sides alike; the phone's board it still fills.
+  await dragHandle(page, "e", 20);
+  await expectInEveryView(page, { off: dragged, top: 60 });
+  await widths(440, 440, 342);
+  await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
+});
+
+test("in a Stack's layout, centered by its auto margins (`mx-auto w-*`), dragged into a Frame: it lands where it is let go, at that X in every view (ticket 97)", async ({ page }) => {
+  await page.evaluate(() => {
+    const column = Object.assign(document.createElement("div"), { id: "column" });
+    column.style.cssText = "display: flex; flex-direction: column; margin: 16px 0";
+    const tag = Object.assign(document.createElement("div"), { id: "tag" });
+    tag.style.cssText = "margin-inline: auto; width: 80px; height: 40px; background: #ccc";
+    column.append(tag);
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "position: relative; height: 240px; margin: 16px 0; background: #eee";
+    document.querySelector("main")!.append(column, board);
+  });
+  await enterEditMode(page);
+  // Drawn at (848 - 80) / 2 in its column; dragged 30 px right and into the board, 100 px below its top edge.
+  await expect.poll(() => gapsIn(desktop(page))).toMatchObject({ left: 384 });
+  await pickTag(page);
+  const [tag, board] = await Promise.all(["#tag", "#board"].map((id) => desktop(page).contentFrame().locator(id).evaluate((el) => el.getBoundingClientRect().top)));
+  await dragTag(page, { x: 30, y: board - tag + 100 });
+  for (const view of everyView(page)) await expect(view.contentFrame().locator("#board > #tag")).toHaveCount(1);
+  await expectInEveryView(page, { left: 414, top: 100 });
+});
+
+test("a Frame ungrouped, its layer centered by auto margins: the layer stays where it is drawn in every view, centered so in the container it goes into (ticket 97)", async ({ page }) => {
+  await page.evaluate(() => {
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "position: relative; height: 240px; margin: 16px 0; background: #eee";
+    const card = Object.assign(document.createElement("div"), { id: "card" });
+    card.style.cssText = "position: absolute; left: 0; right: 0; top: 40px; height: 120px; background: #ddd";
+    const tag = Object.assign(document.createElement("div"), { id: "tag" });
+    tag.style.cssText = "position: absolute; top: 20px; left: 0; right: 0; margin-inline: auto; width: 80px; height: 40px; background: #ccc";
+    card.append(tag);
+    board.append(card);
+    document.querySelector("main")!.append(board);
+  });
+  await enterEditMode(page);
+  await expectInEveryView(page, { off: 0, top: 20 });
+  // The card, away from the tag.
+  const box = await steadyBox(desktop(page).contentFrame().locator("#card"));
+  await page.keyboard.down(mod);
+  await page.mouse.click(box.x + 10, box.y + box.height - 10);
+  await page.keyboard.up(mod);
+  await page.keyboard.press("ControlOrMeta+Shift+g");
+  for (const view of everyView(page)) await expect(view.contentFrame().locator("#board > #tag")).toHaveCount(1);
+  await expectInEveryView(page, { off: 0, top: 60 });
 });
 
 test("placed from the right, resized and then moved, or moved and then resized: its width and its `right`, two changes, in every view as far from the right edge as it was left", async ({ page }) => {

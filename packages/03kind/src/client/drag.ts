@@ -5,11 +5,10 @@
  */
 import type { Destination, Editor } from "./edit-commands";
 import { placesItself } from "./property-table";
-import { autoMarginsBefore } from "./placed-from";
 import { trackCount } from "./grid-tracks";
 import type { Layer } from "./layers";
 import { snap, type Axis, type Mark } from "./snap";
-import { insideBorder, paddingBox } from "./stacks";
+import { insideBorder, marginsAside, paddingBox } from "./stacks";
 import type { View } from "./views";
 
 export interface Drop {
@@ -36,7 +35,7 @@ export interface Drop {
  * Placed freely in a Frame, it snaps (`snapWithin` px, in the view's px; null:
  * not at all) to the edges and middles of the layers beside it and of the
  * Frame, and to the spacing between those layers.
- * `counted`: the room the layer's auto margins before it take up, which X and Y count (ticket 96), read once as its drag begins; else read here.
+ * `aside`: the layer's left and top margins it is placed past, but `auto` ones, which X and Y count (`marginsAside`, tickets 96, 97), read once as its drag begins; else read here.
  */
 export function findDrop(
   editor: Editor,
@@ -46,7 +45,7 @@ export function findDrop(
   box: DOMRect,
   rectOf: (layer: Layer) => DOMRect,
   snapWithin: number | null = null,
-  counted?: Record<Axis, number>,
+  aside?: Record<Axis, number>,
 ): Drop | null {
   const home = layer?.parent ?? null;
   const el = (layer: Layer) => view.elementOf(layer.el) ?? layer.el;
@@ -76,11 +75,10 @@ export function findDrop(
       box = new DOMRect(to.x, to.y, box.width, box.height);
       marks = to.marks;
     }
-    // Placed where it is let go: its left and top in the Frame, margins aside, but one `auto`, which X and Y count (ticket 96); snapped, exactly where it lines up.
-    const margins = !layer || layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(el(layer));
-    const auto = counted ?? (layer && !layer.text ? autoMarginsBefore(el(layer)) : { x: 0, y: 0 });
-    const x = box.left - inside.left - parseFloat(margins.marginLeft) + auto.x;
-    const y = box.top - inside.top - parseFloat(margins.marginTop) + auto.y;
+    // Placed where it is let go: its left and top in the Frame, margins aside, but `auto` ones, which X and Y count, or which take up no room once it is placed freely (tickets 96, 97); snapped, exactly where it lines up.
+    const margins = aside ?? (layer && !layer.text ? marginsAside(el(layer)) : { x: 0, y: 0 });
+    const x = box.left - inside.left - margins.x;
+    const y = box.top - inside.top - margins.y;
     const at = (n: number, exact: boolean) => (exact ? Math.round(n * 100) / 100 : Math.round(n));
     return { to: { parent: container, x: at(x, snapped.x), y: at(y, snapped.y) }, line: null, shifts: new Map(), box, marks };
   }

@@ -22,7 +22,7 @@ import {
   type Target,
 } from "./client/changeset";
 import { breakpointName, mediaOf, tailwindOf, type Breakpoint } from "./client/breakpoints";
-import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, AXIS_WAY, CENTERING_SIGN, centeringSides, isEndOffset, PLACED_BY, shareCss, SIDES, SIZE_AXIS, type Edge, type Share } from "./client/checkable";
+import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_MAX, AXIS_SIZE, AXIS_WAY, CENTERING_SIGN, centeringSides, isEndOffset, MAX_AXIS, PLACED_BY, shareCss, SIDES, SIZE_AXIS, type Edge, type Share } from "./client/checkable";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
@@ -311,6 +311,9 @@ export function shareWords({ percent, px }: Share, axis: Axis, edge: Edge, conta
   return `${percent}% of ${container}'s ${AXIS_SIZE[axis]} ${where ?? `from its ${SIDES[axis][edge]} edge`}${past}`;
 }
 
+/** Of a layer centered by its auto margins along `axis`, its size there `auto`, held by a maximum (`PlacedFrom.held`, ticket 97): that, after a comma; nothing otherwise. */
+export const heldWords = (axis: Axis, held?: boolean) => (held ? `, its ${AXIS_SIZE[axis]} \`auto\`, held by its \`${AXIS_MAX[axis]}\`` : "");
+
 /** What keeps a layer placed from its container's right or bottom edge along `axis` so: its `left` or `top` left alone. */
 const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` instead`;
 
@@ -319,13 +322,20 @@ const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` 
  * its container's left or top edge (ticket 75): it stays placed so.
  */
 function placementLine({ property, placedFrom }: Change): string {
-  const sized = SIZE_AXIS[property];
+  // A maximum, as a resize sets that of a layer held by it (ticket 97): a size too.
+  const max = MAX_AXIS[property];
+  const sized = SIZE_AXIS[property] ?? max;
   const axis = sized ?? PLACED_BY[property]!.axis;
   if (placedFrom!.margins) {
     // Between its sides, by its auto margins (ticket 96): moved, its sides change as much one way as the other.
     const { start, end } = SIDES[axis];
-    const only = sized ? `only its ${property} changes, on both sides alike` : "keep both sides and the auto margins, only how far past the middle it is changes";
-    return `**Placement:** the layer is centered ${AXIS_WAY[axis]} between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`), and stays so: ${only}.`;
+    const size = AXIS_SIZE[axis];
+    const only = max
+      ? `only its \`${AXIS_MAX[axis]}\` changes, on both sides alike; give it no ${size}, so it still fills the room its sides leave where that is less`
+      : sized
+        ? `only its ${property} changes, on both sides alike`
+        : "keep both sides and the auto margins, only how far past the middle it is changes";
+    return `**Placement:** the layer is centered ${AXIS_WAY[axis]} between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`)${heldWords(axis, placedFrom!.held)}, and stays so: ${only}.`;
   }
   if (placedFrom!.centered) {
     // On where the side it is placed by places it: moved back half its size from a `left` or `top`, forward from a `right` or `bottom`.
@@ -567,7 +577,7 @@ function absoluteWhere({ x, y, placed }: NonNullable<Place["absolute"]>, whose: 
       const sides = centeringSides(how);
       return (
         `centered ${AXIS_WAY[axis]} between \`${start}: ${shareCss(sides.start)}\` and \`${end}: ${shareCss(sides.end)}\` by its auto margins ` +
-        `(its middle at ${shareWords(how, axis, "start", `the ${whose}`)}, with its \`${AUTO_MARGINS[axis]}\` kept, as the layer is now)`
+        `(its middle at ${shareWords(how, axis, "start", `the ${whose}`)}, with its \`${AUTO_MARGINS[axis]}\` kept${heldWords(axis, how.held)}, as the layer is now)`
       );
     }
     const side = SIDES[axis][how.edge];
