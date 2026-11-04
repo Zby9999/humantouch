@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./la
 import { colorReader } from "./paint";
 import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Side } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { pastShare, placedFrom, roomOf, sideMoves, sideShareOf } from "./placed-from";
+import { extentOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -169,7 +169,7 @@ export function createEditor(
     const from = placedFrom(el, along.axis);
     if (!from.centered || from.edge !== along.edge) return null;
     const share = earlier?.centeredOn ? earlier.centeredOn.after : sideShareOf(el, along.axis, along.edge);
-    return share && { from, share, room: roomOf(el, along.axis), side: SIDES[along.axis][along.edge] };
+    return share && { from, share, room: extentOf(el, along.axis), side: SIDES[along.axis][along.edge] };
   };
 
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */

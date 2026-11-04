@@ -51,7 +51,7 @@ export function placedFrom(el: Element, axis: Axis): PlacedFrom {
  */
 export function endOffsetPlaces(el: Element, axis: Axis): boolean {
   const { start } = SIDES[axis];
-  return absolute(el) && !pinnedOf(el).includes(start) && (!sideDeclared(el, axis, "start") || endGoneBy(el, axis));
+  return absolute(el) && !pinnedOf(el).includes(start) && (!sideDeclared(el, axis, "start") || endWins(el, axis));
 }
 
 /**
@@ -70,38 +70,77 @@ export function edgeGoneBy(el: Element, axis: Axis): Edge {
  * Whether the browser goes by the side from the end edge along `axis` of
  * `el`, given both its sides there, as it is placed (ticket 89): relative, as
  * the box that places it runs (`edgeGoneBy`); absolute or fixed, so too, but
- * only as large as it is set there, as declared, with nothing laid out (else
- * both sides place it, its size given by them). The one rule the canvas goes by.
+ * only as large as it is set there, as declared, or as large as it draws
+ * itself (an image, a `<canvas>`), with nothing laid out (else both sides
+ * place it, its size given by them). The one rule the canvas goes by.
  */
-const endGoneBy = (el: Element, axis: Axis) => edgeGoneBy(el, axis) === "end" && (!absolute(el) || declared(el, AXIS_SIZE[axis]));
+const endWins = (el: Element, axis: Axis) => edgeGoneBy(el, axis) === "end" && (!absolute(el) || declared(el, AXIS_SIZE[axis]) || REPLACED.has(el.localName));
+
+/** Elements as large as what they draw, not as what they hold: their size set, though no CSS sets it. */
+const REPLACED = new Set(["img", "canvas", "video", "iframe", "svg", "input", "object", "embed"]);
+
+/**
+ * Whether the page gives `el`, placed absolute or fixed, more than it can
+ * keep along `axis` (ticket 89, review and re-review): both its sides, and
+ * those, its margins and its size adding up to other than the room the box
+ * that places it gives it (a size set, held by `max-width`, or its own, as a
+ * `<canvas>`'s is). Laid out sizes alone, as `extentOf` and `roomPlacing`
+ * read them: what draws a box otherwise than laid out (a `transform`, a
+ * `rotate`) is no part of it.
+ */
+function overConstrained(el: Element, axis: Axis): boolean {
+  return sideDeclared(el, axis, "start") && sideDeclared(el, axis, "end") && Math.abs(roomPlacing(el)[axis] - extentOf(el, axis)) > 0.5;
+}
 
 /**
  * How far from the edge of the box that places it along `axis` the browser
- * places `el`, placed absolute or fixed, in px, as laid out (ticket 89,
- * review): its side's value, as the browser computes it; but given more than
- * it can keep, its sides, margins and size adding up to other than that
- * box's room (a size set, held by `max-width`, or its own, as a `<canvas>`'s
- * is), the side the browser does not go by (`edgeGoneBy`) keeps its value as
- * given and places nothing, so it is the room left past the other side, its
- * margins and its size.
+ * places `el`, placed absolute or fixed, in px, as laid out: its side's
+ * value, as the browser computes it; but given more than it can keep
+ * (`overConstrained`), the side the browser does not go by (`edgeGoneBy`)
+ * keeps its value as given and places nothing, so it is the room left past
+ * the other side, its margins and its size (ticket 89, review).
  */
-export function placedAt(el: Element, axis: Axis, edge: Edge): number {
+export function offsetPlacing(el: Element, axis: Axis, edge: Edge): number {
   const value = parseFloat(getComputedStyle(el).getPropertyValue(SIDES[axis][edge])) || 0;
-  const room = roomPlacing(el)[axis];
-  const taken = roomOf(el, axis);
-  return Math.abs(room - taken) <= 0.5 || edgeGoneBy(el, axis) === edge ? value : room - (taken - value);
+  if (edgeGoneBy(el, axis) === edge || !overConstrained(el, axis)) return value;
+  return roomPlacing(el)[axis] - (extentOf(el, axis) - value);
+}
+
+/**
+ * What a share of `el`'s container along `axis` is a share of, placed
+ * absolute or fixed: its sides, margins and size added up (`extentOf`),
+ * which come to the room its container gives it; but given more than it can
+ * keep (`overConstrained`), they do not, and it is that room (`roomPlacing`).
+ */
+export function roomAlong(el: Element, axis: Axis): number {
+  return overConstrained(el, axis) ? roomPlacing(el)[axis] : extentOf(el, axis);
 }
 
 /**
  * How much room the box that places `el`, placed absolute or fixed, gives it
- * along each axis, as laid out (`containingBlockOf`): its size inside its
- * border (`roomIn`); the window's, what the page's root does not scroll.
+ * along each axis (`containingBlockOf`), as laid out, not as drawn: its
+ * padding box, by its computed size, the padding and border its
+ * `box-sizing` puts in or leaves out, and less any scrollbar; the window's,
+ * what the page's root does not scroll.
  */
 export function roomPlacing(el: Element): Record<Axis, number> {
   const block = containingBlockOf(el);
-  if (block) return roomIn(block);
   const root = el.ownerDocument.documentElement;
-  return { x: root.clientWidth, y: root.clientHeight };
+  if (!block) return { x: root.clientWidth, y: root.clientHeight };
+  const style = getComputedStyle(block);
+  const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
+  const room = (axis: Axis): number => {
+    const { start, end } = SIDES[axis];
+    const size = parseFloat(style.getPropertyValue(AXIS_SIZE[axis]));
+    // An inline box has no size of its own to read: as drawn, then.
+    if (Number.isNaN(size)) return roomIn(block)[axis];
+    const borders = px(`border-${start}-width`) + px(`border-${end}-width`);
+    const padding = style.boxSizing === "border-box" ? size - borders : size + px(`padding-${start}`) + px(`padding-${end}`);
+    const [outer, inner] = axis === "x" ? [(block as HTMLElement).offsetWidth, block.clientWidth] : [(block as HTMLElement).offsetHeight, block.clientHeight];
+    const scrollbar = Math.max(0, Math.round(outer - borders) - inner);
+    return padding - scrollbar;
+  };
+  return { x: room("x"), y: room("y") };
 }
 
 /** The logical sides along each axis, as `inset-inline-*` and `inset-block-*` write them. */
@@ -122,17 +161,17 @@ function sideDeclared(el: Element, axis: Axis, edge: Edge): boolean {
   if (edit) return edit !== "auto";
   const logical = axis === "x" && getComputedStyle(el).direction === "rtl" ? OTHER_EDGE[edge] : edge;
   const [physical, own, both, all] = declarationsOf(el, [side, `inset-${LOGICAL[axis]}-${logical}`, `inset-${LOGICAL[axis]}`, "inset"]);
-  const set = (declaration: string | null, part = 0) => {
+  // Of a shorthand's values, written as few as the browser writes them, which one gives each side, by how many there are (`inset`: top, right, bottom, left).
+  const set = (declaration: string | null, part: number, sides: number) => {
     if (!declaration) return false;
     const values = split(declaration.slice(declaration.indexOf(":") + 1).trim(), " ");
-    return (values[Math.min(part, values.length - 1)] ?? "auto") !== "auto";
+    const at = sides === 4 ? [[0, 0, 0, 0], [0, 1, 0, 1], [0, 1, 2, 1], [0, 1, 2, 3]][values.length - 1]?.[part] : part && values.length > 1 ? 1 : 0;
+    return (values[at ?? 0] ?? "auto") !== "auto";
   };
   // Written as itself, else through a shorthand of its own, as the cascade has them.
   const name = physical?.slice(0, physical.indexOf(":")).trim();
-  if (name === side) return set(physical);
-  // `inset`: top, right, bottom, left.
-  const at = { top: 0, right: 1, bottom: 2, left: 3 }[side];
-  return set(own) || set(both, logical === "start" ? 0 : 1) || set(all, at);
+  if (name === side) return set(physical, 0, 1);
+  return set(own, 0, 1) || set(both, logical === "start" ? 0 : 1, 2) || set(all, { top: 0, right: 1, bottom: 2, left: 3 }[side], 4);
 }
 
 /**
@@ -151,7 +190,7 @@ function sideDeclared(el: Element, axis: Axis, edge: Edge): boolean {
 export function sideMoves(el: Element, { axis, edge }: Side): "placed" | InLayout | null {
   const { position } = getComputedStyle(el);
   if (position === "relative" || position === "sticky")
-    return edge === "start" || position === "sticky" || !sideDeclared(el, axis, "start") || endGoneBy(el, axis) ? position : null;
+    return edge === "start" || position === "sticky" || !sideDeclared(el, axis, "start") || endWins(el, axis) ? position : null;
   if (edge === "end") return endOffsetPlaces(el, axis) ? "placed" : null;
   return position === "static" ? null : "placed";
 }
@@ -245,13 +284,13 @@ export function shiftIn(el: Element): Record<Axis, number> {
 }
 
 /**
- * How much room `el`'s container gives it along `axis`, as its document lays
- * it out: what its `left` and `right` (`top`, `bottom`) are shares of, its
- * containing block's size. Read from the browser's values for those, its
- * margins and its size, which add up to it when it is placed freely: its
- * size as laid out, not as a `transform` or `rotate` draws it.
+ * What `el`'s sides, margins and size along `axis` add up to, as the browser
+ * computes them, laid out, not as a `transform` or `rotate` draws it: the
+ * room its container gives it, placed freely and not given more than it can
+ * keep (`roomAlong` tells), so what its `left` and `right` (`top`, `bottom`)
+ * are shares of.
  */
-export function roomOf(el: Element, axis: Axis): number {
+export function extentOf(el: Element, axis: Axis): number {
   const style = getComputedStyle(el);
   const { start, end } = SIDES[axis];
   const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
@@ -262,9 +301,10 @@ export function roomOf(el: Element, axis: Axis): number {
 
 /**
  * How much room `container` gives a layer placed absolute in it, as its
- * positioning reference, along each axis: its size inside its border, to the
- * fraction of a px (`insideBorder`). What the share and the px a layer is
- * placed by from its right or bottom edge, or centered, are of (ticket 79).
+ * positioning reference, along each axis, as drawn: its size inside its
+ * border, to the fraction of a px (`insideBorder`). What the share and the px
+ * a layer dropped in it is placed by from its right or bottom edge, or
+ * centered, are of (ticket 79), on the canvas, where nothing is drawn otherwise.
  */
 export function roomIn(container: Element): Record<Axis, number> {
   const { width, height } = insideBorder(container, container.getBoundingClientRect());

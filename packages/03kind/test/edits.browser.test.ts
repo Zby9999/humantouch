@@ -4470,6 +4470,61 @@ ${html}${body} style="margin: 0">
     expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value, margin: 4 }, width: 390 });
   });
 
+  test.each(["transform: scale(0.5)", "rotate: 10deg"])(
+    "left to right, the page placing a layer from its right edge alone in a board drawn otherwise than laid out, by `%s`: its `right` as the change has it shows, as the board is laid out, not as it is drawn (ticket 89, re-review)",
+    (drawn) => {
+      const html = fromTheRight();
+      const { page, editor, changes, layer } = open(html);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      page.getElementById("tag")!.setAttribute("style", "right: 32px");
+      const phone = pageAt(html.replace("</style>", `#tag { right: 32px } #board { ${drawn} }</style>`), 390);
+      expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown" });
+      // Given its `left` too, as wide as it is set: by its `left` still, 390 - 8 - 50 is 332px in the board as laid out.
+      const both = pageAt(html.replace("</style>", `#tag { right: 32px } #board { ${drawn} } @media (max-width: 500px) { #tag { left: 8px } }</style>`), 390);
+      expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => both)).toEqual({ outcome: "not shown", actual: { value: 332, margin: 0 }, width: 390 });
+    },
+  );
+
+  test.each([
+    ["one value", "inset: 0", "x", "y"],
+    ["two values", "inset: auto 0", "x", "y"],
+    ["three values", "inset: 0 0 auto 0", "x", "y"],
+    ["three values, from the bottom", "inset: auto 0 0", "x", "bottom"],
+    ["four values", "inset: auto 0 0 auto", "right", "bottom"],
+  ] as const)("left to right, a layer placed absolute by `inset` with %s, `%s`: moved, it is moved by the side each axis is placed from, as `inset` gives them (ticket 89, re-review)", (_, inset, across, down) => {
+    const { editor, changes, layer } = open(fromTheRight().replace("right: 12px; top: 8px", inset));
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    editor.set(layer("tag"), "y", editor.read(layer("tag"), "y")! + 10);
+    expect(changes.list().map((change) => change.property)).toEqual([across, down]);
+  });
+
+  test.each([
+    ["`inset-inline-end`, as Tailwind's `end-4` writes it", "inset-inline-end: 16px"],
+    ["`inset-inline` with two values", "inset-inline: auto 16px"],
+  ])("left to right, a layer placed absolute by %s: placed from its right, so moved, its `right` changes, as ADR 0014 has it (ticket 89, re-review: a change from main)", (_, inset) => {
+    const { editor, changes, layer } = open(fromTheRight().replace("right: 12px", inset));
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual([["right", 16, 36]]);
+  });
+
+  test.each([
+    ["left to right", (html: string) => html, [{ min: null, max: 800 }]],
+    ["right to left", rightToLeft, undefined],
+  ] as const)(
+    "a `<canvas>` placed from its right edge that the canvas places absolute in a view by its `left` and its `right` both, as wide as it draws, no width set, %s: right to left, its `right` places it there, and it is looked at (ticket 89, re-review)",
+    async (_, laidOut, placedOtherwiseAt) => {
+      const html = laidOut(fromTheRight("left: 8px").replace("width: 50px; height: 20px", "").replace(/<span id="tag" ([^>]*)>Tag<\/span>/, '<canvas id="tag" $1 width="50" height="20"></canvas>'));
+      const { views, editor, changes, layer } = open(html);
+      phoneFrame = document.createElement("iframe");
+      document.body.append(phoneFrame);
+      await views.add(phoneFrame, 390);
+      editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+      const [right] = changes.list();
+      expect([right.property, right.placedOtherwiseAt]).toEqual(["right", placedOtherwiseAt]);
+    },
+  );
+
   test("the page placing a layer absolute by its `left` and its `right` both, as wide as it is set, left to right, its `right` not the change's but its `left` putting it where the canvas has it: shown, by where it is drawn (ticket 89, review)", () => {
     const html = fromTheRight();
     const { page, editor, changes, layer } = open(html);
@@ -7007,6 +7062,20 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     expect(checkChange(pageWith(300, "#v4 { left: 170px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
     // Its container 400px wide: centered 20px past its middle, at 220px; not at 170px.
     expect(checkChange(pageWith(400, "#v4 { left: 170px !important }"), moved, onCanvas([moved]))).toEqual({ outcome: "not shown", actual: { value: 170, margin: 0, at: 220, share: { percent: 0, px: 170 } } });
+  });
+
+  test("centered by `translate`, moved or its X set, in a board drawn at half its size: the page shows it where the share puts it in the board as laid out, not as drawn (ticket 89, re-review)", () => {
+    const page = () => pageWith(400, "#board { transform: scale(0.5) } #v4 { left: calc(50% + 20px) !important }");
+    const moving = open(UNCHAINED);
+    moving.editor.move(moving.layer("v4"), { parent: moving.layer("board"), x: 150, y: 40 });
+    const [moved] = moving.changes.list();
+    expect(checkChange(page(), moved, onCanvas([moved]))).toEqual({ outcome: "shown" });
+    iframe?.remove();
+    const setting = open(UNCHAINED);
+    setting.editor.set(setting.layer("v4"), "x", setting.editor.read(setting.layer("v4"), "x")! + 20);
+    const [x] = setting.changes.list();
+    expect(x.property).toBe("x");
+    expect(checkChange(page(), x, onCanvas([x]))).toEqual({ outcome: "shown" });
   });
 
   test("centered from the right and moved: its `right` is looked at the same way", () => {

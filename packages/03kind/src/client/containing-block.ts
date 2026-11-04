@@ -6,26 +6,32 @@
  * styles, with nothing laid out; the freezer goes by it too, for what holds
  * a layer placed fixed.
  */
+
 /**
  * Whether an element, by its computed `style`, is the box that places layers
  * placed absolute or fixed in it whatever its `position` (CSS Transforms,
  * Filter Effects, Containment, Will Change): transformed, as `transform`,
  * `translate`, `rotate`, `scale` and `perspective` do; filtered, through
- * `filter` or `backdrop-filter`; contained in its layout or paint; or soon
- * to be, as `will-change` says. Not as a container for queries: the browser
- * places nothing in it so (`container-type`, ticket 89, review).
+ * `filter` or `backdrop-filter`, but not the page's root (`root`), which
+ * the window holds what is fixed in all the same; contained in its layout or
+ * paint, by `contain` or `content-visibility`; keeping its layers in 3D
+ * (`transform-style: preserve-3d`); or soon to be one of these, as
+ * `will-change` says. Not as a container for queries: the browser places
+ * nothing in it so (`container-type`). As Chromium does (ticket 89, review
+ * and re-review, each probed).
  */
-export function holdsPlacedLayers(style: CSSStyleDeclaration): boolean {
+function holdsPlacedLayers(style: CSSStyleDeclaration, root = false): boolean {
   return (
     style.transform !== "none" ||
     style.translate !== "none" ||
     style.rotate !== "none" ||
     style.scale !== "none" ||
     style.perspective !== "none" ||
-    style.filter !== "none" ||
-    style.backdropFilter !== "none" ||
+    (!root && (style.filter !== "none" || style.backdropFilter !== "none")) ||
     /paint|layout|strict|content/.test(style.contain) ||
-    /transform|perspective|filter/.test(style.willChange)
+    /^(auto|hidden)$/.test(style.contentVisibility) ||
+    style.transformStyle === "preserve-3d" ||
+    /\b(transform|translate|rotate|scale|perspective|filter|contain)\b/.test(style.willChange)
   );
 }
 
@@ -47,7 +53,7 @@ export function containingBlockOf(el: Element): Element | null {
     if (style.display === "contents") continue;
     if (!placed) {
       if (style.display !== "inline") return at;
-    } else if (holdsPlacedLayers(style) || (position === "absolute" && style.position !== "static")) return at;
+    } else if (holdsPlacedLayers(style, at === el.ownerDocument.documentElement) || (position === "absolute" && style.position !== "static")) return at;
   }
   return null;
 }
@@ -58,9 +64,9 @@ export function containingBlockOf(el: Element): Element | null {
  * the body's (CSS Writing Modes 3, 8: the root takes its direction from its
  * body, and the window from the root), however the root is marked.
  */
-export function directionPlacing(el: Element): string {
+export function directionPlacing(el: Element): "ltr" | "rtl" {
   const block = containingBlockOf(el);
   const doc = el.ownerDocument;
   const root = !block || block === doc.documentElement;
-  return getComputedStyle(root ? (doc.body ?? doc.documentElement) : block).direction;
+  return getComputedStyle(root ? (doc.body ?? doc.documentElement) : block).direction === "rtl" ? "rtl" : "ltr";
 }

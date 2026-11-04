@@ -15,7 +15,7 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import type { RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { edgeGoneBy, placedAt, placedFrom, roomPlacing, sideShareOf } from "./placed-from";
+import { edgeGoneBy, offsetPlacing, placedFrom, roomAlong, sideShareOf } from "./placed-from";
 import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
@@ -473,10 +473,10 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
     const at = placedOn(el);
     // Centered, its translate gone or turned over: drawn half its size aside, whatever its side gives it.
     if ((["x", "y"] as const).some((axis) => placed[axis]?.centered && !stillCentered(el, axis, placed[axis]!.edge))) return { outcome: "not shown", actual: { ...at, centered: false } };
-    // Its side where the browser places it by it, given both its sides, as large as it is (ticket 89, review), and its container as wide as it is.
+    // Along an axis placed otherwise than from the start (ticket 79): how far its side places it, what the share and px of its container that side is to give it come to there.
     const sideOff = (["x", "y"] as const).some((axis) => {
       const how = placed[axis];
-      return how && Math.abs(placedAt(el, axis, how.edge) - pxIn(how, roomPlacing(el)[axis])) > 0.5;
+      return how && Math.abs(offsetPlacing(el, axis, how.edge) - pxIn(how, roomAlong(el, axis))) > 0.5;
     });
     if (sideOff || !drawnThere(at, { ...(!placed.x && { x }), ...(!placed.y && { y }) }, margins)) return { outcome: "not shown", actual: at };
   }
@@ -511,7 +511,7 @@ function lookPosition(els: Element[], property: Property, after: number | { x: n
       continue;
     }
     // Where the canvas centers it at this width, and what its side is written as now: a share, or else px.
-    const at = Math.round(pxIn(centered.after, roomPlacing(el)[axis]) * 100) / 100;
+    const at = rounded(pxIn(centered.after, roomAlong(el, axis)));
     const off = { value: placed[axis], margin: placed.margins[axis], at, share: sideShareOf(el, axis, edge) ?? { percent: 0, px: placed[axis] } };
     // Its translate gone or turned over: drawn half its size aside, whatever its side gives it.
     if (!stillCentered(el, axis, edge)) return [{ outcome: "not shown", actual: { ...off, centered: false } }, el];
@@ -548,13 +548,13 @@ export type PlacedOnPage = { x: number; y: number; margins: Margins };
 /**
  * Where the page places an absolute layer, from its container's start edges
  * (left, top) or `from` its end edges (right, bottom): as the browser does,
- * given both sides along an axis (`placedAt`).
+ * given both sides along an axis (`offsetPlacing`).
  */
 function placedOn(el: Element, from: Edge = "start"): PlacedOnPage {
   const style = getComputedStyle(el);
   const margin = (axis: Axis) => rounded(parseFloat(style.getPropertyValue(`margin-${SIDES[axis][from]}`)) || 0);
   // Where it is placed, given both sides: by the one the browser goes by (ticket 89, review).
-  return { x: rounded(placedAt(el, "x", from)), y: rounded(placedAt(el, "y", from)), margins: { x: margin("x"), y: margin("y") } };
+  return { x: rounded(offsetPlacing(el, "x", from)), y: rounded(offsetPlacing(el, "y", from)), margins: { x: margin("x"), y: margin("y") } };
 }
 
 /**
