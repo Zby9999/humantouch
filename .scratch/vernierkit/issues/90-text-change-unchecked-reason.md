@@ -1,18 +1,34 @@
-# 90: 改字的改动没在页面上核对时，`done` 说的原因是「结构改动」的
+# 90: 页面核对改字的改动
 
-**What to build:** 一条改字（Text）的改动在页面上核对不了时，`done` 给的原因是 "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page"，好像它是一条结构改动。改字有自己的原因可说（例如新的文字页面不核对），Agent 照这句话写报告就会写错类别。
+**What to build:** 改现有图层的字（Text 改动）现在页面从来不核对：样式改动、删除和一部分移动才核对，改字落在兜底那一支，`done` 还说它是结构改动（"of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page"），Agent 照这句话写报告就写错了类别。改字是设计师最常做的改动之一，不核对，它落没落对全凭 Agent 自报。要做到：页面按源码标记找到这个图层，看它的字是不是设计师最后打的字；核不了的情况给它自己的、准确的原因。
 
-参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准（「Faithful」里的核对覆盖率和报告），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
+参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准（「Faithful」：虚假的 ✓ = 0；「Robust」：核对覆盖率），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策（ADR 0006、0013）。
 
 **Blocked by:** 无
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
-- [ ] 改字的改动在页面上没核对时，`done`（以及 `result.json` 里的原因）说的是改字自己的原因，不再落到结构改动那句
-- [ ] 有单元测试覆盖这条原因；切换按钮的包大小按 goals 的要求看
+- [ ] 先复现，用剧本（脚本扮演 Agent，不跑真实 Agent）：改一个现有图层的字，Agent 写对、写错各一次，`done` 现在都说没能核对，原因是结构改动那句
+- [ ] **核对改字**：图层按源码标记找得到（不是这一轮新建的、不是数据里来的字、不是一段字里的一截）时，页面看它的字是不是最后打的那几个字，比法照新建文字（spec「核对」一节：新建文字要字对得上，以最后打的字为准）。页面上渲染了好几份（循环、组件用了好几次）时，每一份都要对上，和样式改动一样
+- [ ] **只改一处的改字**（组件用了好几次，设计师只改了其中一个使用处的字）：别的使用处的字没变，照 ticket 77、82 对样式改动的做法看；改到别的使用处算没显示，不报虚假的 ✓
+- [ ] 没显示时，`done` 照 80 的口吻说：页面上那里现在是什么字、画布上是什么字，该怎么改；`finish` 报告里 Why 那一行有相应的一句。说法由这条线代定，等设计师确认
+- [ ] **核不了时给它自己的原因**，不再落到结构改动那句：字是从数据里来的（例如卡片列表里的一项）、改的是一段字里的一截（例如加粗的那个词，已有「the text has no element of its own on the page」）、图层没有源码标记、这一轮新建的图层上的改字等，各自一句，照现有原因的口吻
+- [ ] 改动说明（`claim`）里「How the page checks」一节，这一轮有改字时说一次页面怎么核对改字；Skill 里如果有列出页面核对哪些改动的地方，也跟着改
+- [ ] 没有改字的场景，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变（核对代码在编辑层延迟加载的那部分里）
+- [ ] 测量台里有改字的标准场景（`data-and-text`、`next-server-usage-text` 等），脚本扮演 Agent 跑（`--scripted`）时，能核对的改字核为 shown
 
 ## 背景
 
-- ticket 87 的审查发现（2026-11-03）：在 Next.js 示例的场景 `next-server-usage-text` 里，第三个 Stat 的 label 改字，`npx 03kind done` 对它说的是上面那句结构改动的原因。
-- 原因来自 `packages/03kind/src/client/check.ts` 的 `uncheckable()`：前面的分支都不认改字，最后落到结构改动的兜底那句。没有测试覆盖改字的原因。
-- 不影响落地本身；影响 Agent 报告里写的原因（ticket 88 会数报告合规）。
+- ticket 87 的审查发现（2026-11-03）：在 Next.js 示例的场景 `next-server-usage-text` 里，第三个 Stat 的 label 改字，`npx 03kind done` 对它说的是结构改动那句原因。原因来自 `check.ts` 的 `uncheckable()`：前面的分支都不认改字，落到兜底那句；`checkable()` 也只认样式、删除和一部分移动。
+- 规划会话查了：核对代码在编辑层延迟加载的那部分（`editor.dev.js`）和命令行里，不在切换按钮的包里。
+- 可选做法（分诊时）：1. 只改原因；2. 让页面核对改字，核不了的给准确原因；3. 不改。
+
+## 设计师决定（2026-11-04，分诊）
+
+- 选做法 2：改字很常见，不核对的话全凭 Agent 自报；有新建文字的比法可以照着做，也不碰切换按钮。
+- 排在 ticket 88 前面：88 的数字会成为以后的基线，先补上改字的核对再跑。
+- 先复现，再修。不跑真实 Agent。
+
+## Comments
+
+**由 ticket 87 那条线开出（2026-11-03，938d005）**：原来的标题是「改字的改动没在页面上核对时，`done` 说的原因是『结构改动』的」，状态 needs-triage，验收项是只改原因、加单元测试；分诊时改成上面的做法 2。
