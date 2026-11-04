@@ -72,6 +72,19 @@ test("under the install list, pi's own folder stays out of reach, in the backgro
   for (const command of ["cat ~/.pi/agent/auth.json", "npx vite ~/.pi &", "npm run dev > ~/.pi/agent/log &"]) assert.ok(blocked(bash(command)), command);
 });
 
+test("the Skill's undo is the applying bench's alone (ticket 86): under the install list pi may not run git apply, or git -C of the project as git, and the reason names neither", () => {
+  for (const command of ["git apply", "git diff | git apply", `git -C ${project} status`, `git -C "${project}" diff`, "git apply &"]) {
+    const result = bash(command);
+    assert.ok(blocked(result), command);
+    assert.doesNotMatch(result.reason.split("Turned away:")[0], /git apply|git -C/, command);
+  }
+  const none = join(scratch, "nothing-here.json");
+  for (const command of ["git apply", `git -C ${project} diff`, `git -C ${project} diff 1a2b3c 4d5e6f | git -C "${project}" apply`]) assert.equal(bash(command, none), undefined, command);
+  const claude = installClaudeArgs("/run", "Install 03Kind");
+  const rules = [...claude[claude.indexOf("--allowedTools") + 1].split(","), ...claude[claude.indexOf("--disallowedTools") + 1].split(",")];
+  assert.ok(!rules.some((rule) => /git apply|git -C/.test(rule)));
+});
+
 test("with no install list beside it, the extension holds pi to the applying bench's list, as before", () => {
   const none = join(scratch, "nothing-here.json");
   assert.equal(bash("npx 03kind claim", none), undefined);
