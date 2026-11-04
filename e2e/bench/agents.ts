@@ -131,7 +131,7 @@ const COMMAND_CODE = join(homedir(), ".pi/agent/npm/node_modules/@commandcode/pi
  * and grep, which need fd and rg, by their names (its override mode). Its finder is a native library its npm package brings
  * along (`@ff-labs/fff-bin-<platform>`): nothing is fetched, on or off the Agent's PATH.
  */
-export const PI_FFF = join(homedir(), ".pi/agent/npm/node_modules/@ff-labs/pi-fff");
+const PI_FFF = join(homedir(), ".pi/agent/npm/node_modules/@ff-labs/pi-fff");
 
 /** The version of pi-fff installed, as its package says; null when there is none. */
 export function piFffVersion(dir = PI_FFF): string | null {

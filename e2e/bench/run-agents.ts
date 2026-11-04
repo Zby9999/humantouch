@@ -33,7 +33,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, commandLine, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
-import { checkReport, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
+import { checkReport, fffProblem, measureRun, parseTranscript, summarize, toolCallStats, usesVariable, type AgentName } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { exampleOf, openObservers, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
@@ -204,6 +204,7 @@ async function main(argv: string[]) {
               const measures = measureFolder(folder);
               console.log(`${agent} ${scenario.id} #${run}: ${Math.round((Date.now() - started) / 1000)}s, ${oneLine(measures)}`);
               if (measures.model !== AGENTS[agent].model) stop = `${agent} ran on ${measures.model}, not ${AGENTS[agent].model}: stopped`;
+              else if (measures.fffProblem) stop = `${agent} ${measures.fffProblem}: stopped`;
             } catch (error) {
               // The Agent ran, and counts against the limit, once it has a transcript.
               if (existsSync(join(folder, "transcript.jsonl"))) agentRuns++;
@@ -542,6 +543,8 @@ export function measureFolder(folder: string) {
     skills: transcript.skills,
     tools: transcript.tools,
     extensions: raw.extensions ?? {},
+    /** A run with pi-fff whose transcript does not show fff's tools as such (ticket 92): the bench stops on it. */
+    fffProblem: fffProblem(raw.extensions, transcript),
     changes: count,
     exitCode: raw.exitCode,
     timedOut: raw.timedOut,
