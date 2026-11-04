@@ -6,6 +6,7 @@
 import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
+import { otherUsagesThere } from "./page-elements";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -81,8 +82,14 @@ export interface Among {
   signs: string[];
 }
 
-/** A change of a round placed on its canvas: a new layer's with where it is there (`among`; null: in no container there). */
-export type ChangeOnCanvas = Change & { among?: Among | null };
+/**
+ * A change of a round placed on its canvas: a new layer's with where it is
+ * there (`among`; null: in no container there); a layer in a component's
+ * usage, the usage keys of the component's other usages at its location
+ * there (`stayedPut`, `otherUsagesThere`), which the page does not take for
+ * it where its markers move (review of ticket 90).
+ */
+export type ChangeOnCanvas = Change & { among?: Among | null; stayedPut?: string[] };
 
 declare const onCanvas: unique symbol;
 
@@ -97,15 +104,21 @@ export type RoundOnCanvas = ChangeOnCanvas[] & { readonly [onCanvas]: true };
 /**
  * The changes of a round, each new layer's with where it is among its
  * container's layers on the round's canvas, `canvas` as saved (`Among`,
- * ticket 76): what the page finds it by. Read from the canvas by the page as
- * it checks, never saved with the ChangeSet, which the Agent may read: an
- * Agent that did went looking in the package for what it was. A round with
- * no new layer is as it is, its canvas not read.
+ * ticket 76): what the page finds it by; each layer in a component's usage
+ * with the other usages there (`stayedPut`). Read from the canvas by the
+ * page as it checks, never saved with the ChangeSet, which the Agent may
+ * read: an Agent that did went looking in the package for what it was. A
+ * round with neither is as it is, its canvas not read.
  */
 export function placedOnCanvas(changes: Change[], canvas: string): RoundOnCanvas {
-  if (!canvas || !changes.some((change) => change.kind === "create")) return changes as RoundOnCanvas;
+  const inUsage = (change: Change) => !!change.target.loc && change.target.chain.length > 0;
+  if (!canvas || !changes.some((change) => change.kind === "create" || inUsage(change))) return changes as RoundOnCanvas;
   const doc = new DOMParser().parseFromString(canvas, "text/html");
-  return changes.map((change) => (change.kind === "create" ? { ...change, among: amongOf(doc, change.layer, changes) } : change)) as RoundOnCanvas;
+  return changes.map((change) => {
+    const placed: ChangeOnCanvas = change.kind === "create" ? { ...change, among: amongOf(doc, change.layer, changes) } : change;
+    const stayedPut = inUsage(change) ? otherUsagesThere(doc, change.target) : [];
+    return stayedPut.length ? { ...placed, stayedPut } : placed;
+  }) as RoundOnCanvas;
 }
 
 /**

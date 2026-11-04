@@ -13,7 +13,7 @@
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
-import type { RoundOnCanvas } from "./moves";
+import type { ChangeOnCanvas, RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { placedFrom, roomOf, sideShareOf } from "./placed-from";
 import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
@@ -299,7 +299,7 @@ function lookAt(doc: Document, change: Change, round: RoundOnCanvas, apart: stri
 
 /** The elements a style change is to show on, as `at` shows them: a change to a component itself shows in every usage of it, but those `apart`. */
 function styledBy(doc: Document, change: Change, apart: string[], at: PageWidth): Element[] {
-  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target);
+  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target, stayedPutOf(change));
   return found.map((el) => at.of(el)).filter((el): el is Element => !!el);
 }
 
@@ -407,7 +407,7 @@ function lookDeleted(doc: Document, change: Change, at: PageWidth): CheckResult 
   const tag = /^<([\w-]+)/.exec(target.context.element)?.[1];
   const same = (el: Element) =>
     target.context.text ? signOf(el) === `${tag} ${target.context.text}` : el.localName === tag && (usageKeyOf(el) === own || openingTag(el) === target.context.element);
-  const there = elementsOf(doc, target)
+  const there = elementsOf(doc, target, stayedPutOf(change))
     .filter(same)
     .map((el) => at.of(el))
     .filter((el) => el && getComputedStyle(el).display !== "none");
@@ -442,7 +442,7 @@ function lookOrder(doc: Document, change: Change): CheckResult {
  * when it is not absolute, "no reference" when placed from elsewhere.
  */
 function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
-  const els = elementsOf(doc, change.target)
+  const els = elementsOf(doc, change.target, stayedPutOf(change))
     .map((el) => at.of(el))
     .filter((el): el is Element => !!el);
   return placedThere(els, (change.after as Place).absolute!, marginsFor(change, at));
@@ -456,7 +456,7 @@ function lookPlaced(doc: Document, change: Change, at: PageWidth): CheckResult {
  * what the first instance that does not reads instead.
  */
 function lookWords(doc: Document, change: Change): CheckResult {
-  const els = elementsOf(doc, change.target);
+  const els = elementsOf(doc, change.target, stayedPutOf(change));
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const words = spaced(change.after as string);
   const wrong = els.find((el) => wordsOn(el) !== words);
@@ -592,6 +592,9 @@ function drawnThere(placed: PlacedOnPage, to: { x?: number; y?: number }, canvas
     return drawn || ((!canvas || !canvas.known) && near(placed[side], value));
   });
 }
+
+/** The other usages of a change's component at its layer's location on the round's canvas, which the page does not take for the layer where its markers move (`ChangeOnCanvas`). */
+const stayedPutOf = (change: Change) => (change as ChangeOnCanvas).stayedPut ?? [];
 
 /** Values are plain data in design language. */
 function sameValue(a: unknown, b: unknown): boolean {

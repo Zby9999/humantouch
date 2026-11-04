@@ -613,8 +613,8 @@ describe("a change for one usage, looked at on the component's other usages (tic
 });
 
 describe("new words, looked at in every instance and at the component's other usages (ticket 90)", () => {
-  /** The live page, as React renders `html`: each Card and its title with the Card's usage known, the loop's three and "Your turn". */
-  function livePage(html = PAGE) {
+  /** The live page, as React renders `html`: each Card and its title with the Card's usage known, the loop's three and "Your turn" (at `fourth`). */
+  function livePage(html = PAGE, fourth = "src/App.tsx:8:7") {
     live = document.createElement("iframe");
     live.style.width = "800px";
     document.body.append(live);
@@ -626,7 +626,7 @@ describe("new words, looked at in every instance and at the component's other us
     function Card() {}
     const app = { type: App, memoizedProps: {}, _debugOwner: null };
     [...page.querySelectorAll("article")].forEach((card, i) => {
-      const usage = i < 3 ? "src/App.tsx:6:9" : "src/App.tsx:8:7";
+      const usage = i < 3 ? "src/App.tsx:6:9" : fourth;
       const fiber = { _debugOwner: { type: Card, memoizedProps: { "data-tk-usage": usage }, _debugOwner: app } };
       for (const el of [card, card.querySelector("h3")!]) Object.assign(el, { __reactFiber$words: fiber });
     });
@@ -744,22 +744,46 @@ describe("new words, looked at in every instance and at the component's other us
     checks.stop();
   });
 
+  /** "Your turn" given new words, the round placed on its canvas as saved: where the Card's other usages are there. */
+  function yourMoveOnCanvas() {
+    const { editor, changes, cards, layerOf, doc } = openCanvas();
+    editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
+    const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
+    expect(round[0].stayedPut).toEqual([expect.stringContaining("src/App.tsx:6:9")]);
+    return round;
+  }
+
   test("its own element gone from the page, another usage reading the new words is not taken for it: not checked, never shown (review)", () => {
-    const round = yourMove();
+    const round = yourMoveOnCanvas();
     const { page, titles } = livePage();
     page.querySelectorAll("article")[3].remove();
-    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "unchecked", reason: "the layer is not on the page now" });
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "unchecked", reason: "the layer is not on the page now" });
     for (const title of titles.slice(0, 3)) title.textContent = "Your move";
-    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "unchecked", reason: "the layer is not on the page now" });
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "unchecked", reason: "the layer is not on the page now" });
   });
 
   test("the Card edited above its title, every usage's markers moving with it: the layer is found where it moved to", () => {
-    const round = yourMove();
+    const round = yourMoveOnCanvas();
     const { page, titles } = livePage();
     for (const title of titles) title.setAttribute("data-tk-loc", "src/Card.tsx:6:7");
-    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "not shown", actual: "Your turn" });
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
     titles[3].textContent = "Your move";
-    expect(checkChange(page, round[0], onCanvas(round))).toEqual({ outcome: "shown" });
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("lines added in the App above this usage, the Card's lines and the other usages as they were: the usage, moved, is found and checked (review)", () => {
+    const round = yourMoveOnCanvas();
+    const { page, titles } = livePage(PAGE, "src/App.tsx:10:7");
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
+    titles[3].textContent = "Your move";
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "shown" });
+    // A style change to it too, as the page finds its layer the same way.
+    const { editor, changes, cards, layerOf, doc } = openCanvas();
+    editor.set(layerOf(cards[3]), "fill", RED);
+    const fill = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
+    expect(checkChange(page, fill[0], fill)).toMatchObject({ outcome: "not shown" });
+    (page.querySelectorAll("article")[3] as HTMLElement).style.backgroundColor = "rgb(255, 0, 0)";
+    expect(checkChange(page, fill[0], fill)).toEqual({ outcome: "shown" });
   });
 
   test("a line break the Agent writes as `<br>` reads as the space it is: shown (review)", () => {

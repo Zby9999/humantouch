@@ -4,22 +4,44 @@
  * file has moved its markers, by where they went.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
+import { MADE_ATTR } from "./canvas-style";
 import type { Target } from "./changeset";
-import { originOf, usageKey } from "./layers";
+import { chainOf, originOf, usageKey } from "./layers";
 import { readUsageChain } from "./usage-chain";
 
 /**
  * The elements of the layer a change is made to, on the live page now: every
  * instance of its usage. Where its markers have moved, as an edit to its file
- * moves them, where they went.
+ * moves them, where they went; `stayedPut`, the usage keys of its component's
+ * other usages at its location on the round's canvas (`otherUsagesThere`),
+ * which are not it.
  */
-export function elementsOf(doc: Document, target: Target): Element[] {
+export function elementsOf(doc: Document, target: Target, stayedPut: readonly string[] = []): Element[] {
   if (!target.loc) return [];
   const key = usageKey(target.loc, target.chain);
   // Of another tag, it is not the layer, though at its place in the code: an element the Agent wrote where the layer was, say, around it.
   const tag = tagOf(target);
   const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([el, k]) => k === key && (!tag || el.localName === tag)).map(([el]) => el);
-  return els.length ? els : movedElementsOf(doc, target);
+  return els.length ? els : movedElementsOf(doc, target, stayedPut);
+}
+
+/**
+ * The usage keys of the other usages of a layer's component on a canvas
+ * `doc` (as saved with the round, its usage chains written onto it): the
+ * elements written at the layer's location in another usage, none made this
+ * round. Where the layer's markers move, these are the usages that were
+ * there, not it (`movedElementsOf`).
+ */
+export function otherUsagesThere(doc: Document, target: Target): string[] {
+  if (!target.loc || !target.chain.length) return [];
+  const own = usageKey(target.loc, target.chain);
+  const keys = new Set<string>();
+  for (const el of doc.querySelectorAll(`[${LOC_ATTR}="${CSS.escape(target.loc)}"]`)) {
+    if (el.hasAttribute(MADE_ATTR)) continue;
+    const key = usageKey(target.loc, chainOf(el));
+    if (key !== own) keys.add(key);
+  }
+  return [...keys];
 }
 
 /** The tag of the layer's element, as its opening tag gives it. */
@@ -64,10 +86,12 @@ export function otherUsagesOf(doc: Document, target: Target): Map<string, Elemen
  * A layer whose markers no longer match, found among the elements of the same
  * tag written in the same file, by the same components: the one whose
  * locations moved least. None when two are as near. Not one written at the
- * layer's very location in another usage: that is another usage that stayed
- * put, not this one moved (review of ticket 90).
+ * layer's very location in another usage the canvas has (`stayedPut`): that
+ * is another usage that stayed put, not this one moved; one in a usage the
+ * canvas does not know is (the lines around the usage moved, its component's
+ * did not) (review of ticket 90).
  */
-function movedElementsOf(doc: Document, target: Target): Element[] {
+function movedElementsOf(doc: Document, target: Target, stayedPut: readonly string[]): Element[] {
   const at = parseLoc(target.loc);
   const tag = tagOf(target);
   if (!at || !tag) return [];
@@ -76,7 +100,7 @@ function movedElementsOf(doc: Document, target: Target): Element[] {
   for (const el of doc.querySelectorAll(`${tag}[${LOC_ATTR}^="${CSS.escape(at.file)}:"]`)) {
     const { loc, chain } = originOf(el, readUsageChain(el));
     if (!loc || JSON.stringify(chain.map(({ component, thirdParty }) => [component, thirdParty])) !== components) continue;
-    if (loc === target.loc && usageKey(loc, chain) !== usageKey(target.loc, target.chain)) continue;
+    if (loc === target.loc && stayedPut.includes(usageKey(loc, chain))) continue;
     const distance = [distanceOf(target.loc, loc), ...chain.map((level, i) => distanceOf(target.chain[i].usage, level.usage))].reduce((a, b) => a + b, 0);
     if (!Number.isFinite(distance)) continue;
     const key = usageKey(loc, chain);
