@@ -7,12 +7,12 @@
  */
 import { asShown, declaredByEdit } from "./canvas-style";
 import type { Change, Fragment, Place } from "./changeset";
-import { OTHER_EDGE, shareCss, SIDES as PLACING_SIDES } from "./checkable";
+import { centeringSides, OTHER_EDGE, shareCss, SIDES as PLACING_SIDES } from "./checkable";
 import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTextShadows, type Blur, type Shadow } from "./effects";
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
-import { offsetPlacing } from "./placed-from";
+import { startOffsetOf } from "./placed-from";
 import type { Axis } from "./snap";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { pinOffsetOf, sourcesOf, type StyleSource } from "./style-source";
@@ -328,13 +328,22 @@ export function readAsShown<P extends Property>(el: Element, property: P, colors
 /**
  * The CSS that places a layer absolute at `x` and `y`, in px, from its
  * container's top left; along an axis it is `placed` otherwise, by the side
- * that places it so, at what it gives it (ticket 79).
+ * that places it so, at what it gives it (ticket 79); centered by its auto
+ * margins, by both its sides, past their shares of its container that put
+ * its middle there by as much one way as the other (`left: 20px; right:
+ * -20px`, ticket 96), its margins as it has them.
  */
 export function absoluteAt({ x, y, placed }: NonNullable<Place["absolute"]>): Record<string, string> {
   const css: Record<string, string> = { position: "absolute", left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" };
   for (const axis of ["x", "y"] as const) {
     const how = placed?.[axis];
     if (!how) continue;
+    if (how.margins) {
+      const sides = centeringSides(how);
+      css[PLACING_SIDES[axis].start] = shareCss(sides.start);
+      css[PLACING_SIDES[axis].end] = shareCss(sides.end);
+      continue;
+    }
     css[PLACING_SIDES[axis][how.edge]] = shareCss(how);
     css[PLACING_SIDES[axis][OTHER_EDGE[how.edge]]] = "auto";
   }
@@ -511,7 +520,9 @@ export function declaredValue(el: Element, property: string): string {
  * from its container's, its `left` or `top`. Given both its `left` and its
  * `right`, more than it can keep, the browser may go by its `right` instead
  * (right to left, ticket 89): then it is where that places it, as the page's
- * check reads it (`offsetPlacing`, ticket 94). A side that computes to no
+ * check reads it (`offsetPlacing`, ticket 94). Past that by its margin there
+ * when `auto`, which takes up the room its sides and size leave (`inset-x-0
+ * mx-auto`): where it is drawn (`startOffsetOf`, ticket 96). A side that computes to no
  * length (`auto`, under an element not shown) reads as none, NaN. Where the
  * freezer pinned it, it was shifted with the page's scroll: shifted back, it
  * reads as the page has it.
@@ -519,7 +530,7 @@ export function declaredValue(el: Element, property: string): string {
 function offsetOf(el: Element, axis: Axis): number {
   const side = PLACING_SIDES[axis].start;
   if (Number.isNaN(parseFloat(getComputedStyle(el).getPropertyValue(side)))) return NaN;
-  return round(offsetPlacing(el, axis, "start") - pinOffsetOf(el)[axis === "x" ? 0 : 1]);
+  return round(startOffsetOf(el, axis) - pinOffsetOf(el)[axis === "x" ? 0 : 1]);
 }
 
 /** An absolute layer's place along one axis (`offsetOf`); written, from its left or top edge, the other side let go. */

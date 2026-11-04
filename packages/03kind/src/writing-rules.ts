@@ -89,12 +89,21 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "Centered",
-    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.centered) || placedOtherwise(change, { centered: true }),
+    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.centered && !change.placedFrom.margins) || placedOtherwise(change, { centered: true }),
     text:
       "a layer centered on where its `left` or `top` places it by `translate: -50%`, or on where its `right` or `bottom` places it by `translate: 50%` " +
       "(Tailwind's `left-1/2 -translate-x-1/2`, `right-1/2 translate-x-1/2`, and the same down) stays centered: " +
       "resized, change its size alone, and keep what places it and its translate as they are; " +
       "moved, only how far past the share of its container it is centered on changes: write the side as given (`left: calc(50% + 20px)`, Tailwind's `left-[calc(50%+20px)]`), keeping the share and the translate.",
+  },
+  {
+    name: "Centered by auto margins",
+    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.margins) || placedOtherwise(change, { centered: true, margins: true }),
+    text:
+      "a layer centered between both its sides by its margins there, both `auto` (Tailwind's `inset-x-0 mx-auto` with a width, `inset-y-0 my-auto` with a height), stays centered so: " +
+      "resized, change its size alone, and keep its sides and margins as they are; " +
+      "moved, keep both sides and the auto margins, and give its sides as given, as much more and less (`left: 20px; right: -20px`, Tailwind's `left-[20px] right-[-20px]`): " +
+      "a px value from one side with the other `auto` places it there only as wide as its container is now.",
   },
   {
     name: "This usage only",
@@ -206,9 +215,13 @@ interface HowChecked {
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
 /** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
 const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOffset(change.property);
-/** A move or a copy that places a layer absolute otherwise than from its container's left or top along an axis (ticket 79): `centered` so, or (not) from the right or bottom. */
-const placedOtherwise = (change: Change, { centered }: { centered: boolean }) =>
-  (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some((how) => how.centered === centered);
+/**
+ * A move or a copy that places a layer absolute otherwise than from its
+ * container's left or top along an axis (ticket 79): `centered` so, or (not)
+ * from the right or bottom; centered by its auto margins (ticket 96) with `margins`, by a translate without.
+ */
+const placedOtherwise = (change: Change, { centered, margins = false }: { centered: boolean; margins?: boolean }) =>
+  (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some((how) => how.centered === centered && !!how.margins === margins);
 
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [
@@ -236,10 +249,16 @@ const HOW_CHECKED: HowChecked[] = [
     text: "a layer placed from its container's right or bottom edge by where it is drawn: its `right` or `bottom` the value given, plus its right or bottom margin, kept, as on the canvas",
   },
   {
-    calledFor: (change, list) => checkable(change, list) && !!change.centeredOn,
+    calledFor: (change, list) => checkable(change, list) && !!change.centeredOn && !change.placedFrom?.margins,
     text:
       "a layer centered on where its side places it by that side at each width: the share of its container given, and the px past it, plus its margin, kept, as on the canvas, and its translate still centering it there; " +
       "a px value right as wide as the page's window is not right at the other widths",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && !!change.centeredOn && !!change.placedFrom?.margins,
+    text:
+      "a layer centered by its auto margins by where it is drawn at each width: its middle at the share of its container given, and the px past it, as on the canvas; " +
+      "a px value from one side right as wide as the page's window is not right at the other widths, nor are its sides with its auto margins gone",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "create",

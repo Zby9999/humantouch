@@ -50,7 +50,7 @@ import { componentBrief, componentElements, componentKey, inComponent, promotabl
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
 import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
-import { offsetPlacing, placedAlong, roomIn, shiftIn } from "./placed-from";
+import { placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -225,9 +225,9 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     const el = working.shown(layer.el);
     if (!absolute(el)) return spotIn(el, container);
     // Where its border box is: past its `left` and `top` by its own translate, as a drop has it.
-    // Given both sides along an axis, where the browser places it, as its X and Y read (ticket 94).
+    // Given both sides along an axis, where the browser places it, past an auto margin, as its X and Y read (tickets 94, 96).
     const shift = shiftIn(el);
-    return { x: offsetPlacing(el, "x", "start") + shift.x, y: offsetPlacing(el, "y", "start") + shift.y };
+    return { x: startOffsetOf(el, "x") + shift.x, y: startOffsetOf(el, "y") + shift.y };
   };
 
   /**

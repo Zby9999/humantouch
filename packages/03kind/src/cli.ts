@@ -9,7 +9,7 @@ import { changes as changesWord, container as containerOf, describeChanges, shar
 import { breakpointName } from "./client/breakpoints";
 import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, quoted, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
-import { AXIS_SIZE, CENTERING_SIGN, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
+import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
@@ -346,8 +346,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     const centeredAxis = (["x", "y"] as const).find((axis) => placedOtherwise?.[axis]?.centered);
     if (centeredAxis && isUncentered(actual)) return notCentered(centeredAxis, placedOtherwise![centeredAxis]!.edge, again, width);
     if (placedOtherwise) {
-      const [across, down] = (["x", "y"] as const).map((axis) => SIDES[axis][placedOtherwise[axis]?.edge ?? "start"]);
-      return `${at} layer is not where the notes place it: check its \`position\`, \`${across}\` and \`${down}\` as the notes give them, and that its container is its positioning reference, then ${again}.`;
+      return `${at} layer is not where the notes place it: check its \`position\`, ${sidesToCheck(placedOtherwise)} as the notes give them, and that its container is its positioning reference, then ${again}.`;
     }
     if (change.margins) return offByMargins(absolute, change.margins, actual as PlacedOnPage, again, width);
     const placed = actual as { x: number; y: number };
@@ -356,6 +355,8 @@ function notShown(change: Change, actual: unknown, width?: number): string {
   if (PLACED_BY[change.property] && isOffsetInLayout(actual)) return offsetNotShown(change.property, change.after as number, actual, again, width);
   if (PLACED_BY[change.property] && actual === null) return notPlacedAbsolute(change.property, change.after as number, again, width);
   if (change.centeredOn && isUncentered(actual)) return notCentered(PLACED_BY[change.property]!.axis, PLACED_BY[change.property]!.edge, again, width);
+  if (change.centeredOn && change.placedFrom?.margins && actual !== null && typeof actual === "object" && "side" in actual) return notAtSide(change, actual as unknown as { value: number; at: number }, again, width);
+  if (change.centeredOn && change.placedFrom?.margins && actual !== null && typeof actual === "object" && "at" in actual) return notAtMiddle(change, actual as { value: number; at: number }, again, width);
   if (change.centeredOn && actual !== null && typeof actual === "object" && "at" in actual) return centeredOff(change, actual as { value: number; margin: number; at: number }, again, width);
   if (change.margins && actual !== null && typeof actual === "object") {
     if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as PlacedOnPage, again, width);
@@ -427,14 +428,32 @@ function movedNotAbsolute(to: NonNullable<Place["absolute"]>, again: string, wid
   const axes = (["x", "y"] as const).map((axis) => {
     const how = to.placed?.[axis];
     const side = SIDES[axis][how?.edge ?? "start"];
+    if (how?.margins) {
+      const sides = centeringSides(how);
+      return { side, centeredOn: `\`${side}: ${shareCss(sides.start)}\` and \`${SIDES[axis].end}: ${shareCss(sides.end)}\` by its auto margins`, between: true };
+    }
     if (how?.centered) return { side, centeredOn: `\`${side}: ${shareCss(how)}\`` };
     return { side, at: how ? `${how.px}px from its container's ${side} edge` : `${axis.toUpperCase()} ${to[axis]}px` };
   });
   // "at X 40px and Y 12px", as with no side but `left` and `top` it always was.
   const where = axes.some(({ centeredOn }) => centeredOn)
-    ? axes.map(({ at, centeredOn }) => (centeredOn ? `centered on ${centeredOn}` : `at ${at}`)).join(" and ")
+    ? axes.map(({ at, centeredOn, between }) => (centeredOn ? `centered ${between ? "between" : "on"} ${centeredOn}` : `at ${at}`)).join(" and ")
     : `at ${axes.map(({ at }) => at).join(" and ")}`;
-  return `${sentenceAt(width)} layer is not placed absolute, not absolute ${where}: check its \`position\`, \`${axes[0].side}\` and \`${axes[1].side}\`, and that its container is its positioning reference, then ${again}.`;
+  return `${sentenceAt(width)} layer is not placed absolute, not absolute ${where}: check its \`position\`, ${sidesToCheck(to.placed)}, and that its container is its positioning reference, then ${again}.`;
+}
+
+/**
+ * The CSS that places a layer moved to be placed absolute, along each axis,
+ * as `placed` has it (ticket 79): the side that places it; centered by its
+ * auto margins, both, and those margins (ticket 96, review).
+ */
+function sidesToCheck(placed: NonNullable<Place["absolute"]>["placed"]): string {
+  const [across, down] = (["x", "y"] as const).map((axis) => {
+    const how = placed?.[axis];
+    if (how?.margins) return `\`${SIDES[axis].start}\` and \`${SIDES[axis].end}\` with its \`${AUTO_MARGINS[axis]}\``;
+    return `\`${SIDES[axis][how?.edge ?? "start"]}\``;
+  });
+  return placed?.x?.margins || placed?.y?.margins ? `${across}, and ${down}` : `${across} and ${down}`;
 }
 
 /**
@@ -530,6 +549,36 @@ function centeredOff({ property, centeredOn }: Change, placed: { value: number; 
     `${sentenceAt(width)} layer's \`${side}\` is ${placed.value}px (${side} margin ${placed.margin}px), ` +
     `where the canvas centers it at ${placed.at}px: ${shareWords(share, axis, edge, "its container", "there")} (\`${side}: ${shareCss(share)}\`), its margin kept. ` +
     `Write its \`${side}\` as that share of its container, not in px, keep its \`translate\`, and ${again}.`
+  );
+}
+
+/**
+ * The X or Y of a layer centered between its sides by its auto margins
+ * (ticket 96), the page drawing it (`value`) elsewhere than where its middle,
+ * as the canvas has it, puts it at that width (`at`).
+ */
+function notAtMiddle({ property, centeredOn, style }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
+  const { axis } = PLACED_BY[property]!;
+  const { start, end } = SIDES[axis];
+  return (
+    `${sentenceAt(width)} layer is drawn at ${placed.value}px from its container's ${start} edge, where the canvas centers it by its auto margins at ${placed.at}px, ` +
+    `its middle at ${shareWords(centeredOn!.after, axis, "start", "its container", "there")}. ` +
+    `Keep it centered between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`), ` +
+    `its sides as the notes give them (\`${start}: ${style[start]}; ${end}: ${style[end]}\`), not a px value from one side, and ${again}.`
+  );
+}
+
+/**
+ * The X or Y of a layer centered by its auto margins on the canvas, at a
+ * width it does not center it so (`Change.uncenteredAt`, ticket 96, review),
+ * the page drawing it (`value`) elsewhere than its side from the start, as
+ * the change writes it, puts it there (`at`).
+ */
+function notAtSide({ property }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
+  const side = SIDES[PLACED_BY[property]!.axis].start;
+  return (
+    `${sentenceAt(width)} layer is drawn at ${placed.value}px from its container's ${side} edge, where the canvas places it by its \`${side}\`, ${placed.at}px, as it does not center it by its auto margins there: ` +
+    `give it that \`${side}\` at this width too, and ${again}.`
   );
 }
 

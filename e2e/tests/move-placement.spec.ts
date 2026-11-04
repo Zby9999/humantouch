@@ -4,7 +4,8 @@ import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures
 /**
  * Ticket 79 (ADR 0014): layers placed freely from their container's right or
  * bottom edge, or centered by `translate: -50%`, stay placed so as they are
- * moved: dragged on the canvas, nudged, or given an X or Y in the panel.
+ * moved: dragged on the canvas, nudged, or given an X or Y in the panel. So
+ * does one centered by auto margins between its sides (ticket 96).
  */
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
@@ -192,6 +193,48 @@ for (const [name, css] of [
     await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
   });
 }
+
+test("centered by auto margins (`inset-x-0 mx-auto`): its X reads where it is drawn; dragged, nudged, given an X or resized, it stays centered in every view, past the middle by as much (ticket 96)", async ({ page }) => {
+  await addBoard(page, "top: 60px; left: 0; right: 0; margin-inline: auto");
+  await enterEditMode(page);
+  await pickTag(page);
+  await expectInEveryView(page, { off: 0, top: 60 });
+  const start = await gapsIn(desktop(page));
+  // Its X: where it is drawn, not its `left`, 0.
+  expect(await number(page, "X")).toBe(start.left);
+
+  // Midway, where the pointer has taken it; let go, there, centered as far past the middle in every view.
+  await dragTag(page, { x: 100, y: 0 }, { drop: false });
+  expect(Math.abs((await gapsIn(desktop(page))).left - start.left - 100)).toBeLessThanOrEqual(1);
+  await page.mouse.up();
+  await page.keyboard.up(mod);
+  const dragged = (await number(page, "X")) - start.left;
+  expect(Math.abs(dragged - 100)).toBeLessThanOrEqual(1);
+  expect((await gapsIn(desktop(page))).left - start.left).toBe(dragged);
+  await expectInEveryView(page, { off: dragged, top: 60 });
+  await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
+
+  // Nudged, it moves a px, not to its `left`.
+  await page.keyboard.press("ArrowLeft");
+  await expectInEveryView(page, { off: dragged - 1 });
+  await expect(field(page, "X")).toHaveValue(String(start.left + dragged - 1));
+
+  await field(page, "X").fill(String(start.left - 30));
+  await field(page, "X").press("Enter");
+  await expectInEveryView(page, { off: -30, top: 60 });
+
+  // Its right edge 20 px out: it grows on both sides alike, its middle where it was.
+  const zoom = await zoomOf(desktop(page));
+  const edge = (await handle(page, "e").boundingBox())!;
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 + 20 * zoom, edge.y + edge.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expectInEveryView(page, { off: -30, top: 60 });
+  for (const view of everyView(page)) await expect.poll(() => view.contentFrame().locator("#tag").evaluate((el) => el.getBoundingClientRect().width)).toBe(120);
+  // Its X and its width: never a `right` of its own.
+  await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
+});
 
 test("placed from the right, resized and then moved, or moved and then resized: its width and its `right`, two changes, in every view as far from the right edge as it was left", async ({ page }) => {
   await addBoard(page, "top: 60px; right: 40px");
