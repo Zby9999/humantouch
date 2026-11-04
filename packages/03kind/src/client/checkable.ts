@@ -153,6 +153,19 @@ export function checkable(change: Change, round: Change[]): boolean {
 }
 
 /**
+ * Whether the change moves a Frame's only text, as a button's words are
+ * (`Target.onlyText`), in the same container: placed freely in that Frame
+ * (ticket 95). It has no element of its own: the canvas wraps it in a
+ * `<span>` to move it, which the page does not have, so it cannot find it,
+ * as it cannot a run of text.
+ */
+export function textMovedInPlace(change: Change): boolean {
+  if (change.kind !== "move" || !change.target.onlyText) return false;
+  const [before, after] = [change.before, change.after] as Place[];
+  return before.container.layer === after.container.layer;
+}
+
+/**
  * Whether the change is for one usage of a component, the others to stay as
  * they are: not one with no component, nor one written by a component used
  * outside any other (the notes' Scope line says it is changed where it is

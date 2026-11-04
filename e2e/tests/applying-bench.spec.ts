@@ -1806,3 +1806,88 @@ test.describe("a text change (ticket 90)", () => {
     );
   });
 });
+
+/**
+ * Ticket 95: one of a loop's instances alone deleted, copied or moved: in the
+ * code, the data the loop goes through changes, and the page cannot tell the
+ * loop's instances apart, so it does not check them. `done` said the reason
+ * for the structure ("only reorders, … and deletions are checked"), which
+ * these deletions and reorders are not; now it says the data's. The bench's
+ * `data-and-text` scenario has the first two.
+ */
+test.describe("a loop's instance deleted, copied or moved (ticket 95)", () => {
+  /** The features data as the example writes it, in order, and each card keyed by its title. */
+  const asWritten = (served: string) =>
+    /title: "Freeze"[\s\S]*?title: "Arrange"[\s\S]*?title: "Apply"/.test(served) && served.match(/title: "Freeze"/g)?.length === 1 && !/key: i\b/.test(served);
+  test.afterEach(async () => {
+    if (readFileSync(APP, "utf8") !== originalApp) writeFileSync(APP, originalApp);
+    await expect.poll(async () => asWritten(await (await fetch(`${DEV_URL}/src/App.tsx`)).text())).toBe(true);
+  });
+
+  /** In edit mode, `design` done to the cards, as a designer does in the layers panel; back in preview mode, the changes saved, of `kinds`. */
+  async function designOnTheCards(page: Page, kinds: string[], design: (cards: Locator) => Promise<void>) {
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(canvas(page).locator("h1")).toBeVisible();
+    await design(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }));
+    await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(kinds);
+    await leaveEditMode(page);
+  }
+
+  /** The round claimed, the features data written as `features` (each card keyed by its place, as two may share a title), `done` for every change, and `finish`: what each said, and the round's checks. */
+  async function writeTheData(page: Page, features: string[]) {
+    const ids = changesNow().map((change) => change.id);
+    const claim = await npx03kind("claim");
+    await expect(ring(page)).toBeVisible();
+    const items = Object.fromEntries([...originalApp.matchAll(/^ {2}\{ title: "(\w+)",.*\n/gm)].map((match) => [match[1], match[0]]));
+    const data = /^const features = \[\n[\s\S]*?^\];\n/m;
+    expect(originalApp).toMatch(data);
+    writeFileSync(
+      APP,
+      originalApp
+        .replace(data, `const features = [\n${features.map((title) => items[title]).join("")}];\n`)
+        .replace("{features.map((feature) => (\n          <Card key={feature.title}", "{features.map((feature, i) => (\n          <Card key={i}"),
+    );
+    await expect.poll(() => page.locator("article h3").allTextContents()).toEqual([...features, "Your turn"]);
+    const done = await npx03kind("done", ...ids.map(String));
+    const finished = await npx03kind("finish");
+    return { claim, done, finished, checks: checksOf(ids), ticked: tickedIn(finished), applied: appliedInArchive() };
+  }
+
+  const LOOP = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
+
+  test("playbook: the Arrange card deleted and the Freeze card copied, as in the bench's data-and-text; the Agent writes the data: the page says why it cannot check either", async ({ page }) => {
+    await designOnTheCards(page, ["delete", "duplicate"], async (cards) => {
+      await cards.nth(1).click();
+      await page.keyboard.press("Delete");
+      await cards.nth(0).click();
+      await page.keyboard.press("ControlOrMeta+d");
+    });
+    const result = await writeTheData(page, ["Freeze", "Freeze", "Apply"]);
+    record("loop-delete-copy", { outcomes: result.checks.outcomes, ticked: result.ticked, applied: result.applied, claim: result.claim, done: result.done, finished: result.finished });
+    expect(result.done).toBe(
+      "Changes 1 and 2 done: 2 of 2 changes applied.\n" +
+        `Change 1: not checked on the page: ${LOOP}. That is no error: go on.\n` +
+        `Change 2: not checked on the page: ${LOOP}. That is no error: go on.\n`,
+    );
+    expect(result.checks.outcomes).toEqual({ 1: `unchecked: ${LOOP}`, 2: `unchecked: ${LOOP}` });
+    expect(result.claim).toContain("- **How the page checks:** the page reads a change to one of a loop's instances alone, not at all: `done` says Not checked, which is no error; say in the report what you did.\n");
+    expect(result.finished).toMatch(/^Round finished: 2 of 2 changes applied\./);
+    expect(result.ticked).toEqual([1, 2]);
+    expect(result.applied).toEqual([1, 2]);
+  });
+
+  test("playbook: the Apply card moved a cell back, before Arrange; the Agent reorders the data: the page says why it cannot check it", async ({ page }) => {
+    await designOnTheCards(page, ["move"], async (cards) => {
+      await cards.nth(2).click();
+      await page.keyboard.press("ArrowLeft");
+      await expect.poll(() => canvas(page).locator("article h3").allTextContents()).toEqual(["Freeze", "Apply", "Arrange", "Your turn"]);
+    });
+    const result = await writeTheData(page, ["Freeze", "Apply", "Arrange"]);
+    record("loop-reorder", { outcomes: result.checks.outcomes, ticked: result.ticked, applied: result.applied, claim: result.claim, done: result.done, finished: result.finished });
+    expect(result.done).toBe(`Change 1 done: 1 of 1 change applied.\nNot checked on the page: ${LOOP}. That is no error: go on.\n`);
+    expect(result.checks.outcomes).toEqual({ 1: `unchecked: ${LOOP}` });
+    expect(result.ticked).toEqual([1]);
+  });
+});

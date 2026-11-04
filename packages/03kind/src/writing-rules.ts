@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, forOneUsage, isEndOffset, makerOf, PLACING } from "./client/checkable";
+import { checkable, forOneUsage, isEndOffset, makerOf, PLACING, textMovedInPlace } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 
@@ -260,7 +260,7 @@ const HOW_CHECKED: HowChecked[] = [
 ];
 
 /** A move of a layer the page can find that it still cannot check (`checkable`). */
-const movedUnchecked = (change: Change, list: Change[]) => change.kind === "move" && !change.data && !change.target.made && !!change.target.loc && !checkable(change, list);
+const movedUnchecked = (change: Change, list: Change[]) => change.kind === "move" && !change.data && !change.target.made && !!change.target.loc && !textMovedInPlace(change) && !checkable(change, list);
 /** A move that leaves the layer in a container the page has no marker to find by: one made this round, or one with no source marker. */
 function inUnfoundContainer({ before, after }: Change): boolean {
   const { container } = after as Place;
@@ -272,7 +272,7 @@ const UNCHECKED: [string, (change: Change, list: Change[]) => boolean][] = [
   ["a change to one of a loop's instances alone", (change) => !!change.data],
   ["a change to a layer made this round", (change, list) => !change.data && !!change.target.made && change.kind !== "create" && !!makerOf(change.target.made, list) && !checkable(change, list)],
   ["a change to a layer made in a round before", (change, list) => !change.data && !!change.target.made && !makerOf(change.target.made, list) && change.kind !== "brief"],
-  ["a change to a layer the page cannot find", (change) => !change.data && !change.target.made && (!change.target.loc || change.target.run !== undefined) && change.kind !== "brief"],
+  ["a change to a layer the page cannot find", (change) => !change.data && !change.target.made && (!change.target.loc || change.target.run !== undefined || textMovedInPlace(change)) && change.kind !== "brief"],
   ["a new layer in a container the page cannot find", (change, list) => change.kind === "create" && !checkable(change, list)],
   ["a layer put back", (change) => change.kind === "putBack"],
   ["a Stack made or dissolved", (change) => change.kind === "stack" || change.kind === "unstack"],

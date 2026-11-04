@@ -464,6 +464,16 @@ describe("claim, how to write the changes (ticket 65)", () => {
       expect(checks).toContain("a move in a container made this round, or one the page cannot find, not at all");
       expect(checks).not.toContain("another container");
     });
+
+    test("a Frame's only text placed freely in that Frame is named a change to a layer the page cannot find, as `done` says it has no element of its own: not a move into another container (ticket 95)", async () => {
+      const onlyText = change("move", { before: place(1), after: { ...place(1), absolute: at(10, 20) }, wrap: true, target: { ...inApp, onlyText: true } });
+      saveRound(onlyText);
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      expect(uncheckable(onlyText as unknown as Change, [onlyText as unknown as Change])).toBe("the text has no element of its own on the page");
+      expect(checks).toBe("the page reads a change to a layer the page cannot find, not at all: `done` says Not checked, which is no error; say in the report what you did.");
+    });
   });
 
   test("a layer placed absolute: how the page checks says its `left` and `top` are the X and Y given, its margins kept, not taken off; a round with none says nothing of margins (ticket 65)", async () => {
