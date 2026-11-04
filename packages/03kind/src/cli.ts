@@ -5,7 +5,7 @@
  * `last` prints the round before, to undo it by. `init`, `doctor` and
  * `remove` install 03Kind, check it, and take it back out.
  */
-import { changes as changesWord, container as containerOf, describeChanges, shareWords, toApply, type NotesOptions } from "./change-notes";
+import { changes as changesWord, container as containerOf, describeChanges, heldWords, shareWords, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
 import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, quoted, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
@@ -559,13 +559,13 @@ function centeredOff({ property, centeredOn }: Change, placed: { value: number; 
  * (ticket 96), the page drawing it (`value`) elsewhere than where its middle,
  * as the canvas has it, puts it at that width (`at`).
  */
-function notAtMiddle({ property, centeredOn, style }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
+function notAtMiddle({ property, centeredOn, style, placedFrom }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
   const { axis } = PLACED_BY[property]!;
   const { start, end } = SIDES[axis];
   return (
     `${sentenceAt(width)} layer is drawn at ${placed.value}px from its container's ${start} edge, where the canvas centers it by its auto margins at ${placed.at}px, ` +
     `its middle at ${shareWords(centeredOn!.after, axis, "start", "its container", "there")}. ` +
-    `Keep it centered between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`), ` +
+    `Keep it centered between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`)${heldWords(axis, placedFrom?.held)}, ` +
     `its sides as the notes give them (\`${start}: ${style[start]}; ${end}: ${style[end]}\`), not a px value from one side, and ${again}.`
   );
 }

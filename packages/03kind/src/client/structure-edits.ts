@@ -11,6 +11,7 @@ import type { WorkingView } from "./breakpoint-edits";
 import type { Breakpoint } from "./breakpoints";
 import {
   AS_STACK_ATTR,
+  asShown,
   BRIEF_ATTR,
   changesOn,
   DELETED_ATTR,
@@ -48,9 +49,9 @@ import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
+import { borderBox, compose, decompose, dissolve, inferStack, marginsAside, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
-import { placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
+import { heldCentered, placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -257,6 +258,22 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     return tree().layerOf(spans[runs.indexOf(layer)])!;
   };
 
+  /**
+   * The size a layer placed freely keeps as it moves (`sizeOf`): but along
+   * an axis it is centered by its auto margins, its size `auto`, held by a
+   * maximum (`heldCentered`, ticket 97), none, so it still fills what room
+   * its sides leave where less, as it did.
+   */
+  const keptSize = (el: Element): Record<string, string> => {
+    const size = sizeOf(el);
+    const shown = working.shown(el);
+    asShown(shown, () => {
+      if (heldCentered(shown, "x")) delete size.width;
+      if (heldCentered(shown, "y")) delete size.height;
+    });
+    return size;
+  };
+
   /** A move that can be undone. `start`: where the layer was before any move, where its own style is enough. */
   const moveStep = (id: string, from: Place, to: Place, start: Place, size: Record<string, string>, record: MoveRecord) => {
     const styleAt = (place: Place): Record<string, string> => {
@@ -439,7 +456,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       const { kind, target, scope, property, data, instance, wrap, reference } = change;
       const record: MoveRecord = { kind, target, scope, property, sources: [], ...(data && { data }), ...(instance && { instance }), ...(wrap && { wrap }), ...(reference && { reference }) };
       const el = elementsOf(doc, change.layer).find((e) => e.getAttribute(MOVE_ATTR) === property) ?? layer.el;
-      moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, sizeOf(el), record);
+      moveStep(change.layer, change.after as Place, change.before as Place, change.before as Place, keptSize(el), record);
       return tree().layerOf(el);
     }
     const { id: _, layer: id, ...record } = change;
@@ -612,7 +629,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         ...(text && { wrap: true }),
         ...(reference && { reference: true }),
       };
-      moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, sizeOf(el), record);
+      moveStep(id, from, after, (earlier?.before as Place | undefined) ?? from, keptSize(el), record);
       return tree().layerOf(el) ?? layer;
     },
     nudge(layers, dx, dy, { continues = false } = {}) {
@@ -970,7 +987,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       if (!to) place = { container: where, nth: parent.children.indexOf(layer) + 2, slot: slots.indexOf(layer.el) + 1, absolute: from.absolute };
       else if ("x" in to) {
         place = { container: where, nth: parent.children.length + 1, slot: slots.length, absolute: freelyAt(layer, to) };
-        style = { ...absoluteAt(place.absolute!), ...sizeOf(layer.el) };
+        style = { ...absoluteAt(place.absolute!), ...keptSize(layer.el) };
       } else {
         const next = parent.children.filter((child) => child !== layer)[to.index];
         const nth = next ? parent.children.indexOf(next) : parent.children.length;
@@ -1046,18 +1063,15 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         padding: readAsShown(layer.el, "padding", colors),
         align: readAsShown(layer.el, "align", colors),
       };
-      // Each layer where it is now, from inside the Frame's border, its margins aside.
-      const frame = paddingBox(layer.el);
+      // Each layer where it is now, from inside the Frame's border, its margins aside, but `auto` ones, which take up no room once it is placed by its left and top (ticket 97).
       const dissolved: Dissolved = {
         width: round(layer.el.getBoundingClientRect().width),
         height: round(layer.el.getBoundingClientRect().height),
         layers: layer.children.map((child) => {
           const r = child.el.getBoundingClientRect();
-          const margins = getComputedStyle(child.el);
-          const x = round(r.left - frame.left - (parseFloat(margins.marginLeft) || 0));
-          const y = round(r.top - frame.top - (parseFloat(margins.marginTop) || 0));
+          const { x, y } = spotIn(child.el, layer.el);
           const style = { ...absoluteAt({ x, y }), ...sizeOf(child.el) };
-          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAt(child.el) };
+          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAside(child.el) };
         }),
       };
       const own = getComputedStyle(layer.el);

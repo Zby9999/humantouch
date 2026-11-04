@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, forOneUsage, isEndOffset, makerOf, PLACING, textMovedInPlace } from "./client/checkable";
+import { checkable, forOneUsage, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 import type { ClassHelper, WhereToLook } from "./where-to-look";
@@ -105,6 +105,13 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "resized, change its size alone, and keep its sides and margins as they are; " +
       "moved, keep both sides and the auto margins, and give its sides as given, as much more and less (`left: 20px; right: -20px`, Tailwind's `left-[20px] right-[-20px]`): " +
       "a px value from one side with the other `auto` places it there only as wide as its container is now.",
+  },
+  {
+    name: "Held by a maximum",
+    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.held) || placedSo(change, (how) => !!how.held),
+    text:
+      "a layer centered by its auto margins whose width (height) is `auto`, held by its `max-width` (`max-height`; Tailwind's `inset-x-0 mx-auto max-w-md`), stays so: " +
+      "resized, change its maximum, not its width; moved, give it no width either: as its container grows or shrinks, it stays centered where there is room, and fills what room its sides leave where there is less.",
   },
   {
     name: "This usage only",
@@ -238,7 +245,11 @@ const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOf
  * from the right or bottom; centered by its auto margins (ticket 96) with `margins`, by a translate without.
  */
 const placedOtherwise = (change: Change, { centered, margins = false }: { centered: boolean; margins?: boolean }) =>
-  (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some((how) => how.centered === centered && !!how.margins === margins);
+  placedSo(change, (how) => how.centered === centered && !!how.margins === margins);
+
+/** Whether a move or a copy places a layer along an axis as `so` has it. */
+const placedSo = (change: Change, so: (how: PlacedAlong) => boolean) =>
+  (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some(so);
 
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [

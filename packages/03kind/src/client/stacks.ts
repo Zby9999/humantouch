@@ -128,12 +128,31 @@ export function borderBox(el: Element): Box {
   return { left, top, right, bottom };
 }
 
-/** Where an element is in `container`, as an absolute layer is placed there: from inside its border, margins left out. */
+/**
+ * Where an element is in `container`, as an absolute layer is placed there:
+ * from inside its border, margins left out (`marginsAside`), but `auto` ones,
+ * which X and Y count (ticket 97).
+ */
 export function spotIn(el: Element, container: Element): { x: number; y: number } {
   const reference = paddingBox(container);
   const r = el.getBoundingClientRect();
+  const aside = marginsAside(el);
+  return { x: round(r.left - aside.x - reference.left), y: round(r.top - aside.y - reference.top) };
+}
+
+/**
+ * An element's left and top margins, in px, that it is drawn past its X and
+ * Y by, placed freely: none for one `auto` (ticket 97), as its style computes
+ * it (`computedStyleMap`, which keeps the keyword). Placed freely by both
+ * its sides, such a margin takes up room its X and Y count (`inset-x-0
+ * mx-auto`, ticket 96); in its container's layout (`mx-auto` in a Stack), or
+ * placed from one side, it takes up none once the layer is placed so.
+ */
+export function marginsAside(el: Element): { x: number; y: number } {
   const [top, , , left] = marginsOf(el);
-  return { x: round(r.left - left - reference.left), y: round(r.top - top - reference.top) };
+  const style = el.computedStyleMap();
+  const auto = (side: string) => String(style.get(`margin-${side}`)) === "auto";
+  return { x: auto("left") ? 0 : left, y: auto("top") ? 0 : top };
 }
 
 /**
