@@ -117,7 +117,7 @@ End your reply with this report. Each change is under the heading the page's che
   - （审查后）从左往右，`right` 的改动，页面在手机上另有自己的 `left`：没显示，实际值是画出来的 332px（改前报虚假的 ✓）。
   - 原有测试一条期望都没改。
 - **e2e** `round.spec.ts` +1 条：就是上面「先复现」那条，断言改动单的两个范围和 `done` / `finish` 的逐字输出。改前失败（`placedOtherwiseAt` 记了手机、`done` 报 ✓）。
-- **从左往右逐字不变，怎么确认的**：按代码看，`edgeGoneBy` 在从左往右时总答 `start`，`sideMoves`、`endOffsetPlaces`、`placedFrom`、`lookOffset` 都退回原来的式子；`placedAt` 只在两边都写、尺寸定死、改动的那一边不是说了算的那边时才换值（代定第 4 条）。按测试看，原有测试期望都没改、全部通过，其中有 `cli.test.ts` 的逐字比对和 e2e 的落地剧本（round、claim、applying-bench、bench-scenarios、next-round、react18-round 等）；上面每条单测的从左往右一半都是护栏。
+- **从左往右逐字不变，怎么确认的**：按代码看，`edgeGoneBy` 在从左往右时总答 `start`，`lookOffset` 退回原来的式子；`sideMoves`、`endOffsetPlaces`、`placedFrom` 不全是（复审后改正：审查后它们按 `sideDeclared` 读逻辑方向的边和 `inset`，从左往右写 `inset-inline-end`、`inset-inline` 两个值、四个值的 `inset` 的图层，现在按右边、下边定位，见代定第 4 条 (f)）；页面那边换值见「复审后修正」，只在两边都写并且排出来对不上空间时才换（原来写成「尺寸定死」）。按测试看，原有测试期望都没改、全部通过，其中有 `cli.test.ts` 的逐字比对和 e2e 的落地剧本（round、claim、applying-bench、bench-scenarios、next-round、react18-round 等）；上面每条单测的从左往右一半都是护栏。
 - **全量**（审查修正之后的代码）：
   - typecheck 通过。
   - 单测 829 通过、1 跳过；node 测试 32 条通过（含旧名检查）。
@@ -148,7 +148,7 @@ End your reply with this report. Each change is under the heading the page's che
 
 1. **属性面板里的 X**：从右往左、宽度定死、两边都写的自由定位图层，面板的 X 读的是写的 `left`，不是画出来的位置。移动、微移、拖拽按差值改 `right`，结果是对的；在面板里直接输一个 X 会差出写的 `left` 和实际位置之差。不报虚假的 ✓。要修得让 X 按画出来的位置读，牵动面板和改动单，没在这条线做。
 2. **包含块读错时，核对的空间也错**（按审查修正后改写，原来说得太轻）：审查后 `placedAt` 用包含块的空间算没说了算的那一边，包含块找错了，不只方向会错，空间也错，一个从左往右本来对的 ✓ 会变成没显示。现在认 `position`（含定位了的 `html`）、所有变换、`filter`、`backdrop-filter`、`contain`、`will-change`，跳过 `display: contents`，和冻结时判断固定图层用的是同一条规则（`holdsPlacedLayers`）。还不认的：行内的定位参照（空间按它的外框量，折行时不准）、`<dialog>` 顶层这类，很少见。
-3. **画布那边「宽度定死」仍按声明读**：页面的核对审查后按几何判断（见「按审查修正」），画布那边（旁边视图第一次记下时、`placedFrom`）照 ADR 0011 不排版，仍按声明的宽度、高度：`<img>` / `<canvas>` 自带尺寸的、`max-width` 卡住的，从右往左两边都写时浏览器按右边摆，这里当成两边都摆它（按左边处理，`right` 仍进 `placedOtherwiseAt`、那个宽度不看），可能漏看，和改前一样。
+3. **画布那边「宽度定死」仍按声明读**（复审后改写）：页面的核对按几何判断，画布那边（旁边视图第一次记下时、`placedFrom`）照 ADR 0011 不排版，按声明的宽度、高度，复审后加上自带尺寸的元素（`img`、`canvas`、`video`、`iframe`、`svg`、`input`、`object`、`embed`，只看标签）。还漏的只有 `max-width` / `min-width` 卡住的：从右往左两边都写时浏览器按右边摆，这里当成两边都摆它（`right` 仍进 `placedOtherwiseAt`、那个宽度不看），可能漏看，和改前一样。
 4. **84 的遗留风险第 6 条在从右往左时反过来**：页面 `relative` 两边都写、从右往左时，X 的改动没显示，`done` 说「give it `left` 30px at this width too」，可页面上 `left` 已经是 30px，真正要去掉的是 `right`。不报虚假的 ✓，等 ticket 88 的数据和 84 的第 6 条一起看。
 5. **读一次的记录会过时**、**一个视图代表一整段宽度**：同 75、83、84，不变。
 6. 没跑真实 Agent。
@@ -219,9 +219,79 @@ End your reply with this report. Each change is under the heading the page's che
 2. 包含块读错时，核对的空间也错（已改写，见上面遗留风险第 2 条）：还不认行内的定位参照（空间按外框量）、顶层的 `<dialog>` / popover。
 3. 画布那边「尺寸定死」仍按声明读（已改写，见上面遗留风险第 3 条）。
 4. 84 的遗留风险第 6 条在从右往左时反过来（同上）。
-5. **一个块里同时写了逻辑的和物理的边**：`sideDeclared` 按声明顺序取第一个，同一条规则里 `inset-inline-start` 和 `left` 都写时只认前一个；还有 `writing-mode` 竖排时逻辑的边不对到左右，按横排算。很少见。
+5. **逻辑的边和物理的边谁算数，没按层叠的先后排**（复审后改写）：`sideDeclared` 先看物理的边，只要哪条规则写了它就算它，再看逻辑的边、`inset-inline`、`inset`，各按自己的层叠取胜者，彼此之间按这个固定次序，不按哪条规则在后、哪条更具体；同一个块里也按 `SHORTHANDS` 的次序，不按书写次序。例如从左往右 `right-[10px] md:end-auto`，到 `md` 浏览器让 `right` 是 `auto`，这里仍当成写了 `right`。还有 `writing-mode` 竖排时逻辑的边不对到左右，按横排算。很少见。
 6. 读一次的记录会过时、一个视图代表一整段宽度；没跑真实 Agent（同上）。
 
 **暂停于 2026-11-03**
 
 独立审查找到的 1–8 条都改完、补了测试（c4196a3），全量通过：typecheck、单测 856 通过 1 跳过、node 65 条、e2e 399 通过 1 跳过，没有重跑；切换按钮的包逐字节相同。还剩：「从左往右输出逐字不变」那一项留给指挥定（代定第 4 条），代定第 7 条和更新后的代定、遗留风险等设计师确认；按审查修正后没有再跑 code-review。
+
+**复审后修正（2026-11-04）**
+
+指挥让独立审查（effort high）复审了 c4196a3，找到两处会改掉从左往右本来对的输出，外加几条小的。分支先同步过 main（957f717，带进 ticket 87），没有再合并。每条修正都先写测试、在当时的分支（957f717）上看着失败；最后把改后的源码临时换回 957f717 的版本，又跑了一遍新测试确认都失败，再换回来。
+
+*在浏览器里看了*（headless shell，临时的探测测试，没留下）：
+
+- 让元素接住自由定位、固定图层的，Chromium 还认：`will-change` 写 `translate`、`rotate`、`scale`、`filter`、`perspective`、`contain`、`transform`（`opacity` 不认），`content-visibility: auto` / `hidden`，`transform-style: preserve-3d`。`container-type` 仍不认。
+- 根元素上的 `filter` 不接住固定图层：页面滚了 500px，固定在 `top: 10px` 的图层仍在窗口的 10px 处。
+- 缩放了的容器（`transform: scale(0.5)`，400px 宽）：`getBoundingClientRect` 是 200，`clientWidth` 和算出来的 `width` 是 400。
+- headless shell 的滚动条是浮在上面的，不占地方：`overflow-y: scroll`、`scrollbar-gutter: stable`、`scrollbar-width: thin`、`::-webkit-scrollbar { width: 15px }` 的 200px 盒子，`clientWidth` 都是 200。所以有滚动条的情形测不了，代码照算（减去 `offsetWidth` 和 `clientWidth` 之差），没有测试钉住。
+
+*找到的和改的*
+
+1. **空间按画出来的框量**（高，确认）：按审查修正时 `placedAt` 用 `getBoundingClientRect` 量包含块的空间，把容器和它祖先的变换（缩放、旋转）都算进去了，而图层自己的边、外边距和尺寸是按排版算的，两者一对不上就当成「两边都写、没让出来」，把从左往右的 `right` / `bottom` 读错：容器 `transform: scale(0.5)` 时写对了的 `right: 32px` 报没显示、数是 -368；`rotate: 10deg` 时数是 37.21；main 报 ✓。居中的（`translate: -50%`）也一样，main 报 ✓、按审查修正后报没显示。改了两处：
+   - 换值要先有两边都写了值（`sideDeclared`，左右两边都写，或上下都写），再看排出来对不上空间（`overConstrained`）；只写一边的永远不换，和 main 一样读算出来的值。
+   - 空间改按排版量（`roomPlacing`）：包含块算出来的宽、高，按 `box-sizing` 加上内边距或去掉边框，再减去滚动条；由窗口定位的用根元素的 `clientWidth` / `clientHeight`；行内的包含块没有宽、高可读，照旧按框量。
+   - 居中和移动的核对（`lookPosition` 居中那一支、`placedThere`）用的空间改为 `roomAlong`：没对不上时就是 main 用的 `roomOf`（改名 `extentOf`，边、外边距和尺寸加起来），对不上时才用包含块的空间。这样不是「两边都写、对不上」的图层，三处都和 main 逐字一样。
+2. **三个值的 `inset` 读错**（中，确认）：浏览器把 `inset` 写成最短的样子，三个值时左边是第 2 个，两个值时下边是第 1 个；原来按「不够就取最后一个」读，`inset: 0 0 auto 0` 的左边读成 `auto`，从左往右移动这条横条就记成 `right` 0 → -20、画布上它被拉宽、`claim` 也变了（main 记 X）。改为按值的个数查表（1 到 4 个值各一套）。
+3. **从左往右逻辑方向的边，`claim` 变了**（对的，原来没记）：从左往右写 `inset-inline-end`（Tailwind v4 的 `end-4`）或两个值的 `inset-inline: auto 16px` 的图层，现在按右边定位，移动记 `right` 16 → 36；main 记 X、写 `left: …; right: auto`，把它改成按左边定位，违背 ADR 0014。加了测试钉住，记进代定第 4 条 (f)。
+4. **逻辑的边和物理的边谁说了算**（低，可能）：要按层叠先后排四种写法（物理的边、逻辑的边、`inset-inline`、`inset`），得把 `style-source.ts` 里层叠比较的内部（层、具体程度、次序）导出来再比，不是小改动，没做；遗留风险第 5 条改写成「跨规则也按固定次序」，带上例子。
+5. **自带尺寸的元素**（可能报虚假的 ✓）：画布那边「尺寸定死」按声明读，从右往左两边都写、没写宽度的 `<img>` / `<canvas>` 在旁边视图里进了 `placedOtherwiseAt`、那个宽度不看。改为这几种标签（`img`、`canvas`、`video`、`iframe`、`svg`、`input`、`object`、`embed`）都算定死，只看标签，不排版（ADR 0011）。
+6. **一条共用的规则**：冻结时的 `fixedToViewport` 改为直接用 `containingBlockOf`（于是也跳过 `display: contents`）；`holdsPlacedLayers` 照上面探测的结果加上 `content-visibility`、`preserve-3d` 和 `will-change` 的那几个值，根元素上的 `filter` / `backdrop-filter` 不算。冻结后钉不钉住因此又变了几种，见代定第 7 条。两个模块都只在编辑层的包里。
+7. **Standards**：`endGoneBy` 改叫 `endWins`；`check.ts` 居中那一支的手写取整改用 `rounded`；`placed-from.ts` 的 `placedAt` 和 `changeset.ts` 的 `placedAt(change)` 撞名，前者改叫 `offsetPlacing`；三个「room」各说各量什么：`extentOf`（原 `roomOf`，边、外边距和尺寸加起来）、`roomPlacing`（包含块按排版的空间）、`roomAlong`（核对用的，前两者里该用的那个），`roomIn` 的说明写明是按画出来的框量、给画布上拖放用；`directionPlacing` 的类型改成 `"ltr" | "rtl"`；`containing-block.ts` 的文件说明和第一个函数的说明分开了；`check.ts` 里 `sideOff` 那句注释重写。
+
+*看了没改*
+
+- 有滚动条的包含块：headless shell 的滚动条不占地方，测不了（见上），代码照算。
+- `placedFrom`、`stillCentered` 判断居中时量的是图层画出来的框：页面上容器缩放了时，用 `transform` 居中的（Tailwind v3）会被当成没居中。main 就这样，和本 ticket 无关，写进遗留风险第 7 条；复审要的那条测试改用 `translate` 居中（Tailwind v4），它不受影响。
+- 逻辑的边按层叠排：见上面第 4 条。
+
+*测试和数字*
+
+- `edits.browser.test.ts` +12 条（test.each 展开后算）：缩放、旋转的容器里只按右边定位的，`right` 写对了显示（复审确认的那种），两边都写时仍按 `left`、没显示、332px；`inset` 一到四个值（含三个值从下边的）各一，移动时按各方向定位的那一边记；从左往右 `inset-inline-end`、两个值的 `inset-inline`，移动记 `right` 16 → 36（钉住 main 之后的变化）；`<canvas>` 两边都写、没写宽度，从右往左不进 `placedOtherwiseAt`、从左往右进（护栏）；缩放的容器里用 `translate` 居中的，移动、改 X，写对了都显示。在 957f717 上失败的：缩放、旋转各一，三个值的 `inset`，从右往左的 `<canvas>`，居中那条；其余是护栏和钉住的。
+- `freezer.browser.test.ts` +6 条：`display: contents` 加 `filter` 的盒子里、根元素加 `filter` 时，固定图层照窗口钉住；`will-change: translate`、`will-change: contain`、`content-visibility: auto`、`transform-style: preserve-3d` 的盒子里不钉。在 957f717 上都失败。
+- 全量：typecheck 通过；单测 874 通过、1 跳过；node 测试 65 条通过；e2e（`TK_E2E_PORT=5800 pnpm test:e2e`）401 条：全量那次 page 一组 283 通过、2 条失败（`breakpoints.spec.ts:204` 播放的那条、`next-install.spec`），project files 一组因此没跑；两条单独重跑都通过；再用 `--project="project files" --no-deps` 跑 project files 一组：114 通过、1 跳过、1 条失败（`applying-bench.spec.ts:570` Agent 中途停很久那条，停住提示一类），单独重跑通过。合起来 400 通过、1 跳过。切换按钮体积检查在里面，通过。
+- 包体积：切换按钮 `react.dev.js` 1423 B（gzip 822 B）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B），sha256 前 16 位仍是 `c83849f1557e0b1b`、`cdd6f09dfeaf13fa`，逐字节相同；`editor.dev.js` 325260 → 326058 B（+798 B），gzip 110540 → 110841 B（+301 B）；和 ticket 89 开始前（323972 B，gzip 110054 B）比 +2086 B，gzip +787 B。
+
+*代定第 4 条，最终：从左往右和 main 比，输出变了的地方*
+
+只有下面这些，每种原来的输出都是错的。没找到本来对、现在变了的从左往右输出（复审找到的两处都已改回和 main 一样）：
+
+- (a) 页面上自由定位的图层两边都写了值、排出来对不上空间（宽度、高度定死，`max-width` 卡住，自带尺寸），浏览器按 `left`（`top`）摆它，`right`（`bottom`）的改动：页面上 `right` 写对了却不起作用，原来读写的值、报 ✓，是虚假的 ✓；现在报没显示。
+- (b) 同样的图层，原来就没显示的：仍是没显示，只是「is drawn at …」后面的数从写的值换成画出来的位置；原来的数是图层并不在的地方。
+- (c) 同样的图层，`right`（`bottom`）过时、但 `left`（`top`）已经把它摆在画布那里：原来按写的值报没显示，图层其实就在画布那里；现在报 ✓。
+- (d) 移动、新建图层的核对（`placedThere`，ticket 79、76）在同样的图层上：按右边、下边定位的那一边原来比写的值、另一方向不看画出来的位置，`right` 写对却被 `left` 盖过时报 ✓；现在按它被摆在哪里比，(a)、(b)、(c) 三种同样会变。
+- (e) 上下方向：`top` 总是说了算没变，但 `bottom` 的改动在同样的情况下照 (a) 到 (d) 变。ticket 说的「上下方向不受影响」指的是哪一边说了算，不是核对的输出。
+- (f) 画布上（`claim` 的改动、改动单）：从左往右用逻辑方向的边或 `inset` 定位在右边、下边的图层（`inset-inline-end`、`end-*`，`inset-inline: auto 16px`，`inset-block-end`，四个值的 `inset: auto 0 0 auto`），现在照 ADR 0014 按右边、下边定位，移动、改尺寸记 `right` / `bottom`；main 读不出这些写法里的右边、下边，记成 X / Y、写 `left: …; right: auto`，悄悄把它改成按左边定位。
+- 另外冻结的画布（不是 `claim` / `done` / `finish` 的输出）钉住固定图层的几种情况变了，见代定第 7 条。
+
+*代定的事，最终*
+
+1. 按包含块的 `direction`，不按图层自己的；包含块是窗口或根元素时看 `body` 的方向；`relative` / `sticky` 的包含块是排它的那个块，跳过 `display: contents` 和行内元素。
+2. 自由定位的图层只在排出来对不上空间时才有一边说了算：页面的核对按排版的几何判断（要两边都写了值）；画布那边按声明的宽度、高度，加上自带尺寸的元素，不排版（ADR 0011）。
+3. `placedFrom` 一起改：从右往左、宽度定死（或自带尺寸）、两边都写的按右边处理。
+4. 页面上两边都写、对不上空间的自由定位图层按浏览器把它摆在哪里核对，从左往右的输出照上面 (a) 到 (f) 变；指挥已按代定接受（条件是对的从左往右输出不变，复审后已做到）。
+5. 说法照 84 已确认的那套，不起新的。
+6. `sticky` 不分方向。
+7. 冻结时钉不钉住固定图层，照 Chromium 的定法：`container-type` 盒子里的、`display: contents` 盒子上的 `filter` 底下的、根元素有 `filter` 时的，现在钉住（原来不钉）；`will-change: translate` / `rotate` / `scale` / `contain`、`content-visibility: auto` / `hidden`、`transform-style: preserve-3d` 的盒子里的，现在不钉（原来钉住，画布上它跟着窗口摆，实际上跟着那个盒子）。
+
+*遗留风险，最终*
+
+1. 属性面板里的 X：从右往左、宽度定死、两边都写的自由定位图层，面板的 X 读写的 `left`，不是画出来的位置。不报虚假的 ✓。
+2. 包含块读错时，核对的空间也错：还不认行内的定位参照（空间按外框量，折行时不准）、顶层的 `<dialog>` / popover。有滚动条的包含块在 headless shell 里测不了。
+3. 画布那边「尺寸定死」按声明读，自带尺寸的元素按标签算：`max-width` / `min-width` 卡住的从右往左可能漏看（见上面第 3 条，已改写）。
+4. 84 的遗留风险第 6 条在从右往左时反过来：`done` 叫 Agent 给 `left` 一个它已经有的值，真正要去掉的是 `right`。不报虚假的 ✓，等 ticket 88。
+5. 逻辑的边和物理的边按固定次序算，不按层叠先后（见上面第 5 条，已改写）。竖排的 `writing-mode` 按横排算。
+6. 读一次的记录会过时、一个视图代表一整段宽度；没跑真实 Agent。
+7. **页面上的容器缩放、旋转了时，用 `transform` 居中的图层**（main 就有）：`placedFrom`、`stillCentered` 按图层画出来的框判断居中，容器缩放时 Tailwind v3 的 `-translate-x-1/2` 会被当成没居中，报没显示。不报虚假的 ✓；`translate` 居中（Tailwind v4）不受影响。
+
