@@ -15,7 +15,7 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import { stayedPutOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { autoMarginTakesRoom, edgeGoneBy, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
+import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
@@ -644,17 +644,22 @@ function drawnFrom(el: Element, axis: Axis): number {
  * `drawnFrom`: so a px margin written instead is where it is drawn too), and
  * where the canvas has it (`at`), both from its container's start edge.
  * Drawn there, null: so, whether its auto margins or its sides alone place it
- * there, and only so, as wide as its container is (a px right at one width
+ * there, and only so (where its middle is, `share`, read again as for a
+ * translate, ticket 79), as wide as its container is (a px right at one width
  * is not at another; its margins gone, it is drawn at its side). A
  * `translate` is no part of it, as of an X or Y.
  */
-function offMiddle(el: Element, axis: Axis, sides: Record<Edge, Share>): { value: number; at: number; margins: true } | null {
+function offMiddle(el: Element, axis: Axis, sides: Record<Edge, Share>): { value: number; at: number; margins: true; share: Share } | null {
   const room = roomAlong(el, axis);
+  const size = sizeAlong(el, axis);
   const [start, end] = [pxIn(sides.start, room), pxIn(sides.end, room)];
-  const left = room - start - end - sizeAlong(el, axis);
+  const left = room - start - end - size;
   const at = start + (left >= 0 || axis === "y" ? left / 2 : edgeGoneBy(el, axis) === "end" ? left : 0);
   const drawn = drawnFrom(el, axis);
-  return Math.abs(drawn - at) <= 0.5 ? null : { value: rounded(drawn), at: rounded(at), margins: true };
+  if (Math.abs(drawn - at) <= 0.5) return null;
+  // Where its middle is now: centered by its auto margins still, the share its sides give it; else in px, as drawn (read again, as for a translate, ticket 79).
+  const share = placedFrom(el, axis).margins ? middleShareOf(el, axis) : { percent: 0, px: rounded(drawn + size / 2) };
+  return { value: rounded(drawn), at: rounded(at), margins: true, share };
 }
 
 /**

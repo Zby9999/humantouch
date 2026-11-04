@@ -7532,10 +7532,10 @@ describe("a layer centered by auto margins (ticket 96)", () => {
     for (const width of [800, 390]) expect(check(width, "#tag { left: 20px; right: -20px }")).toEqual({ outcome: "shown" });
     expect(check(800, "#tag { left: 195px; right: auto }")).toEqual({ outcome: "shown" });
     // As wide as a phone, its board 195px wide: its middle 20px past the board's, at 92.5px; not at 195px.
-    expect(check(390, "#tag { left: 195px; right: auto }")).toEqual({ outcome: "not shown", actual: { value: 195, at: 92.5, margins: true } });
-    expect(check(800, "#tag { left: 20px; right: -20px; margin-inline: 0 }")).toEqual({ outcome: "not shown", actual: { value: 20, at: 195, margins: true } });
+    expect(check(390, "#tag { left: 195px; right: auto }")).toEqual({ outcome: "not shown", actual: { value: 195, at: 92.5, margins: true, share: { percent: 0, px: 220 } } });
+    expect(check(800, "#tag { left: 20px; right: -20px; margin-inline: 0 }")).toEqual({ outcome: "not shown", actual: { value: 20, at: 195, margins: true, share: { percent: 0, px: 45 } } });
     // Not moved on the page at all: still at its middle.
-    expect(check(800, "")).toEqual({ outcome: "not shown", actual: { value: 175, at: 195, margins: true } });
+    expect(check(800, "")).toEqual({ outcome: "not shown", actual: { value: 175, at: 195, margins: true, share: { percent: 50, px: 0 } } });
   });
 
   test("centered across, moved into another Frame, placed freely there: it stays centered there by its auto margins, as far past that Frame's middle; copied, the copy is placed so too", async () => {

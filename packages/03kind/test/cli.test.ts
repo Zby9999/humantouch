@@ -1940,7 +1940,36 @@ describe("done, checked on the page", () => {
         "Keep it centered between its `left` and `right` by its auto margins (`margin-inline: auto`, Tailwind's `mx-auto`), its sides as the notes give them (`left: 20px; right: -20px`), not a px value from one side, and run `npx 03kind done 1` again.\n",
     );
     expect((await cli("done", "2")).output).toContain(
-      "it does not show the change. The layer is not placed absolute, not absolute centered between `left: 20px` and `right: -20px` by its auto margins and at Y 8px: check its `position`, `left` and `top`, and that its container is its positioning reference, then run `npx 03kind done 2` again.\n",
+      "it does not show the change. The layer is not placed absolute, not absolute centered between `left: 20px` and `right: -20px` by its auto margins and at Y 8px: check its `position`, `left` and `right` with its `margin-inline: auto`, and `top`, and that its container is its positioning reference, then run `npx 03kind done 2` again.\n",
+    );
+    closePage();
+    closePage = openPage(() => ({ outcome: "not shown", actual: { x: 300, y: 8, margins: { x: 0, y: 0 } } }));
+    expect((await cli("done", "2")).output).toContain(
+      "it does not show the change. The layer is not where the notes place it: check its `position`, `left` and `right` with its `margin-inline: auto`, and `top` as the notes give them, and that its container is its positioning reference, then run `npx 03kind done 2` again.\n",
+    );
+  });
+
+  test("a layer centered by its auto margins in the desktop view only, moved: the notes give its `left` alone, and done, where the page does not center it so, says where its `left` puts it (ticket 96, review)", async () => {
+    const PHONE = { min: null, max: 800 };
+    saveRound({
+      ...redFill,
+      property: "x",
+      before: 175,
+      after: 195,
+      placedFrom: { edge: "start", centered: true, margins: true },
+      centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } },
+      style: { left: "40px" },
+      margins: { x: 0, y: 0 },
+      uncenteredAt: [PHONE],
+    });
+    const { output } = await cli("claim");
+    expect(section(output, 1)).toContain(
+      "Give its `left` twice as much more, `left: 40px` (Tailwind's `left-[40px]`), keeping its `right` and its auto margins as the page has them at each width: where the page does not center it so, below 800px, it is placed by that `left`.",
+    );
+    expect(section(output, 1)).not.toContain("undefined");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 16, at: 40, margins: true, side: true }, width: 390 }));
+    expect((await cli("done", "1")).output).toContain(
+      "it does not show the change. At 390px wide, the layer is drawn at 16px from its container's left edge, where the canvas places it by its `left`, 40px, as it does not center it by its auto margins there: give it that `left` at this width too, and run `npx 03kind done 1` again.\n",
     );
   });
 
@@ -2565,6 +2594,28 @@ describe("changes not applied, carried over to the next round on the same canvas
         "Its X position goes from 600px to 660px as the designer saw it",
     );
     expect(changeSet().changes[0].centeredOn).toEqual({ before: { percent: 0, px: 600 }, after: { percent: 50, px: 20 } });
+  });
+
+  test("a layer centered by its auto margins, its X carried over, goes from where the page has its middle now: the notes say so (ticket 96, review)", async () => {
+    const x = {
+      ...redFill,
+      id: 2,
+      property: "x",
+      before: 175,
+      after: 195,
+      placedFrom: { edge: "start", centered: true, margins: true },
+      centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } },
+      style: { left: "20px", right: "-20px" },
+      margins: { x: 0, y: 0 },
+    };
+    await carriedOver({ ...smallRadius, id: 1 }, x);
+    // The Agent wrote `left-[10px] right-[-10px]`: its middle 10px past the board's.
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 185, at: 195, margins: true, share: { percent: 50, px: 10 } } }));
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain("its middle from 50% of its container's width from its left edge, and 10px past that to 50% of its container's width from its left edge, and 20px past that.");
+    expect(changeSet().changes[0].centeredOn).toEqual({ before: { percent: 50, px: 10 }, after: { percent: 50, px: 20 } });
   });
 
   test("an X the page does not place absolute now keeps the X it went from", async () => {

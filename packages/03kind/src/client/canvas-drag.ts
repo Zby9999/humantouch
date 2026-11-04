@@ -11,6 +11,8 @@
 import type { Drop } from "./drag";
 import type { Layer } from "./layers";
 import { split } from "./paint";
+import { autoMarginsBefore } from "./placed-from";
+import type { Axis } from "./snap";
 import type { Shown } from "./view-layout";
 import type { Shift, Views } from "./views";
 
@@ -56,6 +58,8 @@ export interface DragSession {
   pointer?: Pointer;
   /** The layer dragged's own `translate`, across and down (and in depth), which the drag's adds to: none, it has none (ticket 79). */
   translate: string[] | null;
+  /** The room its auto margins before it take up in the view dragged in, which its X and Y count (ticket 96), read once, as the drag begins: where a drop places it. */
+  autoMargins: Record<Axis, number>;
 }
 
 /**
@@ -81,6 +85,7 @@ export function startDragSession(layer: Layer, shown: Shown, views: Views): Drag
     back: null,
     release: () => {},
     translate: layer.text ? null : translateOf(layer.el),
+    autoMargins: layer.text ? { x: 0, y: 0 } : autoMarginsBefore(view.elementOf(layer.el) ?? layer.el),
   };
   if (!layer.text && offCanvasLayer?.layer()?.el === layer.el) {
     session.to = { x: offCanvasLayer.x, y: offCanvasLayer.y };

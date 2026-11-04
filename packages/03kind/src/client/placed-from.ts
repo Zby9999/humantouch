@@ -138,6 +138,9 @@ export function autoMarginBefore(el: Element, axis: Axis): number {
   return parseFloat(getComputedStyle(el).getPropertyValue(margin)) || 0;
 }
 
+/** `autoMarginBefore` along each axis. */
+export const autoMarginsBefore = (el: Element): Record<Axis, number> => ({ x: autoMarginBefore(el, "x"), y: autoMarginBefore(el, "y") });
+
 /**
  * Where `el`, placed absolute or fixed, is placed along `axis` from its
  * container's start edge, as its X and Y read it, in px: as the browser
@@ -385,12 +388,11 @@ export function extentOf(el: Element, axis: Axis): number {
   const style = getComputedStyle(el);
   const { start, end } = SIDES[axis];
   const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
-  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + sizeAlong(el, axis);
+  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + sizeAlong(el, axis, style);
 }
 
-/** How large `el`'s border box is along `axis`, as the browser computes it, laid out, not as a `transform` or `rotate` draws it. */
-export function sizeAlong(el: Element, axis: Axis): number {
-  const style = getComputedStyle(el);
+/** How large `el`'s border box is along `axis`, as the browser computes it (`style`, if read already), laid out, not as a `transform` or `rotate` draws it. */
+export function sizeAlong(el: Element, axis: Axis, style = getComputedStyle(el)): number {
   const { start, end } = SIDES[axis];
   const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
   const sides = [start, end].map((side) => px(`padding-${side}`) + px(`border-${side}-width`));

@@ -277,14 +277,20 @@ function centeredIntent({ property, before, after, centeredOn }: Change): string
  * it, which changes, and its sides, as much more and less, as CSS and
  * Tailwind write them.
  */
-function marginsCenteredIntent({ property, before, after, centeredOn, style }: Change): string {
+function marginsCenteredIntent({ property, before, after, centeredOn, style, uncenteredAt }: Change): string {
   const { axis } = PLACED_BY[property]!;
   const { start, end } = SIDES[axis];
   const [from, to] = [shareWords(centeredOn!.before, axis, "start", "its container"), shareWords(centeredOn!.after, axis, "start", "its container")];
-  const tailwind = [start, end].map((side) => `${side}-[${style[side].replace(/ /g, "")}]`).join(" ");
+  const written = [start, end].filter((side) => style[side]);
+  const tailwind = written.map((side) => `${side}-[${style[side].replace(/ /g, "")}]`).join(" ");
+  // Where a view beside does not center it so (review): its start side alone, its end side as each width has it.
+  const give = uncenteredAt?.length
+    ? `Give its \`${start}\` twice as much more, \`${start}: ${style[start]}\` (Tailwind's \`${tailwind}\`), keeping its \`${end}\` and its auto margins as the page has them at each width: ` +
+      `where the page does not center it so, ${uncenteredAt.map(breakpointName).join(", ")}, it is placed by that \`${start}\`. `
+    : `Give its \`${start}\` and \`${end}\` as much more and less, \`${start}: ${style[start]}; ${end}: ${style[end]}\` (Tailwind's \`${tailwind}\`), keeping both and its auto margins. `;
   return (
     `Move it ${AXIS_WAY[axis]}, centered between its \`${start}\` and \`${end}\` by its auto margins as it is: its middle from ${from} to ${to}. ` +
-    `Give its \`${start}\` and \`${end}\` as much more and less, \`${start}: ${style[start]}; ${end}: ${style[end]}\` (Tailwind's \`${tailwind}\`), keeping both and its auto margins. ` +
+    give +
     `Its ${propertyName(property)} goes from ${value(property, before)} to ${value(property, after)} as the designer saw it, but do not write that px value with the other side \`auto\`: as its container grows or shrinks, it stays centered, as far past its middle.`
   );
 }
