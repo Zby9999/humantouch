@@ -141,6 +141,14 @@ describe("the class-merging helper", () => {
     expect((await whereToLook(project, [cardChange()])).helper).toEqual({ name: "cn", at: "src/lib/utils.ts:2", merges: true });
   });
 
+  test("is found by an import written with .js, of a .ts module", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", `import { cn } from "./helpers/classes.js";\n${APP_TSX}`);
+    write("src/helpers/classes.ts", 'import { twMerge } from "tailwind-merge";\nexport const cn = (...c: string[]) => twMerge(c);\n');
+
+    expect((await whereToLook(project, [cardChange("src/App.tsx:6:7")])).helper).toEqual({ name: "cn", at: "src/helpers/classes.ts:2", merges: true });
+  });
+
   test("is said not to merge when it only joins the classes", async () => {
     write("package.json", "{}");
     write("src/App.tsx", `import { cn } from "./lib/utils";\n${APP_TSX}`);
@@ -185,7 +193,18 @@ describe("the body text style", () => {
     write("app/layout.tsx", 'export default function Layout({ children }) {\n  return (\n    <html>\n      <body className="font-sans text-stone-700">{children}</body>\n    </html>\n  );\n}\n');
     write("app/globals.css", "body {\n  margin: 0;\n}\n");
 
-    expect((await whereToLook(project, [newText])).bodyText).toEqual([{ selector: null, at: "app/layout.tsx:4:7" }]);
+    expect((await whereToLook(project, [newText])).bodyText).toEqual([{ element: "body", attribute: "className", at: "app/layout.tsx:4:7" }]);
+  });
+
+  test("is set by a class on the <html> JSX, or on <body> in the page's index.html", async () => {
+    write("package.json", "{}");
+    write("app/layout.tsx", 'export default function Layout({ children }) {\n  return (\n    <html className="font-serif">\n      <body>{children}</body>\n    </html>\n  );\n}\n');
+    write("index.html", '<!doctype html>\n<html>\n  <body class="font-sans">\n    <div id="root"></div>\n  </body>\n</html>\n');
+
+    expect((await whereToLook(project, [newText])).bodyText).toEqual([
+      { element: "html", attribute: "className", at: "app/layout.tsx:3:5" },
+      { element: "body", attribute: "class", at: "index.html:3" },
+    ]);
   });
 
   test("is set nowhere when no rule or className sets it", async () => {
@@ -200,6 +219,10 @@ describe("the body text style", () => {
     write("src/index.css", "body {\n  font-family: Georgia;\n}\n");
 
     expect((await whereToLook(project, [cardChange()])).bodyText).toBeUndefined();
+  });
+
+  test("rules: not those in a media query, for some widths or print only", () => {
+    expect(bodyRules("@media print {\n  body { color: black }\n}\n@layer base {\n  @media (min-width: 640px) { html { font-size: 18px } }\n}\n")).toEqual([]);
   });
 
   test("rules: each on body or html with a text style, at the line its selector starts, in layers and with @apply too", () => {

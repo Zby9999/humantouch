@@ -20,11 +20,8 @@ export interface ClassHelper {
   merges: boolean;
 }
 
-/** Where something sets the page's body text style: a rule (`selector`) of a stylesheet, at `file:line`; or, `selector` null, the `className` of the `<body>` JSX, at `file:line:column`. */
-export interface BodyTextPlace {
-  selector: string | null;
-  at: string;
-}
+/** Where something sets the page's body text style: a rule (`selector`) of a stylesheet, at `file:line`; or a class or style (`attribute`) on the `element`, `<body>` or `<html>`, in JSX at `file:line:column` or in an HTML page at `file:line`. */
+export type BodyTextPlace = { selector: string; at: string } | { element: "body" | "html"; attribute: string; at: string };
 
 export interface WhereToLook {
   /** Each usage in the source of the components the round changes for one usage alone, by component: `file:line:column`, as its usage marker gives it, in the order of the source. */
@@ -36,7 +33,7 @@ export interface WhereToLook {
 }
 
 /** A change whose scope is one usage of a component, as the notes say it (This usage only), at a usage they give. */
-export function oneUsageGiven(change: Change): boolean {
+function oneUsageGiven(change: Change): boolean {
   return change.scope !== "component" && forOneUsage(change) && !!change.target.chain[0].usage;
 }
 
@@ -64,7 +61,7 @@ export async function whereToLook(root: string, changes: Change[]): Promise<Wher
 }
 
 const JSX = /\.(jsx|tsx|js)$/;
-const STYLESHEET = /\.(css|scss|sass|less|pcss)$/;
+const STYLESHEET = /\.(css|scss|less|pcss)$/;
 
 /** The project's own files, from its folder: what git does not ignore, else all but `node_modules`, hidden and build folders; a package of its own inside it (vendored) left out. */
 async function projectFiles(root: string): Promise<string[]> {
@@ -97,7 +94,7 @@ const read = (root: string, file: string) => readFile(join(root, file), "utf8").
 /** Each usage of `components` in the JSX `files`: an element opened with its name (or `Something.Name`). */
 async function usagesOf(root: string, files: string[], components: string[]): Promise<Record<string, string[]>> {
   const usages: Record<string, string[]> = Object.fromEntries(components.map((component) => [component, []]));
-  const named = new RegExp(`<\\s*(?:[\\w$]+\\.)*(${components.map(escape).join("|")})\\b`);
+  const named = new RegExp(`<\\s*(?:[\\w$]+\\.)*(${components.map(escapeRegExp).join("|")})\\b`);
   for (const file of files.filter((file) => JSX.test(file)).sort()) {
     const code = await read(root, file);
     if (!code || !named.test(code)) continue;
@@ -109,7 +106,7 @@ async function usagesOf(root: string, files: string[], components: string[]): Pr
   return usages;
 }
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Names a class-merging helper, or one that only joins classes, goes by. */
 const HELPERS = ["cn", "cx", "clsx", "classNames", "classnames", "twMerge", "twJoin"];
@@ -140,18 +137,16 @@ async function helperOf(root: string, manifest: string, involved: string[]): Pro
   for (const file of involved) {
     const code = await read(root, file);
     for (const { name, source } of code ? helperImports(code) : []) {
-      const helper = HELPER_PACKAGES[source] ? { ...HELPER_PACKAGES[source], name, from: source } : await definedIn(root, resolveImport(file, source), name);
+      const helper = HELPER_PACKAGES[source] ? { ...HELPER_PACKAGES[source], name, from: source } : await definedIn(root, resolveImport(file, source), [name]);
       if (helper) found.push(helper);
     }
   }
   for (const place of KNOWN_PLACES) {
-    for (const name of HELPERS) {
-      const helper = await definedIn(root, [place], name);
-      if (helper) found.push(helper);
-    }
+    const helper = await definedIn(root, [place], HELPERS);
+    if (helper) found.push(helper);
   }
   for (const [source, helper] of Object.entries(HELPER_PACKAGES)) if (deps.includes(source)) found.push({ ...helper, from: source });
-  // One that merges first, the project's own before a package's.
+  // One that merges first; of those, one the files of the change import, then the project's own, then a package it depends on.
   return found.find((helper) => helper.merges) ?? found[0] ?? null;
 }
 
@@ -172,28 +167,31 @@ function helperImports(code: string): { name: string; source: string }[] {
 
 /** The files an import of `source` from `file` may be, from the project's folder, without their extensions: `@/` and `~/` from `src/`, or from the folder. */
 function resolveImport(file: string, source: string): string[] {
-  if (source.startsWith(".")) return [posix.join(posix.dirname(file), source)];
-  const alias = source.match(/^[@~]\/(.*)$/)?.[1];
+  // Written as the module it builds to (`./utils.js` for `utils.ts`): the extension is left to be found.
+  const path = source.replace(/\.(m?js|jsx)$/, "");
+  if (path.startsWith(".")) return [posix.join(posix.dirname(file), path)];
+  const alias = path.match(/^[@~]\/(.*)$/)?.[1];
   return alias ? [`src/${alias}`, alias] : [];
 }
 
-/** The helper `name` as the module at one of `places` (without an extension, or an index in it) defines it: at the line of its definition, merging when the module uses tailwind-merge. */
-async function definedIn(root: string, places: string[], name: string): Promise<ClassHelper | null> {
+/** The first of the helpers `names` the module at one of `places` (without an extension, or an index in it) defines: at the line of its definition, merging when the module uses tailwind-merge. */
+async function definedIn(root: string, places: string[], names: string[]): Promise<ClassHelper | null> {
+  const defines = new RegExp(`^export\\s+(?:default\\s+)?(?:async\\s+)?(?:function\\s*\\*?\\s*|const\\s+|let\\s+|var\\s+)(${names.map(escapeRegExp).join("|")})\\b`, "m");
   for (const place of places) {
     for (const file of [place, ...EXTENSIONS.map((ext) => place + ext), ...EXTENSIONS.map((ext) => `${place}/index${ext}`)]) {
       if (!EXTENSIONS.some((ext) => file.endsWith(ext))) continue;
       const code = await read(root, file);
       if (code === null) continue;
-      const definition = new RegExp(`^export\\s+(?:default\\s+)?(?:async\\s+)?(?:function\\s*\\*?\\s*|const\\s+|let\\s+|var\\s+)${escape(name)}\\b`, "m").exec(code);
+      const definition = defines.exec(code);
       if (!definition) continue;
       const line = code.slice(0, definition.index).split("\n").length;
-      return { name, at: `${file}:${line}`, merges: /from\s*["']tailwind-merge["']|require\(\s*["']tailwind-merge["']\s*\)/.test(code) };
+      return { name: definition[1], at: `${file}:${line}`, merges: /from\s*["']tailwind-merge["']|require\(\s*["']tailwind-merge["']\s*\)/.test(code) };
     }
   }
   return null;
 }
 
-/** What sets the page's body text style: the rules on `body` or `html` of the project's stylesheets (CSS Modules aside), and a `className` on the `<body>` JSX. */
+/** What sets the page's body text style: the rules on `body` or `html` of the project's stylesheets (CSS Modules aside), a `className` on the `<body>` or `<html>` JSX, and a class or style on `<body>` or `<html>` in an HTML page (Vite's `index.html`). */
 async function bodyTextOf(root: string, files: string[]): Promise<BodyTextPlace[]> {
   const places: BodyTextPlace[] = [];
   for (const file of files.filter((file) => STYLESHEET.test(file) && !/\.module\.[a-z]+$/.test(file)).sort()) {
@@ -202,8 +200,16 @@ async function bodyTextOf(root: string, files: string[]): Promise<BodyTextPlace[
   }
   for (const file of files.filter((file) => JSX.test(file)).sort()) {
     const code = await read(root, file);
-    if (!code?.includes("<body")) continue;
-    for (const { tag, line, column, attributes } of openingTags(code, file) ?? []) if (tag === "body" && attributes.includes("className")) places.push({ selector: null, at: `${file}:${line}:${column}` });
+    if (!code || !/<(body|html)\b/.test(code)) continue;
+    for (const { tag, line, column, attributes } of openingTags(code, file) ?? []) {
+      if ((tag === "body" || tag === "html") && attributes.includes("className")) places.push({ element: tag, attribute: "className", at: `${file}:${line}:${column}` });
+    }
+  }
+  for (const file of files.filter((file) => /\.html$/.test(file)).sort()) {
+    const html = await read(root, file);
+    for (const match of html?.matchAll(/<(body|html)\b[^>]*?\s(class|style)\s*=/gi) ?? []) {
+      places.push({ element: match[1].toLowerCase() as "body" | "html", attribute: match[2].toLowerCase(), at: `${file}:${html!.slice(0, match.index).split("\n").length}` });
+    }
   }
   // By file, as the project lists them.
   const fileOf = (place: BodyTextPlace) => place.at.replace(/(:\d+)+$/, "");
@@ -218,9 +224,17 @@ export function bodyRules(css: string): { selector: string; line: number }[] {
   // Comments out, every line kept where it is.
   const text = css.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
   const rules: { selector: string; line: number }[] = [];
+  // The blocks open where each rule starts: one in a media query (or another at-rule but `@layer`) holds at some widths, or in print, only.
+  const open: string[] = [];
+  let read = 0;
   for (const match of text.matchAll(/([^{};]*)\{/g)) {
-    const parts = match[1].split(",").map((part) => part.trim());
-    if (match[1].trim().startsWith("@") || !parts.some((part) => part === "body" || part === "html")) continue;
+    for (const char of text.slice(read, match.index)) if (char === "}") open.pop();
+    read = match.index! + match[0].length;
+    const head = match[1].trim();
+    const inside = open.some((block) => block.startsWith("@") && !block.startsWith("@layer"));
+    open.push(head);
+    const parts = head.split(",").map((part) => part.trim());
+    if (head.startsWith("@") || inside || !parts.some((part) => part === "body" || part === "html")) continue;
     const start = match.index! + match[0].length;
     const end = text.slice(start).search(/[{}]/);
     if (!TEXT_STYLE.test(text.slice(start, end < 0 ? undefined : start + end))) continue;

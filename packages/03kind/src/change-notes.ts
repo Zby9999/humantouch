@@ -768,7 +768,7 @@ function bodyText(look: WhereToLook | undefined): string {
   const places = look?.bodyText;
   if (!places) return "";
   if (!places.length) return ": nothing in the project's source sets it, on `body` or `html`";
-  return `: ${listed(places.map(({ selector, at }) => (selector === null ? `the \`className\` of \`<body>\` at \`${at}\`` : `the rule \`${selector}\` at \`${at}\``)))}`;
+  return `: ${listed(places.map((place) => ("selector" in place ? `the rule \`${place.selector}\`` : `the \`${place.attribute}\` of \`<${place.element}>\``) + ` at \`${place.at}\``))}`;
 }
 
 /** How many other usages of a component the notes name, at most; the rest are counted, by file (ticket 101). */
