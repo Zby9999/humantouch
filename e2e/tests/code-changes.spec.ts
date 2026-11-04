@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice } from "../bench/notices";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /**
@@ -38,14 +38,17 @@ const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFra
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const layer = (page: Page, name: string) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).first();
 const savedChanges = () => readThirdKindFile("changeset.json")?.changes.length ?? 0;
+/** The first card's title on the canvas. The canvas is frozen afresh as the code changes: wait on its size with `toHaveCSS`, which reads it again in the new frame, where a read in `expect.poll` fails on the old one going away. */
+const canvasTitleOf = (page: Page) => canvas(page).locator("article h3").first();
 /** The first card's title size on the canvas: 18px as the code is, 20px once `titleUp` is in and the canvas frozen afresh. */
-const canvasTitle = (page: Page) => canvas(page).locator("article h3").first().evaluate((h3) => getComputedStyle(h3).fontSize);
+const canvasTitle = (page: Page) => canvasTitleOf(page).evaluate((h3) => getComputedStyle(h3).fontSize);
 /** Every toast or notice the code changing may bring, so far. */
 const told = async (page: Page) => ({ updated: (await canvasUpdatedNoticesShown(page)).length, changed: (await pageChangedNoticesShown(page)).length });
 
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function setField(page: Page, name: string, value: string) {
@@ -85,7 +88,7 @@ test("the Agent landing a change with no claim: the round is claimed as if it ha
   expect(readThirdKindFile("state.json")).toMatchObject({ status: "claimed", done: [] });
   // The Agent, told nothing by the Skill, runs claim at last: claimed already, with all of it applied, as the page shows.
   expect(await npx03kind("claim")).toMatch(/^This round is claimed already, and all 1 of its changes are applied/);
-  expect(await told(page)).toEqual({ updated: 0, changed: 0 });
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
 
   // It stops: the toggle says so, as after any claim (ticket 67); the designer ends the round by holding the toggle.
   await page.clock.fastForward(STALL_MS + 1000);
@@ -114,8 +117,8 @@ test("a file the page does not use tells nothing: a note, a module nothing impor
   writeFileSync(UNUSED[1], "export const later = 'bg-blue-600';\n");
   await page.waitForTimeout(2500);
 
-  expect(await told(page)).toEqual({ updated: 0, changed: 0 });
-  expect(await canvasTitle(page)).toBe(before);
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
+  await expect(canvasTitleOf(page)).toHaveCSS("font-size", before);
   await layer(page, "Button").click();
   await setField(page, "Corner radius", "8");
   await expect.poll(savedChanges).toBe(1);
@@ -147,7 +150,7 @@ test("the editor layer's own saves tell nothing: the round, the layers off the c
   await expect(canvas(page).locator("article").first()).toBeVisible();
   await page.waitForTimeout(2000);
 
-  expect(await told(page)).toEqual({ updated: 0, changed: 0 });
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
   expect(readThirdKindFile("state.json")).toBeNull();
 });
 
@@ -172,7 +175,7 @@ test("the Agent claiming and editing at once tells nothing, even with the page n
   await titleUp(page);
   await page.waitForTimeout(2500);
 
-  expect(await told(page)).toEqual({ updated: 0, changed: 0 });
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
   // The claim is the command line's, as it made it.
   expect(readFileSync(`${THIRD_KIND_FOLDER}state.json`, "utf8")).toBe(claimed);
   await page.unroute((url) => url.hostname === "127.0.0.1" && url.pathname === "/events");
@@ -192,14 +195,14 @@ test("a press held as the page changes ends first, as the designer meant it; the
 
   await titleUp(page);
   await page.waitForTimeout(2000);
-  expect(await told(page)).toEqual({ updated: 0, changed: 0 });
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
 
   await page.mouse.up();
   // The drag was an edit, made before: what was pressed is off the canvas, a deletion on the page; so the canvas has a change, and is not frozen afresh.
   await expect(pageChangedNotice(page)).toBeVisible();
   await expect.poll(savedChanges).toBe(1);
-  expect(await canvasTitle(page)).toBe("18px");
-  expect(await told(page)).toEqual({ updated: 0, changed: 1 });
+  await expect(canvasTitleOf(page)).toHaveCSS("font-size", "18px");
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 1 });
 });
 
 test("words typed and not yet set, in a field or a text layer, are let be till they are: none is lost", async ({ page }) => {
@@ -211,12 +214,12 @@ test("words typed and not yet set, in a field or a text layer, are let be till t
 
   await titleUp(page);
   await page.waitForTimeout(2000);
-  expect(await told(page)).toEqual({ updated: 0, changed: 0 });
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
 
   await design(page).getByRole("textbox", { name: "Fill color", exact: true }).press("Enter");
   // Set: the canvas has a change, and so says the page changed, rather than freezing it afresh.
   await expect(pageChangedNotice(page)).toBeVisible();
-  expect(await canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(0, 255, 0)");
+  await expect.poll(() => canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(0, 255, 0)");
   await expect.poll(savedChanges).toBe(1);
 
   // A text layer typed in on the canvas, and the page changing again: told of once the typing is done (and no more, being stale already).
@@ -228,7 +231,7 @@ test("words typed and not yet set, in a field or a text layer, are let be till t
   await expect(canvas(page).locator("h1")).toHaveText("Third");
   await page.keyboard.press("Escape");
   await expect.poll(savedChanges).toBe(2);
-  expect(await told(page)).toEqual({ updated: 0, changed: 1 });
+  await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 1 });
 });
 
 test("files saved one after another, as an Agent writes several, are told once", async ({ page }) => {
@@ -242,9 +245,9 @@ test("files saved one after another, as an Agent writes several, are told once",
     writeFileSync(CARD, text);
     await page.waitForTimeout(400);
   }
-  await expect.poll(() => canvasTitle(page)).toBe("30px");
+  await expect(canvasTitleOf(page)).toHaveCSS("font-size", "30px");
   await page.waitForTimeout(2000);
-  expect(await told(page)).toEqual({ updated: 1, changed: 0 });
+  await expect.poll(() => told(page)).toEqual({ updated: 1, changed: 0 });
 });
 
 test("the toasts: at the canvas's bottom left, by the Layers panel or the window's edge; apart from the toast at its bottom middle; each gone on its own, but not under the pointer", async ({ page }) => {

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { clearThirdKindFolder, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real, so they go one at a time. */
@@ -22,6 +22,7 @@ function canvas(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Gives the first card a red fill from the Design panel. */
@@ -100,7 +101,7 @@ test("after a reload, edit mode brings back the canvas and its changes as they w
   await enterEditMode(page);
 
   await expect(canvas(page).getByRole("dialog", { name: "Ship it?" })).toBeVisible();
-  expect(await cardFills(page)).toEqual([RED, RED, RED, WHITE]);
+  await expect.poll(() => cardFills(page)).toEqual([RED, RED, RED, WHITE]);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   const design = page.getByRole("complementary", { name: "Design" });
   await expect(design.getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FF0000");
@@ -131,7 +132,7 @@ test("with changes not yet applied, edit mode comes back to the same canvas wher
   await expect(page.getByRole("dialog", { name: "Ship it?" })).toBeVisible();
   await enterEditMode(page);
   await expect(canvas(page).getByRole("dialog", { name: "Ship it?" })).toHaveCount(0);
-  expect(await cardFills(page)).toEqual([RED, RED, RED, WHITE]);
+  await expect.poll(() => cardFills(page)).toEqual([RED, RED, RED, WHITE]);
   await backToPreviewMode(page);
 
   // …and goes to another page.
@@ -139,7 +140,7 @@ test("with changes not yet applied, edit mode comes back to the same canvas wher
   await page.getByRole("button", { name: "Get started" }).click();
   await enterEditMode(page);
   await expect(canvas(page).getByRole("dialog", { name: "Ship it?" })).toHaveCount(0);
-  expect(await cardFills(page)).toEqual([RED, RED, RED, WHITE]);
+  await expect.poll(() => cardFills(page)).toEqual([RED, RED, RED, WHITE]);
 });
 
 test("with no changes left, edit mode freezes the page afresh", async ({ page }) => {
@@ -158,7 +159,7 @@ test("with no changes left, edit mode freezes the page afresh", async ({ page })
   await enterEditMode(page);
 
   await expect(canvas(page).getByRole("dialog", { name: "Ship it?" })).toBeVisible();
-  expect(await cardFills(page)).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardFills(page)).toEqual([WHITE, WHITE, WHITE, WHITE]);
 });
 
 test("a badge on the toggle counts the changes not yet applied", async ({ page }) => {
@@ -224,7 +225,7 @@ function viewStyles(page: Page): Promise<Record<string, string[][]>> {
 
 /** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */
 async function pick(page: Page, view: Locator, selector: string) {
-  const box = (await view.contentFrame().locator(selector).first().boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator(selector).first());
   await page.keyboard.down("Meta");
   await page.mouse.click(box.x + 4, box.y + 4);
   await page.keyboard.up("Meta");

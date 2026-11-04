@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 
 /**
  * Ticket 79 (ADR 0014): layers placed freely from their container's right or
@@ -37,6 +37,7 @@ async function addBoard(page: Page, css: string, height = "240px") {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Selects the layer under the middle of the tag in a view (the desktop view), the deepest there: the view is the one worked in from then on. */
@@ -172,7 +173,7 @@ for (const [name, css] of [
     // X is its middle, as before: it moved as far as it was dragged, and is drawn there.
     const dragged = (await number(page, "X")) - x;
     expect(Math.abs(dragged - 100)).toBeLessThanOrEqual(1);
-    expect((await gapsIn(desktop(page))).left - start.left).toBe(dragged);
+    await expect.poll(async () => (await gapsIn(desktop(page))).left - start.left).toBe(dragged);
     await expectInEveryView(page, { off: dragged, top: 60 });
     await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 

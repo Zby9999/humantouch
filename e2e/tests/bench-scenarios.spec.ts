@@ -33,6 +33,14 @@ async function served(example: Example, file: string): Promise<string> {
   return (await (await fetch(`${SERVED[example]}/${file}`)).text()).replace(/[?&]t=\d+/g, "");
 }
 
+/**
+ * `text` with each run of Vite's hoisted CJS-interop lines (`const useState = __vite__cjsImport1_react["useState"];`) in a
+ * fixed order, all else as it is. Vite hoists them in the order its import analysis resolves the CJS imports, which can differ
+ * from one serve of the same file to the next under load (ticket 93): the wait for a restored file takes them in any order.
+ */
+const INTEROP = /const \w+ = [^;]*?__vite__cjsImport\d+_\w+[^;]*;/g;
+const normalised = (text: string) => text.replace(/(?:const \w+ = [^;]*?__vite__cjsImport\d+_\w+[^;]*; ?)+/g, (run) => run.match(INTEROP)!.sort().join(""));
+
 /** The source files a round before edited, by their paths: as they were, and as the dev server served them then. Written back after each test. */
 const originals = new Map<string, { example: Example; file: string; text: string; served: string }>();
 
@@ -40,7 +48,7 @@ test.afterEach(async () => {
   for (const [path, original] of originals) {
     if (readFileSync(path, "utf8") !== original.text) writeFileSync(path, original.text);
     // So the next test's page loads it as it was. The design waits for its page to take an edit in, by what the page shows.
-    await expect.poll(() => served(original.example, original.file)).toBe(original.served);
+    await expect.poll(async () => normalised(await served(original.example, original.file))).toBe(normalised(original.served));
   }
   originals.clear();
 });

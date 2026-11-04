@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 
 // What the designer sees the first time: no Layers panel yet.
 test.use({ showLayers: false });
@@ -10,6 +10,7 @@ const design = (page: Page) => page.getByRole("complementary", { name: "Design" 
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]').contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Left and right edges of an element, in the window. */
@@ -45,7 +46,7 @@ test("with the Layers panel hidden, the canvas takes its room; shown, the panel 
   const viewport = page.getByRole("region", { name: "Canvas viewport" });
   const panel = await edges(page, design(page));
 
-  expect(await edges(page, viewport)).toEqual({ left: 0, right: panel.left });
+  await expect.poll(() => edges(page, viewport)).toEqual({ left: 0, right: panel.left });
 
   const canvas = page.locator('iframe[title="Canvas"]');
   const before = await edges(page, canvas);
@@ -53,7 +54,7 @@ test("with the Layers panel hidden, the canvas takes its room; shown, the panel 
   await page.getByRole("button", { name: "Show layers" }).click();
   const left = await edges(page, layers(page));
   expect(left.left).toBe(0);
-  expect(await edges(page, viewport)).toEqual({ left: left.right, right: panel.left });
+  await expect.poll(() => edges(page, viewport)).toEqual({ left: left.right, right: panel.left });
   // The canvas stays where it was on screen as the panel opens beside it.
   await expect.poll(() => edges(page, canvas)).toEqual(before);
 });

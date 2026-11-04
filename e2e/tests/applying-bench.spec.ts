@@ -120,6 +120,24 @@ async function watchFor(notice: ReturnType<typeof stalledNotice>, ms: number): P
   }
 }
 
+/**
+ * Ticket 93: the page has heard the last move before its clock is run on. `done` answers once the page's
+ * check is in (a layout effect), but the stall watch hears the ask in an effect after it: under load that
+ * may run after `fastForward`, start the while again from the new time, and the notice never shows.
+ * Two of the page's turns, each a posted message and a frame, let it run first.
+ */
+async function pageHeardTheLastMove(page: Page) {
+  await page.evaluate(async () => {
+    for (let turn = 0; turn < 2; turn++) {
+      await new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => requestAnimationFrame(() => resolve());
+        channel.port2.postMessage(null);
+      });
+    }
+  });
+}
+
 /** Keeps a playbook's numbers: in `bench-results/playbooks/<id>.json`, and in the output. */
 function record(id: string, metrics: Record<string, unknown>) {
   mkdirSync(RESULTS, { recursive: true });
@@ -232,6 +250,7 @@ async function noticeAfterStop(page: Page, stoppedAt: number, real = STALL_REAL)
   const ranOn = real ? 0 : STALL_MS - 2000;
   if (!real) {
     await expect(stalledNotice(page)).toHaveCount(0);
+    await pageHeardTheLastMove(page);
     await page.clock.fastForward(ranOn);
   }
   const shown = await watchFor(stalledNotice(page), stoppedAt + STALL_MS - ranOn + NOTICE_LATE_MS + WATCH_PAST_MS - Date.now());
@@ -386,7 +405,8 @@ async function panCanvas(page: Page) {
 async function within(ms: number, test: () => Promise<boolean>): Promise<number | null> {
   const start = Date.now();
   while (Date.now() - start < ms) {
-    if (await test()) return Date.now() - start;
+    // A read as the canvas is frozen afresh can land on the frame going away: not there yet (ticket 93).
+    if (await test().catch((error: Error) => (/Frame was detached/.test(error.message) ? false : Promise.reject(error)))) return Date.now() - start;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return null;
@@ -401,11 +421,21 @@ const typedApart = (text: string) =>
 const TITLE = { from: "text-lg font-semibold", to: "text-xl font-semibold", shows: "20px", was: "18px" };
 const TEXT = { from: "mt-2 text-sm", to: "mt-2 text-base", shows: "16px", was: "14px" };
 /** The first card's title and text size on the canvas, and its fill. */
-const canvasCard = (page: Page) =>
-  canvas(page)
-    .locator("article")
-    .first()
-    .evaluate((card) => ({ title: getComputedStyle(card.querySelector("h3")!).fontSize, text: getComputedStyle(card.querySelector("p")!).fontSize, fill: getComputedStyle(card).backgroundColor }));
+const canvasCard = async (page: Page) => {
+  const start = Date.now();
+  for (;;) {
+    try {
+      return await canvas(page)
+        .locator("article")
+        .first()
+        .evaluate((card) => ({ title: getComputedStyle(card.querySelector("h3")!).fontSize, text: getComputedStyle(card.querySelector("p")!).fontSize, fill: getComputedStyle(card).backgroundColor }));
+    } catch (error) {
+      // A read as the canvas is frozen afresh can land on the frame going away: read again, for up to 5 s (ticket 93).
+      if (!/Frame was detached/.test((error as Error).message) || Date.now() - start >= 5000) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+};
 
 test("playbook: the Agent lands the designer's changes with no claim, while the designer is in edit mode", async ({ page }) => {
   await designTheRound(page);
@@ -579,6 +609,8 @@ test("playbook: the Agent sits still a long time between two changes, then goes 
   const noticeDuringPauseAfterMs = await watchFor(stalledNotice(page), 5000);
   await apply(page, 2);
   await npx03kind("done", "2");
+  await expect(ring(page)).toHaveAttribute("aria-valuenow", "2");
+  await pageHeardTheLastMove(page);
   // Still past the threshold, then on again: the notice shows, and goes as the code comes in.
   await page.clock.fastForward(STALL_MS);
   const noticePastThreshold = (await watchFor(stalledNotice(page), NOTICE_LATE_MS)) !== null;

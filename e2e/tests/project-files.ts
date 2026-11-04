@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -26,10 +26,18 @@ export function npx03kindIn(dir: string) {
   return async (...args: string[]): Promise<string> => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: dir })).stdout;
 }
 
-/** A JSON file in `.03kind/`, or null when it is not there. */
+/**
+ * A JSON file in `.03kind/`, or null when it is not there. Ticket 93: the
+ * service may take it away between a look and the read (a round discarded):
+ * gone then, it is not there.
+ */
 export function readThirdKindFile(file: string) {
-  const path = `${THIRD_KIND_FOLDER}${file}`;
-  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  try {
+    return JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}${file}`, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 /** What the dev server serves of a Card edited for one usage alone (`forTheLoopAlone`, or a prop the Card takes with a default, ticket 77): a test that puts the Card back waits till it serves none of it. */

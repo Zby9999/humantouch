@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
@@ -36,6 +36,7 @@ function canvas(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function setField(page: Page, name: string, value: string) {
@@ -157,7 +158,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   const roundAt = Date.now();
   // The page, with the round read again, has looked: the fill is not drawn yet.
   await expect.poll(() => fillLooks.some((at) => at >= roundAt)).toBe(true);
-  expect(await page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
+  await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
   await page.evaluate(() => (window as unknown as HeldDrawing).__tkLetDraw());
@@ -285,13 +286,13 @@ const WHITE = "rgb(255, 255, 255)";
 test("the page shows the code all along: before the claim, while the round is applied, and after it", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  expect(await cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
 
   await npx03kind("claim");
   await npx03kind("done", "1");
-  expect(await cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   await npx03kind("finish");
-  expect(await cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
 });
 
 

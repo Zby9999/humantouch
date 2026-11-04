@@ -49,9 +49,9 @@ test("code from third-party dependencies is not marked", async ({ page }) => {
   const badge = page.getByTestId("acme-badge");
   await expect(badge).toBeVisible();
 
-  expect(await badge.getAttribute("data-tk-loc")).toBeNull();
+  await expect.poll(() => badge.getAttribute("data-tk-loc")).toBeNull();
   // The usage of the third-party component is project source, so it is marked.
-  expect((await ownerProps(page, "[data-testid=acme-badge]"))["data-tk-usage"]).toBe(
+  await expect.poll(async () => (await ownerProps(page, "[data-testid=acme-badge]"))["data-tk-usage"]).toBe(
     locate("src/App.tsx", "<Badge"),
   );
 });

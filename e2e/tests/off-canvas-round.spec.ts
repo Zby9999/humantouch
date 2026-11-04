@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 import { EXAMPLE, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
@@ -17,6 +17,7 @@ const offCanvas = (page: Page) => page.locator('iframe[title="Off canvas"]:visib
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(desktop(page).contentFrame().locator("article").first()).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Where the layer off the canvas is in the workspace, in the desktop view's px from its top left. */
@@ -76,7 +77,7 @@ async function movedOffAndApplied(page: Page, APP: string, original: string) {
   await enterEditMode(page);
   await expect(offCanvas(page)).toHaveCount(1);
   await expect(offCanvas(page).contentFrame().locator("h1")).toHaveText("Third Kind");
-  expect(await placeOff(page)).toEqual(where);
+  await expect.poll(() => placeOff(page)).toEqual(where);
   // Off the canvas, it is no part of the round.
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 }

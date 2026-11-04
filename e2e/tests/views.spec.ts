@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
@@ -10,6 +10,7 @@ const design = (page: Page) => page.getByRole("complementary", { name: "Design" 
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** How many columns the cards are laid out in, in a view. */
@@ -64,9 +65,9 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
   expect(boxes[2].x + boxes[2].width).toBeLessThan(area.x + area.width);
 
   // `sm:grid-cols-3`: three columns from 640px up, one below.
-  expect(await cardColumns(desktop(page))).toBe(3);
-  expect(await cardColumns(tablet(page))).toBe(3);
-  expect(await cardColumns(phone(page))).toBe(1);
+  await expect.poll(() => cardColumns(desktop(page))).toBe(3);
+  await expect.poll(() => cardColumns(tablet(page))).toBe(3);
+  await expect.poll(() => cardColumns(phone(page))).toBe(1);
   // `h-screen`: as tall as the window the page was frozen in, in every view.
   const height = await page.evaluate(() => innerHeight);
   for (const view of [desktop(page), tablet(page), phone(page)]) {
@@ -164,16 +165,16 @@ test("a value set once in the Design panel shows in the views beside the frame a
   let shown = await watchTablet(page, "border-radius", "5px", "keydown");
   await radius.fill("5");
   await radius.press("Enter");
-  expect((await shown()).frames).toBeLessThanOrEqual(3);
+  await expect.poll(async () => (await shown()).frames).toBeLessThanOrEqual(3);
   // Toggled: the same.
   shown = await watchTablet(page, "overflow", "visible", "click");
   await clip.uncheck();
-  expect((await shown()).frames).toBeLessThanOrEqual(3);
+  await expect.poll(async () => (await shown()).frames).toBeLessThanOrEqual(3);
 
   // ↑: one step of a run of them, which the views beside show once the steps pause (ADR 0011).
   shown = await watchTablet(page, "border-radius", "6px", "keydown");
   await radius.press("ArrowUp");
-  expect((await shown()).ms).toBeGreaterThanOrEqual(100);
+  await expect.poll(async () => (await shown()).ms).toBeGreaterThanOrEqual(100);
   // Dragged on the icon: so is each px.
   const { x, y } = (await page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub').boundingBox())!;
   shown = await watchTablet(page, "border-radius", "9px", "pointermove");
@@ -181,7 +182,7 @@ test("a value set once in the Design panel shows in the views beside the frame a
   await page.mouse.down();
   for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
   await page.mouse.up();
-  expect((await shown()).ms).toBeGreaterThanOrEqual(100);
+  await expect.poll(async () => (await shown()).ms).toBeGreaterThanOrEqual(100);
   await expect(radius).toHaveValue("9");
 });
 
@@ -266,7 +267,7 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   for (const view of [desktop(page), tablet(page), phone(page)]) {
     const making = view.contentFrame().locator(`${hero} > p`);
     await expect(making).not.toHaveCSS("translate", "none");
-    expect(await making.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+    await expect.poll(() => making.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
   }
   await page.mouse.up();
 
@@ -314,16 +315,16 @@ test("while dragging in the phone view, ⌘Z and ⇧⌘Z do nothing in any view;
       await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
     }
   }
-  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+  await expect.poll(() => orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
   await expect(badge).toHaveAccessibleName("1 change not applied yet");
-  expect(await tree.getByRole("treeitem").allTextContents()).toEqual(rows);
+  await expect.poll(() => tree.getByRole("treeitem").allTextContents()).toEqual(rows);
   await page.mouse.up();
 
-  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
-  expect(await paragraphStyles()).toEqual(before);
+  await expect.poll(() => orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
+  await expect.poll(() => paragraphStyles()).toEqual(before);
   await expect(badge).toHaveAccessibleName("2 changes not applied yet");
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+  await expect.poll(() => orders()).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
   for (const view of views) await expect(view.contentFrame().locator("h1")).toBeHidden();
   await page.keyboard.press("ControlOrMeta+z");
   for (const view of views) await expect(view.contentFrame().locator("h1")).toBeVisible();
@@ -341,7 +342,7 @@ test("while dragging in the phone view, ⌘D, Delete and the other keys that edi
   /** In each view, the elements of the hero with a style left of a drag: not taking the pointer, over the others, or shifted. */
   const dragStyled = () =>
     Promise.all(views.map((view) => view.contentFrame().locator(`${hero} [style*="pointer-events"], ${hero} [style*="z-index"], ${hero} [style*="translate"]`).count()));
-  expect(await dragStyled()).toEqual([0, 0, 0]);
+  await expect.poll(() => dragStyled()).toEqual([0, 0, 0]);
   const rows = await tree.getByRole("treeitem").allTextContents();
 
   const button = phone(page).contentFrame().locator(`${hero} > button`);
@@ -353,15 +354,15 @@ test("while dragging in the phone view, ⌘D, Delete and the other keys that edi
   for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`)).not.toHaveCSS("translate", "none");
   for (const key of ["ControlOrMeta+d", "Delete", "Backspace", "ControlOrMeta+x", "Shift+A", "Alt+Shift+A", "ControlOrMeta+Shift+g", "ArrowDown"]) {
     await page.keyboard.press(key);
-    expect(await orders(), key).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
+    await expect.poll(() => orders(), key).toEqual([0, 1, 2].map(() => ["header", "p", "button"]));
     for (const view of views) await expect(view.contentFrame().locator(`${hero} > p`), key).not.toHaveCSS("translate", "none");
   }
   await expect(badge).toHaveCount(0);
-  expect(await tree.getByRole("treeitem").allTextContents()).toEqual(rows);
+  await expect.poll(() => tree.getByRole("treeitem").allTextContents()).toEqual(rows);
   await page.mouse.up();
 
-  expect(await orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
-  expect(await dragStyled()).toEqual([0, 0, 0]);
+  await expect.poll(() => orders()).toEqual([0, 1, 2].map(() => ["header", "button", "p"]));
+  await expect.poll(() => dragStyled()).toEqual([0, 0, 0]);
   await expect(badge).toHaveAccessibleName("1 change not applied yet");
 });
 
@@ -428,7 +429,7 @@ test("the camera moved while typing in a view, and then at rest, the words go on
   await page.mouse.wheel(0, -20);
   await page.keyboard.up("ControlOrMeta");
   await page.waitForTimeout(400);
-  expect(await caret()).toBe("Third ".length);
+  await expect.poll(() => caret()).toBe("Third ".length);
   await page.keyboard.type("Edit");
   for (const h1 of titles) await expect(h1).toHaveText("Third Edit");
 
@@ -437,7 +438,7 @@ test("the camera moved while typing in a view, and then at rest, the words go on
   await page.waitForTimeout(400);
   for (const h1 of titles) await expect(h1).toHaveText("Third Edit");
   await expect(layers.getByRole("treeitem", { selected: true })).toHaveText("Third Edit");
-  expect(await selectionBoxes(page)).toEqual(boxes);
+  await expect.poll(() => selectionBoxes(page)).toEqual(boxes);
 });
 
 test("the camera moved while a number's icon or a layer is pressed: the stage is drawn again only once the mouse is let go", async ({ page }) => {
@@ -458,7 +459,7 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
   const redrawn = () => page.evaluate(() => (window as unknown as { redrawn: number }).redrawn);
   const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
   const onIcon = async () => {
-    const box = (await icon.boundingBox())!;
+    const box = await steadyBox(icon);
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   };
 
@@ -470,7 +471,7 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
     // Pressed, not moved, the camera moved by ⇧1 (which goes on while pressed): well past the 100ms the stage waits for, it is not drawn again meanwhile.
     await page.keyboard.press("Shift+Digit1");
     await page.waitForTimeout(400);
-    expect(await redrawn()).toBe(before);
+    await expect.poll(() => redrawn()).toBe(before);
     await page.mouse.up();
     await expect.poll(redrawn).toBe(before + 1);
   }
@@ -524,14 +525,14 @@ test("the window made shorter, then taller till every view shows whole, then sho
   // Shorter again: drawn whole meanwhile, it is drawn again.
   await page.setViewportSize({ width, height: shorter });
   await expect.poll(redrawn).toBe(3);
-  expect((await viewEdges(page)).transform).toBe(at.transform);
+  await expect.poll(async () => (await viewEdges(page)).transform).toBe(at.transform);
 
   // Drawn with views out of sight: a value changed, which makes the views taller, does not draw the stage again.
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await design(page).getByRole("textbox", { name: "Gap", exact: true }).focus();
   await page.keyboard.press("ArrowUp");
   await page.waitForTimeout(400);
-  expect(await redrawn()).toBe(3);
+  await expect.poll(() => redrawn()).toBe(3);
 });
 
 test("a view deleted, the others then showing whole, and added back: each time, the stage is drawn again only as far as it shows; a window change with views out of sight does not", async ({ page }) => {
@@ -551,7 +552,7 @@ test("a view deleted, the others then showing whole, and added back: each time, 
   // Shorter still: not drawn whole since, it is not drawn again.
   await page.setViewportSize({ width, height: shorter - 10 });
   await page.waitForTimeout(400);
-  expect(await redrawn()).toBe(1);
+  await expect.poll(() => redrawn()).toBe(1);
 
   await page.getByRole("button", { name: "Delete Phone view" }).click();
   await expect(phone(page)).toHaveCount(0);
@@ -563,11 +564,14 @@ test("a view deleted, the others then showing whole, and added back: each time, 
   await newWidth.press("Enter");
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
   // The phone view out of sight again, once it is as tall as what it shows.
-  await expect.poll(async () => (await viewEdges(page)).views.find((view) => view.title === "Phone 390")!.bottom).toBeGreaterThan((await viewEdges(page)).bottom);
+  await expect(async () => {
+    const edges = await viewEdges(page);
+    expect(edges.views.find((view) => view.title === "Phone 390")!.bottom).toBeGreaterThan(edges.bottom);
+  }).toPass({ timeout: 5_000 });
   await expect.poll(redrawn).toBeGreaterThanOrEqual(3);
   const settled = await redrawn();
   await page.waitForTimeout(400);
-  expect(await redrawn()).toBe(settled);
+  await expect.poll(() => redrawn()).toBe(settled);
 });
 
 test("a double click on text in the phone view types in it there, the caret in that view; the words show in every view as they are typed", async ({ page }) => {
@@ -586,8 +590,8 @@ test("a double click on text in the phone view types in it there, the caret in t
       return doc.hasFocus() && doc.activeElement === el && (el as HTMLElement).isContentEditable && !!at && el.contains(at);
     });
   await expect.poll(() => caretIn(title)).toBe(true);
-  expect(await caretIn(titles[0])).toBe(false);
-  expect(await caretIn(titles[1])).toBe(false);
+  await expect.poll(() => caretIn(titles[0])).toBe(false);
+  await expect.poll(() => caretIn(titles[1])).toBe(false);
 
   await page.keyboard.type("Third ");
   for (const h1 of titles) await expect(h1).toHaveText("Third ");
@@ -597,13 +601,13 @@ test("a double click on text in the phone view types in it there, the caret in t
   for (const h1 of titles) await expect(h1).toHaveText("Third ji");
   await cdp.send("Input.insertText", { text: "基" });
   for (const h1 of titles) await expect(h1).toHaveText("Third 基");
-  expect(await caretIn(title)).toBe(true);
-  expect(await title.evaluate((el) => el.ownerDocument.getSelection()!.anchorOffset)).toBe("Third 基".length);
+  await expect.poll(() => caretIn(title)).toBe(true);
+  await expect.poll(() => title.evaluate((el) => el.ownerDocument.getSelection()!.anchorOffset)).toBe("Third 基".length);
 
   // Esc ends it, as in the desktop view.
   await page.keyboard.press("Escape");
   for (const h1 of titles) await expect(h1).toHaveText("Third 基");
-  expect(await caretIn(title)).toBe(false);
+  await expect.poll(() => caretIn(title)).toBe(false);
   await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third 基", exact: true })).toBeVisible();
   // The same change as typed in the desktop view: words for every width.
   await page.getByRole("button", { name: /not applied yet/ }).click();
@@ -624,7 +628,7 @@ test("a double click on text in the phone view types in it there, the caret in t
   for (const h1 of titles) await expect(h1).toHaveText("Kit");
   const area = (await viewportArea(page).boundingBox())!;
   await page.mouse.click(area.x + 4, area.y + area.height - 4);
-  expect(await caretIn(titles[1])).toBe(false);
+  await expect.poll(() => caretIn(titles[1])).toBe(false);
   for (const h1 of titles) await expect(h1).toHaveText("Kit");
   await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Kit", exact: true })).toBeVisible();
 });
@@ -709,7 +713,7 @@ test("a layer dragged below the bottom of a view leaves every view as tall as it
     return cards[cards.length - 1].getBoundingClientRect().bottom - frame.offsetHeight;
   });
   expect(past).toBeGreaterThan(0);
-  expect(await heights()).toEqual(before);
+  await expect.poll(() => heights()).toEqual(before);
 
   // Let go outside every view, it goes off the canvas (ADR 0009): gone from every view, there beside them.
   await page.mouse.up();

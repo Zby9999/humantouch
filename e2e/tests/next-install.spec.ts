@@ -35,6 +35,9 @@ test.afterAll(() => {
 const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/03kind/dist/cli.js"), ...args], project);
 
 test("init installs 03Kind into a Next.js project: with webpack, the toggle is on the page and the markers in it; the rest of the editor layer loads as edit mode is first entered", async ({ page }) => {
+  // Room for the waits on Next.js below: 150 s for its cold start and 60 s for edit mode's first compile, and
+  // 60 s left for `init` (an install from the packed package), the checks between and stopping the server.
+  test.setTimeout(150_000 + 60_000 + 60_000);
   const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
   expect(output).toContain("03Kind (Next.js, pnpm)");
   expect(output).toContain("Installed.");
@@ -42,9 +45,10 @@ test("init installs 03Kind into a Next.js project: with webpack, the toggle is o
   const server = startServer(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--webpack", "--port", String(NEXT_INSTALL_PORT)], project);
   try {
     const loaded = scripts(page);
+    // Next.js starts cold here, with webpack, in a copy just installed: on a busy machine it took more than 60 seconds to answer at all (ticket 93).
     await expect(async () => {
       await page.goto(`http://localhost:${NEXT_INSTALL_PORT}`);
-    }).toPass({ timeout: 60_000 });
+    }).toPass({ timeout: 150_000 });
     const toggle = page.getByRole("button", { name: TOGGLE_LABEL });
     await expect(toggle).toBeVisible();
     await expect(page.locator("article").first()).toHaveAttribute("data-tk-loc", /^components\/Card\.tsx:\d+:\d+$/);
@@ -52,7 +56,8 @@ test("init installs 03Kind into a Next.js project: with webpack, the toggle is o
     await settle(page);
     expect(await loaded.has(EXIT_LABEL)).toBe(false);
     await toggle.click();
-    await expect(page.locator('iframe[title="Canvas"]').contentFrame().locator("h1")).toBeVisible();
+    // webpack compiles the rest of the editor layer only now, as it is first asked for: seconds more on a busy machine.
+    await expect(page.locator('iframe[title="Canvas"]').contentFrame().locator("h1")).toBeVisible({ timeout: 60_000 });
     expect(await loaded.has(EXIT_LABEL)).toBe(true);
   } finally {
     await server.stop();

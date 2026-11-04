@@ -1,5 +1,5 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -16,6 +16,7 @@ function design(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** The rows of the change list, opened from the count beside the Design title. */
@@ -61,7 +62,7 @@ test("T and a drag in a Stack make new text there, in the page's body text style
   await page.keyboard.type("Hello there");
   await page.keyboard.press("Enter");
 
-  expect(await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "p", "p", "button"]);
+  await expect.poll(() => canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "p", "p", "button"]);
   const text = canvas(page).locator(`${HERO} > p`).nth(1);
   await expect(text).toHaveText("Hello there");
   const body = await canvas(page).locator("body").evaluate((el) => getComputedStyle(el).fontFamily);
@@ -127,10 +128,10 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await expect(brief).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Brief", exact: true })).toBeVisible();
   // No outline of its own on the canvas: a stroke will say that.
-  expect(await frame.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
+  await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
   await expect(frame).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
-  expect(await frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
+  await expect.poll(() => frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
   await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
   // Marked on the canvas in the other views; in the one worked in, its button stands for the mark.
   await expect(page.locator('.tk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
@@ -226,7 +227,7 @@ test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys
     await page.keyboard.press(key);
     await expect(title, key).toBeHidden();
     await expect(button, key).toBeVisible();
-    expect(await kinds(), key).toEqual(before);
+    await expect.poll(() => kinds(), key).toEqual(before);
     await expect(badge, key).toHaveAccessibleName("1 change not applied yet");
     await expect(textTool, key).toHaveAttribute("aria-pressed", "true");
   }
@@ -276,7 +277,7 @@ test("Delete deletes the selected layer; ⌘D copies a card of the loop beside i
   await layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).nth(1).click();
   await page.keyboard.press("ControlOrMeta+d");
 
-  expect(await canvas(page).locator("article h3").allTextContents()).toEqual(["Freeze", "Arrange", "Arrange", "Apply", "Your turn"]);
+  await expect.poll(() => canvas(page).locator("article h3").allTextContents()).toEqual(["Freeze", "Arrange", "Arrange", "Apply", "Your turn"]);
   await expect(await changeRows(page)).toHaveText([/Delete.*Button.*from Stack/, /Duplicate.*Card.*copy in Grid, 3rd/]);
 });
 
@@ -293,7 +294,7 @@ test("⌥ held as a dragged layer is let go leaves it where it was, and puts a c
   await page.mouse.up();
   await page.keyboard.up("Alt");
 
-  expect(await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "button", "p", "button"]);
+  await expect.poll(() => canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "button", "p", "button"]);
 });
 
 test("a copy is on the canvas only: back in preview mode, the page is as the code has it", async ({ page }) => {

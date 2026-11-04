@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 
 /** The desktop view: the canvas. */
 function canvas(page: Page) {
@@ -17,6 +17,7 @@ function layerTree(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function selectRow(page: Page, name: string, nth = 0, modifiers?: "Shift"[]) {
@@ -42,7 +43,7 @@ async function inlineTitles(page: Page) {
 
 /** Selects, in a view, the deepest layer under the middle of the first `selector` there: the view is the one worked in from then on. */
 async function pick(page: Page, view: Locator, selector: string) {
-  const box = (await view.contentFrame().locator(selector).first().boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator(selector).first());
   await page.keyboard.down("ControlOrMeta");
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.up("ControlOrMeta");
@@ -80,7 +81,7 @@ test("a Card changed on one usage offers Promote on the top right of its selecti
 
   await promote(page).click();
 
-  expect((await cardRadii(page)).map((view) => view.join())).toEqual(Array(3).fill("2px,2px,2px,2px"));
+  await expect.poll(async () => (await cardRadii(page)).map((view) => view.join())).toEqual(Array(3).fill("2px,2px,2px,2px"));
   // Nothing left to promote: the layer is still selected, with no Promote.
   await expect(promote(page)).toHaveCount(0);
   await expect(radius(page)).toHaveValue("2");
@@ -104,9 +105,9 @@ test("Promote goes as the layer is deselected and comes back as it is selected a
   await expect(promote(page)).toBeVisible();
 
   await promote(page).click();
-  expect((await cardRadii(page))[0]).toEqual(Array(4).fill("2px"));
+  await expect.poll(async () => (await cardRadii(page))[0]).toEqual(Array(4).fill("2px"));
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await cardRadii(page))[0]).toEqual(["12px", "12px", "12px", "2px"]);
+  await expect.poll(async () => (await cardRadii(page))[0]).toEqual(["12px", "12px", "12px", "2px"]);
   await expect(promote(page)).toBeVisible();
 });
 
