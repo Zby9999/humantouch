@@ -126,6 +126,25 @@ const DESIGNERS_PI = join(homedir(), ".npm-global/bin/pi");
  */
 const COMMAND_CODE = join(homedir(), ".pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider");
 
+/**
+ * pi-fff, another extension the designer installed in pi (ticket 92): fff's search tools in place of pi's own find
+ * and grep, which need fd and rg, by their names (its override mode). Its finder is a native library its npm package brings
+ * along (`@ff-labs/fff-bin-<platform>`): nothing is fetched, on or off the Agent's PATH.
+ */
+const PI_FFF = join(homedir(), ".pi/agent/npm/node_modules/@ff-labs/pi-fff");
+
+/** The version of pi-fff installed, as its package says; null when there is none. */
+export function piFffVersion(dir = PI_FFF): string | null {
+  try {
+    return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where a run's own fff databases go, in its folder: what files it found often, and which files its queries led to. */
+const fffDb = (folder: string, name: "frecency" | "history") => join(folder, "fff", name);
+
 /** The bench's extension for pi, and the rule it holds shell commands to, by their names here and in the run's folder. */
 const PI_EXTENSION = ["pi-extension.ts", "allowlist.ts"];
 const piExtensionDir = (folder: string) => join(folder, "pi-extension");
@@ -143,6 +162,8 @@ export interface AgentSpec {
   effortSeen?(folder: string): string | null;
   /** Done before the Agent starts: in the project, `dir`, and in the run's own folder. What it returns goes in the run's record. */
   prepare?(dir: string, folder: string): Pick<AgentRun, "headlessShell"> | void;
+  /** The extensions of others the Agent runs with whose version the record keeps (pi-fff's), by name: the version installed, or null with none. */
+  extensions?(): Record<string, string | null>;
 }
 
 export const AGENTS: Record<AgentName, AgentSpec> = {
@@ -232,12 +253,13 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     // Project-only, as Claude's `--setting-sources project,local --strict-mcp-config`, in the designer's own agent
     // directory (~/.pi/agent): that is where pi keeps their login, and pi has no setting or variable that points at
     // a login elsewhere, so a directory of the bench's own (PI_CODING_AGENT_DIR) would need the credentials copied
-    // into it. What that directory would bring in is switched off instead: every extension but the provider (their
-    // MCP adapter, fff, web access, subagents and the rest) and pi's own MCP; every skill but the project's, named by
-    // its path, so a project with no Skill (ticket 65) has none; prompt templates; themes. Their global AGENTS.md
-    // has no switch of its own (`--no-context-files` would drop the project's too): the bench's extension keeps
-    // only the project's. Their settings.json (compaction, for one) and models.json (their overrides of a model's
-    // settings) still apply: pi reads them from that directory with no way round it but another directory.
+    // into it. What that directory would bring in is switched off instead: every extension but the provider and
+    // pi-fff (their MCP adapter, fff's broad-search guard, web access, subagents and the rest) and pi's own MCP;
+    // every skill but the project's, named by its path, so a project with no Skill (ticket 65) has none; prompt
+    // templates; themes. Their global AGENTS.md has no switch of its own (`--no-context-files` would drop the
+    // project's too): the bench's extension keeps only the project's. Their settings.json (compaction, for one)
+    // and models.json (their overrides of a model's settings) still apply: pi reads them from that directory with
+    // no way round it but another directory.
     args: (folder, prompt = PROMPT) => [
       "-p",
       prompt,
@@ -256,6 +278,23 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--no-extensions",
       "-e",
       COMMAND_CODE,
+      // fff's search tools, unrestricted, as the designer's own pi has them: in override mode, under the names of pi's
+      // own grep and find, which they take the place of (a transcript tells them apart by the parameters its system
+      // prompt declares: metrics.ts, parsePi). Pinned here, over the designer's pi-fff.json (~/.pi/agent, which
+      // pi-fff reads all the same: one it finds invalid stops pi before any model call).
+      // Each run's databases are its own, in its folder: none reads or writes the designer's (~/.pi/agent/fff), or
+      // another run's. Following links into folders is pi-fff's default, pinned; its other settings (indexing the
+      // home folder or the root) only tell on a search over a folder above ~/.pi, which the bench's extension blocks,
+      // and pi 1.4.0 sets an extension's yes-or-no flag only to yes.
+      "-e",
+      PI_FFF,
+      "--fff-mode",
+      "override",
+      "--fff-frecency-db",
+      fffDb(folder, "frecency"),
+      "--fff-history-db",
+      fffDb(folder, "history"),
+      "--fff-follow-symlinks",
       // Blocks every shell command off the bench's list, and keeps the designer's global AGENTS.md out (pi-extension.ts).
       "-e",
       join(piExtensionDir(folder), "pi-extension.ts"),
@@ -267,17 +306,19 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--no-themes",
       // Trusts the project, as it would be once the designer has opened it in pi.
       "--approve",
-      // pi's own tools, those of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode. Not
-      // its find either: it needs fd, which is not on the Agent's PATH, and --offline stops pi fetching it; the shell's
-      // find, ls and grep do as well.
+      // The tools of Claude's allowlist: no web search or fetch (pi has none of its own), no codemode. grep and find
+      // (Claude's Grep and Glob) are fff's: pi's own find would need fd, which is not on the Agent's PATH, and
+      // --offline stops pi fetching it. No multi_grep: pi-fff 0.11.0 leaves it out unless PI_FFF_MULTIGREP=1, which
+      // neither the designer's shell nor the Agent's environment (cleanEnv) sets.
       "--tools",
-      "read,bash,edit,write,grep,ls",
+      "read,bash,edit,write,ls,grep,find",
     ],
     prepare(_dir, folder) {
       // A copy in the run's folder: the command line is the same from any checkout, and the run keeps what it ran with.
       mkdirSync(piExtensionDir(folder), { recursive: true });
       for (const file of PI_EXTENSION) copyFileSync(fileURLToPath(new URL(file, import.meta.url)), join(piExtensionDir(folder), file));
     },
+    extensions: () => ({ "pi-fff": piFffVersion() }),
   },
 };
 

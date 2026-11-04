@@ -4,16 +4,20 @@
  * Agent's behaviour, not a sandbox: it blocks the tool calls the bench does
  * not allow, and the Agent reads why. pi has no allowlist of its own for shell
  * commands: every `bash` call the bench's rule turns away is blocked, and
- * any that cds out of the project. pi's
- * own tools are held to two path rules: `write` and `edit` stay in the
- * project (the folder pi runs in), and no tool or command reaches pi's own
- * folder (~/.pi), where the designer's login is; reading elsewhere goes
- * ahead, as Claude Code's Read does. A call the extension cannot check is
- * blocked. And pi has no switch for leaving out only the designer's global
- * AGENTS.md: this keeps the instructions files inside the project, as Claude
- * Code's `--setting-sources project,local` does.
+ * any that cds out of the project. pi's own tools are held to two path
+ * rules: `write` and `edit` stay in the project (the folder pi runs in), and
+ * no tool or command reaches pi's own folder (~/.pi), where the designer's
+ * login is, by any name for it (the file system's: device and inode);
+ * reading elsewhere goes ahead, as Claude Code's Read does. The search
+ * tools, fff's (pi-fff, ticket 92), are held to the second only, by the
+ * folder they index: the designer let them search as they will, with no
+ * broad-search guard. A call the extension cannot check is blocked: a path
+ * with blanks around it among them, which pi-fff trims. And pi has no
+ * switch for leaving out only the designer's global AGENTS.md: this keeps
+ * the instructions files inside the project, as Claude Code's
+ * `--setting-sources project,local` does.
  */
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,9 +28,27 @@ interface PiExtensionApi {
   on(event: "tool_call" | "before_agent_start", handler: (event: any, ctx?: any) => unknown): void;
 }
 
-/** pi's own tools that work on a path, and those of them that search all below it. */
-const PATH_TOOLS = ["read", "grep", "find", "ls", "write", "edit"];
-const SEARCHES = ["grep", "find"];
+/** pi's own tools that work on a path, its searches aside. */
+const PATH_TOOLS = ["read", "ls", "write", "edit"];
+/**
+ * The search tools, and the argument each is pointed with. In the bench's
+ * runs grep and find are fff's (pi-fff in override mode, ticket 92); fff's
+ * own names are those it falls back on when it does not index the folder pi
+ * runs in, and multi_grep comes only with PI_FFF_MULTIGREP=1. Each is
+ * pointed by a path (a folder, a file or a glob, which may be outside the
+ * project: ~/ and ../ included), or the multi-greps (on the project only,
+ * but checked all the same) by a line of them, `!` before those they leave
+ * out. pi's own grep and find, were they run, take a folder or a file as
+ * path: the same check holds them, a file's folder for a file.
+ */
+const SEARCHES: Record<string, "path" | "constraints"> = {
+  grep: "path",
+  find: "path",
+  multi_grep: "constraints",
+  ffgrep: "path",
+  fffind: "path",
+  "fff-multi-grep": "constraints",
+};
 /** The shell commands of the list that can read all below a folder. */
 const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
 
@@ -47,6 +69,8 @@ function realPath(path: string): string {
 function toolPath(path: unknown, cwd: string): string {
   if (path === undefined) return cwd;
   if (typeof path !== "string") throw new Error("A path that is no string");
+  // pi-fff trims (aux-finders.ts, routePathConstraint): ` ~` would index the home folder.
+  if (path !== path.trim()) throw new Error("A path with blanks around it");
   const given = path.replace(/^@/, "");
   if (/^file:\/\//.test(given)) return resolve(fileURLToPath(given));
   return resolve(cwd, withHome(given));
@@ -58,17 +82,82 @@ function withHome(path: string): string {
   return path.startsWith("~") ? join(dirname(homedir()), path.slice(1)) : path;
 }
 
-/** pi's own folder, as written and as the file system has it. */
-const piFolders = () => [join(homedir(), ".pi"), realPath(join(homedir(), ".pi"))];
+/**
+ * The folder an fff search indexes for `path`, found as pi-fff finds it
+ * (aux-finders.ts, resolveAuxRoot): of the part before the first part with a
+ * glob in it (`*`, `?`, `[…]`, `{…}`), the nearest folder there is, or a
+ * file's own folder; the rest is a constraint searched for all below it, and
+ * a bare name matches that name in any folder there. So `~/{.pi,x}` and
+ * `~/auth.json` both index all of ~.
+ */
+function searchRoot(path: string): string {
+  const parts = path.split(sep);
+  const glob = parts.findIndex((part) => /[*?[{]/.test(part));
+  for (let dir = glob < 0 ? path : parts.slice(0, glob).join(sep) || sep; ; dir = dirname(dir)) {
+    try {
+      return statSync(dir).isDirectory() ? dir : dirname(dir);
+    } catch {
+      if (dirname(dir) === dir) return dir;
+    }
+  }
+}
+
+/** What the file system has at `path`, following links; null when nothing. */
+function statOr(path: string): Stats | null {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
+}
+
+const sameFile = (a: Stats | null, b: Stats | null) => !!a && !!b && a.dev === b.dev && a.ino === b.ino;
+
+/** macOS's other name for every folder of the Data volume (a firmlink): `/System/Volumes/Data/Users/…` is `/Users/…`. */
+const DATA_VOLUME = "/System/Volumes/Data";
+
+/**
+ * pi's own folder, as written, as the file system has it, and by macOS's
+ * name for it on the Data volume, when that is the same folder: a pattern
+ * (a glob, a folder that is not there) is matched against each by name.
+ */
+function piFolders(): string[] {
+  const folder = join(homedir(), ".pi");
+  const real = realPath(folder);
+  return [folder, real, ...(sameFile(statOr(DATA_VOLUME + real), statOr(folder)) ? [DATA_VOLUME + real] : [])];
+}
+
+/**
+ * Whether `path`, or a folder it is in, is pi's own folder by the file
+ * system's identity of it (device and inode), whatever the name; or (with
+ * `above`) whether `path` is one of the folders above it, so.
+ */
+function sameAsPi(path: string, above: boolean): boolean {
+  const pi = statOr(join(homedir(), ".pi"));
+  if (!pi) return false;
+  for (let dir = path; ; dir = dirname(dir)) {
+    if (sameFile(statOr(dir), pi)) return true;
+    if (dirname(dir) === dir) break;
+  }
+  if (!above) return false;
+  const here = statOr(path);
+  for (let dir = dirname(join(homedir(), ".pi")); ; dir = dirname(dir)) {
+    if (sameFile(here, statOr(dir))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
 
 /**
  * Whether `path`, a pattern bash may fill in, names something in pi's folder,
- * or (with `above`) a folder above it, which a search reads all of. Compared
- * part by part, in any case (as macOS finds names): `*`, `?` and `[…]` match
- * as in bash, a dot first only by a dot.
+ * or (with `above`) a folder above it, which a search reads all of: by the
+ * file system's identity of the folders there are (sameAsPi), and by name,
+ * part by part, against each name of pi's folder, in any case (as macOS
+ * finds names): `*`, `?` and `[…]` match as in bash, a dot first only by a
+ * dot.
  */
 function reachesPi(path: string, above: boolean): boolean {
   const parts = (p: string) => p.split(sep).filter(Boolean);
+  if (sameAsPi(path, above)) return true;
   return [path, realPath(path)].some((candidate) =>
     piFolders().some((folder) => {
       const want = parts(folder);
@@ -166,9 +255,17 @@ function check(event: { toolName: string; input: Record<string, unknown> }, cwd:
     if (reaches === "out") return block(deniedReason(command));
     return reaches === "pi" ? intoPi(command) : undefined;
   }
+  if (Object.hasOwn(SEARCHES, toolName)) {
+    // Each folder it indexes, or with none the project; a folder above pi's own reaches it.
+    const given = input[SEARCHES[toolName]];
+    if (given !== undefined && typeof given !== "string") throw new Error("An argument that is no string");
+    const words = SEARCHES[toolName] === "path" ? [given] : (given ?? "").split(/\s+/).filter((word) => word && !word.startsWith("!"));
+    const paths = words.length ? words : [undefined];
+    return paths.some((word) => reachesPi(searchRoot(toolPath(word, cwd)), true)) ? intoPi(`${toolName} ${given ?? "."}`) : undefined;
+  }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);
-  if (reachesPi(path, SEARCHES.includes(toolName))) return intoPi(`${toolName} ${input.path ?? "."}`);
+  if (reachesPi(path, false)) return intoPi(`${toolName} ${input.path ?? "."}`);
   if ((toolName === "write" || toolName === "edit") && !realPath(path).startsWith(realPath(cwd) + sep)) {
     return block(`${DENIED} writing in the project only. Turned away: ${toolName} ${input.path}`);
   }
