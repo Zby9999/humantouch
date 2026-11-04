@@ -224,9 +224,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     }
     const el = working.shown(layer.el);
     if (!absolute(el)) return spotIn(el, container);
-    // Where its border box is: past its `left` and `top` by its own translate, as a drop has it; given its `left` and `right` both, where the browser draws it, as its X reads (ticket 94).
+    // Where its border box is: past its `left` and `top` by its own translate, as a drop has it.
+    // Given both sides along an axis, where the browser places it, as its X and Y read (ticket 94).
     const shift = shiftIn(el);
-    return { x: offsetPlacing(el, "x", "start") + shift.x, y: (parseFloat(getComputedStyle(el).top) || 0) + shift.y };
+    return { x: offsetPlacing(el, "x", "start") + shift.x, y: offsetPlacing(el, "y", "start") + shift.y };
   };
 
   /**

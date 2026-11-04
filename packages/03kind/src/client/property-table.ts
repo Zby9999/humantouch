@@ -12,9 +12,9 @@ import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTex
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
-import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { offsetPlacing } from "./placed-from";
 import type { Axis } from "./snap";
+import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { pinOffsetOf, sourcesOf, type StyleSource } from "./style-source";
 import { TYPOGRAPHY, type TypographyValues } from "./typography";
 
@@ -202,8 +202,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   },
   layerBlur: { kinds: BOXES, ...blur("filter") },
   backgroundBlur: { kinds: BOXES, ...blur("backdrop-filter") },
-  x: position("x", "left", "right"),
-  y: position("y", "top", "bottom"),
+  x: position("x"),
+  y: position("y"),
   right: endOffset("right"),
   bottom: endOffset("bottom"),
   absolute: {
@@ -508,18 +508,19 @@ export function declaredValue(el: Element, property: string): string {
 
 /**
  * An absolute layer's place along `axis`: how far its left or top edge is
- * from its container's, as CSS places it, its `left` or `top`; but given its
- * `left` and `right` both, more than it can keep, where the browser goes by
- * its `right` (right to left), where that draws it, as the page's check reads
- * it (`offsetPlacing`, ticket 94), not the `left` written. Where the freezer
+ * from its container's, its `left` or `top`. Given both its `left` and its
+ * `right`, and too large for them to both place it, the browser may go by its
+ * `right` instead (right to left, ticket 89): then it is where that draws it,
+ * as the page's check reads it (`offsetPlacing`, ticket 94). Where the freezer
  * pinned it, it was shifted with the page's scroll: shifted back, it reads as the page has it.
  */
 function offsetOf(el: Element, axis: Axis): number {
   return round(offsetPlacing(el, axis, "start") - pinOffsetOf(el)[axis === "x" ? 0 : 1]);
 }
 
-/** An absolute layer's place along one axis: where its edge is from its parent's, as CSS places it (`offsetOf`). */
-function position(axis: Axis, start: "left" | "top", end: "right" | "bottom"): Definition<number> {
+/** An absolute layer's place along one axis (`offsetOf`); written, from its left or top edge, the other side let go. */
+function position(axis: Axis): Definition<number> {
+  const { start, end } = PLACING_SIDES[axis];
   return {
     kinds: EVERY_KIND,
     applies: absolute,

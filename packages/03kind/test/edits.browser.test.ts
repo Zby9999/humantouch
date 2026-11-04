@@ -4594,6 +4594,16 @@ ${html}${body} style="margin: 0">
     },
   );
 
+  test("a layer placed absolute by its `left` and its `right` both, held 50px wide by its `max-width`, right to left: its X reads where the browser draws it, and an X typed lands it there, written as X, as the canvas reads its width from what is declared (ticket 94, ticket 89's 代定 2)", () => {
+    const { doc, editor, changes, layer } = open(rightToLeft(bothSides.replace("width: 50px", "max-width: 50px")));
+    const tag = doc.getElementById("tag")!;
+    const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+    expect([drawn(), editor.read(layer("tag"), "x")]).toEqual([expect.closeTo(320, 1), 320]);
+    editor.set(layer("tag"), "x", 300);
+    expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual([["x", 320, 300]]);
+    expect(drawn()).toBeCloseTo(300, 1);
+  });
+
   test.each([
     ["left", "left: 50%; right: auto; translate: -50% 0", "x"],
     ["right", "right: 50%; translate: 50% 0", "right"],
