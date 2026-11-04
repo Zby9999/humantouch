@@ -72,9 +72,23 @@ export function edgeGoneBy(el: Element, axis: Axis): Edge {
  * the box that places it runs (`edgeGoneBy`); absolute or fixed, so too, but
  * only as large as it is set there, as declared, or as large as it draws
  * itself (an image, a `<canvas>`), with nothing laid out (else both sides
- * place it, its size given by them). The one rule the canvas goes by.
+ * place it, its size given by them); and with no margin there `auto`, which
+ * takes up the room left (`inset-x-0 mx-auto`: centered, so neither side
+ * wins, ticket 94, review). The one rule the canvas goes by.
  */
-const endWins = (el: Element, axis: Axis) => edgeGoneBy(el, axis) === "end" && (!absolute(el) || declared(el, AXIS_SIZE[axis]) || REPLACED.has(el.localName));
+const endWins = (el: Element, axis: Axis) =>
+  edgeGoneBy(el, axis) === "end" && (!absolute(el) || ((declared(el, AXIS_SIZE[axis]) || REPLACED.has(el.localName)) && !autoMargin(el, axis)));
+
+/**
+ * Whether a margin of `el` along `axis` is `auto`, as its style computes it,
+ * not as laid out (`computedStyleMap`, which keeps the keyword where
+ * `getComputedStyle` gives the px it takes up): however it is written
+ * (`margin`, `margin-inline`, `mx-auto`), with nothing laid out (ADR 0011).
+ */
+function autoMargin(el: Element, axis: Axis): boolean {
+  const style = el.computedStyleMap();
+  return [SIDES[axis].start, SIDES[axis].end].some((side) => String(style.get(`margin-${side}`)) === "auto");
+}
 
 /** Elements as large as what they draw, not as what they hold: their size set, though no CSS sets it. */
 const REPLACED = new Set(["img", "canvas", "video", "iframe", "svg", "input", "object", "embed"]);
@@ -89,7 +103,8 @@ const REPLACED = new Set(["img", "canvas", "video", "iframe", "svg", "input", "o
  * `rotate`) is no part of it.
  */
 function overConstrained(el: Element, axis: Axis): boolean {
-  return sideDeclared(el, axis, "start") && sideDeclared(el, axis, "end") && Math.abs(roomPlacing(el)[axis] - extentOf(el, axis)) > 0.5;
+  // The layout read first: it is cheaper than walking the cascade for the sides, and mostly settles it.
+  return Math.abs(roomPlacing(el)[axis] - extentOf(el, axis)) > 0.5 && sideDeclared(el, axis, "start") && sideDeclared(el, axis, "end");
 }
 
 /**

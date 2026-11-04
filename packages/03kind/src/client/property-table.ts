@@ -12,6 +12,8 @@ import { blur, readShadows, readTextShadows, textCanDraw, writeShadows, writeTex
 import { equalColumns, trackCount } from "./grid-tracks";
 import type { Layer, LayerKind } from "./layers";
 import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, writeStroke, type ColorReader, type Fill, type Stroke } from "./paint";
+import { offsetPlacing } from "./placed-from";
+import type { Axis } from "./snap";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
 import { pinOffsetOf, sourcesOf, type StyleSource } from "./style-source";
 import { TYPOGRAPHY, type TypographyValues } from "./typography";
@@ -200,13 +202,13 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   },
   layerBlur: { kinds: BOXES, ...blur("filter") },
   backgroundBlur: { kinds: BOXES, ...blur("backdrop-filter") },
-  x: position("left", "right", 0),
-  y: position("top", "bottom", 1),
+  x: position("x"),
+  y: position("y"),
   right: endOffset("right"),
   bottom: endOffset("bottom"),
   absolute: {
     kinds: [],
-    read: (el) => (absolute(el) ? { x: offsetOf(el, "left", 0), y: offsetOf(el, "top", 1) } : null),
+    read: (el) => (absolute(el) ? { x: offsetOf(el, "x"), y: offsetOf(el, "y") } : null),
     // Taken out of the layout at its size; back in it, nothing of it is left once the change is gone.
     write: (place, el) => (place ? { ...absoluteAt(place), ...sizeOf(el) } : { position: "static", left: "auto", top: "auto", right: "auto", bottom: "auto" }),
     writes: ["position", "left", "top", "right", "bottom", "width", "height"],
@@ -505,19 +507,28 @@ export function declaredValue(el: Element, property: string): string {
 }
 
 /**
- * An absolute layer's place along one axis, as CSS sets it. Where the freezer
- * pinned it, it was shifted with the page's scroll: shifted back, it reads as the page has it.
+ * An absolute layer's place along `axis`: how far its left or top edge is
+ * from its container's, its `left` or `top`. Given both its `left` and its
+ * `right`, more than it can keep, the browser may go by its `right` instead
+ * (right to left, ticket 89): then it is where that places it, as the page's
+ * check reads it (`offsetPlacing`, ticket 94). A side that computes to no
+ * length (`auto`, under an element not shown) reads as none, NaN. Where the
+ * freezer pinned it, it was shifted with the page's scroll: shifted back, it
+ * reads as the page has it.
  */
-function offsetOf(el: Element, start: "left" | "top", axis: 0 | 1): number {
-  return round(parseFloat(getComputedStyle(el).getPropertyValue(start)) - pinOffsetOf(el)[axis]);
+function offsetOf(el: Element, axis: Axis): number {
+  const side = PLACING_SIDES[axis].start;
+  if (Number.isNaN(parseFloat(getComputedStyle(el).getPropertyValue(side)))) return NaN;
+  return round(offsetPlacing(el, axis, "start") - pinOffsetOf(el)[axis === "x" ? 0 : 1]);
 }
 
-/** An absolute layer's place along one axis: where its edge is from its parent's, as CSS sets it. */
-function position(start: "left" | "top", end: "right" | "bottom", axis: 0 | 1): Definition<number> {
+/** An absolute layer's place along one axis (`offsetOf`); written, from its left or top edge, the other side let go. */
+function position(axis: Axis): Definition<number> {
+  const { start, end } = PLACING_SIDES[axis];
   return {
     kinds: EVERY_KIND,
     applies: absolute,
-    read: (el) => offsetOf(el, start, axis),
+    read: (el) => offsetOf(el, axis),
     write: (value) => ({ [start]: `${value}px`, [end]: "auto" }),
     writes: [start, end],
     sets: [start],
