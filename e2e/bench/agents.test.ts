@@ -162,14 +162,20 @@ test("Claude's and Cursor's command lines have nothing of fff, and their runs re
   }
 });
 
+test("Claude runs on Sonnet 5.5 at effort medium, pinned (ticket 88, the designer's decision of 2026-11-05), and its record says so", () => {
+  assert.match(commandLine("claude"), / --model claude-sonnet-5-5 --effort medium /);
+  assert.equal(AGENTS.claude.model, "claude-sonnet-5-5");
+  assert.equal(AGENTS.claude.effort, "medium (--effort medium)");
+});
+
 test("the effort pi ran at is the thinking level its answers name in the transcript; Claude Code says it in its debug log, Cursor nowhere", () => {
   const folder = mkdtempSync(join(scratch, "run-"));
   writeFileSync(join(folder, "transcript.jsonl"), `${JSON.stringify({ type: "message_end", message: { role: "assistant", thinkingLevel: "high" } })}\n`);
 
   assert.equal(AGENTS.pi.effortSeen!(folder), "high");
   assert.equal(AGENTS.claude.effortSeen!(folder), null);
-  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] effort: high\n");
-  assert.equal(AGENTS.claude.effortSeen!(folder), "high");
+  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] effort: medium\n");
+  assert.equal(AGENTS.claude.effortSeen!(folder), "medium");
   assert.equal(AGENTS.cursor.effortSeen, undefined);
 });
 

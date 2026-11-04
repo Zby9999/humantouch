@@ -199,7 +199,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     // The Claude Code the designer's desktop app ships, not one installed by npm.
     binary: () => process.env.TK_BENCH_CLAUDE ?? desktopClaudeCode(),
     model: "claude-sonnet-5-5",
-    effort: "high (--effort high)",
+    effort: "medium (--effort medium)",
     // In its debug log only.
     effortSeen: (folder) => /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(readOr(join(folder, "claude-debug.log")))?.[1] ?? null,
     args: (folder, prompt = PROMPT, project = PROJECT) => [
@@ -211,8 +211,9 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       // Pinned: neither the account's default model nor the designer's effortLevel setting.
       "--model",
       "claude-sonnet-5-5",
+      // Medium, not high: the designer's decision for ticket 88's runs (2026-11-05).
       "--effort",
-      "high",
+      "medium",
       // The effort the session ran at is in its debug log only.
       "--debug-file",
       join(folder, "claude-debug.log"),
