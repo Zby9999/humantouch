@@ -271,6 +271,13 @@ test("Claude may run the Skill's undo and its viewing command for the run's own 
   assert.doesNotMatch(line, new RegExp(project));
 });
 
+test("Claude has no rule for echo (ticket 101): Claude Code runs it as a read-only command already, and a rule would not govern where a redirect writes", () => {
+  const args = AGENTS.claude.args("/run", PROMPT, "/project");
+  const rules = args[args.indexOf("--allowedTools") + 1].split(",");
+  assert.ok(!rules.some((rule) => /^Bash\(echo\b/.test(rule)), "no echo rule");
+  assert.ok(rules.includes("Bash(cat:*)"));
+});
+
 test("an Agent that leaves a process running with its output ends when it exits, not when its output closes (the install bench)", async () => {
   const folder = mkdtempSync(join(scratch, "left-running-"));
   // The Agent prints its last words, starts a process that keeps its stdout, and exits.

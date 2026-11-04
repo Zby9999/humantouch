@@ -292,7 +292,9 @@ test("a round saved before the instances of a layer shared their edit styles ope
   await expect.poll(() => viewStyles(page)).toEqual(before);
   await expect.poll(() => JSON.parse(readFileSync(CHANGESET, "utf8"))).toEqual(changeSet);
   // Each change's notes as they were; what goes around them, the way through the round and how to write them, is of the notes of now (ticket 65).
-  expect(changeSections(await npx03kind("claim"))).toBe(changeSections(readBefore60("claim.md")));
+  // Ticket 101 names the other usages of the component, from the source as it is now: the Card at the end of the Grid.
+  const named = changeSections(readBefore60("claim.md")).replaceAll("Other usages of Card stay as they are.", "Other usages of Card stay as they are: `src/App.tsx:42:9`.");
+  expect(changeSections(await npx03kind("claim"))).toBe(named);
 });
 
 /** The change notes' sections of the changes, one after another: what is said around them left out. */

@@ -16,7 +16,7 @@ import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
-import { realPath, SHELL } from "./allowlist.ts";
+import { NOT_FOR_CLAUDE, realPath, SHELL } from "./allowlist.ts";
 import type { AgentName } from "./metrics.ts";
 
 const execFileAsync = promisify(execFile);
@@ -252,7 +252,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--permission-mode",
       "acceptEdits",
       "--allowedTools",
-      ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "TodoWrite", "Skill", ...SHELL.map((command) => `Bash(${command}:*)`), ...undoRules(project)].join(","),
+      ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "TodoWrite", "Skill", ...SHELL.filter((command) => !NOT_FOR_CLAUDE.includes(command)).map((command) => `Bash(${command}:*)`), ...undoRules(project)].join(","),
       "--disallowedTools",
       "WebFetch,WebSearch",
     ],

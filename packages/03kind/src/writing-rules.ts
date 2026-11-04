@@ -8,14 +8,15 @@ import { drawnIn, type Change, type Created, type Place } from "./client/changes
 import { checkable, forOneUsage, isEndOffset, makerOf, PLACING, textMovedInPlace } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
+import type { ClassHelper, WhereToLook } from "./where-to-look";
 
 /** How to write one kind of change: its name in the notes, the changes it is for, and what it says. */
 interface HowToWrite {
   name: string;
   /** Whether `change` is one it is for: it is said when the round has one. */
   calledFor(change: Change): boolean;
-  /** What it says, or, where that depends on the round, what it says for the round's changes. */
-  text: string | ((list: Change[]) => string);
+  /** What it says, or, where that depends on the round or the project, what it says for the round's changes, with what was found in the project (`look`). */
+  text: string | ((list: Change[], look?: WhereToLook) => string);
 }
 
 const HOW_TO_WRITE: HowToWrite[] = [
@@ -108,9 +109,9 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     name: "This usage only",
     calledFor: (change) => change.scope !== "component" && forOneUsage(change),
-    text:
+    text: (_list, look) =>
       "change the layer at the usage given (a prop, a `className` passed in, a variant), not the component for every usage; all the instances that one usage renders (a loop) change together. " +
-      "When a class inside the component sets the value, do not add a second, conflicting class at the usage (`rounded-xl rounded-sm`): make the component's class a default the usage can replace (a prop, or the project's class-merging helper, if it has one).",
+      `When a class inside the component sets the value, do not add a second, conflicting class at the usage (\`rounded-xl rounded-sm\`): make the component's class a default the usage can replace (${replaceBy(look?.helper)}).`,
   },
   {
     name: "The component itself",
@@ -206,6 +207,20 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "when the data is written in the code (an array, a constant, a fixture), change it there. When it comes from outside the code (an API, a CMS, a database), do not fake it in the code: report it under ⚠️.",
   },
 ];
+
+/**
+ * What makes a component's class a default a usage can replace: a prop, or
+ * the project's class-merging helper, named as it was found (ticket 101): one
+ * that only joins classes leaves both of two that conflict, so it is none.
+ * Not known (`undefined`), it is said as it always was.
+ */
+function replaceBy(helper: ClassHelper | null | undefined): string {
+  if (helper === undefined) return "a prop, or the project's class-merging helper, if it has one";
+  if (helper === null) return "a prop; the project has no class-merging helper";
+  const named = `\`${helper.name}\` ${helper.at ? `at \`${helper.at}\`` : `from \`${helper.from}\``}`;
+  if (helper.merges) return `a prop, or the project's class-merging helper, ${named}`;
+  return `a prop; the project has no class-merging helper: its ${named} only joins classes, keeping both of two that conflict`;
+}
 
 /** How the page checks one kind of change (ticket 65): what it reads, and where, said once for the changes it is for, of the round `list`. */
 interface HowChecked {
@@ -312,9 +327,9 @@ function howChecked(list: Change[], round: Change[]): string {
   return `the page reads ${said.join("; ")}.${shows}`;
 }
 
-/** The **How to write them** section of a round's notes: the rules the changes given (`list`) call for, and how the page checks them in their round (`round`). */
-export function writingRules(list: Change[], round: Change[] = list): string {
-  const called = HOW_TO_WRITE.filter((how) => list.some(how.calledFor)).map((how) => ({ name: how.name, text: typeof how.text === "string" ? how.text : how.text(list) }));
+/** The **How to write them** section of a round's notes: the rules the changes given (`list`) call for, and how the page checks them in their round (`round`); `look`, what was found in the project (ticket 101). */
+export function writingRules(list: Change[], round: Change[] = list, look?: WhereToLook): string {
+  const called = HOW_TO_WRITE.filter((how) => list.some(how.calledFor)).map((how) => ({ name: how.name, text: typeof how.text === "string" ? how.text : how.text(list, look) }));
   called.push({ name: "How the page checks", text: howChecked(list, round) });
   return `## How to write them\n\n${called.map((how) => `- **${how.name}:** ${how.text}\n`).join("")}`;
 }
