@@ -17,6 +17,7 @@ import { canvasOffset, isOffsetInLayout, movedWords, reportFor } from "./report-
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
+import { whereToLook } from "./where-to-look";
 import {
   appliedOf,
   archiveRound,
@@ -84,7 +85,8 @@ async function claim(folder: ThirdKindFolder, root: string, io: Io): Promise<num
   if (claimed) await claimFresh(folder, claimed);
   const checks = await readChecks(folder);
   const pageOpen = !!checks?.pages && isRunning(checks.service);
-  const notes = toApply(pageOpen);
+  // Where to look in the project, read as it is now, so the Agent need not search it (ticket 101); what cannot be read, the notes say as before: the round is claimed already.
+  const notes = toApply(pageOpen, await whereToLook(root, changeSet.changes).catch(() => undefined));
   if (claimed && changeSet.changes.some((change) => change.carried)) return claimCarried(folder, root, io, claimed, changeSet, notes, pageOpen);
   if (!state) {
     io.write(describeChanges(changeSet.changes, root, notes));

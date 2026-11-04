@@ -7,8 +7,16 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
-/** The shell commands an Agent may run: the command line, and reading the project. */
-export const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
+/**
+ * The shell commands an Agent may run: the command line, and reading the
+ * project; and `echo` that only prints, as pi parts its reads with (ticket
+ * 101): the rule below turns away its writing a file (any redirect but to
+ * /dev/null or a stream; `tee` is not on the list) and what bash fills in.
+ */
+export const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc", "echo"];
+
+/** Commands Claude's list leaves out (ticket 101): Claude Code runs `echo` as a read-only command already, and a `Bash(echo:*)` rule would allow the command, not where a redirect writes. */
+export const NOT_FOR_CLAUDE = ["echo"];
 
 /** How a tool result turned away by the bench starts: what the transcript is counted by. */
 export const DENIED = "Not run: the 03Kind bench allows";

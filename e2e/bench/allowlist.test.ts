@@ -232,3 +232,14 @@ test("git apply goes ahead alone, the patch on its input: no option, no patch fi
   }
   assert.equal(shellAllowed(`git -C ${project} apply`, SHELL, project), true);
 });
+
+test("an echo that only prints goes ahead, alone or between read-only commands, as pi's separators are (ticket 101); one that writes a file or fills in an expansion does not", () => {
+  assert.ok(SHELL.includes("echo"));
+  assert.ok(!SHELL.includes("tee"));
+  for (const command of ['echo "---"', "echo ---", 'cat a && echo "---" && cat b', "cat a; echo ---; cat b", "ls src | head -5; echo '---'", "echo x > /dev/null", "echo x 2>&1", 'grep -n Card src/App.tsx 2>&1 && echo "--- done"']) {
+    assert.equal(shellAllowed(command), true, command);
+  }
+  for (const command of ["echo x > f", "echo x >> f", "echo x | tee f", "echo x 1> f", "echo x &> f", "echo x >| f", "echo x>f", "echo $(rm f)", "echo `rm f`", 'echo "exit:$?"', "echo $HOME", "echo x > src/App.tsx && cat src/App.tsx", "echo {a,b}"]) {
+    assert.equal(shellAllowed(command), false, command);
+  }
+});

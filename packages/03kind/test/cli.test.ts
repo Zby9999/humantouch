@@ -488,6 +488,18 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("margins");
   });
 
+  test("a Stack dissolved: its rule says each layer's `left` and `top` are its X and Y and that it keeps its margins, without how the page checks a layer placed absolute (ticket 100)", async () => {
+    saveRound(change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target: inApp, x: 0, y: 0, width: 200, height: 40 }] } }));
+
+    const { output } = await cli("claim");
+    const dissolving = rule(output, "Dissolving a Stack");
+
+    expect(dissolving).toContain("give each layer `position: absolute`, its `left` and `top` the X and Y given, and its size");
+    expect(dissolving).toContain("keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much");
+    expect(dissolving).toContain("The page should look the same afterwards.");
+    expect(rule(output, "How the page checks")).not.toContain("margins");
+  });
+
   test("a layer placed from its container's right or bottom edge, or centered, resized: its changes say it stays placed so, and which value changes; how to write and check them, only in such a round (ticket 75)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value });
     saveRound(
@@ -1612,6 +1624,132 @@ describe("claim, layers off the canvas put back", () => {
     );
     expect(output).not.toContain("deleted");
     expect(output).not.toMatch(/set aside|aside (beside|off)/i);
+  });
+});
+
+describe("claim, where to look in the project (ticket 101)", () => {
+  /** Writes `file` into the project. */
+  const write = (file: string, text: string) => {
+    mkdirSync(join(project, file, ".."), { recursive: true });
+    writeFileSync(join(project, file), text);
+  };
+  /** App.tsx with Card used at line 40, column 11, as the round's cards are, and at `more` lines after it. */
+  const app = (...more: number[]) => {
+    const lines = Array.from({ length: 60 }, () => "");
+    lines[0] = 'import { Card } from "./components/Card";';
+    lines[1] = "export const App = () => (";
+    lines[2] = "  <main>";
+    lines[39] = "          <Card />";
+    for (const line of more) lines[line - 1] = "    <Card />";
+    lines[58] = "  </main>";
+    lines[59] = ");";
+    return lines.join("\n");
+  };
+  const scope = (notes: string) => /^- \*\*Scope:\*\* (.*)$/m.exec(notes)?.[1] ?? "";
+  const thisUsageOnly = (notes: string) => /^- \*\*This usage only:\*\* (.*)$/m.exec(notes)?.[1] ?? "";
+
+  test("This usage only: names the component's other usages in the source, file, line and column", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", app(45, 52));
+    saveRound(redFill);
+
+    expect(scope(section((await cli("claim")).output, 1))).toBe(
+      "This usage only: Card used at `src/App.tsx:40:11`, inside App used at `src/main.tsx:8:5`. It renders 3 instances, which change together. Other usages of Card stay as they are: `src/App.tsx:45:5` and `src/App.tsx:52:5`.",
+    );
+  });
+
+  test("This usage only: of many other usages, names 3 and counts the rest, with their files", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", app(41, 42, 43, 44));
+    write("src/Other.tsx", 'import { Card } from "./components/Card";\nexport const Other = () => <Card />;\n');
+    saveRound(redFill);
+
+    expect(scope(section((await cli("claim")).output, 1))).toContain(
+      "Other usages of Card stay as they are: `src/App.tsx:41:5`, `src/App.tsx:42:5`, `src/App.tsx:43:5` and 2 more, in `src/App.tsx` and `src/Other.tsx`.",
+    );
+  });
+
+  test("This usage only: says the component has no other usage in the source", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", app());
+    saveRound(redFill);
+
+    expect(scope(section((await cli("claim")).output, 1))).toMatch(/ Card has no other usage in the source\.$/);
+  });
+
+  test("This usage only: names no other usage when the source does not have the usage given, as the page names it", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", 'export const App = () => <Card />;\n');
+    saveRound(redFill);
+
+    expect(scope(section((await cli("claim")).output, 1))).toMatch(/ Other usages of Card stay as they are\.$/);
+  });
+
+  test("names the project's class-merging helper, where it is defined", async () => {
+    write("package.json", JSON.stringify({ dependencies: { "tailwind-merge": "^3" } }));
+    write("src/App.tsx", app());
+    write("src/lib/utils.ts", 'import { twMerge } from "tailwind-merge";\n\nexport function cn(...classes: string[]) {\n  return twMerge(classes);\n}\n');
+    saveRound(redFill);
+
+    expect(thisUsageOnly((await cli("claim")).output)).toMatch(/make the component's class a default the usage can replace \(a prop, or the project's class-merging helper, `cn` at `src\/lib\/utils\.ts:3`\)\.$/);
+  });
+
+  test("names the class-merging helper of a package the project has, when it has none of its own", async () => {
+    write("package.json", JSON.stringify({ dependencies: { "tailwind-merge": "^3" } }));
+    write("src/App.tsx", app());
+    saveRound(redFill);
+
+    expect(thisUsageOnly((await cli("claim")).output)).toMatch(/\(a prop, or the project's class-merging helper, `twMerge` from `tailwind-merge`\)\.$/);
+  });
+
+  test("says the project has no class-merging helper, and what its helper that only joins classes does", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", app());
+    write("src/lib/utils.ts", 'export function cn(...classes: string[]) {\n  return classes.filter(Boolean).join(" ");\n}\n');
+    saveRound(redFill);
+
+    expect(thisUsageOnly((await cli("claim")).output)).toMatch(
+      /\(a prop; the project has no class-merging helper: its `cn` at `src\/lib\/utils\.ts:1` only joins classes, keeping both of two that conflict\)\.$/,
+    );
+  });
+
+  test("says the project has no class-merging helper", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", app());
+    saveRound(redFill);
+
+    expect(thisUsageOnly((await cli("claim")).output)).toMatch(/\(a prop; the project has no class-merging helper\)\.$/);
+  });
+
+  const newText = {
+    ...redFill,
+    kind: "create",
+    layer: "new-1",
+    property: "new",
+    target: { ...cards, loc: "src/App.tsx:3:3", chain: [APP], component: "App", instances: 1, context: { path: ["Page", "Stack"], element: "<main>" } },
+    before: null,
+    after: { type: "text", place: { container: { layer: "2", target: { ...cards, loc: "src/App.tsx:3:3", chain: [APP] } }, nth: 1 }, width: null, height: null, text: "Hello" },
+    style: { "font-size": "16px" },
+  };
+  const intent = (notes: string) => /^- \*\*Design intent:\*\* (.*)$/m.exec(notes)?.[1] ?? "";
+
+  test("new text: names what sets the page's body text style", async () => {
+    write("package.json", "{}");
+    write("src/index.css", '@import "tailwindcss";\n\nbody {\n  font-family: Georgia, serif;\n}\n');
+    write("app/layout.tsx", 'export default function Layout({ children }) {\n  return <body className="font-sans">{children}</body>;\n}\n');
+    saveRound(newText);
+
+    expect(intent(section((await cli("claim")).output, 1))).toMatch(
+      /from what the page already uses for body text: the `className` of `<body>` at `app\/layout\.tsx:2:10` and the rule `body` at `src\/index\.css:3`\.$/,
+    );
+  });
+
+  test("new text: says when nothing in the project's source sets the body text style", async () => {
+    write("package.json", "{}");
+    write("src/index.css", "body {\n  margin: 0;\n}\n");
+    saveRound(newText);
+
+    expect(intent(section((await cli("claim")).output, 1))).toMatch(/from what the page already uses for body text: nothing in the project's source sets it, on `body` or `html`\.$/);
   });
 });
 
