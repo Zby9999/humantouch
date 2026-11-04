@@ -3645,11 +3645,17 @@ describe("a layer wrapped in a new element on its own line", () => {
     document.body.append(live);
     const page = live.contentDocument!;
     page.open();
-    // As an Agent writes it: a <div> on line 11 now, the paragraph, at 20px, on the line below.
-    page.write(STRUCTURE.replace(`<p id="one" ${loc("11:7")} style="margin: 0">One</p>`, `<div ${loc("11:7")}><p id="one" ${loc("12:9")} style="margin: 0; font-size: 20px">One</p></div>`).replace(loc("12:7"), loc("13:7")));
+    // As an Agent writes it: a <div> on line 11 now, the paragraph, at 20px, on the line below, and every line after it one down.
+    page.write(
+      STRUCTURE.replace(loc("14:7"), loc("15:7"))
+        .replace(loc("13:5"), loc("14:5"))
+        .replace(loc("12:7"), loc("13:7"))
+        .replace(`<p id="one" ${loc("11:7")} style="margin: 0">One</p>`, `<div ${loc("11:7")}><p id="one" ${loc("12:9")} style="margin: 0; font-size: 20px">One</p></div>`),
+    );
     page.close();
 
-    expect(checkChange(page, changes.list()[0], onCanvas([changes.list()[0]]))).toEqual({ outcome: "shown" });
+    // Where it went, by the round's canvas as saved (ticket 99).
+    expect(checkChange(page, changes.list()[0], placedOnCanvas([changes.list()[0]], doc.documentElement.outerHTML))).toEqual({ outcome: "shown" });
   });
 });
 
