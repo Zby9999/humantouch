@@ -22,7 +22,7 @@
 - [ ] 开跑时把设计师 pi 的 `settings.json`、`models.json` 的指纹（内容摘要，不是内容本身）记进每次跑的结果；pi 带 fff 跑（ticket 92），结果里标明 fff 的版本
 - [ ] 87 的 `next-client-stack-breakpoint` 场景里，Yearly 选项的填色改在 `.selected` 规则上还是只改在 Yearly 上，两种都算对（87 代定第 7 条，设计师 2026-11-04 确认）；结果里写明每家 Agent 每次用的是哪一种。Next 场景的改动是不是写在 `.module.css` 里（87 遗留风险第 4 条），看 diff 人工核
 - [x] **跑前检查一**：真实跑之前，测量台在 Agent 结束后量页面的等法改成和脚本那一遍一样（`endState`，等页面显示出来，最长 `SCRIPTED_END_MS`，现改名 `END_STATE_MS`），不再固定等 3 秒、刷新一次就量；只改测量台，不改 `packages/`，改完用 `--scripted` 再验一遍。否则 Next 编译慢时，写对了、`done` 核为 ✓ 的改动会被量成没显示，算成虚假的 ✓（86 遗留风险第 7 条）
-- [ ] **跑前检查二**：第一次真实跑 `flow-undo-last` 时先看 Claude 被权限拦下的次数；不是 0 就停下，先修名单再接着跑（86 遗留风险第 1 条：Claude Code 怎么匹配带管道的新规则，仓库里没法证实）
+- [x] **跑前检查二**：第一次真实跑 `flow-undo-last` 时先看 Claude 被权限拦下的次数；不是 0 就停下，先修名单再接着跑（86 遗留风险第 1 条：Claude Code 怎么匹配带管道的新规则，仓库里没法证实）
 - [ ] Cursor、Codex 不在这次验收里；goals 不改（以后有额度再验）
 
 ## 背景
@@ -89,3 +89,14 @@
 ### 设计师确认（2026-11-05）
 
 - 跑前检查一的代定 1、2 都确认：结束时第一次看到全部显示、预期成立就量；标了 `notOneToOne` 的改动结束时不等它显示，真实跑里碰到 Agent 改了又列在 ✓ 下的，看 diff 人工复核。
+
+### 跑前检查二（2026-11-05）
+
+- Claude（effort medium）单跑一次 `flow-undo-last`（原始记录 `bench-results/agents/88-real/claude/flow-undo-last/run-1`）：被权限拦下 1 次。用时 18 秒，工具调用 6 次。撤销成功，场景整体预期 2/2 成立。
+- 被拦的是 Claude 自己改写的命令：不带 `-C` 的 `git diff --binary … | git apply && git diff --stat && grep …`。紧接着它照 `npx 03kind last` 打印的原样（`git -C <项目> diff --binary … | git -C <项目> apply`）跑，放行了。
+- 结论：Claude Code 对带管道的新规则匹配正常，86 遗留风险第 1 条解除。被拦的正是 86 代定第 8 条故意挡的裸 `git apply`，名单没错。
+
+### 设计师决定（2026-11-05，跑前检查二）
+
+- 名单不改，照跑。这类被拦照「跑法」的规矩单独列出；每条改动的工具调用次数同时给含、不含被拦的两个数。
+- 考虑过的别的做法：放行裸 `git apply`（和 86 代定第 8 条相反，名单比真实使用宽）。
