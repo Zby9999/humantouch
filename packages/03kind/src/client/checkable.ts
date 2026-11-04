@@ -70,7 +70,10 @@ export function shareCss({ percent, px }: Share): string {
  * their shares of it one way as the other, as wide as it is, the start's from
  * 0 and the end's from 0 for a middle at 50% (`left: 20px; right: -20px`).
  */
-export const centeringSides = ({ percent, px }: Share): Record<Edge, Share> => ({ start: { percent: percent - 50, px }, end: { percent: 50 - percent, px: 0 - px } });
+export const centeringSides = ({ percent, px }: Share): Record<Edge, Share> => ({ start: { percent: percent - 50, px }, end: { percent: 50 - percent, px: 0 - px } }); // `0 - px`: no `-0px` for a middle at 50%
+
+/** Where the middle of a layer centered by its auto margins between its sides is (ticket 96), its sides given as `sides`: what `centeringSides` gives them. */
+export const middleOf = ({ start, end }: Record<Edge, Share>): Share => ({ percent: (100 + start.percent - end.percent) / 2, px: (start.px - end.px) / 2 });
 
 /** A layer's margins along each axis both `auto`, as CSS writes them: what centers it between its sides (ticket 96). Tailwind's are `AUTO_MARGINS_CLASS`. */
 export const AUTO_MARGINS = { x: "margin-inline: auto", y: "margin-block: auto" } as const satisfies Record<Axis, string>;

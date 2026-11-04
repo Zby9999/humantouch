@@ -7441,6 +7441,14 @@ describe("a layer centered by auto margins (ticket 96)", () => {
     },
   );
 
+  test("a layer placed by both its sides, as wide as it is set, with only its left margin `auto`, copied in place: the copy is placed from the right as it is, where it is drawn (code review)", async () => {
+    const { editor, layer, changes } = await open(AUTO_MARGINS.replace("margin-inline: auto", "margin-left: auto"));
+    const copy = editor.duplicate(layer("tag"));
+    const r = copy.el.getBoundingClientRect();
+    expect(r.left - copy.el.parentElement!.getBoundingClientRect().left).toBe(350);
+    expect((changes.list()[0].after as Place).absolute).toEqual({ x: 350, y: 8, placed: { x: { edge: "end", centered: false, percent: 0, px: 0 } } });
+  });
+
   /** The page `width` px wide, its board half that, as the check shows it at a view's width; `css`: the code as the Agent writes it. */
   const pageAt = (width: number, css = "") => {
     const frame = document.createElement("iframe");

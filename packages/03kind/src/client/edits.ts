@@ -16,7 +16,7 @@ import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
+import { middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
@@ -189,12 +189,11 @@ export function createEditor(
     const by = value - before;
     const { start, end } = SIDES[along.axis];
     const [from0, to0] = [computedShareOf(el, start), computedShareOf(el, end)];
-    const sides = { [start]: { percent: from0.percent, px: round(from0.px + by) }, [end]: { percent: to0.percent, px: round(to0.px - by) } } as Record<string, Share>;
-    const middle = (a: Share, b: Share): Share => ({ percent: (100 + a.percent - b.percent) / 2, px: round((a.px - b.px) / 2) });
+    const sides: Record<Edge, Share> = { start: { percent: from0.percent, px: round(from0.px + by) }, end: { percent: to0.percent, px: round(to0.px - by) } };
     return {
       from,
-      declarations: { [start]: shareCss(sides[start]), [end]: shareCss(sides[end]) },
-      middle: { before: middleShareOf(el, along.axis), after: middle(sides[start], sides[end]) },
+      declarations: { [start]: shareCss(sides.start), [end]: shareCss(sides.end) },
+      middle: { before: middleShareOf(el, along.axis), after: middleOf(sides) },
     };
   };
 

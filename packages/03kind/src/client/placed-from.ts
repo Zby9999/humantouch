@@ -11,7 +11,7 @@
  * share of its container it is centered on (`calc(50% + 20px)`, ticket 79;
  * by its margins, its sides, as much one way as the other).
  */
-import { AXIS_SIZE, OTHER_EDGE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
+import { AXIS_SIZE, middleOf, OTHER_EDGE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
 import { declaredByEdit } from "./canvas-style";
 import { containingBlockOf, directionPlacing } from "./containing-block";
 import { absolute, declaredValue, round } from "./property-table";
@@ -119,12 +119,12 @@ export function autoMarginsPlacing(el: Element, axis: Axis): Edge | "both" | nul
  * How much room a margin of `el`'s before it along `axis` (its left, its
  * top) takes up, in px, as laid out, when it is `auto` (ticket 96): where
  * it is drawn past its side, which X and Y count, as they do not its other
- * margins. None when it is not `auto`, where the browser takes it for none
- * as much as anywhere.
+ * margins. None when it is not `auto`, or `el` is not placed absolute or
+ * fixed: in its container's layout, X and Y go as they always did.
  */
 export function autoMarginBefore(el: Element, axis: Axis): number {
   const margin = `margin-${SIDES[axis].start}`;
-  if (String(el.computedStyleMap().get(margin)) !== "auto") return 0;
+  if (!absolute(el) || String(el.computedStyleMap().get(margin)) !== "auto") return 0;
   return parseFloat(getComputedStyle(el).getPropertyValue(margin)) || 0;
 }
 
@@ -148,7 +148,7 @@ export function startOffsetOf(el: Element, axis: Axis): number {
  */
 export function middleShareOf(el: Element, axis: Axis): Share {
   const [start, end] = (["start", "end"] as const).map((edge) => computedShareOf(el, SIDES[axis][edge]));
-  return { percent: (100 + start.percent - end.percent) / 2, px: (start.px - end.px) / 2 };
+  return middleOf({ start, end });
 }
 
 /** A side of `el` as its style computes it, a share of its container and px past it; in px, as laid out, where it is no share read here. */
@@ -431,8 +431,8 @@ export function placedAlong(el: Element, at: Record<Axis, number>, room: Record<
     if (from.edge === "start" && !from.centered) continue;
     const share = from.margins ? middleShareOf(el, axis) : from.centered ? sideShareOf(el, axis, from.edge) : { percent: 0, px: 0 };
     if (!share) continue;
-    // From the end edge: what is left of its container's room past it and its margins. Centered by its auto margins: its middle.
-    const size = axis === "x" ? r.width + left + right : r.height + top + bottom;
+    // From the end edge: what is left of its container's room past it and its margins, but one `auto` before it, which `at` counts (ticket 96). Centered by its auto margins: its middle.
+    const size = (axis === "x" ? r.width + left + right : r.height + top + bottom) - autoMarginBefore(el, axis);
     const value = from.margins ? at[axis] + sizeAlong(el, axis) / 2 : from.edge === "start" ? at[axis] : room[axis] - at[axis] - size;
     placed[axis] = { ...from, percent: share.percent, px: pastShare(value, share.percent, room[axis]) };
   }

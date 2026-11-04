@@ -356,7 +356,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
   if (PLACED_BY[change.property] && isOffsetInLayout(actual)) return offsetNotShown(change.property, change.after as number, actual, again, width);
   if (PLACED_BY[change.property] && actual === null) return notPlacedAbsolute(change.property, change.after as number, again, width);
   if (change.centeredOn && isUncentered(actual)) return notCentered(PLACED_BY[change.property]!.axis, PLACED_BY[change.property]!.edge, again, width);
-  if (change.centeredOn && change.placedFrom?.margins && actual !== null && typeof actual === "object" && "at" in actual) return middleOff(change, actual as { value: number; at: number }, again, width);
+  if (change.centeredOn && change.placedFrom?.margins && actual !== null && typeof actual === "object" && "at" in actual) return notAtMiddle(change, actual as { value: number; at: number }, again, width);
   if (change.centeredOn && actual !== null && typeof actual === "object" && "at" in actual) return centeredOff(change, actual as { value: number; margin: number; at: number }, again, width);
   if (change.margins && actual !== null && typeof actual === "object") {
     if (change.property === "absolute") return offByMargins(change.after as { x: number; y: number }, change.margins, actual as PlacedOnPage, again, width);
@@ -543,7 +543,7 @@ function centeredOff({ property, centeredOn }: Change, placed: { value: number; 
  * (ticket 96), the page drawing it (`value`) elsewhere than where its middle,
  * as the canvas has it, puts it at that width (`at`).
  */
-function middleOff({ property, centeredOn, style }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
+function notAtMiddle({ property, centeredOn, style }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
   const { axis } = PLACED_BY[property]!;
   const { start, end } = SIDES[axis];
   return (
