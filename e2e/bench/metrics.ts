@@ -4,9 +4,10 @@
  * archived, and when the page and the command line moved. Pure functions, so
  * a run's raw results can be measured again later, by a newer rule.
  */
+import { DENIED } from "./allowlist.ts";
 
 /** The Agents the bench runs. */
-export type AgentName = "claude" | "cursor";
+export type AgentName = "claude" | "cursor" | "pi";
 
 /** One tool call the Agent made, and what it got back. */
 export interface ToolCall {
@@ -26,20 +27,28 @@ export interface ToolCall {
 }
 
 export interface Transcript {
-  /** The model the Agent ran on, as the Agent says at the start. */
+  /** The model the Agent ran on, as the Agent says at the start (pi: as its answers say; each model, joined by commas, when they do not all say the same). */
   model: string | null;
+  /** The concrete models the provider answered with, where the transcript names them (pi's responseModel): for the record, not checked. */
+  responseModels: string[];
+  /** The skills the Agent was given at the start, by name, as it says (Claude Code's init, pi's system prompt; Cursor says none). */
+  skills: string[];
   toolCalls: ToolCall[];
   /** The Agent's last words: where the report is. */
   finalText: string;
-  /** Tool calls the bench's permissions turned away. */
+  /** Tool calls the bench's permissions (or, in pi, its extension) turned away. */
   permissionDenials: number;
-  /** Subagents the Agent started (Claude Code's Task, Cursor's explore), and the models other than its own they ran on. */
+  /** Subagents the Agent started (Claude Code's Task, Cursor's explore; pi has none of its own), and the models other than its own they ran on. */
   subagents: { calls: number; models: string[] };
-  /** Times the API did not answer and was asked again (Claude Code says so; Cursor does not): a wait that is no Agent's doing. */
+  /** Times the API did not answer and was asked again (Claude Code and pi say so; Cursor does not): a wait that is no Agent's doing. */
   apiRetries: number;
 }
 
 type Event = Record<string, any>;
+
+function emptyTranscript(): Transcript {
+  return { model: null, responseModels: [], skills: [], toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
+}
 
 /** The events of a transcript; a line that is no JSON (a stray warning) is left out. */
 function events(text: string): Event[] {
@@ -53,14 +62,17 @@ function events(text: string): Event[] {
 }
 
 export function parseTranscript(agent: AgentName, text: string): Transcript {
-  return agent === "claude" ? parseClaudeCode(events(text)) : parseCursor(events(text));
+  return agent === "claude" ? parseClaudeCode(events(text)) : agent === "pi" ? parsePi(events(text)) : parseCursor(events(text));
 }
 
 function parseClaudeCode(all: Event[]): Transcript {
-  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
+  const transcript = emptyTranscript();
   const byId = new Map<string, ToolCall>();
   for (const event of all) {
-    if (event.type === "system" && event.subtype === "init") transcript.model = event.model ?? null;
+    if (event.type === "system" && event.subtype === "init") {
+      transcript.model = event.model ?? null;
+      transcript.skills = event.skills ?? [];
+    }
     if (event.type === "system" && event.subtype === "api_retry") transcript.apiRetries++;
     if (event.type === "result") {
       transcript.finalText = event.result ?? "";
@@ -92,7 +104,7 @@ function parseClaudeCode(all: Event[]): Transcript {
  * run together, so the last words are its last assistant message.
  */
 function parseCursor(all: Event[]): Transcript {
-  const transcript: Transcript = { model: null, toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
+  const transcript = emptyTranscript();
   const others = new Set<string>();
   for (const event of all) {
     if (event.type === "system" && event.subtype === "init") transcript.model = event.model ?? null;
@@ -116,6 +128,63 @@ function parseCursor(all: Event[]): Transcript {
   }
   transcript.subagents.models = [...others];
   return transcript;
+}
+
+/**
+ * pi tells each message as it starts, as it streams and as it ends; only the
+ * end is the whole of it. The first is the system prompt, with the skills it
+ * lists. The model is each answer's, as its provider and id: pi says nothing
+ * of it before, and starts no subagent of its own (nor does the bench give it
+ * an extension that does), so an answer on another model is a switch, and the
+ * transcript names every model, which is no Agent's pinned one. Each tool
+ * call is in the answer that makes it, and what it got back in the tool
+ * result after; one the bench's extension blocked is a tool result in error,
+ * its text the bench's reason.
+ */
+function parsePi(all: Event[]): Transcript {
+  const transcript = emptyTranscript();
+  const byId = new Map<string, ToolCall>();
+  const models = new Set<string>();
+  const responseModels = new Set<string>();
+  let prompted = false;
+  for (const event of all) {
+    if (event.type === "auto_retry_start") transcript.apiRetries++;
+    if (event.type !== "message_end") continue;
+    const message: Event = event.message ?? {};
+    if (message.role === "system" && !prompted) {
+      prompted = true;
+      const listed = /<available_skills>([\s\S]*?)<\/available_skills>/.exec(message.sections?.skills ?? "")?.[1] ?? "";
+      transcript.skills = [...listed.matchAll(/<name>([\s\S]*?)<\/name>/g)].map((match) => unescapeXml(match[1].trim()));
+    }
+    if (message.role === "assistant") {
+      const model = message.provider ? `${message.provider}/${message.model}` : message.model;
+      if (model) models.add(model);
+      if (message.responseModel) responseModels.add(message.responseModel);
+      const text = textOf(message.content);
+      if (text.trim()) transcript.finalText = text;
+      for (const part of message.content ?? []) {
+        if (part.type !== "toolCall") continue;
+        const call: ToolCall = { name: part.name, ...where(part.arguments ?? {}), output: "" };
+        byId.set(part.id, call);
+        transcript.toolCalls.push(call);
+      }
+    }
+    if (message.role === "toolResult") {
+      const output = textOf(message.content);
+      const call = byId.get(message.toolCallId);
+      if (call) call.output = output;
+      if (message.isError && output.startsWith(DENIED)) transcript.permissionDenials++;
+    }
+  }
+  transcript.model = models.size ? [...models].join(", ") : null;
+  transcript.responseModels = [...responseModels];
+  return transcript;
+}
+
+/** Text as XML escapes it in pi's system prompt. */
+function unescapeXml(text: string): string {
+  const named: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+  return text.replace(/&(amp|lt|gt|quot|apos);/g, (_, name: string) => named[name]);
 }
 
 /** Every `model` named anywhere in an event. */

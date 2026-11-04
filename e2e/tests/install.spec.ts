@@ -48,7 +48,7 @@ test("init installs 03Kind: once the dev server starts, the toggle is on the pag
     await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
     expect(Date.now() - start).toBeLessThan(60_000);
   } finally {
-    server.stop();
+    await server.stop();
   }
 });
 
@@ -76,7 +76,7 @@ test("as installed, the page loads only the toggle, under 10KB gzipped as Vite s
     await expect(page.locator('iframe[title="Canvas"]').contentFrame().locator("h1")).toBeVisible();
     expect(await loaded.has(EXIT_LABEL)).toBe(true);
   } finally {
-    server.stop();
+    await server.stop();
   }
 });
 

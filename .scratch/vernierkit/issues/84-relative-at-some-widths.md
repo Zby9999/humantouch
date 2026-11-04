@@ -232,3 +232,18 @@ End your reply with this report. Each change is under the heading the page's che
 - 前后合上盖子的状态都是开着（`AppleClamshellState = No`）；没有跑计时的性能测试。
 
 `done` / `finish` 前后、包体积、代定的事和遗留风险见上面的实现记录和「审查后修正」：代定 8 条，遗留风险 7 条。遗留风险第 1 条（居中的 `relative` / `sticky` 图层仍说「check its `position`」）和第 2 条（`direction: rtl`）如果要做，另开 ticket，编号在 main 上给。
+
+## 设计师确认（2026-11-03）
+
+代定的八条全部确认：
+
+1. 页面在那个宽度要和画布同一种排法（`relative` 对 `relative`，`sticky` 对 `sticky`），换了一种算没显示。
+2. `relative` 比浏览器把它挪了多远，`sticky` 比写的 px 值（写成百分比的不算）。
+3. `right` / `bottom` 在 `sticky` 宽度都看；在 `relative` 宽度写了 `left` / `top` 的照旧不看。
+4. 居中的图层不记这种范围，按自由定位核对：不报虚假的 ✓，只是说法仍会提 `position`（遗留风险第 1 条）。
+5. `done` 的新说法照 80 的口吻，不点名 `position`、不提定位参照。说法 Agent 能不能看懂，看 ticket 88 真实跑的结果。
+6. `finish` 的 Why 一行只说一件事。
+7. 所有宽度都被跳过时的原因不改。
+8. 「How the page checks」不补句。
+
+遗留风险第 1、2、6 条另行分诊。
