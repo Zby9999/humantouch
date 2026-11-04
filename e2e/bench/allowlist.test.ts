@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -173,8 +173,30 @@ test("the Skill's undo and its viewing command, as `last` prints them, go ahead 
       }
     }
   }
-  assert.equal(shellAllowed("git apply", SHELL, project), true);
-  assert.equal(shellAllowed("git diff --binary 1a2b3c 4d5e6f | git apply"), true);
+});
+
+test("there is no bare git apply (ticket 86 review): where it applies is the folder a cd left it in, .git or a link to it among them", () => {
+  const project = mkdtempSync(join(scratch, "project-"));
+  mkdirSync(join(project, ".git"));
+  mkdirSync(join(project, "src"));
+  symlinkSync(join(project, ".git"), join(project, "gl"));
+  for (const command of ["git apply", "git diff --binary 1a2b3c 4d5e6f | git apply", "cd .git && cat p | git apply", "cd gl && git apply", "cd src && git apply", "git apply && ls"]) {
+    assert.equal(shellAllowed(command, SHELL, project), false, command);
+    assert.equal(shellAllowed(command), false, command);
+  }
+});
+
+test("the -C folder is read only as written: a pattern or braces bash would fill in leave the command turned away", () => {
+  const project = mkdtempSync(join(scratch, "project-"));
+  mkdirSync(join(project, ".git"));
+  const real = realpathSync(project);
+  for (const dir of [project, real]) {
+    for (const command of [`git -C "${dir}"/.gi? apply`, `git -C ${dir}/.gi? apply`, `git -C ${dir}/[.]git apply`, `git -C ${dir}/{..,x} diff`, `git -C ${dir}/* diff`, `git -C ${dir}/{.git,x} apply`]) {
+      assert.equal(shellAllowed(command, SHELL, project), false, command);
+    }
+  }
+  // Quoted, the same characters are only text, and the folder is the one written.
+  assert.equal(shellAllowed(`git -C "${real}" diff '*.tsx'`, SHELL, project), true);
 });
 
 test("git -C is plain git only for the run's own project: another folder, one above it, a relative one, or none known is turned away; the rest is held to the rule as usual", () => {

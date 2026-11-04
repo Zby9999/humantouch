@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DENIED } from "./allowlist.ts";
-import benchExtension from "./pi-extension.ts";
+import { DENIED, SHELL } from "./allowlist.ts";
+import benchExtension, { shellDenied } from "./pi-extension.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-pi-extension-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -240,7 +240,21 @@ test("in pi, the Skill's undo as `npx 03kind last` prints it goes ahead for the 
     assert.equal(call("bash", { command: `${git} diff 4d5e6f 1a2b3c` }), undefined, dir);
   }
   const elsewhere = mkdtempSync(join(scratch, "elsewhere-"));
-  for (const command of [`git -C "${elsewhere}" diff --binary a b | git -C "${elsewhere}" apply`, `git -C "${real}" diff a b | git -C "${real}" apply x.patch`, `git -C "${real}" apply --unsafe-paths`, `git -C ${join(homedir(), ".pi")} log`]) {
+  for (const command of [`git -C "${elsewhere}" diff --binary a b | git -C "${elsewhere}" apply`, `git -C "${real}" diff a b | git -C "${real}" apply x.patch`, `git -C "${real}" apply --unsafe-paths`, `git -C ${join(homedir(), ".pi")} log`,
+    // No bare git apply, and no -C folder bash would fill in (ticket 86 review).
+    "git apply", "cd .git && cat p | git apply", `git -C "${real}"/.gi? apply`, `git -C ${real}/[.]git apply`, `git -C ${real}/{..,x} diff`]) {
     assert.ok(blocked(call("bash", { command })), command);
   }
+});
+
+test("the Skill's undo goes ahead only on a list that asks for it: a copy of the applying list, with no undo, gets none of it, nor its reason", () => {
+  const real = realpathSync(project);
+  const copy = { shell: [...SHELL], servers: [], runners: {}, flags: [], options: [] };
+  for (const command of [`git -C "${real}" diff a b`, `git -C "${real}" diff --binary a b | git -C "${real}" apply`, "git apply"]) {
+    const reason = shellDenied(command, project, copy);
+    assert.ok(reason !== null, command);
+    assert.doesNotMatch(reason.split("Turned away:")[0], /git -C|apply/, command);
+  }
+  assert.equal(shellDenied(`git -C "${real}" diff a b`, project), null);
+  assert.match(shellDenied("git apply", project) ?? "", /git -C with it and apply alone/);
 });

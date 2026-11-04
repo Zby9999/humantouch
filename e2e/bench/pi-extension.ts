@@ -23,8 +23,9 @@
  * (allowlist.ts, backgroundServer), and a runner of its `runners` (`npx`,
  * `pnpm exec`…) may run only the programs listed for it, past only its
  * `flags`, and no word may be one of its `options` (allowlist.ts,
- * runsAllowed), and the Skill's undo (`git apply`, `git -C` of the project,
- * ticket 86) is not among them: it is the applying list's alone. With no such
+ * runsAllowed), and the Skill's undo (`git -C` of the project, ticket 86)
+ * is not among them: it goes ahead only where a list says `undo`, as the
+ * applying list does. With no such
  * file, nothing changes. Under the install list,
  * "nothing reaches ~/.pi" holds at the command line only: `npm run <script>`,
  * `npx vite` and `npx next` run code the Agent may have written with write or
@@ -50,10 +51,12 @@ export interface ShellList {
   runners: Readonly<Record<string, readonly string[]>>;
   flags: readonly string[];
   options: readonly string[];
+  /** Whether the Skill's undo goes ahead (`git -C` of the project, ticket 86): off unless a list asks for it. */
+  undo?: boolean;
 }
 
 /** The applying bench's list, what pi is held to with no install list beside the extension. */
-const APPLYING: ShellList = { shell: SHELL, servers: [], runners: {}, flags: [], options: [] };
+const APPLYING: ShellList = { shell: SHELL, servers: [], runners: {}, flags: [], options: [], undo: true };
 
 /** The applying bench's list, or the install bench's when `file` is there. */
 function shellList(file: string): ShellList {
@@ -274,13 +277,16 @@ const intoPi = (what: string) => `${DENIED} no tool or command in pi's own folde
  * Why the bench turns a shell command line away, run in the project `cwd`
  * under `list`; null when it goes ahead. pi's `bash` calls are held to it,
  * and the scripted pass's commands (run-agents.ts). The Skill's undo (`git
- * apply`, `git -C` of the project, ticket 86) goes ahead on the applying list
- * only: the install bench's has no reason to undo a round.
+ * -C` of the project, ticket 86) goes ahead only on a list with `undo`, the
+ * applying one: the install bench's has no reason to undo a round. It keeps
+ * the shell's undo out of `.git`; it does not stop pi's write or edit from
+ * writing `.git/config` in the project directly (ticket 85: the fence is not
+ * a sandbox).
  */
 export function shellDenied(command: string, cwd: string, list: ShellList = APPLYING): string | null {
-  const denied = deniedReason(command, list.shell, list.servers);
+  const denied = deniedReason(command, list.shell, list.servers, list.undo === true);
   const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
-  const project = list.shell === SHELL ? cwd : undefined;
+  const project = list.undo === true ? cwd : undefined;
   // A dev server in the background is checked as the command it runs, the paths in it too.
   const checked = shellAllowed(command, list.shell, project) ? command : backgroundServer(command, list.servers, inProject);
   if (checked === null) return denied;

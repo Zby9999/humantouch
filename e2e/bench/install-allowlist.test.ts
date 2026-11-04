@@ -79,7 +79,8 @@ test("the Skill's undo is the applying bench's alone (ticket 86): under the inst
     assert.doesNotMatch(result.reason.split("Turned away:")[0], /git apply|git -C/, command);
   }
   const none = join(scratch, "nothing-here.json");
-  for (const command of ["git apply", `git -C ${project} diff`, `git -C ${project} diff 1a2b3c 4d5e6f | git -C "${project}" apply`]) assert.equal(bash(command, none), undefined, command);
+  for (const command of [`git -C ${project} diff`, `git -C ${project} diff 1a2b3c 4d5e6f | git -C "${project}" apply`]) assert.equal(bash(command, none), undefined, command);
+  assert.ok(blocked(bash("git apply", none)), "no bare git apply, on the applying list either");
   const claude = installClaudeArgs("/run", "Install 03Kind");
   const rules = [...claude[claude.indexOf("--allowedTools") + 1].split(","), ...claude[claude.indexOf("--disallowedTools") + 1].split(",")];
   assert.ok(!rules.some((rule) => /git apply|git -C/.test(rule)));

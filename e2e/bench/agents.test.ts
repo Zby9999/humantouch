@@ -237,14 +237,15 @@ test("Claude may run the Skill's undo and its viewing command for the run's own 
       assert.ok(rules.includes(`Bash(${git} apply)`), git);
     }
   }
-  assert.ok(rules.includes("Bash(git apply)"));
+  assert.ok(!rules.includes("Bash(git apply)"), "no bare git apply");
   assert.ok(!rules.some((rule) => /^Bash\(git (-C \S+ )?apply:/.test(rule)), "no prefix rule for git apply");
   // Two rules, quoted and not, for each of diff and apply, by each name of the project (one, where tmpdir() is a real path already).
   assert.equal(rules.filter((rule) => rule.includes(" -C ")).length, 8 / (real === project ? 2 : 1));
   assert.ok(!rules.some((rule) => rule.includes(" -C ") && !rule.includes(real) && !rule.includes(project)));
 
   const line = commandLine("claude");
-  assert.match(line, /Bash\(git -C "<project>" diff:\*\),Bash\(git -C <project> diff:\*\),Bash\(git -C "<project>" apply\),Bash\(git -C <project> apply\),Bash\(git apply\)/);
+  assert.match(line, /Bash\(git -C "<project>" diff:\*\),Bash\(git -C <project> diff:\*\),Bash\(git -C "<project>" apply\),Bash\(git -C <project> apply\)' --disallowedTools/);
+  assert.doesNotMatch(line, /Bash\(git apply\)/);
   assert.doesNotMatch(line, new RegExp(project));
 });
 

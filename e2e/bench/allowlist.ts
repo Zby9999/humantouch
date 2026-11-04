@@ -10,26 +10,19 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 /** The shell commands an Agent may run: the command line, and reading the project. */
 export const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
 
-/**
- * The commands an Agent may run as they are, with nothing after them: the
- * Skill's undo, `git apply` with the patch on its input (`npx 03kind last`
- * prints it), and no option or patch file (`--unsafe-paths`, `--directory`
- * and the like).
- */
-export const EXACT = ["git apply"];
-
 /** How a tool result turned away by the bench starts: what the transcript is counted by. */
 export const DENIED = "Not run: the 03Kind bench allows";
 
 /**
  * The reason a turned-away command is given, for the Agent to read; `allowed`
  * and `servers` as the install bench gives them (ticket 91). The Skill's undo
- * (`EXACT`, `git -C` of the project) is named only for the applying list.
+ * (`git -C` of the project, ticket 86) is named only when `undo` says it goes
+ * ahead: the applying list's, asked for by name, not any list's by default.
  */
-export function deniedReason(command: string, allowed: readonly string[] = SHELL, servers: readonly string[] = []): string {
+export function deniedReason(command: string, allowed: readonly string[] = SHELL, servers: readonly string[] = [], undo = false): string {
   const background = servers.length ? `; and a dev server started in the background, one command of these alone, its output to /dev/null or to a .log file in the project, ending in &: ${servers.join(", ")}` : "";
-  const undo = allowed === SHELL ? `; ${EXACT.join(", ")} alone, the patch on its input; git -C with the project's own folder as git;` : ",";
-  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${allowed.join(", ")}${undo} and cd to a folder in the project${background}. Turned away: ${command}`;
+  const undoText = undo ? "; git -C with the project's own folder (written in full) as git, and git -C with it and apply alone, the patch on its input;" : ",";
+  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${allowed.join(", ")}${undoText} and cd to a folder in the project${background}. Turned away: ${command}`;
 }
 
 /**
@@ -96,12 +89,15 @@ interface Word {
 /**
  * Whether the bench lets `command` run: every command in it, split at `&&`,
  * `||`, `;`, `|` and new lines (outside quotes), is one of `allowed` (its
- * words, then any arguments), one of `exact` as it is (`EXACT` for the
- * applying list, none for any other, so the install bench's has no `git apply`),
- * or a `cd` to one
- * folder; a leading `git -C <folder>` is read as `git` when the folder, by
- * its real path, is `project` or one in it, not in its `.git` (none without `project`), the
- * rest of the command held to the rule as usual; none sets a variable first or uses an
+ * words, then any arguments), or a `cd` to one folder. With `project` given
+ * (the Skill's undo, ticket 86: the applying bench asks for it, no list has it
+ * by default), a leading `git -C <folder>` is read as `git` when the folder,
+ * written in full with no pattern or braces bash would fill in, is by its real
+ * path `project` or one in it, not in its `.git`, the rest of the command held
+ * to the rule as usual; and `git -C <that folder> apply`, with nothing after
+ * it, goes ahead (the patch on its input, as `npx 03kind last` prints it).
+ * There is no bare `git apply`: where it applies depends on the folder a `cd`
+ * left it in, `.git` or a link to it among them. None sets a variable first or uses an
  * option that runs another program or writes a file. Each is matched by the
  * words bash will pass, quotes taken out and backslashes read. Nothing runs a
  * command inside another (`$( )`, backticks, `<( )`, `>( )`), in a subshell
@@ -110,25 +106,34 @@ interface Word {
  * option of a command that has one of those; and output is redirected only to
  * /dev/null or another stream. What the rule cannot read is turned away.
  */
-export function shellAllowed(command: string, allowed: readonly string[] = SHELL, project?: string, exact: readonly string[] = allowed === SHELL ? EXACT : []): boolean {
+export function shellAllowed(command: string, allowed: readonly string[] = SHELL, project?: string): boolean {
   const commands = parse(command)?.filter((words) => words.length > 0);
-  return !!commands && commands.length > 0 && commands.every((words) => allowedCommand(inProjectGit(words, project), allowed, exact));
+  return !!commands && commands.length > 0 && commands.every((words) => {
+    const rest = inProjectGit(words, project);
+    if (!rest) return allowedCommand(words, allowed);
+    // The undo: `apply` alone, no option and no patch file (`--unsafe-paths`, `--directory`, `x.patch`).
+    return (rest.length === 1 && rest[0].text === "apply") || allowedCommand([words[0], ...rest], allowed);
+  });
 }
 
 /**
- * `git -C <folder> …` as `git …` when the folder is written in full and is,
+ * The words after `git -C <folder>` when the folder is written in full and is,
  * by its real path, `project` or a folder in it: as `npx 03kind last` writes
- * its commands (`git rev-parse --show-toplevel`, on macOS the real path). Any
- * other is left as it is, for the rule to turn away.
+ * its commands (`git rev-parse --show-toplevel`, on macOS the real path).
+ * Null for any other, left for the rule to turn away. The fence is not a
+ * sandbox (ticket 85): pi's own write or edit may still write `.git/config`
+ * in the project directly; this keeps only the shell's undo out of `.git`.
  */
-function inProjectGit(words: Word[], project: string | undefined): Word[] {
-  const [git, option, folder] = words.map((word) => word.text);
-  if (git !== "git" || option !== "-C" || !project || folder === undefined || !isAbsolute(folder)) return words;
+function inProjectGit(words: Word[], project: string | undefined): Word[] | null {
+  const [git, option, folder] = words;
+  if (git?.text !== "git" || option?.text !== "-C" || !project || folder === undefined || !isAbsolute(folder.text)) return null;
+  // A pattern or braces bash fills in (`.gi?`, `[.]git`, `{..,x}`): the folder bash passes is not the one read here.
+  if ([...folder.text].some((char, i) => folder.bare[i] && "*?[{".includes(char))) return null;
   const root = realPath(project);
-  const there = realPath(resolve(folder));
+  const there = realPath(resolve(folder.text));
   // Not the repository's own folder: in `.git` git sees no work tree, and `git apply` there could write its config.
   const inGit = there.slice(root.length).split(sep).some((part) => part.toLowerCase() === ".git");
-  return (there === root || there.startsWith(root + sep)) && !inGit ? [words[0], ...words.slice(3)] : words;
+  return (there === root || there.startsWith(root + sep)) && !inGit ? words.slice(3) : null;
 }
 
 /** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike: the real path of the nearest folder there is, and the rest. */
@@ -149,14 +154,13 @@ export function shellWords(command: string): string[][] | null {
   return parse(command)?.map((words) => words.map((word) => word.text)) ?? null;
 }
 
-function allowedCommand(words: Word[], allowed: readonly string[], exact: readonly string[]): boolean {
+function allowedCommand(words: Word[], allowed: readonly string[]): boolean {
   const text = words.map((word) => word.text);
   if (words.some(expandsBraces)) return false;
   if (/^\w+=/.test(text[0])) return false;
   // One folder, no option: bare `cd` goes home, `cd -` back, and `-P` or `-L` are no folder.
   if (text[0] === "cd") return words.length === 2 && !text[1].startsWith("-");
   const starts = (prefix: string) => prefix.split(" ").every((word, i) => text[i] === word);
-  if (exact.includes(text.join(" "))) return true;
   const options = Object.entries(RUNS_OR_WRITES).flatMap(([prefix, option]) => (starts(prefix) ? [option] : []));
   if (options.length && words.some((word) => options.some((option) => option.test(word.text)) || mayNameAnOption(word))) return false;
   return allowed.some(starts);

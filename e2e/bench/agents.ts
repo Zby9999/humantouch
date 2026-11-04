@@ -15,7 +15,7 @@ import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
-import { EXACT, realPath, SHELL } from "./allowlist.ts";
+import { realPath, SHELL } from "./allowlist.ts";
 import type { AgentName } from "./metrics.ts";
 
 const execFileAsync = promisify(execFile);
@@ -184,13 +184,14 @@ export const PROJECT = "<project>";
  * Claude's rules for the Skill's own undo and its viewing command, as
  * `npx 03kind last` prints them (`git -C "<repo>" diff …`, `… | git -C
  * "<repo>" apply`, the repository by its real path), for the run's own
- * project only: by that path and as the bench names it, quoted and not; and
- * `git apply` as it is, the patch on its input (`EXACT`), not by prefix.
+ * project only: by that path and as the bench names it, quoted and not;
+ * `apply` as it is, the patch on its input, not by prefix. No bare `git
+ * apply`: it applies wherever the shell is, `.git` too after a `cd`.
  */
 function undoRules(project: string): string[] {
   const dirs = [...new Set([isAbsolute(project) ? realPath(project) : project, project])];
   const gits = dirs.flatMap((dir) => [`git -C "${dir}"`, `git -C ${dir}`]);
-  return [...gits.map((git) => `Bash(${git} diff:*)`), ...gits.map((git) => `Bash(${git} apply)`), ...EXACT.map((command) => `Bash(${command})`)];
+  return [...gits.map((git) => `Bash(${git} diff:*)`), ...gits.map((git) => `Bash(${git} apply)`)];
 }
 
 export const AGENTS: Record<AgentName, AgentSpec> = {
