@@ -93,9 +93,14 @@ async function watchVariables(context: BrowserContext) {
     (window as unknown as Record<string, typeof asked>)[name] = asked;
     const fetch = window.fetch;
     window.fetch = (input, init) => {
+      let url: URL;
+      try {
+        url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      } catch {
+        return fetch.call(window, input, init);
+      }
       const response = fetch.call(window, input, init);
-      const { hostname, pathname } = new URL(input instanceof Request ? input.url : String(input), location.href);
-      if (hostname !== "127.0.0.1" || pathname !== "/variables") return response;
+      if (url.hostname !== "127.0.0.1" || url.pathname !== "/variables") return response;
       asked.open++;
       // Answered once the whole body is in, as the editor layer reads it.
       void response
@@ -121,7 +126,15 @@ async function watchVariables(context: BrowserContext) {
  * Variables in already; then none is open, and this returns at once.
  */
 async function variablesIn(page: Page) {
-  const open = () => page.evaluate((name) => (window as unknown as Record<string, { open: number } | undefined>)[name]?.open ?? 0, VARIABLES_ASKED);
+  // A read as the page navigates fails ("Execution context was destroyed"), and `expect.poll`
+  // would fail with it at once: that read counts as still open, and the new document is read next.
+  const open = () =>
+    page
+      .evaluate((name) => (window as unknown as Record<string, { open: number } | undefined>)[name]?.open ?? 0, VARIABLES_ASKED)
+      .catch((error: unknown) => {
+        if (error instanceof Error && /context was destroyed|navigat/i.test(error.message)) return 1;
+        throw error;
+      });
   await expect.poll(open, { message: "the project's Variables are in" }).toBe(0);
   // Then drawn with them.
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));

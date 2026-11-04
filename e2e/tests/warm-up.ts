@@ -10,10 +10,12 @@ const SERVERS = [
 ];
 
 /**
- * How long all of them together may take, side by side. Long, as a cold start
- * is: Next.js compiles the page and then the editor layer from nothing, and on
- * a busy machine one cold Next.js start took more than 60 seconds to answer at
- * all (ticket 93).
+ * How long all of them together may take, side by side. Playwright starts this
+ * only once each `webServer` URL has answered (within that entry's own timeout),
+ * so the dev server is up by then; this covers loading the page in a browser,
+ * whose code a cold Next.js may still be compiling, and entering edit mode, where
+ * the editor layer is compiled for the first time. Long, as on a busy machine
+ * those first compiles can take more than a minute (ticket 93).
  */
 const WARM_UP_MS = 180_000;
 
