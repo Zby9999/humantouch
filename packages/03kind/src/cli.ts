@@ -85,8 +85,8 @@ async function claim(folder: ThirdKindFolder, root: string, io: Io): Promise<num
   if (claimed) await claimFresh(folder, claimed);
   const checks = await readChecks(folder);
   const pageOpen = !!checks?.pages && isRunning(checks.service);
-  // Where to look in the project, read as it is now, so the Agent need not search it (ticket 101).
-  const notes = toApply(pageOpen, await whereToLook(root, changeSet.changes));
+  // Where to look in the project, read as it is now, so the Agent need not search it (ticket 101); what cannot be read, the notes say as before: the round is claimed already.
+  const notes = toApply(pageOpen, await whereToLook(root, changeSet.changes).catch(() => undefined));
   if (claimed && changeSet.changes.some((change) => change.carried)) return claimCarried(folder, root, io, claimed, changeSet, notes, pageOpen);
   if (!state) {
     io.write(describeChanges(changeSet.changes, root, notes));
