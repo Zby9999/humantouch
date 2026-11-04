@@ -6,13 +6,13 @@
 
 **Blocked by:** 无（84 已完成）
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 先复现，用剧本或单元测试（脚本扮演 Agent，不跑真实 Agent）：从右往左的页面上，一个图层在手机上 `relative`，左右两边都写了值，在平板、桌面上按右边自由定位；在桌面视图改它的 X（ADR 0014，写成 `right`），Agent 只写 `md:right-[…]`，`done` 现在报 ✓
 - [x] 判断「这一边挪不挪它」（84 的 `relative`，75 的自由定位、左右都写了值并且宽度定死的情况）和核对「页面上挪了多少」时，按图层算出来的 `direction` 定哪一边说了算。代码里改文字对齐、找样式出处的地方已经这样读 `direction`，照着做
 - [x] 上下方向不受影响（`top` 总是说了算），不改
 - [x] 不报虚假的 ✓；没显示时的说法照 84 已确认的那套，不另起新说法（要是非起不可，记进代定）
-- [ ] 从左往右的页面上，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变（包逐字节相同；输出有一种情况变了，见代定第 4 条，留给指挥定）
+- [x] 从左往右的页面上，`claim`、`done`、`finish` 的输出逐字不变；切换按钮的包逐字节不变（包逐字节相同；输出只在原来就错的几种情况变了，见代定第 4 条，指挥代定接受，待设计师确认）
 - [x] spec「核对」一节补一句：哪一边说了算跟着图层的 `direction`
 
 ## 背景
@@ -295,3 +295,16 @@ End your reply with this report. Each change is under the heading the page's che
 6. 读一次的记录会过时、一个视图代表一整段宽度；没跑真实 Agent。
 7. **页面上的容器缩放、旋转了时，用 `transform` 居中的图层**（main 就有）：`placedFrom`、`stillCentered` 按图层画出来的框判断居中，容器缩放时 Tailwind v3 的 `-translate-x-1/2` 会被当成没居中，报没显示。不报虚假的 ✓；`translate` 居中（Tailwind v4）不受影响。
 
+**合并前全量（2026-11-04，指挥）**
+
+两轮独立审查（effort high）都跑了：第一轮找到 `body` 上的 `dir`、逻辑写法的边、包含块认错量错空间、移动的核对、`display: contents` 的父元素，第二轮（复审）找到空间按画出来的框量、三个值的 `inset` 读错，两处都会改掉对的从左往右输出，已改，见上面两节。复审之后我看了 `offsetPlacing`：只有两边都写了值、排出来又对不上空间时才换成画出来的位置，别的情况直接是算出来的值，和 main 一样；空间按排版量（算出来的尺寸、内边距、减滚动条），不按画出来的框。
+
+分支先同步了 main（9cbef6c，带进 87 的确认和 90 的分诊，只有 ticket 文件，和本线不重叠），在同步后的代码上跑：
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：单测 874 通过、1 跳过；node 测试 65 条通过。
+- `TK_E2E_PORT=5800 pnpm test:e2e`：402 通过、1 跳过、1 失败。失败的是已知会抖的 `applying-bench.spec.ts:241`「the Agent stops halfway, with no finish; the toggle says so …」（停住提示），用 `--project="project files" --no-deps` 单独重跑通过。切换按钮体积检查在里面，通过。
+- 包体积（这次构建）：`react.dev.js` 1423 B（gzip 822 B，sha256 前 16 位 `c83849f1557e0b1b`）、`chunk-UQJRS7YD.js` 21575 B（gzip 9164 B，`cdd6f09dfeaf13fa`），和 ticket 89 开始前逐字节相同；`editor.dev.js` 323972 → 326058 B（+2086 B），gzip 110054 → 110841 B（+787 B）。
+- 合上盖子的状态是开着（`AppleClamshellState = No`）；没有跑计时的性能测试（多出来的读法只在改动第一次记下时和 `done` 的核对里，拖拽的路上没有新的排版，见复审）。
+
+`done` / `finish` 前后见实现记录；代定 7 条、遗留风险 7 条见「代定的事，最终」「遗留风险，最终」。代定第 4 条（从左往右的输出在 (a) 到 (f) 几种原来就错的情况下变了）是指挥按 docs/goals.md「虚假的 ✓ = 0」和设计师分诊时「每处会报虚假的 ✓ 的地方都修」代定接受的，条件是对的从左往右输出不变，复审后已做到，待设计师确认。遗留风险第 1 条（属性面板的 X）如果要做，另开 ticket，编号在 main 上给。
