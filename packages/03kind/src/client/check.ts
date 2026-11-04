@@ -15,7 +15,7 @@ import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import type { ChangeOnCanvas, RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
-import { placedFrom, roomOf, sideShareOf } from "./placed-from";
+import { edgeGoneBy, offsetPlacing, placedFrom, roomAlong, sideShareOf } from "./placed-from";
 import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
@@ -365,8 +365,9 @@ export interface OffsetInLayout {
  * itself, its margins left out, as they are where its container lays it out.
  * Relative, by how far the browser moves it, which it gives its `left` and
  * `top`: a `right` or `bottom` moves it the other way, but not with a `left`
- * or `top` declared too, which it goes by instead. Sticky, by its side's
- * value. Not shown: with the first that is not, and how (`OffsetInLayout`).
+ * or `top` declared too, which it goes by instead; right to left, it goes by
+ * the `right` (`movedAlong`, ticket 89). Sticky, by its side's value. Not
+ * shown: with the first that is not, and how (`OffsetInLayout`).
  */
 function lookOffset(els: Element[], property: Property, after: number, canvas: InLayout): [CheckResult, Element | null] {
   const { axis, edge } = PLACED_BY[property]!;
@@ -375,14 +376,24 @@ function lookOffset(els: Element[], property: Property, after: number, canvas: I
     const position = style.position as Position;
     // Sticky, as written: a percentage is not px, though it reads as a number.
     const written = style.getPropertyValue(SIDES[axis][edge]);
-    const offset =
-      position === "relative" ? movedBy(edge, rounded(parseFloat(style.getPropertyValue(SIDES[axis].start)) || 0)) : position === "sticky" && written.endsWith("px") ? rounded(parseFloat(written)) : null;
+    const offset = position === "relative" ? movedBy(edge, movedAlong(el, axis)) : position === "sticky" && written.endsWith("px") ? rounded(parseFloat(written)) : null;
     if (position !== canvas || offset === null || Math.abs(offset - after) > 0.5) {
       const actual: OffsetInLayout = { canvas, position, offset, ...(position === "sticky" && offset === null && { written }) };
       return [{ outcome: "not shown", actual }, el];
     }
   }
   return [{ outcome: "shown" }, null];
+}
+
+/**
+ * How far the browser moves `el`, placed relative, along `axis`, across or
+ * down, in px: by the side it goes by (`edgeGoneBy`), which it gives how far
+ * that moves it, its `left` or `top`, or right to left its `right`, the other
+ * way (ticket 89).
+ */
+function movedAlong(el: Element, axis: Axis): number {
+  const by = edgeGoneBy(el, axis);
+  return movedBy(by, rounded(parseFloat(getComputedStyle(el).getPropertyValue(SIDES[axis][by])) || 0));
 }
 
 /** Whether every one of `els` shows `after`; not, the first that does not, and the value it shows. */
@@ -498,9 +509,10 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
     const at = placedOn(el);
     // Centered, its translate gone or turned over: drawn half its size aside, whatever its side gives it.
     if ((["x", "y"] as const).some((axis) => placed[axis]?.centered && !stillCentered(el, axis, placed[axis]!.edge))) return { outcome: "not shown", actual: { ...at, centered: false } };
+    // Along an axis placed otherwise than from the start (ticket 79): how far its side places it, what the share and px of its container that side is to give it come to there.
     const sideOff = (["x", "y"] as const).some((axis) => {
       const how = placed[axis];
-      return how && Math.abs((parseFloat(style.getPropertyValue(SIDES[axis][how.edge])) || 0) - pxIn(how, roomOf(el, axis))) > 0.5;
+      return how && Math.abs(offsetPlacing(el, axis, how.edge) - pxIn(how, roomAlong(el, axis))) > 0.5;
     });
     if (sideOff || !drawnThere(at, { ...(!placed.x && { x }), ...(!placed.y && { y }) }, margins)) return { outcome: "not shown", actual: at };
   }
@@ -535,7 +547,7 @@ function lookPosition(els: Element[], property: Property, after: number | { x: n
       continue;
     }
     // Where the canvas centers it at this width, and what its side is written as now: a share, or else px.
-    const at = Math.round(pxIn(centered.after, roomOf(el, axis)) * 100) / 100;
+    const at = rounded(pxIn(centered.after, roomAlong(el, axis)));
     const off = { value: placed[axis], margin: placed.margins[axis], at, share: sideShareOf(el, axis, edge) ?? { percent: 0, px: placed[axis] } };
     // Its translate gone or turned over: drawn half its size aside, whatever its side gives it.
     if (!stillCentered(el, axis, edge)) return [{ outcome: "not shown", actual: { ...off, centered: false } }, el];
@@ -569,12 +581,16 @@ type CanvasMargins = { margins: Margins; known: boolean };
 /** Where the page places an absolute layer: its `left` and `top`, and its left and top margins, in px; from its container's right and bottom edges, its `right` and `bottom` and those margins. */
 export type PlacedOnPage = { x: number; y: number; margins: Margins };
 
-/** Where the page places an absolute layer, from its container's start edges (left, top) or `from` its end edges (right, bottom). */
+/**
+ * Where the page places an absolute layer, from its container's start edges
+ * (left, top) or `from` its end edges (right, bottom): as the browser does,
+ * given both sides along an axis (`offsetPlacing`).
+ */
 function placedOn(el: Element, from: Edge = "start"): PlacedOnPage {
   const style = getComputedStyle(el);
-  const px = (value: string) => Math.round((parseFloat(value) || 0) * 100) / 100;
-  const [x, y] = [SIDES.x[from], SIDES.y[from]];
-  return { x: px(style.getPropertyValue(x)), y: px(style.getPropertyValue(y)), margins: { x: px(style.getPropertyValue(`margin-${x}`)), y: px(style.getPropertyValue(`margin-${y}`)) } };
+  const margin = (axis: Axis) => rounded(parseFloat(style.getPropertyValue(`margin-${SIDES[axis][from]}`)) || 0);
+  // Where it is placed, given both sides: by the one the browser goes by (ticket 89, review).
+  return { x: rounded(offsetPlacing(el, "x", from)), y: rounded(offsetPlacing(el, "y", from)), margins: { x: margin("x"), y: margin("y") } };
 }
 
 /**

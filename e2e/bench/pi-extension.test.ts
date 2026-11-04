@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -83,6 +83,96 @@ test("in pi, no tool reaches pi's own folder, where the designer's login is: by 
   assert.equal(call("bash", { command: "ls ~" }), undefined);
   assert.equal(call("bash", { command: "cat src/*.tsx" }), undefined);
   assert.equal(call("ls", { path: "~" }), undefined);
+});
+
+/** fff's tools under the names of pi's own, as override mode has them, and under their own, which fff falls back on. */
+const FFF_NAMES: Record<string, string[]> = { ffgrep: ["grep", "ffgrep"], fffind: ["find", "fffind"], "fff-multi-grep": ["multi_grep", "fff-multi-grep"] };
+
+test("in pi, fff's search tools go ahead anywhere, the whole project or outside it, but never reach pi's own folder: by their path, a glob in it, the folder fff indexes for it, or a folder above it; by either name (ticket 92)", () => {
+  const pi = join(homedir(), ".pi");
+  for (const [tool, input] of [
+    ["ffgrep", { pattern: "Card" }],
+    ["ffgrep", { pattern: "Card", path: "src/" }],
+    ["ffgrep", { pattern: "Card", path: "*.tsx", exclude: "test/" }],
+    ["ffgrep", { pattern: "Card", path: "src/**/*.tsx" }],
+    ["ffgrep", { pattern: "key", path: "/etc" }],
+    ["ffgrep", { pattern: "key", path: "../" }],
+    ["fffind", { pattern: "App" }],
+    ["fffind", { pattern: "", path: "{src,lib}/**" }],
+    ["fffind", { pattern: "auth", path: "~/Desktop" }],
+    ["ffgrep", { pattern: "Card", path: "src/App.tsx" }],
+    ["ffgrep", { pattern: "Card", path: "src/new/Card.tsx" }],
+    ["fff-multi-grep", { patterns: ["Card", "card"] }],
+    ["fff-multi-grep", { patterns: ["Card"], constraints: "*.{ts,tsx} !test/" }],
+    ["fff-multi-grep", { patterns: ["Card"], constraints: "!~/.pi/" }],
+  ] as const) {
+    for (const name of FFF_NAMES[tool]) assert.equal(call(name, input), undefined, `${name} ${JSON.stringify(input)}`);
+  }
+  for (const [tool, input] of [
+    ["ffgrep", { pattern: "key", path: "~/.pi/agent" }],
+    ["ffgrep", { pattern: "key", path: `${pi}/agent/auth.json` }],
+    ["ffgrep", { pattern: "key", path: "~/.PI/" }],
+    ["ffgrep", { pattern: "key", path: "~" }],
+    ["ffgrep", { pattern: "key", path: "/" }],
+    ["ffgrep", { pattern: "key", path: "~/.p*/agent" }],
+    ["ffgrep", { pattern: "key", path: "~/{.pi,x}/agent" }],
+    ["ffgrep", { pattern: "key", path: "~/**/*.json" }],
+    // A file's own folder, or the nearest there is, is indexed, and a bare name found in any folder below it.
+    ["ffgrep", { pattern: "key", path: "~/auth.json" }],
+    ["ffgrep", { pattern: "key", path: "~/no-such-folder/auth.json" }],
+    ["ffgrep", { pattern: "key", path: join(homedir(), "..", "auth.json") }],
+    ["ffgrep", { pattern: "key", path: "../../../../../../../../../../auth.json" }],
+    ["ffgrep", { pattern: "key", path: "../../../../../../../../../.." + pi }],
+    ["fffind", { pattern: "auth", path: "~/.pi" }],
+    ["fffind", { pattern: "auth", path: homedir() }],
+    ["fffind", { pattern: "auth", path: `file://${pi}` }],
+    ["fff-multi-grep", { patterns: ["key"], constraints: "*.json ~/.pi/" }],
+    ["fff-multi-grep", { patterns: ["key"], constraints: "~" }],
+  ] as const) {
+    for (const name of FFF_NAMES[tool]) assert.ok(blocked(call(name, input)), `${name} ${JSON.stringify(input)}`);
+  }
+  assert.ok(blocked(call("grep", { pattern: "key", path: 42 })));
+  assert.ok(blocked(call("multi_grep", { patterns: ["key"], constraints: ["~/.pi"] })));
+});
+
+test("in pi, a path with blanks around it, which pi-fff trims (and pi's tools may), is turned away by every tool: none reaches ~ or / that way (ticket 92)", () => {
+  for (const path of [" ~", "\t~/.pi", " /", `\n${homedir()}`, "~/.pi/agent/auth.json ", " src/App.tsx"]) {
+    for (const [tool, input] of [
+      ["grep", { pattern: "key", path }],
+      ["find", { pattern: "auth", path }],
+      ["ffgrep", { pattern: "key", path }],
+      ["read", { path }],
+      ["ls", { path }],
+      ["write", { path, content: "x" }],
+    ] as const) {
+      assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+    }
+  }
+});
+
+const DATA = "/System/Volumes/Data";
+test("in pi, pi's own folder by another name for it, macOS's firmlink of the Data volume, is pi's own folder: by device and inode, and the folders above it are above it (ticket 92)", { skip: !existsSync(DATA + homedir()) && `no ${DATA} here` }, () => {
+  const home = DATA + homedir();
+  for (const [tool, input] of [
+    ["read", { path: `${home}/.pi/agent/auth.json` }],
+    ["read", { path: `${home}/.PI/agent/auth.json` }],
+    ["ls", { path: `${home}/.pi` }],
+    ["write", { path: `${home}/.pi/agent/settings.json`, content: "{}" }],
+    ["grep", { pattern: "key", path: `${home}/.pi/agent` }],
+    ["grep", { pattern: "key", path: home }],
+    ["grep", { pattern: "key", path: `${DATA}/Users` }],
+    ["grep", { pattern: "key", path: DATA }],
+    ["grep", { pattern: "key", path: "/System" }],
+    ["find", { pattern: "auth", path: `${home}/.p*/agent` }],
+    ["find", { pattern: "auth", path: `${home}/auth.json` }],
+  ] as const) {
+    assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+  }
+  for (const command of [`cat ${home}/.p*/agent/auth.json`, `grep -r key ${DATA}`, `grep -rn key ${home}`, `find ${DATA}/Users -name auth.json`]) {
+    assert.ok(blocked(call("bash", { command })), command);
+  }
+  assert.equal(call("read", { path: `${home}/x.txt` }), undefined);
+  assert.equal(call("ls", { path: home }), undefined);
 });
 
 test("in pi, a cd stays in the project, its folder by its real path, following the cds before it on the line; so a search with no path stays there too", () => {

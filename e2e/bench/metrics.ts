@@ -24,6 +24,8 @@ export interface ToolCall {
   output: string;
   /** How long it was, when the transcript gives only that (Cursor, for a long file read). */
   size?: number;
+  /** For one of fff's searches in pi (pi-fff, ticket 92), by the parameters the system prompt declares for its tool: grep and find in override mode, under the names of pi's own. */
+  fff?: boolean;
 }
 
 export interface Transcript {
@@ -33,6 +35,10 @@ export interface Transcript {
   responseModels: string[];
   /** The skills the Agent was given at the start, by name, as it says (Claude Code's init, pi's system prompt; Cursor says none). */
   skills: string[];
+  /** The tools pi was given at the start, by name, as its system prompt declares them: fff's among them (ticket 92). None for the others. */
+  tools: string[];
+  /** Of those, the ones that are fff's (pi-fff), by their parameters or their own names. */
+  fffTools: string[];
   toolCalls: ToolCall[];
   /** The Agent's last words: where the report is. */
   finalText: string;
@@ -47,7 +53,7 @@ export interface Transcript {
 type Event = Record<string, any>;
 
 function emptyTranscript(): Transcript {
-  return { model: null, responseModels: [], skills: [], toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
+  return { model: null, responseModels: [], skills: [], tools: [], fffTools: [], toolCalls: [], finalText: "", permissionDenials: 0, subagents: { calls: 0, models: [] }, apiRetries: 0 };
 }
 
 /** The events of a transcript; a line that is no JSON (a stray warning) is left out. */
@@ -133,10 +139,13 @@ function parseCursor(all: Event[]): Transcript {
 /**
  * pi tells each message as it starts, as it streams and as it ends; only the
  * end is the whole of it. The first is the system prompt, with the skills it
- * lists. The model is each answer's, as its provider and id: pi says nothing
- * of it before, and starts no subagent of its own (nor does the bench give it
- * an extension that does), so an answer on another model is a switch, and the
- * transcript names every model, which is no Agent's pinned one. Each tool
+ * lists and the tools it declares, fff's told from pi's own grep and find,
+ * whose names they take in override mode, by their parameters: fff's have
+ * `exclude` and `cursor`, pi's neither. The model is each answer's, as its
+ * provider and id: pi says nothing of it before, and starts no subagent of
+ * its own (nor does the bench give it an extension that does), so an answer
+ * on another model is a switch, and the transcript names every model, which
+ * is no Agent's pinned one. Each tool
  * call is in the answer that makes it, and what it got back in the tool
  * result after; one the bench's extension blocked is a tool result in error,
  * its text the bench's reason.
@@ -146,6 +155,7 @@ function parsePi(all: Event[]): Transcript {
   const byId = new Map<string, ToolCall>();
   const models = new Set<string>();
   const responseModels = new Set<string>();
+  const fffTools = new Set<string>();
   let prompted = false;
   for (const event of all) {
     if (event.type === "auto_retry_start") transcript.apiRetries++;
@@ -155,6 +165,9 @@ function parsePi(all: Event[]): Transcript {
       prompted = true;
       const listed = /<available_skills>([\s\S]*?)<\/available_skills>/.exec(message.sections?.skills ?? "")?.[1] ?? "";
       transcript.skills = [...listed.matchAll(/<name>([\s\S]*?)<\/name>/g)].map((match) => unescapeXml(match[1].trim()));
+      transcript.tools = (message.toolsAdded ?? []).map((tool: Event) => tool.name);
+      for (const tool of message.toolsAdded ?? []) if (FFF_TOOLS.test(tool.name) || (tool.parameters?.properties?.exclude && tool.parameters?.properties?.cursor)) fffTools.add(tool.name);
+      transcript.fffTools = [...fffTools];
     }
     if (message.role === "assistant") {
       const model = message.provider ? `${message.provider}/${message.model}` : message.model;
@@ -164,7 +177,7 @@ function parsePi(all: Event[]): Transcript {
       if (text.trim()) transcript.finalText = text;
       for (const part of message.content ?? []) {
         if (part.type !== "toolCall") continue;
-        const call: ToolCall = { name: part.name, ...where(part.arguments ?? {}), output: "" };
+        const call: ToolCall = { name: part.name, ...where(part.arguments ?? {}), ...(fffTools.has(part.name) && { fff: true }), output: "" };
         byId.set(part.id, call);
         transcript.toolCalls.push(call);
       }
@@ -194,11 +207,11 @@ function modelsIn(value: unknown): string[] {
   return Object.entries(value).flatMap(([key, inner]) => (key === "model" && typeof inner === "string" ? [inner] : modelsIn(inner)));
 }
 
-/** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on. */
+/** A tool's input, as far as the bench looks at it: the command it runs, or the path it works on (fff-multi-grep's: the files it is held to). */
 function where(input: Event): Pick<ToolCall, "command" | "path" | "skill" | "folder"> {
   if (typeof input.command === "string") return { command: input.command };
   if (typeof input.skill === "string") return { skill: input.skill };
-  const path = input.file_path ?? input.path;
+  const path = input.file_path ?? input.path ?? input.constraints;
   if (typeof path === "string") return { path };
   // Cursor's glob names the folder it looks in as its target.
   return typeof input.targetDirectory === "string" ? { folder: input.targetDirectory } : {};
@@ -236,18 +249,56 @@ function thirdKindCommands(command: string): string[] {
 }
 
 const SEARCH_TOOLS = /^(grep|glob|search|codebase_?search|semantic_?search|file_?search|ripgrep|find)$/i;
+/** fff's search tools in pi (pi-fff, ticket 92) by the names that are theirs alone: beside pi's own (when fff does not index the folder pi runs in), and multi_grep in override mode. */
+const FFF_TOOLS = /^(ffgrep|fffind|fff-multi-grep|multi_grep)$/;
 const SHELL_SEARCH = /(^|[\s;&|(])(rg|ag|ack|fd|find|git\s+grep)\s|(^|[\s;&|(])grep\s+(-\w*[rR]\w*|--recursive)\b/;
+
+/** A path that names one file: by its extension. */
+const ONE_FILE = /\.[a-z0-9]+$/i;
+/** One that fff takes for a file (query.ts, normalizePathConstraint): an extension of a letter, then up to nine letters or digits. `src/v1.2` is a folder. */
+const FFF_ONE_FILE = /\.[a-zA-Z][a-zA-Z0-9]{0,9}$/;
 
 /**
  * A search over the project or a folder of it: a search tool not given one
  * file, or a shell command that searches folders (`rg`, `find`, `git grep`,
  * `grep -r`). Goal: none (docs/goals.md, Light): the change notes say where
- * each change goes.
+ * each change goes. fff's (pi's grep and find with pi-fff, ffgrep, fffind,
+ * and the multi-greps) are judged alike, but their path may be a glob
+ * (`*.tsx`, `src/**`), which names no one file: grep or find with no path, a
+ * folder or a glob, and a multi-grep with no constraint, or any
+ * but one file (`*.{ts,tsx} !test/`), search the project or a folder of it;
+ * given one file, by a path with an extension and no glob, they do not
+ * (a bare name, `App.tsx`, looks in every folder for it, as a search for
+ * that one file).
  */
 export function isRepoWideSearch(call: ToolCall): boolean {
   if (call.command !== undefined) return SHELL_SEARCH.test(call.command);
+  if (call.fff || FFF_TOOLS.test(call.name)) {
+    const path = call.path?.trim();
+    // A glob, or more than one, or one left out.
+    return path === undefined || /[*?[{\s!]/.test(path) || !FFF_ONE_FILE.test(path);
+  }
   if (!SEARCH_TOOLS.test(call.name)) return false;
-  return call.path === undefined || !/\.[a-z0-9]+$/i.test(call.path);
+  return call.path === undefined || !ONE_FILE.test(call.path);
+}
+
+/** pi's search tools that pi-fff takes the place of, in override mode, under their names, or under its own. */
+const REPLACED = ["grep", "find", "ffgrep", "fffind"];
+
+/**
+ * Why a run's tools are not what its record says it ran with, or null: one
+ * that had pi-fff (`extensions`, from the run's record) whose transcript
+ * declares no tool of fff's, or declares grep or find not as fff's (pi-fff
+ * changed their parameters, say), would be judged by pi's own rule, wrong
+ * in silence. The bench stops on it, as on another model.
+ */
+export function fffProblem(extensions: Record<string, string | null> | undefined, transcript: Transcript): string | null {
+  if (!extensions || !("pi-fff" in extensions)) return null;
+  const ran = `ran with pi-fff ${extensions["pi-fff"]}`;
+  const notFff = transcript.tools.filter((tool) => REPLACED.includes(tool) && !transcript.fffTools.includes(tool));
+  if (notFff.length) return `${ran}, but its transcript declares ${notFff.join(", ")} not as fff's (no exclude and cursor parameters)`;
+  if (!transcript.fffTools.length) return `${ran}, but its transcript declares no tool of fff's`;
+  return null;
 }
 
 /** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/03kind/skill/SKILL.md`), which an Agent with none in the project may find. */

@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./la
 import { colorReader } from "./paint";
 import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Side } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { pastShare, placedFrom, roomOf, sideMoves, sideShareOf } from "./placed-from";
+import { extentOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -169,7 +169,7 @@ export function createEditor(
     const from = placedFrom(el, along.axis);
     if (!from.centered || from.edge !== along.edge) return null;
     const share = earlier?.centeredOn ? earlier.centeredOn.after : sideShareOf(el, along.axis, along.edge);
-    return share && { from, share, room: roomOf(el, along.axis), side: SIDES[along.axis][along.edge] };
+    return share && { from, share, room: extentOf(el, along.axis), side: SIDES[along.axis][along.edge] };
   };
 
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
@@ -287,11 +287,11 @@ export function createEditor(
    * still, placed relative or sticky, and how (ticket 84). A layer `centered`
    * on where its side places it is placed so by a share of its container,
    * which no layout moves it by: the check looks at it as placed absolute
-   * there, as before. Read from each view's computed `position` and what is
-   * declared, as it shows the layer now: no view is brought up to date or
-   * laid out (ADR 0011), as the change does not change what places the layer
-   * there. A view in the desktop view's range is the desktop view's, where
-   * the change is made.
+   * there, as before. Read from each view's computed `position`, the
+   * direction the browser goes by there (ticket 89) and what is declared, as
+   * it shows the layer now: no view is brought up to date or laid out (ADR
+   * 0011), as the change does not change what places the layer there. A view
+   * in the desktop view's range is the desktop view's, where the change is made.
    */
   const viewsMovedOtherwise = (layer: Layer, side: Side, centered: boolean) => {
     const placedOtherwiseAt: Breakpoint[] = [];
