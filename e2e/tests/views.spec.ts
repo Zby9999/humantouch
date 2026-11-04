@@ -564,7 +564,10 @@ test("a view deleted, the others then showing whole, and added back: each time, 
   await newWidth.press("Enter");
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
   // The phone view out of sight again, once it is as tall as what it shows.
-  await expect.poll(async () => (await viewEdges(page)).views.find((view) => view.title === "Phone 390")!.bottom).toBeGreaterThan((await viewEdges(page)).bottom);
+  await expect(async () => {
+    const edges = await viewEdges(page);
+    expect(edges.views.find((view) => view.title === "Phone 390")!.bottom).toBeGreaterThan(edges.bottom);
+  }).toPass({ timeout: 5_000 });
   await expect.poll(redrawn).toBeGreaterThanOrEqual(3);
   const settled = await redrawn();
   await page.waitForTimeout(400);

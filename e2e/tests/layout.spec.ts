@@ -54,7 +54,7 @@ test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a 
   await expect(sizing).toHaveValue("hug");
 
   await sizing.selectOption("fill");
-  await expect.poll(() => widthOf(page, `${HERO} > button`)).toBe(await widthOf(page, HERO));
+  await expect(async () => expect(await widthOf(page, `${HERO} > button`)).toBe(await widthOf(page, HERO))).toPass({ timeout: 5_000 });
 
   await setField(page, "Width", "200");
   await expect(sizing).toHaveValue("fixed");
@@ -191,7 +191,9 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await page.getByRole("button", { name: "Play", exact: true }).click();
 
   const button = canvas(page).locator(`${HERO} > button`);
-  await expect.poll(() => button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await canvas(page).locator(HERO).evaluate((el) => el.getBoundingClientRect().width));
+  await expect(async () =>
+    expect(await button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await canvas(page).locator(HERO).evaluate((el) => el.getBoundingClientRect().width)),
+  ).toPass({ timeout: 5_000 });
   await expect(canvas(page).locator("article").first()).toHaveCSS("display", "flex");
   await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "8px");
 });

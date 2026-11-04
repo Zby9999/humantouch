@@ -106,9 +106,11 @@ test("with ⌘ held, it does not snap: the lines go as ⌘ is pressed, and come 
   await page.keyboard.up(mod);
 
   // Where it was let go, 3 screen px off the mark's edge.
-  const x = (await placeIn(desktop(page), "#board > button")).x;
-  expect(Math.abs(x - 100)).toBeGreaterThanOrEqual(1);
-  await expect.poll(async () => Math.abs(x - 100 - 3 / (await zoomOf(desktop(page))))).toBeLessThanOrEqual(2);
+  await expect(async () => {
+    const x = (await placeIn(desktop(page), "#board > button")).x;
+    expect(Math.abs(x - 100)).toBeGreaterThanOrEqual(1);
+    expect(Math.abs(x - 100 - 3 / (await zoomOf(desktop(page))))).toBeLessThanOrEqual(2);
+  }).toPass({ timeout: 5_000 });
 });
 
 test("dragged to as far from two layers in a row as they are from each other, it snaps there, each equal space marked in magenta with its size", async ({ page }) => {

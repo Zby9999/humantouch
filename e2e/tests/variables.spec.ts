@@ -22,16 +22,6 @@ async function selectRow(page: Page, name: string, nth = 0) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).nth(nth).click();
 }
 
-/**
- * Waits for the project's Variables to be in. They come after the canvas; the
- * panel's fields are then drawn anew, each beside its variable button, and a
- * click in a field before that is lost: what is typed next lands before its
- * value instead of over it. On a busy machine that took more than a second (ticket 93).
- */
-async function variablesIn(page: Page) {
-  await design(page).locator(".tk-variable-button, .tk-variable-chip").first().waitFor();
-}
-
 /** A computed style of every card on the canvas, in page order. */
 function cardStyles(page: Page, property: "backgroundColor" | "paddingTop" | "paddingRight" | "borderTopLeftRadius" | "boxShadow") {
   return canvas(page)
@@ -208,7 +198,6 @@ test("a shadow's color takes a color Variable from the color picker, shown by na
 test("typing part of a name in a field lists its group's Variables that have it, under the field: arrows choose, Enter picks, Esc puts the value back", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
-  await variablesIn(page);
   const matching = page.getByRole("listbox", { name: "Matching variables" });
 
   // The fill color: the project's brand colors, in its order.
@@ -258,7 +247,6 @@ test("typing part of a name in a field lists its group's Variables that have it,
 test("a value typed close to a Variable of the field's group shows its name in the field, quietly: a click makes it the Variable, typing on leaves it be", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
-  await variablesIn(page);
 
   // 71px is 1px from section, 72px.
   const top = design(page).getByRole("textbox", { name: "Padding top" });

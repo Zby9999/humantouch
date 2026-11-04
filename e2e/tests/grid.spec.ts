@@ -84,7 +84,8 @@ test("a Grid shows its columns and gaps in the panel; changed there, every view 
 
   // Two cells to a row: the third card starts the second row.
   const [first, third] = [desktop(page).contentFrame().locator("article").nth(0), desktop(page).contentFrame().locator("article").nth(2)];
-  await expect.poll(async () => (await third.boundingBox())!.x).toBeCloseTo((await first.boundingBox())!.x, 0);
+  // Both read afresh each time: the first card may still be moving too.
+  await expect(async () => expect((await third.boundingBox())!.x).toBeCloseTo((await first.boundingBox())!.x, 0)).toPass({ timeout: 5_000 });
 
   await expect(await changeRows(page)).toHaveText([/Columns.*Grid.*3 → 2/, /Column gap.*Grid.*16px → 40px/]);
   await page.keyboard.press("Escape");

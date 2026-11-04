@@ -35,8 +35,9 @@ test.afterAll(() => {
 const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/03kind/dist/cli.js"), ...args], project);
 
 test("init installs 03Kind into a Next.js project: with webpack, the toggle is on the page and the markers in it; the rest of the editor layer loads as edit mode is first entered", async ({ page }) => {
-  // Room for the waits on Next.js below.
-  test.setTimeout(270_000);
+  // Room for the waits on Next.js below: 150 s for its cold start and 60 s for edit mode's first compile, and
+  // 60 s left for `init` (an install from the packed package), the checks between and stopping the server.
+  test.setTimeout(150_000 + 60_000 + 60_000);
   const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
   expect(output).toContain("03Kind (Next.js, pnpm)");
   expect(output).toContain("Installed.");

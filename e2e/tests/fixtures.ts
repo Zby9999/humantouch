@@ -1,4 +1,4 @@
-import { expect, test as base, type BrowserContext, type Locator, type Page, type Request } from "@playwright/test";
+import { expect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
 export { expect } from "@playwright/test";
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
@@ -15,7 +15,7 @@ export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolea
   keepRoundInMemory: [true, { option: true }],
   showLayers: [true, { option: true }],
   context: async ({ context, keepRoundInMemory, showLayers }, use) => {
-    watchVariables(context);
+    await watchVariables(context);
     if (keepRoundInMemory) await keepRoundIn(context);
     if (showLayers) await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
     await use(context);
@@ -58,53 +58,71 @@ export async function keepRoundIn(context: BrowserContext) {
 }
 
 /**
- * Waits for the canvas to be in place. Entering edit mode, the page shrinks
- * into the canvas first; a view's layers are on the page before that ends, but
- * a press or a drag made meanwhile lands on the page shrinking, not on them.
- * Quick on an idle machine, it can take seconds on a busy one (ticket 93).
+ * Waits, once edit mode has been entered and a view shows, for the canvas to
+ * take presses: what really waits is `variablesIn`, the project's Variables in
+ * and drawn with (ticket 93).
+ *
+ * Also waits for the canvas to travel into place, which matters only with
+ * motion on. The tests run with reduced motion (`reducedMotion` in the
+ * config), and then the mode switch only fades the shell in: nothing travels,
+ * `.tk-viewport.is-travelling` is never there, and the wait returns at once.
+ * With motion on, the page shrinks into the canvas, and a press or a drag made
+ * meanwhile lands on the page shrinking. The one test calling this with motion
+ * on (views.spec.ts, the drag in the phone view) waits for the phone view
+ * first, which is drawn only once the travel has ended; the wait is for a test
+ * that turns motion on and waits for the desktop view, which travels.
  */
 export async function canvasInPlace(page: Page) {
   await page.locator(".tk-viewport.is-travelling").waitFor({ state: "detached" });
   await variablesIn(page);
 }
 
-/** Per page, the requests for the project's Variables made, and those not yet answered. */
-const variablesAsked = new WeakMap<Page, { made: number; open: number }>();
+/** Where the page counts its requests for the project's Variables (`watchVariables`). */
+const VARIABLES_ASKED = "__e2eVariablesAsked";
 
-const asksForVariables = (url: string) => {
-  const { hostname, pathname } = new URL(url);
-  return hostname === "127.0.0.1" && pathname === "/variables";
-};
-
-function watchVariables(context: BrowserContext) {
-  const count = (url: string, page: Page | null, made: number, open: number) => {
-    if (!page || !asksForVariables(url)) return;
-    const seen = variablesAsked.get(page) ?? { made: 0, open: 0 };
-    variablesAsked.set(page, { made: seen.made + made, open: seen.open + open });
-  };
-  const pageOf = (request: Request) => {
-    try {
-      return request.frame().page();
-    } catch {
-      return null;
-    }
-  };
-  context.on("request", (request) => count(request.url(), pageOf(request), 1, 1));
-  context.on("requestfinished", (request) => count(request.url(), pageOf(request), 0, -1));
-  context.on("requestfailed", (request) => count(request.url(), pageOf(request), 0, -1));
+/**
+ * Has the page count its requests for the project's Variables not yet read
+ * through, in the page itself: a count read there has every request
+ * the page made so far, where Playwright's request events can still be on
+ * their way to the test. Each new document starts at none.
+ */
+async function watchVariables(context: BrowserContext) {
+  await context.addInitScript((name) => {
+    if (window !== window.top) return;
+    const asked = { open: 0 };
+    (window as unknown as Record<string, typeof asked>)[name] = asked;
+    const fetch = window.fetch;
+    window.fetch = (input, init) => {
+      const response = fetch.call(window, input, init);
+      const { hostname, pathname } = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (hostname !== "127.0.0.1" || pathname !== "/variables") return response;
+      asked.open++;
+      // Answered once the whole body is in, as the editor layer reads it.
+      void response
+        .then((answer) => answer.clone().text())
+        .catch(() => {})
+        .finally(() => asked.open--);
+      return response;
+    };
+  }, VARIABLES_ASKED);
 }
 
 /**
- * Waits for the project's Variables to be in, once edit mode has asked for
- * them. They come in after the canvas; the Design panel's fields are then
- * drawn anew, each beside its Variables button, and a field filled or clicked
- * before that loses it: an Enter pressed next applies nothing. On a busy
- * machine they took seconds (ticket 93).
+ * Waits for the project's Variables to be in, once edit mode has been entered.
+ * They come in after the canvas; the Design panel's fields are then drawn
+ * anew, each beside its Variables button, and a field filled or clicked before
+ * that loses it: an Enter pressed next applies nothing. On a busy machine they
+ * took seconds (ticket 93).
+ *
+ * The Shell asks for them as it mounts (`useState(loadVariables)`), when the
+ * dev server set up the local service: the request is made before the canvas
+ * is up, so by the time a view shows the page has counted it. Not every entry
+ * asks: entered again while edit mode is still leaving, the Shell stays, its
+ * Variables in already; then none is open, and this returns at once.
  */
 async function variablesIn(page: Page) {
-  const seen = () => variablesAsked.get(page) ?? { made: 0, open: 0 };
-  if (!seen().made) return;
-  await expect.poll(() => seen().open, { message: "the project's Variables are in" }).toBe(0);
+  const open = () => page.evaluate((name) => (window as unknown as Record<string, { open: number } | undefined>)[name]?.open ?? 0, VARIABLES_ASKED);
+  await expect.poll(open, { message: "the project's Variables are in" }).toBe(0);
   // Then drawn with them.
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }

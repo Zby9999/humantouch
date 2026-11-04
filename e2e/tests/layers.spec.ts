@@ -524,7 +524,7 @@ test.describe("the hover outline", () => {
     await page.mouse.move(h1.x, h1.y);
     const outermost = await rect(hover(page));
     await page.keyboard.down("Meta");
-    await expect.poll(() => rect(hover(page))).toEqual(await rect(canvas(page).locator("h1")));
+    await expect(async () => expect(await rect(hover(page))).toEqual(await rect(canvas(page).locator("h1")))).toPass({ timeout: 5_000 });
     await page.keyboard.up("Meta");
     await expect.poll(() => rect(hover(page))).toEqual(outermost);
 
