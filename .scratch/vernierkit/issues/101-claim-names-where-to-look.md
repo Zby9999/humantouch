@@ -12,7 +12,7 @@
 
 **Blocked by:** 无
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 「This usage only」写明其他使用处的文件和行
 - [x] 写明项目有没有类名合并工具（有的话是哪个、在哪）
@@ -160,3 +160,25 @@
 - 类名合并工具：cards-style、fill-gap-brief、phone-breakpoints（Claude 搜 `twMerge|clsx`），r18-style-variables（只拼接的 `cn`）。
 - 正文样式：put-back-and-new-text（Claude 搜 Georgia）。
 - `echo`：pi 的被拦次数（88 里 34 次中有 18 次带它），各场景都会有。比较时看「不含被拦」那一列。
+
+### 合并前验证（线的会话，2026-11-05）
+
+- 分支同步 main（0ffc7dc，合进 5363ebf）后：`pnpm typecheck` 通过；`pnpm test` vitest 975 通过、1 跳过，node 125 通过；`TK_E2E_PORT=5600 pnpm test:e2e` 422 通过、1 跳过、0 挂、0 抖；`--scripted` 15/15 ✓；`--dry` 24/24 ✓。
+- 审查（effort medium，按规划会话转达的设计师决定，审查也用 medium）修了 6 处，都在 101 的 `where-to-look.ts` / `cli.ts`（bf640e2、3dd723b，见 101 的「审查修正」）；修完 `--dry --claim-out` 和审查前一字不差。
+- `claim` 长度（字节，同一台机器、同一种 `--claim-out` 目录；子 agent 表里「before」那列是另一次输出，绝对数差几十字节，增减一样）：
+
+| 场景 | 两张 ticket 之前 | 合并前 |
+|---|---|---|
+| cards-style | 6522 | 6569 |
+| data-and-text | 5209 | 5236 |
+| dissolve-place-frame | 7283 | 7404 |
+| fill-gap-brief | 6913 | 6920 |
+| next-client-stack-breakpoint | 9626 | 9613 |
+| next-server-usage-text | 8694 | 8771 |
+| phone-breakpoints | 8051 | 8058 |
+| put-back-and-new-text | 6827 | 6865 |
+| r18-style-variables | 7480 | 7600 |
+| third-party | 5578 | 5565 |
+
+  其余 14 个场景没变。`diff -r` 只有 100 的那一行和 101 的三种信息。
+- 复验：规划会话在 97–101 都合进 main 后按 88 的次数重跑全部 24 个场景（设计师 2026-11-05 定），这条线不跑。
