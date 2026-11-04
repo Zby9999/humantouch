@@ -1,6 +1,6 @@
 # 88: 落地验收：Claude 和 pi 跑全部标准场景
 
-**What to build:** Agent 验收的前一半（ticket 24 原来的落地部分）。用测量台让 Claude（Sonnet 5.5，effort high）和无头 pi（DeepSeek v4.1 flash，command-code）各跑全部标准场景（85、86、87 补齐之后的那一套），按 docs/goals.md 分别出数，作为第一版在这两家 Agent 上的落地判定。结论决定要不要改 Skill 措辞，然后才发布到 npm。
+**What to build:** Agent 验收的前一半（ticket 24 原来的落地部分）。用测量台让 Claude（Sonnet 5.5，effort medium；原定 high，设计师 2026-11-05 改）和无头 pi（DeepSeek v4.1 flash，command-code）各跑全部标准场景（85、86、87 补齐之后的那一套），按 docs/goals.md 分别出数，作为第一版在这两家 Agent 上的落地判定。结论决定要不要改 Skill 措辞，然后才发布到 npm。
 
 参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准，用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策（ADR 0006、0012、0013）。
 
@@ -52,6 +52,13 @@
 - 前置都做完了（85、86、87、90、92、95）。现在开线，先做跑前检查一和二要准备的、算好总次数和用时来问设计师；真实跑等 93、96 都合进 main、机器闲下来再跑（开跑前看负载和合盖状态）。
 - 考虑过的别的做法：等 93、96 都合完再开线；现在开线、准备好就跑，不等机器闲。
 - Skill 要改的措辞保持英文（设计师 2026-11-04 定，见 ticket 86「设计师确认」）。
+
+## 设计师决定（2026-11-05，次数和 effort）
+
+- 每家 Agent 每个标准场景都跑 3 次：24 × 2 × 3 = 144 次，不再按「两次不一样才补第 3 次」。
+- Claude 的 effort 压到 medium（Sonnet 5.5，原定 high）；pi 照旧 command-code 的 DeepSeek v4.1 flash，`--thinking high`。结论按这两个设置出数，和之前 effort high 跑的数不直接比。
+- 现在开跑：93、96 都已合进 main（7f876c5），负载 5 左右，别的线都停着。先做跑前检查二（Claude 单跑一次 `flow-undo-last`，被权限拦下的次数要是 0），过了就接着跑完，不再问设计师；没过就停下修名单、再问。97、98 等这一轮跑完再开线。
+- 考虑过的别的做法：各跑 2 次、两次不一样补第 3 次（约 1.5–2.5 小时）；各跑 1 次；effort 照原定 high。
 
 ## Comments
 
