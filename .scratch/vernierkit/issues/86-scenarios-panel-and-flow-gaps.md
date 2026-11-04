@@ -98,3 +98,5 @@
 7. `runOnce` 照 main 原来的做法：固定等 3 秒，再刷新一次就量。Next 编译慢的时候，可能把改动记成没显示（`endState` 可以拿过来用）。
 8. 列出没显示的改动时，是按位置把记录里的改动和现在的场景配对的，只核对种类。以后调整场景里改动的顺序要注意。
 9. 负载高时 e2e 有抖动：`off-canvas.spec.ts:173`、`breakpoints.spec:63`、`undo.spec.ts:80`（这条不在已知清单里），单独重跑都过了。交给 93。
+
+**合并前最后一遍（同步到 main f56d1fe，含 ticket 90 之后）**：`pnpm build`、`pnpm typecheck` 通过；`pnpm test`：vitest 898 通过、1 个跳过，node 121 通过；`--dry` 24/24 ✓；`--scripted` 15/15 ✓（90 给 `data-and-text` 也加了 `apply`，它那条改字现在能核对了，这是 90 改的）；全套 e2e 418 通过、1 个跳过、0 失败。`git diff origin/main...HEAD -- packages examples` 为空。
