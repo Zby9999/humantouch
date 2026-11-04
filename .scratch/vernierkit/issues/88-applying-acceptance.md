@@ -4,7 +4,7 @@
 
 参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准，用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策（ADR 0006、0012、0013）。
 
-**Blocked by:** 85、86、87、92
+**Blocked by:** 85、86、87、90、92
 
 **Status:** ready-for-agent
 
