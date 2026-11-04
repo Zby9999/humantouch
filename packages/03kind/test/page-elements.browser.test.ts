@@ -292,6 +292,18 @@ describe("a layer deleted, two siblings alike (review)", () => {
     expect(checkChange(livePage(ITEMS([5], ["Two"])), round[0], round)).toEqual(UNTOLD);
   });
 
+  test("deleted, one alike in another list further down the file: shown, the other not taken for it", () => {
+    const LISTS = (first: [number, string][], down: number) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${first.map(([line, words]) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words}</li>`).join("")}</ul>
+  <ol data-tk-loc="src/App.tsx:${8 - down}:5" ${chain(APP)}><li data-tk-loc="src/App.tsx:${9 - down}:7" ${chain(APP)}>Two</li></ol>
+</body>`;
+    const { doc, editor, layerOf, round } = openCanvas(LISTS([[5, "One"], [6, "Two"]], 0));
+    editor.remove(layerOf(doc.querySelectorAll("ul > li")[1]));
+    const changes = round();
+    expect(checkChange(livePage(LISTS([[5, "One"]], 1)), changes[0], changes)).toEqual({ outcome: "shown" });
+  });
+
   test("not deleted, a third written after both: the second, where it was, is there", () => {
     const round = secondDeleted();
     expect(checkChange(livePage(ITEMS([5, 6, 7], ["One", "Two", "New"])), round[0], round)).toEqual({ outcome: "not shown", actual: "there" });

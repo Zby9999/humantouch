@@ -237,9 +237,12 @@ function movedElementsOf(doc: Document, target: Target, canvas: () => SavedCanva
 /**
  * Where its markers have moved, every element on the live page now that may
  * be the layer of `target`: of its tag, written in its file by the same
- * components. None where they have not moved, its own elements there: what
- * a deleted layer's check asks (`elementsOf` finds the layer, or nothing,
- * where it cannot tell which it is; review of ticket 99).
+ * components, at a location some largest pairing of its file's markers
+ * (`movedTo`) takes its own to; every one of them with no canvas to go by.
+ * None where they have not moved, its own elements there, nor where every
+ * such pairing leaves it unpaired: what a deleted layer's check asks
+ * (`elementsOf` finds the layer, or nothing where it cannot tell which it
+ * is, and nothing is not gone; review of ticket 99).
  */
 export function mayBeOf(doc: Document, target: Target, canvas: () => SavedCanvas | null): Element[] {
   const tag = tagOf(target);
@@ -248,8 +251,11 @@ export function mayBeOf(doc: Document, target: Target, canvas: () => SavedCanvas
   const key = usageKey(target.loc!, target.chain);
   const there = [...keysIn(doc.documentElement, new Set([target.loc!]))];
   const saved = canvas();
-  const stayed = there.some(([el, k]) => k === key && el.localName === tag) && (!saved || !(markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) || usagesMoved(there, target, saved)));
-  return stayed ? [] : layersIn(doc, file, tag, componentsOf(target.chain), readUsageChain).map(({ el }) => el);
+  if (there.some(([el, k]) => k === key && el.localName === tag) && saved && !markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) && !usagesMoved(there, target, saved)) return [];
+  const components = componentsOf(target.chain);
+  const now = layersIn(doc, file, tag, components, readUsageChain);
+  const paired = saved && pairedWith(target.loc!, pointsIn(saved.doc(), file, layersIn(saved.doc(), file, tag, components, chainOf), chainOf), pointsIn(doc, file, now, readUsageChain));
+  return now.filter(({ origin }) => !paired || paired.to.includes(origin.loc!)).map(({ el }) => el);
 }
 
 /** The elements of `target`, of `tag`, written in `file`, where its locations went (`movedElementsOf`). */
@@ -338,7 +344,7 @@ const MAX_PAIRS = 25_000_000;
 /**
  * Where location `loc`, a marker in `before`, went in `after`: the marker
  * every largest pairing of the two, in order and kind by kind, pairs it
- * with. Null where one pairs it with another, or leaves it unpaired. But
+ * with (`pairedWith`). Null where one pairs it with another, or leaves it unpaired. But
  * where nothing up to it reads otherwise, it stayed put: an element of its
  * kind written after it, as a new layer of the round is, leaves two such
  * pairings, and this one is taken, as its marker took it before ticket 99.
@@ -347,12 +353,24 @@ const MAX_PAIRS = 25_000_000;
  */
 function movedTo(loc: string, before: Point[], after: Point[]): string | null {
   const i = before.findIndex((point) => point.loc === loc);
+  // Nothing before it, nor it, written otherwise: it stayed put, whatever came after it (but see above).
+  if (i >= 0 && i < after.length && before.slice(0, i + 1).every((point, x) => point.loc === after[x].loc && point.kind === after[x].kind)) return loc;
+  const paired = pairedWith(loc, before, after);
+  return paired && !paired.unpaired && paired.to.length === 1 ? paired.to[0] : null;
+}
+
+/**
+ * The markers in `after` that some largest pairing of `before` and `after`,
+ * in order and kind by kind, pairs location `loc` of `before` with, and
+ * whether some leaves it unpaired. Null where it is not in `before`, or the
+ * file is too large to weigh.
+ */
+function pairedWith(loc: string, before: Point[], after: Point[]): { to: string[]; unpaired: boolean } | null {
+  const i = before.findIndex((point) => point.loc === loc);
   const n = before.length;
   const m = after.length;
-  if (i < 0 || !m || n * m > MAX_PAIRS) return null;
+  if (i < 0 || n * m > MAX_PAIRS) return null;
   const same = (x: number, y: number) => before[x].kind === after[y].kind;
-  // Nothing before it, nor it, written otherwise: it stayed put, whatever came after it (but see above).
-  if (i < m && before.slice(0, i + 1).every((point, x) => point.loc === after[x].loc && same(x, x))) return loc;
   // The most pairs of the markers before it with after's first y, for each y.
   let head = new Int32Array(m + 1);
   for (let x = 0; x < i; x++) {
@@ -377,7 +395,7 @@ function movedTo(loc: string, before: Point[], after: Point[]): string | null {
     if (pairs > most) [most, to] = [pairs, [y]];
     else if (pairs === most) to.push(y);
   }
-  return most > unpaired && to.length === 1 ? after[to[0]].loc : null;
+  return { to: most >= unpaired ? to.map((y) => after[y].loc) : [], unpaired: unpaired >= most };
 }
 
 function parseLoc(loc: string | null): { file: string; line: number; column: number } | null {
