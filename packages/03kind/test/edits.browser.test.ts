@@ -7788,6 +7788,29 @@ describe("layers whose auto margins take up room do not jump (ticket 97)", () =>
     ]);
     const [dissolved] = changes.list();
     expect((dissolved.after as { layers: { x: number }[] }).layers.map((member) => member.x)).toEqual([175]);
+    // Drawn past its X by the margins it keeps, as recorded: none for its `auto` ones, which its X counts now (review).
+    expect((dissolved.after as { layers: { margins?: unknown }[] }).layers.map((member) => member.margins)).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  test("held by its maximum, centered across by its auto margins, resized, then undone and redone: its maximum goes back and comes again, its width `auto` throughout", async () => {
+    const { editor, layer, drawn, doc } = await open();
+    editor.resize(layer("tag"), { width: 70 });
+    editor.undo();
+    expect([drawn("tag", "x"), getComputedStyle(doc.getElementById("tag")!).maxWidth]).toEqual([
+      [
+        [175, 50],
+        [72.5, 50],
+      ],
+      "50px",
+    ]);
+    editor.redo();
+    expect([drawn("tag", "x"), getComputedStyle(doc.getElementById("tag")!).maxWidth]).toEqual([
+      [
+        [165, 70],
+        [62.5, 70],
+      ],
+      "70px",
+    ]);
   });
 });
 

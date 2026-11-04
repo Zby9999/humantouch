@@ -49,7 +49,7 @@ import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
+import { borderBox, compose, decompose, dissolve, inferStack, marginsAside, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
 import { heldCentered, placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
 import type { Steps } from "./undo-steps";
@@ -1071,7 +1071,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           const r = child.el.getBoundingClientRect();
           const { x, y } = spotIn(child.el, layer.el);
           const style = { ...absoluteAt({ x, y }), ...sizeOf(child.el) };
-          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAt(child.el) };
+          return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAside(child.el) };
         }),
       };
       const own = getComputedStyle(layer.el);
