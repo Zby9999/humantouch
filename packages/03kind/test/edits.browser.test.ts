@@ -12,7 +12,9 @@ import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
-import type { Fill, PropertyValues, Shadow, Stroke } from "../src/client/property-table";
+import { definitionOf, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/property-table";
+import { resizeStep, type ResizeSession } from "../src/client/canvas-resize";
+import type { Shown } from "../src/client/view-layout";
 import { breakpointMarks } from "../src/client/BreakpointMark";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
@@ -4286,6 +4288,16 @@ describe("changes to the structure are checked on the live page", () => {
     },
   );
 
+  test("a layer placed from its right edge that the canvas places absolute in a view by its `left` and its `right` both, as wide as it is set, centered there by auto margins, right to left: neither side wins there, so its `right` is taken to place nothing there, as left to right (ticket 94, review)", async () => {
+    const { views, editor, changes, layer } = open(rightToLeft(fromTheRight("left: 8px; margin-inline: auto")));
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    await views.add(phoneFrame, 390);
+    editor.set(layer("tag"), "x", editor.read(layer("tag"), "x")! - 20);
+    const [right] = changes.list();
+    expect([right.property, right.after, right.placedOtherwiseAt]).toEqual(["right", 32, [{ min: null, max: 800 }]]);
+  });
+
   test.each([
     ["left to right", (html: string) => html, { outcome: "shown" }],
     ["right to left", rightToLeft, { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
@@ -4618,6 +4630,38 @@ ${html}${body} style="margin: 0">
       }
     },
   );
+
+  test("a layer placed absolute by its `left` and its `right` both, held 50px wide by its `max-width`, right to left: resized from its left handle, its left edge goes as far as the handle, from where it is drawn (ticket 94, review)", () => {
+    const { doc, editor, layer } = open(rightToLeft(bothSides.replace("width: 50px", "max-width: 50px")));
+    const tag = doc.getElementById("tag")!;
+    const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+    const view = { boxOf: (l: Layer) => l.el.getBoundingClientRect(), elementOf: (el: Element) => el };
+    const session: ResizeSession = { pointerId: 1, layer: layer("tag"), in: { view } as unknown as Shown, handle: "w", from: { clientX: 0, clientY: 0 }, begun: null, stepped: false, set: new Set(), release: () => {} };
+    const step = resizeStep(session, editor, { clientX: 20, clientY: 0, metaKey: true, ctrlKey: false, shiftKey: false, altKey: false }, 1, 0)!;
+    expect(step.to).toEqual({ width: 30, x: 340 });
+    editor.resize(layer("tag"), step.to);
+    expect([drawn(), tag.getBoundingClientRect().width]).toEqual([expect.closeTo(340, 1), expect.closeTo(30, 1)]);
+  });
+
+  test("a layer placed absolute by its `left` and its `right` both, as wide as it is set, right to left, moved into another Frame: its place before is where it is drawn, so the move taken back puts it there again (ticket 94, review)", () => {
+    const html = rightToLeft(bothSides.replace("</div>", `</div><div id="other" ${loc("15:5")} style="position: relative; width: 200px; height: 100px"></div>`));
+    const { doc, editor, changes, layer } = open(html);
+    const tag = () => doc.getElementById("tag")!;
+    const drawn = () => tag().getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+    editor.move(layer("tag"), { parent: layer("other"), x: 10, y: 10 });
+    const [moved] = changes.list();
+    expect((moved.before as Place).absolute).toMatchObject({ x: 320, y: 8, placed: { x: { edge: "end", px: 30 } } });
+    editor.revert(moved.id);
+    expect(tag().parentElement!.id).toBe("board");
+    expect(drawn()).toBeCloseTo(320, 1);
+  });
+
+  test("a layer placed absolute whose `left` computes to `auto`, under an element not shown: its X reads as no number, as before ticket 94 (ticket 94, review)", () => {
+    const { doc } = open(bothSides.replace('<span id="tag"', '<div style="display: none"><span id="hidden" style="position: absolute">Hidden</span></div><span id="tag"'));
+    const hidden = doc.getElementById("hidden")!;
+    expect(getComputedStyle(hidden).left).toBe("auto");
+    expect([definitionOf("x").read(hidden, undefined as never), definitionOf("y").read(hidden, undefined as never)]).toEqual([NaN, NaN]);
+  });
 
   test("a layer placed absolute by its `left` and its `right` both, held 50px wide by its `max-width`, right to left: its X reads where the browser draws it, and an X typed lands it there, written as X, as the canvas reads its width from what is declared (ticket 94, ticket 89's 代定 2)", () => {
     const { doc, editor, changes, layer } = open(rightToLeft(bothSides.replace("width: 50px", "max-width: 50px")));

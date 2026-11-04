@@ -509,12 +509,16 @@ export function declaredValue(el: Element, property: string): string {
 /**
  * An absolute layer's place along `axis`: how far its left or top edge is
  * from its container's, its `left` or `top`. Given both its `left` and its
- * `right`, and too large for them to both place it, the browser may go by its
- * `right` instead (right to left, ticket 89): then it is where that draws it,
- * as the page's check reads it (`offsetPlacing`, ticket 94). Where the freezer
- * pinned it, it was shifted with the page's scroll: shifted back, it reads as the page has it.
+ * `right`, more than it can keep, the browser may go by its `right` instead
+ * (right to left, ticket 89): then it is where that places it, as the page's
+ * check reads it (`offsetPlacing`, ticket 94). A side that computes to no
+ * length (`auto`, under an element not shown) reads as none, NaN. Where the
+ * freezer pinned it, it was shifted with the page's scroll: shifted back, it
+ * reads as the page has it.
  */
 function offsetOf(el: Element, axis: Axis): number {
+  const side = PLACING_SIDES[axis].start;
+  if (Number.isNaN(parseFloat(getComputedStyle(el).getPropertyValue(side)))) return NaN;
   return round(offsetPlacing(el, axis, "start") - pinOffsetOf(el)[axis === "x" ? 0 : 1]);
 }
 
