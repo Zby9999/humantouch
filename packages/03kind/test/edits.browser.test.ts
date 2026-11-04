@@ -7257,3 +7257,143 @@ describe("new words, as the page checks them (ticket 90)", () => {
     expect(uncheckable(words, [maker, words])).toBe("the layer is new this round: the page checks its words with the change that makes it (change 1)");
   });
 });
+
+/**
+ * Ticket 95: the changes the page does not check that fell to the reason for
+ * the structure ("of the changes to the structure, only reorders, …"): each
+ * where that reason is wrong for it gets one of its own; where it is right, it
+ * stays word for word. The page checks none of them more than before.
+ */
+describe("why the page cannot check a change to the structure (ticket 95)", () => {
+  const STRUCTURE = "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
+  const LOOP = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
+  const item = `data-tk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+  const LIST = `<!DOCTYPE html>
+    <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column; position: relative; width: 200px; height: 200px">
+      <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
+    </ul>
+    <div id="board" ${at("13:5")} style="width: 300px; height: 200px"></div>`;
+  /** The reason of the round's only change, or of its last. */
+  const reasonOf = (changes: { list(): Change[] }) => uncheckable(changes.list().at(-1)!, changes.list());
+
+  test("one of a loop's instances alone deleted, copied or moved: the change is to the data, and the page cannot tell the instances apart", () => {
+    const deleted = openCanvas();
+    deleted.editor.remove(deleted.layerOf(deleted.cards[1]));
+    expect(deleted.changes.list()[0]).toMatchObject({ kind: "delete", data: true });
+    expect(reasonOf(deleted.changes)).toBe(LOOP);
+
+    const copied = openCanvas();
+    copied.editor.duplicate(copied.layerOf(copied.cards[0]));
+    expect(copied.changes.list()[0]).toMatchObject({ kind: "duplicate", data: true });
+    expect(reasonOf(copied.changes)).toBe(LOOP);
+
+    const reordered = openCanvas(LIST);
+    const li = (canvas: typeof reordered, n: number) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.querySelectorAll("li")[n])!;
+    const list = (canvas: typeof reordered) => find(canvas.editor.tree().root, (l) => l.el.id === "list")!;
+    reordered.editor.move(li(reordered, 1), { parent: list(reordered), index: 0 });
+    expect(reordered.changes.list()[0]).toMatchObject({ kind: "move", data: true });
+    expect(reasonOf(reordered.changes)).toBe(LOOP);
+
+    const placed = openCanvas(LIST);
+    placed.editor.move(li(placed, 2), { parent: list(placed), x: 20, y: 30 });
+    expect(placed.changes.list()[0]).toMatchObject({ kind: "move", data: true, after: { absolute: { x: 20, y: 30 } } });
+    expect(reasonOf(placed.changes)).toBe(LOOP);
+  });
+
+  test("one of a loop's instances moved into another container, or among text that runs on: still the data's reason", () => {
+    const { changes, editor, doc } = openCanvas(LIST);
+    editor.move(find(editor.tree().root, (l) => l.el === doc.querySelectorAll("li")[0])!, { parent: find(editor.tree().root, (l) => l.el.id === "list")!, index: 2 });
+    const reorder = changes.list()[0];
+    const elsewhere = { ...reorder, after: { ...(reorder.after as Place), container: { layer: "other", target: { ...(reorder.after as Place).container.target, loc: "src/App.tsx:13:5" } } } };
+    expect(uncheckable(elsewhere, [elsewhere])).toBe(LOOP);
+    const amongText = { ...reorder, order: null };
+    expect(uncheckable(amongText, [amongText])).toBe(LOOP);
+  });
+
+  test("a reorder in a container the page cannot find: why it cannot find the container", () => {
+    // A new Stack: no marker to find it by.
+    const stacked = openCanvas(MOVES);
+    const layer = (id: string) => find(stacked.editor.tree().root, (l) => l.el === stacked.doc.getElementById(id) && !l.text)!;
+    stacked.editor.stack([layer("a"), layer("b")]);
+    const stack = layer("a").parent!;
+    stacked.editor.move(layer("b"), { parent: stack, index: 0 });
+    const move = stacked.changes.list().at(-1)!;
+    expect(move).toMatchObject({ kind: "move", before: { container: { layer: stack.el.getAttribute("data-tk-layer") } } });
+    expect(reasonOf(stacked.changes)).toBe("its container is new this round (a copy, a layer put back or a new Stack), so the page has no marker to find it by");
+
+    // A container with no source marker.
+    const unmarked = openCanvas(MOVES.replace(`<div id="list" ${at("5:5")}`, '<div id="list"'));
+    const own = (id: string) => find(unmarked.editor.tree().root, (l) => l.el === unmarked.doc.getElementById(id) && !l.text)!;
+    unmarked.editor.move(own("c"), { parent: own("list"), index: 0 });
+    expect(reasonOf(unmarked.changes)).toBe("its container has no source marker, so the page cannot find it");
+
+    // One made in a round before.
+    const [reorder] = (() => {
+      const opened = openCanvas(MOVES);
+      const at = (id: string) => find(opened.editor.tree().root, (l) => l.el === opened.doc.getElementById(id) && !l.text)!;
+      opened.editor.move(at("c"), { parent: at("list"), index: 0 });
+      return opened.changes.list();
+    })();
+    const before = { ...(reorder.before as Place).container, target: { ...(reorder.before as Place).container.target, loc: null, made: "9" } };
+    const inMadeBefore = { ...reorder, before: { ...(reorder.before as Place), container: before }, after: { ...(reorder.after as Place), container: before } };
+    expect(uncheckable(inMadeBefore, [inMadeBefore])).toBe("its container was made in a round before, and the page cannot find it");
+
+    // A new Frame, as a round carried over may have one a layer was moved into in the round before: the page finds it, but checks only the layers made in it.
+    const framed = openCanvas(MOVES);
+    framed.editor.create("frame", { parent: find(framed.editor.tree().root, (l) => l.el.id === "row")!, index: 1 });
+    const [maker] = framed.changes.list();
+    const frame = { layer: maker.layer, target: { ...maker.target, loc: null, made: maker.layer } };
+    const inFrame = { ...reorder, id: 2, before: { ...(reorder.before as Place), container: frame }, after: { ...(reorder.after as Place), container: frame } };
+    expect(uncheckable(inFrame, [maker, inFrame])).toBe("of the changes in a container made this round, the page checks only the layers made in it");
+  });
+
+  test("a Frame's only text, as a button's words are, placed freely in that Frame: it has no element of its own on the page", () => {
+    const { editor, changes } = openCanvas(`<!DOCTYPE html><body style="margin: 0"><div id="button" ${at("3:5")} style="width: 200px; height: 100px; background-color: rgb(255, 0, 0)">Go</div></body>`);
+    const button = find(editor.tree().root, (l) => l.el.id === "button" && !l.text)!;
+    expect(button.framesText).toBe(true);
+
+    editor.move(button.children[0], { parent: button, x: 10, y: 20 });
+
+    expect(changes.list()[0]).toMatchObject({ kind: "move", wrap: true, after: { absolute: { x: 10, y: 20 } } });
+    expect(changes.list()[0].target.run).toBeUndefined();
+    expect(reasonOf(changes)).toBe("the text has no element of its own on the page");
+  });
+
+  test("where the reason for the structure is right, it stays word for word: a copy, a Stack made or dissolved, a move into another container, into a layout from a place of its own", () => {
+    const moves = () => {
+      const canvas = openCanvas(MOVES);
+      const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+      return { ...canvas, layer };
+    };
+
+    const copied = moves();
+    copied.editor.duplicate(copied.layer("a"));
+    expect(copied.changes.list()[0]).toMatchObject({ kind: "duplicate" });
+    expect(copied.changes.list()[0].data).toBeUndefined();
+    expect(reasonOf(copied.changes)).toBe(STRUCTURE);
+
+    const stacked = moves();
+    stacked.editor.stack([stacked.layer("a"), stacked.layer("b")]);
+    expect(reasonOf(stacked.changes)).toBe(STRUCTURE);
+
+    const dissolved = moves();
+    dissolved.editor.unstack(dissolved.layer("list"));
+    expect(dissolved.changes.list()[0]).toMatchObject({ kind: "unstack" });
+    expect(reasonOf(dissolved.changes)).toBe(STRUCTURE);
+
+    const elsewhere = moves();
+    elsewhere.editor.move(elsewhere.layer("b"), { parent: elsewhere.layer("row"), index: 1 });
+    expect(reasonOf(elsewhere.changes)).toBe(STRUCTURE);
+
+    const elsewhereFree = moves();
+    elsewhereFree.editor.move(elsewhereFree.layer("b"), { parent: elsewhereFree.layer("board"), x: 40, y: 30 });
+    expect(reasonOf(elsewhereFree.changes)).toBe(STRUCTURE);
+
+    const intoLayout = moves();
+    intoLayout.editor.move(intoLayout.layer("b"), { parent: intoLayout.layer("board"), x: 40, y: 30 });
+    const [free] = intoLayout.changes.list();
+    const back: Change = { ...free, before: { ...(free.after as Place), nth: 1 }, after: { ...(free.after as Place), absolute: null, nth: 1 }, order: { signs: ["div B"], self: 0, others: [] } };
+    expect(uncheckable(back, [back])).toBe(STRUCTURE);
+  });
+});
+

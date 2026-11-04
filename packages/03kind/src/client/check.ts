@@ -16,7 +16,7 @@ import { changeKey, isReorder, type Change, type Created, type Margins, type Pla
 import { stayedPutOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { edgeGoneBy, offsetPlacing, placedFrom, roomAlong, sideShareOf } from "./placed-from";
-import { checkable, isEndOffset, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
+import { checkable, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, whereMade, type Edge, type InLayout, type Position, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
@@ -53,10 +53,34 @@ export function uncheckable(change: Change, round: Change[]): string | null {
   if (change.target.run !== undefined) return "the text has no element of its own on the page";
   if (!change.target.loc) return "the layer has no source marker, so the page cannot find it";
   if (change.kind === "style") return "the layer's container cannot be found on the page";
-  // Found by its marker, new words are checked but on one of a loop's instances alone (ticket 90).
-  if (change.kind === "text") return "the words come from the data the loop goes through, and the page cannot tell the loop's instances apart";
+  // Found by its marker, one of a loop's instances alone: its new words (ticket 90), or it deleted, copied or moved (ticket 95).
+  if (change.data) return change.kind === "text" ? "the words come from the data the loop goes through, and the page cannot tell the loop's instances apart" : LOOP_DATA;
+  // Text with no element of its own, moved in its container: the page cannot find it, as it cannot a run of text (ticket 95).
+  if (textMovedInPlace(change)) return "the text has no element of its own on the page";
+  // A reorder or a placement in the same container, which the page checks, but in a container it cannot find (ticket 95).
+  const unfound = change.kind === "move" && containerUnfound(change, round);
+  if (unfound) return unfound;
   if (isReorder(change) && !change.order) return "text runs on among the layers of its container, so the page cannot tell their order";
   return "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
+}
+
+/** Why the page cannot check one of a loop's instances alone deleted, copied or moved (ticket 95): in the code, the data the loop goes through changes. */
+const LOOP_DATA = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
+
+/**
+ * Of a move in the same container, why the page cannot find that container,
+ * when it cannot (ticket 95): one with no source marker, or one made in a round
+ * before, or this round otherwise than as a Frame. Made this round as a Frame,
+ * the page finds it, but checks only the layers made in it. Null for a move
+ * into another container.
+ */
+function containerUnfound(change: Change, round: Change[]): string | null {
+  const [before, after] = [change.before, change.after] as Place[];
+  const { target } = after.container;
+  if (before.container.layer !== after.container.layer) return null;
+  if (!target.made) return target.loc ? null : CONTAINER_UNFOUND.unmarked;
+  const where = whereMade(target.made, round);
+  return "layer" in where ? CONTAINER_UNFOUND[where.layer] : "of the changes in a container made this round, the page checks only the layers made in it";
 }
 
 /**
