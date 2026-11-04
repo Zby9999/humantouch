@@ -11,6 +11,9 @@ export default defineConfig({
       {
         // Canvas code needs real layout and computed styles.
         extends: true,
+        // Bundled before the first test file loads: found only as the tests import them, with Vite's cache
+        // cold, they were bundled midway and the page reloaded, failing the files loading then (ticket 98).
+        optimizeDeps: { include: ["preact", "preact/hooks", "preact/jsx-dev-runtime", "preact/test-utils"] },
         test: {
           name: "browser",
           include: ["test/**/*.browser.test.ts"],
