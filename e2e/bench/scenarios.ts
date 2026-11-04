@@ -62,7 +62,7 @@ export interface ScenarioChange {
   kind: Change["kind"];
   /** What the page shows once it is applied, in words. */
   expect: string;
-  /** Whether the editor layer's page check can tell it (the Skill's list): not a Stack made or dissolved, a move into another container, a copy, a layer put back, new words, a brief; a new layer is, by its place (ticket 76). */
+  /** Whether the editor layer's page check can tell it (the Skill's list): not a Stack made or dissolved, a move into another container, a copy, a layer put back, a brief; a new layer is, by its place (ticket 76), and new words, by what the layer reads (ticket 90). */
   checkable: boolean;
   /**
    * The Variable the notes name for it, as the code may write it (its Tailwind class, or its CSS variable): the bench looks for one of these
@@ -545,10 +545,19 @@ export const SCENARIOS: Scenario[] = [
       {
         kind: "text",
         expect: "The title reads “Third Kind Studio”.",
-        checkable: false,
+        // Found by its source marker, the title's words are checked (ticket 90).
+        checkable: true,
         shows: () => document.querySelector("h1")?.textContent === "Third Kind Studio",
       },
     ],
+    async apply(desk) {
+      // The cards' data: the Arrange item out, a copy of the Freeze one after it, each card keyed by its place now that two share a title.
+      const freeze = '{ title: "Freeze", body: "Turn the current page into a canvas." },';
+      await desk.edit("src/App.tsx", '  { title: "Arrange", body: "Drag layers, build Stacks, tune spacing." },\n', "");
+      await desk.edit("src/App.tsx", freeze, `${freeze}\n  ${freeze}`);
+      await desk.edit("src/App.tsx", "{features.map((feature) => (\n          <Card key={feature.title}", "{features.map((feature, i) => (\n          <Card key={i}");
+      await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third Kind Studio</h1>");
+    },
   },
   {
     id: "put-back-and-new-text",

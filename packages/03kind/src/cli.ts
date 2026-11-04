@@ -7,7 +7,7 @@
  */
 import { changes as changesWord, container as containerOf, describeChanges, shareWords, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName } from "./client/breakpoints";
-import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, value } from "./design-values";
+import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, quoted, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
 import { AXIS_SIZE, CENTERING_SIGN, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
@@ -328,6 +328,10 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
   }
   if (change.kind === "create") return madeNotShown(change, actual, again, width);
+  // New words (ticket 90): what the layer reads on the page, and what on the canvas.
+  if (change.kind === "text") {
+    return `The layer reads ${quoted(actual as string)} on the page, not ${quoted(change.after as string)} as on the canvas: change its words in the JSX, or where they are given when they come from a prop or a variable, and ${again}.`;
+  }
   if (change.kind === "move") {
     const { absolute, nth } = change.after as Place;
     if (!absolute) return `Its container's layers are in another order on the page: put it ${ordinal(nth)}, as the notes say, and ${again}.`;

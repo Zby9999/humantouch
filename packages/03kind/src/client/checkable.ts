@@ -130,11 +130,12 @@ export const NEW_TAGS: Record<Created["type"], string> = { text: "p", frame: "di
  * Whether the page can check the change: it must find the layer by its
  * source marker (not a run of text), or, made this round as new text or a
  * Frame, at its place (`madeLayer`), and tell what the change does there: a
- * style, the layer made itself, a deletion, a reorder in the same container
- * (unless text runs on among its layers), a placement absolute in the same
- * container, that container found on the page too; not when one of a loop's
- * instances is changed alone, which the page cannot tell apart. `round`: the
- * changes of its round, where those that make layers are.
+ * style, the layer made itself, a deletion, new words (ticket 90), a reorder
+ * in the same container (unless text runs on among its layers), a placement
+ * absolute in the same container, that container found on the page too; not
+ * when one of a loop's instances is changed alone, which the page cannot tell
+ * apart. New words of a layer made this round are its maker's, checked with
+ * it. `round`: the changes of its round, where those that make layers are.
  */
 export function checkable(change: Change, round: Change[]): boolean {
   const { target } = change;
@@ -143,7 +144,7 @@ export function checkable(change: Change, round: Change[]): boolean {
   if (!foundByMarker(target)) return false;
   if (change.kind === "style") return true;
   if (change.data) return false;
-  if (change.kind === "delete") return true;
+  if (change.kind === "delete" || change.kind === "text") return true;
   if (change.kind !== "move" || change.wrap) return false;
   const [before, after] = [change.before, change.after] as Place[];
   const container = after.container.target;

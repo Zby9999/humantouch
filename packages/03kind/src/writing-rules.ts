@@ -247,6 +247,14 @@ const HOW_CHECKED: HowChecked[] = [
       "a new layer, and so the changes to it, by finding it where its section puts it, of whatever element: that layer of its container, counted with this round's other changes applied or not, one the container did not have before, new text with its words, " +
       "or, placed absolute, one placed absolute in the container at the X and Y given; found written at more than one place in the source, it is not checked",
   },
+  {
+    calledFor: (change, list) => checkable(change, list) && change.kind === "text",
+    text: "new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && change.kind === "text" && forOneUsage(change),
+    text: "new words for this usage only by the component's other usages too, which are to read as they did",
+  },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
 ];
@@ -271,7 +279,6 @@ const UNCHECKED: [string, (change: Change, list: Change[]) => boolean][] = [
   ["a move into another container, or into a layout from a place of its own", (change, list) => movedUnchecked(change, list) && !inUnfoundContainer(change)],
   ["a move in a container made this round, or one the page cannot find", (change, list) => movedUnchecked(change, list) && inUnfoundContainer(change)],
   ["a copy", (change) => change.kind === "duplicate" && !change.data],
-  ["new words", (change) => change.kind === "text" && !change.data],
   ["a brief", (change) => change.kind === "brief"],
 ];
 
