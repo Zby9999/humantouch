@@ -4,6 +4,7 @@
  * The live page itself is left untouched.
  */
 import { dropUnusedRules, orderEditStyles, syncEditStyles, upgradeEditStyles } from "./canvas-style";
+import { containingBlockOf } from "./containing-block";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
@@ -597,26 +598,9 @@ function canScroll(el: Element, style: CSSStyleDeclaration): boolean {
   return scrolls(style.overflowX) || scrolls(style.overflowY) || FIELDS.has(el.localName);
 }
 
-/** False when a transformed (or similar) ancestor holds the fixed element instead of the viewport. */
+/** False when a transformed (or similar) ancestor holds the fixed element instead of the viewport (`containingBlockOf`). */
 function fixedToViewport(el: HTMLElement): boolean {
-  for (let a = el.parentElement; a; a = a.parentElement) {
-    const s = getComputedStyle(a);
-    if (
-      s.transform !== "none" ||
-      s.translate !== "none" ||
-      s.rotate !== "none" ||
-      s.scale !== "none" ||
-      s.perspective !== "none" ||
-      s.filter !== "none" ||
-      s.backdropFilter !== "none" ||
-      s.containerType !== "normal" ||
-      /paint|layout|strict|content/.test(s.contain) ||
-      /transform|perspective|filter/.test(s.willChange)
-    ) {
-      return false;
-    }
-  }
-  return true;
+  return containingBlockOf(el) === null;
 }
 
 function absoluteToViewport(el: HTMLElement): boolean {

@@ -761,6 +761,41 @@ test.describe("done checks the change on the page", () => {
     );
   });
 
+  test("on a page laid out right to left, a layer the canvas places relative on phones by its `left` and its `right` both, from the right from `md` up, moved: at the phone's width its `right` is what moves it, so done compares it there; written from `md` up only, it does not show; written at every width, it shows (ticket 89)", async ({ page }) => {
+    editSource(
+      APP,
+      '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
+      '<section dir="rtl" className="relative flex h-screen flex-col justify-center" data-testid="hero">\n' +
+        '        <div data-testid="both-sides" className="relative left-[8px] right-[40px] h-[40px] w-[80px] bg-stone-300 md:absolute md:top-[30px] md:left-auto md:right-[40px]" />',
+    );
+    await expect(async () => {
+      await page.goto(DEV_URL);
+      await expect(page.getByTestId("both-sides")).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 20000 });
+    await enterEditMode(page);
+    const field = (name: string) => page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name, exact: true });
+
+    // In the desktop view, 20px right, at every width: placed from the right, its `right` 20px less (ADR 0014); on the canvas, the phone view goes by its `right`, right to left, and moves it 20px left of where the hero lays it out.
+    await pickOnCanvas(page, "both-sides");
+    await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readThirdKindFile("changeset.json").changes;
+    expect([change.property, change.before, change.after, ...rangesOf(change)]).toEqual(["right", 40, 20, undefined, [[null, 768, "relative"]]]);
+    const id = String(change.id);
+    await npx03kind("claim");
+
+    // Written from `md` up only: on phones, the page moves it by its `right` as it was.
+    editSource(APP, "md:right-[40px]", "md:right-[20px]");
+    expect(await npx03kind("done", id)).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. At 390px wide, the page moves the layer 40px left, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx 03kind done 1` again.\n",
+    );
+    // Written at every width, as the notes say: its `left` there moves it nothing, right to left.
+    editSource(APP, "right-[40px] h-[40px]", "right-[20px] h-[40px]");
+    expect(await npx03kind("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(await npx03kind("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. Right: <the layer, and what you changed>\n```\n");
+  });
+
   test("layers placed from the right, from the bottom and centered, moved, one resized first: they stay placed so, the notes say which value changes and how to write it, and done checks each, a centered one at every view's width (ticket 79)", async ({ page }) => {
     editSource(
       APP,
