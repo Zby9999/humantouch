@@ -17,6 +17,8 @@ import { readUsageChain, type UsageLevel } from "./usage-chain";
 export interface SavedCanvas {
   /** The locations of the markers written on it in `file` (`data-tk-loc`, `data-tk-usage`), read off it unparsed. */
   markers(file: string): ReadonlySet<string>;
+  /** The usage locations of `component` in `file` on the usage chains written on it, read off it unparsed. */
+  usages(component: string, file: string): ReadonlySet<string>;
   /** The canvas, parsed. */
   doc(): Document;
 }
@@ -24,13 +26,13 @@ export interface SavedCanvas {
 /** A canvas as saved, `html`, read once each is asked for: its markers file by file, then the whole of it. */
 export function savedCanvas(html: string, parse: (html: string) => Document): SavedCanvas {
   const files = new Map<string, Set<string>>();
+  const used = new Map<string, Set<string>>();
   let doc: Document | undefined;
   return {
     markers(file) {
       let found = files.get(file);
       if (!found) {
-        // As the canvas is serialized: in double quotes, `&` and `"` escaped.
-        const start = `="${file.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}:`;
+        const start = `="${escaped(file)}:`;
         found = new Set();
         for (let at = html.indexOf(start); at >= 0; at = html.indexOf(start, at + start.length)) {
           if (!MARKER_NAME.test(html.slice(Math.max(0, at - 13), at))) continue;
@@ -41,9 +43,29 @@ export function savedCanvas(html: string, parse: (html: string) => Document): Sa
       }
       return found;
     },
+    usages(component, file) {
+      const key = JSON.stringify([component, file]);
+      let found = used.get(key);
+      if (!found) {
+        // A chain is written as JSON in an attribute, `&` and `"` escaped: each level's component, then its usage.
+        const level = escaped(`{"component":${JSON.stringify(component)},"usage":"`);
+        const start = level + escaped(JSON.stringify(`${file}:`).slice(1, -1));
+        found = new Set();
+        for (let at = html.indexOf(start); at >= 0; at = html.indexOf(start, at + start.length)) {
+          const from = at + level.length;
+          const end = html.indexOf("&quot;", from);
+          found.add(JSON.parse(`"${html.slice(from, end).replace(/&amp;/g, "&")}"`) as string);
+        }
+        used.set(key, found);
+      }
+      return found;
+    },
     doc: () => (doc ??= parse(html)),
   };
 }
+
+/** `text` as an attribute's value is serialized: in double quotes, `&` and `"` escaped. */
+const escaped = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
 /** The name of a marker's attribute, just before its value. */
 const MARKER_NAME = new RegExp(`(?:${LOC_ATTR}|${USAGE_ATTR})$`);
@@ -60,45 +82,63 @@ export function elementsOf(doc: Document, target: Target, canvas: () => SavedCan
   const key = usageKey(target.loc, target.chain);
   // Of another tag, it is not the layer, though at its place in the code: an element the Agent wrote where the layer was, say, around it.
   const tag = tagOf(target);
-  const els = [...keysIn(doc.documentElement, new Set([target.loc]))].filter(([el, k]) => k === key && (!tag || el.localName === tag)).map(([el]) => el);
+  const there = [...keysIn(doc.documentElement, new Set([target.loc]))];
+  const els = there.filter(([el, k]) => k === key && (!tag || el.localName === tag)).map(([el]) => el);
   if (!els.length) return movedElementsOf(doc, target, canvas);
   const saved = canvas();
-  return saved && markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) ? movedElementsOf(doc, target, () => saved) : els;
+  return saved && (markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) || usagesMoved(there, target, saved)) ? movedElementsOf(doc, target, () => saved) : els;
 }
 
 /** Whether markers written in the files of `locs` (a layer's element's, say, and each usage's on its chain) are not where the canvas has them: an edit to one moved them, or added or took some away. */
 function markersMoved(doc: Document, locs: (string | null)[], saved: SavedCanvas): boolean {
   const files = new Set(locs.map((loc) => parseLoc(loc)?.file).filter((file) => file !== undefined));
-  for (const file of files) {
-    const was = saved.markers(file);
-    const now = markersOn(doc, file);
-    if (now.size !== was.size || [...now].some((loc) => !was.has(loc))) return true;
+  for (const file of files) if (!sameSet(saved.markers(file), markersOn(doc, file))) return true;
+  return false;
+}
+
+/**
+ * Whether the usages of the components on a layer's chain, in the files they
+ * are used in, are not where the canvas has them, as the elements at the
+ * layer's location on the page (`there`) have them: a usage written above
+ * the layer's, or a line taken away above it, moves the usages after it, and
+ * the elements a project component writes carry no marker of where it is used
+ * (review of ticket 99). Where the canvas has a usage none of them renders
+ * at, so too: then where it went is looked for, not taken as it is.
+ */
+function usagesMoved(there: [Element, string, UsageLevel[]][], target: Target, saved: SavedCanvas): boolean {
+  for (const { component, usage } of target.chain) {
+    const file = parseLoc(usage)?.file;
+    if (file === undefined) continue;
+    const now = new Set<string>();
+    for (const [, , chain] of there) for (const level of chain) if (level.component === component && level.usage?.startsWith(`${file}:`)) now.add(level.usage);
+    if (!sameSet(saved.usages(component, file), now)) return true;
   }
   return false;
 }
 
-/** What is read off each page to find layers whose markers moved, kept until an element or a marker on it changes: its markers by file, and the layers found by usage key. */
-const readOff = new WeakMap<Document, { watch: MutationObserver; files: Map<string, Set<string>>; moved: Map<string, Element[]> }>();
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((item) => b.has(item));
+}
+
+/** What is read off each page to find layers whose markers moved, kept until an element or a marker on it changes: its markers by file, and the layers found by usage key, by the canvas they were found by. */
+const readOff = new WeakMap<Document, { watch: MutationObserver; files: Map<string, Set<string>>; moved: WeakMap<SavedCanvas, Map<string, Element[]>> }>();
 
 /** What is read off page `doc` as it is now (`readOff`): the check looks at it many times a hot update. */
 function readOffPage(doc: Document) {
   let read = readOff.get(doc);
   if (!read) {
-    const files = new Map<string, Set<string>>();
-    const moved = new Map<string, Element[]>();
-    const watch = new MutationObserver(() => {
-      files.clear();
-      moved.clear();
-    });
+    const watch = new MutationObserver(() => forget(read!));
     watch.observe(doc, { subtree: true, childList: true, attributes: true, attributeFilter: [LOC_ATTR, USAGE_ATTR] });
-    readOff.set(doc, (read = { watch, files, moved }));
+    readOff.set(doc, (read = { watch, files: new Map(), moved: new WeakMap() }));
   }
   // Changed since, and not told yet: what was read is out of date.
-  if (read.watch.takeRecords().length) {
-    read.files.clear();
-    read.moved.clear();
-  }
+  if (read.watch.takeRecords().length) forget(read);
   return read;
+}
+
+function forget(read: { files: Map<string, Set<string>>; moved: WeakMap<SavedCanvas, Map<string, Element[]>> }) {
+  read.files.clear();
+  read.moved = new WeakMap();
 }
 
 /** The locations of the markers on page `doc` in `file`. */
@@ -127,17 +167,26 @@ function tagOf(target: Target): string | undefined {
  * The elements a change to a component itself is made to, on the live page
  * now: every element the component writes at the change's location, in every
  * usage of it but those with the usage keys `apart`. Where markers in its
- * file have moved (`canvas`), those of the usage it was promoted from, where
- * they went (`elementsOf`).
+ * file have moved (`canvas`), where that location went, by the usage it was
+ * promoted from (`elementsOf`): in every usage still, not that one alone
+ * (review of ticket 99).
  */
 export function componentElementsOf(doc: Document, target: Target, apart: string[] = [], canvas: () => SavedCanvas | null = () => null): Element[] {
-  if (!target.loc) return [];
+  const was = target.loc;
+  if (!was) return [];
+  const saved = canvas();
+  if (!saved || !markersMoved(doc, [was], saved)) return writtenAt(doc, target, was, apart, canvas);
+  const own = elementsOf(doc, target, () => saved);
+  const loc = own.length ? originOf(own[0], readUsageChain(own[0])).loc! : null;
+  // Of the other usages set apart, the keys where the location went.
+  return loc ? writtenAt(doc, target, loc, apart.map((key) => loc + key.slice(was.length)), canvas) : [];
+}
+
+/** The elements of `target`'s tag written at `loc` in every usage of its component, but those with the usage keys `apart`; where there are none, those of `target`'s own usage (`elementsOf`). */
+function writtenAt(doc: Document, target: Target, loc: string, apart: string[], canvas: () => SavedCanvas | null): Element[] {
   const tag = tagOf(target);
-  const els = [...keysIn(doc.documentElement, new Set([target.loc]))]
-    .filter(([el, key]) => key.startsWith(`${target.loc} `) && !apart.includes(key) && (!tag || el.localName === tag))
-    .map(([el]) => el);
-  const saved = els.length ? canvas() : null;
-  return els.length && !(saved && markersMoved(doc, [target.loc], saved)) ? els : elementsOf(doc, target, canvas);
+  const els = [...keysIn(doc.documentElement, new Set([loc]))].filter(([el, key]) => key.startsWith(`${loc} `) && !apart.includes(key) && (!tag || el.localName === tag)).map(([el]) => el);
+  return els.length ? els : elementsOf(doc, target, canvas);
 }
 
 /**
@@ -175,20 +224,40 @@ export function otherUsagesOf(doc: Document, target: Target): Map<string, Elemen
 function movedElementsOf(doc: Document, target: Target, canvas: () => SavedCanvas | null): Element[] {
   const tag = tagOf(target);
   const file = parseLoc(target.loc)?.file;
-  if (!tag || !file) return [];
-  const { moved } = readOffPage(doc);
+  const saved = tag && file ? canvas() : null;
+  if (!saved) return [];
+  const read = readOffPage(doc);
+  if (!read.moved.has(saved)) read.moved.set(saved, new Map());
+  const moved = read.moved.get(saved)!;
   const key = `${tag} ${usageKey(target.loc!, target.chain)}`;
-  if (!moved.has(key)) moved.set(key, followed(doc, target, tag, file, canvas));
+  if (!moved.has(key)) moved.set(key, followed(doc, target, tag!, file!, saved));
   return moved.get(key)!;
 }
 
+/**
+ * Where its markers have moved, every element on the live page now that may
+ * be the layer of `target`: of its tag, written in its file by the same
+ * components. None where they have not moved, its own elements there: what
+ * a deleted layer's check asks (`elementsOf` finds the layer, or nothing,
+ * where it cannot tell which it is; review of ticket 99).
+ */
+export function mayBeOf(doc: Document, target: Target, canvas: () => SavedCanvas | null): Element[] {
+  const tag = tagOf(target);
+  const file = parseLoc(target.loc)?.file;
+  if (!tag || file === undefined) return [];
+  const key = usageKey(target.loc!, target.chain);
+  const there = [...keysIn(doc.documentElement, new Set([target.loc!]))];
+  const saved = canvas();
+  const stayed = there.some(([el, k]) => k === key && el.localName === tag) && (!saved || !(markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) || usagesMoved(there, target, saved)));
+  return stayed ? [] : layersIn(doc, file, tag, componentsOf(target.chain), readUsageChain).map(({ el }) => el);
+}
+
 /** The elements of `target`, of `tag`, written in `file`, where its locations went (`movedElementsOf`). */
-function followed(doc: Document, target: Target, tag: string, file: string, canvas: () => SavedCanvas | null): Element[] {
+function followed(doc: Document, target: Target, tag: string, file: string, canvas: SavedCanvas): Element[] {
   const components = componentsOf(target.chain);
   const now = layersIn(doc, file, tag, components, readUsageChain);
   if (!now.length) return [];
-  const saved = canvas()?.doc();
-  if (!saved) return [];
+  const saved = canvas.doc();
   const was = layersIn(saved, file, tag, components, chainOf);
   const files = new Map<string, [Point[], Point[]]>();
   const where = (loc: string): string | null => {
@@ -269,7 +338,12 @@ const MAX_PAIRS = 25_000_000;
 /**
  * Where location `loc`, a marker in `before`, went in `after`: the marker
  * every largest pairing of the two, in order and kind by kind, pairs it
- * with. Null where one pairs it with another, or leaves it unpaired.
+ * with. Null where one pairs it with another, or leaves it unpaired. But
+ * where nothing up to it reads otherwise, it stayed put: an element of its
+ * kind written after it, as a new layer of the round is, leaves two such
+ * pairings, and this one is taken, as its marker took it before ticket 99.
+ * One written above it, each marker of its kind from there one place down
+ * to its own, cannot be told from that; the page then reads the new one.
  */
 function movedTo(loc: string, before: Point[], after: Point[]): string | null {
   const i = before.findIndex((point) => point.loc === loc);
@@ -277,7 +351,7 @@ function movedTo(loc: string, before: Point[], after: Point[]): string | null {
   const m = after.length;
   if (i < 0 || !m || n * m > MAX_PAIRS) return null;
   const same = (x: number, y: number) => before[x].kind === after[y].kind;
-  // Nothing before it, nor it, written otherwise: it stayed put, whatever came after it.
+  // Nothing before it, nor it, written otherwise: it stayed put, whatever came after it (but see above).
   if (i < m && before.slice(0, i + 1).every((point, x) => point.loc === after[x].loc && same(x, x))) return loc;
   // The most pairs of the markers before it with after's first y, for each y.
   let head = new Int32Array(m + 1);
@@ -311,14 +385,14 @@ function parseLoc(loc: string | null): { file: string; line: number; column: num
   return match ? { file: match[1], line: Number(match[2]), column: Number(match[3]) } : null;
 }
 
-/** Elements in `root` (itself included) that may be layers at `locs`, with their usage keys. */
-function* keysIn(root: Element, locs: Set<string>): Generator<[Element, string]> {
+/** Elements in `root` (itself included) that may be layers at `locs`, with their usage keys and chains. */
+function* keysIn(root: Element, locs: Set<string>): Generator<[Element, string, UsageLevel[]]> {
   for (const el of [root, ...root.querySelectorAll(`[${LOC_ATTR}], [${USAGE_ATTR}]`)]) {
     const own = el.getAttribute(LOC_ATTR);
     // Without a location of its own, it may pass a usage's props on; its origin says.
     if (own ? !locs.has(own) : !el.hasAttribute(USAGE_ATTR)) continue;
     const { loc, chain } = originOf(el, readUsageChain(el));
-    if (loc) yield [el, usageKey(loc, chain)];
+    if (loc) yield [el, usageKey(loc, chain), chain];
   }
 }
 

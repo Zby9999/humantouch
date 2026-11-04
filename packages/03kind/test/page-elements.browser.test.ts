@@ -3,7 +3,8 @@ import { createChangeSet } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { createEditor } from "../src/client/edits";
 import type { Layer } from "../src/client/layers";
-import { placedOnCanvas } from "../src/client/moves";
+import { canvasOf, placedOnCanvas } from "../src/client/moves";
+import { elementsOf } from "../src/client/page-elements";
 import type { Fill } from "../src/client/property-table";
 import { CHAIN_ATTR, type UsageLevel } from "../src/client/usage-chain";
 import { createViews } from "../src/client/views";
@@ -26,12 +27,12 @@ const stat = (usage: string, value: string, label: string, at = 6) => {
   return `<div data-tk-loc="components/Stat.tsx:${at}:5" ${of} style="background-color: rgb(255, 255, 255)"><span data-tk-loc="components/Stat.tsx:${at + 1}:7" ${of} style="display: block">${value}</span><span data-tk-loc="components/Stat.tsx:${at + 2}:7" ${of} style="display: block">${label}</span></div>`;
 };
 
-/** The Next.js page's stats: three Stats, at lines 32–34 of the page (`down` lines further); the Stat's div at line `at`. */
-const stats = (at = 6, labels = ["views side by side", "layers at 60fps", "bytes in production"], down = 0) => `<!DOCTYPE html>
+/** The Next.js page's stats: three Stats, at lines 32–34 of the page (`down` lines further, and the Stats `usagesDown` more); the Stat's div at line `at`. */
+const stats = (at = 6, labels = ["views side by side", "layers at 60fps", "bytes in production"], down = 0, usagesDown = 0) => `<!DOCTYPE html>
 <body style="margin: 0">
   <main data-tk-loc="app/page.tsx:${20 + down}:5" ${chain(HOME)}>
     <section data-tk-loc="app/page.tsx:${31 + down}:7" ${chain(HOME)} data-testid="stats">
-      ${stat(`app/page.tsx:${32 + down}:9`, "3", labels[0], at)}${stat(`app/page.tsx:${33 + down}:9`, "5,000", labels[1], at)}${stat(`app/page.tsx:${34 + down}:9`, "0", labels[2], at)}
+      ${[0, 1, 2].map((n) => stat(`app/page.tsx:${32 + n + down + usagesDown}:9`, ["3", "5,000", "0"][n], labels[n], at)).join("")}
     </section>
   </main>
 </body>`;
@@ -154,6 +155,15 @@ describe("the third Stat's label given new words (next-server-usage-text)", () =
     expect(checkChange(page, round[0], round)).toEqual(NOT_ON_PAGE);
   });
 
+  test("a line added above the Stats alone, no element's marker after it, the third's usage where the second's was: the third's label is read, not the second's given its words (review)", () => {
+    const round = newWords();
+    expect(checkChange(livePage(stats(6, ["views side by side", "bytes shipped to production", "bytes in production"], 0, 1)), round[0], round)).toEqual({
+      outcome: "not shown",
+      actual: "bytes in production",
+    });
+    expect(checkChange(livePage(stats(6, written, 0, 1)), round[0], round)).toEqual({ outcome: "shown" });
+  });
+
   test("a new span written between the value and the label, the label two lines down: which of the two it is cannot be told, and the page says so", () => {
     const round = newWords();
     const page = livePage(stats(6, written));
@@ -229,5 +239,76 @@ describe("two siblings alike", () => {
   test("the first deleted, the second a line up: which is the layer cannot be told, and the page says so", () => {
     const round = secondRenamed();
     expect(checkChange(livePage(ITEMS([5], ["Second"])), round[0], round)).toEqual(NOT_ON_PAGE);
+  });
+});
+
+describe("the Stat's fill, a change to the Stat itself (review)", () => {
+  /** The round: the first Stat filled, the change promoted to the Stat. */
+  function promoted() {
+    const { doc, editor, layerOf, round } = openCanvas(stats());
+    const first = layerOf(doc.querySelector('[data-testid="stats"] > div')!);
+    editor.set(first, "fill", STONE);
+    editor.promote(first);
+    return round();
+  }
+  const fill = (stat: Element) => ((stat as HTMLElement).style.backgroundColor = STONE_RGB);
+
+  test("a line added to the Stat above its div, the first usage alone filled: every usage is read where the div went, not the first alone", () => {
+    const round = promoted();
+    expect(round[0]).toMatchObject({ scope: "component" });
+    const page = livePage(stats(7));
+    const divs = [...page.querySelectorAll('[data-testid="stats"] > div')];
+    fill(divs[0]);
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } });
+    divs.forEach(fill);
+    expect(checkChange(page, round[0], round)).toEqual({ outcome: "shown" });
+  });
+});
+
+describe("a layer deleted, two siblings alike (review)", () => {
+  const ITEMS = (lines: number[], words: string[]) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words[i]}</li>`).join("")}</ul>
+</body>`;
+  function secondDeleted() {
+    const { doc, editor, layerOf, round } = openCanvas(ITEMS([5, 6], ["One", "Two"]));
+    editor.remove(layerOf(doc.querySelectorAll("li")[1]));
+    return round();
+  }
+  const UNTOLD = { outcome: "unchecked", reason: "its markers have moved, and an element that looks like it is on the page: the page cannot tell whether that is the layer" };
+
+  test("deleted: shown", () => {
+    const round = secondDeleted();
+    expect(checkChange(livePage(ITEMS([5], ["One"])), round[0], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("not deleted, a third written above both over two lines: which is the layer cannot be told, and the page does not take it for gone", () => {
+    const round = secondDeleted();
+    expect(checkChange(livePage(ITEMS([5, 7, 8], ["New", "One", "Two"])), round[0], round)).toEqual(UNTOLD);
+  });
+
+  test("the first deleted instead, the second a line up: not taken for gone", () => {
+    const round = secondDeleted();
+    expect(checkChange(livePage(ITEMS([5], ["Two"])), round[0], round)).toEqual(UNTOLD);
+  });
+
+  test("not deleted, a third written after both: the second, where it was, is there", () => {
+    const round = secondDeleted();
+    expect(checkChange(livePage(ITEMS([5, 6, 7], ["One", "Two", "New"])), round[0], round)).toEqual({ outcome: "not shown", actual: "there" });
+  });
+});
+
+describe("what the page reads off itself, kept (review)", () => {
+  test("a layer looked for with no canvas first, then by the round's canvas: found where it went", () => {
+    const ITEMS = (lines: number[]) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${["One", "Two"][i]}</li>`).join("")}</ul>
+</body>`;
+    const { doc, editor, layerOf, round } = openCanvas(ITEMS([5, 6]));
+    editor.setText(layerOf(doc.querySelectorAll("li")[1]), "Second");
+    const changes = round();
+    const page = livePage(ITEMS([7, 8]));
+    expect(elementsOf(page, changes[0].target)).toEqual([]);
+    expect(elementsOf(page, changes[0].target, () => canvasOf(changes))).toEqual([page.querySelectorAll("li")[1]]);
   });
 });
