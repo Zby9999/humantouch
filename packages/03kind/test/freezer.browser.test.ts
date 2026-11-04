@@ -334,3 +334,37 @@ describe("bringing the copy to rest", () => {
     await copied;
   });
 });
+
+describe("layers fixed to the window", () => {
+  test("pinned where the window holds them, also in a container for queries, which holds no placed layer; not in a box that holds them, as a filter does (ticket 89, review)", async () => {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html><body style="margin: 0">
+  <div style="container-type: inline-size"><div id="queried" style="position: fixed; top: 0; height: 10px"></div></div>
+  <div style="filter: blur(0)"><div id="filtered" style="position: fixed; top: 0; height: 10px"></div></div>
+  <div id="window" style="position: fixed; top: 0; height: 10px"></div>
+</body>`);
+    doc.close();
+    const canvas = await freeze(live.contentWindow!, iframe());
+    const pinned = (id: string) => canvas.document.getElementById(id)!.hasAttribute("data-tk-pinned");
+    expect([pinned("window"), pinned("queried"), pinned("filtered")]).toEqual([true, true, false]);
+  });
+
+  test.each([
+    ["a box that lays out nothing of its own, filtered", '<div style="display: contents; filter: blur(0)">', true],
+    ["the page's root filtered", "", true],
+    ["`will-change: translate`", '<div style="will-change: translate">', false],
+    ["`will-change: contain`", '<div style="will-change: contain">', false],
+    ["`content-visibility: auto`", '<div style="content-visibility: auto">', false],
+    ["`transform-style: preserve-3d`", '<div style="transform-style: preserve-3d">', false],
+  ] as const)("in %s: pinned where the browser has the window hold it (ticket 89, re-review)", async (_, open, held) => {
+    const live = iframe(800, 600);
+    const doc = live.contentDocument!;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html${open ? "" : ' style="filter: blur(0)"'}><body style="margin: 0">${open}<div id="bar" style="position: fixed; top: 0; height: 10px"></div>${open ? "</div>" : ""}</body></html>`);
+    doc.close();
+    const canvas = await freeze(live.contentWindow!, iframe());
+    expect(canvas.document.getElementById("bar")!.hasAttribute("data-tk-pinned")).toBe(held);
+  });
+});
