@@ -183,3 +183,7 @@ Not checked on the page: the change is to the data the loop goes through, and th
 - `TK_E2E_PORT=5400 pnpm test:e2e`：420 passed、1 skipped，没有失败。
 - `TK_BENCH_PORT=5440 node e2e/bench/run-agents.ts --scripted`：15 个有脚本的场景一遍全过。
 - 切换按钮的包：`react.dev.js`（c83849f1…）、`chunk-UQJRS7YD.js`（cdd6f09d…）sha256 和 cef746d 相同，逐字节不变。
+
+## 设计师确认（2026-11-04）
+
+- 「代定的事」1–9 条全部确认：循环里的一项删除、复制、调换、挪动共用数据那句；数据里的调换遇上散字也说数据那句；找不到容器照 76 的容器原因逐字说；这一轮新建的 Frame 那两句；兜底说得对的照旧；按钮里的字原地自由定位用「the text has no element of its own on the page」，`claim` 改归类；`claim` 别的名目、`finish` 不改；分支先后不调。
