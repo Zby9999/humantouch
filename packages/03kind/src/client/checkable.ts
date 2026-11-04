@@ -23,17 +23,23 @@ export type Edge = "start" | "end";
  * How a layer placed freely is placed along one axis (GLOSSARY: Placement,
  * ticket 75): from its container's `edge`, by the side that places it from
  * there (`SIDES`); `centered` on where that side places it, moved back half
- * its size (`translate: -50%` from the start, `50%` from the end).
+ * its size (`translate: -50%` from the start, `50%` from the end); or, with
+ * `margins`, centered between both its sides by its margins there, both
+ * `auto`, which take up the room its size leaves (`inset-x-0 mx-auto w-12`,
+ * ticket 96): placed from its start then, as X and Y go, and centered.
  */
 export interface PlacedFrom {
   edge: Edge;
   centered: boolean;
+  margins?: true;
 }
 
 /**
  * A length as a share of a container's size along one axis and px past that:
  * `calc(50% + 20px)` is 50 and 20. How a layer centered is placed: what its
- * side gives it, the share kept as it moves (ticket 79).
+ * side gives it, the share kept as it moves (ticket 79), which is where its
+ * middle is; centered by its auto margins, where its middle is too, which its
+ * sides give it between them (ticket 96).
  */
 export interface Share {
   percent: number;
@@ -57,6 +63,23 @@ export function shareCss({ percent, px }: Share): string {
   if (!n) return `${p}%`;
   return `calc(${p}% ${n < 0 ? "-" : "+"} ${Math.abs(n)}px)`;
 }
+
+/**
+ * The sides of a layer centered by its auto margins (ticket 96), placed
+ * afresh with its middle at `middle`, a share of its container: both from 0,
+ * as much past it one way as the other (`left: 20px; right: -20px` for 50%
+ * and 20px). `0 - px`: no `-0px` for none.
+ */
+export const centeringSides = ({ percent, px }: Share): Record<Edge, Share> => ({ start: { percent: percent - 50, px }, end: { percent: 50 - percent, px: 0 - px } });
+
+/** Where the middle of a layer centered by its auto margins between its sides is (ticket 96), its sides given as `sides`: what `centeringSides` gives them. */
+export const middleOf = ({ start, end }: Record<Edge, Share>): Share => ({ percent: (100 + start.percent - end.percent) / 2, px: (start.px - end.px) / 2 });
+
+/** A layer's margins along each axis both `auto`, as CSS writes them: what centers it between its sides (ticket 96). Tailwind's are `AUTO_MARGINS_CLASS`. */
+export const AUTO_MARGINS = { x: "margin-inline: auto", y: "margin-block: auto" } as const satisfies Record<Axis, string>;
+
+/** `AUTO_MARGINS` as Tailwind writes them. */
+export const AUTO_MARGINS_CLASS = { x: "mx-auto", y: "my-auto" } as const satisfies Record<Axis, string>;
 
 /** Along each axis, the CSS side that places a layer from its container's start edge and from its end edge (ticket 75). */
 export const SIDES = {

@@ -22,7 +22,7 @@ import {
   type Target,
 } from "./client/changeset";
 import { breakpointName, mediaOf, tailwindOf, type Breakpoint } from "./client/breakpoints";
-import { AXIS_SIZE, AXIS_WAY, CENTERING_SIGN, isEndOffset, PLACED_BY, shareCss, SIDES, SIZE_AXIS, type Edge, type Share } from "./client/checkable";
+import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, AXIS_WAY, CENTERING_SIGN, centeringSides, isEndOffset, PLACED_BY, shareCss, SIDES, SIZE_AXIS, type Edge, type Share } from "./client/checkable";
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
@@ -187,7 +187,7 @@ function intent(change: Change, list: Change[]): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
-      if (change.centeredOn) return centeredIntent(change);
+      if (change.centeredOn) return change.placedFrom?.margins ? marginsCenteredIntent(change) : centeredIntent(change);
       if (isEndOffset(change.property)) return endOffsetIntent(change);
       if (partsDiffer(change)) return partByPart(change);
       return `Change the ${propertyName(change.property)} from ${value(change.property, change.before)} to ${value(change.property, change.after)}.`;
@@ -272,6 +272,30 @@ function centeredIntent({ property, before, after, centeredOn }: Change): string
 }
 
 /**
+ * A change to where a layer centered between its sides by its auto margins
+ * is (ticket 96): where its middle is, a share of its container and px past
+ * it, which changes, and its sides, as much more and less, as CSS and
+ * Tailwind write them.
+ */
+function marginsCenteredIntent({ property, before, after, centeredOn, style, uncenteredAt }: Change): string {
+  const { axis } = PLACED_BY[property]!;
+  const { start, end } = SIDES[axis];
+  const [from, to] = [shareWords(centeredOn!.before, axis, "start", "its container"), shareWords(centeredOn!.after, axis, "start", "its container")];
+  const written = [start, end].filter((side) => style[side]);
+  const tailwind = written.map((side) => `${side}-[${style[side].replace(/ /g, "")}]`).join(" ");
+  // Where a view beside does not center it so (review): its start side alone, its end side as each width has it.
+  const give = uncenteredAt?.length
+    ? `Give its \`${start}\` twice as much more, \`${start}: ${style[start]}\` (Tailwind's \`${tailwind}\`), keeping its \`${end}\` and its auto margins as the page has them at each width: ` +
+      `where the page does not center it so, ${uncenteredAt.map(breakpointName).join(", ")}, it is placed by that \`${start}\`. `
+    : `Give its \`${start}\` and \`${end}\` as much more and less, \`${start}: ${style[start]}; ${end}: ${style[end]}\` (Tailwind's \`${tailwind}\`), keeping both and its auto margins. `;
+  return (
+    `Move it ${AXIS_WAY[axis]}, centered between its \`${start}\` and \`${end}\` by its auto margins as it is: its middle from ${from} to ${to}. ` +
+    give +
+    `Its ${propertyName(property)} goes from ${value(property, before)} to ${value(property, after)} as the designer saw it, but do not write that px value with the other side \`auto\`: as its container grows or shrinks, it stays centered, as far past its middle.`
+  );
+}
+
+/**
  * What a share a side gives a layer is, in words, of `container` ("its
  * container", "the Frame"): "50% of its container's width from its left
  * edge, and 20px past that", "…, less 20px".
@@ -292,6 +316,12 @@ const notByStart = (axis: Axis) => `do not place it by \`${SIDES[axis].start}\` 
 function placementLine({ property, placedFrom }: Change): string {
   const sized = SIZE_AXIS[property];
   const axis = sized ?? PLACED_BY[property]!.axis;
+  if (placedFrom!.margins) {
+    // Between its sides, by its auto margins (ticket 96): moved, its sides change as much one way as the other.
+    const { start, end } = SIDES[axis];
+    const only = sized ? `only its ${property} changes, on both sides alike` : "keep both sides and the auto margins, only how far past the middle it is changes";
+    return `**Placement:** the layer is centered ${AXIS_WAY[axis]} between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`), and stays so: ${only}.`;
+  }
   if (placedFrom!.centered) {
     // On where the side it is placed by places it: moved back half its size from a `left` or `top`, forward from a `right` or `bottom`.
     const [side, back] = [SIDES[axis][placedFrom!.edge], CENTERING_SIGN[placedFrom!.edge]];
@@ -528,6 +558,13 @@ function absoluteWhere({ x, y, placed }: NonNullable<Place["absolute"]>, whose: 
     const { start, end } = SIDES[axis];
     if (!how) return `${axis.toUpperCase()} ${at}px from the ${whose}'s ${start} edge (CSS \`${start}\`)`;
     if (!how.centered) return `${how.px}px from the ${whose}'s ${end} edge (CSS \`${end}\`, placed from that edge as the layer is now: not by \`${start}\`)`;
+    if (how.margins) {
+      const sides = centeringSides(how);
+      return (
+        `centered ${AXIS_WAY[axis]} between \`${start}: ${shareCss(sides.start)}\` and \`${end}: ${shareCss(sides.end)}\` by its auto margins ` +
+        `(its middle at ${shareWords(how, axis, "start", `the ${whose}`)}, with its \`${AUTO_MARGINS[axis]}\` kept, as the layer is now)`
+      );
+    }
     const side = SIDES[axis][how.edge];
     return (
       `centered ${AXIS_WAY[axis]} on \`${side}: ${shareCss(how)}\` ` +

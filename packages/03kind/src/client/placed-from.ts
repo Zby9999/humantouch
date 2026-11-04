@@ -4,12 +4,14 @@
  * edge (`right`, `bottom`), or centered on where it is placed from either
  * (`translate: -50%` from its left, as Tailwind's `-translate-x-1/2` writes
  * it, in v3 through `transform`, in v4 through `translate`; `50%` from its
- * right). Resized or moved, it stays placed so (ADR 0014): what changes is the
- * value that places it from the edge it is placed from, or, centered, its
- * size alone, or how far past the share of its container it is centered on
- * (`calc(50% + 20px)`, ticket 79).
+ * right), or centered between both its sides by its margins there, both
+ * `auto` (`inset-x-0 mx-auto w-12`, ticket 96). Resized or moved, it stays
+ * placed so (ADR 0014): what changes is the value that places it from the
+ * edge it is placed from, or, centered, its size alone, or how far past the
+ * share of its container it is centered on (`calc(50% + 20px)`, ticket 79;
+ * by its margins, its sides, as much one way as the other).
  */
-import { AXIS_SIZE, OTHER_EDGE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
+import { AXIS_SIZE, middleOf, OTHER_EDGE, pxIn, SIDES, type Edge, type InLayout, type PlacedAlong, type PlacedFrom, type Share, type Side } from "./checkable";
 import { declaredByEdit } from "./canvas-style";
 import { containingBlockOf, directionPlacing } from "./containing-block";
 import { absolute, declaredValue, round } from "./property-table";
@@ -27,11 +29,14 @@ import { declarationsOf, pinnedOf } from "./style-source";
  * ticket 89). A layer the freezer pinned is taken to be placed from its
  * start too, which the canvas places it from whatever the page does. Not
  * placed freely: from its start. Centered from either edge, it is resized
- * alike, on both sides.
+ * alike, on both sides. Its margins there both `auto`, taking up the room
+ * between its sides (`autoMarginsPlacing`): centered by them, from its start
+ * as X and Y go (ticket 96); one of them `auto`, from the other's edge.
  */
 export function placedFrom(el: Element, axis: Axis): PlacedFrom {
-  const { start, end } = SIDES[axis];
+  const { start } = SIDES[axis];
   if (!absolute(el) || pinnedOf(el).includes(start)) return { edge: "start", centered: false };
+  if (autoMarginsPlacing(el, axis) === "both") return { edge: "start", centered: true, margins: true };
   const edge: Edge = sideDeclared(el, axis, "end") && endOffsetPlaces(el, axis) ? "end" : "start";
   // Moved back half its size from where it is placed (forward, placed from the end): centered there.
   const { width, height } = el.getBoundingClientRect();
@@ -70,24 +75,98 @@ export function edgeGoneBy(el: Element, axis: Axis): Edge {
  * Whether the browser goes by the side from the end edge along `axis` of
  * `el`, given both its sides there, as it is placed (ticket 89): relative, as
  * the box that places it runs (`edgeGoneBy`); absolute or fixed, so too, but
- * only as large as it is set there, as declared, or as large as it draws
- * itself (an image, a `<canvas>`), with nothing laid out (else both sides
- * place it, its size given by them); and with no margin there `auto`, which
- * takes up the room left (`inset-x-0 mx-auto`: centered, so neither side
- * wins, ticket 94, review). The one rule the canvas goes by.
+ * only as large as it is set there (`sized`), with nothing laid out (else
+ * both sides place it, its size given by them); and with a margin there
+ * `auto`, which takes up the room left, by the side whose margin is not
+ * (`autoMarginsPlacing`): its end's with only its start's `auto` (`ml-auto`,
+ * pushed to its end, ticket 96), and neither with both (`inset-x-0 mx-auto`:
+ * centered, ticket 94, review). The one rule the canvas goes by.
  */
-const endWins = (el: Element, axis: Axis) =>
-  edgeGoneBy(el, axis) === "end" && (!absolute(el) || ((declared(el, AXIS_SIZE[axis]) || REPLACED.has(el.localName)) && !autoMargin(el, axis)));
+const endWins = (el: Element, axis: Axis) => {
+  if (!absolute(el)) return edgeGoneBy(el, axis) === "end";
+  const byMargins = autoMarginsPlacing(el, axis);
+  if (byMargins) return byMargins === "end";
+  return edgeGoneBy(el, axis) === "end" && sized(el, axis);
+};
+
+/** Whether `el` is as large along `axis` as it is set, as declared (ticket 89's 代定 2), or as large as it draws itself (an image, a `<canvas>`). */
+const sized = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) || REPLACED.has(el.localName);
 
 /**
- * Whether a margin of `el` along `axis` is `auto`, as its style computes it,
- * not as laid out (`computedStyleMap`, which keeps the keyword where
- * `getComputedStyle` gives the px it takes up): however it is written
- * (`margin`, `margin-inline`, `mx-auto`), with nothing laid out (ADR 0011).
+ * Along `axis`, how `el`'s margins there place it, placed absolute or fixed,
+ * where one or both are `auto` and so take up the room its container gives
+ * it past its sides and its size (CSS 2.1, 10.3.7, 10.6.4; ticket 96): both,
+ * centered between its sides (`inset-x-0 mx-auto w-12`), "both"; only the one
+ * at its start, from its end (`ml-auto`, pushed there), "end"; only the one
+ * at its end, from its start. Null where neither is `auto`, or a side is, or
+ * it is not as large as it is set there (`sized`), where the browser takes
+ * them for none. As its style computes them (`computedStyleMap`, which keeps
+ * the keyword where `getComputedStyle` gives the px it takes up), however
+ * they are written (`margin`, `margin-inline`, `mx-auto`), with nothing laid
+ * out (ADR 0011); left to right and right to left alike.
  */
-function autoMargin(el: Element, axis: Axis): boolean {
+export function autoMarginsPlacing(el: Element, axis: Axis): Edge | "both" | null {
+  if (!absolute(el)) return null;
   const style = el.computedStyleMap();
-  return [SIDES[axis].start, SIDES[axis].end].some((side) => String(style.get(`margin-${side}`)) === "auto");
+  const auto = (property: string) => String(style.get(property)) === "auto";
+  const { start, end } = SIDES[axis];
+  const [before, after] = [auto(`margin-${start}`), auto(`margin-${end}`)];
+  if ((!before && !after) || auto(start) || auto(end) || !sized(el, axis)) return null;
+  return before && after ? "both" : before ? "end" : "start";
+}
+
+/**
+ * Whether a margin of `el`'s along `axis` at its `edge` is `auto` and takes
+ * up room (`autoMarginsPlacing`), so its side from that edge does not place
+ * it where it gives it (ticket 96, review).
+ */
+export function autoMarginTakesRoom(el: Element, axis: Axis, edge: Edge): boolean {
+  const by = autoMarginsPlacing(el, axis);
+  return by !== null && by !== edge;
+}
+
+/**
+ * How much room a margin of `el`'s before it along `axis` (its left, its
+ * top) takes up, in px, as laid out, when it is `auto` (ticket 96): where
+ * it is drawn past its side, which X and Y count, as they do not its other
+ * margins. None when it is not `auto`, or `el` is not placed absolute or
+ * fixed: in its container's layout, X and Y go as they always did.
+ */
+export function autoMarginBefore(el: Element, axis: Axis): number {
+  const margin = `margin-${SIDES[axis].start}`;
+  if (!absolute(el) || String(el.computedStyleMap().get(margin)) !== "auto") return 0;
+  return parseFloat(getComputedStyle(el).getPropertyValue(margin)) || 0;
+}
+
+/** `autoMarginBefore` along each axis. */
+export const autoMarginsBefore = (el: Element): Record<Axis, number> => ({ x: autoMarginBefore(el, "x"), y: autoMarginBefore(el, "y") });
+
+/**
+ * Where `el`, placed absolute or fixed, is placed along `axis` from its
+ * container's start edge, as its X and Y read it, in px: as the browser
+ * places it by its side there (`offsetPlacing`), and past that by its
+ * margin there when `auto` (`autoMarginBefore`, ticket 96).
+ */
+export function startOffsetOf(el: Element, axis: Axis): number {
+  return offsetPlacing(el, axis, "start") + autoMarginBefore(el, axis);
+}
+
+/**
+ * Where the middle of `el`, centered along `axis` by its auto margins between
+ * its sides (ticket 96), is: halfway between where its sides place its edges,
+ * as a share of its container and px past it, as its style computes them
+ * (`left: 0; right: 0` is 50% and none; Tailwind v4's `inset-inline`, a
+ * `var()`, read as they come to); in px, as laid out, where one is no share
+ * read here.
+ */
+export function middleShareOf(el: Element, axis: Axis): Share {
+  const [start, end] = (["start", "end"] as const).map((edge) => computedShareOf(el, SIDES[axis][edge]));
+  return middleOf({ start, end });
+}
+
+/** A side of `el` as its style computes it, a share of its container and px past it; in px, as laid out, where it is no share read here. */
+export function computedShareOf(el: Element, side: string): Share {
+  return shareOf(String(el.computedStyleMap().get(side))) ?? { percent: 0, px: parseFloat(getComputedStyle(el).getPropertyValue(side)) || 0 };
 }
 
 /** Elements as large as what they draw, not as what they hold: their size set, though no CSS sets it. */
@@ -309,9 +388,15 @@ export function extentOf(el: Element, axis: Axis): number {
   const style = getComputedStyle(el);
   const { start, end } = SIDES[axis];
   const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
+  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + sizeAlong(el, axis, style);
+}
+
+/** How large `el`'s border box is along `axis`, as the browser computes it (`style`, if read already), laid out, not as a `transform` or `rotate` draws it. */
+export function sizeAlong(el: Element, axis: Axis, style = getComputedStyle(el)): number {
+  const { start, end } = SIDES[axis];
+  const px = (property: string) => parseFloat(style.getPropertyValue(property)) || 0;
   const sides = [start, end].map((side) => px(`padding-${side}`) + px(`border-${side}-width`));
-  const size = px(AXIS_SIZE[axis]) + (style.boxSizing === "border-box" ? 0 : sides[0] + sides[1]);
-  return px(start) + px(end) + px(`margin-${start}`) + px(`margin-${end}`) + size;
+  return px(AXIS_SIZE[axis]) + (style.boxSizing === "border-box" ? 0 : sides[0] + sides[1]);
 }
 
 /**
@@ -345,8 +430,9 @@ export const pastShare = (at: number, percent: number, room: number) => round(at
  * (its X and Y, its `left` and `top` were it placed by them) in a container
  * that gives it `room` (ticket 79, ADR 0014). From the right or bottom edge,
  * px, as X and Y are; centered, the share of its container it is centered on
- * now, and px past it. None along an axis it is placed from the start, or
- * centered on a side whose value is not read here (placed by its X and Y then).
+ * now, and px past it (by its auto margins, where its middle is, ticket 96).
+ * None along an axis it is placed from the start, or centered on a side whose
+ * value is not read here (placed by its X and Y then).
  */
 export function placedAlong(el: Element, at: Record<Axis, number>, room: Record<Axis, number>): Partial<Record<Axis, PlacedAlong>> | undefined {
   const placed: Partial<Record<Axis, PlacedAlong>> = {};
@@ -355,11 +441,11 @@ export function placedAlong(el: Element, at: Record<Axis, number>, room: Record<
   for (const axis of ["x", "y"] as const) {
     const from = placedFrom(el, axis);
     if (from.edge === "start" && !from.centered) continue;
-    const share = from.centered ? sideShareOf(el, axis, from.edge) : { percent: 0, px: 0 };
+    const share = from.margins ? middleShareOf(el, axis) : from.centered ? sideShareOf(el, axis, from.edge) : { percent: 0, px: 0 };
     if (!share) continue;
-    // From the end edge: what is left of its container's room past it and its margins.
-    const size = axis === "x" ? r.width + left + right : r.height + top + bottom;
-    const value = from.edge === "start" ? at[axis] : room[axis] - at[axis] - size;
+    // From the end edge: what is left of its container's room past it and its margins, but one `auto` before it, which `at` counts (ticket 96). Centered by its auto margins: its middle.
+    const size = (axis === "x" ? r.width + left + right : r.height + top + bottom) - autoMarginBefore(el, axis);
+    const value = from.margins ? at[axis] + sizeAlong(el, axis) / 2 : from.edge === "start" ? at[axis] : room[axis] - at[axis] - size;
     placed[axis] = { ...from, percent: share.percent, px: pastShare(value, share.percent, room[axis]) };
   }
   return Object.keys(placed).length ? placed : undefined;
