@@ -28,9 +28,11 @@ import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE
 import type { StyleSource } from "./client/style-source";
 import type { Size } from "./client/property-table";
 import type { Axis } from "./client/snap";
+import type { UsageLevel } from "./client/usage-chain";
 import { variablesLine } from "./variable-notes";
 import { writingRules } from "./writing-rules";
-import { changeTitle, kindTitle, layerName, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
+import { changeTitle, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
+import type { WhereToLook } from "./where-to-look";
 
 export interface NotesOptions {
   /** The notes' title. */
@@ -43,21 +45,24 @@ export interface NotesOptions {
   end?(list: Change[], round: Change[]): string;
   /** The changes to give, when not all of the round: the others are only referred to (a layer one of them made, say). */
   only?: Change[];
+  /** What the notes name from the project, so the Agent need not search it (ticket 101); not given, they name none of it. */
+  look?: WhereToLook;
 }
 
 /** The sentence that says the designer's page is up, and checks the edits: no dev server to start, no browser to open (ticket 65). */
 const PAGE_OPEN = "The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. ";
 
-/** For a round to apply; `pageOpen`: a page with 03Kind is open now, to check it. */
-export function toApply(pageOpen: boolean): NotesOptions {
+/** For a round to apply; `pageOpen`: a page with 03Kind is open now, to check it; `look`: what to name from the project (ticket 101). */
+export function toApply(pageOpen: boolean, look?: WhereToLook): NotesOptions {
   return {
+    look,
     heading: "Design changes to apply",
     intro: (count) =>
       `${count}, made by the designer in 03Kind. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. ` +
       (pageOpen ? PAGE_OPEN : "") +
       "After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. " +
       "Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.",
-    end: writingRules,
+    end: (list, round) => writingRules(list, round, look),
   };
 }
 
@@ -70,11 +75,11 @@ export function changes(count: number): string {
 export function describeChanges(list: Change[], root: string, options: NotesOptions = toApply(false)): string {
   const given = options.only ?? list;
   let notes = `# ${options.heading}\n\n${options.intro(changes(given.length))}\n\n`;
-  for (const change of given) notes += section(change, list, root, options.status?.(change));
+  for (const change of given) notes += section(change, list, root, options.status?.(change), options.look);
   return notes + (options.end?.(given, list) ?? "");
 }
 
-function section(change: Change, list: Change[], root: string, status: string | undefined): string {
+function section(change: Change, list: Change[], root: string, status: string | undefined, look: WhereToLook | undefined): string {
   const { target } = change;
   const style = Object.entries(change.style).map(([name, css]) => `\`${name}: ${css}\``);
   const lines = [
@@ -82,9 +87,9 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Kind:** ${kindTitle(change)}`,
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? (madeBefore(target, list) ? MADE_BEFORE : newLayer(target.made, list)) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
-    `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target)}`,
+    `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target, look)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
-    `**Design intent:** ${intent(change, list)}`,
+    `**Design intent:** ${intent(change, list, look)}`,
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack ? [AS_STACK] : []),
@@ -183,7 +188,7 @@ function briefLine({ before, after, target, scope }: Change, list: Change[]): st
 }
 
 /** What the designer wants of the change, in design language. */
-function intent(change: Change, list: Change[]): string {
+function intent(change: Change, list: Change[], look?: WhereToLook): string {
   switch (change.kind) {
     case "style":
       if (change.property === "absolute" && change.after) return placedFreely(change);
@@ -201,7 +206,7 @@ function intent(change: Change, list: Change[]): string {
       const { type, place, width, height, text } = change.after as Created;
       if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, placeOnceApplied(change, list))}.`;
       const wide = width === null ? "" : `, ${width}px wide`;
-      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text.`;
+      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
     }
     case "text":
       return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
@@ -754,8 +759,44 @@ function onlyTextLine({ context }: Target): string {
   return `**The Frame's only text:** the text is all ${frame} draws inside it, and has no element of its own: write its text styles on ${frame}'s element itself, whose words inherit them, with no element around the text.`;
 }
 
+/**
+ * Where the page's body text style is set, as `look` found it (ticket 101):
+ * the rules and the `className` of `<body>` that set it, or nothing; not
+ * looked for, nothing said.
+ */
+function bodyText(look: WhereToLook | undefined): string {
+  const places = look?.bodyText;
+  if (!places) return "";
+  if (!places.length) return ": nothing in the project's source sets it, on `body` or `html`";
+  return `: ${listed(places.map((place) => ("selector" in place ? `the rule \`${place.selector}\`` : `the \`${place.attribute}\` of \`<${place.element}>\``) + ` at \`${place.at}\``))}`;
+}
+
+/** How many other usages of a component the notes name, at most; the rest are counted, by file (ticket 101). */
+const USAGES_NAMED = 3;
+
+/**
+ * That the other usages of `component` stay as they are, and, as `look` found
+ * them in the source (ticket 101), where they are: none, when `usage` is the
+ * only one. Not named when the source does not have `usage` itself, as the
+ * page names it: the source is not as the page has it, or uses the component
+ * by another name.
+ */
+function otherUsages({ component, usage }: UsageLevel, look: WhereToLook | undefined): string {
+  const said = `Other usages of ${component} stay as they are`;
+  const all = look?.usages[component];
+  if (!all || !usage || !all.includes(usage)) return `${said}.`;
+  const others = all.filter((place) => place !== usage);
+  if (!others.length) return `${component} has no other usage in the source.`;
+  const code = (text: string) => `\`${text}\``;
+  if (others.length <= USAGES_NAMED) return `${said}: ${listed(others.map(code))}.`;
+  const rest = others.slice(USAGES_NAMED);
+  const files = [...new Set(rest.map((place) => place.replace(/(:\d+)+$/, "")))];
+  const where = files.length <= USAGES_NAMED ? listed(files.map(code)) : `${files.length} files`;
+  return `${said}: ${others.slice(0, USAGES_NAMED).map(code).join(", ")} and ${rest.length} more, in ${where}.`;
+}
+
 /** Which instances the change is for: those of the usage the layer sits in. */
-function scope({ chain, instances, locked, context }: Target): string {
+function scope({ chain, instances, locked, context }: Target, look?: WhereToLook): string {
   if (!chain.length) return "This layer only.";
   const [own, ...outer] = chain;
   if (!outer.length && own.usage) {
@@ -767,7 +808,7 @@ function scope({ chain, instances, locked, context }: Target): string {
   const where = chain.map(usedAt);
   let text = `This usage only: ${where[0]}${outer.length ? `, inside ${where.slice(1).join(", inside ")}` : ""}.`;
   if (instances > 1) text += ` It renders ${instances} instances, which change together.`;
-  text += ` Other usages of ${own.component} stay as they are.`;
+  text += ` ${otherUsages(own, look)}`;
   if (locked) text += " The layer is drawn by a dependency: change it from the usage, never inside the dependency.";
   return text;
 }

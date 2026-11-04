@@ -53,6 +53,29 @@ export function markSource(code: string, options: MarkSourceOptions) {
   return { code: s.toString(), map: s.generateMap({ source: filePath, hires: true }) };
 }
 
+/**
+ * The JSX elements a module opens, each by its tag and where it starts, as
+ * its marker gives it (`line:column`, from 1), and the names of its attributes:
+ * how the notes find a component's other usages without the page (ticket 101).
+ * Null when the module does not parse.
+ */
+export function openingTags(code: string, file: string): { tag: string; line: number; column: number; attributes: string[] }[] | null {
+  let ast;
+  try {
+    ast = parse(code, { sourceType: "module", plugins: file.endsWith(".js") ? ["jsx"] : ["jsx", "typescript"] });
+  } catch {
+    return null;
+  }
+  const tags: { tag: string; line: number; column: number; attributes: string[] }[] = [];
+  walk(ast.program, (node) => {
+    if (node.type !== "JSXOpeningElement") return;
+    const { line, column } = node.loc!.start;
+    const attributes = node.attributes.filter((a: Node) => a.type === "JSXAttribute").map((a: Node) => tagName(a.name));
+    tags.push({ tag: tagName(node.name), line, column: column + 1, attributes });
+  });
+  return tags;
+}
+
 function tagName(name: Node): string {
   switch (name.type) {
     case "JSXIdentifier":
