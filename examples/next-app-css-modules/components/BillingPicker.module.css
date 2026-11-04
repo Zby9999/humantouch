@@ -1,0 +1,40 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 64px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 20px;
+  color: rgb(28, 25, 23);
+}
+
+.options {
+  display: flex;
+  gap: 8px;
+}
+
+.option {
+  padding: 6px 14px;
+  border: 1px solid rgb(214, 211, 209);
+  border-radius: 6px;
+  background: rgb(255, 255, 255);
+  color: rgb(28, 25, 23);
+}
+
+.selected {
+  border-color: rgb(37, 99, 235);
+  background: rgb(239, 246, 255);
+}
+
+.saving {
+  align-self: flex-start;
+  margin: 0;
+  padding: 2px 10px;
+  border-radius: 4px;
+  background: rgb(220, 252, 231);
+  color: rgb(22, 101, 52);
+  font-size: 14px;
+}
