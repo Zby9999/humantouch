@@ -13,13 +13,13 @@
 import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
-import { stayedPutOf, type RoundOnCanvas } from "./moves";
+import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
-import { componentElementsOf, elementsOf, usageKeyOf } from "./page-elements";
+import { componentElementsOf, elementsOf, mayBeOf, usageKeyOf } from "./page-elements";
 import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
@@ -181,7 +181,7 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
   const { maker, place } = found;
   const created = maker.after as Created;
   const { target } = place.container;
-  const outer: Found = target.made ? findMade(doc, target.made, round) : { els: elementsOf(doc, target) };
+  const outer: Found = target.made ? findMade(doc, target.made, round) : { els: elementsOf(doc, target, savedCanvas(round)) };
   if ("unchecked" in outer) return outer;
   if ("missing" in outer || !outer.els.length) return { unchecked: "its container is not on the page now" };
   const written = round.filter((change) => change.kind === "text" && change.layer === id).at(-1)?.after as string | undefined;
@@ -329,7 +329,7 @@ function lookAt(doc: Document, change: Change, round: RoundOnCanvas, apart: stri
 
 /** The elements a style change is to show on, as `at` shows them: a change to a component itself shows in every usage of it, but those `apart`. */
 function styledBy(doc: Document, change: Change, apart: string[], at: PageWidth, round?: RoundOnCanvas): Element[] {
-  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart) : elementsOf(doc, change.target, notTheLayer(change, round));
+  const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart, savedCanvas(round)) : elementsOf(doc, change.target, savedCanvas(round));
   return found.map((el) => at.of(el)).filter((el): el is Element => !!el);
 }
 
@@ -341,7 +341,7 @@ export function valueOn(doc: Document, change: Change, at: PageWidth): unknown {
 
 function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string[], at: PageWidth, sources: boolean): CheckResult {
   if (change.kind === "delete") return lookDeleted(doc, change, round, at);
-  if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, round, at) : lookOrder(doc, change);
+  if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, round, at) : lookOrder(doc, change, round);
   if (change.kind === "create") return lookMade(doc, change, round, at);
   if (change.kind === "text") return lookWords(doc, change, round);
   const property = change.property as Property;
@@ -444,19 +444,26 @@ function lookStyle(els: Element[], property: Property, after: unknown, at: PageW
  * there (gone with its container, it may only be out of view). An element
  * found by its markers counts as the layer only if it looks the same: its tag
  * and words, or, with no words, its opening tag; markers move as the Agent edits.
+ * Where they have moved, the layer found by them or not, another element that
+ * may be it and looks the same leaves it untold (review of ticket 99): not
+ * finding the layer is not finding it gone.
  */
 function lookDeleted(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): CheckResult {
   const { target } = change;
-  if (!elementsOf(doc, (change.before as Place).container.target).length) return { outcome: "unchecked", reason: "its container is not on the page now" };
+  const canvas = savedCanvas(round);
+  if (!elementsOf(doc, (change.before as Place).container.target, canvas).length) return { outcome: "unchecked", reason: "its container is not on the page now" };
   const own = usageKey(target.loc!, target.chain);
   const tag = /^<([\w-]+)/.exec(target.context.element)?.[1];
   const same = (el: Element) =>
     target.context.text ? signOf(el) === `${tag} ${target.context.text}` : el.localName === tag && (usageKeyOf(el) === own || openingTag(el) === target.context.element);
-  const there = elementsOf(doc, target, notTheLayer(change, round))
-    .filter(same)
-    .map((el) => at.of(el))
-    .filter((el) => el && getComputedStyle(el).display !== "none");
-  return there.length ? { outcome: "not shown", actual: "there" } : { outcome: "shown" };
+  const shown = (els: Element[]) =>
+    els
+      .filter(same)
+      .map((el) => at.of(el))
+      .filter((el) => el && getComputedStyle(el).display !== "none");
+  if (shown(elementsOf(doc, target, canvas)).length) return { outcome: "not shown", actual: "there" };
+  if (shown(mayBeOf(doc, target, canvas)).length) return { outcome: "unchecked", reason: "its markers have moved, and an element that looks like it is on the page: the page cannot tell whether that is the layer" };
+  return { outcome: "shown" };
 }
 
 /**
@@ -465,8 +472,8 @@ function lookDeleted(doc: Document, change: Change, round: RoundOnCanvas, at: Pa
  * edit moves their markers. Layers other reorders move are left out, so each
  * reorder is checked on its own. `actual`: the layers on the page, in order.
  */
-function lookOrder(doc: Document, change: Change): CheckResult {
-  const containers = elementsOf(doc, (change.after as Place).container.target);
+function lookOrder(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
+  const containers = elementsOf(doc, (change.after as Place).container.target, savedCanvas(round));
   if (!containers.length) return { outcome: "unchecked", reason: "its container is not on the page now" };
   const { signs, self, others } = change.order!;
   const kept = signs.filter((_, i) => !others.includes(i));
@@ -487,7 +494,7 @@ function lookOrder(doc: Document, change: Change): CheckResult {
  * when it is not absolute, "no reference" when placed from elsewhere.
  */
 function lookPlaced(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): CheckResult {
-  const els = elementsOf(doc, change.target, notTheLayer(change, round))
+  const els = elementsOf(doc, change.target, savedCanvas(round))
     .map((el) => at.of(el))
     .filter((el): el is Element => !!el);
   return placedThere(els, (change.after as Place).absolute!, marginsFor(change, at));
@@ -501,7 +508,7 @@ function lookPlaced(doc: Document, change: Change, round: RoundOnCanvas, at: Pag
  * what the first instance that does not reads instead.
  */
 function lookWords(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
-  const els = elementsOf(doc, change.target, notTheLayer(change, round));
+  const els = elementsOf(doc, change.target, savedCanvas(round));
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   const words = spaced(change.after as string);
   const wrong = els.find((el) => wordsOn(el) !== words);
@@ -737,8 +744,8 @@ function drawnThere(placed: PlacedOnPage, to: { x?: number; y?: number }, canvas
   });
 }
 
-/** The other usages of a change's component at its layer's location on the canvas of `round`, which the page does not take for the layer where its markers move (`stayedPutOf`): read only then. None to go by with no round. */
-const notTheLayer = (change: Change, round?: RoundOnCanvas) => () => (round ? stayedPutOf(round, change) : []);
+/** The canvas of `round`, as saved, which the page tells by whether a layer's markers have moved, and where (`canvasOf`). None to go by with no round. */
+const savedCanvas = (round?: RoundOnCanvas) => () => (round ? canvasOf(round) : null);
 
 /** Values are plain data in design language. */
 function sameValue(a: unknown, b: unknown): boolean {
