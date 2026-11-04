@@ -20,6 +20,7 @@
 - [ ] 按场景、按改动类别列出没达标的地方，每条找到原因（Agent 没照 Skill、Skill 写得不清楚、`claim` 的说明不够、页面核对判错、场景本身的问题），原始记录留在测量台的结果目录里
 - [ ] 结论记在 Comments：哪几项达标、哪几项没有；要不要改 Skill 措辞、要不要把截图从路线图提前（原 24 的最后一条）。要改的东西另开 ticket（编号在 main 上取），不在这张 ticket 里改代码
 - [ ] 开跑时把设计师 pi 的 `settings.json`、`models.json` 的指纹（内容摘要，不是内容本身）记进每次跑的结果；pi 带 fff 跑（ticket 92），结果里标明 fff 的版本
+- [ ] 87 的 `next-client-stack-breakpoint` 场景里，Yearly 选项的填色改在 `.selected` 规则上还是只改在 Yearly 上，两种都算对（87 代定第 7 条，设计师 2026-11-04 确认）；结果里写明每家 Agent 每次用的是哪一种。Next 场景的改动是不是写在 `.module.css` 里（87 遗留风险第 4 条），看 diff 人工核
 - [ ] Cursor、Codex 不在这次验收里；goals 不改（以后有额度再验）
 
 ## 背景
