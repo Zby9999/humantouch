@@ -8,16 +8,16 @@
 
 **Status:** done
 
-- [ ] 单独一条命令启动（和 `bench:agents` 一样，`pnpm test:e2e` 不会带起它），能选 Agent（`claude`、`pi`，以及只用脚本扮演 Agent 的模式）、选起点、选包的来源（npm 上的 `03kind@latest`，或本地打的包）。Agent 的跑法和落地测量台同一套（Claude 的模型、effort、配置隔离，pi 用 ticket 85 接上的那套），只有命令名单不同（见下一条）
-- [ ] **安装用的命令名单**：落地的名单（`npx 03kind`、`git diff` 等）挡得住 `npx -y 03kind@latest init` 和起开发服务器的命令，安装要单独一份。放行：读、改、搜索的工具，`npx`，四种包管理器的安装、运行脚本和执行命令，起开发服务器，`git status` / `git diff`。仍然挡：`rm`、`sudo`、`kill` / `pkill`、`curl`、`wget`、`ssh`、`scp`、`open`、`osascript`、`git push`，以及网页搜索、抓取工具。包管理器访问 npm 源要上网，这是放行的
-- [ ] **起点清单**：10 个全新项目，每次都用官方脚手架现建在系统临时目录里，装好依赖、`git init` 并提交之后才交给 Agent（设计师的项目本来就装好了依赖、跑得起来）。覆盖 ticket 24 列的那些：Vite + React（TypeScript、JavaScript 各一）、Next.js App Router（Turbopack、webpack 各一，有 `src/` 和没有各一）、npm / pnpm / yarn / bun、Tailwind v4 / v3、CSS Modules、普通 CSS、React 18 至少一个
-- [ ] **计时**：从 Agent 进程启动（收到四步）算起，到测量台用无头浏览器在 Agent 起的开发服务器上找到名为 "03Kind: enter edit mode" 的按钮为止。开发服务器在哪个端口，从 Agent 起的进程监听的端口找，不靠 Agent 自报；没找到就是没成功。同时记下 Agent 整个会话结束的时间
-- [ ] **判成功**，每一项都要过：按钮出现 ≤ 60 秒；没有人工介入（从对话记录判：Agent 中途停下来问人、或最后一条消息在等人回答，都算要人工介入，算失败；第 3 步「最后告诉设计师去看右下角的按钮」不算）；Agent 结束后测量台自己跑一次 `doctor`，全部 ✓；用户源码只改了 ≤ 2 处（除 03Kind 自己的文件，也就是 `package.json`、锁文件、`.gitignore`、`AGENTS.md`、Skill 目录之外，只改了构建配置和渲染应用的文件，各是一个 import 加一行）
-- [ ] **卸载**：测量台关掉 Agent 留着的开发服务器，再跑 `npx 03kind remove`，`git status --untracked-files=all` 和 `git diff` 都为空
-- [ ] 第 3 步：无头的 Agent 开不了浏览器，记下它最后有没有告诉设计师去看右下角的按钮（只记录，不算成功条件）
-- [ ] **走通**：脚本扮演 Agent、用本地打的包，10 个起点全部判成功；再让脚本 Agent 故意出几种错（没起开发服务器、多改了一处源码、中途停下来问人、`remove` 后留下文件），测量台都判对
-- [ ] 每次的记录（用时、对话记录、`git diff`、`doctor` 和 `remove` 的输出）放在不进 git 的目录，能汇总出 24 要的数
-- [ ] 不跑真实 Agent（发布前第 1 步跑不通，真实跑是 24 的事）
+- [x] 单独一条命令启动（和 `bench:agents` 一样，`pnpm test:e2e` 不会带起它），能选 Agent（`claude`、`pi`，以及只用脚本扮演 Agent 的模式）、选起点、选包的来源（npm 上的 `03kind@latest`，或本地打的包）。Agent 的跑法和落地测量台同一套（Claude 的模型、effort、配置隔离，pi 用 ticket 85 接上的那套），只有命令名单不同（见下一条）
+- [x] **安装用的命令名单**：落地的名单（`npx 03kind`、`git diff` 等）挡得住 `npx -y 03kind@latest init` 和起开发服务器的命令，安装要单独一份。放行：读、改、搜索的工具，`npx`，四种包管理器的安装、运行脚本和执行命令，起开发服务器，`git status` / `git diff`。仍然挡：`rm`、`sudo`、`kill` / `pkill`、`curl`、`wget`、`ssh`、`scp`、`open`、`osascript`、`git push`，以及网页搜索、抓取工具。包管理器访问 npm 源要上网，这是放行的
+- [x] **起点清单**：10 个全新项目，每次都用官方脚手架现建在系统临时目录里，装好依赖、`git init` 并提交之后才交给 Agent（设计师的项目本来就装好了依赖、跑得起来）。覆盖 ticket 24 列的那些：Vite + React（TypeScript、JavaScript 各一）、Next.js App Router（Turbopack、webpack 各一，有 `src/` 和没有各一）、npm / pnpm / yarn / bun、Tailwind v4 / v3、CSS Modules、普通 CSS、React 18 至少一个
+- [x] **计时**：从 Agent 进程启动（收到四步）算起，到测量台用无头浏览器在 Agent 起的开发服务器上找到名为 "03Kind: enter edit mode" 的按钮为止。开发服务器在哪个端口，从 Agent 起的进程监听的端口找，不靠 Agent 自报；没找到就是没成功。同时记下 Agent 整个会话结束的时间
+- [x] **判成功**，每一项都要过：按钮出现 ≤ 60 秒；没有人工介入（从对话记录判：Agent 中途停下来问人、或最后一条消息在等人回答，都算要人工介入，算失败；第 3 步「最后告诉设计师去看右下角的按钮」不算）；Agent 结束后测量台自己跑一次 `doctor`，全部 ✓；用户源码只改了 ≤ 2 处（除 03Kind 自己的文件，也就是 `package.json`、锁文件、`.gitignore`、`AGENTS.md`、Skill 目录之外，只改了构建配置和渲染应用的文件，各是一个 import 加一行）
+- [x] **卸载**：测量台关掉 Agent 留着的开发服务器，再跑 `npx 03kind remove`，`git status --untracked-files=all` 和 `git diff` 都为空
+- [x] 第 3 步：无头的 Agent 开不了浏览器，记下它最后有没有告诉设计师去看右下角的按钮（只记录，不算成功条件）
+- [x] **走通**：脚本扮演 Agent、用本地打的包，10 个起点全部判成功；再让脚本 Agent 故意出几种错（没起开发服务器、多改了一处源码、中途停下来问人、`remove` 后留下文件），测量台都判对
+- [x] 每次的记录（用时、对话记录、`git diff`、`doctor` 和 `remove` 的输出）放在不进 git 的目录，能汇总出 24 要的数
+- [x] 不跑真实 Agent（发布前第 1 步跑不通，真实跑是 24 的事）
 
 ## 背景
 
@@ -115,3 +115,8 @@ pnpm bench:install summary <dir>
 7. **`package.json` 的顺序**：设计师手排的 `package.json`，bun / npm 装、卸之后会重新排序，`remove` 后会有只差顺序的 diff；10 个起点都是包管理器写出的顺序，所以没出现。
 8. **只有脚本 Agent 走过**：真实 Agent 的对话记录形状（尤其 pi 的最后一条消息、fff 的调用）只用录下来的片段测过，`fffProblem` 那条停下只由 92 的测试证明。
 9. **在建起点时按 Ctrl-C**：会删掉正在建的临时目录，但没有真的按过 Ctrl-C 验证。
+
+## 设计师确认（2026-11-04）
+
+- 「代定的事」1–12 条全部确认，10 个起点那张表也看过了（ticket 24 真实跑时照它跑）。
+- yarn、bun 先留在机器上，等 ticket 24 跑完再按上面「装了什么」那段删。
