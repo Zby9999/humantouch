@@ -12,15 +12,25 @@
 
 **Blocked by:** 无
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] 「This usage only」写明其他使用处的文件和行
 - [ ] 写明项目有没有类名合并工具（有的话是哪个、在哪）
 - [ ] 新文字写明正文样式从哪来
 - [ ] `--dry --claim-out` 前后对比，只多了这三种信息；`--scripted` 全过
+- [ ] 组件用的地方很多时怎样列（列几处、其余怎么说）由这条线代定，`claim` 不因此变得很长
+- [ ] 测量台的名单（Claude 和 pi 两家）放行只打印的 `echo`，带 `>`、`>>` 写文件的照挡（ticket 88 代定第 3 条，设计师 2026-11-05 定）；名单的单测跟着加
 
 ## 背景
 
 - ticket 88 真实跑（2026-11-05），原始记录在 88 线的 `bench-results/agents/88-real/`。
 - 88 的结论里还有一个可选做法：Skill 第 2 步加一句「The notes name the file and line of each change: read those, and search the project only where a section says the layer is not located.」。88 倾向先修 `claim` 这三处，再看 pi 的数；要不要也加这句，分诊时定。
 - 要看改了有没有用，得再跑真实 Agent（用设计师的额度）；分诊时定跑不跑、跑几次。
+
+## 设计师决定（2026-11-05，分诊）
+
+- 选做法 1：ready-for-agent，和 100 交给同一条线，先做 100 再做 101，现在开线（和 97、98、99 并排）。
+- Skill 第 2 步那一句这次不加：先修 `claim` 这三处，再看对照数据（88 的结论）。
+- 名单放行 `echo` 放进这条线（88 代定第 3 条）。
+- 不跑真实 Agent；要不要复验、跑几次，等这条线做完再定。
+- 考虑过的别的做法：同时加 Skill 那一句；先只做 100，101 以后再说。

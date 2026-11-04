@@ -8,7 +8,7 @@
 
 **Blocked by:** 无
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] `claim` 的「Dissolving a Stack」那条写明 `left`/`top` 怎么对应 X、Y，margin 留着
 - [ ] 不改 Skill（88 的结论：问题在 `claim`，不在 Skill）
@@ -19,3 +19,9 @@
 
 - ticket 88 真实跑（2026-11-05），原始记录在 88 线的 `bench-results/agents/88-real/claude/dissolve-place-frame/run-2`。
 - 要看改了有没有用，得再跑真实 Agent（用设计师的额度）；分诊时定跑不跑、跑几次。
+
+## 设计师决定（2026-11-05，分诊）
+
+- 选做法 1：ready-for-agent，和 101 交给同一条线，先做 100 再做 101，现在开线（和 97、98、99 并排）。
+- 不跑真实 Agent；要不要复验、跑几次，等这条线做完再定。
+- 考虑过的别的做法：同时在 Skill 第 2 步加那一句；先只做 100，101 以后再说。
