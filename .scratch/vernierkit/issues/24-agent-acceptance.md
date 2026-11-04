@@ -1,6 +1,6 @@
 # 24: Agent 验收：安装
 
-**What to build:** Agent 验收的后一半：安装验收。包发布到 npm 之后，Claude（Sonnet 5.5，effort high）和无头 pi（DeepSeek v4.1 flash，command-code）各在 10 个全新项目里，从 README「For Agents」那一节的四步原文开始安装（`npx -y 03kind@latest init`，不拿本地打的包代替），确认切换按钮出现，再运行 `remove`。落地的那一半（原来这张 ticket 的标准场景部分）移到 ticket 88。
+**What to build:** Agent 验收的后一半：安装验收。包发布到 npm 之后，Claude（Sonnet 5.5，effort medium；原定 high，设计师 2026-11-05 改，和 88 一致）和无头 pi（DeepSeek v4.1 flash，command-code）各在 10 个全新项目里，从 README「For Agents」那一节的四步原文开始安装（`npx -y 03kind@latest init`，不拿本地打的包代替），确认切换按钮出现，再运行 `remove`。落地的那一半（原来这张 ticket 的标准场景部分）移到 ticket 88。
 
 参考本功能的 spec.md（同目录上一级），目标与指标以 docs/goals.md 为准（「Light」「Reversible」），用词以 GLOSSARY.md 为准，并遵守 docs/adr/ 中的决策。
 
@@ -20,7 +20,7 @@
 ## 设计师决定（2026-11-03，重新分诊）
 
 - Agent 验收拆开：先跑落地验收（ticket 88），再发布到 npm（设计师自己操作），最后跑安装验收（本 ticket）。理由：落地验收不依赖发布，可能要改 Skill 措辞，改好再发布第一版；安装验收要照 For Agents 原文，第 1 步只有发布后才跑得通。
-- 这次只验 Claude（Sonnet，high）和无头 pi（command-code 的 DeepSeek v4.1 flash）：Cursor 没有额度。docs/goals.md 不改：Codex、Cursor 以后还要验，这次不算偏离。
+- 这次只验 Claude（Sonnet，medium）和无头 pi（command-code 的 DeepSeek v4.1 flash）：Cursor 没有额度。docs/goals.md 不改：Codex、Cursor 以后还要验，这次不算偏离。
 - 测量台接上 pi 在 ticket 85，标准场景补全在 86、87，安装验收的测量台（命令名单、计时、判成功的办法）在 91。
 
 ## Comments
@@ -28,3 +28,8 @@
 **改名为 03Kind（2026-11-01，ticket 70 第三步）**：已查，无旧名（旧产品名、命令、包名、文件夹名和 vk 前缀，不分大小写地查过）。
 
 **重新分诊前的验收项（2026-11-03 之前）**：原来的 Blocked by 是 07, 09, 14, 16, 17, 18, 19, 20, 21, 22, 26, 27, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 50，都已完成。原来的标准场景、三家 Agent 落地、1:1 落地率、设计变量使用率、工具调用次数、Skill 措辞和截图的结论，移到 ticket 88；安装和 remove 两项留在这里。
+
+## 设计师决定（2026-11-05，effort）
+
+- Claude 用 effort medium，pi 照旧 `--thinking high`，和 ticket 88 的真实跑一致（88 代定第 4 条）。安装测量台和落地测量台共用 Claude 的设置，88 已经改成 medium，不用另配。
+- 考虑过的别的做法：24 改回 high，为安装验收另配一份设置。
