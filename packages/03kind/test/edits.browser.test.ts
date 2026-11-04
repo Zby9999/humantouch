@@ -4,7 +4,7 @@ import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Change, type Place } from "../src/client/changeset";
 import { placedOnCanvas } from "../src/client/moves";
-import { checkAcross, checkChange, widthsOf, type PageWidth } from "../src/client/check";
+import { checkAcross, checkChange, uncheckable, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
 import { watchPage } from "../src/client/page-checks";
@@ -7208,5 +7208,52 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     editor.set(layer("bottom"), "x", 20);
 
     expect(recorded()).toEqual([["x", 12, 20, undefined, undefined]]);
+  });
+});
+
+describe("new words, as the page checks them (ticket 90)", () => {
+  const SAME_TITLES = PAGE.replace(/>Card \d</g, ">Card<");
+
+  test("looked at as wide as the page's window alone: its words are the same at every width", () => {
+    const { editor, changes, cards, layerOf } = openCanvas(SAME_TITLES);
+    editor.setText(layerOf(cards[0].querySelector("h3")!), "Plan");
+    expect(widthsOf(changes.list()[0], changes.list(), 1280, [390, 768])).toEqual({ own: true, others: [] });
+  });
+
+  test("where the page cannot check them, it says why, in words of their own: from data, a run of text, no source marker, a layer made this round", () => {
+    const reason = (change: Change, round: Change[]) => uncheckable(change, round);
+    const STRUCTURE_REASON = /of the changes to the structure/;
+
+    const loop = openCanvas();
+    loop.editor.setText(loop.layerOf(loop.cards[1].querySelector("h3")!), "Second");
+    expect(reason(loop.changes.list()[0], loop.changes.list())).toBe("the words come from the data the loop goes through, and the page cannot tell the loop's instances apart");
+
+    const moves = openCanvas(MOVES);
+    const run = find(moves.editor.tree().root, (l) => l.name === "more")!;
+    moves.editor.setText(moves.editor.ownElement(run), "less");
+    expect(reason(moves.changes.list()[0], moves.changes.list())).toBe("the text has no element of its own on the page");
+
+    const unmarked = openCanvas(`<!DOCTYPE html><body><main ${at("2:3")}><p id="plain">Hello</p></main></body>`);
+    unmarked.editor.setText(find(unmarked.editor.tree().root, (l) => l.el.id === "plain" && !l.text)!, "Hi");
+    expect(reason(unmarked.changes.list()[0], unmarked.changes.list())).toBe("the layer has no source marker, so the page cannot find it");
+
+    const copied = openCanvas();
+    const copy = copied.editor.duplicate(copied.layerOf(copied.cards[3]));
+    copied.editor.setText(find(copy, (l) => l.el.localName === "h3" && !l.text)!, "Mine");
+    const [, words] = copied.changes.list();
+    expect(words.kind).toBe("text");
+    expect(reason(words, copied.changes.list())).toBe("the layer is new this round, so the page has no marker to find it by");
+
+    for (const round of [loop, moves, unmarked, copied].map((canvas) => canvas.changes.list())) {
+      for (const change of round.filter(({ kind }) => kind === "text")) expect(reason(change, round) ?? "").not.toMatch(STRUCTURE_REASON);
+    }
+  });
+
+  test("new words of a layer made this round are its maker's, checked with it: a change of their own, as a round may have, says so", () => {
+    const { editor, changes } = openCanvas(MOVES);
+    editor.create("text", { parent: find(editor.tree().root, (l) => l.el.id === "list")!, index: 0 });
+    const [maker] = changes.list();
+    const words: Change = { ...maker, id: 2, kind: "text", property: "text", before: "Text", after: "Hello", style: {}, target: { ...maker.target, loc: null, made: maker.layer } };
+    expect(uncheckable(words, [maker, words])).toBe("the layer is new this round: the page checks its words with the change that makes it (change 1)");
   });
 });

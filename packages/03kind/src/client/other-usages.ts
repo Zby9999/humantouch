@@ -6,9 +6,10 @@
  * window; looking again as the code changes, a value not what it was there
  * means the change went beyond its usage, and is not applied. The property
  * the change sets alone is looked at, as the check reads it, not every style
- * an edit may bring along. Not looked at: a usage the round changes the
- * property of itself, every usage when the round changes the component
- * itself so, and usages not on the page.
+ * an edit may bring along; for new words, what each usage reads (ticket
+ * 90). Not looked at: a usage the round changes the property of itself,
+ * every usage when the round changes the component itself so, and usages
+ * not on the page.
  *
  * What the page notes is kept with the claim in `.03kind/` (ticket 82): a
  * page reloaded or opened while the round is claimed goes by it, finding the
@@ -18,6 +19,7 @@
  */
 import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
 import type { Change } from "./changeset";
+import { wordsOn } from "./check";
 import { forOneUsage, foundByMarker } from "./checkable";
 import { originOf } from "./layers";
 import { otherUsagesOf } from "./page-elements";
@@ -42,14 +44,21 @@ export function notedFrom(kept: OtherUsagesKept): Map<number, OtherUsagesNoted |
   return new Map(Object.entries(kept).map(([id, one]) => [Number(id), one && { width: one.width, seen: one.seen.map((seen) => ({ ...seen })) }]));
 }
 
-/** Whether the page looks at the component's other usages for `change`: a style change for one usage of it alone, to a layer it finds by its source marker. */
+/** Whether the page looks at the component's other usages for `change`: a style change, or new words (ticket 90), for one usage of it alone, to a layer it finds by its source marker. */
 export function looksAtOtherUsages(change: Change): boolean {
-  return change.kind === "style" && change.scope === "usage" && !change.data && foundByMarker(change.target) && forOneUsage(change);
+  return (change.kind === "style" || change.kind === "text") && change.scope === "usage" && !change.data && foundByMarker(change.target) && forOneUsage(change);
 }
 
-/** Whether `other`, another change of the round, changes what `change` changes: its property, or a CSS property its reference style names. */
+/** Whether `other`, another change of the round, changes what `change` changes: its property, or a CSS property its reference style names; new words, those of the same layer. */
 function changesTheSame(change: Change, other: Change): boolean {
-  return other.id !== change.id && other.kind === "style" && (other.property === change.property || Object.keys(other.style).some((css) => css in change.style));
+  if (other.id === change.id) return false;
+  if (change.kind === "text") return other.kind === "text" && other.target.loc === change.target.loc;
+  return other.kind === "style" && (other.property === change.property || Object.keys(other.style).some((css) => css in change.style));
+}
+
+/** What an element shows of what `change` changes: the value of its property, in design language; for new words, what it reads (ticket 90). */
+function shownOn(el: Element, change: Change): unknown {
+  return change.kind === "text" ? wordsOn(el) : readValue(el, change.property as Property);
 }
 
 /**
@@ -63,12 +72,15 @@ export function noteOtherUsages(doc: Document, change: Change, round: Change[], 
   if (!looksAtOtherUsages(change)) return null;
   const component = change.target.chain[0].component;
   if (round.some((other) => other.scope === "component" && other.target.chain[0]?.component === component && changesTheSame(change, other))) return null;
-  const changedThere = new Set(round.filter((other) => other.scope === "usage" && changesTheSame(change, other)).map((other) => JSON.stringify(other.target.chain)));
+  // New words: nor a usage whose instances the round changes the data of (deleted, copied, moved, given words of their own), whose words then change, or shift from one instance to the next (review).
+  const changedThere = new Set(
+    round.filter((other) => other.scope === "usage" && (changesTheSame(change, other) || (change.kind === "text" && !!other.data))).map((other) => JSON.stringify(other.target.chain)),
+  );
   const seen: OtherUsagesNoted["seen"] = [];
   for (const [key, els] of otherUsagesOf(doc, change.target)) {
     const { chain } = originOf(els[0], readUsageChain(els[0]));
     if (changedThere.has(JSON.stringify(chain))) continue;
-    for (const el of els) seen.push({ el, key, chain, value: readValue(el, change.property as Property) });
+    for (const el of els) seen.push({ el, key, chain, value: shownOn(el, change) });
   }
   return { width, seen };
 }
@@ -111,7 +123,7 @@ export function otherUsagesChanged(doc: Document, change: Change, noted: OtherUs
       seen.el = there;
     }
     if (!there) return;
-    const is = readValue(there, change.property as Property);
+    const is = shownOn(there, change);
     if (JSON.stringify(is) !== JSON.stringify(value)) found.set(key, { chain, was: value, is });
   });
   return [...found.values()];

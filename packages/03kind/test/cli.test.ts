@@ -362,12 +362,46 @@ describe("claim, how to write the changes (ticket 65)", () => {
   });
 
   test("how the page checks names the kinds of change in this round it cannot check: done says so, and the report says what was done", async () => {
-    saveRound({ ...change("text", { before: "A", after: "B" }), id: 1 }, { ...change("brief", { before: null, after: "Bounce" }), id: 2 });
+    saveRound({ ...change("copy", { kind: "duplicate" }), id: 1 }, { ...change("brief", { before: null, after: "Bounce" }), id: 2 });
 
     const checks = rule((await cli("claim")).output, "How the page checks");
 
-    expect(checks).toContain("new words and a brief, not at all: `done` says Not checked, which is no error; say in the report what you did");
+    expect(checks).toContain("a copy and a brief, not at all: `done` says Not checked, which is no error; say in the report what you did");
     expect(checks).not.toContain("getComputedStyle");
+  });
+
+  describe("new words (ticket 90)", () => {
+    const words = (more: object = {}) => change("text", { before: "Get started", after: "Start now", ...more });
+
+    test("how the page checks says once how it checks them: by what the layer reads, in every instance", async () => {
+      saveRound({ ...words(), id: 1 }, { ...words({ before: "A", after: "B" }), id: 2 });
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toBe(
+        "the page reads new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance. " +
+          "Where it does not show, `done` says what the page shows instead, and at which width: you need not look further for how it checks.",
+      );
+    });
+
+    test("for this usage only, by the component's other usages too", async () => {
+      saveRound(words({ target: cards }));
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toContain("in every instance; new words for this usage only by the component's other usages too, which are to read as they did.");
+    });
+
+    test("where the page cannot check them, the rule names them with the other changes it cannot check, not as new words", async () => {
+      saveRound(
+        { ...words({ property: "text-1", target: cards, data: true }), id: 1 },
+        { ...words({ target: { ...inApp, run: 0 } }), id: 2 },
+      );
+
+      const checks = rule((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toBe("the page reads a change to one of a loop's instances alone and a change to a layer the page cannot find, not at all: `done` says Not checked, which is no error; say in the report what you did.");
+    });
   });
 
   describe("how the page checks says a change is checked exactly when the page checks it (`uncheckable` in check.ts)", () => {
@@ -404,6 +438,9 @@ describe("claim, how to write the changes (ticket 65)", () => {
       ["a reorder in a container made this round", change("move", { before: placeIn({ ...container, loc: null, made: "9" }, 2), after: placeIn({ ...container, loc: null, made: "9" }, 1), order })],
       ["a placement absolute in a container with no source marker", change("move", { before: placeIn({ ...container, loc: null }, 2), after: placeIn({ ...container, loc: null }, 2, at(10, 20)) })],
       ["new words", change("text", { before: "A", after: "B" })],
+      ["new words in a loop's instance alone", change("text", { property: "text-1", before: "A", after: "B", data: true })],
+      ["new words in a run of text", change("text", { before: "A", after: "B", target: { ...inApp, run: 0 } })],
+      ["new words of a copy made this round, with the change that makes it", [copy("9"), change("text", { id: 2, layer: "9", before: "A", after: "B", target: madeAs("9") })]],
       ["a brief", change("brief", { before: null, after: "Bounce" })],
     ])("%s", async (_, changes) => {
       // Every change of a round of several the page checks, or none.
@@ -2116,6 +2153,62 @@ describe("a change for one usage, shown at another usage of its component too (t
     expect(output).toContain(
       "⚠️ Not applied 1:1\n- 1. Fill: <the layer>\n  Why: the page shows it at another usage of Card too, Card used at `src/App.tsx:44:9`, its fill from #FFFFFF to #FF0000 at 50% opacity: <what keeps it so>\n",
     );
+  });
+});
+
+describe("new words, as the page checks them (ticket 90)", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+  const title = { ...redFill, kind: "text", property: "text", target: { ...cards, loc: "src/App.tsx:21:11", chain: [APP], component: "App", instances: 1 }, before: "Third Kind", after: "Third Kind Studio", style: {} };
+  const theLoop = [CARD_IN_LOOP, APP];
+
+  test("done says what the layer reads on the page, and what on the canvas, and how to change it", async () => {
+    saveRound(title);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: "Third Kind Studios" }));
+
+    const { output } = await cli("done", "1");
+
+    expect(output).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. The layer reads “Third Kind Studios” on the page, not “Third Kind Studio” as on the canvas: " +
+        "change its words in the JSX, or where they are given when they come from a prop or a variable, and run `npx 03kind done 1` again.\n",
+    );
+  });
+
+  test("finish puts it under ⚠️, its Why what the layer reads on the page", async () => {
+    saveRound(title);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: "Third Kind Studios" }));
+
+    const { output } = await cli("finish");
+
+    expect(finished(output)).toBe("Round finished: 0 of 1 change applied. The page does not show: 1.\n");
+    expect(output).toContain("⚠️ Not applied 1:1\n- 1. Text: <the layer>\n  Why: the layer reads “Third Kind Studios” on the page, not “Third Kind Studio”: <what keeps it so>\n");
+  });
+
+  test("shown, done says so, and finish puts it under ✓", async () => {
+    saveRound(title);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "shown" }));
+
+    expect((await cli("done", "1")).output).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect((await cli("finish")).output).toContain("✓ Applied\n- 1. Text: <the layer, and what you changed>\n```");
+  });
+
+  test("for one usage alone, read at another usage too: its words from what to what, as a style's value is said (ticket 77)", async () => {
+    saveRound({ ...title, target: { ...cards, chain: [{ component: "Card", usage: "src/App.tsx:44:9", thirdParty: false }, APP], instances: 1 }, before: "Your turn", after: "Your move" });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: "Your move", otherUsages: [{ chain: theLoop, was: "Freeze", is: "Your move" }] }));
+
+    expect((await cli("done", "1")).output).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it shows the change, but on another usage of Card too: Card used at `src/App.tsx:40:11`, inside App used at `src/main.tsx:8:5`, its words from “Freeze” to “Your move” since the round was claimed. " +
+        "The change is for this usage only (Scope): make it at the usage, put the other usage back as it was, and run `npx 03kind done 1` again.\n",
+    );
+    const { output } = await cli("finish");
+    expect(finished(output)).toBe("Round finished: 0 of 1 change applied. Shown at other usages of its component too: 1.\n");
+    expect(output).toContain("  Why: the page shows it at another usage of Card too, Card used at `src/App.tsx:40:11`, its words from “Freeze” to “Your move”: <what keeps it so>\n");
   });
 });
 

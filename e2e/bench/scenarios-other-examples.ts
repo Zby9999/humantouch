@@ -202,7 +202,8 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
       {
         kind: "text",
         expect: "The third stat's label reads “bytes shipped to production”.",
-        checkable: false,
+        // That usage's words, the other Stats reading as they did (ticket 90).
+        checkable: true,
         shows: () => document.querySelector('[data-testid="stats"]')!.children[2]?.lastElementChild?.textContent === "bytes shipped to production",
       },
       {

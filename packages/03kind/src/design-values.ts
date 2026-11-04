@@ -180,9 +180,11 @@ export function otherUsagesWord(change: Change, usages: OtherUsageChanged[]): st
   return usages.length === 1 ? `another usage of ${component}` : `${usages.length} other usages of ${component}`;
 }
 
-/** What other usages of a change's component show of its property now, and showed as the round was claimed (ticket 77): each `Card used at …, its fill from … to …`. */
+/** What other usages of a change's component show of its property now, and showed as the round was claimed (ticket 77): each `Card used at …, its fill from … to …`; of new words, `its words from “…” to “…”` (ticket 90). */
 export function otherUsagesWords(property: string, usages: OtherUsageChanged[], outer = true): string {
-  return usages.map(({ chain, was, is }) => `${usageWhere(chain, outer)}, its ${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`).join("; ");
+  const words = property === "text";
+  const from = (was: unknown, is: unknown) => (words ? `words from ${quoted(was as string)} to ${quoted(is as string)}` : `${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`);
+  return usages.map(({ chain, was, is }) => `${usageWhere(chain, outer)}, its ${from(was, is)}`).join("; ");
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */
