@@ -310,3 +310,7 @@ End your reply with this report. Each change is under the heading the page's che
 `done` / `finish` 前后见实现记录；代定 7 条、遗留风险 7 条见「代定的事，最终」「遗留风险，最终」。代定第 4 条（从左往右的输出在 (a) 到 (f) 几种原来就错的情况下变了）是指挥按 docs/goals.md「虚假的 ✓ = 0」和设计师分诊时「每处会报虚假的 ✓ 的地方都修」代定接受的，条件是对的从左往右输出不变，复审后已做到，待设计师确认。遗留风险第 1 条（属性面板的 X）如果要做，另开 ticket，编号在 main 上给。
 
 合并前 main 又合进了 ticket 92（2515c21、b9ee04f，只改了 bench，和本线不重叠），再同步一次（aed39ef）重跑：typecheck 通过；单测 874 通过、1 跳过，node 测试 75 条通过；e2e 401 通过、1 跳过、2 失败，都是已知会抖的停住提示一类（`applying-bench.spec.ts:310`、`:570`），用 `--project="project files" --no-deps` 单独重跑都通过。切换按钮 sha256 前 16 位仍是 `c83849f1557e0b1b`、`cdd6f09dfeaf13fa`。
+
+## 设计师确认（2026-11-04）
+
+- 「代定的事，最终」1–7 条全部确认：按包含块的 `direction`（窗口、根元素看 `body`）；自由定位只在排出来对不上空间时有一边说了算（页面按几何，画布按声明加自带尺寸的元素）；`placedFrom` 从右往左按右边处理（ADR 0014 的例外）；从左往右的输出只在 (a)–(f) 那几种原来就错的情况下变；说法照 84；`sticky` 不分方向；冻结时钉不钉住固定图层照 Chromium。
