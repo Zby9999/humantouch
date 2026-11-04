@@ -152,9 +152,11 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "Dissolving a Stack",
+    // Said here, not only in how the page checks (ticket 100): it does not check a dissolve, and an Agent took a margin off.
     calledFor: (change) => change.kind === "unstack",
     text:
-      "take the flex layout off the element and give it the fixed size given, as the positioning reference (`position: relative`) of its layers; give each layer `position: absolute`, the `left` / `top` given and its size. " +
+      "take the flex layout off the element and give it the fixed size given, as the positioning reference (`position: relative`) of its layers; give each layer `position: absolute`, its `left` and `top` the X and Y given, and its size; " +
+      "keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much. " +
       "The page should look the same afterwards.",
   },
   {

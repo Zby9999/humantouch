@@ -488,6 +488,18 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule((await cli("claim")).output, "How the page checks")).not.toContain("margins");
   });
 
+  test("a Stack dissolved: its rule says each layer's `left` and `top` are its X and Y and that it keeps its margins, without how the page checks a layer placed absolute (ticket 100)", async () => {
+    saveRound(change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target: inApp, x: 0, y: 0, width: 200, height: 40 }] } }));
+
+    const { output } = await cli("claim");
+    const dissolving = rule(output, "Dissolving a Stack");
+
+    expect(dissolving).toContain("give each layer `position: absolute`, its `left` and `top` the X and Y given, and its size");
+    expect(dissolving).toContain("keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much");
+    expect(dissolving).toContain("The page should look the same afterwards.");
+    expect(rule(output, "How the page checks")).not.toContain("margins");
+  });
+
   test("a layer placed from its container's right or bottom edge, or centered, resized: its changes say it stays placed so, and which value changes; how to write and check them, only in such a round (ticket 75)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value });
     saveRound(
