@@ -179,3 +179,7 @@ bafe4e8 之后，我误跑了一次不带 `TK_PERF_HEADLESS=1` 的 `pnpm test:pe
 - `pnpm test`：vitest 34 个文件，897 passed、1 skipped；node 测试通过。
 - `TK_E2E_PORT=5400 pnpm test:e2e`：page 组 287 passed、1 failed（`breakpoints.spec.ts:204` 的 Fill color 输入，已知不稳），单独重跑通过；「project files」组用 `--project="project files" --no-deps` 跑完，120 passed、1 skipped。
 - `TK_BENCH_PORT=5440 node e2e/bench/run-agents.ts --scripted`：5 个有脚本的场景全过（`data-and-text`、`r18-style-variables`、`r18-phone-and-stack`、`next-server-usage-text`、`next-client-stack-breakpoint`），两个改字场景的改字都核为 shown。86 还没合进 main，它新加的场景合进来后要再跑一次 `--scripted`。
+
+## 设计师确认（2026-11-04）
+
+- 「代定的事」1–10 条全部确认：没显示时 `done` 和 `finish` 的说法、漏到别的使用处沿用 77 的整句、字从数据里来和这一轮新建的图层各自的原因、其余沿用已有原因、`claim`「How the page checks」的说法、核不了的清单拿掉「new words」、改字只在窗口宽度看、审查修正 2 对所有种类生效。
