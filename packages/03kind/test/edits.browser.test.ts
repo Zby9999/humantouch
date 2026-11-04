@@ -4610,20 +4610,20 @@ ${html}${body} style="margin: 0">
     ["left to right", (html: string) => html],
     ["right to left", rightToLeft],
   ] as const)(
-    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, centered by auto margins (`inset-x-0 mx-auto`), %s: the margins take up the room, so neither side wins, it is placed from its left, and an X typed, a nudge or a drag lands it there (ticket 94, review)",
+    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, centered by auto margins (`inset-x-0 mx-auto`), %s: the margins take up the room, so neither side wins; centered by them, its X reads where it is drawn, and an X typed, a nudge or a drag lands it there (ticket 94, review; ticket 96)",
     (_, laidOut) => {
       const { doc, editor, changes, layer } = open(laidOut(bothSides.replace("left: 10px; right: 30px", "left: 0; right: 0; margin-inline: auto")));
       const tag = doc.getElementById("tag")!;
       const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
-      expect([drawn(), editor.read(layer("tag"), "x")]).toEqual([expect.closeTo(175, 1), 0]);
+      expect([drawn(), editor.read(layer("tag"), "x")]).toEqual([expect.closeTo(175, 1), 175]);
       const moves = [
         ["typed", () => editor.set(layer("tag"), "x", 300), 300],
-        ["nudged", () => editor.nudge([layer("tag")], -20, 0), -20],
+        ["nudged", () => editor.nudge([layer("tag")], -20, 0), 155],
         ["dragged", () => editor.move(layer("tag"), { parent: layer("board"), x: 300, y: 8 }), 300],
       ] as const;
       for (const [how, move, x] of moves) {
         move();
-        expect([how, changes.list().map((change) => [change.property, change.before, change.after])]).toEqual([how, [["x", 0, x]]]);
+        expect([how, changes.list().map((change) => [change.property, change.before, change.after])]).toEqual([how, [["x", 175, x]]]);
         expect([how, drawn()]).toEqual([how, expect.closeTo(x, 1)]);
         editor.undo();
         expect([how, drawn()]).toEqual([how, expect.closeTo(175, 1)]);
@@ -7324,6 +7324,174 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     editor.set(layer("bottom"), "x", 20);
 
     expect(recorded()).toEqual([["x", 12, 20, undefined, undefined]]);
+  });
+});
+
+/**
+ * A board half as wide as the page and as tall, a tag in it centered across
+ * by auto margins, as Tailwind's `inset-x-0 mx-auto w-12` centers it, and a
+ * bar centered down so (`inset-y-0 my-auto h-12`), ticket 96. In the desktop
+ * view, 800px wide, the board is 400px and both are drawn at 175; in a
+ * phone's, 390px, 195px and 72.5.
+ */
+const AUTO_MARGINS = `<!DOCTYPE html>
+<body style="margin: 0">
+  <style>
+    #board { position: relative; width: 50vw; height: 50vw }
+    #tag { position: absolute; left: 0; right: 0; margin-inline: auto; top: 8px; width: 50px; height: 20px }
+    #bar { position: absolute; top: 0; bottom: 0; margin-block: auto; left: 8px; width: 20px; height: 50px }
+  </style>
+  <div id="board" ${loc("13:5")}><span id="tag" ${loc("14:7")}>Tag</span><span id="bar" ${loc("15:7")}></span></div>
+</body>`;
+
+describe("a layer centered by auto margins (ticket 96)", () => {
+  const open = async (html = AUTO_MARGINS) => {
+    const canvas = openCanvas(html);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await canvas.views.add(phoneFrame, 390);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    /** Where `id` is drawn in its board along `axis`: in the desktop view, and in the phone view, brought up to date. */
+    const drawn = (id: string, axis: "x" | "y") => {
+      canvas.views.sync(phone);
+      return [canvas.doc, phone.document].map((doc) => {
+        const [r, p] = [doc.getElementById(id)!.getBoundingClientRect(), doc.getElementById("board")!.getBoundingClientRect()];
+        return axis === "x" ? r.left - p.left : r.top - p.top;
+      });
+    };
+    return { ...canvas, phone, layer, drawn };
+  };
+  const ways = [
+    ["across, left to right", (html: string) => html, "tag", "x"],
+    ["across, right to left", (html: string) => html.replace("<body", '<body dir="rtl"'), "tag", "x"],
+    ["down", (html: string) => html, "bar", "y"],
+  ] as const;
+  /** `by` px along `axis`, as `nudge` takes it. */
+  const along = (axis: "x" | "y", by: number): [number, number] => (axis === "x" ? [by, 0] : [0, by]);
+
+  test.each(ways)("centered %s: its X or Y reads where it is drawn, from its container's left or top", async (_, laidOut, id, axis) => {
+    const { editor, layer, drawn } = await open(laidOut(AUTO_MARGINS));
+    expect(drawn(id, axis)).toEqual([175, 72.5]);
+    expect(editor.read(layer(id), axis)).toBe(175);
+  });
+
+  test.each(ways)("centered %s, nudged 20px back: it stays centered, 20px off its middle, in every view", async (_, laidOut, id, axis) => {
+    const { editor, layer, drawn } = await open(laidOut(AUTO_MARGINS));
+    editor.nudge([layer(id)], ...along(axis, -20));
+    expect(drawn(id, axis)).toEqual([155, 52.5]);
+    expect(editor.read(layer(id), axis)).toBe(155);
+    editor.undo();
+    expect(drawn(id, axis)).toEqual([175, 72.5]);
+  });
+
+  test.each(ways)("centered %s, its X or Y typed, or let go there: it lands there and stays centered, as far off its middle, in every view", async (_, laidOut, id, axis) => {
+    const { editor, layer, drawn } = await open(laidOut(AUTO_MARGINS));
+    const other = axis === "x" ? "y" : "x";
+    const moves = [
+      ["typed", () => editor.set(layer(id), axis, 195)],
+      ["dropped", () => editor.move(layer(id), { parent: layer("board"), [axis]: 195, [other]: editor.read(layer(id), other) } as { parent: Layer; x: number; y: number })],
+    ] as const;
+    for (const [how, move] of moves) {
+      move();
+      expect([how, drawn(id, axis)]).toEqual([how, [195, 92.5]]);
+      expect([how, editor.read(layer(id), axis)]).toEqual([how, 195]);
+      editor.undo();
+      expect([how, drawn(id, axis)]).toEqual([how, [175, 72.5]]);
+    }
+  });
+
+  test("centered across, its X typed: the change records it so, its X from where it was drawn to where it is, its middle 20px further, and its sides as much more and less", async () => {
+    const { editor, layer, changes } = await open();
+    editor.set(layer("tag"), "x", 195);
+    const [x] = changes.list();
+    expect([x.property, x.before, x.after, x.placedFrom, x.centeredOn, x.style, x.margins]).toEqual([
+      "x",
+      175,
+      195,
+      { edge: "start", centered: true, margins: true },
+      { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } },
+      { left: "20px", right: "-20px" },
+      { x: 0, y: 0 },
+    ]);
+    // Typed again, the same change, its middle where it was before the first.
+    editor.set(layer("tag"), "x", 145);
+    expect(changes.list().map((change) => [change.before, change.after, change.centeredOn, change.style])).toEqual([
+      [175, 145, { before: { percent: 50, px: 0 }, after: { percent: 50, px: -30 } }, { left: "-30px", right: "30px" }],
+    ]);
+  });
+
+  test("centered across, resized: it stays centered, growing on both sides alike, its width the one change, placed so", async () => {
+    const { editor, layer, changes, drawn } = await open();
+    editor.set(layer("tag"), "width", { type: "fixed", value: 70 });
+    expect(drawn("tag", "x")).toEqual([165, 62.5]);
+    expect(changes.list().map((change) => [change.property, change.placedFrom])).toEqual([["width", { edge: "start", centered: true, margins: true }]]);
+  });
+
+  test.each([
+    ["its left one", "margin-left: auto", 350, 145, [["right", 0, 20]]],
+    ["its right one", "margin-right: auto", 0, 0, [["x", 0, -20]]],
+  ] as const)(
+    "a layer placed by both its sides, as wide as it is set, with only %s `auto`: the browser pushes it to the other side, so it is placed from that side, its X where it is drawn, and nudged it stays placed so in every view",
+    async (_, margin, x, phone, changed) => {
+      const { editor, layer, changes, drawn } = await open(AUTO_MARGINS.replace("margin-inline: auto", margin));
+      expect([drawn("tag", "x"), editor.read(layer("tag"), "x")]).toEqual([[x, phone], x]);
+      editor.nudge([layer("tag")], -20, 0);
+      expect(drawn("tag", "x")).toEqual([x - 20, phone - 20]);
+      expect(changes.list().map((change) => [change.property, change.before, change.after])).toEqual(changed);
+    },
+  );
+
+  /** The page `width` px wide, its board half that, as the check shows it at a view's width; `css`: the code as the Agent writes it. */
+  const pageAt = (width: number, css = "") => {
+    const frame = document.createElement("iframe");
+    frame.style.width = `${width}px`;
+    document.body.append(frame);
+    copies.push(frame);
+    const doc = frame.contentDocument!;
+    doc.open();
+    doc.write(AUTO_MARGINS.replace("</style>", `${css}</style>`));
+    doc.close();
+    return doc;
+  };
+  const copies: HTMLIFrameElement[] = [];
+  afterEach(() => copies.splice(0).forEach((frame) => frame.remove()));
+
+  test("centered across and moved: the page shows it where its middle is as far past its container's at every width; a px from one side right as wide as the canvas is not, nor its sides with its auto margins gone", async () => {
+    const { editor, layer, changes } = await open();
+    editor.set(layer("tag"), "x", 195);
+    const [x] = changes.list();
+    const check = (width: number, css: string) => checkChange(pageAt(width, css), x, onCanvas([x]));
+    for (const width of [800, 390]) expect(check(width, "#tag { left: 20px; right: -20px }")).toEqual({ outcome: "shown" });
+    expect(check(800, "#tag { left: 195px; right: auto }")).toEqual({ outcome: "shown" });
+    // As wide as a phone, its board 195px wide: its middle 20px past the board's, at 92.5px; not at 195px.
+    expect(check(390, "#tag { left: 195px; right: auto }")).toEqual({ outcome: "not shown", actual: { value: 195, at: 92.5, margins: true } });
+    expect(check(800, "#tag { left: 20px; right: -20px; margin-inline: 0 }")).toEqual({ outcome: "not shown", actual: { value: 20, at: 195, margins: true } });
+    // Not moved on the page at all: still at its middle.
+    expect(check(800, "")).toEqual({ outcome: "not shown", actual: { value: 175, at: 195, margins: true } });
+  });
+
+  test("centered across, moved into another Frame, placed freely there: it stays centered there by its auto margins, as far past that Frame's middle; copied, the copy is placed so too", async () => {
+    const html = AUTO_MARGINS.replace("</div>", `</div><div id="other" ${loc("16:5")} style="position: relative; width: 200px; height: 100px"></div>`);
+    const { editor, layer, changes, doc } = await open(html);
+    const box = (el: Element) => [el.getBoundingClientRect().left - el.parentElement!.getBoundingClientRect().left, el.getBoundingClientRect().width];
+
+    editor.move(layer("tag"), { parent: layer("other"), x: 100, y: 10 });
+    const tag = doc.getElementById("tag")!;
+    expect(tag.parentElement!.id).toBe("other");
+    expect(box(tag)).toEqual([100, 50]);
+    expect([declaredByEdit(tag, "left"), declaredByEdit(tag, "right")]).toEqual(["25px", "-25px"]);
+    const [moved] = changes.list();
+    expect([(moved.before as Place).absolute, (moved.after as Place).absolute]).toEqual([
+      { x: 175, y: 8, placed: { x: { edge: "start", centered: true, margins: true, percent: 50, px: 0 } } },
+      { x: 100, y: 10, placed: { x: { edge: "start", centered: true, margins: true, percent: 50, px: 25 } } },
+    ]);
+    editor.undo();
+    expect(doc.getElementById("tag")!.parentElement!.id).toBe("board");
+    expect(box(doc.getElementById("tag")!)).toEqual([175, 50]);
+
+    const copy = editor.duplicate(layer("tag"));
+    expect(box(copy.el)).toEqual([175, 50]);
+    expect((changes.list()[0].after as Place).absolute).toEqual({ x: 175, y: 8, placed: { x: { edge: "start", centered: true, margins: true, percent: 50, px: 0 } } });
   });
 });
 

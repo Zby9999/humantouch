@@ -5,6 +5,7 @@
  */
 import type { Destination, Editor } from "./edit-commands";
 import { placesItself } from "./property-table";
+import { autoMarginBefore } from "./placed-from";
 import { trackCount } from "./grid-tracks";
 import type { Layer } from "./layers";
 import { snap, type Mark } from "./snap";
@@ -73,10 +74,11 @@ export function findDrop(
       box = new DOMRect(to.x, to.y, box.width, box.height);
       marks = to.marks;
     }
-    // Placed where it is let go: its left and top in the Frame, margins aside; snapped, exactly where it lines up.
+    // Placed where it is let go: its left and top in the Frame, margins aside, but one `auto`, which X and Y count (ticket 96); snapped, exactly where it lines up.
     const margins = !layer || layer.text ? { marginLeft: "0", marginTop: "0" } : getComputedStyle(el(layer));
-    const x = box.left - inside.left - parseFloat(margins.marginLeft);
-    const y = box.top - inside.top - parseFloat(margins.marginTop);
+    const counted = (axis: "x" | "y") => (!layer || layer.text ? 0 : autoMarginBefore(el(layer), axis));
+    const x = box.left - inside.left - parseFloat(margins.marginLeft) + counted("x");
+    const y = box.top - inside.top - parseFloat(margins.marginTop) + counted("y");
     const at = (n: number, exact: boolean) => (exact ? Math.round(n * 100) / 100 : Math.round(n));
     return { to: { parent: container, x: at(x, snapped.x), y: at(y, snapped.y) }, line: null, shifts: new Map(), box, marks };
   }

@@ -16,9 +16,9 @@ import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Side } from "./checkable";
+import { PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { extentOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
+import { autoMarginBefore, computedShareOf, extentOf, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -161,15 +161,41 @@ export function createEditor(
    * where it places it (ticket 79). With how it is placed, the share of its
    * container the side gives it, which stays (as first changed, `earlier`),
    * and the room its container gives it. Null for any other, or a side whose
-   * value is not read here (a `var()`): written in px, as X and Y are.
+   * value is not read here (a `var()`): written in px, as X and Y are; and
+   * for one centered by its auto margins (`marginsCentering`).
    */
   const centeringSide = (el: Element, property: Property, earlier: Change | null) => {
     const along = PLACED_BY[property];
     if (!along) return null;
     const from = placedFrom(el, along.axis);
-    if (!from.centered || from.edge !== along.edge) return null;
+    if (!from.centered || from.margins || from.edge !== along.edge) return null;
     const share = earlier?.centeredOn ? earlier.centeredOn.after : sideShareOf(el, along.axis, along.edge);
     return share && { from, share, room: extentOf(el, along.axis), side: SIDES[along.axis][along.edge] };
+  };
+
+  /**
+   * Of a change to the X or Y of `el`, from `before` to `value`, when it is
+   * centered by its auto margins between its sides (ticket 96): how it stays
+   * so, moved as far, its sides given as much more and less, each keeping
+   * its share of its container (`left: 0; right: 0` to `left: 20px; right:
+   * -20px`), so as wide as its container is, its middle is as far past where
+   * it was; where its middle was and is now. Null for any other.
+   */
+  const marginsCentering = (el: Element, property: Property, value: number, before: number) => {
+    const along = PLACED_BY[property];
+    if (!along || along.edge !== "start") return null;
+    const from = placedFrom(el, along.axis);
+    if (!from.margins) return null;
+    const by = value - before;
+    const { start, end } = SIDES[along.axis];
+    const [from0, to0] = [computedShareOf(el, start), computedShareOf(el, end)];
+    const sides = { [start]: { percent: from0.percent, px: round(from0.px + by) }, [end]: { percent: to0.percent, px: round(to0.px - by) } } as Record<string, Share>;
+    const middle = (a: Share, b: Share): Share => ({ percent: (100 + a.percent - b.percent) / 2, px: round((a.px - b.px) / 2) });
+    return {
+      from,
+      declarations: { [start]: shareCss(sides[start]), [end]: shareCss(sides[end]) },
+      middle: { before: middleShareOf(el, along.axis), after: middle(sides[start], sides[end]) },
+    };
   };
 
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
@@ -192,10 +218,13 @@ export function createEditor(
     // Centered on where the side that places it does (ticket 79): the side keeps its share of the container, past it by as much as the layer moves.
     const centering = typeof value === "number" ? asShown(el, () => centeringSide(el, property, earlier)) : null;
     const offCenter = centering && pastShare(value as number, centering.share.percent, centering.room);
+    // Centered by its auto margins (ticket 96): its sides move it, as much one way as the other, so it stays so.
+    const byMargins = typeof value === "number" && typeof before === "number" ? asShown(el, () => marginsCentering(el, property, value, before)) : null;
     const declarations = asShown(el, () => ({
       ...(asStack && { display: "flex", "flex-direction": stackOf(el).direction === "horizontal" ? "row" : "column" }),
       ...definition.write(value, el),
       ...(centering && { [centering.side]: shareCss({ percent: centering.share.percent, px: offCenter! }) }),
+      ...byMargins?.declarations,
       // Placed freely at a breakpoint and placed anew there: as large as it was when first taken out of the layout.
       ...(property === "absolute" && value && earlier?.style.width && { width: earlier.style.width, height: earlier.style.height }),
     }));
@@ -217,10 +246,11 @@ export function createEditor(
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
     const along = SIZE_AXIS[property];
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
-    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centering ? { placedFrom: earlier?.placedFrom ?? centering.from } : {};
+    const centeredBy = centering ?? byMargins;
+    const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centeredBy ? { placedFrom: earlier?.placedFrom ?? centeredBy.from } : {};
     // Its X or Y, or its `right` or `bottom`, changed at every width: where the canvas places it otherwise, the value moves nothing.
     const placedBy = PLACED_BY[property];
-    const { placedOtherwiseAt, offsetInLayoutAt } = !earlier && !breakpoint && placedBy ? viewsMovedOtherwise(layer, placedBy, !!centering) : { placedOtherwiseAt: [], offsetInLayoutAt: [] };
+    const { placedOtherwiseAt, offsetInLayoutAt } = !earlier && !breakpoint && placedBy ? viewsMovedOtherwise(layer, placedBy, !!centeredBy) : { placedOtherwiseAt: [], offsetInLayoutAt: [] };
     const variables = bind?.(property, value, picked, earlier?.variables);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
@@ -237,7 +267,7 @@ export function createEditor(
       ...(variables && { variables }),
       ...(within && { within }),
       // Placed by its X and Y: drawn past them by its margins, which it keeps.
-      ...(PLACING.includes(property) && value !== null && { margins: marginsAt(el, PLACED_BY[property]?.edge) }),
+      ...(PLACING.includes(property) && value !== null && { margins: marginsPast(el, PLACED_BY[property]?.edge) }),
       ...placed,
       ...(centering && {
         centeredOn: {
@@ -245,6 +275,7 @@ export function createEditor(
           after: { percent: centering.share.percent, px: offCenter! },
         },
       }),
+      ...(byMargins && { centeredOn: { before: earlier?.centeredOn?.before ?? byMargins.middle.before, after: byMargins.middle.after } }),
       ...(placedOtherwiseAt.length ? { placedOtherwiseAt } : {}),
       ...(offsetInLayoutAt.length ? { offsetInLayoutAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
@@ -259,6 +290,15 @@ export function createEditor(
     // A Stack now laid out the other way: the layers are built anew, so a drag into it reads the way it runs now.
     if (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction) tree = buildLayerTree(doc);
     return id;
+  };
+
+  /**
+   * The margins a layer placed by its X and Y, or from `edge`, is drawn past
+   * them by: but one `auto` before it, which they count (ticket 96).
+   */
+  const marginsPast = (el: Element, edge?: Edge) => {
+    const margins = marginsAt(el, edge);
+    return edge === "end" ? margins : { x: margins.x - autoMarginBefore(el, "x"), y: margins.y - autoMarginBefore(el, "y") };
   };
 
   /**

@@ -23,17 +23,23 @@ export type Edge = "start" | "end";
  * How a layer placed freely is placed along one axis (GLOSSARY: Placement,
  * ticket 75): from its container's `edge`, by the side that places it from
  * there (`SIDES`); `centered` on where that side places it, moved back half
- * its size (`translate: -50%` from the start, `50%` from the end).
+ * its size (`translate: -50%` from the start, `50%` from the end); or, with
+ * `margins`, centered between both its sides by its margins there, both
+ * `auto`, which take up the room its size leaves (`inset-x-0 mx-auto w-12`,
+ * ticket 96): placed from its start then, as X and Y go, and centered.
  */
 export interface PlacedFrom {
   edge: Edge;
   centered: boolean;
+  margins?: true;
 }
 
 /**
  * A length as a share of a container's size along one axis and px past that:
  * `calc(50% + 20px)` is 50 and 20. How a layer centered is placed: what its
- * side gives it, the share kept as it moves (ticket 79).
+ * side gives it, the share kept as it moves (ticket 79), which is where its
+ * middle is; centered by its auto margins, where its middle is too, which its
+ * sides give it between them (ticket 96).
  */
 export interface Share {
   percent: number;
