@@ -222,7 +222,11 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
     model: "claude-sonnet-5-5",
     effort: "medium (--effort medium)",
     // In its debug log only.
-    effortSeen: (folder) => /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(readOr(join(folder, "claude-debug.log")))?.[1] ?? null,
+    // Claude Code writes the session's effort only when it lowers it (capped, or refused by the API): the level it used then, else null.
+    effortSeen: (folder) => {
+      const log = readOr(join(folder, "claude-debug.log"));
+      return /using '(low|medium|high|xhigh|max)'/.exec(log)?.[1] ?? /no more than '(low|medium|high|xhigh|max)'/.exec(log)?.[1] ?? /\beffort["'\s:=]+["']?(low|medium|high|xhigh|max)\b/i.exec(log)?.[1] ?? null;
+    },
     args: (folder, prompt = PROMPT, project = PROJECT) => [
       "-p",
       prompt,

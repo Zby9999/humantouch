@@ -179,7 +179,7 @@ test("Claude runs on Sonnet 5.5 at effort medium, pinned (ticket 88, the designe
   assert.equal(AGENTS.claude.effort, "medium (--effort medium)");
 });
 
-test("the effort pi ran at is the thinking level its answers name in the transcript; Claude Code says it in its debug log, Cursor nowhere", () => {
+test("the effort pi ran at is the thinking level its answers name in the transcript; Claude Code says it in its debug log only when it lowers it, Cursor nowhere", () => {
   const folder = mkdtempSync(join(scratch, "run-"));
   writeFileSync(join(folder, "transcript.jsonl"), `${JSON.stringify({ type: "message_end", message: { role: "assistant", thinkingLevel: "high" } })}\n`);
 
@@ -187,6 +187,11 @@ test("the effort pi ran at is the thinking level its answers name in the transcr
   assert.equal(AGENTS.claude.effortSeen!(folder), null);
   writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] effort: medium\n");
   assert.equal(AGENTS.claude.effortSeen!(folder), "medium");
+  // Lowered: the level it used, not the one asked for.
+  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] [effort] Effort 'high' exceeds the cap for claude-sonnet-5-5; using 'medium'.\n");
+  assert.equal(AGENTS.claude.effortSeen!(folder), "medium");
+  writeFileSync(join(folder, "claude-debug.log"), "[DEBUG] [effort] the API refused effort 'high' for this model: no more than 'low'\n");
+  assert.equal(AGENTS.claude.effortSeen!(folder), "low");
   assert.equal(AGENTS.cursor.effortSeen, undefined);
 });
 
