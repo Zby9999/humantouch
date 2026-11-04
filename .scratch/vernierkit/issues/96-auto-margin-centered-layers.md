@@ -152,3 +152,58 @@ ticket 的例子（board 400，图层画在 175），面板输 X = 195：
 3. **`translate` 写法多报**（代定第 3 条）：Agent 改用 `left-[calc(50%+20px)] -translate-x-1/2` 时 `done` 报「没有显示」，说法让它照说明写两边。
 4. **在排版里带 `mx-auto` 的图层被拖出来变成自由定位**，落点照旧减去用掉的外边距，会跳（原来就这样，代定第 4 条，没改）。
 5. 两边是 `var()` 之类读不出百分比时按算出来的 px 写（`computedStyleMap` 一般能读出 Tailwind v4 的 `calc(var(--spacing) * 0)`，算出来就是 px，不受影响）；读一次的记录会过时；一个视图代表一整段宽度；没跑真实 Agent（同 79、94）。
+
+**按独立审查修正（2026-11-04）**
+
+指挥另跑了独立审查（effort high，探针在 scratchpad 的 `review/`），在同一条分支上修（指挥先把 main 合进来，020018e，只动了 bench 和 ticket 文件，和本线不重叠）。每条源码修正都先写测试、看着失败再改；有的在本线之前的源码（9f9b4b0）上也跑了。
+
+*找到的和改的*
+
+1. **新的虚假 ✓（中高，确认；本线引入，另有一个 9f9b4b0 就有的洞）**：
+   - 本线让 `placedFrom` 对 `auto` 外边距居中的图层也答 `centered: true`，于是 `check.ts` 的「仍居中」（原 `stillCentered`）把它也当成 `translate` 居中。`translate` 居中的图层移动后，页面去掉 translate、改写 `right: 0; margin-inline: auto`，`done` 报「显示了」，图层却画在别处：探针 P11（拖出再拖回，board 400，画布 200，页面 290），P1b（X +20，board 300，画布 150，页面 170）。改：判断改名 `centeredByTranslate`，要 `centered && !margins`。
+   - 9f9b4b0 就有的：拖出再拖回、记了 `placed` 的移动只比那一边的值（`placedThere` 的 `sideOff`），translate 留着、再加 `right-0 mx-auto`，那一边仍是 `calc(50% + 20px)`，报「显示了」，图层画在 270（该在 200）。X 改动（`lookPosition`）在非窗口宽度也一样（那里外边距「不知道」，只比那一边）。改：那一边所在的那条边上有 `auto` 外边距在占地方（`autoMarginTakesRoom`），那一边就没把图层摆在它给的位置，算「没有显示」；`placedThere` 和 `lookPosition` 都这样。没照指挥说的「把外边距加进去比」：79 的代定第 7 条（设计师已确认）定了记 `placed` 的方向只比那一边、不比外边距，而 `right` / `bottom` 那边画布也没记外边距；只拦 `auto` 外边距已经堵上这个洞，别的写法不变（见代定第 7 条）。
+   - 测试：`edits.browser.test.ts` 一条（X +20 页面去 translate 加 `mx-auto`；拖出再拖回，去 translate、留 translate 加 `mx-auto`、照写三种）。在改前的本线代码（020018e）上失败（`expected 'shown' to be 'not shown'`）；在 9f9b4b0 上「留 translate 加 `mx-auto`」那一句失败（就是那个旧洞），其余两句在那里本来就对。
+2. **旁边视图里不这样居中时，移动让图层在那里跳（中，确认）**：从右往左、手机视图里页面的断点把它改成 `right: auto; left: 16px; margin-inline: 0`，在桌面视图里移动它，写 `left: 20px; right: -20px`，手机视图里两边都写了值、宽度定死，从右往左 `right` 说了算，图层从 16 跳到 165（9f9b4b0：16 → 20）。改：移动第一次记下时，看每个旁边的视图里这个方向是不是也靠两边的 `auto` 外边距居中（`viewsUncentered`，照 `viewsMovedOtherwise` 读计算样式，不排版）；有不是的，就只写起点那一边、加两倍（`left: 40px`），终点那一边照各个宽度原样不写，那些视图的范围记进改动（`uncenteredAt`），`done` 在那些宽度按写的 `left` 核对（`offSide`，外边距知不知道照 `drawnThere`）。桌面视图仍居中、中点往右 20；手机视图照 `left` 摆，从 16 到 40，从左往右、从右往左一样。改动说明写「Give its `left` twice as much more, `left: 40px` (Tailwind's `left-[40px]`), keeping its `right` and its auto margins as the page has them at each width: where the page does not center it so, below 800px, it is placed by that `left`.」；`done` 在那里说「…where the canvas places it by its `left`, 40px, as it does not center it by its auto margins there: give it that `left` at this width too…」。见代定第 6 条。测试：`edits.browser.test.ts` 从左往右、从右往左各一条（三视图位置、改动单、页面在 1000 / 390 宽的核对）；改前从左往右是 `[195, 20]`、从右往左 `[195, 165]`，都失败；`cli.test.ts` 一条（说明和 `done` 的说法），改前说明里是 `right: undefined`，失败。
+3. **容器比图层加两边还窄时 `done` 永远不过（中，确认）**：原来 `done` 总按两边外边距相等算该在哪里；浏览器在剩下的空间是负的时候，横向不平分（CSS 2.1 10.3.7：从左往右左外边距取 0，从右往左右外边距取 0、左外边距吃掉负数），于是页面和画布都画在 20（从右往左都在 -35），`done` 却等 -7.5，报「没有显示」。改：`offMiddle` 按画布的两边（改动写的 `left` / `right`；只写了起点那一边时，从中点推出终点那一边）在那个宽度照浏览器的规则算该画在哪里；竖向（CSS 2.1 10.6.4）没有这条例外，负的也平分，在 Chrome 里量过，和画布、页面一致。测试：从左往右、从右往左、竖向各一条（图层 250 宽 / 高，手机视图的 board 195）：页面照画布写时在 390、1000 都「显示了」；改前横向两条失败，竖向本来就过。
+4. **（不修，记进遗留风险）`inset-x-0 mx-auto max-w-*`、宽度 `auto`**：不算居中（「定死」照 94 代定第 2 条按声明读）；X 读 175，微移写 `left: 155px; right: auto`，宽度也跟着缩。指挥会向设计师提后续 ticket。
+5. **性能（低）**：`findDrop` 每次指针移动都跑，本线加的读 `auto` 外边距（`absolute()` + `computedStyleMap()`）每步两次。改：拖动开始时读一次（`DragSession.autoMargins`），`findDrop` 收它。更正上面实现记录「性能」一节的话：本线第一版拖动途中每一步多读两次，不是「每一步不多读」；这次修正后才是。另外更正 94 合并前的一句「`autoMargin` 只在从右往左时才读」：本线之后，`placedFrom` / `endWins` 在从左往右时，对每个两边都写了值的自由图层也读 `computedStyleMap()`（只读样式，不排版）。
+6. **说法（低）**：
+   - 移动的 `done`，记了 `placed` 但位置不对、或不是自由定位时，`auto` 外边距居中的那个方向原来说「check its `position`, `left` and `top`」；改为「`left` and `right` with its `margin-inline: auto`, and `top`」（`sidesToCheck`，两处共用）。`cli.test.ts` 原有那条的期望改了，新加一句，改前失败。
+   - 下一轮重读改前（`readAgain`）：原来 `auto` 外边距居中的改动不更新 `centeredOn.before`，说明仍说「its middle from 50%…」。改：`offMiddle` 的 `actual` 带上页面上图层中点现在在哪里（`share`：仍这样居中的，照两边读成百分比加 px；否则画出来的 px），`readAgain` 照 79 的做法换上。浏览器测试三处期望加 `share`，改前失败；`cli.test.ts` 加一条重读的。
+7. **（不修，记进遗留风险）解散 Frame**：读了 `structure-edits.ts` 1050–1060：每个子图层的位置是画出来的边框减去算出来的外边距，`auto` 外边距居中的子图层那里减掉的是用掉的 175px，再写 `left: x; right: auto`，`auto` 外边距算成 0，图层往左跳 175。9f9b4b0 一样（这条线没碰这里）。
+8. **整理（低）**：`extentOf` 把已经读的 `getComputedStyle` 传给 `sizeAlong`；`centeringSides` 的说明缩短。
+
+*代定的事，更新后*
+
+1. **写进代码的样子**（同上）：两边都保留、外边距照旧 `auto`，一个加、一个减同样多；拖进别的 Frame、复制时以 0 为准一加一减。
+2. **只有一边外边距是 `auto` 的，按另一边定位**（同上）。
+3. **`done` 按画出来的位置核对，不按写法**（同上），并且照浏览器在空间不够时的摆法（审查后，见第 3 条）。
+4. **面板的 X 把 `auto` 外边距占掉的地方算进去**（同上），拖动时在开始时读一次（审查后）。
+5. **改尺寸两边对称地长**（同上）。
+6. **（新）旁边有视图不这样居中时，只写起点那一边、加两倍**：目标是不给那个视图添一个它原来没有的、会把它摆到别处的 `right`（ADR 0014，从右往左时它说了算）。那个视图里图层照写的 `left` 摆，和任何在所有宽度改的 X 一样，`left` 换成新写的值（例子里 16 → 40；9f9b4b0 是 16 → 20，那时写的就是 X）；不写成断点改动，因为桌面视图改的照例在所有宽度。代价：桌面视图里两边之间窄了 40，窄的宽度上比原来早一点不再居中（代定第 1 条说的那种），只在这种页面上。从左往右、从右往左一样（从左往右时两边都写本来也不跳，但为了一条规则，同样只写 `left`）。
+7. **（新）`translate` 居中、按右边定位的，`auto` 外边距在那一边占地方就算没显示，别的外边距照旧不比**：照 79 已确认的代定第 7 条，记 `placed` 的方向只比那一边；只拦会把图层摆到别处的 `auto` 外边距（`ml-auto` / `mx-auto` 之类）。X / `right` 改动在知道画布外边距的宽度照旧连外边距一起比，在别的宽度原来只比那一边，现在多拦这一种。
+
+*遗留风险，更新后*
+
+1. 旁边视图里定位方式不同（审查第 2 条修了「不这样居中」那种）：旁边视图里也居中、但两边的写法不同（例如手机视图 `inset-x-4`），照所有宽度写的两边，手机视图里两边被改成桌面的值，中点照算，不跳但两边变了；`done` 按中点核对，Agent 照写就过。
+2. ~~容器太窄~~（审查第 3 条已修）。
+3. `translate` 写法多报（代定第 3 条）。
+4. 在排版里带 `mx-auto` 的图层被拖出来变成自由定位，落点照旧减去用掉的外边距，会跳（原来就这样）。
+5. **（新，审查第 4 条）`inset-x-0 mx-auto max-w-*`、宽度 `auto` 不算居中**：X 读 175，微移写 `left: 155px; right: auto`，宽度跟着缩成内容宽。照 94 代定第 2 条（「定死」按声明读）；指挥会向设计师提后续。
+6. **（新，审查第 7 条）解散 `auto` 外边距居中的子图层所在的 Frame**，子图层往左跳用掉的外边距那么多（9f9b4b0 就这样）。
+7. 读不出百分比的两边按算出来的 px 写；读一次的记录会过时（`uncenteredAt` 也是第一次记下时读）；一个视图代表一整段宽度；没跑真实 Agent。
+
+*全量（最后的代码）*
+
+- `pnpm typecheck` 通过。
+- `pnpm test`：单测 939 通过、1 跳过（34 个文件）；node 测试 121 条通过。
+- `TK_E2E_PORT=5800 pnpm test:e2e`：page 一组 287 通过、2 条失败：`off-canvas.spec.ts:173`（已知不稳），和本线自己的 `move-placement.spec.ts:196`（第一步「三个视图里中点都是 0」5 秒内没等到旁边的视图跟上，机器忙时那条跑了 14.1s）；两条单独重跑都过，`move-placement.spec.ts:196` 再用 `--repeat-each=4` 跑 4 次全过。project files 一组因此没跑，用 `--project="project files" --no-deps` 补跑：133 通过、1 跳过（含 `round.spec.ts` 那条和切换按钮体积检查）。
+- bench（`TK_BENCH_PORT=5840`）：`--dry` 24 个场景都 ✓，`--scripted` 15 个都 ✓，和 9f9b4b0 上跑的输出逐行比对相同。
+
+*性能（headless，只作前后对比）*
+
+`TK_PERF_HEADLESS=1 TK_PERF_PORT=5810 pnpm test:perf` 在最后的代码上：15 条全过。中位数 / p95，和 9f9b4b0 那次比：改一个值 圆角 work 10.4 / 14.2ms（改前 8.7 / 12.0）、间距 10.6 / 17.0ms（15.2 / 26.7）；按住方向键 圆角 8.5 / 13.8ms（10.5 / 14.0）、间距 13.2 / 15.5ms（11.6 / 16.9）；拖动卡片 60 fps（60）；拖控制点改尺寸 59.6 fps（52.6）；核对认领的一轮最长一段 15.4 / 16.5ms（22.6 / 24.2）；进入编辑模式 133.7ms（134.8）。前后在同一水平，方向不一致是噪声；性能场景里没有这种图层。
+
+*包体积（最后的代码）*
+
+切换按钮 `react.dev.js` 1423 B（gzip -9 822 B，sha256 前 16 位 `c83849f1557e0b1b`）、`chunk-UQJRS7YD.js` 21575 B（gzip -9 9164 B，`cdd6f09dfeaf13fa`），和 9f9b4b0 逐字节相同。编辑层 `editor.dev.js` 328607 → 332022 B（和 9f9b4b0 比 +3415 B；上一版 330693），gzip -9 111660 → 112856 B（+1196 B；上一版 112335）。
