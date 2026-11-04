@@ -9,7 +9,7 @@ import { changes as changesWord, container as containerOf, describeChanges, shar
 import { breakpointName } from "./client/breakpoints";
 import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, quoted, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
-import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
+import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_MAX, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
@@ -557,13 +557,15 @@ function centeredOff({ property, centeredOn }: Change, placed: { value: number; 
  * (ticket 96), the page drawing it (`value`) elsewhere than where its middle,
  * as the canvas has it, puts it at that width (`at`).
  */
-function notAtMiddle({ property, centeredOn, style }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
+function notAtMiddle({ property, centeredOn, style, placedFrom }: Change, placed: { value: number; at: number }, again: string, width?: number): string {
   const { axis } = PLACED_BY[property]!;
   const { start, end } = SIDES[axis];
+  // Its size `auto`, held by a maximum (ticket 97): no size of its own either.
+  const held = placedFrom?.held ? `, its ${AXIS_SIZE[axis]} \`auto\`, held by its \`${AXIS_MAX[axis]}\`` : "";
   return (
     `${sentenceAt(width)} layer is drawn at ${placed.value}px from its container's ${start} edge, where the canvas centers it by its auto margins at ${placed.at}px, ` +
     `its middle at ${shareWords(centeredOn!.after, axis, "start", "its container", "there")}. ` +
-    `Keep it centered between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`), ` +
+    `Keep it centered between its \`${start}\` and \`${end}\` by its auto margins (\`${AUTO_MARGINS[axis]}\`, Tailwind's \`${AUTO_MARGINS_CLASS[axis]}\`)${held}, ` +
     `its sides as the notes give them (\`${start}: ${style[start]}; ${end}: ${style[end]}\`), not a px value from one side, and ${again}.`
   );
 }

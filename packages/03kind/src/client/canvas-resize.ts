@@ -10,7 +10,7 @@ import { DRAG_THRESHOLD, type At } from "./canvas-drag";
 import type { Editor, ResizeTo } from "./edit-commands";
 import type { Layer } from "./layers";
 import type { Edge, PlacedFrom } from "./checkable";
-import { placedFrom } from "./placed-from";
+import { heldCentered, placedFrom } from "./placed-from";
 import { readValue, round } from "./property-table";
 import { marksOf, middlesOf, resizeBox, type Handle, type Limits, type Middles } from "./resize";
 import type { Axis, Box, Mark } from "./snap";
@@ -141,11 +141,12 @@ function begin({ layer, in: { view } }: ResizeSession, editor: Editor): Begun {
   /** A minimum or maximum as the layer has it in this view, a locked layer's from its own styles too; null: none. */
   const limit = (property: "minWidth" | "maxWidth" | "minHeight" | "maxHeight") => readValue(el, property);
   // Its padding and border it keeps however small: no smaller than those it goes.
+  // Centered by its auto margins, held by a maximum: no maximum, what the resize sets (ticket 97).
   const limits: Limits = {
     minWidth: Math.max(limit("minWidth") ?? 0, px(["padding-left", "padding-right", "border-left-width", "border-right-width"])),
-    maxWidth: limit("maxWidth") ?? Infinity,
+    maxWidth: heldCentered(el, "x") ? Infinity : (limit("maxWidth") ?? Infinity),
     minHeight: Math.max(limit("minHeight") ?? 0, px(["padding-top", "padding-bottom", "border-top-width", "border-bottom-width"])),
-    maxHeight: limit("maxHeight") ?? Infinity,
+    maxHeight: heldCentered(el, "y") ? Infinity : (limit("maxHeight") ?? Infinity),
   };
   const targets: Box[] = [];
   const parent = layer.parent;

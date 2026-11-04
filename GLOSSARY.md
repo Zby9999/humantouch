@@ -87,7 +87,7 @@ _Avoid_: 网格布局、表格
 _Avoid_: 绝对定位、自由摆放
 
 **定位方式 (Placement)**:
-自由定位的图层沿每个方向从哪里摆：父容器的左边或上边、右边或下边（`right`、`bottom`），或居中：用 `translate(-50%)`，或两边都写了值、尺寸定死、两边外边距都是 `auto`（`inset-x-0 mx-auto w-12`，ticket 96）；只有一边外边距是 `auto` 的，浏览器把它推到另一边，就按另一边；改尺寸、移动时都保留，拖进别的 Frame 或复制时也保留、按新的 Frame 算（ticket 75、79、96，ADR 0014），相当于 Figma 的 Left、Right、Center 等约束里的这几种。编辑层没有设约束的界面，父容器改尺寸时也不按约束移动子图层。
+自由定位的图层沿每个方向从哪里摆：父容器的左边或上边、右边或下边（`right`、`bottom`），或居中：用 `translate(-50%)`，或两边都写了值、尺寸定死（或尺寸 `auto`、靠最大值卡住，`inset-x-0 mx-auto max-w-md`，ticket 97）、两边外边距都是 `auto`（`inset-x-0 mx-auto w-12`，ticket 96）；只有一边外边距是 `auto` 的，浏览器把它推到另一边，就按另一边；改尺寸、移动时都保留，拖进别的 Frame 或复制时也保留、按新的 Frame 算（ticket 75、79、96，ADR 0014），相当于 Figma 的 Left、Right、Center 等约束里的这几种。编辑层没有设约束的界面，父容器改尺寸时也不按约束移动子图层。
 _Avoid_: 锚点、Anchor、约束（Constraint）
 
 **Frame**:

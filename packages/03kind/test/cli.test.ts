@@ -605,6 +605,37 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule(output, "How the page checks")).not.toContain("its translate still centering it there");
   });
 
+  test("a layer centered by its auto margins, its width `auto`, held by its `max-width`, moved, resized, moved into another Frame: its changes say it stays so, its maximum resized, and no width given it (ticket 97)", async () => {
+    const other = { ...container, loc: "src/App.tsx:30:7", context: { path: ["Page", "App", "Frame"], element: '<div class="relative">' } };
+    const into = (absolute: object) => ({ container: { layer: "9", target: other }, nth: 1, slot: 0, absolute });
+    const held = { edge: "start", centered: true, margins: true, held: true };
+    saveRound(
+      style("x", { before: 175, after: 195, placedFrom: held, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, style: { left: "20px", right: "-20px" }, margins: { x: 0, y: 0 } }),
+      { ...style("maxWidth", { before: 50, after: 70, placedFrom: held, style: { "max-width": "70px" } }), id: 2 },
+      { ...change("move", { after: into({ x: 100, y: 10, placed: { x: { ...held, percent: 50, px: 25 } } }) }), id: 3 },
+    );
+
+    const { output } = await cli("claim");
+
+    expect(section(output, 1)).toContain(
+      "- **Placement:** the layer is centered across between its `left` and `right` by its auto margins (`margin-inline: auto`, Tailwind's `mx-auto`), its width `auto`, held by its `max-width`, and stays so: keep both sides and the auto margins, only how far past the middle it is changes.\n",
+    );
+    expect(section(output, 2)).toContain(
+      "- **Placement:** the layer is centered across between its `left` and `right` by its auto margins (`margin-inline: auto`, Tailwind's `mx-auto`), its width `auto`, held by its `max-width`, and stays so: only its `max-width` changes, on both sides alike; give it no width, so it still fills the room its sides leave where that is less.\n",
+    );
+    expect(section(output, 3)).toContain("with its `margin-inline: auto` kept, its width `auto`, held by its `max-width`, as the layer is now)");
+    expect(names(output)).toEqual(expect.arrayContaining(["Centered by auto margins", "Held by a maximum"]));
+    expect(rule(output, "Held by a maximum")).toContain("resized, change its maximum, not its width");
+  });
+
+  test("a layer centered by its auto margins, as wide as it is set, moved: no word of a maximum (ticket 97)", async () => {
+    const byMargins = { edge: "start", centered: true, margins: true };
+    saveRound(style("x", { before: 175, after: 195, placedFrom: byMargins, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, style: { left: "20px", right: "-20px" }, margins: { x: 0, y: 0 } }));
+    const { output } = await cli("claim");
+    expect(output).not.toContain("held by its");
+    expect(names(output)).not.toContain("Held by a maximum");
+  });
+
   test("the rule for breakpoints names no class of its own: a part of the range the layer shows another value in now is changed too (ticket 65)", async () => {
     saveRound(style("columns", { before: 1, after: 2, breakpoint: { min: null, max: 768, project: { tailwind: "max-md:" } } }));
 
@@ -1946,6 +1977,16 @@ describe("done, checked on the page", () => {
     closePage = openPage(() => ({ outcome: "not shown", actual: { x: 300, y: 8, margins: { x: 0, y: 0 } } }));
     expect((await cli("done", "2")).output).toContain(
       "it does not show the change. The layer is not where the notes place it: check its `position`, `left` and `right` with its `margin-inline: auto`, and `top` as the notes give them, and that its container is its positioning reference, then run `npx 03kind done 2` again.\n",
+    );
+  });
+
+  test("for a layer centered by its auto margins, held by its `max-width`, moved, the page drawing it elsewhere than its middle: says to keep its width `auto` too (ticket 97)", async () => {
+    const held = { edge: "start", centered: true, margins: true, held: true };
+    saveRound({ ...redFill, property: "x", before: 175, after: 195, placedFrom: held, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 20 } }, style: { left: "20px", right: "-20px" }, margins: { x: 0, y: 0 } });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { value: 195, at: 92.5, margins: true }, width: 390 }));
+    expect((await cli("done", "1")).output).toContain(
+      "Keep it centered between its `left` and `right` by its auto margins (`margin-inline: auto`, Tailwind's `mx-auto`), its width `auto`, held by its `max-width`, its sides as the notes give them (`left: 20px; right: -20px`), not a px value from one side, and run `npx 03kind done 1` again.\n",
     );
   });
 

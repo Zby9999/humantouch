@@ -106,6 +106,13 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "a px value from one side with the other `auto` places it there only as wide as its container is now.",
   },
   {
+    name: "Held by a maximum",
+    calledFor: (change) => (change.kind === "style" && !!change.placedFrom?.held) || heldOtherwise(change),
+    text:
+      "a layer centered by its auto margins whose width (height) is `auto`, held by its `max-width` (`max-height`; Tailwind's `inset-x-0 mx-auto max-w-md`), stays so: " +
+      "resized, change its maximum, not its width; moved, give it no width either: as its container grows or shrinks, it stays centered where there is room, and fills what room its sides leave where there is less.",
+  },
+  {
     name: "This usage only",
     calledFor: (change) => change.scope !== "component" && forOneUsage(change),
     text:
@@ -222,6 +229,9 @@ const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOf
  */
 const placedOtherwise = (change: Change, { centered, margins = false }: { centered: boolean; margins?: boolean }) =>
   (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some((how) => how.centered === centered && !!how.margins === margins);
+
+/** A move or a copy that places a layer centered by its auto margins, held by a maximum, along an axis (ticket 97). */
+const heldOtherwise = (change: Change) => (change.kind === "move" || change.kind === "duplicate") && Object.values((change.after as Place).absolute?.placed ?? {}).some((how) => !!how.held);
 
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [

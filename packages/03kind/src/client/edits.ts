@@ -16,9 +16,9 @@ import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
 import { colorReader } from "./paint";
-import { middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
+import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues } from "./property-table";
-import { autoMarginBefore, computedShareOf, extentOf, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
+import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
 import { sourcesOf } from "./style-source";
@@ -271,7 +271,9 @@ export function createEditor(
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
-    const along = SIZE_AXIS[property];
+    // A maximum of one centered by its auto margins, held by it, as a resize sets it: so too (ticket 97).
+    const max = MAX_AXIS[property];
+    const along = SIZE_AXIS[property] ?? (max && asShown(el, () => heldCentered(el, max)) ? max : undefined);
     const from = along && (earlier ? earlier.placedFrom : placedFrom(el, along));
     const centeredBy = centering ?? byMargins;
     const placed = from && (from.edge === "end" || from.centered) ? { placedFrom: from } : centeredBy ? { placedFrom: earlier?.placedFrom ?? centeredBy.from } : {};
@@ -623,10 +625,12 @@ export function createEditor(
         group(
           () => {
             // Each edge where the handle has it: no size keeps an edge of its own accord.
-            if (width !== undefined) setValue(layer, "width", { type: "fixed", value: width }, { sizeAlone: true });
+            // Centered by its auto margins, held by a maximum: that maximum, so it still fills what room its sides leave where less (ticket 97).
+            const held = (axis: Axis) => asShown(working.shown(layer.el), () => heldCentered(working.shown(layer.el), axis));
+            if (width !== undefined) held("x") ? setValue(layer, "maxWidth", width) : setValue(layer, "width", { type: "fixed", value: width }, { sizeAlone: true });
             if (x !== undefined) setValue(layer, "x", x);
             if (right !== undefined) setValue(layer, "right", right);
-            if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
+            if (height !== undefined) held("y") ? setValue(layer, "maxHeight", height) : setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
             if (y !== undefined) setValue(layer, "y", y);
             if (bottom !== undefined) setValue(layer, "bottom", bottom);
           },

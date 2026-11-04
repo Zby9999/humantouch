@@ -31,12 +31,13 @@ import { declarationsOf, pinnedOf } from "./style-source";
  * placed freely: from its start. Centered from either edge, it is resized
  * alike, on both sides. Its margins there both `auto`, taking up the room
  * between its sides (`autoMarginsPlacing`): centered by them, from its start
- * as X and Y go (ticket 96); one of them `auto`, from the other's edge.
+ * as X and Y go (ticket 96), its size held by a maximum or not (`held`,
+ * ticket 97); one of them `auto`, from the other's edge.
  */
 export function placedFrom(el: Element, axis: Axis): PlacedFrom {
   const { start } = SIDES[axis];
   if (!absolute(el) || pinnedOf(el).includes(start)) return { edge: "start", centered: false };
-  if (autoMarginsPlacing(el, axis) === "both") return { edge: "start", centered: true, margins: true };
+  if (autoMarginsPlacing(el, axis) === "both") return { edge: "start", centered: true, margins: true, ...(heldByMax(el, axis) && { held: true as const }) };
   const edge: Edge = sideDeclared(el, axis, "end") && endOffsetPlaces(el, axis) ? "end" : "start";
   // Moved back half its size from where it is placed (forward, placed from the end): centered there.
   const { width, height } = el.getBoundingClientRect();
@@ -93,6 +94,17 @@ const endWins = (el: Element, axis: Axis) => {
 const sized = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) || REPLACED.has(el.localName);
 
 /**
+ * Whether `el`'s size along `axis` is `auto`, held by a maximum, as declared
+ * (`inset-x-0 mx-auto max-w-md`, ticket 97): placed by both its sides, the
+ * browser makes it as large as they leave it room for, up to that maximum,
+ * and so as large as it is set where they leave more (CSS 2.1, 10.4).
+ */
+export function heldByMax(el: Element, axis: Axis): boolean {
+  const size = AXIS_SIZE[axis];
+  return !sized(el, axis) && !/^(none|auto)?$/.test(declaredValue(el, `max-${size}`));
+}
+
+/**
  * Along `axis`, how `el`'s margins there place it, placed absolute or fixed,
  * where one or both are `auto` and so take up the room its container gives
  * it past its sides and its size (CSS 2.1, 10.3.7, 10.6.4; ticket 96): both,
@@ -100,7 +112,9 @@ const sized = (el: Element, axis: Axis) => declared(el, AXIS_SIZE[axis]) || REPL
  * at its start, from its end (`ml-auto`, pushed there), "end"; only the one
  * at its end, from its start. Null where neither is `auto`, or a side is, or
  * it is not as large as it is set there (`sized`), where the browser takes
- * them for none. As its style computes them (`computedStyleMap`, which keeps
+ * them for none; but both, its size `auto`, held by a maximum (`heldByMax`,
+ * ticket 97), "both": where its sides leave it less room than that, it fills
+ * it, its middle between them still. As its style computes them (`computedStyleMap`, which keeps
  * the keyword where `getComputedStyle` gives the px it takes up), however
  * they are written (`margin`, `margin-inline`, `mx-auto`), with nothing laid
  * out (ADR 0011); left to right and right to left alike.
@@ -111,8 +125,21 @@ export function autoMarginsPlacing(el: Element, axis: Axis): Edge | "both" | nul
   const auto = (property: string) => String(style.get(property)) === "auto";
   const { start, end } = SIDES[axis];
   const [before, after] = [auto(`margin-${start}`), auto(`margin-${end}`)];
-  if ((!before && !after) || auto(start) || auto(end) || !sized(el, axis)) return null;
+  if ((!before && !after) || auto(start) || auto(end)) return null;
+  // Held by a maximum, both its margins `auto`: centered where its sides leave it more room, and filling what they leave where less, its middle between them either way (ticket 97).
+  if (before && after && heldByMax(el, axis)) return "both";
+  if (!sized(el, axis)) return null;
   return before && after ? "both" : before ? "end" : "start";
+}
+
+/**
+ * Whether `el` is centered along `axis` by its auto margins, its size there
+ * held by a maximum (`heldByMax`, ticket 97): what a resize sets of it is
+ * that maximum, its size `auto` still, so it goes on filling what room its
+ * sides leave where less.
+ */
+export function heldCentered(el: Element, axis: Axis): boolean {
+  return !!placedFrom(el, axis).held;
 }
 
 /**
@@ -138,8 +165,6 @@ export function autoMarginBefore(el: Element, axis: Axis): number {
   return parseFloat(getComputedStyle(el).getPropertyValue(margin)) || 0;
 }
 
-/** `autoMarginBefore` along each axis. */
-export const autoMarginsBefore = (el: Element): Record<Axis, number> => ({ x: autoMarginBefore(el, "x"), y: autoMarginBefore(el, "y") });
 
 /**
  * Where `el`, placed absolute or fixed, is placed along `axis` from its

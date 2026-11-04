@@ -726,7 +726,7 @@ export function CanvasView(props: Props) {
     // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it.
     session.out = !offCanvasLayer && !viewAt(event) && !!editor?.canRemove(layer);
     const rectOf = (l: Layer) => laidOut(session, l);
-    const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin, session.autoMargins));
+    const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin, session.marginsAside));
     session.drop = drop;
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;

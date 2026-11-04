@@ -26,12 +26,15 @@ export type Edge = "start" | "end";
  * its size (`translate: -50%` from the start, `50%` from the end); or, with
  * `margins`, centered between both its sides by its margins there, both
  * `auto`, which take up the room its size leaves (`inset-x-0 mx-auto w-12`,
- * ticket 96): placed from its start then, as X and Y go, and centered.
+ * ticket 96): placed from its start then, as X and Y go, and centered;
+ * `held`, so with its size `auto`, held by a maximum (`inset-x-0 mx-auto
+ * max-w-md`, ticket 97), filling the room its sides leave where less.
  */
 export interface PlacedFrom {
   edge: Edge;
   centered: boolean;
   margins?: true;
+  held?: true;
 }
 
 /**
@@ -105,6 +108,12 @@ export const CENTERING_SIGN = { start: "-", end: "" } as const satisfies Record<
 
 /** The axis each size is along: width across, height down. */
 export const SIZE_AXIS: Readonly<Partial<Record<string, Axis>>> = { width: "x", height: "y" };
+
+/** The axis each maximum size is along: what a resize sets of a layer centered by its auto margins, held by one (ticket 97). */
+export const MAX_AXIS: Readonly<Partial<Record<string, Axis>>> = { maxWidth: "x", maxHeight: "y" };
+
+/** The CSS maximum along each axis. */
+export const AXIS_MAX = { x: "max-width", y: "max-height" } as const satisfies Record<Axis, string>;
 
 /**
  * How a layer still in its container's layout is moved by its `left`, `top`,
