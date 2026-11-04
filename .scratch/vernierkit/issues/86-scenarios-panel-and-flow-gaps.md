@@ -100,3 +100,7 @@
 9. 负载高时 e2e 有抖动：`off-canvas.spec.ts:173`、`breakpoints.spec:63`、`undo.spec.ts:80`（这条不在已知清单里），单独重跑都过了。交给 93。
 
 **合并前最后一遍（同步到 main f56d1fe，含 ticket 90 之后）**：`pnpm build`、`pnpm typecheck` 通过；`pnpm test`：vitest 898 通过、1 个跳过，node 121 通过；`--dry` 24/24 ✓；`--scripted` 15/15 ✓（90 给 `data-and-text` 也加了 `apply`，它那条改字现在能核对了，这是 90 改的）；全套 e2e 418 通过、1 个跳过、0 失败。`git diff origin/main...HEAD -- packages examples` 为空。
+
+## 设计师确认（2026-11-04）
+
+- 「代定的事」1–12 条全部确认，其中第 8 条（测量台的命令名单放行 Skill 自己的撤销：`git -C <这一轮的项目> diff …` 和后面什么都不带的 `git -C <这一轮的项目> apply`）改动了 88 的「跑法维持现状」，已记进 88。
