@@ -30,10 +30,10 @@ import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 import { pack } from "../tests/install-copy.ts";
-import { agentVersion, AGENTS, cleanEnv, runAgent, type AgentRun, type AgentSpec } from "./agents.ts";
+import { agentVersion, AGENTS, cleanEnv, commandLine, runAgent, type AgentRun, type AgentSpec } from "./agents.ts";
 import { installClaudeArgs, prepareInstallPi } from "./install-allowlist.ts";
-import { forAgents, judgeInstall, toldToLook, withLocalPackage, type Judged } from "./install-judge.ts";
-import { AgentProcesses, portTaken, type Server } from "./install-servers.ts";
+import { forAgents, intervention, judgeInstall, logsLeft, stepsReached, toldToLook, withLocalPackage, type Judged, type Step } from "./install-judge.ts";
+import { AgentProcesses, type Server } from "./install-servers.ts";
 import { packageManagerPath, portInUse, scaffold, STARTS, type Start } from "./install-starts.ts";
 import { parseTranscript, summarize } from "./metrics.ts";
 import { PLANTS, type Plant } from "./scripted-agent.ts";
@@ -43,7 +43,7 @@ const README = fileURLToPath(new URL("../../README.md", import.meta.url));
 const SCRIPTED = fileURLToPath(new URL("./scripted-agent.ts", import.meta.url));
 
 /** The Agents the install bench knows: the scripted one stands in for a real one before the package is published. */
-export type InstallAgent = "claude" | "pi" | "scripted";
+type InstallAgent = "claude" | "pi" | "scripted";
 const INSTALL_AGENTS: InstallAgent[] = ["claude", "pi", "scripted"];
 
 /** Longest an Agent gets for an install. */
@@ -67,23 +67,34 @@ function installSpec(agent: InstallAgent, plant: Plant | null): Pick<AgentSpec, 
   return { binary: () => process.execPath, args: (_folder, prompt = "") => [SCRIPTED, prompt, ...(plant ? ["--plant", plant] : [])], prepare: undefined };
 }
 
-/** The Agent whose transcript form a run's is: the scripted Agent writes Claude Code's. */
-const transcriptForm = (agent: InstallAgent) => (agent === "pi" ? "pi" : "claude");
-
-/** The command line as a person would type it, for the record. */
-function commandLine(spec: Pick<AgentSpec, "binary" | "args" | "prepare">, prompt: string): string {
-  return [spec.binary(), ...spec.args("<run folder>", prompt)].map((part) => (/^[\w./:,=-]+$/.test(part) ? part : `'${part.replace(/'/g, `'\\''`)}'`)).join(" ");
-}
+/** The Agent a run is run as, and whose transcript form it writes: the scripted Agent writes Claude Code's. */
+const runAs = (agent: InstallAgent) => (agent === "pi" ? "pi" : "claude");
 
 /**
  * The environment the Agent installs in, and the bench runs `doctor` and
  * `remove` in: the applying bench's, with the four package managers on PATH,
- * corepack never asking before it fetches yarn, and, with a local package,
+ * corepack never asking before it fetches yarn, no browser opened by a dev
+ * server (`BROWSER=none`: Vite's `--open` and the like open no window on the
+ * designer's screen, whatever the command line), and, with a local package,
  * `init` pointed at it.
  */
 function installEnv(tarball: string | null): NodeJS.ProcessEnv {
   const env = cleanEnv();
-  return { ...env, PATH: [...packageManagerPath(), env.PATH].join(delimiter), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", ...(tarball && { TK_INSTALL_FROM: tarball }) };
+  return { ...env, PATH: [...packageManagerPath(), env.PATH].join(delimiter), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", BROWSER: "none", ...(tarball && { TK_INSTALL_FROM: tarball }) };
+}
+
+/**
+ * What the bench has under way that a Ctrl-C or a kill must not leave behind:
+ * the run's Agent and its dev servers, the run's project, the packed package,
+ * the browser. Undone last first, and the bench exits failing.
+ */
+const underWay = new Set<() => unknown>();
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, async () => {
+    console.error(`\n${signal}: stopping the run's Agent and its dev servers, deleting its project`);
+    for (const undo of [...underWay].reverse()) await Promise.resolve().then(undo).catch(() => {});
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  });
 }
 
 /** What a run leaves for judging, besides the transcript, the diffs and what `doctor` and `remove` printed. */
@@ -110,7 +121,7 @@ interface RawInstall {
   endedAt: number;
   headedBrowsers: string[];
   /** From t0 to the toggle found on the page, or null; and the dev server it was found on. */
-  buttonMs: number | null;
+  toggleMs: number | null;
   server: Server | null;
   /** Every dev server of the Agent's seen listening, and what the bench stopped after it ended. */
   serversSeen: Server[];
@@ -120,7 +131,14 @@ interface RawInstall {
   portsLeft: number[];
   criteria: Judged[];
   success: boolean;
+  /** The steps the transcript shows the Agent reached, for where it got stuck: the last of them, null when none. */
+  steps: Step[];
+  lastStep: Step | null;
   finalMessage: string;
+  /** A question the Agent ended on once `doctor` said "All good.": no intervention, shown to the designer. */
+  trailingQuestion: string | null;
+  /** Log files the Agent left in the project, which `remove` cannot take out and which are not held against it. */
+  logsLeft: string[];
   /** Step 3, recorded only: whether the last message tells the designer to look for the round button at the bottom right. */
   step3Told: boolean;
 }
@@ -145,6 +163,8 @@ async function main(argv: string[]) {
   const specs = Object.fromEntries(agents.map((agent) => [agent, installSpec(agent, plant)]));
 
   const packDir = source === "local" ? mkdtempSync(join(tmpdir(), "03kind-install-pack-")) : null;
+  const removePack = () => packDir && rmSync(packDir, { recursive: true, force: true });
+  underWay.add(removePack);
   try {
     const tarball = packDir && (await pack(packDir));
     const steps = forAgents(readFileSync(README, "utf8"));
@@ -156,17 +176,19 @@ async function main(argv: string[]) {
     for (const agent of agents) versions[agent] = agent === "scripted" ? `scripted-agent.ts, node ${process.version}` : await agentVersion(agent);
     mkdirSync(out, { recursive: true });
     if (existsSync(join(out, "meta.json"))) throw new Error(`${out} has a round of installs already: start one of its own`);
-    const meta = { versions, package: { source, tarball }, prompt, plant, starts: starts.map((start) => start.id), commandLines: Object.fromEntries(agents.map((agent) => [agent, commandLine(specs[agent], prompt)])) };
+    const meta = { versions, package: { source, tarball }, prompt, plant, starts: starts.map((start) => start.id), commandLines: Object.fromEntries(agents.map((agent) => [agent, commandLine(runAs(agent), prompt, specs[agent])])) };
     writeFileSync(join(out, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
 
     const browser = await chromium.launch();
+    const closeBrowser = () => browser.close();
+    underWay.add(closeBrowser);
     const failures: string[] = [];
     try {
       for (let run = 1; run <= runs; run++) {
         for (const start of starts) {
           for (const agent of agents) {
             // Never stopped by the bench: it did not start it.
-            for (const port of DEFAULT_PORTS) if ((await portInUse(port)) || (await portTaken(port))) throw new Error(`Port ${port} is in use, and the Agent's dev server would take another: free it, then run the bench again`);
+            for (const port of DEFAULT_PORTS) if (await portInUse(port)) throw new Error(`Port ${port} is in use, and the Agent's dev server would take another: free it, then run the bench again`);
             const folder = join(out, agent, start.id, `run-${run}`);
             mkdirSync(folder, { recursive: true });
             const began = Date.now();
@@ -184,12 +206,14 @@ async function main(argv: string[]) {
         }
       }
     } finally {
+      underWay.delete(closeBrowser);
       await browser.close();
     }
     writeSummary(out);
     if (failures.length) process.exitCode = 1;
   } finally {
-    if (packDir) rmSync(packDir, { recursive: true, force: true });
+    underWay.delete(removePack);
+    removePack();
   }
 }
 
@@ -234,7 +258,7 @@ async function watchForToggle(browser: Browser, servers: AgentProcesses, start: 
       for (const server of up) seen.set(`${server.pid}:${server.port}`, server);
       for (const server of up) {
         try {
-          await page.goto(`http://localhost:${server.port}`, { timeout: 60_000 });
+          await page.goto(server.url, { timeout: 60_000 });
           await page.getByRole("button", { name: TOGGLE_LABEL }).waitFor({ state: "visible", timeout: 3000 });
           return { at: Date.now(), server };
         } catch {
@@ -275,6 +299,20 @@ async function installOnce({
   const log: string[] = [];
   const project = await scaffold(start, (line) => log.push(line)).finally(() => writeFileSync(join(folder, "scaffold.log"), `${log.join("\n")}\n`));
   const servers = new AgentProcesses(project.dir);
+  let agentGroup: number | null = null;
+  // On a Ctrl-C: the Agent runs in a process group of its own, which the terminal's signal does not reach.
+  const undo = async () => {
+    if (agentGroup !== null) {
+      try {
+        process.kill(-agentGroup, "SIGTERM");
+      } catch {
+        // Gone already.
+      }
+    }
+    await servers.stop();
+    project.remove();
+  };
+  underWay.add(undo);
   try {
     const env = installEnv(tarball);
     const seen = new Map<string, Server>();
@@ -284,21 +322,26 @@ async function installOnce({
     // What the Agent starts after the toggle is found is its too: looked for as long as it runs.
     const tracking = setInterval(() => void servers.track().catch(() => {}), 500);
     try {
-      agentRun = await runAgent(agent === "pi" ? "pi" : "claude", project.dir, folder, AGENT_TIMEOUT_MS, prompt, {
+      agentRun = await runAgent(runAs(agent), project.dir, folder, AGENT_TIMEOUT_MS, prompt, {
         spec,
         env,
         leaveRunning: true,
         onStart(pid) {
-          servers.agentPid = pid;
-          watching = watchForToggle(browser, servers, start, () => endedAt, seen);
+          servers.agentPid = agentGroup = pid;
+          watching = watchForToggle(browser, servers, start, () => endedAt, seen).catch((error) => {
+            console.error(`Bench: looking for the toggle failed: ${(error as Error).message}`);
+            return null;
+          });
         },
       });
     } finally {
       endedAt = Date.now();
       clearInterval(tracking);
+      // Its pid may be taken again by another process.
+      servers.agentPid = null;
     }
     const found = await watching;
-    const transcript = parseTranscript(transcriptForm(agent), readFileSync(join(folder, "transcript.jsonl"), "utf8"));
+    const transcript = parseTranscript(runAs(agent), readFileSync(join(folder, "transcript.jsonl"), "utf8"));
     const afterAgent = await gitState(project.dir);
     writeFileSync(join(folder, "status.txt"), afterAgent.status);
     writeFileSync(join(folder, "diff.patch"), afterAgent.diff);
@@ -307,7 +350,7 @@ async function installOnce({
     // would watch the files the build rewrites (next-env.d.ts, tsconfig.json) and puts back.
     const { stopped, killed } = await servers.stop();
     const portsLeft: number[] = [];
-    for (const port of new Set([...seen.values()].map((server) => server.port))) if (await portTaken(port)) portsLeft.push(port);
+    for (const port of new Set([...seen.values()].map((server) => server.port))) if (await portInUse(port)) portsLeft.push(port);
 
     const doctor = await projectCli(project.dir, "doctor", env);
     writeFileSync(join(folder, "doctor.txt"), doctor);
@@ -317,8 +360,9 @@ async function installOnce({
     writeFileSync(join(folder, "status-after-remove.txt"), afterRemove.status);
     writeFileSync(join(folder, "diff-after-remove.patch"), afterRemove.diff);
 
-    const buttonMs = found ? found.at - agentRun.startedAt : null;
-    const criteria = judgeInstall({ buttonMs, transcript, doctor, ...afterAgent, afterRemove });
+    const toggleMs = found ? found.at - agentRun.startedAt : null;
+    const criteria = judgeInstall({ framework: start.framework, toggleMs, exitCode: agentRun.exitCode, timedOut: agentRun.timedOut, transcript, doctor, ...afterAgent, afterRemove });
+    const steps = stepsReached(transcript);
     const raw: RawInstall = {
       agent,
       start,
@@ -330,14 +374,14 @@ async function installOnce({
       versions: project.versions,
       package: { source: tarball ? "local" : "npm", tarball },
       prompt,
-      commandLine: commandLine(spec, prompt),
+      commandLine: commandLine(runAs(agent), prompt, spec),
       plant,
       exitCode: agentRun.exitCode,
       timedOut: agentRun.timedOut,
       startedAt: agentRun.startedAt,
       endedAt: agentRun.endedAt,
       headedBrowsers: agentRun.headedBrowsers,
-      buttonMs,
+      toggleMs,
       server: found?.server ?? null,
       serversSeen: [...seen.values()],
       stopped,
@@ -345,23 +389,32 @@ async function installOnce({
       portsLeft,
       criteria,
       success: criteria.every((c) => c.pass),
+      steps,
+      lastStep: steps.at(-1) ?? null,
       finalMessage: transcript.finalText,
+      trailingQuestion: intervention(transcript).trailingQuestion,
+      logsLeft: logsLeft(afterRemove.status),
       step3Told: toldToLook(transcript.finalText),
     };
     writeFileSync(join(folder, "raw.json"), `${JSON.stringify(raw, null, 2)}\n`);
     return raw;
   } finally {
     // Again, on a crash before they were stopped: nothing of the Agent's is left running.
+    underWay.delete(undo);
     await servers.stop().catch(() => {});
     project.remove();
   }
 }
 
+/** How a run's Agent ended, and the last step it reached: for where it got stuck. */
+const ending = (raw: RawInstall) => `${raw.timedOut ? "timed out" : `exit ${raw.exitCode}`}, last step ${raw.lastStep ?? "none"}`;
+
 /** One line on an install, as it ends. */
 function oneLine(raw: RawInstall): string {
   const failed = raw.criteria.filter((c) => !c.pass);
-  const button = raw.buttonMs === null ? "no toggle" : `toggle at ${(raw.buttonMs / 1000).toFixed(1)}s`;
-  return `${button}, session ${Math.round((raw.endedAt - raw.startedAt) / 1000)}s, step 3 ${raw.step3Told ? "told" : "not told"}${failed.map((c) => `\n    ✗ ${c.criterion}: ${c.why}`).join("")}`;
+  const toggle = raw.toggleMs === null ? "no toggle" : `toggle at ${(raw.toggleMs / 1000).toFixed(1)}s`;
+  const notes = [raw.trailingQuestion && `ended on a question after doctor: "${raw.trailingQuestion}"`, raw.logsLeft.length && `logs left: ${raw.logsLeft.join(", ")}`].filter(Boolean);
+  return `${toggle}, session ${Math.round((raw.endedAt - raw.startedAt) / 1000)}s (${ending(raw)}), step 3 ${raw.step3Told ? "told" : "not told"}${[...failed.map((c) => `✗ ${c.criterion}: ${c.why}`), ...notes].map((line) => `\n    ${line}`).join("")}`;
 }
 
 /** Judges every install in `out` again, by the rules as they are now, and writes `summary.json` and `summary.md` beside them. */
@@ -374,15 +427,17 @@ function writeSummary(out: string) {
         if (!existsSync(join(folder, "raw.json"))) continue;
         const raw: RawInstall = JSON.parse(readFileSync(join(folder, "raw.json"), "utf8"));
         const read = (file: string) => readFileSync(join(folder, file), "utf8");
-        const transcript = parseTranscript(transcriptForm(raw.agent), read("transcript.jsonl"));
-        const criteria = judgeInstall({ buttonMs: raw.buttonMs, transcript, doctor: read("doctor.txt"), status: read("status.txt"), diff: read("diff.patch"), afterRemove: { status: read("status-after-remove.txt"), diff: read("diff-after-remove.patch") } });
-        installs.push({ ...raw, criteria, success: criteria.every((c) => c.pass), step3Told: toldToLook(transcript.finalText) });
+        const transcript = parseTranscript(runAs(raw.agent), read("transcript.jsonl"));
+        const afterRemove = { status: read("status-after-remove.txt"), diff: read("diff-after-remove.patch") };
+        const criteria = judgeInstall({ framework: raw.start.framework, toggleMs: raw.toggleMs, exitCode: raw.exitCode, timedOut: raw.timedOut, transcript, doctor: read("doctor.txt"), status: read("status.txt"), diff: read("diff.patch"), afterRemove });
+        const steps = stepsReached(transcript);
+        installs.push({ ...raw, criteria, success: criteria.every((c) => c.pass), steps, lastStep: steps.at(-1) ?? null, trailingQuestion: intervention(transcript).trailingQuestion, logsLeft: logsLeft(afterRemove.status), step3Told: toldToLook(transcript.finalText) });
       }
   }
   const seconds = (ms: number | null) => (ms === null ? null : Math.round(ms / 100) / 10);
   const summary = [...new Set(installs.map((raw) => raw.agent))].map((agent) => {
     const mine = installs.filter((raw) => raw.agent === agent);
-    const button = summarize(mine.map((raw) => raw.buttonMs));
+    const toggle = summarize(mine.map((raw) => raw.toggleMs));
     const session = summarize(mine.map((raw) => raw.endedAt - raw.startedAt));
     return {
       agent,
@@ -393,14 +448,19 @@ function writeSummary(out: string) {
       plants: [...new Set(mine.map((raw) => raw.plant ?? "none"))],
       runs: mine.length,
       successes: mine.filter((raw) => raw.success).length,
-      buttonSeconds: { median: seconds(button.median), max: seconds(button.max), found: button.n },
+      toggleSeconds: { median: seconds(toggle.median), max: seconds(toggle.max), found: toggle.n },
       sessionSeconds: { median: seconds(session.median), max: seconds(session.max) },
+      timedOut: mine.filter((raw) => raw.timedOut).length,
       failures: mine.flatMap((raw) => raw.criteria.filter((c) => !c.pass).map((c) => ({ criterion: c.criterion, start: raw.start.id, run: raw.run, why: c.why }))),
+      /** Each run that did not succeed: how its Agent ended, and the last step it reached. */
+      stuck: mine.filter((raw) => !raw.success).map((raw) => ({ start: raw.start.id, run: raw.run, exitCode: raw.exitCode, timedOut: raw.timedOut, lastStep: raw.lastStep })),
+      trailingQuestions: mine.filter((raw) => raw.trailingQuestion).map((raw) => ({ start: raw.start.id, run: raw.run, question: raw.trailingQuestion })),
+      logsLeft: mine.filter((raw) => raw.logsLeft.length).map((raw) => ({ start: raw.start.id, run: raw.run, files: raw.logsLeft })),
       step3Told: mine.filter((raw) => raw.step3Told).length,
       byStart: Object.fromEntries(
         [...new Set(mine.map((raw) => raw.start.id))].map((id) => {
           const runs = mine.filter((raw) => raw.start.id === id);
-          return [id, { runs: runs.length, successes: runs.filter((raw) => raw.success).length, buttonSeconds: runs.map((raw) => seconds(raw.buttonMs)), sessionSeconds: runs.map((raw) => seconds(raw.endedAt - raw.startedAt)) }];
+          return [id, { runs: runs.length, successes: runs.filter((raw) => raw.success).length, toggleSeconds: runs.map((raw) => seconds(raw.toggleMs)), sessionSeconds: runs.map((raw) => seconds(raw.endedAt - raw.startedAt)), endings: runs.map(ending) }];
         }),
       ),
     };
@@ -412,14 +472,16 @@ function writeSummary(out: string) {
         `## ${agent.agent}：${agent.versions.join(", ")}，模型 ${agent.models.join(", ")}，effort ${agent.efforts.join("; ")}，包 ${agent.packages.join(", ")}${agent.plants.some((plant) => plant !== "none") ? `，故意出错 ${agent.plants.join(", ")}` : ""}`,
         "",
         `- 成功 ${agent.successes} / ${agent.runs}`,
-        `- 到切换按钮出现（秒）：中位数 ${agent.buttonSeconds.median ?? "–"}，最长 ${agent.buttonSeconds.max ?? "–"}（找到 ${agent.buttonSeconds.found} 次）`,
-        `- Agent 整个会话（秒）：中位数 ${agent.sessionSeconds.median ?? "–"}，最长 ${agent.sessionSeconds.max ?? "–"}`,
+        `- 到切换按钮出现（秒）：中位数 ${agent.toggleSeconds.median ?? "–"}，最长 ${agent.toggleSeconds.max ?? "–"}（找到 ${agent.toggleSeconds.found} 次）`,
+        `- Agent 整个会话（秒）：中位数 ${agent.sessionSeconds.median ?? "–"}，最长 ${agent.sessionSeconds.max ?? "–"}；超时 ${agent.timedOut} 次`,
         `- 第 3 步告诉设计师去看右下角的按钮：${agent.step3Told} / ${agent.runs}`,
         "",
-        "| 起点 | 成功 | 到按钮（秒） | 会话（秒） |",
-        "|---|---|---|---|",
-        ...Object.entries(agent.byStart).map(([id, s]) => `| ${id} | ${s.successes} / ${s.runs} | ${s.buttonSeconds.map((value) => value ?? "–").join(", ")} | ${s.sessionSeconds.join(", ")} |`),
+        "| 起点 | 成功 | 到按钮（秒） | 会话（秒） | 结束、最后到的一步 |",
+        "|---|---|---|---|---|",
+        ...Object.entries(agent.byStart).map(([id, s]) => `| ${id} | ${s.successes} / ${s.runs} | ${s.toggleSeconds.map((value) => value ?? "–").join(", ")} | ${s.sessionSeconds.join(", ")} | ${s.endings.join("; ")} |`),
         ...(agent.failures.length ? ["", "没过的：", ...agent.failures.map((f) => `- ${f.criterion}，${f.start} #${f.run}：${f.why}`)] : []),
+        ...(agent.trailingQuestions.length ? ["", "doctor 全部 ✓ 之后最后还问了设计师（不算人工介入）：", ...agent.trailingQuestions.map((q) => `- ${q.start} #${q.run}：${q.question}`)] : []),
+        ...(agent.logsLeft.length ? ["", "留下的日志文件（不算 remove 没删干净）：", ...agent.logsLeft.map((l) => `- ${l.start} #${l.run}：${l.files.join(", ")}`)] : []),
       ].join("\n"),
     )
     .join("\n\n");

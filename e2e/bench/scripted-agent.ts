@@ -28,14 +28,14 @@ export type Plant = (typeof PLANTS)[number];
 const OTHER_SOURCE = ["src/App.tsx", "src/App.jsx", "app/page.tsx", "app/page.jsx", "app/page.js", "src/app/page.tsx", "src/app/page.jsx", "src/app/page.js"];
 
 /** Step 1's command, as the steps name it. */
-export function stepOneCommand(steps: string): string {
+function stepOneCommand(steps: string): string {
   const command = /^1\.[^\n]*?`([^`]+)`/m.exec(steps)?.[1];
   if (!command) throw new Error("Step 1 names no command");
   return command;
 }
 
 /** The dev server command `init` printed, if it printed one. */
-export function devCommand(initOutput: string): string | null {
+function printedDevCommand(initOutput: string): string | null {
   return /Start the dev server \(`([^`]+)`\)/.exec(initOutput)?.[1] ?? null;
 }
 
@@ -99,7 +99,7 @@ async function main([steps, ...rest]: string[]) {
 
   // 2. The dev server, detached and left running, as `nohup … &` would.
   if (plant !== "no-dev-server") {
-    const command = devCommand(init.output) ?? "npm run dev";
+    const command = printedDevCommand(init.output) ?? "npm run dev";
     spawn("/bin/sh", ["-c", command], { cwd: process.cwd(), env: process.env, stdio: "ignore", detached: true }).unref();
     toolCall("Bash", { command, description: "Start the dev server", run_in_background: true }, `Command running in background with ID: scripted-dev.`);
   }

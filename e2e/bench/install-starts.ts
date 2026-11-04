@@ -1,7 +1,7 @@
 /**
  * The starting points of the install bench (ticket 91): ten fresh projects,
  * each built anew, every time, by its official scaffold in the system's
- * temporary folder, as a new user gets it. Scaffolds are taken at their latest
+ * temporary folder, as anyone starting a project gets it. Scaffolds are taken at their latest
  * version, so `scaffold` records what each resolved to.
  *
  *   node e2e/bench/install-starts.ts check [id,…]   build each start, run its own `dev` script on its default port,

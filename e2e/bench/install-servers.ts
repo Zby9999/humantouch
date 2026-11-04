@@ -46,7 +46,7 @@ function lsofNames(text: string): { pid: number; names: string[] }[] {
  * address (`*`) is `localhost`; `127.0.0.1` and `[::1]` stay as they are, so
  * a server on IPv6 alone is opened there.
  */
-export function pageUrl(name: string): string | null {
+function pageUrl(name: string): string | null {
   const [, host, port] = /^(.*):(\d+)$/.exec(name) ?? [];
   if (!port) return null;
   return `http://${host === "*" ? "localhost" : host}:${port}`;

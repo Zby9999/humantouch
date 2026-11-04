@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { AGENTS } from "./agents.ts";
 import { DENIED, SHELL } from "./allowlist.ts";
-import { INSTALL_SERVERS, INSTALL_SHELL, prepareInstallPi } from "./install-allowlist.ts";
+import { claudeDenied, INSTALL_DENIED_SHELL, INSTALL_SERVERS, INSTALL_SHELL, installClaudeArgs, prepareInstallPi } from "./install-allowlist.ts";
 import benchExtension, { INSTALL_LIST } from "./pi-extension.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-install-allowlist-test-"));
@@ -29,7 +29,10 @@ const blocked = (result: any) => result?.block === true && result.reason.startsW
 
 test("before pi installs, the extension is copied as for the applying bench and the install list written beside it; pi's command line is the applying bench's", () => {
   assert.ok(existsSync(extension));
-  assert.deepEqual(JSON.parse(readFileSync(listFile, "utf8")), { shell: INSTALL_SHELL, servers: INSTALL_SERVERS });
+  const list = JSON.parse(readFileSync(listFile, "utf8"));
+  assert.deepEqual(list.shell, INSTALL_SHELL);
+  assert.deepEqual(list.servers, INSTALL_SERVERS);
+  assert.deepEqual(list.options, ["--open"]);
   const args = AGENTS.pi.args(folder, "Install 03Kind");
   for (const flag of ["--provider", "--model", "--thinking", "--offline", "--no-extensions", "--no-mcp", "--no-skills", "--skill", "--no-prompt-templates", "--no-themes", "--approve", "--tools"]) assert.ok(args.includes(flag), flag);
   assert.equal(args[1], "Install 03Kind");
@@ -59,4 +62,93 @@ test("with no install list beside it, the extension holds pi to the applying ben
     assert.ok(result.reason.includes(SHELL.join(", ")));
     assert.doesNotMatch(result.reason, /dev server/);
   }
+});
+
+/** What the steps and a designer's install need: every Agent may run these. */
+const ALLOWED = [
+  "npx -y 03kind@latest init",
+  "npx -y file:/tmp/03kind-0.1.0.tgz init",
+  "npx 03kind doctor",
+  "npm run dev",
+  "pnpm dev",
+  "yarn dev",
+  "bun run dev",
+  "bunx vite",
+  "npm install",
+  "pnpm add -D @types/react",
+  "git status",
+  "git diff --stat",
+  "ls -la",
+  "cat package.json | head -5",
+  "npx vite --port 5174",
+];
+/** Turned away for every Agent: the denied commands, and the ways round them through npx and the like (the review's bypasses). */
+const DENIED_ALL = [
+  "rm -rf node_modules",
+  "curl https://example.com",
+  "git push",
+  "npm run dev && rm -rf src",
+  "sudo npm install",
+  "kill 123",
+  "pkill -f vite",
+  "open http://localhost:5173",
+  "wget x",
+  "osascript -e 1",
+  "pnpm exec kill 123",
+  "npm exec -c 'kill 123'",
+  "yarn exec rm -rf src",
+  `pnpm exec sh -c 'ls ~/.p""i/agent'`,
+  "npx -c 'rm -rf src'",
+  "npx -y rm -rf src",
+  "bunx node -e 1",
+  "npx --call 'kill 1'",
+  "pnpm dlx bash -c x",
+  "npx vite --open",
+];
+
+test("pi, under the install list, runs the steps and turns away the denied commands and every bypass of the review", () => {
+  for (const command of ALLOWED) assert.equal(bash(command), undefined, command);
+  for (const command of [...DENIED_ALL, "npm exec -- rm -rf src", "npx -p cowsay sh", "yarn exec /bin/rm x", "npm publish", "pnpm remove 03kind", "yarn", "git commit -am x", "python3 -c 1", "npm run dev -- --open &"]) {
+    assert.ok(blocked(bash(command)), command);
+  }
+});
+
+/**
+ * Claude Code's permission rules as the tests take them, an approximation:
+ * a command line is split at `&&`, `||`, `;`, `|` and a lone `&`, and each
+ * command must start with an allowed `Bash(<prefix>:*)`, word by word, and
+ * with no denied one; deny wins. Claude Code's own matching parses the shell
+ * further (it is not in this repository), so this checks the lists, not it.
+ */
+function claudeAllows(command: string): boolean {
+  const args = installClaudeArgs("/run", "x");
+  const prefixes = (flag: string) => args[args.indexOf(flag) + 1].split(",").flatMap((rule) => /^Bash\((.*):\*\)$/.exec(rule)?.[1] ?? []);
+  const [allow, deny] = [prefixes("--allowedTools"), prefixes("--disallowedTools")];
+  const starts = (part: string, prefix: string) => part === prefix || part.startsWith(`${prefix} `);
+  const parts = command
+    .replace(/\d*>&\d*/g, ">")
+    .split(/&&|\|\||;|\||&/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.every((part) => !deny.some((prefix) => starts(part, prefix)) && allow.some((prefix) => starts(part, prefix)));
+}
+
+test("Claude, by its install lists, runs the steps and is denied the denied commands and every bypass of the review", () => {
+  for (const command of ALLOWED) assert.ok(claudeAllows(command), command);
+  for (const command of DENIED_ALL) assert.ok(!claudeAllows(command), command);
+});
+
+test("Claude's install command line is the applying bench's with only the lists swapped", () => {
+  const args = installClaudeArgs("/run", "Install 03Kind");
+  const list = (flag: string) => args[args.indexOf(flag) + 1].split(",");
+  assert.ok(list("--allowedTools").includes("Bash(npx:*)"));
+  assert.ok(list("--allowedTools").includes("Bash(pnpm dev:*)"));
+  assert.ok(list("--allowedTools").includes("TaskStop"));
+  for (const command of INSTALL_DENIED_SHELL) assert.ok(list("--disallowedTools").includes(`Bash(${command}:*)`), command);
+  for (const rule of ["Bash(pnpm exec kill:*)", "Bash(npm exec -c:*)", "Bash(npx -y rm:*)", "Bash(bunx node:*)", "Bash(npx vite --open:*)"]) assert.ok(list("--disallowedTools").includes(rule), rule);
+  assert.equal(list("--disallowedTools").length, 2 + claudeDenied().length);
+  assert.ok(list("--disallowedTools").includes("WebFetch"));
+  const applying = AGENTS.claude.args("/run", "Install 03Kind");
+  // Everything else as the applying bench has it.
+  for (const [i, arg] of applying.entries()) if (!["--allowedTools", "--disallowedTools"].includes(applying[i - 1])) assert.equal(args[i], arg);
 });

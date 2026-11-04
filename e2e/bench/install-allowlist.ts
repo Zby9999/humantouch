@@ -66,8 +66,8 @@ const INSTALL_DENIED_TOOLS = ["WebFetch", "WebSearch"];
  * interpreter, which would run anything (`npm exec -c 'kill 123'`,
  * `pnpm exec sh -c …`).
  */
-export const INSTALL_RUNNERS = ["npx", "bunx", "npm exec", "pnpm exec", "pnpm dlx", "yarn exec", "yarn dlx", "bun x"];
-export const INSTALL_DENIED_PROGRAMS = [...INSTALL_DENIED_SHELL, "sh", "bash", "zsh", "dash", "fish", "node", "env", "xargs"];
+const INSTALL_RUNNERS = ["npx", "bunx", "npm exec", "pnpm exec", "pnpm dlx", "yarn exec", "yarn dlx", "bun x"];
+const INSTALL_DENIED_PROGRAMS = [...INSTALL_DENIED_SHELL, "sh", "bash", "zsh", "dash", "fish", "node", "env", "xargs"];
 
 /** Runner options that run a command line of their own. */
 const RUNS_A_LINE = ["-c", "--call", "--shell-mode"];
