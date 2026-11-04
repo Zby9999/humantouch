@@ -135,7 +135,7 @@
 4. **只拼接的 `cn` 不算合并工具**：React 18 示例的 `cn` 只是 `filter(Boolean).join(" ")`，说「the project has no class-merging helper: its `cn` … only joins classes, keeping both of two that conflict」。定义所在文件 import 了 `tailwind-merge` 才算合并。
 5. **合并工具的查找顺序**：先挑会合并的；同样会合并时，改动涉及的文件 import 的优先，其次常见位置，最后依赖里的包。只在依赖里有 `tailwind-merge`、项目没自己的 helper 时，说「the project's class-merging helper, `twMerge` from `tailwind-merge`」。
 6. **没有 `package.json` 的目录不看**：三样都不说，照旧（单测的临时目录就是这样）。
-7. **正文样式只看 `body` / `html`**：规则（设了字体、颜色、行高、字距或 `@apply`）、JSX 的 `className`、HTML 页面的 `class` / `style`。`:root`、Tailwind `@theme` 的 `--font-*`、外层 `<main className>` 不算。都没有时说「nothing in the project's source sets it, on `body` or `html`」：特意说了「on `body` or `html`」，免得读成哪里都没设。
+7. **正文样式只看 `body` / `html`**：规则（设了字体、颜色、行高、字距或 `@apply`）、JSX 的 `className` / `style`（审查时加了 `style`）、HTML 页面的 `class` / `style`。`:root`、Tailwind `@theme` 的 `--font-*`、外层 `<main className>` 不算。都没有时说「nothing in the project's source sets it, on `body` or `html`」：特意说了「on `body` or `html`」，免得读成哪里都没设。
 8. **Claude 不加 echo 规则**（依据见上）。pi、脚本剧本、Cursor 的名单加 `echo`。
 
 ### 剩下的风险
@@ -146,6 +146,13 @@
 - `claim` 现在要读一遍项目的 JSX（先用正则筛，含组件名的才解析）。示例项目感觉不到；很大的项目没测过耗时。只在这一轮有「This usage only」或新文字时才读。
 - Claude 的 `echo > 文件` 挡不挡，是 Claude Code 自己的事（acceptEdits 下很可能放行），测量台管不了。没跑 claude 验证。
 - `html { font-size: 62.5% }` 这种只设 rem 基准的规则也会被当成正文样式列出。
+
+**审查修正（2026-11-05）**（`bf640e2`、`3dd723b`；24 个场景的 `--dry --claim-out` 和改前一字不差，长度不变）
+
+- 只读项目里的文件：`../` 开头的 import、git 列出的指向项目外的链接都不读（原来会读）。
+- 宁可不说，不说错：组件名出现在解析不了的文件（语法错、超过 2 MB）或 MDX / Astro / Vue / Svelte 里，就不列使用处，照旧那句；改动涉及的文件 import 的 helper 读不到（项目外、别名如 `#/`）时，照旧「if it has one」，不说「没有」；打开 `<body>` / `<html>` 的模块解析不了时，照旧不说正文样式。
+- 项目在一个忽略它的 git 仓库里时，`git ls-files` 列不出文件，改为自己走目录（原来会什么都找不到）；git 不跑 fsmonitor，10 秒超时。
+- `<valueOf />` 这类和对象自带属性同名的标签会让扫描抛错；已修。`claim` 里查找出任何错都照旧打印说明（原来会在轮次已认领后退出，之后每次 `claim` 都一样）。
 
 ### 复验会在哪些场景看到
 
