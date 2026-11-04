@@ -1,6 +1,8 @@
 /**
- * The bench's standard scenarios: rounds a designer makes in the editor layer
- * on the Vite + React 19 + Tailwind v4 example, for an Agent to apply. Every
+ * The bench's standard scenarios on the Vite + React 19 + Tailwind v4
+ * example (`SCENARIOS`; with those on the other examples, `STANDARD_SCENARIOS`
+ * in `scenarios-other-examples.ts`): rounds a designer makes in the editor
+ * layer, for an Agent to apply. Every
  * kind of change is in one at least, breakpoint changes and layers moved off
  * the canvas and put back included. Each change says what the page shows once
  * it is applied, in words (for a person running the round by hand, ticket 24)
@@ -902,8 +904,12 @@ export const SCENARIOS: Scenario[] = [
       "Set up by a round before: the project's own color brand (#2563EB) in its `@theme`. Now: the intro paragraph's text brand (picked as the Variable), the header's gap 20px, the hero's corners 16px, the title 30px: each a Variable's value; the intro paragraph 17px, which no Variable has.",
     async design(desk) {
       const { page } = desk;
+      // The page takes the edit in by a hot update of the stylesheet, or reloads for it (Tailwind's plugin, at times): the editor layer opened before that would be gone.
+      const takenIn = Promise.race([page.waitForEvent("load"), page.waitForEvent("console", (message) => /hot updated: \/src\/index\.css/.test(message.text()))]);
       await desk.edit("src/index.css", '  --font-display: "Space Grotesk", sans-serif;\n', '  --font-display: "Space Grotesk", sans-serif;\n  --color-brand: #2563eb;\n');
       await desk.settle("The round before: the project's own brand color");
+      await takenIn;
+      await page.locator("main").waitFor();
 
       await enterEditMode(page);
       await layer(page, INTRO).click();

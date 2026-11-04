@@ -430,11 +430,14 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
 async function endState(observers: Map<number, Page>, scenario: Scenario, saved: SavedChange[], dir: string, head: string, withExpectations: boolean) {
   const until = Date.now() + SCRIPTED_END_MS;
   for (;;) {
-    await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
+    // A reload can fail as the dev server brings an edit in (Next.js recompiling): looked at again, till the time is up.
+    const reloaded = await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())))
+      .then(() => true)
+      .catch(() => false);
     const atEnd = await shown(observers, scenario, saved);
     const expectations = withExpectations ? await expectationsHold(observers, scenario, dir, head) : [];
     const holds = scenario.changes.every((change, i) => change.notOneToOne || atEnd[i] !== false) && expectations.every(Boolean);
-    if (holds || Date.now() > until) return { atEnd, expectations };
+    if ((reloaded && holds) || Date.now() > until) return { atEnd, expectations };
     await new Promise((resolve) => setTimeout(resolve, SHOWN_POLL_MS));
   }
 }

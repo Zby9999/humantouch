@@ -22,28 +22,25 @@ test.setTimeout(120_000);
 const SERVED: Record<Example, string> = { "vite-react19-tw4": DEV_URL, "vite-react18-tw3": REACT18_URL, "next-app-css-modules": NEXT_URL };
 const folderOf = (example: Example) => fileURLToPath(new URL(`../../examples/${example}/`, import.meta.url));
 
-/** The source files a round before edited, by path from the example's root, as they were: written back after each test. */
-const originals = new Map<Example, Map<string, string>>();
-
 /**
- * Until the example's dev server has `file` as `text` (`?raw`: its text as a string, untransformed, with or without a `;` after).
- * Waited for once the file is edited too: Vite reads `?raw` from disk the first time, and only from then on keeps it until it
- * sees the file change, as it does the module the page loads. Vite's examples only: no scenario on the Next.js one edits the
- * source as it is designed.
+ * What the example's dev server serves of `file`: its module as the page loads it, with no hot update's timestamp in it. Not
+ * `?raw`: that request puts a module of its own in the dev server's module graph, and from then on an edit to the stylesheet
+ * reloads the page whole, so a later test's page is gone as `done` checks it. Vite's examples only: no scenario on the Next.js
+ * one edits the source as it is designed.
  */
-async function served(example: Example, file: string, text: string) {
+async function served(example: Example, file: string): Promise<string> {
   if (example === "next-app-css-modules") throw new Error(`No scenario on ${example} is to edit its source as it is designed (${file}): the test cannot wait for Next.js to serve it`);
-  await expect.poll(async () => (await fetch(`${SERVED[example]}/${file}?raw`)).text()).toContain(`export default ${JSON.stringify(text)}`);
+  return (await (await fetch(`${SERVED[example]}/${file}`)).text()).replace(/[?&]t=\d+/g, "");
 }
 
+/** The source files a round before edited, by their paths: as they were, and as the dev server served them then. Written back after each test. */
+const originals = new Map<string, { example: Example; file: string; text: string; served: string }>();
+
 test.afterEach(async () => {
-  for (const [example, files] of originals) {
-    for (const [file, text] of files) {
-      const path = `${folderOf(example)}${file}`;
-      if (readFileSync(path, "utf8") !== text) writeFileSync(path, text);
-      // So the next test's page loads it as it was.
-      await served(example, file, text);
-    }
+  for (const [path, original] of originals) {
+    if (readFileSync(path, "utf8") !== original.text) writeFileSync(path, original.text);
+    // So the next test's page loads it as it was. The design waits for its page to take an edit in, by what the page shows.
+    await expect.poll(() => served(original.example, original.file)).toBe(original.served);
   }
   originals.clear();
 });
@@ -68,10 +65,8 @@ for (const scenario of STANDARD_SCENARIOS) {
         const path = `${dir}${file}`;
         const text = readFileSync(path, "utf8");
         expect(text).toContain(from);
-        if (!originals.has(example)) originals.set(example, new Map());
-        if (!originals.get(example)!.has(file)) originals.get(example)!.set(file, text);
+        if (!originals.has(path)) originals.set(path, { example, file, text, served: await served(example, file) });
         writeFileSync(path, text.replace(from, to));
-        await served(example, file, text.replace(from, to));
       },
       // The example's code is no commit of its own: the round before is taken back out after the test.
       settle: async () => {},
