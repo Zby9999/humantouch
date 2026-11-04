@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -109,6 +109,35 @@ describe("the usages of a component", () => {
     expect(look.usages).toEqual({ Card: ["src/App.tsx:5:7", "src/App.tsx:6:7"] });
   });
 
+  test("are not known when a file that names the component does not parse, or is not JSX the notes read (MDX): no list, rather than one that may leave a usage out", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", APP_TSX);
+    write("src/Broken.tsx", "export const X = () => <Card title={ />;\n");
+    expect((await whereToLook(project, [cardChange()])).usages).toEqual({});
+
+    rmSync(join(project, "src/Broken.tsx"));
+    write("docs/intro.mdx", "# Intro\n\n<Card title=\"Docs\" />\n");
+    expect((await whereToLook(project, [cardChange()])).usages).toEqual({});
+  });
+
+  test("count only the component's own tags, whatever other tags are named", async () => {
+    write("package.json", "{}");
+    write("src/App.tsx", "export const X = () => (\n  <div>\n    <Card />\n    <constructor />\n    <valueOf />\n  </div>\n);\n");
+
+    expect((await whereToLook(project, [cardChange("src/App.tsx:3:5")])).usages).toEqual({ Card: ["src/App.tsx:3:5"] });
+  });
+
+  test("are found in a project inside a git repository that ignores it", async () => {
+    write(".gitignore", "app/\n");
+    execFileSync("git", ["init", "-q"], { cwd: project });
+    const root = join(project, "app");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "package.json"), "{}");
+    writeFileSync(join(root, "src/App.tsx"), APP_TSX);
+
+    expect((await whereToLook(root, [cardChange()])).usages).toEqual({ Card: ["src/App.tsx:5:7", "src/App.tsx:6:7"] });
+  });
+
   test("are not looked for when no change is for one usage alone", async () => {
     write("package.json", "{}");
     write("src/App.tsx", APP_TSX);
@@ -171,6 +200,18 @@ describe("the class-merging helper", () => {
     expect((await whereToLook(project, [cardChange()])).helper).toBeNull();
   });
 
+  test("is not said to be none when a file of the change imports one from where it cannot be read: outside the project, or by an alias", async () => {
+    write("shared/utils.ts", 'import { twMerge } from "tailwind-merge";\nexport const cn = (...c: string[]) => twMerge(c);\n');
+    const root = join(project, "app");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "package.json"), "{}");
+    writeFileSync(join(root, "src/App.tsx"), `import { cn } from "../../shared/utils";\n${APP_TSX}`);
+    expect((await whereToLook(root, [cardChange("src/App.tsx:6:7")])).helper).toBeUndefined();
+
+    writeFileSync(join(root, "src/App.tsx"), `import { cn } from "#/lib/utils";\n${APP_TSX}`);
+    expect((await whereToLook(root, [cardChange("src/App.tsx:6:7")])).helper).toBeUndefined();
+  });
+
   test("is not looked for, nor anything else, in a folder with no package.json, which is no project", async () => {
     write("src/App.tsx", APP_TSX);
     write("src/index.css", "body {\n  font-family: Georgia;\n}\n");
@@ -205,6 +246,31 @@ describe("the body text style", () => {
       { element: "html", attribute: "className", at: "app/layout.tsx:3:5" },
       { element: "body", attribute: "class", at: "index.html:3" },
     ]);
+  });
+
+  test("is set by a style on the <body> JSX too", async () => {
+    write("package.json", "{}");
+    write("app/layout.tsx", 'export default function Layout({ children }) {\n  return (\n    <html>\n      <body style={{ fontFamily: "Georgia" }}>{children}</body>\n    </html>\n  );\n}\n');
+
+    expect((await whereToLook(project, [newText])).bodyText).toEqual([{ element: "body", attribute: "style", at: "app/layout.tsx:4:7" }]);
+  });
+
+  test("is not read from a stylesheet linked in from outside the project", async () => {
+    write("outside/theme.css", "body {\n  font-family: Georgia;\n}\n");
+    const root = join(project, "app");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "package.json"), "{}");
+    symlinkSync(join(project, "outside/theme.css"), join(root, "src/theme.css"));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+
+    expect((await whereToLook(root, [newText])).bodyText).toEqual([]);
+  });
+
+  test("is not known when a file that opens <body> does not parse", async () => {
+    write("package.json", "{}");
+    write("app/layout.tsx", "export default function Layout() {\n  return <body className={>;\n}\n");
+
+    expect((await whereToLook(project, [newText])).bodyText).toBeUndefined();
   });
 
   test("is set nowhere when no rule or className sets it", async () => {

@@ -5,8 +5,8 @@
  * from the project's source as `claim` prints the notes, as it is then.
  */
 import { execFile } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { readdir, readFile, realpath } from "node:fs/promises";
+import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { Change, Created } from "./client/changeset";
 import { forOneUsage } from "./client/checkable";
@@ -24,11 +24,11 @@ export interface ClassHelper {
 export type BodyTextPlace = { selector: string; at: string } | { element: "body" | "html"; attribute: string; at: string };
 
 export interface WhereToLook {
-  /** Each usage in the source of the components the round changes for one usage alone, by component: `file:line:column`, as its usage marker gives it, in the order of the source. */
+  /** Each usage in the source of the components the round changes for one usage alone, by component: `file:line:column`, as its usage marker gives it, in the order of the source. A component left out: its usages are not known (a file that names it does not parse, or is not JSX). */
   usages: Record<string, string[]>;
-  /** The project's class-merging helper, or the one it joins classes with; null: it has none. Not given: not looked for. */
+  /** The project's class-merging helper, or the one it joins classes with; null: it has none. Not given: not looked for, or not known (a file of the change imports one from where it cannot be read). */
   helper?: ClassHelper | null;
-  /** What sets the page's body text style; none: nothing in the project's source. Not given: not looked for (no new text this round). */
+  /** What sets the page's body text style; none: nothing in the project's source. Not given: not looked for (no new text this round), or not known (a file that opens `<body>` or `<html>` does not parse). */
   bodyText?: BodyTextPlace[];
 }
 
@@ -54,24 +54,30 @@ export async function whereToLook(root: string, changes: Change[]): Promise<Wher
   if (components.length) look.usages = await usagesOf(root, files, components);
   if (wantsHelper) {
     const involved = forOne.flatMap(({ target }) => [target.chain[0].usage, target.loc]).map((place) => place?.replace(/(:\d+)+$/, ""));
-    look.helper = await helperOf(root, manifest, [...new Set(involved.filter((file): file is string => !!file))]);
+    const helper = await helperOf(root, manifest, [...new Set(involved.filter((file): file is string => !!file))]);
+    if (helper !== undefined) look.helper = helper;
   }
-  if (wantsBody) look.bodyText = await bodyTextOf(root, files);
+  if (wantsBody) {
+    const bodyText = await bodyTextOf(root, files);
+    if (bodyText) look.bodyText = bodyText;
+  }
   return look;
 }
 
 const JSX = /\.(jsx|tsx|js)$/;
 const STYLESHEET = /\.(css|scss|less|pcss)$/;
 
-/** The project's own files, from its folder: what git does not ignore, else all but `node_modules`, hidden and build folders; a package of its own inside it (vendored) left out. */
+/** The project's own files, from its folder: what git does not ignore, else (no git, or a repository around it that ignores it all) all but `node_modules`, hidden and build folders; a package of its own inside it (vendored) left out. */
 async function projectFiles(root: string): Promise<string[]> {
-  let files: string[];
+  let files: string[] = [];
   try {
-    const { stdout } = await promisify(execFile)("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
+    // No fsmonitor hook of the repository's run by a listing; one that hangs is given up.
+    const { stdout } = await promisify(execFile)("git", ["-c", "core.fsmonitor=false", "ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, maxBuffer: 64 * 1024 * 1024, timeout: 10_000 });
     files = stdout.split("\0").filter(Boolean);
   } catch {
-    files = await walk(root, "");
+    // Listed below.
   }
+  if (!files.length) files = await walk(root, "");
   const packages = files.filter((file) => file.endsWith("/package.json")).map((file) => file.slice(0, -"package.json".length));
   return files.filter((file) => !/(^|\/)node_modules\//.test(file) && !packages.some((dir) => file.startsWith(dir)));
 }
@@ -89,21 +95,46 @@ async function walk(root: string, dir: string): Promise<string[]> {
   return files;
 }
 
-const read = (root: string, file: string) => readFile(join(root, file), "utf8").catch(() => null);
+/** Whether `path` is `root` or in it. */
+const inside = (root: string, path: string) => {
+  const rest = relative(root, path);
+  return !rest.startsWith("..") && !isAbsolute(rest);
+};
 
-/** Each usage of `components` in the JSX `files`: an element opened with its name (or `Something.Name`). */
-async function usagesOf(root: string, files: string[], components: string[]): Promise<Record<string, string[]>> {
-  const usages: Record<string, string[]> = Object.fromEntries(components.map((component) => [component, []]));
-  const named = new RegExp(`<\\s*(?:[\\w$]+\\.)*(${components.map(escapeRegExp).join("|")})\\b`);
-  for (const file of files.filter((file) => JSX.test(file)).sort()) {
-    const code = await read(root, file);
-    if (!code || !named.test(code)) continue;
-    for (const { tag, line, column } of openingTags(code, file) ?? []) {
-      const name = tag.split(".").at(-1)!;
-      if (name in usages) usages[name].push(`${file}:${line}:${column}`);
-    }
+/** A file of the project as text; null when it cannot be read, or is not in the project, by its path or, through a link, by its real path. */
+async function read(root: string, file: string): Promise<string | null> {
+  const path = resolve(root, file);
+  if (!inside(root, path)) return null;
+  try {
+    const [realRoot, real] = await Promise.all([realpath(root), realpath(path)]);
+    return inside(realRoot, real) ? await readFile(real, "utf8") : null;
+  } catch {
+    return null;
   }
-  return usages;
+}
+
+/** A module too large to be the project's own source (a bundle checked in): not parsed, so what it names is not known. */
+const TOO_LARGE = 2_000_000;
+
+/** Modules that use components with no JSX the notes read (MDX, and the like): what they name there is not known. */
+const OTHER_MARKUP = /\.(mdx|astro|vue|svelte)$/;
+
+/** Each usage of `components` in the JSX `files`: an element opened with its name (or `Something.Name`); a component a file names where it cannot be read as JSX left out, as not known. */
+async function usagesOf(root: string, files: string[], components: string[]): Promise<Record<string, string[]>> {
+  const usages = new Map<string, string[]>(components.map((component) => [component, []]));
+  const named = new RegExp(`<\\s*(?:[\\w$]+\\.)*(${components.map(escapeRegExp).join("|")})\\b`, "g");
+  const unknown = new Set<string>();
+  for (const file of files.filter((file) => JSX.test(file) || OTHER_MARKUP.test(file)).sort()) {
+    const code = await read(root, file);
+    if (!code || !code.match(named)) continue;
+    const tags = JSX.test(file) && code.length <= TOO_LARGE ? openingTags(code, file) : null;
+    if (!tags) {
+      for (const [, name] of code.matchAll(named)) unknown.add(name);
+      continue;
+    }
+    for (const { tag, line, column } of tags) usages.get(tag.split(".").at(-1)!)?.push(`${file}:${line}:${column}`);
+  }
+  return Object.fromEntries([...usages].filter(([component]) => !unknown.has(component)));
 }
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -125,7 +156,7 @@ const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs"];
  * found with no search: one the `involved` files import, one where projects
  * keep theirs, or a package of one the project depends on (its `manifest`).
  */
-async function helperOf(root: string, manifest: string, involved: string[]): Promise<ClassHelper | null> {
+async function helperOf(root: string, manifest: string, involved: string[]): Promise<ClassHelper | null | undefined> {
   let deps: string[] = [];
   try {
     const json = JSON.parse(manifest) as { dependencies?: object; devDependencies?: object };
@@ -134,11 +165,14 @@ async function helperOf(root: string, manifest: string, involved: string[]): Pro
     // Read as having none.
   }
   const found: ClassHelper[] = [];
+  // A file of the change imports one this cannot read (outside the project, by an alias): whether it merges is not known.
+  let unread = false;
   for (const file of involved) {
     const code = await read(root, file);
     for (const { name, source } of code ? helperImports(code) : []) {
       const helper = HELPER_PACKAGES[source] ? { ...HELPER_PACKAGES[source], name, from: source } : await definedIn(root, resolveImport(file, source), [name]);
       if (helper) found.push(helper);
+      else unread = true;
     }
   }
   for (const place of KNOWN_PLACES) {
@@ -147,7 +181,7 @@ async function helperOf(root: string, manifest: string, involved: string[]): Pro
   }
   for (const [source, helper] of Object.entries(HELPER_PACKAGES)) if (deps.includes(source)) found.push({ ...helper, from: source });
   // One that merges first; of those, one the files of the change import, then the project's own, then a package it depends on.
-  return found.find((helper) => helper.merges) ?? found[0] ?? null;
+  return found.find((helper) => helper.merges) ?? (unread ? undefined : (found[0] ?? null));
 }
 
 /** The helpers a module imports by a name such helpers go by: the name it is defined by, and where from. */
@@ -191,8 +225,8 @@ async function definedIn(root: string, places: string[], names: string[]): Promi
   return null;
 }
 
-/** What sets the page's body text style: the rules on `body` or `html` of the project's stylesheets (CSS Modules aside), a `className` on the `<body>` or `<html>` JSX, and a class or style on `<body>` or `<html>` in an HTML page (Vite's `index.html`). */
-async function bodyTextOf(root: string, files: string[]): Promise<BodyTextPlace[]> {
+/** What sets the page's body text style: the rules on `body` or `html` of the project's stylesheets (CSS Modules aside), a `className` or `style` on the `<body>` or `<html>` JSX, and a class or style on `<body>` or `<html>` in an HTML page (Vite's `index.html`); undefined, not known, when a module that opens either does not parse. */
+async function bodyTextOf(root: string, files: string[]): Promise<BodyTextPlace[] | undefined> {
   const places: BodyTextPlace[] = [];
   for (const file of files.filter((file) => STYLESHEET.test(file) && !/\.module\.[a-z]+$/.test(file)).sort()) {
     const css = await read(root, file);
@@ -201,8 +235,11 @@ async function bodyTextOf(root: string, files: string[]): Promise<BodyTextPlace[
   for (const file of files.filter((file) => JSX.test(file)).sort()) {
     const code = await read(root, file);
     if (!code || !/<(body|html)\b/.test(code)) continue;
-    for (const { tag, line, column, attributes } of openingTags(code, file) ?? []) {
-      if ((tag === "body" || tag === "html") && attributes.includes("className")) places.push({ element: tag, attribute: "className", at: `${file}:${line}:${column}` });
+    const tags = code.length <= TOO_LARGE ? openingTags(code, file) : null;
+    if (!tags) return undefined;
+    for (const { tag, line, column, attributes } of tags) {
+      if (tag !== "body" && tag !== "html") continue;
+      for (const attribute of ["className", "style"]) if (attributes.includes(attribute)) places.push({ element: tag, attribute, at: `${file}:${line}:${column}` });
     }
   }
   for (const file of files.filter((file) => /\.html$/.test(file)).sort()) {
