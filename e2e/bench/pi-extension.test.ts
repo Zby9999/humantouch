@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -133,6 +133,46 @@ test("in pi, fff's search tools go ahead anywhere, the whole project or outside 
   }
   assert.ok(blocked(call("grep", { pattern: "key", path: 42 })));
   assert.ok(blocked(call("multi_grep", { patterns: ["key"], constraints: ["~/.pi"] })));
+});
+
+test("in pi, a path with blanks around it, which pi-fff trims (and pi's tools may), is turned away by every tool: none reaches ~ or / that way (ticket 92)", () => {
+  for (const path of [" ~", "\t~/.pi", " /", `\n${homedir()}`, "~/.pi/agent/auth.json ", " src/App.tsx"]) {
+    for (const [tool, input] of [
+      ["grep", { pattern: "key", path }],
+      ["find", { pattern: "auth", path }],
+      ["ffgrep", { pattern: "key", path }],
+      ["read", { path }],
+      ["ls", { path }],
+      ["write", { path, content: "x" }],
+    ] as const) {
+      assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+    }
+  }
+});
+
+const DATA = "/System/Volumes/Data";
+test("in pi, pi's own folder by another name for it, macOS's firmlink of the Data volume, is pi's own folder: by device and inode, and the folders above it are above it (ticket 92)", { skip: !existsSync(DATA + homedir()) && `no ${DATA} here` }, () => {
+  const home = DATA + homedir();
+  for (const [tool, input] of [
+    ["read", { path: `${home}/.pi/agent/auth.json` }],
+    ["read", { path: `${home}/.PI/agent/auth.json` }],
+    ["ls", { path: `${home}/.pi` }],
+    ["write", { path: `${home}/.pi/agent/settings.json`, content: "{}" }],
+    ["grep", { pattern: "key", path: `${home}/.pi/agent` }],
+    ["grep", { pattern: "key", path: home }],
+    ["grep", { pattern: "key", path: `${DATA}/Users` }],
+    ["grep", { pattern: "key", path: DATA }],
+    ["grep", { pattern: "key", path: "/System" }],
+    ["find", { pattern: "auth", path: `${home}/.p*/agent` }],
+    ["find", { pattern: "auth", path: `${home}/auth.json` }],
+  ] as const) {
+    assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
+  }
+  for (const command of [`cat ${home}/.p*/agent/auth.json`, `grep -r key ${DATA}`, `grep -rn key ${home}`, `find ${DATA}/Users -name auth.json`]) {
+    assert.ok(blocked(call("bash", { command })), command);
+  }
+  assert.equal(call("read", { path: `${home}/x.txt` }), undefined);
+  assert.equal(call("ls", { path: home }), undefined);
 });
 
 test("in pi, a cd stays in the project, its folder by its real path, following the cds before it on the line; so a search with no path stays there too", () => {
