@@ -1,5 +1,5 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -12,6 +12,7 @@ function layerTree(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 const HERO = '[data-testid="hero"]';
@@ -44,8 +45,8 @@ test("⇧A makes the selected layers a Stack where they are, which is selected; 
 
   await page.keyboard.press("Shift+A");
 
-  expect(await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "div"]);
-  expect(await canvas(page).locator(`${HERO} > div > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["p", "button"]);
+  await expect.poll(() => canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "div"]);
+  await expect.poll(() => canvas(page).locator(`${HERO} > div > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["p", "button"]);
   // In the Stack they are as they were to each other; the paragraph's margin above goes with it (the Stack has none).
   const after = await boxes(page, `${HERO} > div > p, ${HERO} > div > button`);
   const shift = after[0].y - before[0].y;
@@ -61,7 +62,7 @@ test("⇧A makes the selected layers a Stack where they are, which is selected; 
   await expect(page.getByRole("button", { name: "1 change not applied yet" })).toBeVisible();
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "p", "button"]);
+  await expect.poll(() => canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "p", "button"]);
 });
 
 test("absolute layers in a Frame make a horizontal Stack, absolute where they were; the Design panel makes one too", async ({ page }) => {
@@ -88,7 +89,7 @@ test("absolute layers in a Frame make a horizontal Stack, absolute where they we
 
   await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Make Stack" }).click();
 
-  expect((await rows(page)).slice(-5)).toEqual(["3 Frame · Frame", "4 Stack · Horizontal Stack · Absolute", "5 Frame · Frame", "5 Frame · Frame", "5 Frame · Frame"]);
+  await expect.poll(async () => (await rows(page)).slice(-5)).toEqual(["3 Frame · Frame", "4 Stack · Horizontal Stack · Absolute", "5 Frame · Frame", "5 Frame · Frame", "5 Frame · Frame"]);
   const after = await boxes(page, "#one, #two, #three");
   after.forEach((box, i) => expect(Math.abs(box.x - before[i].x)).toBeLessThanOrEqual(4));
   // Spaces of 20 and 24px: their median is 22.

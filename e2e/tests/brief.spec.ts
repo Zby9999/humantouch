@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -16,6 +16,7 @@ function layerTree(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function selectRow(page: Page, name: string, nth = 0) {

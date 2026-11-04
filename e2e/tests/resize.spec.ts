@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 
 /** Ticket 69: the handles of the layer selected alone, dragged to resize it, as in Figma. */
 
@@ -36,6 +36,7 @@ async function addBoard(page: Page, layers: Record<string, number[]>, extra: Rec
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** How large a view is drawn: screen px per px of the view. */
@@ -45,7 +46,7 @@ function zoomOf(view: Locator) {
 
 /** Selects, in a view, the deepest layer under the middle of what `selector` finds there: the view is the one worked in from then on. */
 async function pick(page: Page, view: Locator, selector: string) {
-  const box = (await view.contentFrame().locator(selector).first().boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator(selector).first());
   await page.keyboard.down(mod);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.up(mod);
@@ -133,7 +134,7 @@ test("an edge dragged resizes that way only; the other stays as it was, Hug", as
 
   await dragHandle(page, handle(page, "e"), { x: 30, y: 12 });
 
-  expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual({ ...before, width: Math.round(before.width + 30) });
+  await expect.poll(() => boxIn(desktop(page), `${HERO} > button`)).toEqual({ ...before, width: Math.round(before.width + 30) });
   await expect(sizing(page, "Width")).toHaveValue("fixed");
   await expect(sizing(page, "Height")).toHaveValue("hug");
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
@@ -145,24 +146,24 @@ test("placed freely, dragged by its left or top edge, its X or Y follows and the
   await pick(page, desktop(page), "#box");
 
   await dragHandle(page, handle(page, "w"), { x: -20, y: 0 });
-  expect(await boxIn(desktop(page), "#box")).toEqual({ x: 80, y: 60, width: 100, height: 40 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 80, y: 60, width: 100, height: 40 });
   await expect(field(page, "X")).toHaveValue("80");
 
   await dragHandle(page, handle(page, "nw"), { x: 10, y: 10 });
-  expect(await boxIn(desktop(page), "#box")).toEqual({ x: 90, y: 70, width: 90, height: 30 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 90, y: 70, width: 90, height: 30 });
   await expect(field(page, "Y")).toHaveValue("70");
 
   // ⇧ on a corner: 90 × 30 made twice as wide, so twice as tall.
   await page.keyboard.down("Shift");
   await dragHandle(page, handle(page, "se"), { x: 90, y: 0 });
   await page.keyboard.up("Shift");
-  expect(await boxIn(desktop(page), "#box")).toEqual({ x: 90, y: 70, width: 180, height: 60 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 90, y: 70, width: 180, height: 60 });
 
   // ⌥ on an edge: the edge across goes as far the other way.
   await page.keyboard.down("Alt");
   await dragHandle(page, handle(page, "e"), { x: -20, y: 0 });
   await page.keyboard.up("Alt");
-  expect(await boxIn(desktop(page), "#box")).toEqual({ x: 110, y: 70, width: 140, height: 60 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 110, y: 70, width: 140, height: 60 });
 });
 
 test("dragged past its minimum or maximum, it stops there", async ({ page }) => {
@@ -172,7 +173,7 @@ test("dragged past its minimum or maximum, it stops there", async ({ page }) => 
 
   await dragHandle(page, handle(page, "se"), { x: -60, y: 60 });
 
-  expect(await boxIn(desktop(page), "#box")).toMatchObject({ width: 60, height: 70 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toMatchObject({ width: 60, height: 70 });
   await expect(field(page, "Width")).toHaveValue("60");
   await expect(field(page, "Height")).toHaveValue("70");
 });
@@ -186,19 +187,19 @@ test("dragged near a layer beside it, its edge snaps there with a red line; with
   // Its right edge 3 screen px short of the mark's left.
   await dragHandle(page, handle(page, "e"), { x: 70 - 3 / zoom, y: 0 }, { drop: false });
   await expect(lines(page).first()).toBeVisible();
-  expect((await lines(page).first().boundingBox())!.width).toBeLessThanOrEqual(1.5);
+  await expect.poll(async () => (await lines(page).first().boundingBox())!.width).toBeLessThanOrEqual(1.5);
   await page.keyboard.down(mod);
   await expect(lines(page)).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.up(mod);
-  expect((await boxIn(desktop(page), "#box")).width).not.toBe(150);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).not.toBe(150);
 
   // 4 screen px more: its right edge within 5 of the mark's left.
   await dragHandle(page, handle(page, "e"), { x: 4 / zoom, y: 0 }, { drop: false });
   await expect(lines(page).first()).toBeVisible();
   await page.mouse.up();
   await expect(lines(page)).toHaveCount(0);
-  expect((await boxIn(desktop(page), "#box")).width).toBe(150);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(150);
 });
 
 test("text dragged narrower is Fixed in width, its height still Hug, following its words as they wrap", async ({ page }) => {
@@ -223,7 +224,7 @@ test("a locked layer is resized as a whole, its outer size", async ({ page }) =>
 
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
 
-  expect((await boxIn(desktop(page), '[data-testid="acme-badge"]')).width).toBe(Math.round(before.width + 20));
+  await expect.poll(async () => (await boxIn(desktop(page), '[data-testid="acme-badge"]')).width).toBe(Math.round(before.width + 20));
   await expect(field(page, "Width")).toHaveValue(String(Math.round(before.width + 20)));
 });
 
@@ -235,8 +236,8 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await dragHandle(page, handle(page, "e", "Tablet"), { x: 30, y: 0 }, { view: tablet(page) });
 
   await expect.poll(() => boxIn(tablet(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 30));
-  expect((await boxIn(desktop(page), `${HERO} > button`)).width).toBe(before.width);
-  expect((await boxIn(phone(page), `${HERO} > button`)).width).toBe(before.width);
+  await expect.poll(async () => (await boxIn(desktop(page), `${HERO} > button`)).width).toBe(before.width);
+  await expect.poll(async () => (await boxIn(phone(page), `${HERO} > button`)).width).toBe(before.width);
   // The row's mark (ticket 57), and the breakpoint's list.
   await expect(design(page).locator(".tk-row-mark").and(design(page).getByRole("button", { name: "Reset Width to inherit" }))).toBeVisible();
   await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveText(["Width"]);
@@ -245,7 +246,7 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await expect(design(page).getByRole("button", { name: /to inherit$/ })).toHaveCount(0);
   await expect.poll(() => boxIn(phone(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 20));
   // The tablet keeps its own.
-  expect((await boxIn(tablet(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 30));
+  await expect.poll(async () => (await boxIn(tablet(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 30));
 });
 
 test("a resize is one undo; Esc while dragging puts it back as it was pressed, with nothing of it to redo", async ({ page }) => {
@@ -255,24 +256,24 @@ test("a resize is one undo; Esc while dragging puts it back as it was pressed, w
 
   await dragHandle(page, handle(page, "se"), { x: 40, y: 10 });
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
+  await expect.poll(() => boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
   await expect(badge(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  expect((await boxIn(desktop(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 40));
+  await expect.poll(async () => (await boxIn(desktop(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 40));
   await page.keyboard.press("ControlOrMeta+z");
 
   await dragHandle(page, handle(page, "se"), { x: 25, y: 5 }, { drop: false });
-  expect((await boxIn(desktop(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 25));
+  await expect.poll(async () => (await boxIn(desktop(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 25));
   await page.keyboard.press("Escape");
-  expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
+  await expect.poll(() => boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
   await expect(sizeLabel(page)).toHaveCount(0);
   // The pointer is still down: moving it resizes nothing.
   await page.mouse.move(600, 400, { steps: 3 });
   await page.mouse.up();
-  expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
+  await expect.poll(() => boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
   await expect(badge(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
+  await expect.poll(() => boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
 });
 
 /**
@@ -299,21 +300,21 @@ test("Esc on a resize that has changed nothing takes nothing back: the fill chan
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
   const red = "rgb(255, 0, 0)";
   const fill = () => desktop(page).contentFrame().locator("#box").evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(await fill()).toBe(red);
+  await expect.poll(() => fill()).toBe(red);
 
   await pressRightEdgeWithoutResizing(page);
   await page.keyboard.press("Escape");
   await page.mouse.up();
 
-  expect(await fill()).toBe(red);
-  expect((await boxIn(desktop(page), "#box")).width).toBe(256);
+  await expect.poll(() => fill()).toBe(red);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(256);
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  expect(await fill()).toBe(red);
+  await expect.poll(() => fill()).toBe(red);
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await fill()).toBe("rgb(204, 204, 204)");
+  await expect.poll(() => fill()).toBe("rgb(204, 204, 204)");
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  expect(await fill()).toBe(red);
+  await expect.poll(() => fill()).toBe(red);
 });
 
 test("two resizes of the same layer in a row are an undo each, though the second begins without changing the size", async ({ page }) => {
@@ -323,18 +324,18 @@ test("two resizes of the same layer in a row are an undo each, though the second
   const zoom = await zoomOf(desktop(page));
 
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
-  expect((await boxIn(desktop(page), "#box")).width).toBe(100);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(100);
 
   // Pressed again, first straight down, its width as the first resize left it; then 30 wider.
   const from = await pressRightEdgeWithoutResizing(page);
   await page.mouse.move(from.x + 30 * zoom, from.y + 4, { steps: 6 });
   await page.mouse.up();
-  expect((await boxIn(desktop(page), "#box")).width).toBe(130);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(130);
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await boxIn(desktop(page), "#box")).width).toBe(100);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(100);
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await boxIn(desktop(page), "#box")).width).toBe(80);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(80);
 
   // And Esc on the second takes back the second only.
   await page.keyboard.press("ControlOrMeta+Shift+z");
@@ -343,9 +344,9 @@ test("two resizes of the same layer in a row are an undo each, though the second
   await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(130);
   await page.keyboard.press("Escape");
   await page.mouse.up();
-  expect((await boxIn(desktop(page), "#box")).width).toBe(100);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(100);
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await boxIn(desktop(page), "#box")).width).toBe(80);
+  await expect.poll(async () => (await boxIn(desktop(page), "#box")).width).toBe(80);
 });
 
 test("while a handle is held, ⌘Z and Delete do nothing; let go, they work again", async ({ page }) => {
@@ -356,13 +357,13 @@ test("while a handle is held, ⌘Z and Delete do nothing; let go, they work agai
   await dragHandle(page, handle(page, "e"), { x: 30, y: 0 }, { drop: false });
   for (const key of ["ControlOrMeta+z", "Delete"]) {
     await page.keyboard.press(key);
-    expect((await boxIn(desktop(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 30));
+    await expect.poll(async () => (await boxIn(desktop(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 30));
   }
   await page.mouse.up();
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
+  await expect.poll(() => boxIn(desktop(page), `${HERO} > button`)).toEqual(before);
 });
 
 test("dragged out and back, or with ⌥ let go before the pointer moves again, it is as the handle is now: the edges not dragged where they were", async ({ page }) => {
@@ -379,7 +380,7 @@ test("dragged out and back, or with ⌥ let go before the pointer moves again, i
   await page.mouse.move(pressed.x - 20 * zoom, pressed.y, { steps: 4 });
   await page.mouse.move(pressed.x - 8 * zoom, pressed.y, { steps: 4 });
   await page.mouse.up();
-  expect(await boxIn(desktop(page), "#box")).toEqual({ x: 92, y: 60, width: 88, height: 40 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 92, y: 60, width: 88, height: 40 });
 
   const edge = (await handle(page, "e").boundingBox())!;
   const from = { x: edge.x + edge.width / 2, y: edge.y + edge.height / 2 };
@@ -387,7 +388,7 @@ test("dragged out and back, or with ⌥ let go before the pointer moves again, i
   await page.keyboard.down("Alt");
   await page.mouse.down();
   await page.mouse.move(from.x + 20 * zoom, from.y, { steps: 4 });
-  expect(await boxIn(desktop(page), "#box")).toEqual({ x: 72, y: 60, width: 128, height: 40 });
+  await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 72, y: 60, width: 128, height: 40 });
   // ⌥ let go, the pointer still: from the left edge again, which goes back where it was.
   await page.keyboard.up("Alt");
   await expect.poll(() => boxIn(desktop(page), "#box")).toEqual({ x: 92, y: 60, width: 108, height: 40 });
@@ -402,7 +403,7 @@ test("a locked layer stops at the minimum width its own styles give it", async (
 
   await dragHandle(page, handle(page, "e"), { x: -60, y: 0 });
 
-  expect((await boxIn(desktop(page), '[data-testid="acme-badge"]')).width).toBe(50);
+  await expect.poll(async () => (await boxIn(desktop(page), '[data-testid="acme-badge"]')).width).toBe(50);
   await expect(field(page, "Width")).toHaveValue("50");
   // Recorded as it shows: the change says 50px, not the smaller width the pointer went to.
   await badge(page).click();
@@ -457,31 +458,31 @@ test.describe("placed from the right or bottom, or centered (ticket 75)", () => 
 
     await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
     // The edge across stays: before, 20 px of it moved left instead.
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, width: 100 });
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...before, width: 100 });
     await expect(field(page, "X")).toHaveValue(String(before.x));
     await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
     for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#tag").then((gaps) => gaps.right)).toBe(20);
 
     await dragHandle(page, handle(page, "w"), { x: -40, y: 0 });
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 40, width: 140 });
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 40, width: 140 });
     await expect(field(page, "X")).toHaveValue(String(before.x - 40));
     for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#tag").then((gaps) => gaps.right)).toBe(20);
 
     // ⌥: both edges, from the middle; Esc midway takes it back.
     await page.keyboard.down("Alt");
     await dragHandle(page, handle(page, "e"), { x: -20, y: 0 }, { drop: false });
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 20, width: 100 });
-    expect((await gapsIn(desktop(page), "#tag")).right).toBe(40);
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 20, width: 100 });
+    await expect.poll(async () => (await gapsIn(desktop(page), "#tag")).right).toBe(40);
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await page.keyboard.up("Alt");
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 40, width: 140 });
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...before, x: before.x - 40, width: 140 });
 
     // Each drag one step to undo.
     await page.keyboard.press("ControlOrMeta+z");
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...before, width: 100 });
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...before, width: 100 });
     await page.keyboard.press("ControlOrMeta+z");
-    expect(await boxIn(desktop(page), "#tag")).toEqual(before);
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual(before);
     await expect(badge(page)).toHaveCount(0);
   });
 
@@ -493,22 +494,22 @@ test.describe("placed from the right or bottom, or centered (ticket 75)", () => 
     const tag = await boxIn(desktop(page), "#tag");
     await field(page, "Width").fill("120");
     await field(page, "Width").press("Enter");
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...tag, width: 120 });
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...tag, width: 120 });
     await expect(field(page, "X")).toHaveValue(String(tag.x));
-    expect((await gapsIn(desktop(page), "#tag")).right).toBe(0);
+    await expect.poll(async () => (await gapsIn(desktop(page), "#tag")).right).toBe(0);
 
     await pick(page, desktop(page), "#foot");
     const foot = await boxIn(desktop(page), "#foot");
     await field(page, "Height").fill("60");
     await field(page, "Height").press("Enter");
-    expect(await boxIn(desktop(page), "#foot")).toEqual({ ...foot, height: 60 });
+    await expect.poll(() => boxIn(desktop(page), "#foot")).toEqual({ ...foot, height: 60 });
     await expect(field(page, "Y")).toHaveValue(String(foot.y));
     // Width, right, height, bottom.
     await expect(badge(page)).toHaveAccessibleName("4 changes not applied yet");
     // One step each.
     await page.keyboard.press("ControlOrMeta+z");
-    expect(await boxIn(desktop(page), "#foot")).toEqual(foot);
-    expect(await boxIn(desktop(page), "#tag")).toEqual({ ...tag, width: 120 });
+    await expect.poll(() => boxIn(desktop(page), "#foot")).toEqual(foot);
+    await expect.poll(() => boxIn(desktop(page), "#tag")).toEqual({ ...tag, width: 120 });
   });
 
   test("placed from the bottom: its bottom edge dragged follows the pointer and its top stays", async ({ page }) => {
@@ -519,7 +520,7 @@ test.describe("placed from the right or bottom, or centered (ticket 75)", () => 
 
     await dragHandle(page, handle(page, "s"), { x: 0, y: 25 });
 
-    expect(await boxIn(desktop(page), "#foot")).toEqual({ ...before, height: 65 });
+    await expect.poll(() => boxIn(desktop(page), "#foot")).toEqual({ ...before, height: 65 });
     await expect(field(page, "Y")).toHaveValue(String(before.y));
     for (const view of everyView(page)) await expect.poll(() => gapsIn(view, "#foot").then((gaps) => gaps.bottom)).toBe(55);
   });
@@ -564,9 +565,9 @@ test.describe("placed from the right or bottom, or centered (ticket 75)", () => 
     await dragHandle(page, handle(page, "e"), { x: -30, y: 0 });
 
     await expect(badge(page)).toHaveAccessibleName("2 changes not applied yet");
-    expect(await gapsIn(desktop(page), "#tag")).toMatchObject({ right: 70 });
+    await expect.poll(() => gapsIn(desktop(page), "#tag")).toMatchObject({ right: 70 });
     await expect.poll(() => gapsIn(tablet(page), "#tag").then((gaps) => gaps.right)).toBe(70);
     await expect.poll(() => gapsIn(phone(page), "#tag").then((gaps) => gaps.left)).toBe(8);
-    expect((await boxIn(phone(page), "#tag")).width).toBe(50);
+    await expect.poll(async () => (await boxIn(phone(page), "#tag")).width).toBe(50);
   });
 });

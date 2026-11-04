@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]');
@@ -27,6 +27,7 @@ async function addBoard(page: Page, layers: Record<string, number[]>) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** How large a view is drawn: screen px per px of the view. */
@@ -36,7 +37,7 @@ function zoomOf(view: Locator) {
 
 /** Selects, in a view, the deepest layer under the middle of what `selector` finds there. */
 async function pick(page: Page, view: Locator, selector: string) {
-  const box = (await view.contentFrame().locator(selector).boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator(selector));
   await page.keyboard.down(mod);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.up(mod);
@@ -82,11 +83,11 @@ test("dragged freely near a layer's edge, it snaps there, with a red line along 
   await dragInBoard(page, desktop(page), `${HERO} > button`, { x: 100, y: 30 }, { nudge: { x: 3, y: 0 }, drop: false });
   const line = marks(page, "line").first();
   await expect(line).toBeVisible();
-  expect((await line.boundingBox())!.width).toBeLessThanOrEqual(1.5);
+  await expect.poll(async () => (await line.boundingBox())!.width).toBeLessThanOrEqual(1.5);
   await page.mouse.up();
 
   await expect(marks(page, "line")).toHaveCount(0);
-  expect((await placeIn(desktop(page), "#board > button")).x).toBeCloseTo(100, 1);
+  await expect.poll(async () => (await placeIn(desktop(page), "#board > button")).x).toBeCloseTo(100, 1);
 });
 
 test("with ⌘ held, it does not snap: the lines go as ⌘ is pressed, and come back as it is let go", async ({ page }) => {
@@ -107,7 +108,7 @@ test("with ⌘ held, it does not snap: the lines go as ⌘ is pressed, and come 
   // Where it was let go, 3 screen px off the mark's edge.
   const x = (await placeIn(desktop(page), "#board > button")).x;
   expect(Math.abs(x - 100)).toBeGreaterThanOrEqual(1);
-  expect(Math.abs(x - 100 - 3 / (await zoomOf(desktop(page))))).toBeLessThanOrEqual(2);
+  await expect.poll(async () => Math.abs(x - 100 - 3 / (await zoomOf(desktop(page))))).toBeLessThanOrEqual(2);
 });
 
 test("dragged to as far from two layers in a row as they are from each other, it snaps there, each equal space marked in magenta with its size", async ({ page }) => {
@@ -122,7 +123,7 @@ test("dragged to as far from two layers in a row as they are from each other, it
   await expect(gaps.first()).toHaveCSS("border-top-color", "rgb(232, 28, 196)");
   await page.mouse.up();
 
-  expect(await placeIn(desktop(page), "#board > button")).toEqual({ x: 620, y: 100 });
+  await expect.poll(() => placeIn(desktop(page), "#board > button")).toEqual({ x: 620, y: 100 });
 });
 
 test("dragged in the tablet view, it snaps to what is there as the tablet view lays it out, the lines drawn in that view, and is placed there at its breakpoint", async ({ page }) => {
@@ -135,8 +136,8 @@ test("dragged in the tablet view, it snaps to what is there as the tablet view l
   await expect(page.locator('.tk-marks:not([data-view="Tablet"])')).toHaveCount(0);
   await page.mouse.up();
 
-  expect((await placeIn(tablet(page), "#mark")).x).toBeCloseTo(330, 1);
-  expect((await placeIn(desktop(page), "#mark")).x).toBe(100);
+  await expect.poll(async () => (await placeIn(tablet(page), "#mark")).x).toBeCloseTo(330, 1);
+  await expect.poll(async () => (await placeIn(desktop(page), "#mark")).x).toBe(100);
 });
 
 test("a layer off the canvas dragged back into a Frame's empty space snaps as any layer dragged there does", async ({ page }) => {
@@ -167,7 +168,7 @@ test("a layer off the canvas dragged back into a Frame's empty space snaps as an
   await page.mouse.up();
 
   await expect(outside).toHaveCount(0);
-  expect((await placeIn(desktop(page), "#board > h1")).x).toBeCloseTo(100, 1);
+  await expect.poll(async () => (await placeIn(desktop(page), "#board > h1")).x).toBeCloseTo(100, 1);
 });
 
 test("with ⌥ held, the distances from the layer selected to the one pointed at show, or to its container pointed at itself; let go, they go", async ({ page }) => {
@@ -254,7 +255,7 @@ test("nudged in the phone view, a free layer moves there only, at the phone's br
   await page.keyboard.press("Shift+ArrowRight");
 
   await expect.poll(() => placeIn(phone(page), "#mark")).toEqual({ x: 110, y: 120 });
-  expect(await placeIn(desktop(page), "#mark")).toEqual({ x: 100, y: 120 });
+  await expect.poll(() => placeIn(desktop(page), "#mark")).toEqual({ x: 100, y: 120 });
   // Its Position row is marked as changed at the phone's breakpoint.
   await expect(design(page).getByRole("region", { name: "Position" }).getByRole("button", { name: /^Reset .*X.* to inherit$/ })).toBeVisible();
   await page.locator("[data-tk-changes-opener]").click();
@@ -279,9 +280,9 @@ test("nudged in the phone view, a layer in a Frame's flow is placed freely there
   await page.keyboard.press("Shift+ArrowDown");
 
   await expect.poll(() => placeIn(phone(page), "#chip")).toEqual({ x: was.x, y: was.y + 10 });
-  expect(await position(phone(page))).toBe("absolute");
-  expect(await position(desktop(page))).toBe("static");
-  expect(await placeIn(desktop(page), "#chip")).toEqual(was);
+  await expect.poll(() => position(phone(page))).toBe("absolute");
+  await expect.poll(() => position(desktop(page))).toBe("static");
+  await expect.poll(() => placeIn(desktop(page), "#chip")).toEqual(was);
   const changed = design(page).locator('.tk-breakpoint-change[data-tk-property="absolute"]');
   await expect(changed).toHaveText("Absolute");
   await page.locator("[data-tk-changes-opener]").click();
@@ -291,6 +292,6 @@ test("nudged in the phone view, a layer in a Frame's flow is placed freely there
   // Its X and Y there are what places it: the Position row is marked, and reset there.
   await design(page).getByRole("region", { name: "Position" }).getByRole("button", { name: "Reset Absolute to inherit" }).click();
   await expect.poll(() => position(phone(page))).toBe("static");
-  expect(await placeIn(phone(page), "#chip")).toEqual(was);
+  await expect.poll(() => placeIn(phone(page), "#chip")).toEqual(was);
   await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
 });

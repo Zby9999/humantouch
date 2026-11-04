@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvas(page: Page) {
@@ -12,6 +12,7 @@ function design(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** The toast at the bottom middle of the canvas, read out as it changes: not the one at its bottom left, which tells of the code changing (ticket 78). */
@@ -48,7 +49,7 @@ test("a new fill shows on every instance of the usage, and on no other", async (
   await hex.press("Enter");
 
   // Three cards come from one usage in a loop; "Your turn" is another usage.
-  expect(await cardStyles(page, "backgroundColor")).toEqual(["rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 255, 255)"]);
+  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual(["rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 255, 255)"]);
   await expect(hex).toHaveValue("FF0000");
 });
 
@@ -59,7 +60,7 @@ test("the color picker paints the canvas while it moves", async ({ page }) => {
   await design(page).getByRole("button", { name: "Fill color picker" }).click();
   await page.getByRole("dialog", { name: "Fill color" }).getByLabel("Pick fill color").fill("#00ff00");
 
-  expect(await cardStyles(page, "backgroundColor")).toEqual([
+  await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([
     "rgb(255, 255, 255)",
     "rgb(255, 255, 255)",
     "rgb(255, 255, 255)",
@@ -75,14 +76,14 @@ test("fill opacity, and removing and adding a fill", async ({ page }) => {
 
   await opacity.fill("50");
   await opacity.press("Enter");
-  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgba(255, 255, 255, 0.5)");
+  await expect.poll(async () => (await cardStyles(page, "backgroundColor"))[0]).toBe("rgba(255, 255, 255, 0.5)");
 
   await fill.getByRole("button", { name: "Remove fill" }).click();
-  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgba(0, 0, 0, 0)");
+  await expect.poll(async () => (await cardStyles(page, "backgroundColor"))[0]).toBe("rgba(0, 0, 0, 0)");
   await expect(fill.getByRole("textbox")).toHaveCount(0);
 
   await fill.getByRole("button", { name: "Add fill" }).click();
-  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
+  await expect.poll(async () => (await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
 });
 
 test("a fill made a linear gradient: its angle and its stops, dragged, added, moved and taken off, paint the canvas at once", async ({ page }) => {
@@ -92,7 +93,7 @@ test("a fill made a linear gradient: its angle and its stops, dragged, added, mo
 
   await fill.getByRole("combobox", { name: "Fill type" }).selectOption("Linear");
   // The card's white, fading out, top to bottom; on every instance of the usage and no other.
-  expect(await cardStyles(page, "backgroundImage")).toEqual([
+  await expect.poll(() => cardStyles(page, "backgroundImage")).toEqual([
     ...Array(3).fill("linear-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)"),
     "none",
   ]);
@@ -100,13 +101,13 @@ test("a fill made a linear gradient: its angle and its stops, dragged, added, mo
   const angle = fill.getByRole("textbox", { name: "Angle" });
   await angle.fill("90");
   await angle.press("Enter");
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
 
   const first = fill.getByRole("textbox", { name: "Stop 1 color", exact: true });
   await first.fill("ff0000");
   await first.press("Enter");
   await fill.getByRole("slider", { name: "Stop 2 position" }).press("Shift+ArrowLeft");
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(255, 255, 255, 0) 90%)");
 
   // Dragged along the bar: the canvas follows the handle.
   const bar = fill.getByRole("group", { name: "Gradient stops" });
@@ -115,27 +116,27 @@ test("a fill made a linear gradient: its angle and its stops, dragged, added, mo
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 4 });
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 10%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 10%, rgba(255, 255, 255, 0) 90%)");
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 4 });
   await page.mouse.up();
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 255, 255, 0) 90%)");
   await expect(fill.getByRole("textbox", { name: "Stop 1 at" })).toHaveValue("20%");
   // The whole drag is one step to undo.
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgba(255, 255, 255, 0) 90%)");
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 255, 255, 0) 90%)");
 
   // A click on the bar adds a stop there, in the color the gradient has there.
   await bar.click({ position: { x: box.width * 0.55, y: box.height / 2 } });
   await expect(fill.getByRole("slider")).toHaveCount(3);
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%, rgba(255, 255, 255, 0) 90%)");
 
   await fill.getByRole("slider", { name: "Stop 2 position" }).press("Delete");
   await fill.getByRole("button", { name: "Add stop" }).click();
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%, rgba(255, 255, 255, 0) 90%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%, rgba(255, 255, 255, 0) 90%)");
   await fill.getByRole("button", { name: "Remove stop 3" }).click();
-  expect(await gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 20%, rgba(255, 128, 128, 0.5) 55%)");
   await expect(fill.getByRole("button", { name: "Remove stop 1" })).toBeDisabled();
 });
 
@@ -153,27 +154,27 @@ test("while a gradient's stop is dragged, ⌘Z, ⇧⌘Z, Delete and the arrows d
   await page.keyboard.press("ControlOrMeta+z");
   await expect(fill.getByRole("slider")).toHaveCount(2);
   const at = (n: number) => `linear-gradient(rgb(255, 0, 0) ${n}%, rgba(255, 255, 255, 0) 100%)`;
-  expect(await gradient()).toBe(at(0));
+  await expect.poll(() => gradient()).toBe(at(0));
 
   const bar = (await fill.getByRole("group", { name: "Gradient stops" }).boundingBox())!;
   const handle = (await fill.getByRole("slider", { name: "Stop 1 position" }).boundingBox())!;
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await page.mouse.down();
   await page.mouse.move(bar.x + bar.width * 0.1, bar.y + bar.height / 2, { steps: 4 });
-  expect(await gradient()).toBe(at(10));
+  await expect.poll(() => gradient()).toBe(at(10));
   for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "Delete", "ArrowRight"]) {
     await page.keyboard.press(key);
     await expect(fill.getByRole("slider"), key).toHaveCount(2);
-    expect(await gradient(), key).toBe(at(10));
+    await expect.poll(() => gradient(), key).toBe(at(10));
   }
   await page.mouse.move(bar.x + bar.width * 0.2, bar.y + bar.height / 2, { steps: 4 });
   await page.mouse.up();
-  expect(await gradient()).toBe(at(20));
+  await expect.poll(() => gradient()).toBe(at(20));
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await gradient()).toBe(at(0));
+  await expect.poll(() => gradient()).toBe(at(0));
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await gradient()).toBe("linear-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
+  await expect.poll(() => gradient()).toBe("linear-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
 });
 
 test("a radial gradient keeps the stops, and a color again takes the first of them", async ({ page }) => {
@@ -181,11 +182,11 @@ test("a radial gradient keeps the stops, and a color again takes the first of th
   const type = design(page).getByRole("group", { name: "Fill" }).getByRole("combobox", { name: "Fill type" });
 
   await type.selectOption("Radial");
-  expect((await cardStyles(page, "backgroundImage"))[0]).toBe("radial-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
+  await expect.poll(async () => (await cardStyles(page, "backgroundImage"))[0]).toBe("radial-gradient(rgb(255, 255, 255) 0%, rgba(255, 255, 255, 0) 100%)");
 
   await type.selectOption("Solid");
-  expect((await cardStyles(page, "backgroundImage"))[0]).toBe("none");
-  expect((await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
+  await expect.poll(async () => (await cardStyles(page, "backgroundImage"))[0]).toBe("none");
+  await expect.poll(async () => (await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(255, 255, 255)");
 });
 
 test("a radial gradient's center and size: the page's own kept until changed, changed on the panel, its stops in px kept in px", async ({ page }) => {
@@ -222,24 +223,24 @@ test("a radial gradient's center and size: the page's own kept until changed, ch
 
   // A stop changed: the keyword, the center in % and the stop in px stay as the page has them.
   await type("Stop 1 color", "00ff00");
-  expect(await gradient()).toBe("radial-gradient(circle closest-side at 30% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+  await expect.poll(() => gradient()).toBe("radial-gradient(circle closest-side at 30% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
 
   await type("Center X", "50");
-  expect(await gradient()).toBe("radial-gradient(circle closest-side at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+  await expect.poll(() => gradient()).toBe("radial-gradient(circle closest-side at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
 
   // A size by keyword, changed: an ellipse in % of the layer, 60px of 200px across and 20px of 100px down.
   await type("Radius X", "60");
-  expect(await gradient()).toBe("radial-gradient(30% 20% at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+  await expect.poll(() => gradient()).toBe("radial-gradient(30% 20% at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
   await expect(field("Radius X")).toHaveValue("60");
 
   // The same both ways: a circle, which CSS sizes in px.
   await type("Radius Y", "60");
-  expect(await gradient()).toBe("radial-gradient(60px at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
+  await expect.poll(() => gradient()).toBe("radial-gradient(60px at 50% 20%, rgb(0, 255, 0) 20px, rgb(0, 0, 255) 100%)");
   await expect(first).toHaveAttribute("aria-valuetext", "20px");
 
   // The stop in px moves 1px at a time; a new stop goes in %, in the widest gap: 20px of 60px is 33.33%.
   await first.press("ArrowRight");
-  expect(await gradient()).toBe("radial-gradient(60px at 50% 20%, rgb(0, 255, 0) 21px, rgb(0, 0, 255) 100%)");
+  await expect.poll(() => gradient()).toBe("radial-gradient(60px at 50% 20%, rgb(0, 255, 0) 21px, rgb(0, 0, 255) 100%)");
   await fill.getByRole("button", { name: "Add stop" }).click();
   await expect(field("Stop 2 at")).toHaveValue("67.5%");
   await expect(field("Stop 1 at")).toHaveValue("21px");
@@ -272,20 +273,20 @@ test("a radial gradient centered with calc() keeps the page's own center and siz
 
   await field("Stop 1 color").fill("00ff00");
   await field("Stop 1 color").press("Enter");
-  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 38px, rgb(0, 0, 255) 100%)`);
+  await expect.poll(() => gradient()).toBe(`${kept}, rgb(0, 255, 0) 38px, rgb(0, 0, 255) 100%)`);
   await first.press("ArrowRight");
-  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
+  await expect.poll(() => gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
   // A new stop in the widest gap, from 39px of 190px to the end.
   await fill.getByRole("button", { name: "Add stop" }).click();
   await expect(field("Stop 2 at")).toHaveValue("60.26%");
   await fill.getByRole("button", { name: "Remove stop 2" }).click();
-  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
+  await expect.poll(() => gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
 
   // Another type, and back with undo: the page's own center and size again.
   await fill.getByRole("combobox", { name: "Fill type" }).selectOption("Linear");
-  expect(await gradient()).toMatch(/^linear-gradient\(/);
+  await expect.poll(() => gradient()).toMatch(/^linear-gradient\(/);
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
+  await expect.poll(() => gradient()).toBe(`${kept}, rgb(0, 255, 0) 39px, rgb(0, 0, 255) 100%)`);
   await expect(fill.getByRole("combobox", { name: "Fill type" })).toHaveValue("radial");
   await expect(field("Center X")).toHaveCount(0);
 });
@@ -320,36 +321,36 @@ test("a stroke: the page's own as it is; its weight and line, one side, each sid
 
   await weight.fill("3");
   await weight.press("Enter");
-  expect(await cardStyles(page, "borderWidth")).toEqual(["3px", "3px", "3px", "1px"]);
+  await expect.poll(() => cardStyles(page, "borderWidth")).toEqual(["3px", "3px", "3px", "1px"]);
 
   await stroke.getByRole("combobox", { name: "Stroke style" }).selectOption("Dashed");
-  expect((await cardStyles(page, "borderStyle"))[0]).toBe("dashed");
+  await expect.poll(async () => (await cardStyles(page, "borderStyle"))[0]).toBe("dashed");
 
   const sides = stroke.getByRole("combobox", { name: "Stroke sides" });
   await sides.selectOption("Bottom");
-  expect((await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 3px");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 3px");
 
   await sides.selectOption("Custom");
   const left = stroke.getByRole("textbox", { name: "Stroke left" });
   await left.fill("5");
   await left.press("Enter");
-  expect((await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 3px 5px");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 3px 5px");
 
   await sides.selectOption("All");
-  expect((await cardStyles(page, "borderWidth"))[0]).toBe("5px");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("5px");
 
   // A weight of 0 is no stroke.
   await weight.fill("0");
   await weight.press("Enter");
-  expect((await cardStyles(page, "borderStyle"))[0]).toBe("none");
+  await expect.poll(async () => (await cardStyles(page, "borderStyle"))[0]).toBe("none");
   await expect(stroke.getByRole("button", { name: "Add stroke" })).toBeVisible();
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await cardStyles(page, "borderWidth"))[0]).toBe("5px");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("5px");
 
   await stroke.getByRole("button", { name: "Remove stroke" }).click();
-  expect((await cardStyles(page, "borderStyle"))[0]).toBe("none");
+  await expect.poll(async () => (await cardStyles(page, "borderStyle"))[0]).toBe("none");
   await stroke.getByRole("button", { name: "Add stroke" }).click();
-  expect([(await cardStyles(page, "borderWidth"))[0], (await cardStyles(page, "borderStyle"))[0], (await cardStyles(page, "borderColor"))[0]]).toEqual([
+  await expect.poll(async () => [(await cardStyles(page, "borderWidth"))[0], (await cardStyles(page, "borderStyle"))[0], (await cardStyles(page, "borderColor"))[0]]).toEqual([
     "1px",
     "solid",
     "rgb(0, 0, 0)",
@@ -375,7 +376,7 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await weight.fill("1.5");
   await weight.press("Enter");
   await expect(weight).toHaveValue("1.5");
-  expect(await cardStyles(page, "borderWidth")).toEqual(["1px", "1px", "1px", "1px"]);
+  await expect.poll(() => cardStyles(page, "borderWidth")).toEqual(["1px", "1px", "1px", "1px"]);
   await expect(toast(page)).toHaveText("");
   await selectRow(page, "Card", 3);
   await selectRow(page, "Card");
@@ -465,29 +466,29 @@ test("effects: the page's shadows as they are; shadows added, changed and taken 
   await expect(field("Shadow 2 blur")).toHaveValue("4");
   await effects.getByRole("combobox", { name: "Shadow 2 type" }).selectOption("Inner shadow");
   await enter("Shadow 2 color", "ff0000");
-  expect(await shadow()).toBe("rgba(0, 0, 0, 0.1) 0px 8px 16px 0px, rgba(255, 0, 0, 0.25) 0px 4px 4px 0px inset");
+  await expect.poll(() => shadow()).toBe("rgba(0, 0, 0, 0.1) 0px 8px 16px 0px, rgba(255, 0, 0, 0.25) 0px 4px 4px 0px inset");
 
   // A shadow made a layer blur blurs as much.
   await effects.getByRole("combobox", { name: "Shadow 1 type" }).selectOption("Layer blur");
-  expect(await cardStyles(page, "filter")).toEqual(["blur(16px)", "blur(16px)", "blur(16px)", "none"]);
-  expect(await shadow()).toBe("rgba(255, 0, 0, 0.25) 0px 4px 4px 0px inset");
+  await expect.poll(() => cardStyles(page, "filter")).toEqual(["blur(16px)", "blur(16px)", "blur(16px)", "none"]);
+  await expect.poll(() => shadow()).toBe("rgba(255, 0, 0, 0.25) 0px 4px 4px 0px inset");
   await enter("Layer blur", "2");
-  expect((await cardStyles(page, "filter"))[0]).toBe("blur(2px)");
+  await expect.poll(async () => (await cardStyles(page, "filter"))[0]).toBe("blur(2px)");
 
   // One layer blur and one background blur: the one there is is not offered again.
   await effects.getByRole("button", { name: "Add effect" }).click();
   const type = effects.getByRole("combobox", { name: "Shadow 2 type" });
   await expect(type.getByRole("option", { name: "Layer blur" })).toBeDisabled();
   await type.selectOption("Background blur");
-  expect((await cardStyles(page, "backdropFilter"))[0]).toBe("blur(4px)");
+  await expect.poll(async () => (await cardStyles(page, "backdropFilter"))[0]).toBe("blur(4px)");
 
   await effects.getByRole("button", { name: "Remove layer blur" }).click();
   await effects.getByRole("button", { name: "Remove background blur" }).click();
-  expect([(await cardStyles(page, "filter"))[0], (await cardStyles(page, "backdropFilter"))[0]]).toEqual(["none", "none"]);
+  await expect.poll(async () => [(await cardStyles(page, "filter"))[0], (await cardStyles(page, "backdropFilter"))[0]]).toEqual(["none", "none"]);
   await expect(effects.getByRole("combobox", { name: "Layer blur type" })).toHaveCount(0);
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await cardStyles(page, "backdropFilter"))[0]).toBe("blur(4px)");
+  await expect.poll(async () => (await cardStyles(page, "backdropFilter"))[0]).toBe("blur(4px)");
   await expect(field("Background blur")).toHaveValue("4");
 });
 
@@ -508,7 +509,7 @@ test("a shadow dragged until it draws nothing is taken off, and the rest of the 
   for (const dx of [-1, -2, -3, -1, 1, 3]) await page.mouse.move(at.x + dx, at.y);
   await page.mouse.up();
 
-  expect((await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.1) 0px 1px 2px -1px");
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.1) 0px 1px 2px -1px");
   await expect(effects.getByRole("textbox", { name: "Shadow 1 blur", exact: true })).toHaveValue("2");
 });
 
@@ -523,13 +524,13 @@ test("shadows the selected layers do not share show as Mixed, replaced by a new 
   await expect(effects.getByText("Mixed shadows")).toBeVisible();
   // As in Figma, a new effect replaces the mixed ones.
   await effects.getByRole("button", { name: "Add effect" }).click();
-  expect(await cardStyles(page, "boxShadow")).toEqual(Array(4).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px"));
+  await expect.poll(() => cardStyles(page, "boxShadow")).toEqual(Array(4).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px"));
   await expect(effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true })).toHaveValue("4");
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(effects.getByText("Mixed shadows")).toBeVisible();
   await effects.getByRole("button", { name: "Remove shadows" }).click();
-  expect(await cardStyles(page, "boxShadow")).toEqual(Array(4).fill("none"));
+  await expect.poll(() => cardStyles(page, "boxShadow")).toEqual(Array(4).fill("none"));
   await expect(effects.getByRole("textbox")).toHaveCount(0);
 });
 
@@ -540,11 +541,11 @@ test("a uniform corner radius, typed or stepped with the arrow keys", async ({ p
 
   await radius.fill("4");
   await radius.press("Enter");
-  expect(await cardStyles(page, "borderRadius")).toEqual(["4px", "4px", "4px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["4px", "4px", "4px", "12px"]);
 
   await radius.press("ArrowUp");
   await radius.press("Shift+ArrowUp");
-  expect((await cardStyles(page, "borderRadius"))[0]).toBe("15px");
+  await expect.poll(async () => (await cardStyles(page, "borderRadius"))[0]).toBe("15px");
   await expect(radius).toHaveValue("15");
 });
 
@@ -569,16 +570,16 @@ test("corner radius: each corner its own, and back to one for all corners", asyn
     await corner.press("Enter");
   }
   // On every instance of the usage, and no other.
-  expect(await cardStyles(page, "borderRadius")).toEqual(["12px 12px 0px 0px", "12px 12px 0px 0px", "12px 12px 0px 0px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["12px 12px 0px 0px", "12px 12px 0px 0px", "12px 12px 0px 0px", "12px"]);
   await expect(radius).toHaveValue("Mixed");
 
   // Off again, the corners stay as they are until one radius is set for all.
   await independent.click();
   await expect(corners).toHaveCount(0);
-  expect((await cardStyles(page, "borderRadius"))[0]).toBe("12px 12px 0px 0px");
+  await expect.poll(async () => (await cardStyles(page, "borderRadius"))[0]).toBe("12px 12px 0px 0px");
   await radius.fill("8");
   await radius.press("Enter");
-  expect((await cardStyles(page, "borderRadius"))[0]).toBe("8px");
+  await expect.poll(async () => (await cardStyles(page, "borderRadius"))[0]).toBe("8px");
 
   // A layer whose corners differ shows them each, from the start.
   await page.keyboard.press("ControlOrMeta+z");
@@ -609,7 +610,7 @@ test("a value typed and left without Enter still applies to the layer it was typ
   await radius.fill("2");
   await selectRow(page, "Card", 3);
 
-  expect(await cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["2px", "2px", "2px", "12px"]);
   await expect(radius).toHaveValue("12");
 });
 
@@ -666,8 +667,8 @@ test("a text layer's drop shadows: added, changed and taken off, on the canvas a
   const type = effects.getByRole("combobox", { name: "Shadow 1 type" });
   await expect(type.getByRole("option")).toHaveText(["Drop shadow"]);
   // On every instance of the usage, and no other; the card keeps its own shadow.
-  expect(await titleShadows(page)).toEqual([...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px"), "none"]);
-  expect((await cardStyles(page, "boxShadow"))[0]).toBe(cardShadow);
+  await expect.poll(() => titleShadows(page)).toEqual([...Array(3).fill("rgba(0, 0, 0, 0.25) 0px 4px 4px"), "none"]);
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe(cardShadow);
 
   // A second one, below the first, each changed on its own.
   await effects.getByRole("button", { name: "Add effect" }).click();
@@ -675,17 +676,17 @@ test("a text layer's drop shadows: added, changed and taken off, on the canvas a
   await enter("Shadow 2 blur", "0");
   await enter("Shadow 2 color", "ff0000");
   await enter("Shadow 1 Y", "8");
-  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px, rgba(255, 0, 0, 0.25) 2px 4px 0px");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px, rgba(255, 0, 0, 0.25) 2px 4px 0px");
 
   await effects.getByRole("button", { name: "Remove shadow 1" }).click();
-  expect((await titleShadows(page))[0]).toBe("rgba(255, 0, 0, 0.25) 2px 4px 0px");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("rgba(255, 0, 0, 0.25) 2px 4px 0px");
   await effects.getByRole("button", { name: "Remove shadow 1" }).click();
-  expect((await titleShadows(page))[0]).toBe("none");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("none");
   await expect(effects.getByRole("textbox")).toHaveCount(0);
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(field("Shadow 1 X")).toHaveValue("2");
-  expect((await titleShadows(page))[0]).toBe("rgba(255, 0, 0, 0.25) 2px 4px 0px");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("rgba(255, 0, 0, 0.25) 2px 4px 0px");
 });
 
 test("a text layer's text-shadow on the page reads as its drop shadows", async ({ page }) => {
@@ -716,8 +717,8 @@ test("text and other layers selected together take drop shadows each its own way
   await expect(effects.getByText("Mixed shadows")).toBeVisible();
   // As in Figma, a new effect replaces the mixed ones, on each layer as it draws shadows.
   await effects.getByRole("button", { name: "Add effect" }).click();
-  expect((await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px");
-  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px");
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px 0px");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px");
   // No spread, and drop shadows only, as text has them.
   await expect(field("Shadow 1 spread")).toHaveCount(0);
   await expect(effects.getByRole("combobox", { name: "Shadow 1 type" }).getByRole("option")).toHaveText(["Drop shadow"]);
@@ -725,29 +726,29 @@ test("text and other layers selected together take drop shadows each its own way
   // A card's spread is its own: the text shows the same shadow, and a change leaves the spread as it is.
   // The shadows added are taken back first, and the page given them, so the page's own show.
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await titleShadows(page))[0]).toBe("none");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("none");
   await styleOnCanvas(page, "article h3", { textShadow: "0 4px 4px rgb(0 0 0 / 0.25)" });
   await styleOnCanvas(page, "article", { boxShadow: "0 4px 4px 2px rgb(0 0 0 / 0.25)" });
   await selectBoth();
   await expect(field("Shadow 1 Y")).toHaveValue("4");
   await field("Shadow 1 Y").fill("8");
   await field("Shadow 1 Y").press("Enter");
-  expect((await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px 2px");
-  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px");
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px 2px");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 8px 4px");
 
   // An inner shadow, or a blur, that text cannot have shows as Mixed.
   await field("Shadow 1 Y").blur();
   await page.keyboard.press("ControlOrMeta+z");
-  expect((await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("rgba(0, 0, 0, 0.25) 0px 4px 4px");
   await styleOnCanvas(page, "article", { boxShadow: "inset 0 8px 4px rgb(0 0 0 / 0.25)", filter: "blur(2px)" });
   await selectBoth();
   await expect(effects.getByText("Mixed shadows")).toBeVisible();
   await expect(field("Layer blur")).toHaveValue("Mixed");
   await effects.getByRole("button", { name: "Remove layer blur" }).click();
-  expect((await cardStyles(page, "filter"))[0]).toBe("none");
+  await expect.poll(async () => (await cardStyles(page, "filter"))[0]).toBe("none");
   await effects.getByRole("button", { name: "Remove shadows" }).click();
-  expect((await cardStyles(page, "boxShadow"))[0]).toBe("none");
-  expect((await titleShadows(page))[0]).toBe("none");
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe("none");
+  await expect.poll(async () => (await titleShadows(page))[0]).toBe("none");
 });
 
 test("the selection box steps aside while a value changes, so the change can be seen, and comes back after", async ({ page }) => {
@@ -764,14 +765,16 @@ test("the selection box steps aside while a value changes, so the change can be 
   await design(page).getByRole("textbox", { name: "Corner radius" }).press("ArrowUp");
 
   await expect(box).toHaveCSS("opacity", "1");
-  expect(await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => el.stepsAside)).toBe(true);
+  await expect.poll(() => box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => el.stepsAside)).toBe(true);
 });
 
 test("dragging left and right on a number's icon changes it, 1 per px and 10 with Shift", async ({ page }) => {
+  // 57 pointer moves, one px at a time, each a round trip to the browser: on a busy machine, more than the 30 seconds a test has (ticket 93).
+  test.setTimeout(90_000);
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
   const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
-  const { x, y } = (await icon.boundingBox())!;
+  const { x, y } = await steadyBox(icon);
   const drag = async (dx: number) => {
     await page.mouse.move(x + 4, y + 4);
     await page.mouse.down();
@@ -789,7 +792,7 @@ test("dragging left and right on a number's icon changes it, 1 per px and 10 wit
 
   await drag(-50);
   await expect(radius).toHaveValue("0");
-  expect(await cardStyles(page, "borderRadius")).toEqual(["0px", "0px", "0px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["0px", "0px", "0px", "12px"]);
 });
 
 const INTRO = "A Framer-style editor layer for any page.";
@@ -817,14 +820,14 @@ test("a text layer's font, weight and size, line height and letter spacing, alig
   await expect(font.getByRole("option")).toHaveText(["Georgia", "Space Grotesk"]);
   await expect(weight).toHaveValue("400");
   await font.selectOption("Space Grotesk");
-  expect(await introStyle(page, "fontFamily")).toBe('"Space Grotesk", sans-serif');
+  await expect.poll(() => introStyle(page, "fontFamily")).toBe('"Space Grotesk", sans-serif');
   // As in Figma, the text takes the nearest weight the font has loaded: it has only bold.
-  expect(await introStyle(page, "fontWeight")).toBe("700");
+  await expect.poll(() => introStyle(page, "fontWeight")).toBe("700");
   await expect(weight).toHaveValue("700");
   await expect(weight.getByRole("option")).toHaveText(["Bold"]);
   // One undo takes back the font and its weight together.
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await introStyle(page, "fontWeight")).toBe("400");
+  await expect.poll(() => introStyle(page, "fontWeight")).toBe("400");
   await expect(font).toHaveValue("Georgia");
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(font).toHaveValue("Space Grotesk");
@@ -834,24 +837,24 @@ test("a text layer's font, weight and size, line height and letter spacing, alig
   await expect(field("Letter spacing")).toHaveValue("2%");
 
   await enter("Font size", "20");
-  expect(await introStyle(page, "fontSize")).toBe("20px");
+  await expect.poll(() => introStyle(page, "fontSize")).toBe("20px");
   // The line height grows with it; the spacing, set in em on the body, is what it came to there.
   await expect(field("Line height")).toHaveValue("180%");
   await expect(field("Letter spacing")).toHaveValue("1.6%");
   await enter("Line height", "30px");
-  expect(await introStyle(page, "lineHeight")).toBe("30px");
+  await expect.poll(() => introStyle(page, "lineHeight")).toBe("30px");
   await expect(field("Line height")).toHaveValue("30px");
   await enter("Line height", "auto");
-  expect(await introStyle(page, "lineHeight")).toBe("normal");
+  await expect.poll(() => introStyle(page, "lineHeight")).toBe("normal");
   await enter("Letter spacing", "5");
-  expect(await introStyle(page, "letterSpacing")).toBe("1px");
+  await expect.poll(() => introStyle(page, "letterSpacing")).toBe("1px");
 
   await text.getByRole("radio", { name: "Align center" }).click();
-  expect(await introStyle(page, "textAlign")).toBe("center");
+  await expect.poll(() => introStyle(page, "textAlign")).toBe("center");
   await text.getByRole("radio", { name: "Upper case" }).click();
-  expect(await introStyle(page, "textTransform")).toBe("uppercase");
+  await expect.poll(() => introStyle(page, "textTransform")).toBe("uppercase");
   await text.getByRole("radio", { name: "Strikethrough" }).click();
-  expect(await introStyle(page, "textDecorationLine")).toBe("line-through");
+  await expect.poll(() => introStyle(page, "textDecorationLine")).toBe("line-through");
   await expect(text.getByRole("radio", { name: "Strikethrough" })).toHaveAttribute("aria-checked", "true");
 
   // Its color in Fill, as in Figma; the bold run in it follows.
@@ -859,14 +862,14 @@ test("a text layer's font, weight and size, line height and letter spacing, alig
   await expect(color).toHaveValue("57534D");
   await color.fill("ff0000");
   await color.press("Enter");
-  expect(await introStyle(page, "color")).toBe("rgb(255, 0, 0)");
-  expect(await introStyle(page, "color", "[data-testid=hero] p strong")).toBe("rgb(255, 0, 0)");
+  await expect.poll(() => introStyle(page, "color")).toBe("rgb(255, 0, 0)");
+  await expect.poll(() => introStyle(page, "color", "[data-testid=hero] p strong")).toBe("rgb(255, 0, 0)");
 
   await page.keyboard.press("ControlOrMeta+z");
   // Back to the page's own: Tailwind's stone-600.
-  expect(await introStyle(page, "color")).toBe("oklch(0.444 0.011 73.639)");
+  await expect.poll(() => introStyle(page, "color")).toBe("oklch(0.444 0.011 73.639)");
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await introStyle(page, "textDecorationLine")).toBe("none");
+  await expect.poll(() => introStyle(page, "textDecorationLine")).toBe("none");
 });
 
 test("text layers selected together show what they share, Mixed otherwise, and take a change together", async ({ page }) => {
@@ -881,8 +884,8 @@ test("text layers selected together show what they share, Mixed otherwise, and t
   await size.fill("22");
   await size.press("Enter");
 
-  expect(await introStyle(page, "fontSize")).toBe("22px");
-  expect(await introStyle(page, "fontSize", "article h3 >> nth=0")).toBe("22px");
+  await expect.poll(() => introStyle(page, "fontSize")).toBe("22px");
+  await expect.poll(() => introStyle(page, "fontSize", "article h3 >> nth=0")).toBe("22px");
   await expect(size).toHaveValue("22");
 });
 

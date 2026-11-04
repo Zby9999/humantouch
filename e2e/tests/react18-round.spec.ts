@@ -67,15 +67,15 @@ test("the project's own Variables and breakpoints from its Tailwind v3 config re
   // The project's breakpoints, not Tailwind's: sm at 560px, md at 820px, lg at 1120px.
   await page.setViewportSize({ width: 540, height: 720 });
   await page.goto(REACT18_URL);
-  expect(await columns()).toBe(1);
+  await expect.poll(() => columns()).toBe(1);
   await page.setViewportSize({ width: 580, height: 720 });
-  expect(await columns()).toBe(2);
+  await expect.poll(() => columns()).toBe(2);
   await page.setViewportSize({ width: 800, height: 720 });
-  expect(await heroAlign()).toBe("start");
+  await expect.poll(() => heroAlign()).toBe("start");
   await page.setViewportSize({ width: 840, height: 720 });
-  expect(await heroAlign()).toBe("center");
+  await expect.poll(() => heroAlign()).toBe("center");
   await page.setViewportSize({ width: 1140, height: 720 });
-  expect(await columns()).toBe(4);
+  await expect.poll(() => columns()).toBe(4);
 
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   const card = canvas(page).locator("article").first();
@@ -94,12 +94,12 @@ test("on React 18, the usage chain is read as on React 19: App's own elements, t
   const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-tk-chain"))!);
   const app = { component: "App", usage: locate("src/main.tsx", "<App"), thirdParty: false };
 
-  expect(await chainOf("h1")).toEqual([app]);
-  expect(await chainOf("article")).toEqual([{ component: "Card", usage: locate("src/App.tsx", "<Card key"), thirdParty: false }, app]);
-  expect(await chainOf("article:last-child h3")).toEqual([{ component: "Card", usage: locate("src/App.tsx", '<Card title="Your turn"'), thirdParty: false }, app]);
-  expect(await chainOf("[data-testid=acme-badge]")).toEqual([{ component: "Badge", usage: locate("src/App.tsx", "<Badge"), thirdParty: true }, app]);
+  await expect.poll(() => chainOf("h1")).toEqual([app]);
+  await expect.poll(() => chainOf("article")).toEqual([{ component: "Card", usage: locate("src/App.tsx", "<Card key"), thirdParty: false }, app]);
+  await expect.poll(() => chainOf("article:last-child h3")).toEqual([{ component: "Card", usage: locate("src/App.tsx", '<Card title="Your turn"'), thirdParty: false }, app]);
+  await expect.poll(() => chainOf("[data-testid=acme-badge]")).toEqual([{ component: "Badge", usage: locate("src/App.tsx", "<Badge"), thirdParty: true }, app]);
   // Surface passes its props on, the usage marker with them.
-  expect(await chainOf("[data-testid=features]")).toEqual([{ component: "Surface", usage: locate("src/App.tsx", "<Surface"), thirdParty: true }, app]);
+  await expect.poll(() => chainOf("[data-testid=features]")).toEqual([{ component: "Surface", usage: locate("src/App.tsx", "<Surface"), thirdParty: true }, app]);
 });
 
 test("on React 18, claim reads the usage chain as on React 19: the card's usage in App, App's in main.tsx", async ({ page }) => {
@@ -214,7 +214,7 @@ test("a layer centered by Tailwind v3's `-translate-x-1/2`, through `transform`,
       await page.goto(REACT18_URL);
       await expect(page.getByTestId("centered")).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 20000 });
-    expect(await page.getByTestId("centered").evaluate((el) => getComputedStyle(el).transform)).not.toBe("none");
+    await expect.poll(() => page.getByTestId("centered").evaluate((el) => getComputedStyle(el).transform)).not.toBe("none");
     await page.getByRole("button", { name: TOGGLE_LABEL }).click();
     await expect(canvas(page).locator("h1")).toBeVisible();
     const view = page.locator('iframe[title="Canvas"]');
@@ -232,7 +232,7 @@ test("a layer centered by Tailwind v3's `-translate-x-1/2`, through `transform`,
     await page.mouse.move(edge.x + edge.width / 2 + 30 * zoom, edge.y + edge.height / 2, { steps: 6 });
     await page.mouse.up();
 
-    expect(await middle()).toBe(before);
+    await expect.poll(() => middle()).toBe(before);
     await expect.poll(() => savedChanges()?.length).toBe(1);
     // Wider, as far as it snapped to: the one change, its width.
     const [change] = savedChanges();

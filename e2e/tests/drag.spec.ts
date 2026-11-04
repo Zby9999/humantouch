@@ -1,5 +1,5 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -12,6 +12,7 @@ function layerTree(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 const HERO = '[data-testid="hero"]';
@@ -61,10 +62,10 @@ test("dragged within a Stack, a layer takes another place; the others make room 
   // Only shifted while it moves: the paragraph steps down, the structure is as it was.
   await expect(page.locator(".tk-drop-line")).toBeVisible();
   await expect(paragraph).not.toHaveCSS("translate", "none");
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await page.mouse.up();
 
-  expect(await childTags(page, HERO)).toEqual(["header", "button", "p"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "button", "p"]);
   await expect(paragraph).toHaveCSS("translate", "none");
   await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   const rows = await layerTree(page).getByRole("treeitem").allTextContents();
@@ -72,7 +73,7 @@ test("dragged within a Stack, a layer takes another place; the others make room 
   await expect(layerTree(page).getByRole("treeitem", { name: "Button", exact: true })).toHaveAttribute("aria-selected", "true");
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
 });
 
 test("dragged into another Stack, it goes in where it is let go, beside a locked layer rather than into it", async ({ page }) => {
@@ -86,9 +87,9 @@ test("dragged into another Stack, it goes in where it is let go, beside a locked
     return { x: badge.x + badge.width / 2 + 1, y: badge.y + badge.height / 2 };
   });
 
-  expect(await childTags(page, "header")).toEqual(["h1", "span", "button"]);
+  await expect.poll(() => childTags(page, "header")).toEqual(["h1", "span", "button"]);
   await expect(canvas(page).getByTestId("acme-badge").locator("button")).toHaveCount(0);
-  expect(await childTags(page, HERO)).toEqual(["header", "p"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p"]);
 });
 
 test("a locked layer is dragged as a whole", async ({ page }) => {
@@ -100,7 +101,7 @@ test("a locked layer is dragged as a whole", async ({ page }) => {
     return { x: title.x + 2, y: title.y + title.height / 2 };
   });
 
-  expect(await childTags(page, "header")).toEqual(["span", "h1"]);
+  await expect.poll(() => childTags(page, "header")).toEqual(["span", "h1"]);
 });
 
 test("dragged to a Frame's empty space, it is absolute where it is let go, and the Frame is its positioning reference", async ({ page }) => {
@@ -121,7 +122,7 @@ test("dragged to a Frame's empty space, it is absolute where it is let go, and t
 
   await drag(page, button, async () => ({ x: target.x + 40 * zoom + offset.x, y: target.y + 30 * zoom + offset.y }));
 
-  expect(await childTags(page, "#board")).toEqual(["button"]);
+  await expect.poll(() => childTags(page, "#board")).toEqual(["button"]);
   const placed = await canvas(page)
     .locator("#board > button")
     .evaluate((el) => {
@@ -152,7 +153,7 @@ test("Esc while dragging puts everything back", async ({ page }) => {
   await page.keyboard.press("Escape");
   await page.mouse.up();
 
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await expect(button).toHaveCSS("translate", "none");
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
@@ -180,7 +181,7 @@ test("while dragging, ⌘Z and ⇧⌘Z do nothing: the changes, the canvas and t
   const paragraph = canvas(page).locator(`${HERO} > p`);
   await drag(page, button, () => aboveParagraph(page));
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   const rows = await layerTree(page).getByRole("treeitem").allTextContents();
 
   await drag(page, button, () => aboveParagraph(page), { drop: false });
@@ -189,19 +190,19 @@ test("while dragging, ⌘Z and ⇧⌘Z do nothing: the changes, the canvas and t
     await page.keyboard.press(key);
     // Neither the deletion undone nor the move redone.
     await expect(canvas(page).locator("h1")).toBeHidden();
-    expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+    await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
     await expect(badge).toHaveAccessibleName("1 change not applied yet");
-    expect(await layerTree(page).getByRole("treeitem").allTextContents()).toEqual(rows);
+    await expect.poll(() => layerTree(page).getByRole("treeitem").allTextContents()).toEqual(rows);
     // Still dragging, the paragraph still making room.
     await expect(paragraph).not.toHaveCSS("translate", "none");
     await expect(page.locator(".tk-drop-line")).toBeVisible();
   }
   await page.mouse.up();
 
-  expect(await childTags(page, HERO)).toEqual(["header", "button", "p"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "button", "p"]);
   await expect(badge).toHaveAccessibleName("2 changes not applied yet");
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await expect(canvas(page).locator("h1")).toBeHidden();
   await expect(badge).toHaveAccessibleName("1 change not applied yet");
 });
@@ -222,10 +223,10 @@ test("⌘Z while dragging, then Esc: the layer is back where it was, nothing lef
   await page.keyboard.press("Escape");
   await page.mouse.up();
 
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await expect(paragraph).toHaveCSS("translate", "none");
   await expect(button).toHaveCSS("translate", "none");
-  expect(await styles()).toEqual(before);
+  await expect.poll(() => styles()).toEqual(before);
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveAccessibleName("1 change not applied yet");
   // Not dragging, ⌘Z undoes again.
   await page.keyboard.press("ControlOrMeta+z");
@@ -270,9 +271,9 @@ test("while dragging, none of the keys that edit does anything, nor T picks a to
   for (const key of [...EDIT_KEYS, "t"]) {
     await page.keyboard.press(key);
     await expect(canvas(page).locator("h1"), key).toBeHidden();
-    expect(await childTags(page, HERO), key).toEqual(["header", "p", "button"]);
+    await expect.poll(() => childTags(page, HERO), key).toEqual(["header", "p", "button"]);
     await expect(badge, key).toHaveAccessibleName("1 change not applied yet");
-    expect(await layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
+    await expect.poll(() => layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
     // Still dragging, the paragraph still making room.
     await expect(paragraph, key).not.toHaveCSS("translate", "none");
     await expect(page.locator(".tk-drop-line"), key).toBeVisible();
@@ -280,11 +281,11 @@ test("while dragging, none of the keys that edit does anything, nor T picks a to
   await expect(page.getByRole("toolbar", { name: "Tools" }).getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
   await page.mouse.up();
 
-  expect(await childTags(page, HERO)).toEqual(["header", "button", "p"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "button", "p"]);
   await expect(dragStyled(page)).toHaveCount(0);
   await expect(badge).toHaveAccessibleName("2 changes not applied yet");
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await expect(canvas(page).locator("h1")).toBeHidden();
   await expect(badge).toHaveAccessibleName("1 change not applied yet");
 });
@@ -303,9 +304,9 @@ test("pressed on a layer and not yet moved 3px, none of the keys that edit does 
   await page.mouse.move(at.x + at.width / 2 + 1, at.y + at.height / 2 + 1);
   const unchanged = async (key: string) => {
     await expect(canvas(page).locator("h1"), key).toBeHidden();
-    expect(await childTags(page, HERO), key).toEqual(["header", "p", "button"]);
+    await expect.poll(() => childTags(page, HERO), key).toEqual(["header", "p", "button"]);
     await expect(badge, key).toHaveAccessibleName("1 change not applied yet");
-    expect(await layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
+    await expect.poll(() => layerTree(page).getByRole("treeitem").allTextContents(), key).toEqual(rows);
   };
   for (const key of EDIT_KEYS) {
     await page.keyboard.press(key);
@@ -351,7 +352,7 @@ test("while dragging, the keys that move about the canvas go on: Space readies a
   await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   await page.mouse.up();
 
-  expect(await childTags(page, HERO)).toEqual(["header", "p", "button"]);
+  await expect.poll(() => childTags(page, HERO)).toEqual(["header", "p", "button"]);
   await expect(dragStyled(page)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
@@ -366,7 +367,7 @@ test("a reorder is listed as one; the page keeps the code's order", async ({ pag
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
-  expect(await page.locator(HERO).evaluate((el) => [...el.children].map((child) => child.localName))).toEqual(["header", "p", "button"]);
+  await expect.poll(() => page.locator(HERO).evaluate((el) => [...el.children].map((child) => child.localName))).toEqual(["header", "p", "button"]);
   await page.getByRole("button", { name: /not applied yet/ }).click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Reorder.*Button.*3rd → 2nd/]);
 });

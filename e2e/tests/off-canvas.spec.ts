@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
@@ -13,6 +13,7 @@ const mod = process.platform === "darwin" ? "Meta" : "Control";
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("article").first()).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Pans the workspace `dx` px to the right on screen: room opens on the left of the views. */
@@ -82,8 +83,8 @@ test("a layer dragged out of every view goes off the canvas: gone from every vie
   const moved = offCanvas(page).contentFrame().locator("h1");
   await expect(moved).toHaveText("Third Kind");
   // The page's web font comes along.
-  expect(await moved.evaluate(async (h1) => (await h1.ownerDocument.fonts.ready, h1.ownerDocument.fonts.check('700 36px "Space Grotesk"')))).toBe(true);
-  expect(await lookOf(moved)).toEqual(look);
+  await expect.poll(() => moved.evaluate(async (h1) => (await h1.ownerDocument.fonts.ready, h1.ownerDocument.fonts.check('700 36px "Space Grotesk"')))).toBe(true);
+  await expect.poll(() => lookOf(moved)).toEqual(look);
   const styles = await moved.evaluate((h1) => [...h1.ownerDocument.querySelectorAll("style")].map((s) => s.textContent).join(""));
   expect(styles).not.toContain(".text-4xl");
 
@@ -101,7 +102,7 @@ test("a layer dragged out of the phone view goes from every view; undone, it is 
   for (const shown of [desktop(page), tablet(page), phone(page)]) await expect(shown.contentFrame().getByRole("button", { name: "Get started" })).toBeHidden();
   await expect(offCanvas(page).contentFrame().getByRole("button", { name: "Get started" })).toBeVisible();
   // As it looked in the phone view.
-  expect((await offCanvas(page).boundingBox())!.x).toBeGreaterThan(view.x + view.width);
+  await expect.poll(async () => (await offCanvas(page).boundingBox())!.x).toBeGreaterThan(view.x + view.width);
 
   await page.keyboard.press(`${mod}+z`);
   await expect(offCanvas(page)).toHaveCount(0);
@@ -140,7 +141,7 @@ test("off the canvas, a layer is edited as any other, with no change for the Age
   await page.reload();
   await enterEditMode(page);
   await expect(offCanvas(page).contentFrame().locator("h1")).toHaveCSS("opacity", "0.5");
-  expect(await placeOff(page)).toEqual(after);
+  await expect.poll(() => placeOff(page)).toEqual(after);
   await expect(desktop(page).contentFrame().locator("h1")).toBeHidden();
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
 });
@@ -220,8 +221,8 @@ test("while a layer off the canvas is dragged, Delete, ⌘D and the arrows do no
   await page.mouse.up();
 
   await expect(offCanvas(page)).toHaveCount(1);
-  expect((await offCanvas(page).boundingBox())!.x).toBeLessThan(off.x - 40);
-  expect(await moved.evaluate((el) => (el as HTMLElement).style.cssText)).toBe("");
+  await expect.poll(async () => (await offCanvas(page).boundingBox())!.x).toBeLessThan(off.x - 40);
+  await expect.poll(() => moved.evaluate((el) => (el as HTMLElement).style.cssText)).toBe("");
   await page.keyboard.press(`${mod}+z`);
   await expect(offCanvas(page)).toHaveCount(1);
   await page.keyboard.press(`${mod}+z`);
@@ -276,7 +277,7 @@ test("dragged back where it was in the same round, a layer off the canvas is in 
   await expect(offCanvas(page)).toHaveCount(0);
   for (const shown of [desktop(page), tablet(page), phone(page)]) {
     await expect(shown.contentFrame().locator("header > h1")).toBeVisible();
-    expect(await shown.contentFrame().locator("header > *").first().evaluate((el) => el.localName)).toBe("h1");
+    await expect.poll(() => shown.contentFrame().locator("header > *").first().evaluate((el) => el.localName)).toBe("h1");
   }
   await expect(badge(page)).toHaveCount(0);
   await expect(layerTree(page).getByRole("treeitem").first()).not.toHaveAttribute("aria-description", /Off canvas/);
@@ -308,7 +309,7 @@ test("dragged back as it was in the same round, a layer is listed open and close
   await dragOffTo(page, { x: text.x, y: text.y + 3 });
   await expect(offCanvas(page)).toHaveCount(0);
   expect(await changeNames(page)).toEqual(["Reorder · Header"]);
-  expect((await rows()).sort()).toEqual(before.sort());
+  await expect.poll(async () => (await rows()).sort()).toEqual(before.sort());
 });
 
 test("edited off the canvas and dragged back, a layer is put back new: listed open, as any layer new to the list", async ({ page }) => {
@@ -361,16 +362,16 @@ test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc 
   }
   await page.keyboard.press("Escape");
   await page.mouse.up();
-  expect(await placeOff(page)).toEqual(was);
-  expect(await moved.evaluate((el) => (el as HTMLElement).style.cssText)).toBe("");
+  await expect.poll(() => placeOff(page)).toEqual(was);
+  await expect.poll(() => moved.evaluate((el) => (el as HTMLElement).style.cssText)).toBe("");
 
   await grab();
   await page.keyboard.press(`${mod}+z`);
   await page.mouse.up();
-  expect((await offCanvas(page).boundingBox())!.x).toBeLessThan(off.x - 40);
+  await expect.poll(async () => (await offCanvas(page).boundingBox())!.x).toBeLessThan(off.x - 40);
   await page.keyboard.press(`${mod}+z`);
   // Back where it was, still off the canvas; once more, back on it.
-  expect(await placeOff(page)).toEqual(was);
+  await expect.poll(() => placeOff(page)).toEqual(was);
   await expect(offCanvas(page)).toHaveCount(1);
   await page.keyboard.press(`${mod}+z`);
   await expect(offCanvas(page)).toHaveCount(0);
@@ -421,16 +422,16 @@ test("while a layer inside a layer off the canvas is dragged, ⌘Z and ⇧⌘Z d
     await page.keyboard.press(key);
     // Still off the canvas as it was: the move off it is not undone, nor the deletion redone.
     await expect(offCanvas(page), key).toHaveCount(1);
-    expect(await order(), key).toEqual(["Third Kind", "Beta"]);
+    await expect.poll(() => order(), key).toEqual(["Third Kind", "Beta"]);
     await expect(desktop(page).contentFrame().locator("header"), key).toBeHidden();
     await expect(getStarted, key).toBeVisible();
     await expect(badge(page), key).toHaveAccessibleName("1 change not applied yet");
   }
   await page.keyboard.press("Escape");
   await page.mouse.up();
-  expect(await order()).toEqual(["Third Kind", "Beta"]);
+  await expect.poll(() => order()).toEqual(["Third Kind", "Beta"]);
   // No style of the drag left on it.
-  expect(await styleOfBeta()).toBe(before);
+  await expect.poll(() => styleOfBeta()).toBe(before);
 
   await grab();
   await page.keyboard.press(`${mod}+z`);
@@ -456,7 +457,7 @@ test("dragged back elsewhere in the same round, into a Stack of the phone view, 
   await expect(offCanvas(page)).toHaveCount(0);
   for (const shown of [desktop(page), tablet(page), phone(page)]) {
     await expect(shown.contentFrame().locator('[data-testid="hero"] > h1')).toBeVisible();
-    expect(await shown.contentFrame().locator('[data-testid="hero"] > *').last().evaluate((el) => el.localName)).toBe("h1");
+    await expect.poll(() => shown.contentFrame().locator('[data-testid="hero"] > *').last().evaluate((el) => el.localName)).toBe("h1");
   }
   expect(await changeNames(page)).toEqual(["Move · Third Kind"]);
 });
@@ -505,7 +506,7 @@ test("edited off the canvas, dragged back into a Frame's empty space, it is put 
     await expect(back).toHaveCSS("position", "absolute");
   }
   const back = desktop(page).contentFrame().locator("#board > h1");
-  expect(await lookOf(back)).toEqual(look);
+  await expect.poll(() => lookOf(back)).toEqual(look);
   const at = await back.evaluate((el) => {
     const [r, b] = [el.getBoundingClientRect(), el.parentElement!.getBoundingClientRect()];
     return { x: r.left - b.left, y: r.top - b.top };

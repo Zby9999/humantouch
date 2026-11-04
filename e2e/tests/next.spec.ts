@@ -39,7 +39,7 @@ test("elements server components write carry their element location, under Turbo
 test("code from Next.js itself is not marked: the link next/link writes has no element location", async ({ page }) => {
   const link = page.getByRole("link", { name: "About" });
 
-  expect(await link.getAttribute("data-tk-loc")).toBeNull();
+  await expect.poll(() => link.getAttribute("data-tk-loc")).toBeNull();
   // Its usage is project source: Link passes the marker on to the element.
   await expect(link).toHaveAttribute("data-tk-usage", locate("app/page.tsx", "<Link"));
 });

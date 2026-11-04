@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -16,6 +16,7 @@ function rows(page: Page, name: string) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function setField(page: Page, name: string, value: string) {
@@ -53,11 +54,11 @@ test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a 
   await expect(sizing).toHaveValue("hug");
 
   await sizing.selectOption("fill");
-  expect(await widthOf(page, `${HERO} > button`)).toBe(await widthOf(page, HERO));
+  await expect.poll(() => widthOf(page, `${HERO} > button`)).toBe(await widthOf(page, HERO));
 
   await setField(page, "Width", "200");
   await expect(sizing).toHaveValue("fixed");
-  expect(await widthOf(page, `${HERO} > button`)).toBe(200);
+  await expect.poll(() => widthOf(page, `${HERO} > button`)).toBe(200);
 
   // A card sits in a Grid: no Stack gives it room to fill.
   await rows(page, "Card").first().click();
@@ -74,32 +75,32 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
   await expect(stack.getByRole("radio", { name: "Horizontal" })).toBeChecked();
 
   await stack.getByRole("radio", { name: "Bottom right" }).click();
-  expect(await canvasStyle(page, "header", "justify-content")).toBe("flex-end");
-  expect(await canvasStyle(page, "header", "align-items")).toBe("flex-end");
+  await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("flex-end");
+  await expect.poll(() => canvasStyle(page, "header", "align-items")).toBe("flex-end");
   await setField(page, "Gap", "24");
   const gap = await canvas(page)
     .locator("header")
     .evaluate((header) => header.children[1].getBoundingClientRect().left - header.children[0].getBoundingClientRect().right);
   expect(gap).toBe(24);
   await setField(page, "Padding left", "10");
-  expect(await canvasStyle(page, "header", "padding-left")).toBe("10px");
+  await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
   await stack.getByRole("radio", { name: "Vertical" }).click();
-  expect(await canvasStyle(page, "header", "flex-direction")).toBe("column");
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
   await stack.getByRole("checkbox", { name: "Distribute evenly" }).check();
-  expect(await canvasStyle(page, "header", "justify-content")).toBe("space-between");
+  await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("space-between");
 });
 
 test("a plain top-to-bottom flow shows as a vertical Stack, and becomes a real one once its gap changes", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Card").first().click();
   await expect(design(page).getByRole("radio", { name: "Vertical" })).toBeChecked();
-  expect(await canvasStyle(page, "article", "display")).toBe("block");
+  await expect.poll(() => canvasStyle(page, "article", "display")).toBe("block");
 
   await setField(page, "Gap", "8");
 
-  expect(await canvasStyle(page, "article", "display")).toBe("flex");
-  expect(await canvasStyle(page, "article", "flex-direction")).toBe("column");
-  expect(await canvasStyle(page, "article", "row-gap")).toBe("8px");
+  await expect.poll(() => canvasStyle(page, "article", "display")).toBe("flex");
+  await expect.poll(() => canvasStyle(page, "article", "flex-direction")).toBe("column");
+  await expect.poll(() => canvasStyle(page, "article", "row-gap")).toBe("8px");
 });
 
 test("opacity, clipping, and a hidden layer that stays in the layer tree and the panel, to be shown again", async ({ page }) => {
@@ -107,12 +108,12 @@ test("opacity, clipping, and a hidden layer that stays in the layer tree and the
   await rows(page, "Card").first().click();
 
   await setField(page, "Opacity", "50");
-  expect(await canvasStyle(page, "article", "opacity")).toBe("0.5");
+  await expect.poll(() => canvasStyle(page, "article", "opacity")).toBe("0.5");
   await design(page).getByRole("checkbox", { name: "Clip content" }).check();
-  expect(await canvasStyle(page, "article", "overflow")).toBe("hidden");
+  await expect.poll(() => canvasStyle(page, "article", "overflow")).toBe("hidden");
 
   await design(page).getByRole("checkbox", { name: "Visible" }).uncheck();
-  expect(await canvasStyle(page, "article", "display")).toBe("none");
+  await expect.poll(() => canvasStyle(page, "article", "display")).toBe("none");
   await expect(rows(page, "Card")).toHaveCount(4);
   await expect(rows(page, "Card").first()).toHaveAttribute("aria-selected", "true");
   // Hidden, it stays selected and the panel stays as it was, Visible where it was, to be ticked again.
@@ -120,7 +121,7 @@ test("opacity, clipping, and a hidden layer that stays in the layer tree and the
   await expect(design(page).getByRole("combobox", { name: "Width sizing" })).toBeVisible();
 
   await design(page).getByRole("checkbox", { name: "Visible" }).check();
-  expect(await canvasStyle(page, "article", "display")).toBe("block");
+  await expect.poll(() => canvasStyle(page, "article", "display")).toBe("block");
 });
 
 test("an absolute layer's X and Y are the page's own, even frozen scrolled down", async ({ page }) => {
@@ -161,11 +162,11 @@ test("several layers: values they do not share show as Mixed, and one change set
 
   await setField(page, "Corner radius", "8");
   const radii = () => canvas(page).locator("article").evaluateAll((cards) => cards.map((card) => getComputedStyle(card).borderRadius));
-  expect(await radii()).toEqual(["8px", "8px", "8px", "8px"]);
+  await expect.poll(() => radii()).toEqual(["8px", "8px", "8px", "8px"]);
 
   await design(page).getByRole("textbox", { name: "Corner radius" }).blur();
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await radii()).toEqual(["4px", "4px", "4px", "12px"]);
+  await expect.poll(() => radii()).toEqual(["4px", "4px", "4px", "12px"]);
 });
 
 test("⇧ + click on the canvas adds a layer to the selection", async ({ page }) => {
@@ -190,7 +191,7 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await page.getByRole("button", { name: "Play", exact: true }).click();
 
   const button = canvas(page).locator(`${HERO} > button`);
-  expect(await button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await canvas(page).locator(HERO).evaluate((el) => el.getBoundingClientRect().width));
+  await expect.poll(() => button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await canvas(page).locator(HERO).evaluate((el) => el.getBoundingClientRect().width));
   await expect(canvas(page).locator("article").first()).toHaveCSS("display", "flex");
   await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "8px");
 });
@@ -221,7 +222,7 @@ test("dragging left and right on the opacity icon changes it, 1% per px", async 
   await page.mouse.up();
 
   await expect(opacity).toHaveValue("70%");
-  expect(await canvasStyle(page, "article", "opacity")).toBe("0.7");
+  await expect.poll(() => canvasStyle(page, "article", "opacity")).toBe("0.7");
   // It stops at 100%.
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();

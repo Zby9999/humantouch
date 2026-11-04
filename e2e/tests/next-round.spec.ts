@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { EXIT_LABEL, NEXT_URL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 import { clearThirdKindFolder } from "./project-files";
 
 /** A round on the Next.js example, saved into its `.03kind/` for real. */
@@ -36,6 +36,7 @@ function canvas(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function setField(page: Page, name: string, value: string) {
@@ -72,7 +73,8 @@ test("after a client-side navigation in preview mode, edit mode comes back to th
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
   await page.getByRole("link", { name: "About" }).click();
-  await expect(page.getByRole("heading", { name: "About" })).toBeVisible();
+  // Turbopack compiles the About page only as it is first asked for: on a busy machine that took more than 5 seconds (ticket 93).
+  await expect(page.getByRole("heading", { name: "About" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
 
   await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", "rgb(255, 0, 0)");

@@ -1,5 +1,5 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Page } from "./fixtures";
 
 const RED = "rgb(255, 0, 0)";
 const WHITE = "rgb(255, 255, 255)";
@@ -15,6 +15,7 @@ function design(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 async function backToPreviewMode(page: Page) {
@@ -67,13 +68,13 @@ test("⌘Z and ⇧⌘Z go back and forth through the edits, across layers, on th
   await expect(button).toHaveCSS("background-color", "rgb(220, 38, 38)");
   await expect(badge(page)).toHaveText("2");
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await cardStyles(page, "borderRadius", "canvas")).toEqual(["12px", "12px", "12px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius", "canvas")).toEqual(["12px", "12px", "12px", "12px"]);
   // The panel shows the layer the edit is undone on.
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("12");
   await expect(badge(page)).toHaveText("1");
 
   await page.keyboard.press("ControlOrMeta+Shift+z");
-  expect(await cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
   await expect(badge(page)).toHaveText("2");
 });
 
@@ -82,7 +83,7 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
   const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
-  const { x, y } = (await icon.boundingBox())!;
+  const { x, y } = await steadyBox(icon);
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
   for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
@@ -107,7 +108,7 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
   // The focus stays in the field as its icon is dragged.
   await radius.focus();
   const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
-  const { x, y } = (await icon.boundingBox())!;
+  const { x, y } = await steadyBox(icon);
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
   for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
@@ -117,8 +118,8 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
     await expect(radius, key).toHaveValue("15");
     // Tab would take the focus out of the field, applying what is typed in it.
     await expect(radius, key).toBeFocused();
-    expect(await cardStyles(page, "backgroundColor", "canvas"), key).toEqual([RED, RED, RED, WHITE]);
-    expect(await cardStyles(page, "borderRadius", "canvas"), key).toEqual(["15px", "15px", "15px", "12px"]);
+    await expect.poll(() => cardStyles(page, "backgroundColor", "canvas"), key).toEqual([RED, RED, RED, WHITE]);
+    await expect.poll(() => cardStyles(page, "borderRadius", "canvas"), key).toEqual(["15px", "15px", "15px", "12px"]);
     await expect(badge(page), key).toHaveText("2");
   }
   for (let i = 4; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
@@ -127,9 +128,9 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(radius).toHaveValue("12");
-  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([RED, RED, RED, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "canvas")).toEqual([RED, RED, RED, WHITE]);
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   await expect(badge(page)).toHaveCount(0);
 });
 
@@ -173,7 +174,7 @@ test("several layers edited together go back together with ⌘Z, the focus still
   for (let i = 0; i < 3; i++) await page.keyboard.press("ControlOrMeta+z");
 
   await expect(badge(page)).toHaveCount(0);
-  expect(await css()).toEqual(before);
+  await expect.poll(() => css()).toEqual(before);
 });
 
 test("in edit mode, an X beside the Design title goes back to preview mode, and the change count beside it opens the change list", async ({ page }) => {
@@ -222,13 +223,13 @@ test("the badge opens the change list, where each change can be undone on its ow
   await expect(list.getByRole("listitem")).toHaveText([/Fill.*Card.*#FFFFFF → #FF0000/, /Corner radius.*Card.*12px → 2px/, /Fill.*Button.*#DC2626 → #2563EB/]);
   await list.getByRole("button", { name: "Undo the corner radius of Card" }).click();
 
-  expect(await cardStyles(page, "borderRadius", "canvas")).toEqual(["12px", "12px", "12px", "12px"]);
-  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([RED, RED, RED, WHITE]);
+  await expect.poll(() => cardStyles(page, "borderRadius", "canvas")).toEqual(["12px", "12px", "12px", "12px"]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "canvas")).toEqual([RED, RED, RED, WHITE]);
   await expect(list.getByRole("listitem")).toHaveCount(2);
   await expect(badge(page)).toHaveText("2");
 
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
+  await expect.poll(() => cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
   await expect(list.getByRole("listitem")).toHaveCount(3);
 });
 
@@ -251,8 +252,8 @@ test("in preview mode, a change undone from the list leaves the round at once; t
 
   // The canvas comes back without it.
   await enterEditMode(page);
-  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
-  expect(await cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "borderRadius", "canvas")).toEqual(["2px", "2px", "2px", "12px"]);
 });
 
 test("in preview mode, ⌘Z in the change list undoes what was undone there; with the list closed, ⌘Z is the page's", async ({ page }) => {
@@ -295,31 +296,31 @@ test("in the change list, the keys are the editor's: ⌘Z undoes, ⇧⌘Z and Ct
 
   // ⌘Y: nothing undone (the fill of Button stays out), nothing redone, and the browser has it.
   await page.keyboard.press("Meta+y");
-  expect(await takenFromBrowser()).toBe(false);
+  await expect.poll(() => takenFromBrowser()).toBe(false);
   await page.keyboard.press("Meta+Shift+y");
-  expect(await takenFromBrowser()).toBe(false);
+  await expect.poll(() => takenFromBrowser()).toBe(false);
   await expect(badge(page)).toHaveText("1");
   await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
 
   await page.keyboard.press("Meta+z");
   await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
-  expect(await takenFromBrowser()).toBe(true);
+  await expect.poll(() => takenFromBrowser()).toBe(true);
   await page.keyboard.press("Control+z");
   await expect(badge(page)).toHaveText("3");
-  expect(await takenFromBrowser()).toBe(true);
+  await expect.poll(() => takenFromBrowser()).toBe(true);
   // Ctrl+Y and ⇧⌘Z redo: the two undone from the list go again.
   await page.keyboard.press("Control+y");
   await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
-  expect(await takenFromBrowser()).toBe(true);
+  await expect.poll(() => takenFromBrowser()).toBe(true);
   await page.keyboard.press("Meta+Shift+z");
   await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
   await expect(badge(page)).toHaveText("1");
-  expect(await takenFromBrowser()).toBe(true);
+  await expect.poll(() => takenFromBrowser()).toBe(true);
 
   // ⌘Y once more, with a step to redo and one to undo: still nothing.
   await page.keyboard.press("Meta+z");
   await page.keyboard.press("Meta+y");
-  expect(await takenFromBrowser()).toBe(false);
+  await expect.poll(() => takenFromBrowser()).toBe(false);
   await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
   await expect(badge(page)).toHaveText("2");
 });
@@ -372,12 +373,12 @@ test("Discard all asks first; once confirmed, the changes and the canvas are gon
 
   await expect(badge(page)).toHaveCount(0);
   await expect(list).toHaveCount(0);
-  expect(await cardStyles(page, "backgroundColor", "page")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "page")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   // A page state the old canvas was not frozen in.
   await page.getByRole("button", { name: "Get started" }).click();
   await enterEditMode(page);
   await expect(canvas(page).getByRole("dialog", { name: "Ship it?" })).toBeVisible();
-  expect(await cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "canvas")).toEqual([WHITE, WHITE, WHITE, WHITE]);
 });
 
 test("Discard all in edit mode goes back to preview mode, with nothing changed", async ({ page }) => {
@@ -389,7 +390,7 @@ test("Discard all in edit mode goes back to preview mode, with nothing changed",
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(badge(page)).toHaveCount(0);
-  expect(await cardStyles(page, "backgroundColor", "page")).toEqual([WHITE, WHITE, WHITE, WHITE]);
+  await expect.poll(() => cardStyles(page, "backgroundColor", "page")).toEqual([WHITE, WHITE, WHITE, WHITE]);
   await page.waitForTimeout(700); // Past the autosave delay: nothing left to save.
   await page.reload();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();

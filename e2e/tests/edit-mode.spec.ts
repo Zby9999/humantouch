@@ -1,4 +1,4 @@
-import { expect, test, type Frame, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Frame, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvasIframe(page: Page) {
@@ -8,6 +8,7 @@ function canvasIframe(page: Page) {
 async function enterEditMode(page: Page): Promise<Frame> {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvasIframe(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
   return (await (await canvasIframe(page).elementHandle())!.contentFrame())!;
 }
 
@@ -79,11 +80,11 @@ test("the canvas looks the same as the page: fonts, fixed elements and injected 
   const canvas = await enterEditMode(page);
   await canvas.evaluate(() => document.fonts.ready);
 
-  expect(await canvas.evaluate(() => document.fonts.check('700 36px "Space Grotesk"'))).toBe(true);
-  expect(await canvas.locator("[data-testid=hero] p").evaluate((el) => getComputedStyle(el).color)).toBe(
+  await expect.poll(() => canvas.evaluate(() => document.fonts.check('700 36px "Space Grotesk"'))).toBe(true);
+  await expect.poll(() => canvas.locator("[data-testid=hero] p").evaluate((el) => getComputedStyle(el).color)).toBe(
     "rgb(1, 2, 3)",
   );
-  expect(await canvas.evaluate(layout)).toEqual(expected);
+  await expect.poll(() => canvas.evaluate(layout)).toEqual(expected);
 });
 
 test("areas sized in viewport units keep the viewport's size on the full-height canvas", async ({ page }) => {
@@ -104,9 +105,9 @@ test("areas sized in viewport units keep the viewport's size on the full-height 
       const r = el.getBoundingClientRect();
       return [r.width, r.height];
     });
-  expect((await size("[data-testid=hero]"))[1]).toBe(viewport.height);
-  expect(await size("#strip")).toEqual([viewport.width / 2, viewport.height / 2 - 10]);
-  expect(await canvas.evaluate(() => document.documentElement.scrollHeight)).toBe(pageHeight);
+  await expect.poll(async () => (await size("[data-testid=hero]"))[1]).toBe(viewport.height);
+  await expect.poll(() => size("#strip")).toEqual([viewport.width / 2, viewport.height / 2 - 10]);
+  await expect.poll(() => canvas.evaluate(() => document.documentElement.scrollHeight)).toBe(pageHeight);
   await expect(canvasIframe(page)).toHaveCSS("height", `${pageHeight}px`);
 });
 
@@ -137,13 +138,11 @@ test("animations in progress jump to their end state on the canvas", async ({ pa
 
   const style = (id: string, property: string) =>
     canvas.locator(`#${id}`).evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), property);
-  expect(await style("fade", "opacity")).toBe("1");
-  expect(await style("slide", "translate")).toBe("100px");
-  expect(await canvas.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length)).toBe(0);
+  await expect.poll(() => style("fade", "opacity")).toBe("1");
+  await expect.poll(() => style("slide", "translate")).toBe("100px");
+  await expect.poll(() => canvas.evaluate(() => document.getAnimations().filter((a) => a.playState === "running").length)).toBe(0);
   // Freezing leaves the page alone: its animations carry on.
-  expect(
-    await page.evaluate(() => document.getAnimations().map((a) => [a.playState, Number(a.currentTime) < 30_000])),
-  ).toEqual([
+  await expect.poll(() => page.evaluate(() => document.getAnimations().map((a) => [a.playState, Number(a.currentTime) < 30_000]))).toEqual([
     ["running", true],
     ["running", true],
     ["running", true],
@@ -178,15 +177,13 @@ test("native modal dialogs and popovers stay open on the canvas", async ({ page 
 
   await expect(canvas.locator("#native-dialog")).toBeVisible();
   await expect(canvas.locator("#menu")).toBeVisible();
-  expect(await canvas.locator("#native-dialog").evaluate((el) => el.matches(":modal"))).toBe(true);
-  expect(
-    await canvas.evaluate(() =>
+  await expect.poll(() => canvas.locator("#native-dialog").evaluate((el) => el.matches(":modal"))).toBe(true);
+  await expect.poll(() => canvas.evaluate(() =>
       ["native-dialog", "menu"].map((id) => {
         const r = document.getElementById(id)!.getBoundingClientRect();
         return [r.x, r.y, r.width, r.height].map(Math.round);
       }),
-    ),
-  ).toEqual(expected);
+    )).toEqual(expected);
 });
 
 test("videos and chart canvases become still images; cross-origin iframes become named placeholders", async ({ page }) => {
@@ -213,17 +210,17 @@ test("videos and chart canvases become still images; cross-origin iframes become
 
   const pixel = (id: string) =>
     canvas.locator(`#${id}`).evaluate((el: HTMLCanvasElement) => [...el.getContext("2d")!.getImageData(1, 1, 1, 1).data]);
-  expect(await pixel("chart")).toEqual([255, 0, 0, 255]);
-  expect(await canvas.locator("#clip").evaluate((el) => el.localName)).toBe("canvas");
+  await expect.poll(() => pixel("chart")).toEqual([255, 0, 0, 255]);
+  await expect.poll(() => canvas.locator("#clip").evaluate((el) => el.localName)).toBe("canvas");
   // Video frames go through YUV, so allow a little drift.
   const [r, g, b] = await pixel("clip");
   expect([r < 8, g > 247, b < 8]).toEqual([true, true, true]);
 
   const placeholder = canvas.locator("#embed");
-  expect(await placeholder.evaluate((el) => el.localName)).not.toBe("iframe");
+  await expect.poll(() => placeholder.evaluate((el) => el.localName)).not.toBe("iframe");
   await expect(placeholder).toHaveText("Store map");
   await expect(placeholder).toHaveCSS("background-color", "rgb(229, 229, 229)");
-  expect(await placeholder.evaluate((el: HTMLElement) => [el.offsetWidth, el.offsetHeight])).toEqual(embedBox);
+  await expect.poll(() => placeholder.evaluate((el: HTMLElement) => [el.offsetWidth, el.offsetHeight])).toEqual(embedBox);
 });
 
 test.describe("canvas navigation", () => {
@@ -278,7 +275,7 @@ test.describe("canvas navigation", () => {
     await page.mouse.up();
     await page.keyboard.up("Space");
 
-    expect(await box(page)).toEqual({ ...before, x: before.x + 60, y: before.y - 80 });
+    await expect.poll(() => box(page)).toEqual({ ...before, x: before.x + 60, y: before.y - 80 });
     await expect(page.getByRole("button", { name: EXIT_LABEL })).toBeVisible();
   });
 
@@ -319,7 +316,7 @@ for (const [scheme, panel, area] of [
     await expect(page.getByRole("complementary", { name: "Layers" })).toHaveCSS("background-color", panel);
     await expect(page.getByRole("region", { name: "Canvas viewport" })).toHaveCSS("background-color", area);
     await expect(canvasIframe(page)).toHaveCSS("background-color", "rgb(255, 255, 255)");
-    expect(await canvas.locator("h1").evaluate((el) => getComputedStyle(el).color)).toBe(
+    await expect.poll(() => canvas.locator("h1").evaluate((el) => getComputedStyle(el).color)).toBe(
       await page.locator("h1").evaluate((el) => getComputedStyle(el).color),
     );
   });
@@ -330,7 +327,7 @@ test("the page underneath is paused while editing", async ({ page }) => {
 
   for (let i = 0; i < 5; i++) {
     await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.activeElement?.closest("#root") ?? null)).toBeNull();
+    await expect.poll(() => page.evaluate(() => document.activeElement?.closest("#root") ?? null)).toBeNull();
   }
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toHaveCount(0);

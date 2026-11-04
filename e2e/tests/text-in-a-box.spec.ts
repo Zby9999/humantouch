@@ -80,10 +80,10 @@ test("the Close button takes a background, a border, corners and padding of its 
   await type(page, "Corner radius", "8");
   await type(page, "Padding top", "10");
 
-  expect(await closeStyle(page, "backgroundColor")).toBe("rgb(28, 25, 23)");
-  expect([await closeStyle(page, "borderTopStyle"), await closeStyle(page, "borderTopWidth")]).toEqual(["solid", "1px"]);
-  expect(await closeStyle(page, "borderTopLeftRadius")).toBe("8px");
-  expect(await closeStyle(page, "paddingTop")).toBe("10px");
+  await expect.poll(() => closeStyle(page, "backgroundColor")).toBe("rgb(28, 25, 23)");
+  await expect.poll(async () => [await closeStyle(page, "borderTopStyle"), await closeStyle(page, "borderTopWidth")]).toEqual(["solid", "1px"]);
+  await expect.poll(() => closeStyle(page, "borderTopLeftRadius")).toBe("8px");
+  await expect.poll(() => closeStyle(page, "paddingTop")).toBe("10px");
   await expect(await changeRows(page)).toHaveText([/Fill.*Button/, /Stroke.*Button/, /Corner radius.*Button/, /Padding.*Button/]);
 });
 
@@ -96,15 +96,15 @@ test("the text in it takes its text styles on the button itself, with no element
 
   await type(page, "Font size", "18");
 
-  expect(await closeStyle(page, "fontSize")).toBe("18px");
-  expect(await close(page).evaluate((el) => el.childElementCount)).toBe(0);
+  await expect.poll(() => closeStyle(page, "fontSize")).toBe("18px");
+  await expect.poll(() => close(page).evaluate((el) => el.childElementCount)).toBe(0);
   await expect(selectedRow(page)).toHaveText("Close");
   await expect(await changeRows(page)).toHaveText([/Font size.*Close/]);
   await page.keyboard.press("Escape");
 
   // Undone, the text is still the one selected.
   await page.keyboard.press("ControlOrMeta+z");
-  expect(await closeStyle(page, "fontSize")).toBe("14px");
+  await expect.poll(() => closeStyle(page, "fontSize")).toBe("14px");
   await expect(selectedRow(page)).toHaveText("Close");
 });
 
@@ -119,7 +119,7 @@ test("a click on the Close button selects it; a double click types in its words"
   await page.keyboard.press("Enter");
 
   await expect(close(page)).toHaveText("Done");
-  expect(await close(page).evaluate((el) => el.childElementCount)).toBe(0);
+  await expect.poll(() => close(page).evaluate((el) => el.childElementCount)).toBe(0);
   await expect(selectedRow(page)).toHaveText("Done");
   await expect(await changeRows(page)).toHaveText([/Text.*“Close” → “Done”/]);
 });

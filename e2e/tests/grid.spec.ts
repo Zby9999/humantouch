@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
@@ -15,6 +15,7 @@ const GRID = "main > div:has(> article)";
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Selects the Grid in a view, from its first card, a level up: the view is the one worked in from then on. */
@@ -83,7 +84,7 @@ test("a Grid shows its columns and gaps in the panel; changed there, every view 
 
   // Two cells to a row: the third card starts the second row.
   const [first, third] = [desktop(page).contentFrame().locator("article").nth(0), desktop(page).contentFrame().locator("article").nth(2)];
-  expect((await third.boundingBox())!.x).toBeCloseTo((await first.boundingBox())!.x, 0);
+  await expect.poll(async () => (await third.boundingBox())!.x).toBeCloseTo((await first.boundingBox())!.x, 0);
 
   await expect(await changeRows(page)).toHaveText([/Columns.*Grid.*3 → 2/, /Column gap.*Grid.*16px → 40px/]);
   await page.keyboard.press("Escape");
@@ -128,7 +129,7 @@ test("a card dragged between the cells of the Grid takes that cell, in every vie
   await expect(page.locator(".tk-drop-line")).toBeVisible();
   // Only shifted while it moves: Freeze steps into the next cell, the structure is as it was.
   await expect(freeze).not.toHaveCSS("translate", "none");
-  expect((await cards(page))[0]).toEqual(ORDER);
+  await expect.poll(async () => (await cards(page))[0]).toEqual(ORDER);
   await page.mouse.up();
 
   const moved = ["Your turn", "Freeze", "Arrange", "Apply"];
@@ -196,7 +197,7 @@ test("in a Grid one of whose cards is placed by order, a card dragged or nudged 
   await page.mouse.up();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowUp");
-  expect(await cards(page)).toEqual([ORDER, ORDER, ORDER]);
+  await expect.poll(() => cards(page)).toEqual([ORDER, ORDER, ORDER]);
   await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
 
   await layers(page).getByRole("treeitem", { name: "Button", exact: true }).click();

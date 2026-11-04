@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
@@ -15,11 +15,12 @@ const BLUE = "rgb(37, 99, 235)";
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 /** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */
 async function pick(page: Page, view: Locator, selector: string) {
-  const box = (await view.contentFrame().locator(selector).first().boundingBox())!;
+  const box = await steadyBox(view.contentFrame().locator(selector).first());
   await page.keyboard.down("Meta");
   await page.mouse.click(box.x + 4, box.y + 4);
   await page.keyboard.up("Meta");
@@ -173,7 +174,7 @@ test("a layer hidden at a breakpoint is hidden in that view only, and stays in t
 test("changes to the structure made in the phone view change all three views at once", async ({ page }) => {
   await enterEditMode(page);
   const count = () => Promise.all(views(page).map((view) => view.contentFrame().locator("article:visible").count()));
-  expect(await count()).toEqual([4, 4, 4]);
+  await expect.poll(() => count()).toEqual([4, 4, 4]);
 
   await pick(page, phone(page), "article");
   await page.keyboard.press("Meta+d");

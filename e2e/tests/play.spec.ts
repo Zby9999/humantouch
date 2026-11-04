@@ -50,7 +50,7 @@ test("played, the canvas is as wide as the window: a change made in the phone vi
 
   await playButton(page).click();
   const width = () => page.locator('iframe[title="Canvas"]').evaluate((iframe) => (iframe as HTMLIFrameElement).offsetWidth);
-  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect.poll(() => width()).toBe(page.viewportSize()!.width);
   await expect(card).toHaveCSS("background-color", WHITE);
   // Below the example's `md`, 768px, where the tablet view's range starts: the phone's breakpoint.
   await page.setViewportSize({ width: 500, height: 720 });
@@ -64,7 +64,7 @@ test("played, the canvas is as wide as the window: a change made in the phone vi
   await page.keyboard.press("Escape");
   await expect(design(page)).toBeVisible();
   await expect(card).toHaveCSS("background-color", WHITE);
-  expect(await width()).toBe(1280);
+  await expect.poll(() => width()).toBe(1280);
 });
 
 test("play shows the canvas alone, at full size, with its changes; Esc goes back to editing as it was", async ({ page }) => {
@@ -75,7 +75,7 @@ test("play shows the canvas alone, at full size, with its changes; Esc goes back
   await expect(layers(page)).toBeHidden();
   await expect(design(page)).toBeHidden();
   await expect(page.locator(".tk-selection")).toHaveCount(0);
-  expect((await canvasBox(page)).scale).toBe(1);
+  await expect.poll(async () => (await canvasBox(page)).scale).toBe(1);
   await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", RED);
 
   // It scrolls like a page.
@@ -87,7 +87,7 @@ test("play shows the canvas alone, at full size, with its changes; Esc goes back
   await page.keyboard.press("Escape");
   await expect(design(page)).toBeVisible();
   await expect(design(page).getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FF0000");
-  expect(await canvasBox(page)).toEqual(before);
+  await expect.poll(() => canvasBox(page)).toEqual(before);
   await expect(playButton(page)).toBeFocused();
 });
 

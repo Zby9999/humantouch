@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Page } from "./fixtures";
 import { readFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
@@ -20,6 +20,7 @@ function canvas(page: Page) {
 async function enterEditMode(page: Page) {
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
+  await canvasInPlace(page);
 }
 
 function layerTree(page: Page) {
@@ -94,7 +95,7 @@ test.beforeEach(async ({ page }) => {
 test("the layer tree shows the page structure, named after components, text and what elements are for", async ({ page }) => {
   await enterEditMode(page);
 
-  expect(await treeRows(page)).toEqual([
+  await expect.poll(() => treeRows(page)).toEqual([
     "1 Stack — Vertical Stack",
     "2 App — Vertical Stack",
     "3 Stack — Vertical Stack",
@@ -161,13 +162,13 @@ test("a layer deleted and the delete undone is listed open and closed as it was,
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
-  expect(await treeRows(page)).toEqual(before);
+  await expect.poll(() => treeRows(page)).toEqual(before);
 
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
-  expect(await treeRows(page)).toEqual(before);
+  await expect.poll(() => treeRows(page)).toEqual(before);
 });
 
 test("a layer deleted, then the Layers panel hidden and shown again: the delete undone, the layer is listed open and closed as it was", async ({ page }) => {
@@ -203,7 +204,7 @@ test("a layer deleted, then the Layers panel hidden and shown again: the delete 
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
-  expect(await listRows()).toEqual(before);
+  await expect.poll(() => listRows()).toEqual(before);
 });
 
 test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
@@ -220,7 +221,7 @@ test("a deletion taken back from the change list lists the layer open and closed
   await page.getByRole("button", { name: /not applied yet/ }).click();
   await page.getByRole("dialog", { name: "Changes" }).getByRole("button", { name: /^Undo the delet/ }).click();
   await expect(layerTree(page).getByRole("treeitem", { name: "Header" })).toHaveCount(1);
-  expect(await treeRows(page)).toEqual(before);
+  await expect.poll(() => treeRows(page)).toEqual(before);
 });
 
 test("each part of the page shows up as Stack, Grid, Frame, text or a locked layer", async ({ page }) => {
@@ -289,7 +290,7 @@ test.describe("selecting layers on the canvas", () => {
     await doubleClickOn(page, "h1");
     await doubleClickOn(page, "h1");
 
-    expect(await page.evaluate(() => getSelection()!.type)).not.toBe("Range");
+    await expect.poll(() => page.evaluate(() => getSelection()!.type)).not.toBe("Range");
   });
 
   test("once inside, a click selects the layer beside the selection", async ({ page }) => {
@@ -356,7 +357,7 @@ test.describe("the Design panel says where the selected layer comes from", () =>
 
     await clickOn(page, "article h3", "Meta");
 
-    expect(await layerInfo(page)).toEqual({
+    await expect.poll(() => layerInfo(page)).toEqual({
       Type: "Text",
       Component: "Card",
       Source: locate("src/components/Card.tsx", "<h3"),
@@ -371,7 +372,7 @@ test.describe("the Design panel says where the selected layer comes from", () =>
     await clickOn(page, "article h3", "Meta");
     await page.keyboard.press("Escape");
 
-    expect(await layerInfo(page)).toEqual({
+    await expect.poll(() => layerInfo(page)).toEqual({
       Type: "Vertical Stack",
       Component: "Card",
       Source: locate("src/components/Card.tsx", "<article"),
@@ -386,7 +387,7 @@ test.describe("the Design panel says where the selected layer comes from", () =>
     await clickOn(page, "article:nth-of-type(4) h3", "Meta");
     await page.keyboard.press("Escape");
 
-    expect(await layerInfo(page)).toEqual({
+    await expect.poll(() => layerInfo(page)).toEqual({
       Type: "Vertical Stack",
       Component: "Card",
       Source: locate("src/components/Card.tsx", "<article"),
@@ -399,7 +400,7 @@ test.describe("the Design panel says where the selected layer comes from", () =>
 
     await clickOn(page, "[data-testid=acme-badge]", "Meta");
 
-    expect(await layerInfo(page)).toEqual({
+    await expect.poll(() => layerInfo(page)).toEqual({
       Type: "Locked",
       Component: "Badge",
       Usage: locate("src/App.tsx", "<Badge"),
@@ -414,7 +415,7 @@ test.describe("the Design panel says where the selected layer comes from", () =>
     await page.keyboard.press("Escape");
 
     await expect(selectedRow(page)).toHaveText("Grid");
-    expect(await layerInfo(page)).toEqual({ Type: "Grid", Component: "App", Source: locate("src/App.tsx", "<Surface") });
+    await expect.poll(() => layerInfo(page)).toEqual({ Type: "Grid", Component: "App", Source: locate("src/App.tsx", "<Surface") });
   });
 
   test("a layer without a source marker is not located", async ({ page }) => {
@@ -422,7 +423,7 @@ test.describe("the Design panel says where the selected layer comes from", () =>
 
     await clickOn(page, "h1");
 
-    expect(await layerInfo(page)).toEqual({ Type: "Vertical Stack", Source: "Not located" });
+    await expect.poll(() => layerInfo(page)).toEqual({ Type: "Vertical Stack", Source: "Not located" });
   });
 });
 
@@ -436,7 +437,7 @@ test.describe("text beside other layers", () => {
     await page.keyboard.up("Meta");
 
     await expect(selectedRow(page)).toHaveText("Get started");
-    expect(await layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
+    await expect.poll(() => layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
     await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Button.");
     // Outlines the text only, not the whole button.
     const outline = (await page.locator('.tk-selection[data-view="Desktop"]').boundingBox())!;
@@ -528,7 +529,7 @@ test.describe("the hover outline", () => {
     await expect.poll(() => rect(hover(page))).toEqual(outermost);
 
     await page.mouse.click(h1.x, h1.y);
-    expect(await rect(page.locator('.tk-selection[data-view="Desktop"]'))).toEqual(outermost);
+    await expect.poll(() => rect(page.locator('.tk-selection[data-view="Desktop"]'))).toEqual(outermost);
   });
 
   test("is not drawn over the selected layer, and goes when the pointer leaves the canvas", async ({ page }) => {

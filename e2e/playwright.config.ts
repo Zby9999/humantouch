@@ -30,6 +30,8 @@ const PROJECT_FILES = /(autosave|claim|round|applying-bench|bench-scenarios|code
 
 export default defineConfig({
   testDir: "./tests",
+  // Once the dev servers are up, edit mode is entered once on each: the first time is slow (ticket 93).
+  globalSetup: "./tests/warm-up.ts",
   fullyParallel: true,
   reporter: process.env.CI ? "github" : "list",
   // Mode switches animate; tests that measure the canvas want it to settle at once. motion.spec.ts opts back in.
