@@ -15,9 +15,9 @@
  */
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DENIED, deniedReason, shellAllowed, shellWords } from "./allowlist.ts";
+import { DENIED, deniedReason, realPath, SHELL, shellAllowed, shellWords } from "./allowlist.ts";
 
 /** As much of pi's extension API as the bench uses (`@earendil-works/pi-coding-agent`, which the repository does not install). */
 interface PiExtensionApi {
@@ -29,19 +29,6 @@ const PATH_TOOLS = ["read", "grep", "find", "ls", "write", "edit"];
 const SEARCHES = ["grep", "find"];
 /** The shell commands of the list that can read all below a folder. */
 const SHELL_SEARCHES = ["grep", "rg", "find", "git"];
-
-/** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike: the real path of the nearest folder there is, and the rest. */
-function realPath(path: string): string {
-  const rest: string[] = [];
-  for (let dir = path; ; dir = dirname(dir)) {
-    try {
-      return join(realpathSync(dir), ...rest);
-    } catch {
-      if (dirname(dir) === dir) return path;
-      rest.unshift(basename(dir));
-    }
-  }
-}
 
 /** A path given to one of pi's tools, made absolute as pi does: an @ before it dropped, ~ for the home folder, a file:// URL. */
 function toolPath(path: unknown, cwd: string): string {
@@ -155,20 +142,31 @@ function shellReaches(command: string, cwd: string): "pi" | "out" | null {
   return null;
 }
 
+/** Why pi's tools or commands may not reach pi's own folder: `what` turned away. */
+const intoPi = (what: string) => `${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`;
+
+/**
+ * Why the bench turns a shell command line away, run in the project `cwd`;
+ * null when it goes ahead. pi's `bash` calls are held to it, and the
+ * scripted pass's commands (run-agents.ts).
+ */
+export function shellDenied(command: string, cwd: string): string | null {
+  if (!shellAllowed(command, SHELL, cwd)) return deniedReason(command);
+  const reaches = shellReaches(command, cwd);
+  if (reaches === "out") return deniedReason(command);
+  return reaches === "pi" ? intoPi(command) : null;
+}
+
 function check(event: { toolName: string; input: Record<string, unknown> }, cwd: string): { block: true; reason: string } | undefined {
   const { toolName, input } = event;
   const block = (reason: string) => ({ block: true as const, reason });
-  const intoPi = (what: string) => block(`${DENIED} no tool or command in pi's own folder (~/.pi), where the designer's login is, or a search over a folder above it. Turned away: ${what}`);
   if (toolName === "bash") {
-    const command = String(input.command ?? "");
-    if (!shellAllowed(command)) return block(deniedReason(command));
-    const reaches = shellReaches(command, cwd);
-    if (reaches === "out") return block(deniedReason(command));
-    return reaches === "pi" ? intoPi(command) : undefined;
+    const reason = shellDenied(String(input.command ?? ""), cwd);
+    return reason === null ? undefined : block(reason);
   }
   if (!PATH_TOOLS.includes(toolName)) return undefined;
   const path = toolPath(input.path, cwd);
-  if (reachesPi(path, SEARCHES.includes(toolName))) return intoPi(`${toolName} ${input.path ?? "."}`);
+  if (reachesPi(path, SEARCHES.includes(toolName))) return block(intoPi(`${toolName} ${input.path ?? "."}`));
   if ((toolName === "write" || toolName === "edit") && !realPath(path).startsWith(realPath(cwd) + sep)) {
     return block(`${DENIED} writing in the project only. Turned away: ${toolName} ${input.path}`);
   }

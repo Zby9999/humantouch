@@ -377,6 +377,8 @@ export interface RunMeasures {
   oneToOneByChecks: number | null;
   /** 1:1 applied, by what the page shows at the end, of the changes the scenario has an expectation for and that can be applied 1:1; null with none. */
   oneToOneByPage: number | null;
+  /** The two 1:1 rates' parts and wholes, to be summed up over runs (`pooled`), not taken run by run. */
+  oneToOneCounts: { byChecks: { part: number; whole: number }; byPage: { part: number; whole: number } };
   /** Changes the report lists as applied that the page does not show (by the expectation; else by the last check). */
   falseChecks: number[];
   /** The longest wait between two bits of progress; null with fewer than two. */
@@ -405,12 +407,15 @@ export function measureRun({ changes, checks, report, times }: RunInput): RunMea
     const sorted = [...moments].sort((a, b) => a - b);
     return sorted.length < 2 ? null : Math.max(...sorted.slice(1).map((t, i) => t - sorted[i]));
   };
+  const byChecks = { part: checkable.filter((change) => outcome(change.id) === "shown").length, whole: checkable.length };
+  const byPage = { part: expected.filter((change) => change.shown).length, whole: expected.length };
   return {
     applyMs,
     applyMsPerChange: applyMs / changes.length,
     checked: checkable.filter((change) => ["shown", "not shown"].includes(outcome(change.id) ?? "")).length,
-    oneToOneByChecks: rate(checkable.filter((change) => outcome(change.id) === "shown").length, checkable.length),
-    oneToOneByPage: rate(expected.filter((change) => change.shown).length, expected.length),
+    oneToOneByChecks: rate(byChecks.part, byChecks.whole),
+    oneToOneByPage: rate(byPage.part, byPage.whole),
+    oneToOneCounts: { byChecks, byPage },
     falseChecks: report.applied.filter(notShown),
     maxProgressGapMs: longestGap(within(times.progress)),
     maxStillMs: longestGap([times.claim, ...within([...times.progress, ...times.edits]), end])!,

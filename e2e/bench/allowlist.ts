@@ -1,19 +1,29 @@
 /**
  * The shell commands an Agent may run in the bench, and the rule a command
  * line is held to where the Agent has no allowlist of its own (pi, by the
- * bench's extension). Nothing here but Node's own: pi loads it from the run's
- * folder, beside that extension.
+ * bench's extension; the scripted pass). Nothing here but Node's own: pi
+ * loads it from the run's folder, beside that extension.
  */
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 /** The shell commands an Agent may run: the command line, and reading the project. */
 export const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc"];
+
+/**
+ * The commands an Agent may run as they are, with nothing after them: the
+ * Skill's undo, `git apply` with the patch on its input (`npx 03kind last`
+ * prints it), and no option or patch file (`--unsafe-paths`, `--directory`
+ * and the like).
+ */
+export const EXACT = ["git apply"];
 
 /** How a tool result turned away by the bench starts: what the transcript is counted by. */
 export const DENIED = "Not run: the 03Kind bench allows";
 
 /** The reason a turned-away command is given, for the Agent to read. */
 export function deniedReason(command: string): string {
-  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${SHELL.join(", ")}, and cd to a folder in the project. Turned away: ${command}`;
+  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${SHELL.join(", ")}; ${EXACT.join(", ")} alone, the patch on its input; git -C with the project's own folder as git; and cd to a folder in the project. Turned away: ${command}`;
 }
 
 /**
@@ -38,7 +48,10 @@ interface Word {
 /**
  * Whether the bench lets `command` run: every command in it, split at `&&`,
  * `||`, `;`, `|` and new lines (outside quotes), is one of `allowed` (its
- * words, then any arguments) or a `cd` to one folder; none sets a variable first or uses an
+ * words, then any arguments), one of `EXACT` as it is, or a `cd` to one
+ * folder; a leading `git -C <folder>` is read as `git` when the folder, by
+ * its real path, is `project` or one in it (none without `project`), the
+ * rest of the command held to the rule as usual; none sets a variable first or uses an
  * option that runs another program or writes a file. Each is matched by the
  * words bash will pass, quotes taken out and backslashes read. Nothing runs a
  * command inside another (`$( )`, backticks, `<( )`, `>( )`), in a subshell
@@ -47,9 +60,36 @@ interface Word {
  * option of a command that has one of those; and output is redirected only to
  * /dev/null or another stream. What the rule cannot read is turned away.
  */
-export function shellAllowed(command: string, allowed: readonly string[] = SHELL): boolean {
+export function shellAllowed(command: string, allowed: readonly string[] = SHELL, project?: string): boolean {
   const commands = parse(command)?.filter((words) => words.length > 0);
-  return !!commands && commands.length > 0 && commands.every((words) => allowedCommand(words, allowed));
+  return !!commands && commands.length > 0 && commands.every((words) => allowedCommand(inProjectGit(words, project), allowed));
+}
+
+/**
+ * `git -C <folder> …` as `git …` when the folder is written in full and is,
+ * by its real path, `project` or a folder in it: as `npx 03kind last` writes
+ * its commands (`git rev-parse --show-toplevel`, on macOS the real path). Any
+ * other is left as it is, for the rule to turn away.
+ */
+function inProjectGit(words: Word[], project: string | undefined): Word[] {
+  const [git, option, folder] = words.map((word) => word.text);
+  if (git !== "git" || option !== "-C" || !project || folder === undefined || !isAbsolute(folder)) return words;
+  const root = realPath(project);
+  const there = realPath(resolve(folder));
+  return there === root || there.startsWith(root + sep) ? [words[0], ...words.slice(3)] : words;
+}
+
+/** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike: the real path of the nearest folder there is, and the rest. */
+export function realPath(path: string): string {
+  const rest: string[] = [];
+  for (let dir = path; ; dir = dirname(dir)) {
+    try {
+      return join(realpathSync(dir), ...rest);
+    } catch {
+      if (dirname(dir) === dir) return path;
+      rest.unshift(basename(dir));
+    }
+  }
 }
 
 /** The words of each command in a command line, as bash passes them; null when the rule turns the line away. */
@@ -64,6 +104,7 @@ function allowedCommand(words: Word[], allowed: readonly string[]): boolean {
   // One folder, no option: bare `cd` goes home, `cd -` back, and `-P` or `-L` are no folder.
   if (text[0] === "cd") return words.length === 2 && !text[1].startsWith("-");
   const starts = (prefix: string) => prefix.split(" ").every((word, i) => text[i] === word);
+  if (EXACT.includes(text.join(" "))) return true;
   const options = Object.entries(RUNS_OR_WRITES).flatMap(([prefix, option]) => (starts(prefix) ? [option] : []));
   if (options.length && words.some((word) => options.some((option) => option.test(word.text)) || mayNameAnOption(word))) return false;
   return allowed.some(starts);

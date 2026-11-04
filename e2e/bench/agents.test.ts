@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -194,4 +194,25 @@ test("a project with no Skill: init's record of its line in AGENTS.md is taken o
     edits: [config, { file: ".gitignore", before: "", after: ".03kind/\n" }],
     created: [],
   });
+});
+
+test("Claude may run the Skill's undo and its viewing command for the run's own project only, as `last` prints them (its real path) and as the bench names it, quoted or not; the command line shows the project as a placeholder", () => {
+  const project = mkdtempSync(join(scratch, "project-"));
+  const real = realpathSync(project);
+  const args = AGENTS.claude.args("/run", PROMPT, project);
+  const rules = args[args.indexOf("--allowedTools") + 1].split(",");
+  for (const dir of [real, project]) {
+    for (const git of [`git -C "${dir}"`, `git -C ${dir}`]) {
+      assert.ok(rules.includes(`Bash(${git} diff:*)`), git);
+      assert.ok(rules.includes(`Bash(${git} apply)`), git);
+    }
+  }
+  assert.ok(rules.includes("Bash(git apply)"));
+  assert.ok(!rules.some((rule) => /^Bash\(git (-C \S+ )?apply:/.test(rule)), "no prefix rule for git apply");
+  assert.equal(rules.filter((rule) => rule.includes(" -C ")).length, 8);
+  assert.ok(!rules.some((rule) => rule.includes(" -C ") && !rule.includes(real) && !rule.includes(project)));
+
+  const line = commandLine("claude");
+  assert.match(line, /Bash\(git -C "<project>" diff:\*\),Bash\(git -C <project> diff:\*\),Bash\(git -C "<project>" apply\),Bash\(git -C <project> apply\),Bash\(git apply\)/);
+  assert.doesNotMatch(line, new RegExp(project));
 });

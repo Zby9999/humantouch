@@ -44,6 +44,7 @@ import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, BENCH_FILES, commandLine, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
 import { checkReport, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, variableParts, type AgentName, type VariableNames } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
+import { shellDenied } from "./pi-extension.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { designProblems, exampleOf, held, openObservers, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
 import { STANDARD_SCENARIOS } from "./scenarios-other-examples.ts";
@@ -269,7 +270,13 @@ async function withScenario<T>(
     await page.goto(server.url);
     await page.locator("main").waitFor();
     observers = await openObservers(browser, scenario, server.url);
-    const desk: Desk = { page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet, shell: (command) => sh("/bin/sh", ["-c", command], project.dir) };
+    // A command line held to the rule pi's are (the bench's extension), before it runs: a command the Skill gives that the bench turns away is a gap the scripted pass finds.
+    const shell = (command: string) => {
+      const denied = shellDenied(command, project.dir);
+      if (denied !== null) throw new Error(`the bench turns away a command line the scenario runs as an Agent would: ${denied}`);
+      return sh("/bin/sh", ["-c", command], project.dir);
+    };
+    const desk: Desk = { page, cli: project.cli, edit: project.edit, settle: project.settle, changeSet: project.changeSet, shell };
     await scenario.design(desk);
     // An undo has no round to apply: no ChangeSet.
     return await work({ project, saved: project.changeSet()?.changes ?? [], observers: observers.pages, designer: page, desk });
@@ -364,7 +371,8 @@ function problemOf(error: unknown): string {
  * then applied by its scripted code (`apply`), as an Agent applying it right
  * would, with no Agent run: claim, the code, `done` for the changes it
  * applies once the page shows them, `finish`, and the report filled in. What
- * is wrong: what `--dry` finds; a change applied that its own test does not
+ * is wrong: what `--dry` finds; a command line it runs (`desk.shell`) that
+ * the bench would turn away for an Agent, by pi's rule; a change applied that its own test does not
  * show at its widths, or that has no test (a brief aside); a change the page
  * can check whose check, as the round was archived, is not "shown"; a
  * Variable named not written; a report, as `finish` lays it out and an Agent
@@ -445,27 +453,54 @@ async function endState(observers: Map<number, Page>, scenario: Scenario, saved:
 /**
  * The report `finish` lays out (its fenced block), filled in as an Agent
  * applying the round right would: under ⚠️, why a change cannot be applied
- * 1:1 (`notOneToOne`) and that it was left as it was.
+ * 1:1 (`notOneToOne`) and that it was left as it was. Each line of a change
+ * is to have its placeholder (`REPORT_PLACEHOLDERS`), and none is to be left:
+ * when `finish` lays the report out otherwise, the scenario fails, saying
+ * where, not a report half filled in checked as the Agent's.
  */
 function fillInReport(finished: string, scenario: Scenario, saved: SavedChange[]): string {
   const block = /```\n([\s\S]*?)\n```/.exec(finished);
-  if (!block) return finished;
+  if (!block) throw new Error(`\`finish\` lays out no report (a fenced block) to fill in:\n${finished}`);
   let change: number | null = null;
-  return block[1]
-    .split("\n")
-    .map((line) => {
-      const item = /^\s*-\s*(\d+)\./.exec(line);
-      if (item) change = Number(item[1]);
-      const reason = scenario.changes[saved.findIndex((c) => c.id === change)]?.notOneToOne ?? "unknown";
-      return line
-        .replace("<the layer, and what you changed>", "as asked")
-        .replace("<the layer>", "the layer")
-        .replace("<why it is not applied>", reason)
-        .replace("<what keeps it so>", "unknown")
-        .replace("<what you did, or “left as it was”>", "left as it was");
-    })
-    .join("\n");
+  const filled = block[1].split("\n").map((line) => {
+    const item = /^\s*-\s*(\d+)\./.exec(line);
+    if (item) change = Number(item[1]);
+    const kind = item ? "item" : /^\s+Why:/.test(line) ? "why" : /^\s+Instead:/.test(line) ? "instead" : null;
+    if (kind && !REPORT_PLACEHOLDERS[kind].some(([placeholder]) => line.includes(placeholder))) {
+      throw new Error(`The report \`finish\` lays out has none of ${REPORT_PLACEHOLDERS[kind].map(([placeholder]) => placeholder).join(", ")} to fill in on: ${line}`);
+    }
+    const reason = scenario.changes[saved.findIndex((c) => c.id === change)]?.notOneToOne ?? "unknown";
+    return Object.values(REPORT_PLACEHOLDERS)
+      .flat()
+      .reduce((text, [placeholder, value]) => text.replace(placeholder, value === WHY ? reason : value), line);
+  });
+  // A placeholder is words in angle brackets (`<the layer>`), not a tag of a change's title (`<button>`).
+  const left = filled.find((line) => /<[^<>\s]+\s[^<>]*>/.test(line));
+  if (left !== undefined) throw new Error(`The report \`finish\` lays out has a placeholder the scripted pass does not fill in: ${left}`);
+  return filled.join("\n");
 }
+
+/** Stands for the change's own reason, `notOneToOne`, among the values the scripted pass fills a report in with. */
+const WHY = Symbol("why");
+
+/**
+ * The placeholders of the report `finish` lays out (report-form.ts), by the
+ * line of a change they are on, one of them on each: the change's line,
+ * under ✓ or ⚠️; its Why; its Instead. Each with what the scripted pass puts
+ * in its place.
+ */
+const REPORT_PLACEHOLDERS: Record<"item" | "why" | "instead", [string, string | typeof WHY][]> = {
+  item: [
+    ["<the layer, and what you changed>", "as asked"],
+    ["<the layer>", "the layer"],
+  ],
+  why: [
+    ["<why it is not applied>", WHY],
+    ["<what keeps it so>", "unknown"],
+  ],
+  instead: [["<what you did, or “left as it was”>", "left as it was"]],
+};
+
 /** The newest file under `dir`, by when it changed, in ms; `node_modules` and dot folders left out. */
 function lastEdited(dir: string): number {
   let newest = 0;
@@ -625,6 +660,8 @@ export function measureFolder(folder: string) {
       return now?.kind === change.kind ? { ...change, checkable: now.checkable, variable: now.variable, notOneToOne: now.notOneToOne ? (true as const) : undefined } : change;
     }),
   };
+  /** A change of the run, for a list of misses: its id, its kind, and what the page is to show, as the scenario has it now (none when it has changed since). */
+  const missed = (change: RawRun["changes"][number], i: number) => ({ id: change.id, kind: change.kind, expect: scenario?.changes[i]?.kind === change.kind ? scenario.changes[i].expect : null });
   const transcript = parseTranscript(raw.agent, readFileSync(join(folder, "transcript.jsonl"), "utf8"));
   const stats = toolCallStats(transcript.toolCalls);
   const ids = raw.changes.map((change) => change.id);
@@ -677,6 +714,8 @@ export function measureFolder(folder: string) {
     checkable: raw.changes.filter((change) => change.checkable).length,
     oneToOneByChecks: round?.oneToOneByChecks ?? null,
     oneToOneByPage: round?.oneToOneByPage ?? null,
+    /** The two 1:1 rates' parts and wholes, summed up over runs (`pooled`); null with no round. Measured from raw.json, so runs from before it was recorded have it too. */
+    oneToOneCounts: round?.oneToOneCounts ?? null,
     falseChecks: round?.falseChecks ?? [],
     maxProgressGapMs: round?.maxProgressGapMs ?? null,
     maxStillMs: round?.maxStillMs ?? null,
@@ -690,10 +729,25 @@ export function measureFolder(folder: string) {
     /** The changes with a Variable, and how many of them the diff writes it for: summed up over runs, not run by run (`pooled`). Measured from the diff, so runs from before it was recorded have it too. */
     variables: { part: usedVariable.length, whole: withVariable.length },
     variableUse: withVariable.length ? usedVariable.length / withVariable.length : null,
-    /** Of the changes that cannot be applied 1:1 (ticket 86), the share the report gives right: under ⚠️ with why and instead, or under ✓ and shown; null with none. */
+    /**
+     * Of the changes that cannot be applied 1:1 (ticket 86), the share the
+     * report gives right, "落地不了 1:1 的改动报得对": under ⚠️ with why and
+     * instead, or under ✓ with the page showing it (an Agent that found a way
+     * after all); null with none.
+     */
     reportedAsExpected: reportedAsExpected(
       report,
       raw.changes.filter((change) => change.notOneToOne).map((change) => ({ id: change.id, shown: change.shownAtEnd })),
+    ),
+    /** The changes that can be applied 1:1 the page does not show at the end, by their scenario test (88 lists the misses by kind of change from these). */
+    notShown: raw.changes.flatMap((change, i) => (!change.notOneToOne && change.shownAtEnd === false ? [missed(change, i)] : [])),
+    /** The changes that cannot be applied 1:1 the report does not give right (`reportedAsExpected`); none with no round. */
+    reportedWrong: applying
+      ? raw.changes.flatMap((change, i) => (change.notOneToOne && reportedAsExpected(report, [{ id: change.id, shown: change.shownAtEnd }]) === 0 ? [missed(change, i)] : []))
+      : [],
+    /** The scenario's own expectations that do not hold at the end, by number from 1. */
+    expectationsNotHeld: (raw.scenarioExpectations ?? []).flatMap((expectation, i) =>
+      expectation.atEnd ? [] : [{ expectation: i + 1, kept: expectation.kept, expect: scenario?.expectations?.[i]?.expect ?? null }],
     ),
     /** Of the scenario's own expectations (ticket 86: an earlier round's changes kept, a round undone), the share that hold at the end; null with none. */
     scenarioExpectationsHold: scenarioExpectationsHold(raw.scenarioExpectations),
@@ -707,6 +761,9 @@ export function measureFolder(folder: string) {
 }
 
 type Measures = ReturnType<typeof measureFolder>;
+
+/** A change in a list of misses: `change n (kind; expect)`. */
+const changeWords = (change: { id: number; kind: string; expect: string | null }) => `change ${change.id} (${change.kind}; ${change.expect ?? "?"})`;
 
 /** One line on a run, as it ends. */
 function oneLine(m: Measures): string {
@@ -733,12 +790,14 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["读入字数：全部工具输出", (m) => m.charsRead.total],
   ["1:1 落地率（页面预期）", (m) => m.oneToOneByPage],
   ["1:1 落地率（done 核对）", (m) => m.oneToOneByChecks],
+  // Summed up over runs, not by the median: a false ✓ is rare, and each one counts (`TOTALS`).
   ["虚假的 ✓（条）", (m) => (m.changes ? m.falseChecks.length : null)],
   ["跑了 done（比例）", (m) => yesNo(m.ranDone)],
   ["跑了 finish（比例）", (m) => yesNo(m.ranFinish)],
   ["报告格式合规（比例）", (m) => yesNo(m.reportCompliant)],
   ["设计变量使用率", (m) => m.variableUse],
-  ["落地不了 1:1 的改动报在 ⚠️ 下（比例）", (m) => m.reportedAsExpected],
+  // Under ⚠️ with why and instead, or under ✓ and shown (`reportedAsExpected`).
+  ["落地不了 1:1 的改动报得对（比例）", (m) => m.reportedAsExpected],
   ["场景整体预期成立（比例）", (m) => m.scenarioExpectationsHold],
   ["两次进度最长间隔（秒）", (m) => (m.maxProgressGapMs === null ? null : m.maxProgressGapMs / 1000)],
   ["没进度也没改源码的最长时间（秒）", (m) => (m.maxStillMs === null ? null : m.maxStillMs / 1000)],
@@ -755,8 +814,13 @@ const METRICS: [string, (m: Measures) => number | null][] = [
  * others' is not that.
  */
 const POOLED: Record<string, (m: Measures) => { part: number; whole: number } | null> = {
+  "1:1 落地率（页面预期）": (m) => m.oneToOneCounts?.byPage ?? null,
+  "1:1 落地率（done 核对）": (m) => m.oneToOneCounts?.byChecks ?? null,
   "设计变量使用率": (m) => m.variables,
 };
+
+/** The counts shown by their total over the runs, not by the median. */
+const TOTALS = ["虚假的 ✓（条）"];
 
 /** The numbers the table by scenario shows: 88 lists the misses by scenario from it. */
 const BY_SCENARIO = [
@@ -765,7 +829,7 @@ const BY_SCENARIO = [
   "1:1 落地率（页面预期）",
   "虚假的 ✓（条）",
   "设计变量使用率",
-  "落地不了 1:1 的改动报在 ⚠️ 下（比例）",
+  "落地不了 1:1 的改动报得对（比例）",
   "场景整体预期成立（比例）",
   "两次进度最长间隔（秒）",
   "没进度也没改源码的最长时间（秒）",
@@ -791,7 +855,10 @@ function writeSummary(out: string) {
         const share = name.endsWith("（比例）") && s.n ? values.reduce((total: number, value) => total + (value ?? 0), 0) / s.n : null;
         const total = values.reduce((sum: number, value) => sum + (value ?? 0), 0);
         const all = POOLED[name] ? pooled(some.map(POOLED[name])) : null;
-        return [name, { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share), total: round(total), pooled: all && { rate: round(all.rate), part: all.part, whole: all.whole } }];
+        return [
+          name,
+          { median: round(s.median), min: round(s.min), max: round(s.max), n: s.n, share: round(share), total: round(total), pooled: all && { rate: round(all.rate), part: all.part, whole: all.whole }, byTotal: TOTALS.includes(name) },
+        ];
       }),
     );
   const agents = [...new Set(measures.map((m) => m.agent))];
@@ -814,6 +881,10 @@ function writeSummary(out: string) {
         .filter((m) => m.shownBefore.length || m.expectationsHeldBefore.length)
         .map((m) => `${m.scenario} #${m.run}: ${[...m.shownBefore.map(String), ...m.expectationsHeldBefore.map((n) => `expectation ${n}`)].join(", ")}`),
       keptNotHeld: mine.filter((m) => m.keptNotHeldBefore.length).map((m) => `${m.scenario} #${m.run}: ${m.keptNotHeldBefore.map((n) => `expectation ${n}`).join(", ")}`),
+      /** The misses, one by one, as `scenario #run: change n (kind; expect)`: 88 lists them by kind of change. */
+      notShown: mine.flatMap((m) => m.notShown.map((change) => `${m.scenario} #${m.run}: ${changeWords(change)}`)),
+      reportedWrong: mine.flatMap((m) => m.reportedWrong.map((change) => `${m.scenario} #${m.run}: ${changeWords(change)}`)),
+      expectationsNotHeld: mine.flatMap((m) => m.expectationsNotHeld.map((e) => `${m.scenario} #${m.run}: expectation ${e.expectation} (${e.kept ? "kept" : "new"}; ${e.expect ?? "?"})`)),
       /** Each run whose designer's page showed a notice, and when, in seconds from the Agent's start. */
       notices: mine
         .filter((m) => m.unclaimedNotices || m.stalledNotices)
@@ -827,8 +898,19 @@ function writeSummary(out: string) {
   writeFileSync(join(out, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
   /** A count's total over the runs that have it; – when none does (runs before it was counted). */
   const sumOf = (s: { n: number; total: number | null }) => (s.n ? s.total : "–");
-  const cell = (s: { median: number | null; min: number | null; max: number | null; share: number | null; pooled: { rate: number | null; part: number; whole: number } | null }) =>
-    s.pooled ? (s.pooled.rate === null ? "–" : `${Math.round(s.pooled.rate * 100)}%（${s.pooled.part}/${s.pooled.whole} 条）`) : s.share !== null ? `${Math.round(s.share * 100)}%` : s.median === null ? "–" : `${s.median}（${s.min}–${s.max}）`;
+  const cell = (s: { median: number | null; min: number | null; max: number | null; n: number; share: number | null; total: number | null; pooled: { rate: number | null; part: number; whole: number } | null; byTotal: boolean }) =>
+    s.pooled
+      ? s.pooled.rate === null
+        ? "–"
+        : `${Math.round(s.pooled.rate * 100)}%（${s.pooled.part}/${s.pooled.whole} 条）`
+      : s.byTotal
+        ? `${sumOf(s)}`
+        : s.share !== null
+          ? `${Math.round(s.share * 100)}%`
+          : s.median === null
+            ? "–"
+            : `${s.median}（${s.min}–${s.max}）`;
+  const list = (heading: string, items: string[]) => (items.length ? ["", `${heading}：${items.join("; ")}`] : []);
   const md = summary
     .map((agent) =>
       [
@@ -843,6 +925,9 @@ function writeSummary(out: string) {
         ...Object.entries(agent.scenarios).map(([scenario, s]) => `| ${scenario} | ${BY_SCENARIO.map((name) => cell(s[name])).join(" | ")} |`),
         ...(agent.brokenTests.length ? ["", `场景的预期在 Agent 开始前就成立（测试有误）：${agent.brokenTests.join("; ")}`] : []),
         ...(agent.keptNotHeld.length ? ["", `该保留的场景预期在 Agent 开始前就不成立（场景搭错了，或测试有误）：${agent.keptNotHeld.join("; ")}`] : []),
+        ...list("页面没显示的改动", agent.notShown),
+        ...list("落地不了 1:1、报得不对的改动", agent.reportedWrong),
+        ...list("没成立的场景预期", agent.expectationsNotHeld),
         // Counted from the Agent's start: the Agent at work, each is a false one (tickets 66, 67).
         "",
         `提示合计（从 Agent 开始算）：没认领就改代码 ${sumOf(agent.overall["没认领就改代码的提示（次）"])} 次，Agent 好像停了 ${sumOf(agent.overall["Agent 好像停了的提示（次）"])} 次${agent.notices.length ? `：${agent.notices.join("; ")}` : ""}`,

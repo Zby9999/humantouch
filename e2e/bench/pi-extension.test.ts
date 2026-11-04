@@ -141,3 +141,16 @@ test("in pi, when the instructions files cannot be checked, none is kept but tho
   before_agent_start(broken);
   assert.deepEqual(broken.systemPromptOptions.contextFiles, [{ path: join(project, "AGENTS.md") }]);
 });
+
+test("in pi, the Skill's undo as `npx 03kind last` prints it goes ahead for the project pi runs in, by its real path or as given; for another folder, or with a patch file, it is blocked", () => {
+  const real = realpathSync(project);
+  for (const dir of [real, project]) {
+    const git = `git -C "${dir}"`;
+    assert.equal(call("bash", { command: `${git} diff --binary 1a2b3c 4d5e6f | ${git} apply` }), undefined, dir);
+    assert.equal(call("bash", { command: `${git} diff 4d5e6f 1a2b3c` }), undefined, dir);
+  }
+  const elsewhere = mkdtempSync(join(scratch, "elsewhere-"));
+  for (const command of [`git -C "${elsewhere}" diff --binary a b | git -C "${elsewhere}" apply`, `git -C "${real}" diff a b | git -C "${real}" apply x.patch`, `git -C "${real}" apply --unsafe-paths`, `git -C ${join(homedir(), ".pi")} log`]) {
+    assert.ok(blocked(call("bash", { command })), command);
+  }
+});

@@ -240,6 +240,7 @@ test("a run is measured from claim to finish: per change, against the page's che
     checked: 2,
     oneToOneByChecks: 2 / 3,
     oneToOneByPage: 2 / 3,
+    oneToOneCounts: { byChecks: { part: 2, whole: 3 }, byPage: { part: 2, whole: 3 } },
     falseChecks: [2],
     maxProgressGapMs: 18000,
     maxStillMs: 10000,
@@ -254,7 +255,7 @@ test("with no finish, the round is measured to the Agent's end; with nothing to 
     times: { claim: 0, finish: null, end: 9000, progress: [], edits: [] },
   });
 
-  assert.deepEqual(run, { applyMs: 9000, applyMsPerChange: 9000, checked: 0, oneToOneByChecks: null, oneToOneByPage: null, falseChecks: [], maxProgressGapMs: null, maxStillMs: 9000 });
+  assert.deepEqual(run, { applyMs: 9000, applyMsPerChange: 9000, checked: 0, oneToOneByChecks: null, oneToOneByPage: null, oneToOneCounts: { byChecks: { part: 0, whole: 0 }, byPage: { part: 0, whole: 0 } }, falseChecks: [], maxProgressGapMs: null, maxStillMs: 9000 });
 });
 
 test("runs are summed up by their median and range; a run with no value is left out", () => {
@@ -392,6 +393,21 @@ test("a change that cannot be applied 1:1 listed under ✓ is reported right whe
     });
   assert.deepEqual([run(false).falseChecks, run(false).oneToOneByPage, run(false).oneToOneByChecks], [[2], 1, 1]);
   assert.deepEqual([run(true).falseChecks, run(true).oneToOneByPage, run(true).oneToOneByChecks], [[], 1, 1]);
+  assert.deepEqual(run(true).oneToOneCounts, { byChecks: { part: 1, whole: 1 }, byPage: { part: 1, whole: 1 } });
+});
+
+test("the 1:1 rates pool over runs as the Variable rate does: a run of one change and a run of three weigh as their changes, not as two runs", () => {
+  const run = (shown: boolean[]) =>
+    measureRun({
+      changes: shown.map((s, i) => ({ id: i + 1, checkable: true, shown: s })),
+      checks: Object.fromEntries(shown.map((s, i) => [i + 1, { outcome: s ? "shown" : "not shown" }])),
+      report: { compliant: true, applied: [], notApplied: [], problems: [] },
+      times: { claim: 0, finish: 1000, end: 1000, progress: [], edits: [] },
+    });
+  const runs = [run([false]), run([true, true, true])];
+  assert.deepEqual(pooled(runs.map((r) => r.oneToOneCounts.byPage)), { rate: 0.75, part: 3, whole: 4 });
+  assert.deepEqual(pooled(runs.map((r) => r.oneToOneCounts.byChecks)), { rate: 0.75, part: 3, whole: 4 });
+  assert.equal(summarize(runs.map((r) => r.oneToOneByPage)).median, 0.5);
 });
 
 test("a scenario's own expectations are counted by the share that hold at the end; a scenario with none, or a run from before them, has no rate (ticket 86)", () => {

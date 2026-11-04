@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { shellAllowed } from "./allowlist.ts";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import { SHELL, shellAllowed } from "./allowlist.ts";
+
+const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-allowlist-test-"));
+after(() => rmSync(scratch, { recursive: true, force: true }));
 
 test("a command on the list goes ahead, with its arguments, and so does a cd before it; one that only starts with a listed word does not", () => {
   for (const command of ["npx 03kind claim", "npx 03kind done 2", "git diff", "git diff --stat src/App.tsx", "ls", "ls -la src", "cat src/App.tsx", "grep -n Card src/App.tsx", "npx tsc --noEmit", "cd /t/run && npx 03kind claim"]) {
@@ -153,4 +159,52 @@ test("tsc's --generateCpuProfile writes a file and --init writes a tsconfig: tur
   assert.equal(shellAllowed("npx tsc --generateCpuProfile /tmp/p"), false);
   assert.equal(shellAllowed("npx tsc --init"), false);
   assert.equal(shellAllowed("npx tsc -p tsconfig.json --noEmit"), true);
+});
+
+test("the Skill's undo and its viewing command, as `last` prints them, go ahead for the run's own project, by its real path or as tmpdir() has it, quoted or not, and for a folder in it", () => {
+  const project = mkdtempSync(join(scratch, "project-"));
+  mkdirSync(join(project, "src"));
+  const real = realpathSync(project);
+  for (const given of [project, real]) {
+    for (const dir of [project, real, join(project, "src")]) {
+      for (const git of [`git -C "${dir}"`, `git -C ${dir}`]) {
+        assert.equal(shellAllowed(`${git} diff --binary 1a2b3c 4d5e6f | ${git} apply`, SHELL, given), true, git);
+        assert.equal(shellAllowed(`${git} diff 4d5e6f 1a2b3c`, SHELL, given), true, git);
+      }
+    }
+  }
+  assert.equal(shellAllowed("git apply", SHELL, project), true);
+  assert.equal(shellAllowed("git diff --binary 1a2b3c 4d5e6f | git apply"), true);
+});
+
+test("git -C is plain git only for the run's own project: another folder, one above it, a relative one, or none known is turned away; the rest is held to the rule as usual", () => {
+  const project = mkdtempSync(join(scratch, "project-"));
+  const other = mkdtempSync(join(scratch, "other-"));
+  const real = realpathSync(project);
+  for (const command of [
+    `git -C "${other}" diff`,
+    `git -C ${join(project, "..")} diff`,
+    `git -C ${tmpdir()} diff`,
+    "git -C . diff",
+    "git -C src diff",
+    `git -C "${real}" -c diff.external=x diff`,
+    `git -C ${real} diff --output=/tmp/x`,
+    `git -C ${real} diff --outp=/tmp/x`,
+    `git -C ${real} -C ${other} diff`,
+    `git -C ${real}`,
+    `git -C ${real} rm -r src`,
+    `git -C ${real} apply --unsafe-paths`,
+  ]) {
+    assert.equal(shellAllowed(command, SHELL, project), false, command);
+  }
+  assert.equal(shellAllowed(`git -C "${real}" diff`), false);
+  assert.equal(shellAllowed(`git -C "${real}" status`, SHELL, project), true);
+});
+
+test("git apply goes ahead alone, the patch on its input: no option, no patch file", () => {
+  const project = mkdtempSync(join(scratch, "project-"));
+  for (const command of ["git apply --unsafe-paths", "git apply x.patch", "git apply --directory=x", "git apply --build-fake-ancestor=x", "git apply -", "git applyx", `git -C ${project} apply x.patch`]) {
+    assert.equal(shellAllowed(command, SHELL, project), false, command);
+  }
+  assert.equal(shellAllowed(`git -C ${project} apply`, SHELL, project), true);
 });
