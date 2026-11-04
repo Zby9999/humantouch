@@ -4557,6 +4557,43 @@ ${html}${body} style="margin: 0">
     },
   );
 
+  /** The ticket's example: a board 400px wide, its tag placed by its `left` and its `right` both, 50px wide (ticket 94). */
+  const bothSides = `<!DOCTYPE html>
+<body style="margin: 0">
+  <style>
+    #board { position: relative; width: 400px; height: 100px }
+    #tag { position: absolute; left: 10px; right: 30px; top: 8px; width: 50px; height: 20px }
+  </style>
+  <div id="board" ${loc("13:5")}><span id="tag" ${loc("14:7")}>Tag</span></div>
+</body>`;
+
+  test.each([
+    ["left to right", (html: string) => html, 10, [["x", 10, 300]]],
+    ["right to left", rightToLeft, 320, [["right", 30, 50]]],
+  ] as const)(
+    "a layer placed absolute by its `left` and its `right` both, as wide as it is set, %s: its X reads where the browser draws it from its container's left, and an X typed, a nudge or a drag lands it there, by the side the browser goes by (ticket 94)",
+    (_, laidOut, x, changed) => {
+      const { doc, editor, changes, layer } = open(laidOut(bothSides));
+      const tag = doc.getElementById("tag")!;
+      const drawn = () => tag.getBoundingClientRect().left - doc.getElementById("board")!.getBoundingClientRect().left;
+      expect(drawn()).toBeCloseTo(x, 1);
+      expect([editor.read(layer("tag"), "x"), editor.read(layer("tag"), "y"), editor.read(layer("tag"), "absolute")]).toEqual([x, 8, { x, y: 8 }]);
+      const moves = [
+        ["typed", () => editor.set(layer("tag"), "x", 300)],
+        ["nudged", () => editor.nudge([layer("tag")], 300 - x, 0)],
+        ["dragged", () => editor.move(layer("tag"), { parent: layer("board"), x: 300, y: 8 })],
+      ] as const;
+      for (const [how, move] of moves) {
+        move();
+        expect([how, changes.list().map((change) => [change.property, change.before, change.after])]).toEqual([how, changed]);
+        expect([how, drawn()]).toEqual([how, expect.closeTo(300, 1)]);
+        expect([how, editor.read(layer("tag"), "x")]).toEqual([how, 300]);
+        editor.undo();
+        expect([how, drawn()]).toEqual([how, expect.closeTo(x, 1)]);
+      }
+    },
+  );
+
   test.each([
     ["left", "left: 50%; right: auto; translate: -50% 0", "x"],
     ["right", "right: 50%; translate: 50% 0", "right"],
