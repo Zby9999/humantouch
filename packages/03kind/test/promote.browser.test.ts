@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { createChangeSet, type Change } from "../src/client/changeset";
 import { checkChange } from "../src/client/check";
 import { watchPage } from "../src/client/page-checks";
@@ -9,7 +9,7 @@ import { serializeCanvas } from "../src/client/freezer";
 import { revertSaved } from "../src/client/saved-round";
 import type { Layer } from "../src/client/layers";
 import { createViews } from "../src/client/views";
-import { placedOnCanvas } from "../src/client/moves";
+import { placedOnCanvas, stayedPutOf } from "../src/client/moves";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "../src/client/other-usages";
 
 /** A round as the page checks it, placed on its canvas: with no new layer, no canvas to read. */
@@ -749,7 +749,7 @@ describe("new words, looked at in every instance and at the component's other us
     const { editor, changes, cards, layerOf, doc } = openCanvas();
     editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
     const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
-    expect(round[0].stayedPut).toEqual([expect.stringContaining("src/App.tsx:6:9")]);
+    expect(stayedPutOf(round, round[0])).toEqual([expect.stringContaining("src/App.tsx:6:9")]);
     return round;
   }
 
@@ -769,6 +769,29 @@ describe("new words, looked at in every instance and at the component's other us
     expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
     titles[3].textContent = "Your move";
     expect(checkChange(page, round[0], round)).toEqual({ outcome: "shown" });
+  });
+
+  test("the round's canvas is read only once a layer's markers have moved, its own element is not found and an element at its location is to be told apart, and once a round (perf review)", () => {
+    const { editor, changes, cards, layerOf, doc } = openCanvas();
+    editor.setText(layerOf(cards[3].querySelector("h3")!), "Your move");
+    const parse = vi.spyOn(DOMParser.prototype, "parseFromString");
+    try {
+      const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
+      const { page, titles } = livePage();
+      expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
+      // The Card edited above the title, every usage's markers moving with it: none at the layer's location to tell apart.
+      for (const title of titles) title.setAttribute("data-tk-loc", "src/Card.tsx:6:7");
+      expect(checkChange(page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
+      expect(parse).not.toHaveBeenCalled();
+      // This usage moved alone: the other usages there are read off the canvas, once.
+      live!.remove();
+      const moved = livePage(PAGE, "src/App.tsx:10:7");
+      checkChange(moved.page, round[0], round);
+      expect(checkChange(moved.page, round[0], round)).toEqual({ outcome: "not shown", actual: "Your turn" });
+      expect(parse).toHaveBeenCalledTimes(1);
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   test("lines added in the App above this usage, the Card's lines and the other usages as they were: the usage, moved, is found and checked (review)", () => {

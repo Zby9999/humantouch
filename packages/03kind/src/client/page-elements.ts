@@ -14,9 +14,9 @@ import { readUsageChain } from "./usage-chain";
  * instance of its usage. Where its markers have moved, as an edit to its file
  * moves them, where they went; `stayedPut`, the usage keys of its component's
  * other usages at its location on the round's canvas (`otherUsagesThere`),
- * which are not it.
+ * which are not it, asked for only then.
  */
-export function elementsOf(doc: Document, target: Target, stayedPut: readonly string[] = []): Element[] {
+export function elementsOf(doc: Document, target: Target, stayedPut: () => readonly string[] = () => []): Element[] {
   if (!target.loc) return [];
   const key = usageKey(target.loc, target.chain);
   // Of another tag, it is not the layer, though at its place in the code: an element the Agent wrote where the layer was, say, around it.
@@ -91,7 +91,7 @@ export function otherUsagesOf(doc: Document, target: Target): Map<string, Elemen
  * canvas does not know is (the lines around the usage moved, its component's
  * did not) (review of ticket 90).
  */
-function movedElementsOf(doc: Document, target: Target, stayedPut: readonly string[]): Element[] {
+function movedElementsOf(doc: Document, target: Target, stayedPut: () => readonly string[]): Element[] {
   const at = parseLoc(target.loc);
   const tag = tagOf(target);
   if (!at || !tag) return [];
@@ -100,7 +100,7 @@ function movedElementsOf(doc: Document, target: Target, stayedPut: readonly stri
   for (const el of doc.querySelectorAll(`${tag}[${LOC_ATTR}^="${CSS.escape(at.file)}:"]`)) {
     const { loc, chain } = originOf(el, readUsageChain(el));
     if (!loc || JSON.stringify(chain.map(({ component, thirdParty }) => [component, thirdParty])) !== components) continue;
-    if (loc === target.loc && stayedPut.includes(usageKey(loc, chain))) continue;
+    if (loc === target.loc && stayedPut().includes(usageKey(loc, chain))) continue;
     const distance = [distanceOf(target.loc, loc), ...chain.map((level, i) => distanceOf(target.chain[i].usage, level.usage))].reduce((a, b) => a + b, 0);
     if (!Number.isFinite(distance)) continue;
     const key = usageKey(loc, chain);
