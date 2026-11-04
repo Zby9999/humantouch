@@ -50,7 +50,7 @@ interface Word {
  * `||`, `;`, `|` and new lines (outside quotes), is one of `allowed` (its
  * words, then any arguments), one of `EXACT` as it is, or a `cd` to one
  * folder; a leading `git -C <folder>` is read as `git` when the folder, by
- * its real path, is `project` or one in it (none without `project`), the
+ * its real path, is `project` or one in it, not in its `.git` (none without `project`), the
  * rest of the command held to the rule as usual; none sets a variable first or uses an
  * option that runs another program or writes a file. Each is matched by the
  * words bash will pass, quotes taken out and backslashes read. Nothing runs a
@@ -76,7 +76,9 @@ function inProjectGit(words: Word[], project: string | undefined): Word[] {
   if (git !== "git" || option !== "-C" || !project || folder === undefined || !isAbsolute(folder)) return words;
   const root = realPath(project);
   const there = realPath(resolve(folder));
-  return there === root || there.startsWith(root + sep) ? [words[0], ...words.slice(3)] : words;
+  // Not the repository's own folder: in `.git` git sees no work tree, and `git apply` there could write its config.
+  const inGit = there.slice(root.length).split(sep).some((part) => part.toLowerCase() === ".git");
+  return (there === root || there.startsWith(root + sep)) && !inGit ? [words[0], ...words.slice(3)] : words;
 }
 
 /** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike: the real path of the nearest folder there is, and the rest. */

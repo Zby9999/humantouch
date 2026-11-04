@@ -194,6 +194,8 @@ test("git -C is plain git only for the run's own project: another folder, one ab
     `git -C ${real}`,
     `git -C ${real} rm -r src`,
     `git -C ${real} apply --unsafe-paths`,
+    `cat p.txt | git -C ${join(real, ".git")} apply`,
+    `git -C "${join(project, ".GIT", "hooks")}" diff`,
   ]) {
     assert.equal(shellAllowed(command, SHELL, project), false, command);
   }
