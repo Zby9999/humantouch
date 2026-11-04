@@ -70,8 +70,8 @@ const AGENT_TIMEOUT_MS = 20 * 60_000;
 /** How often the page is looked at for a change newly shown, and the round's files for a claim, a `done`, a finish. */
 const SHOWN_POLL_MS = 1000;
 const FILES_POLL_MS = 250;
-/** Longest the scripted pass waits for the page to show the scripted code, and its end state: the dev server bringing an edit in (Next.js slowly). */
-const SCRIPTED_END_MS = 30_000;
+/** Longest the bench waits for the page to show the code written, and its end state, as an Agent or the scripted pass leaves it: the dev server bringing an edit in (Next.js slowly). */
+const END_STATE_MS = 30_000;
 
 /** What a run leaves for measuring, besides the transcript, the diff and the Agent's other output. */
 interface RawRun {
@@ -113,6 +113,21 @@ interface RawRun {
    * each is a false one. Missing in runs before ticket 67.
    */
   stalledNotices?: number;
+  /**
+   * How long, from the Agent's end, the page took to show each change applied
+   * and hold the scenario's own expectations (`endState`), up to
+   * `END_STATE_MS`: a long one is the dev server slow to bring the last edit
+   * in, or something not shown at all. Recorded only, never scored. Missing in
+   * runs before ticket 88, which waited 3 s and looked once.
+   */
+  endWaitMs?: number;
+  /**
+   * Whether the page loaded afresh for the end's last look: false when no
+   * reload did up to `END_STATE_MS` (the dev server gone, or the page left
+   * broken), so nothing shows or holds at the end, whoever broke it. Missing
+   * in runs before ticket 88, where a reload failing at the end stopped the run.
+   */
+  endLoaded?: boolean;
   /** In ms since the epoch: the claim, each `done`, the finish, each change newly shown on the page, each edit to the project's source, and each time either notice showed. */
   times: { claim: number | null; dones: number[]; finish: number | null; shown: { id: number; at: number }[]; edits: number[]; unclaimedNotices?: number[]; stalledNotices?: number[] };
   /** The page's last check of each change, as the round was archived (or left, unfinished). */
@@ -408,7 +423,8 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       const report = applying ? fillInReport(await project.cli("finish"), scenario, saved) : null;
 
       // The end, once the dev server has brought the last edit in: an undo has no `done` or `finish` to wait for it by.
-      const { atEnd, expectations } = await endState(observers, scenario, saved, project.dir, head, true);
+      const { atEnd, expectations, loaded } = await endState(observers, scenario, saved, project.dir, head, true);
+      if (!loaded) problems.push(`the page did not load afresh at the end, in ${END_STATE_MS / 1000} s`);
       expectations.forEach((holds, i) => holds || problems.push(`expectation ${i + 1} does not hold: ${scenario.expectations![i].expect}`));
       const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
       await sh("git", ["add", "-A"], project.dir);
@@ -437,20 +453,23 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
 /**
  * The page looked at afresh until each change applied shows, and with
  * `withExpectations` each of the scenario's own expectations holds, or for
- * `SCRIPTED_END_MS`: the dev server brings an edit in a while after it is
- * made (Next.js compiling it, slowly on a busy machine).
+ * `END_STATE_MS`: the dev server brings an edit in a while after it is
+ * made (Next.js compiling it, slowly on a busy machine). With how long it
+ * waited (all of `END_STATE_MS` when something does not show or hold), and
+ * whether the last look was at pages loaded afresh.
  */
 async function endState(observers: Map<number, Page>, scenario: Scenario, saved: SavedChange[], dir: string, head: string, withExpectations: boolean) {
-  const until = Date.now() + SCRIPTED_END_MS;
+  const from = Date.now();
+  const until = from + END_STATE_MS;
   for (;;) {
     // A reload can fail as the dev server brings an edit in (Next.js recompiling): looked at again, till the time is up.
-    const reloaded = await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())))
-      .then(() => true)
-      .catch(() => false);
+    // Each page done reloading, failed or not, before any is looked at: no look at a page still loading, no reload over one.
+    const reloads = await Promise.allSettled([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
+    const loaded = reloads.every((reload) => reload.status === "fulfilled");
     const atEnd = await shown(observers, scenario, saved);
     const expectations = withExpectations ? await expectationsHold(observers, scenario, dir, head) : [];
     const holds = scenario.changes.every((change, i) => change.notOneToOne || atEnd[i] !== false) && expectations.every(Boolean);
-    if ((reloaded && holds) || Date.now() > until) return { atEnd, expectations };
+    if ((loaded && holds) || Date.now() > until) return { atEnd, expectations, waitedMs: Date.now() - from, loaded };
     await new Promise((resolve) => setTimeout(resolve, SHOWN_POLL_MS));
   }
 }
@@ -611,11 +630,9 @@ async function runOnce({
     times.unclaimedNotices = await unclaimedNoticesShown(designer, agentRun.startedAt);
     times.stalledNotices = await stalledNoticesShown(designer, agentRun.startedAt);
 
-    // The end: the dev server brings the last edits in, and the page is loaded afresh.
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    await Promise.all([...observers.values()].map((page) => page.reload().then(() => page.locator("main").waitFor())));
-    const atEnd = await shown(observers, scenario, saved);
-    const expectationsAtEnd = await expectationsHold(observers, scenario, project.dir, head);
+    // The end, as the scripted pass measures it: the page loaded afresh till the dev server has brought the last edits in (Next.js
+    // slowly), so a change written right is not measured as not shown. A change not shown, or an expectation not holding, waits it all out.
+    const { atEnd, expectations: expectationsAtEnd, waitedMs: endWaitMs, loaded: endLoaded } = await endState(observers, scenario, saved, project.dir, head, true);
     const result = archived();
     const checks = result?.checks ?? readJson("checks.json")?.results ?? {};
     if (result) writeFileSync(join(folder, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
@@ -636,6 +653,8 @@ async function runOnce({
       ...agentRun,
       unclaimedNotices: times.unclaimedNotices.length,
       stalledNotices: times.stalledNotices.length,
+      endWaitMs,
+      endLoaded,
       changes: scenario.changes.map((change, i) => ({
         id: saved[i].id,
         kind: change.kind,
@@ -650,6 +669,7 @@ async function runOnce({
       checks: Object.fromEntries(Object.entries(checks).map(([id, check]) => [id, { outcome: (check as { outcome: string }).outcome }])),
     };
     writeFileSync(join(folder, "raw.json"), `${JSON.stringify(raw, null, 2)}\n`);
+    if (!endLoaded) console.error(`Bench: the page did not load afresh at the end of ${folder}: nothing shows or holds there, see endLoaded in raw.json`);
     if (raw.headedBrowsers.length > 0) console.error(`Bench: ${agent} opened a browser with a window in ${folder}: see headedBrowsers in raw.json`);
   });
 }
