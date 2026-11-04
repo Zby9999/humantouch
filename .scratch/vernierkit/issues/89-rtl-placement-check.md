@@ -308,3 +308,5 @@ End your reply with this report. Each change is under the heading the page's che
 - 合上盖子的状态是开着（`AppleClamshellState = No`）；没有跑计时的性能测试（多出来的读法只在改动第一次记下时和 `done` 的核对里，拖拽的路上没有新的排版，见复审）。
 
 `done` / `finish` 前后见实现记录；代定 7 条、遗留风险 7 条见「代定的事，最终」「遗留风险，最终」。代定第 4 条（从左往右的输出在 (a) 到 (f) 几种原来就错的情况下变了）是指挥按 docs/goals.md「虚假的 ✓ = 0」和设计师分诊时「每处会报虚假的 ✓ 的地方都修」代定接受的，条件是对的从左往右输出不变，复审后已做到，待设计师确认。遗留风险第 1 条（属性面板的 X）如果要做，另开 ticket，编号在 main 上给。
+
+合并前 main 又合进了 ticket 92（2515c21、b9ee04f，只改了 bench，和本线不重叠），再同步一次（aed39ef）重跑：typecheck 通过；单测 874 通过、1 跳过，node 测试 75 条通过；e2e 401 通过、1 跳过、2 失败，都是已知会抖的停住提示一类（`applying-bench.spec.ts:310`、`:570`），用 `--project="project files" --no-deps` 单独重跑都通过。切换按钮 sha256 前 16 位仍是 `c83849f1557e0b1b`、`cdd6f09dfeaf13fa`。
