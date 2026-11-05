@@ -194,3 +194,7 @@
 *合并后（82a65a6，指挥）*
 
 合并前一刻 main 上合进了 100、101（71279dd，也改 `change-notes.ts`、`cli.ts`、`writing-rules.ts`），合并没有冲突，但合起来的代码在合并前没跑过，所以合并后在 main 上补跑了：`pnpm typecheck` 通过；`pnpm test` 单测 997 通过、1 跳过（35 个文件），node 125 通过；`TK_E2E_PORT=5800 pnpm test:e2e` 437 通过、1 跳过、0 失败，不用重跑；bench `--dry` 24 ✓、`--scripted` 15 ✓，✓ / ✗ 行和 14159a2 的基线逐行相同；切换按钮的包逐字节相同。100 的解散说明（「留着外边距，画在 `left`、`top` 加上它们」）和 `done` 的 `offByMargins` 读 `Dissolved.layers[].margins`：审查后那里 `auto` 的记 0（`mx-auto` 按左边定位后浏览器算成 0），两者一致。
+
+## 设计师确认（2026-11-05）
+
+- 代定 1–7 全部确认，包括重点看的第 4 条（拖出排版的图层落在松手处，所有宽度同一个 `left`，旁边视图里不再居中）和第 5 条（解除分组时居中的子图层仍居中；解散 Stack 时 `mx-auto` 的子图层按左边定位，照 spec 和别的子图层一样）。
