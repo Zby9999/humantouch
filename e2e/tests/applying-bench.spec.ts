@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
-import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /**
@@ -1961,4 +1961,124 @@ test.describe("a layer whose markers the Agent's edit moves (ticket 99)", () => 
       expect(checksOf([1]).outcomes[1]).toBe("shown");
     });
   }
+});
+
+/**
+ * Ticket 104: a change at a breakpoint applies in its range alone (ADR 0008),
+ * so the widths outside it are to show the layer as they did. The window is
+ * outside the phone's range here, as wide as the desktop view; so is the
+ * tablet view, 768px.
+ */
+test.describe("a change at a breakpoint, the widths outside its range kept (ticket 104)", () => {
+  const LOOP_USAGE = "<Card key={feature.title} title={feature.title} body={feature.body} />";
+  const CARD_PROPS = "export function Card({ title, body }: { title: string; body: string }) {";
+  const ARTICLE = '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">';
+  /** The live page's loop cards, as the browser computes their fill: as wide as the window. */
+  const loopFills = (page: Page) => page.locator("article").evaluateAll((cards) => cards.slice(0, 3).map((card) => getComputedStyle(card).backgroundColor));
+
+  /** In edit mode, the loop's first Card filled in each view of `fills`, in turn; back in preview mode, the changes saved, the phone's parts read. */
+  async function fillTheLoop(page: Page, fills: [view: string, color: string][]) {
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(page.locator('iframe[title="Phone 390"]').contentFrame().locator("h1")).toBeVisible();
+    await canvasInPlace(page);
+    for (const [view, color] of fills) {
+      const box = await steadyBox(page.locator(`iframe[title="${view}"]`).contentFrame().locator("article").first());
+      await page.keyboard.down("Meta");
+      await page.mouse.click(box.x + 4, box.y + 4);
+      await page.keyboard.up("Meta");
+      await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+      await setField(page, "Fill color", color);
+    }
+    // A change at the phone's breakpoint is claimed once the parts of its range are read (ticket 65).
+    await expect
+      .poll(() => readThirdKindFile("changeset.json")?.changes.map((change: { property: string; breakpoint?: object; parts?: unknown[] }) => `${change.property}${change.breakpoint ? ` at a breakpoint, ${change.parts?.length ?? 0} parts` : ""}`))
+      .toEqual(fills.map(([view]) => (view === "Phone 390" ? "fill at a breakpoint, 2 parts" : "fill")));
+    await leaveEditMode(page);
+  }
+
+  /** The round claimed, the page's first look in, `edits` written once `shows` says the page has them, then `done` and `finish`. */
+  async function applyTheRound(page: Page, ids: number[], edits: [string, string, string | ((text: string) => string)][], shows: () => Promise<boolean>) {
+    await npx03kind("claim");
+    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[ids[0]]?.outcome).toBeTruthy();
+    for (const [file, from, to] of edits) {
+      const text = readFileSync(file, "utf8");
+      expect(text).toContain(from);
+      writeFileSync(file, typeof to === "string" ? text.replace(from, to) : to(text));
+    }
+    await expect.poll(shows).toBe(true);
+    const done = await npx03kind("done", ...ids.map(String));
+    await expect(ring(page)).toBeVisible();
+    const ringAfterDone = Number(await ring(page).getAttribute("aria-valuenow"));
+    const finished = await npx03kind("finish");
+    return { done, ringAfterDone, finished, checks: checksOf(ids), ticked: tickedIn(finished), applied: appliedInArchive() };
+  }
+
+  const kept = ({ done, ringAfterDone, finished, checks, ticked, applied }: Awaited<ReturnType<typeof applyTheRound>>) => ({
+    outcomes: checks.outcomes,
+    ringAfterDone,
+    ticked,
+    applied,
+    done: done.split("\n").slice(1).join(" "),
+    finished: finished.split("\n")[0],
+    warned: /⚠️ Not applied 1:1\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "",
+  });
+
+  test("playbook: the loop's cards filled red in the phone view; the Agent gives the Card a fill parameter, white by default, and passes `max-md:` red to the loop (pi, phone-breakpoints run-3 of ticket 88's rerun): 768px and wider, no fill at all", async ({ page }) => {
+    await fillTheLoop(page, [["Phone 390", "ff0000"]]);
+    const result = await applyTheRound(
+      page,
+      [1],
+      [
+        [CARD, CARD_PROPS, 'export function Card({\n  title,\n  body,\n  fillClassName = "bg-white",\n}: {\n  title: string;\n  body: string;\n  fillClassName?: string;\n}) {'],
+        [CARD, ARTICLE, "<article className={`rounded-xl border border-stone-200 ${fillClassName} p-5 shadow-sm`}>"],
+        [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} fillClassName="max-md:bg-[#FF0000]" />'],
+      ],
+      async () => (await loopFills(page)).every((fill) => fill === "rgba(0, 0, 0, 0)"),
+    );
+    record("breakpoint-outside-pi-run-3", kept(result));
+    // Ticket 104: not applied, each width outside the range named with the fill there then and now; under ⚠️, and the ring does not count it.
+    expect(result.done).toContain(
+      "Checked on the page: it shows the change, but outside its range too: at 1280px wide, its fill from #FFFFFF to no fill; at 768px wide, its fill from #FFFFFF to no fill since the round was claimed. The change applies below 768px only (`max-md:`)",
+    );
+    expect(result.checks.outcomes[1]).toBe("not shown");
+    expect(result.finished).toContain("Shown outside its breakpoint's range too: 1.");
+    expect(result.ticked).toEqual([]);
+    expect(result.ringAfterDone).toBe(0);
+    expect(result.applied).toEqual([]);
+  });
+
+  test("playbook: the same, the Agent writing the red for the loop with no breakpoint at all: red at every width", async ({ page }) => {
+    await fillTheLoop(page, [["Phone 390", "ff0000"]]);
+    const result = await applyTheRound(page, [1], [[CARD, "bg-white", (text) => forTheLoopAlone(text, "bg-white", "bg-[#ff0000]")]], async () =>
+      (await loopFills(page)).every((fill) => fill === "rgb(255, 0, 0)"),
+    );
+    record("breakpoint-outside-no-prefix", kept(result));
+    expect(result.done).toContain("outside its range too: at 1280px wide, its fill from #FFFFFF to #FF0000; at 768px wide, its fill from #FFFFFF to #FF0000 since the round was claimed");
+    expect(result.checks.outcomes[1]).toBe("not shown");
+    expect(result.ticked).toEqual([]);
+  });
+
+  test("playbook: the same, the Agent adding `max-md:` red for the loop: white at 768px and wider (no false not shown)", async ({ page }) => {
+    await fillTheLoop(page, [["Phone 390", "ff0000"]]);
+    const result = await applyTheRound(page, [1], [[CARD, "bg-white", (text) => forTheLoopAlone(text, "bg-white", "bg-white max-md:bg-[#ff0000]")]], async () =>
+      page.locator("article").first().evaluate((card) => card.className.includes("max-md:bg-[#ff0000]")),
+    );
+    record("breakpoint-outside-right", kept(result));
+    expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(result.ticked).toEqual([1]);
+    expect(result.applied).toEqual([1]);
+  });
+
+  test("playbook: the loop's cards filled blue in the desktop view and red in the phone view; the Agent writes both: 768px and wider are checked by the desktop view's change (no false not shown)", async ({ page }) => {
+    await fillTheLoop(page, [["Canvas", "2563eb"], ["Phone 390", "ff0000"]]);
+    const result = await applyTheRound(page, [1, 2], [[CARD, "bg-white", (text) => forTheLoopAlone(text, "bg-white", "bg-[#2563eb] max-md:bg-[#ff0000]")]], async () =>
+      (await loopFills(page)).every((fill) => fill === "rgb(37, 99, 235)"),
+    );
+    record("breakpoint-outside-desktop-too", kept(result));
+    expect(result.checks.outcomes).toEqual({ 1: "shown", 2: "shown" });
+    expect(result.done).not.toContain("outside its range");
+    expect(result.ticked).toEqual([1, 2]);
+  });
 });

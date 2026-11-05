@@ -6,8 +6,8 @@
  * `remove` install 03Kind, check it, and take it back out.
  */
 import { changes as changesWord, container as containerOf, describeChanges, heldWords, shareWords, toApply, type NotesOptions } from "./change-notes";
-import { breakpointName } from "./client/breakpoints";
-import { otherUsagesWords, listed, ordinal, otherUsagesWord, propertyName, quoted, value } from "./design-values";
+import { breakpointName, tailwindOf } from "./client/breakpoints";
+import { otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
 import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
@@ -16,7 +16,7 @@ import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { canvasOffset, isOffsetInLayout, movedWords, reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
+import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged, type OutsideChanged } from "./service-protocol";
 import { whereToLook } from "./where-to-look";
 import {
   appliedOf,
@@ -181,7 +181,7 @@ function readAgain(change: Change, result: CheckResult | undefined): Change {
   const [first, ...others] = change.parts ?? [];
   if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
   // Shown on the layer, and at other usages too (ticket 77): its value there is its after.
-  if (result?.outcome !== "not shown" || result.otherUsages || !readWhereMade(change, result.width)) return next;
+  if (result?.outcome !== "not shown" || result.otherUsages || result.outside || !readWhereMade(change, result.width)) return next;
   const before = change.parts ? undefined : beforeOf(change, result.actual);
   // Centered (ticket 79): what its side is written as now goes with it, so the notes say the code as it is twice alike.
   const share = before !== undefined && change.centeredOn ? (result.actual as { share?: Share }).share : undefined;
@@ -300,6 +300,7 @@ function checkLine(change: Change, result: CheckResult | undefined): string {
       return "Checked on the page: it shows the change.";
     case "not shown":
       if (result.otherUsages?.length) return shownAtOtherUsages(change, result.otherUsages);
+      if (result.outside?.length) return shownOutside(change, result.outside);
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
       return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
@@ -316,6 +317,20 @@ function shownAtOtherUsages(change: Change, usages: OtherUsageChanged[]): string
   return (
     `Checked on the page: it shows the change, but on ${otherUsagesWord(change, usages)} too: ${otherUsagesWords(change.property, usages)} since the round was claimed. ` +
     `The change is for this usage only (Scope): make it at the usage, put the other ${one ? "usage back as it was" : "usages back as they were"}, and run \`npx 03kind done ${change.id}\` again.`
+  );
+}
+
+/**
+ * A change at a breakpoint that the page shows on its layer, and that changed
+ * it at widths outside its range too (ticket 104): where, what the layer
+ * shows there now that it did not as the round was claimed, and to put it
+ * back.
+ */
+function shownOutside(change: Change, widths: OutsideChanged[]): string {
+  const tailwind = tailwindOf(change.breakpoint);
+  return (
+    `Checked on the page: it shows the change, but outside its range too: ${outsideWords(change.property, widths)} since the round was claimed. ` +
+    `The change applies ${breakpointName(change.breakpoint)} only${tailwind ? ` (\`${tailwind}\`)` : ""}: make it there alone, put the other widths back as they were, and run \`npx 03kind done ${change.id}\` again.`
   );
 }
 
@@ -655,11 +670,14 @@ async function finish(folder: ThirdKindFolder, io: Io): Promise<number> {
   const missing = ids.filter((id) => !applied.includes(id) && !notShown.includes(id));
   // Shown on the layer, but at other usages of its component too (ticket 77).
   const atOtherUsages = notShown.filter((id) => ((check) => check?.outcome === "not shown" && !!check.otherUsages?.length)(result.checks[id]));
-  const unshown = notShown.filter((id) => !atOtherUsages.includes(id));
+  // Shown at its breakpoint, but outside its range too (ticket 104).
+  const outside = notShown.filter((id) => !atOtherUsages.includes(id) && ((check) => check?.outcome === "not shown" && !!check.outside?.length)(result.checks[id]));
+  const unshown = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
   if (unshown.length) text += ` The page does not show: ${unshown.join(", ")}.`;
   if (atOtherUsages.length) text += ` Shown at other usages of its component too: ${atOtherUsages.join(", ")}.`;
+  if (outside.length) text += ` Shown outside its breakpoint's range too: ${outside.join(", ")}.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }

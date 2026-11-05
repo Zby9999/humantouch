@@ -399,7 +399,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     /** What the other usages show as a run of code changes begins, of the changes on the canvas then (ticket 82): what a round the page claims for the Agent goes by. */
     const noteNow = () => {
       const changes = listedNow.current;
-      return { changes, noted: noteRound(document, changes, window.innerWidth) };
+      return { changes, noted: noteRound(document, changes, window.innerWidth, readViewWidths()) };
     };
     const tellRun = async (run: CodeRun<ReturnType<typeof noteNow>>) => {
       const status = await (store ? store.status().catch(() => lastStatus.current) : lastStatus.current);

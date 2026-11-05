@@ -131,9 +131,12 @@ export type CheckResult =
    * the page, read where `actual` is, as `claim` asks (ticket 68).
    * `otherUsages`: the layer shows the change, but other usages of its
    * component do too, the change being for one usage alone (ticket 77);
+   * `actual` is then the layer's own value. `outside`: a change at a
+   * breakpoint the layer shows, but at widths outside its range too, which
+   * show its property otherwise than as the round was claimed (ticket 104);
    * `actual` is then the layer's own value.
    */
-  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[]; otherUsages?: OtherUsageChanged[] }
+  | { outcome: "not shown"; actual: unknown; width?: number; sources?: StyleSource[]; otherUsages?: OtherUsageChanged[]; outside?: OutsideChanged[] }
   /** `anyPage`: no page could check it either (a brief, a copy made this round): not worth waiting for another. */
   | { outcome: "unchecked"; reason: string; anyPage?: true };
 
@@ -145,6 +148,17 @@ export type CheckResult =
  */
 export interface OtherUsageChanged {
   chain: UsageLevel[];
+  was: unknown;
+  is: unknown;
+}
+
+/**
+ * A width outside the range of a change at a breakpoint (ticket 104), where
+ * the layer's value of the change's property is not what it was as the round
+ * was claimed: its value then (`was`) and now (`is`), in design language.
+ */
+export interface OutsideChanged {
+  width: number;
   was: unknown;
   is: unknown;
 }
@@ -194,6 +208,19 @@ export interface SavedRound {
 export interface OtherUsagesNote<More = unknown> {
   width: number;
   seen: (More & { key: string; chain: UsageLevel[]; value: unknown })[];
+  /**
+   * Of a change at a breakpoint (ticket 104): at each width outside its
+   * range the page looks at, what the layer showed of the change's
+   * property, each of its elements in order; a width it could not be read
+   * at is not there.
+   */
+  outside?: OutsideNote[];
+}
+
+/** What a layer showed of a change's property at a width outside the change's range, as the round was claimed (ticket 104). */
+export interface OutsideNote {
+  width: number;
+  values: unknown[];
 }
 
 /**
