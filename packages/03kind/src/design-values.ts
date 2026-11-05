@@ -4,7 +4,8 @@ import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } fr
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
 import type { UsageLevel } from "./client/usage-chain";
-import type { OtherUsageChanged, OutsideChanged } from "./service-protocol";
+import type { OtherUsageChanged } from "./service-protocol";
+import type { OutsideChanged } from "./outside-protocol";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",

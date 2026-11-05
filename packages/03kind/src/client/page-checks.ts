@@ -21,6 +21,7 @@ import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type 
 import { codeUpdates, sliced } from "./code-changes";
 import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
+import type { NotShownOutside } from "../outside-protocol";
 import type { RoundOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
 
@@ -113,7 +114,10 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     const beyond = !changed.length && widths.length ? outsideChanged(doc, change, changes, notes, widths, pageAt) : { changed: [], loading: false };
     observer.takeRecords();
     if (changed.length) return { outcome: "not shown", actual: change.after, otherUsages: changed };
-    if (beyond.changed.length) return { outcome: "not shown", actual: change.after, outside: beyond.changed };
+    if (beyond.changed.length) {
+      const notShown: NotShownOutside = { outcome: "not shown", actual: change.after, outside: beyond.changed };
+      return notShown;
+    }
     // A copy outside its range still loading: looked at again once it has, as one in its range is.
     return beyond.loading ? { outcome: "unchecked", reason: "loading" } : result;
   };

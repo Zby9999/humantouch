@@ -11,6 +11,7 @@ import type { OffsetInLayout } from "./client/check";
 import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
 import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
+import { outsideIn } from "./outside-protocol";
 import { changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, value } from "./design-values";
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
@@ -55,7 +56,8 @@ function pageShows(change: Change, check: CheckResult): string {
   // Shown on the layer, but at other usages of its component too (ticket 77).
   if (check.otherUsages?.length) return `the page shows it at ${otherUsagesWord(change, check.otherUsages)} too, ${otherUsagesWords(change.property, check.otherUsages, false)}`;
   // Shown at its breakpoint, but outside its range too (ticket 104).
-  if (check.outside?.length) return `the page shows it outside its range too, ${outsideWords(change.property, check.outside)}`;
+  const outside = outsideIn(check);
+  if (outside?.length) return `the page shows it outside its range too, ${outsideWords(change.property, outside)}`;
   const at = check.width ? `at ${check.width}px wide, ` : "";
   if (change.kind === "delete") return `${at}the layer is still on the page`;
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;

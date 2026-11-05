@@ -17,7 +17,8 @@
  * did not (ticket 78) goes by what the other usages showed as the code began
  * to change (`noteRound`), noted before the code it claims for is in.
  */
-import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote, OutsideChanged, OutsideNote } from "../service-protocol";
+import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
+import type { OutsideChanged, OutsideNote } from "../outside-protocol";
 import type { Change } from "./changeset";
 import { changedAround, changesTheSame as sameStyle, itself, outsideOf, valuesAt, wordsOn, type PageWidth } from "./check";
 import type { RoundOnCanvas } from "./moves";

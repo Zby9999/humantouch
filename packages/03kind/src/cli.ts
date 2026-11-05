@@ -16,7 +16,8 @@ import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { canvasOffset, isOffsetInLayout, movedWords, reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged, type OutsideChanged } from "./service-protocol";
+import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
+import { outsideIn, type OutsideChanged } from "./outside-protocol";
 import { whereToLook } from "./where-to-look";
 import {
   appliedOf,
@@ -181,7 +182,7 @@ function readAgain(change: Change, result: CheckResult | undefined): Change {
   const [first, ...others] = change.parts ?? [];
   if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
   // Shown on the layer, and at other usages too (ticket 77): its value there is its after.
-  if (result?.outcome !== "not shown" || result.otherUsages || result.outside || !readWhereMade(change, result.width)) return next;
+  if (result?.outcome !== "not shown" || result.otherUsages || outsideIn(result) || !readWhereMade(change, result.width)) return next;
   const before = change.parts ? undefined : beforeOf(change, result.actual);
   // Centered (ticket 79): what its side is written as now goes with it, so the notes say the code as it is twice alike.
   const share = before !== undefined && change.centeredOn ? (result.actual as { share?: Share }).share : undefined;
@@ -300,7 +301,7 @@ function checkLine(change: Change, result: CheckResult | undefined): string {
       return "Checked on the page: it shows the change.";
     case "not shown":
       if (result.otherUsages?.length) return shownAtOtherUsages(change, result.otherUsages);
-      if (result.outside?.length) return shownOutside(change, result.outside);
+      if (outsideIn(result)?.length) return shownOutside(change, outsideIn(result)!);
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
       return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
@@ -671,7 +672,7 @@ async function finish(folder: ThirdKindFolder, io: Io): Promise<number> {
   // Shown on the layer, but at other usages of its component too (ticket 77).
   const atOtherUsages = notShown.filter((id) => ((check) => check?.outcome === "not shown" && !!check.otherUsages?.length)(result.checks[id]));
   // Shown at its breakpoint, but outside its range too (ticket 104).
-  const outside = notShown.filter((id) => !atOtherUsages.includes(id) && ((check) => check?.outcome === "not shown" && !!check.outside?.length)(result.checks[id]));
+  const outside = notShown.filter((id) => !atOtherUsages.includes(id) && !!outsideIn(result.checks[id])?.length);
   const unshown = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
