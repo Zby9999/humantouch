@@ -355,3 +355,4 @@ pi 34 次，除了 1 次撤销，都不改项目里的文件（跑构建工具�
 - 剩下的全仓搜索分散在 10 个场景（button-over-rule、fill-gap-brief、next-client-stack-breakpoint、next-server-usage-text 各 3 次，type-and-stack 2 次，其余 5 个各 1 次）。
 - 页面核对：88 里 pi 在 next-server-usage-text 被读错元素（99 修的）；复验里中途 `done` 说没显示的只有 next-server-usage-text run-2（填色起初没生效）和 dissolve-place-frame run-3（起初去掉了 margin，`done` 照 100 的说法指出来），都是 Agent 先写错、`done` 说对了。最后的核对结果和 88 一样：180 条显示，27 条照原因不核对。
 - **虚假的 ✓**：`phone-breakpoints` run-3 第 1 条（手机断点上循环里三张卡片填红，768 及以上四张都是白）。pi 给 Card 加了 `fillClassName` 参数、默认 `bg-white`，在使用处传 `fillClassName="max-md:bg-[#FF0000]"`，把默认的 `bg-white` 整个换掉了：768 以下是红的，768 及以上卡片没有填色（透明），不是白。`done` 说「shows the change」，pi 列在 ✓ 下。原因在页面核对：断点改动只在它的范围里的宽度核对（`check.ts` 的 `widthsOf`），范围外的宽度该保持原样，没看。不是 97–101 带来的，88 里没碰上。
+- 设计师定：为这条虚假的 ✓ 开 ticket 104（断点上的改动也核对范围外的宽度），发布前修。ticket 103 放到发布以后（复验里页面核对没有读错元素）。Skill 第 2 步那一句等 Claude 一侧跑完再定。
