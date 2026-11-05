@@ -16,7 +16,7 @@ import { changeKey, isReorder, type Change, type Created, type Margins, type Pla
 import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
-import { checkable, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
+import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
 import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, usageKeyOf } from "./page-elements";
@@ -149,6 +149,83 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
   const placesNothing = change.placedOtherwiseAt ?? [];
   const covered = (width: number) => [...ownRanges, ...placesNothing].some((range) => within(range, width));
   return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
+}
+
+/**
+ * Of a change at a breakpoint, the widths outside its range where the page
+ * looks at the layer to show the change's property as it did when the round
+ * was claimed (ticket 104): the window's and each view's, but those where the
+ * round changes the property of the layer otherwise (in the desktop view, or
+ * at a breakpoint of its own there): there it is looked at by that change. A
+ * style change to a layer the page finds by its source marker, not one that
+ * places it (its X, Y, right, bottom or whether absolute, which the layout
+ * around it moves).
+ */
+export function outsideOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): number[] {
+  const { breakpoint } = change;
+  if (!breakpoint || change.kind !== "style" || !foundByMarker(change.target) || PLACING.includes(change.property as Property)) return [];
+  const { loc, chain } = change.target;
+  const ownKey = usageKey(loc!, chain);
+  const otherwise = round.filter(
+    (other) => other.id !== change.id && other.kind === "style" && other.target.loc === loc && (other.scope === "component" || usageKey(loc!, other.target.chain) === ownKey) && changesTheSame(change, other),
+  );
+  return [...new Set([pageWidth, ...viewWidths])].filter((width) => !within(breakpoint, width) && !otherwise.some((other) => !other.breakpoint || within(other.breakpoint, width)));
+}
+
+/** Whether `other`, a style change, changes what the style change `change` does: its property, or a CSS property its reference style names. */
+export function changesTheSame(change: Change, other: Change): boolean {
+  return other.property === change.property || Object.keys(other.style).some((css) => css in change.style);
+}
+
+/**
+ * What the layer of a style change shows of its property, each of its
+ * elements, on the page `doc` as `at` shows it: of a change to a component,
+ * in every usage but those the round (`round`) changes the property of
+ * themselves. Undefined when the layer is not there.
+ */
+export function valuesAt(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): unknown[] | undefined {
+  const { loc } = change.target;
+  const apart = change.scope === "component" ? round.filter((other) => other.scope === "usage" && other.kind === "style" && other.target.loc === loc && changesTheSame(change, other)).map((other) => usageKey(loc!, other.target.chain)) : [];
+  const els = styledBy(doc, change, apart, at, round);
+  return els.length ? els.map((el) => readValue(el, change.property as Property)) : undefined;
+}
+
+/**
+ * Properties whose value the layer's other properties, or the layers around
+ * it, may change (ticket 104): its size (a Stack around it, its padding), and
+ * its text's (inherited, or the line height by the font size).
+ */
+const SIZES = new Set<string>(["width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight"]);
+const TEXT = new Set<string>(["fontFamily", "fontSize", "fontWeight", "textColor", "textAlign", "textCase", "textDecoration", "lineHeight", "letterSpacing", "textShadows"]);
+/** Properties that change how a layer is painted alone, never its size. */
+const PAINT = new Set<string>(["fill", "radius", "shadows", "textShadows", "opacity", "layerBlur", "backgroundBlur", "clip", "textColor", "textDecoration"]);
+
+/** Whether a style change to `other`'s property, on the layer or one around it, may change what the layer shows of `property`: a size by anything but paint, text by text. */
+function mayChange(property: string, other: string): boolean {
+  return SIZES.has(property) ? !PAINT.has(other) : TEXT.has(other);
+}
+
+/**
+ * Whether the round changes, at `width`, the layer of `change` otherwise
+ * than by its property, or a layer around it (ticket 104), where its
+ * property is one these may change, its size or its text's: a style change
+ * applying there to the layer or one around it that may change it
+ * (`mayChange`), or a change to the structure of one around it. What the layer shows of its property there may then change by the
+ * round itself, which the page does not tell from the Agent's edit: it is
+ * not looked at.
+ */
+export function changedAround(doc: Document, change: Change, round: RoundOnCanvas, width: number): boolean {
+  if (!SIZES.has(change.property) && !TEXT.has(change.property)) return false;
+  const own = elementsOf(doc, change.target, savedCanvas(round));
+  const around = (target: Change["target"]) => foundByMarker(target) && elementsOf(doc, target, savedCanvas(round)).some((el) => own.some((mine) => el.contains(mine)));
+  return round.some((other) => {
+    if (other.id === change.id || (other.breakpoint && !within(other.breakpoint, width))) return false;
+    if (other.kind === "style" && !mayChange(change.property, other.property)) return false;
+    if (other.kind === "create") return around(placeOfMade(other, round).container.target);
+    // A change to the structure: the layer it is to, and the containers it takes it out of or puts it in.
+    const containers = other.kind === "style" ? [] : [other.before, other.after].map((place) => (place as Partial<Place> | null)?.container?.target).filter((target) => !!target);
+    return [other.target, ...containers].some(around);
+  });
 }
 
 /** What the page shows where a layer made this round is to be, and is not (ticket 76). */

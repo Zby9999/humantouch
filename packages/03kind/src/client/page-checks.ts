@@ -17,10 +17,11 @@
  */
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
-import { checkAcross, checkHere, uncheckable, widthsOf, type PageWidth } from "./check";
+import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type PageWidth } from "./check";
 import { codeUpdates, sliced } from "./code-changes";
-import { otherUsagesChanged, looksAtOtherUsages, noteOtherUsages, type OtherUsagesNoted } from "./other-usages";
+import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
+import type { NotShownOutside } from "../outside-protocol";
 import type { RoundOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
 
@@ -78,20 +79,50 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const said = new Map<number, string>();
   const checkable = changes.filter((change) => !uncheckable(change, changes));
   const copies = new Map<number, PageCopy>();
-  const noted = (change: Change) => others.has(change.id) || !looksAtOtherUsages(change);
+  /** Of a change at a breakpoint, the widths outside its range its layer is to show its property at as it did (ticket 104). */
+  const outside = (change: Change) => outsideOf(change, changes, win.innerWidth, viewWidths());
+  /** Noted, at every width outside its range it is looked at now too: one the page could not be shown at, or had not the layer at, or a view added since, is noted as soon as it can be. */
+  const noted = (change: Change) => (others.has(change.id) || !looksAtOtherUsages(change)) && !unnoted(others.get(change.id), outside(change)).length;
+  /** The page `width` px wide: itself, as wide as its window, else a copy of it; null while the copy's stylesheets load. */
+  const pageAt = (width: number) => (width === win.innerWidth ? itself(doc) : copyAt(width));
   const note = (change: Change) => {
-    const notes = noteOtherUsages(doc, change, changes, win.innerWidth);
+    if (!others.has(change.id)) {
+      const notes = noteChange(doc, change, changes, win.innerWidth, outside(change), pageAt);
+      others.set(change.id, notes);
+      onNoted?.(change.id, notes);
+      return;
+    }
+    // Noted before, but not at every width outside its range (ticket 104): the rest, as soon as they can be.
+    const was = others.get(change.id) ?? null;
+    const notes = withOutside(was, win.innerWidth, noteOutside(doc, change, changes, unnoted(was, outside(change)), pageAt));
+    if (notes === was) return;
     others.set(change.id, notes);
     onNoted?.(change.id, notes);
   };
-  /** Shown on its layer (or not looked at there, at this width): not shown after all where other usages of its component show it too. */
-  const orAtOtherUsages = (change: Change, result: CheckResult | null): CheckResult | null => {
+  /**
+   * Shown on its layer (or not looked at there, at this width): not shown
+   * after all where other usages of its component show it too (ticket 77),
+   * or, at a breakpoint, widths outside its range (ticket 104): of those, as
+   * wide as the window alone when not `everywhere`.
+   */
+  const orAtOtherUsages = (change: Change, result: CheckResult | null, everywhere: boolean): CheckResult | null => {
     if (result && result.outcome !== "shown") return result;
     if (!noted(change)) note(change);
-    const changed = otherUsagesChanged(doc, change, others.get(change.id) ?? null, win.innerWidth);
+    const notes = others.get(change.id) ?? null;
+    const changed = otherUsagesChanged(doc, change, notes, win.innerWidth);
+    const widths = everywhere ? outside(change) : outside(change).filter((width) => width === win.innerWidth);
+    const beyond = !changed.length && widths.length ? outsideChanged(doc, change, changes, notes, widths, pageAt) : { changed: [], loading: false };
     observer.takeRecords();
-    return changed.length ? { outcome: "not shown", actual: change.after, otherUsages: changed } : result;
+    if (changed.length) return { outcome: "not shown", actual: change.after, otherUsages: changed };
+    if (beyond.changed.length) {
+      const notShown: NotShownOutside = { outcome: "not shown", actual: change.after, outside: beyond.changed };
+      return notShown;
+    }
+    // A copy outside its range still loading: looked at again once it has, as one in its range is.
+    return beyond.loading ? { outcome: "unchecked", reason: "loading" } : result;
   };
+  /** The changes whose copies outside their range the page has waited to load once, to note them (ticket 104). */
+  const waitedFor = new Set<number>();
   /** The copies laid out as they are since they last changed. */
   const laidOut = new Set<number>();
   let stopped = false;
@@ -121,6 +152,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     laidOut.add(width);
     return true;
   };
+  /** The widths `change` is looked at on copies of the page at: those it is to show at, and those outside its range it is to show as it did (ticket 104). */
+  const copiesFor = (change: Change) => [...new Set([...widthsOf(change, changes, win.innerWidth, viewWidths()).others, ...outside(change).filter((width) => width !== win.innerWidth)])];
   /** The page `width` px wide, as a copy of it kept up to date; null while its stylesheets load. */
   const copyAt = (width: number): PageWidth | null => {
     if (!copies.has(width)) prepare(width);
@@ -133,13 +166,13 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     return { width, doc: copy.doc, own: false, of: copy.of };
   };
   /** Looks at `change` now; what looking puts in the page is not the code changing. `sources`: not shown, what sets the value shown instead too. */
-  const check = (change: Change, sources = false): CheckResult => measured(change, () => orAtOtherUsages(change, lookNow(change, sources))!);
+  const check = (change: Change, sources = false): CheckResult => measured(change, () => orAtOtherUsages(change, lookNow(change, sources), true)!);
   /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
   const checkAgain = (change: Change): CheckResult | null =>
     measured(change, () => {
       const result = checkHere(doc, change, changes, viewWidths());
       observer.takeRecords();
-      return orAtOtherUsages(change, result);
+      return orAtOtherUsages(change, result, false);
     });
   const measured = <T,>(change: Change, look: () => T): T => {
     const start = performance.now();
@@ -187,6 +220,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       return;
     }
     looking = true;
+    /** The changes noted in this look: what is not noted yet, at a width the page cannot be shown at or has not the layer at, is left for the next. */
+    const tried = new Set<number>();
     const todo = [...checkable.filter((change) => !shown.has(change.id)), ...checkable.filter((change) => shown.has(change.id))];
     const slice = () => {
       if (stopped) return;
@@ -194,26 +229,35 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       while (todo.length) {
         const change = todo[0];
         // What the other usages of its component show, noted first: before the code changes, if it may (ticket 77).
-        if (!noted(change)) {
+        const noting = !noted(change) && !tried.has(change.id);
+        if (noting || !shown.has(change.id)) {
+          // A copy of the page the change is looked at on, readied first, a step to a task: the costly part. To note it too, at widths outside a breakpoint's range (ticket 104).
+          const stepStart = performance.now();
+          if (copiesFor(change).some((width) => prepare(width))) {
+            performance.measure(CHECK_MEASURE, { start: stepStart, end: performance.now() });
+            return later(slice, 0);
+          }
+        }
+        if (noting) {
+          // Loaded first, waited for once: a copy that never loads, the rest noted as the copies come, the round's other changes looked at meanwhile.
+          const loading = copiesFor(change).map((width) => copies.get(width)!).filter((copy) => !copy.ready());
+          if (loading.length && !waitedFor.has(change.id)) {
+            waitedFor.add(change.id);
+            looking = false;
+            void Promise.all(loading.map((copy) => copy.loaded())).then(() => look());
+            return;
+          }
+          tried.add(change.id);
           measured(change, () => note(change));
           if (performance.now() - start > SLICE_MS) return later(slice, 0);
           continue;
         }
+        todo.shift();
         if (shown.has(change.id)) {
-          todo.shift();
           // Undone by a later edit, it is not shown: looked at at every width again from now on.
           const result = checkAgain(change);
           if (result && result.outcome !== "shown") saw(change, result);
-        } else {
-          // A copy of the page the change is looked at on, readied first, a step to a task: the costly part.
-          const stepStart = performance.now();
-          if (widthsOf(change, changes, win.innerWidth, viewWidths()).others.some((width) => prepare(width))) {
-            performance.measure(CHECK_MEASURE, { start: stepStart, end: performance.now() });
-            return later(slice, 0);
-          }
-          todo.shift();
-          saw(change, check(change));
-        }
+        } else saw(change, check(change));
         if (todo.length && performance.now() - start > SLICE_MS) return later(slice, 0);
       }
       looking = false;
@@ -229,7 +273,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   /** Readies the copies `change` is looked at on, a step to a task, then calls `then`. */
   const whenReady = (change: Change, then: () => void) => {
     const start = performance.now();
-    if (widthsOf(change, changes, win.innerWidth, viewWidths()).others.some((width) => prepare(width))) {
+    if (copiesFor(change).some((width) => prepare(width))) {
       performance.measure(CHECK_MEASURE, { start, end: performance.now() });
       later(() => whenReady(change, then), 0);
     } else then();

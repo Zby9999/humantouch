@@ -18,8 +18,11 @@
  * to change (`noteRound`), noted before the code it claims for is in.
  */
 import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
+import type { OutsideChanged, OutsideNote } from "../outside-protocol";
 import type { Change } from "./changeset";
-import { wordsOn } from "./check";
+import { changedAround, changesTheSame as sameStyle, itself, outsideOf, valuesAt, wordsOn, type PageWidth } from "./check";
+import type { RoundOnCanvas } from "./moves";
+import { sameBreakpoint } from "./breakpoints";
 import { forOneUsage, foundByMarker } from "./checkable";
 import { originOf } from "./layers";
 import { otherUsagesOf } from "./page-elements";
@@ -36,12 +39,12 @@ export type OtherUsagesNoted = OtherUsagesNote<{ el?: Element }>;
 
 /** The round's notes, `noted` by change id, as kept in `.03kind/` (ticket 82): with no elements. */
 export function keptOf(noted: Map<number, OtherUsagesNoted | null>): OtherUsagesKept {
-  return Object.fromEntries([...noted].map(([id, one]) => [id, one && { width: one.width, seen: one.seen.map(({ key, chain, value }) => ({ key, chain, value })) }]));
+  return Object.fromEntries([...noted].map(([id, one]) => [id, one && { width: one.width, seen: one.seen.map(({ key, chain, value }) => ({ key, chain, value })), ...(one.outside && { outside: one.outside }) }]));
 }
 
 /** Notes kept in `.03kind/` (`kept`), by change id, to go by: their elements to be found again on the page. */
 export function notedFrom(kept: OtherUsagesKept): Map<number, OtherUsagesNoted | null> {
-  return new Map(Object.entries(kept).map(([id, one]) => [Number(id), one && { width: one.width, seen: one.seen.map((seen) => ({ ...seen })) }]));
+  return new Map(Object.entries(kept).map(([id, one]) => [Number(id), one && { width: one.width, seen: one.seen.map((seen) => ({ ...seen })), ...(one.outside && { outside: one.outside }) }]));
 }
 
 /** Whether the page looks at the component's other usages for `change`: a style change, or new words (ticket 90), for one usage of it alone, to a layer it finds by its source marker. */
@@ -53,7 +56,7 @@ export function looksAtOtherUsages(change: Change): boolean {
 function changesTheSame(change: Change, other: Change): boolean {
   if (other.id === change.id) return false;
   if (change.kind === "text") return other.kind === "text" && other.target.loc === change.target.loc;
-  return other.kind === "style" && (other.property === change.property || Object.keys(other.style).some((css) => css in change.style));
+  return other.kind === "style" && sameStyle(change, other);
 }
 
 /** What an element shows of what `change` changes: the value of its property, in design language; for new words, what it reads (ticket 90). */
@@ -91,13 +94,81 @@ export function noteOtherUsages(doc: Document, change: Change, round: Change[], 
  * change with the round in edit mode, not claimed (ticket 82), for the page
  * to go by if it claims the round for the Agent (ticket 78).
  */
-export function noteRound(doc: Document, round: Change[], width: number): Map<number, OtherUsagesNoted | null> {
-  return new Map(round.filter(looksAtOtherUsages).map((change) => [change.id, noteOtherUsages(doc, change, round, width)]));
+export function noteRound(doc: Document, round: Change[], width: number, viewWidths: number[] = []): Map<number, OtherUsagesNoted | null> {
+  // Outside a breakpoint's range, as wide as the window alone: a copy of the page at another width takes a while to make, and the code is changing (ticket 104).
+  const at = (w: number) => (w === width ? itself(doc) : null);
+  const here = (change: Change) => outsideOf(change, round, width, viewWidths).filter((w) => w === width);
+  return new Map(round.filter((change) => looksAtOtherUsages(change) || here(change).length).map((change) => [change.id, noteChange(doc, change, round, width, here(change), at)]));
+}
+
+/**
+ * What the page notes of `change` as it begins to check the round, `width`
+ * px wide: what the other usages of its component show (ticket 77), and, of a
+ * change at a breakpoint, what its layer shows at each of the widths
+ * `outside` its range, as `at` shows the page that wide (ticket 104). Null
+ * when it looks at neither.
+ */
+export function noteChange(doc: Document, change: Change, round: Change[], width: number, outside: number[], at: (width: number) => PageWidth | null): OtherUsagesNoted | null {
+  return withOutside(noteOtherUsages(doc, change, round, width), width, noteOutside(doc, change, round, outside, at));
+}
+
+/** `noted`, with what the layer showed at more widths outside the range (`more`): as noted already when there are none. */
+export function withOutside(noted: OtherUsagesNoted | null, width: number, more: OutsideNote[]): OtherUsagesNoted | null {
+  return more.length ? { ...(noted ?? { width, seen: [] }), outside: [...(noted?.outside ?? []), ...more] } : noted;
+}
+
+/** What the layer of a change at a breakpoint shows of its property at each of `widths` outside its range, as `at` shows the page that wide (ticket 104): none at a width the page cannot be shown at now, or does not have the layer at. */
+export function noteOutside(doc: Document, change: Change, round: Change[], widths: number[], at: (width: number) => PageWidth | null): OutsideNote[] {
+  const kept: OutsideNote[] = [];
+  for (const width of widths) {
+    const page = at(width);
+    const values = page && valuesAt(doc, change, round as RoundOnCanvas, page);
+    if (values) kept.push({ width, values });
+  }
+  return kept;
+}
+
+/** Of `widths` outside a change's range, those `noted` has nothing at yet. */
+export function unnoted(noted: OtherUsagesNoted | null | undefined, widths: number[]): number[] {
+  return widths.filter((width) => !noted?.outside?.some((one) => one.width === width));
+}
+
+/**
+ * The widths outside the range of a change at a breakpoint where its layer
+ * shows its property otherwise than noted (`noted`, ticket 104), of those
+ * looked at now (`widths`), on the page `doc` as `at` shows it that wide: the
+ * Agent wrote the change beyond its range. Not where the round itself
+ * changes the layer, or a layer around it, there (`changedAround`), nor
+ * where the page cannot be shown that wide now (`loading`, a copy of it still
+ * loading its stylesheets). Elements are told apart by
+ * value alone: a value now that none of them showed as noted.
+ */
+export function outsideChanged(doc: Document, change: Change, round: RoundOnCanvas, noted: OtherUsagesNoted | null, widths: number[], at: (width: number) => PageWidth | null): { changed: OutsideChanged[]; loading: boolean } {
+  const changed: OutsideChanged[] = [];
+  let loading = false;
+  for (const { width, values } of noted?.outside ?? []) {
+    if (!widths.includes(width)) continue;
+    const page = at(width);
+    loading ||= !page;
+    const now = page && valuesAt(doc, change, round, page);
+    if (!now) continue;
+    const was = values.map((value) => JSON.stringify(value));
+    const i = now.findIndex((value) => !was.includes(JSON.stringify(value)));
+    if (i < 0 || changedAround(doc, change, round, width)) continue;
+    changed.push({ width, was: values[Math.min(i, values.length - 1)], is: now[i] });
+  }
+  return { changed, loading };
 }
 
 /** Whether `noted`, taken for `then`, is for `now`, a change by the same id: the same property of the same layer, not another change since given its id. */
 export function notedFor(then: Change, now: Change): boolean {
-  return then.id === now.id && then.property === now.property && then.target.loc === now.target.loc && JSON.stringify(then.target.chain) === JSON.stringify(now.target.chain);
+  return (
+    then.id === now.id &&
+    then.property === now.property &&
+    sameBreakpoint(then.breakpoint, now.breakpoint) &&
+    then.target.loc === now.target.loc &&
+    JSON.stringify(then.target.chain) === JSON.stringify(now.target.chain)
+  );
 }
 
 /**

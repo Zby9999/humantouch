@@ -5,6 +5,7 @@ import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
 import type { UsageLevel } from "./client/usage-chain";
 import type { OtherUsageChanged } from "./service-protocol";
+import type { OutsideChanged } from "./outside-protocol";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -185,6 +186,11 @@ export function otherUsagesWords(property: string, usages: OtherUsageChanged[], 
   const words = property === "text";
   const from = (was: unknown, is: unknown) => (words ? `words from ${quoted(was as string)} to ${quoted(is as string)}` : `${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`);
   return usages.map(({ chain, was, is }) => `${usageWhere(chain, outer)}, its ${from(was, is)}`).join("; ");
+}
+
+/** What a layer shows of a change's property at widths outside the change's range now, and showed as the round was claimed (ticket 104): each `at 1280px wide, its fill from … to …`. */
+export function outsideWords(property: string, widths: OutsideChanged[]): string {
+  return widths.map(({ width, was, is }) => `at ${width}px wide, its ${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`).join("; ");
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */
