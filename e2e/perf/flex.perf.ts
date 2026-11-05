@@ -1206,6 +1206,51 @@ test.describe("a claimed round", () => {
   });
 
   /**
+   * Ticket 104: the same three changes made in the phone view, at its
+   * breakpoint (below 560px, the example's `sm`): the page looks at them on a
+   * copy of the page in the range, and, as wide as its window and the tablet view,
+   * at the cards' values noted as the round was claimed.
+   */
+  test("while a round of changes at the phone's breakpoint is claimed, the page checks them, and the widths outside their range, on each hot update with no long task of its own", async ({ page }) => {
+    const elements = await openBigPage(page);
+    await enterEditMode(page);
+    const phone = page.locator('iframe[title="Phone 390"]').contentFrame();
+    const pickInPhone = async (parent: boolean) => {
+      await selectDeepestIn(page, (await phone.locator(cardBody(1)).boundingBox())!);
+      if (parent) await page.keyboard.press("Escape");
+      await settle(page);
+    };
+    await pickInPhone(true);
+    for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
+      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      await box.fill(value);
+      await box.press("Enter");
+    }
+    await pickInPhone(false);
+    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    await gap.fill("10");
+    await gap.press("Enter");
+    const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []) as { breakpoint?: object; parts?: unknown[] }[];
+    // The example's own `sm` is 560px: the phone's range (below 560px) is one part, with none to read.
+    await expect.poll(() => saved().map((change) => !!change.breakpoint), { timeout: 20_000 }).toEqual([true, true, true]);
+    await page.evaluate(armTasks, CHECKS);
+    await npx03kind("claim");
+    const ring = page.getByRole("progressbar", { name: "Applying design changes" });
+    await expect(ring).toHaveAttribute("aria-valuenow", "0");
+    await settle(page, 2000);
+    const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, () => npx03kind("done", "1", "2", "3")))];
+    await npx03kind("finish");
+    await expect(ring).toHaveCount(0);
+
+    writeFileSync(PARTS, original);
+    await expect.poll(served).toBe(true);
+    await openBigPage(page);
+    const unclaimed = await hotUpdates(page);
+    reportChecks(claimed, unclaimed, elements, "claimedChecksAtBreakpoint", "3 changes at the phone's breakpoint to 96 cards");
+  });
+
+  /**
    * Ticket 76: text drawn in the body of a card, so in each of the 96 cards,
    * its size then changed. Each check finds the new text where its change puts
    * it, in all 96 bodies, before it reads its size. Hot updates: the cards'
