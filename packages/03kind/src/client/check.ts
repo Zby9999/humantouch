@@ -192,26 +192,35 @@ export function valuesAt(doc: Document, change: Change, round: RoundOnCanvas, at
 
 /**
  * Properties whose value the layer's other properties, or the layers around
- * it, may change: its size (a Stack around it, its padding), and its text's
- * (inherited, or the line height by the font size).
+ * it, may change (ticket 104): its size (a Stack around it, its padding), and
+ * its text's (inherited, or the line height by the font size).
  */
-const AROUND = new Set<string>(["width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight", "fontFamily", "fontSize", "fontWeight", "textColor", "textAlign", "textCase", "textDecoration", "lineHeight", "letterSpacing", "textShadows"]);
+const SIZES = new Set<string>(["width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight"]);
+const TEXT = new Set<string>(["fontFamily", "fontSize", "fontWeight", "textColor", "textAlign", "textCase", "textDecoration", "lineHeight", "letterSpacing", "textShadows"]);
+/** Properties that change how a layer is painted alone, never its size. */
+const PAINT = new Set<string>(["fill", "radius", "shadows", "textShadows", "opacity", "layerBlur", "backgroundBlur", "clip", "textColor", "textDecoration"]);
+
+/** Whether a style change to `other`'s property, on the layer or one around it, may change what the layer shows of `property`: a size by anything but paint, text by text. */
+function mayChange(property: string, other: string): boolean {
+  return SIZES.has(property) ? !PAINT.has(other) : TEXT.has(other);
+}
 
 /**
  * Whether the round changes, at `width`, the layer of `change` otherwise
  * than by its property, or a layer around it (ticket 104), where its
- * property is one these may change (`AROUND`): a style change applying there
- * to the layer or one around it, or a change to the structure of one around
- * it. What the layer shows of its property there may then change by the
+ * property is one these may change, its size or its text's: a style change
+ * applying there to the layer or one around it that may change it
+ * (`mayChange`), or a change to the structure of one around it. What the layer shows of its property there may then change by the
  * round itself, which the page does not tell from the Agent's edit: it is
  * not looked at.
  */
 export function changedAround(doc: Document, change: Change, round: RoundOnCanvas, width: number): boolean {
-  if (!AROUND.has(change.property)) return false;
+  if (!SIZES.has(change.property) && !TEXT.has(change.property)) return false;
   const own = elementsOf(doc, change.target, savedCanvas(round));
   const around = (target: Change["target"]) => foundByMarker(target) && elementsOf(doc, target, savedCanvas(round)).some((el) => own.some((mine) => el.contains(mine)));
   return round.some((other) => {
     if (other.id === change.id || (other.breakpoint && !within(other.breakpoint, width))) return false;
+    if (other.kind === "style" && !mayChange(change.property, other.property)) return false;
     if (other.kind === "create") return around(placeOfMade(other, round).container.target);
     // A change to the structure: the layer it is to, and the containers it takes it out of or puts it in.
     const containers = other.kind === "style" ? [] : [other.before, other.after].map((place) => (place as Partial<Place> | null)?.container?.target).filter((target) => !!target);

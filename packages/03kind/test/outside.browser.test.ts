@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import type { Change } from "../src/client/changeset";
 import { itself } from "../src/client/check";
 import { placedOnCanvas } from "../src/client/moves";
-import { noteChange, noteRound, outsideChanged } from "../src/client/other-usages";
+import { noteChange, noteRound, outsideChanged, unnoted } from "../src/client/other-usages";
 
 /**
  * Ticket 104: what a layer showed at a width outside its change's range as the
@@ -42,7 +42,7 @@ function noteThenCompare(page: Document, change: Change, round: Change[], edit: 
   const at = () => itself(page);
   const noted = noteChange(page, change, round, 800, [800], at);
   edit();
-  return outsideChanged(page, change, placedOnCanvas(round, ""), noted, [800], at);
+  return outsideChanged(page, change, placedOnCanvas(round, ""), noted, [800], at).changed;
 }
 
 test("a fill at the phone's breakpoint: the box's fill outside the range changed is told, with what it was and is; kept, nothing", () => {
@@ -74,9 +74,23 @@ test("a width or the text's: the round changing the layer otherwise, or a layer 
   // The Stack around it at the tablet's breakpoint only: not at 800px.
   expect(noteThenCompare(page, width, [width, style("src/App.tsx:2:5", "direction", { breakpoint: { min: 768, max: 790 } })], grow)).toHaveLength(1);
   box.style.width = "100px";
-  // The words' size, the Stack around them changed: not looked at.
+  // Paint alone, on the layer or around it, changes no size: told still.
+  expect(noteThenCompare(page, width, [width, style("src/App.tsx:3:7", "fill"), style("src/App.tsx:2:5", "radius")], grow)).toHaveLength(1);
+  box.style.width = "100px";
+  // The words' size, the text of the Stack around them changed: not looked at; the Stack's padding or fill: told.
   const size = style("src/App.tsx:4:7", "fontSize", { breakpoint: PHONE });
-  expect(noteThenCompare(page, size, [size, style("src/App.tsx:2:5", "padding")], () => (page.querySelector("p")!.style.fontSize = "20px"))).toEqual([]);
+  const p = page.querySelector("p")!;
+  expect(noteThenCompare(page, size, [size, style("src/App.tsx:2:5", "fontFamily")], () => (p.style.fontSize = "20px"))).toEqual([]);
+  p.style.fontSize = "";
+  expect(noteThenCompare(page, size, [size, style("src/App.tsx:2:5", "padding"), style("src/App.tsx:4:7", "fill")], () => (p.style.fontSize = "20px"))).toHaveLength(1);
+});
+
+test("a width outside the range the page cannot be shown at now: said to be loading, not kept", () => {
+  const page = livePage();
+  const fill = style("src/App.tsx:3:7", "fill", { breakpoint: PHONE });
+  const noted = noteChange(page, fill, [fill], 800, [800, 768], (w) => (w === 800 ? itself(page) : null));
+  expect(unnoted(noted, [800, 768])).toEqual([768]);
+  expect(outsideChanged(page, fill, placedOnCanvas([fill], ""), { width: 800, seen: [], outside: [{ width: 768, values: [] }] }, [768], () => null)).toEqual({ changed: [], loading: true });
 });
 
 test("noted as the code begins to change with no claim (ticket 78): as wide as the window alone", () => {
