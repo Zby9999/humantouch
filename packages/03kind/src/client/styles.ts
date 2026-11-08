@@ -1000,7 +1000,7 @@ export const styles = /* css */ `
 }
 .tk-menu-option.is-active { background: var(--tk-field); }
 .tk-menu-option[aria-disabled="true"] { color: var(--tk-text-muted); opacity: 0.6; }
-.tk-menu-option .tk-icon { position: absolute; left: 6px; --tk-icon-size: 12px; }
+.tk-menu-option .tk-icon { position: absolute; left: 6px; --tk-icon-size: 11px; }
 /* A button's menu: no check marks, so no column for them; its choices under headings, a Variable's with its swatch. */
 .tk-menu-list { outline: none; }
 .tk-menu.is-plain .tk-menu-option { gap: 8px; padding-left: 8px; }

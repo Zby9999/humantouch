@@ -12,9 +12,9 @@ export const toggleStyles = /* css */ `
 :host {
   /* Cut off everything the page could pass down by inheritance. */
   all: initial !important;
-  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
-  --tk-icon-size: 14px;
-  --tk-icon-stroke: 1.25px;
+  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size (designer, 2026-11-08, tuned with DialKit). */
+  --tk-icon-size: 13.5px;
+  --tk-icon-stroke: 1.05px;
 }
 
 .tk-dock {

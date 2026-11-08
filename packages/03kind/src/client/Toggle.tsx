@@ -188,10 +188,11 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
           }}
         >
           {/*
-           * IconMCP's Pointer, in place of a cursor in a frame drawn for the toggle (designer, 2026-11-08): its path and
-           * line as `icons.tsx` has them, to two decimals rather than three, for the toggle's budget.
+           * IconMCP's Pointer, in place of a cursor in a frame drawn for the toggle (designer, 2026-11-08): its path as
+           * `icons.tsx` has it, to two decimals rather than three, for the toggle's budget. 15.5px, its line 1.15 of its 16, growing
+           * with it (designer, 2026-11-08, tuned with DialKit).
            */}
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="15.5" height="15.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M2.64 2.83L6.85 13.14C6.91 13.27 7.09 13.27 7.13 13.14L8.73 8.82C8.74 8.77 8.77 8.74 8.82 8.73L13.14 7.13C13.27 7.09 13.27 6.91 13.14 6.85L2.83 2.64C2.71 2.59 2.59 2.71 2.64 2.83ZM9.25 9.25 13.25 13.25" />
           </svg>
         </button>
