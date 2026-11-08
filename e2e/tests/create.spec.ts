@@ -1,5 +1,6 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
+import { DOUBLE_CLICK_MS } from "../../packages/03kind/src/client/selection";
+import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -264,6 +265,63 @@ test("a double click on the selected text types in it; the words change as an ed
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(canvas(page).locator("h1")).toHaveText("Third Kind");
+});
+
+/** Types in the h1 "Third Kind", double-clicked once selected; then waits, so the next press makes no double click with it. */
+async function typeInHeading(page: Page) {
+  await enterEditMode(page);
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
+  await canvas(page).locator("h1").dblclick();
+  await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
+  await page.waitForTimeout(DOUBLE_CLICK_MS);
+}
+
+/** What is selected in the canvas, as the page reads it. */
+function selectedText(page: Page) {
+  return canvas(page)
+    .locator("h1")
+    .evaluate((h1) => h1.ownerDocument.getSelection()!.toString());
+}
+
+test("while text is typed in, a double click on a word selects it, and typing goes on", async ({ page }) => {
+  await typeInHeading(page);
+  const box = await steadyBox(canvas(page).locator("h1"));
+
+  await page.mouse.dblclick(box.x + box.width * 0.1, box.y + box.height / 2);
+
+  await expect.poll(() => selectedText(page)).toBe("Third");
+  await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
+  await page.keyboard.type("Fourth");
+  await expect(canvas(page).locator("h1")).toHaveText("Fourth Kind");
+});
+
+test("while text is typed in, a click in it places the caret there, and typing goes on from there", async ({ page }) => {
+  await typeInHeading(page);
+  const box = await steadyBox(canvas(page).locator("h1"));
+  await expect.poll(() => selectedText(page)).toBe("Third Kind");
+
+  // Past the end of the words, on their line: the caret goes after them.
+  await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
+
+  await expect.poll(() => selectedText(page)).toBe("");
+  await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
+  await page.keyboard.type("!");
+  await expect(canvas(page).locator("h1")).toHaveText("Third Kind!");
+  await page.keyboard.press("Enter");
+  await expect(canvas(page).locator("h1")).not.toHaveAttribute("contenteditable");
+  await expect(canvas(page).locator("h1")).toHaveText("Third Kind!");
+});
+
+test("while text is typed in, a click outside it ends typing and sets the words as an edit", async ({ page }) => {
+  await typeInHeading(page);
+  await page.keyboard.type("Third");
+  const box = await steadyBox(canvas(page).locator("h1"));
+
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height + 40);
+
+  await expect(canvas(page).locator("h1")).not.toHaveAttribute("contenteditable");
+  await expect(canvas(page).locator("h1")).toHaveText("Third");
+  await expect(await changeRows(page)).toHaveText([/Text.*“Third Kind” → “Third”/]);
 });
 
 test("Delete deletes the selected layer; ⌘D copies a card of the loop beside it", async ({ page }) => {

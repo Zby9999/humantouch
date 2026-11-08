@@ -163,8 +163,14 @@ export function CanvasView(props: Props) {
   /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. Held until let go (ADR 0012). */
   const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number }; release(): void } | null>(null);
   const [drawn, setDrawn] = useState<{ in: Shown; box: DOMRect } | null>(null);
-  /** The text being typed in, and what was in it. */
-  const typing = useRef<{ layer: Layer; html: string } | null>(null);
+  /** The text being typed in, and what was in it; the view it is typed in, and its element there. */
+  const typing = useRef<{ layer: Layer; html: string; view: View; el: HTMLElement } | null>(null);
+  /**
+   * The last press in the text typed in, which places the caret there as the browser would: `pointerId`
+   * till it is let go, as a drag selects the words it passes; `count`, the presses close enough in a row
+   * to make a double click of it (a word) or a triple click (all of it).
+   */
+  const typedPress = useRef<{ pointerId: number | null; in: Shown; time: number; x: number; y: number; count: number } | null>(null);
   /** The text being typed in, outlined in blue; null when none is. */
   const [typingLayer, setTypingLayer] = useState<Layer | null>(null);
   /** Bumped as the words are typed: the blue outline grows with them. */
@@ -597,6 +603,12 @@ export function CanvasView(props: Props) {
     if (playing) return;
     // What is pressed on is read as the view pressed in shows it now: one beside a value just changed catches up first (ADR 0011).
     const over = viewAt(event);
+    // While text is typed in, a press in it places the caret, as in the page; anywhere else, typing ends as the viewport takes the focus.
+    const typed = typing.current;
+    if (typed && over && event.button === 0 && !spaceHeld && over.at.view === typed.view && within(typed.el.getBoundingClientRect(), over)) {
+      pressInTyped(event, typed.el, over.at, over);
+      return;
+    }
     if (over && !over.at.offCanvasLayer) views?.sync(over.at.view);
     if (event.button === 0 && !spaceHeld && tool && editor) {
       // Drawn in the view pressed in, or in a layer off the canvas; outside them all, nothing is.
@@ -633,8 +645,39 @@ export function CanvasView(props: Props) {
     setPanning(true);
   };
 
+  /**
+   * A press in the text typed in, in the view it is typed in: it keeps the focus, and places the caret where
+   * pressed; with ⇧ held, the words selected reach there. Pressed twice in a row it selects the word there,
+   * three times all the words.
+   */
+  const pressInTyped = (event: TargetedPointerEvent<HTMLDivElement>, el: HTMLElement, shown: Shown, at: { x: number; y: number }) => {
+    // Pressed on, the viewport would take the focus, and typing would end.
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const last = typedPress.current;
+    const again = !!last && event.timeStamp - last.time <= DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= DOUBLE_CLICK_PX;
+    const count = again ? Math.min(last.count + 1, 3) : 1;
+    typedPress.current = { pointerId: event.pointerId, in: shown, time: event.timeStamp, x: event.clientX, y: event.clientY, count };
+    const selection = el.ownerDocument.getSelection()!;
+    const caret = caretAt(el, at);
+    if (count === 3) selection.selectAllChildren(el);
+    else if (count === 2) selectWord(selection, caret);
+    else if (event.shiftKey && selection.anchorNode && el.contains(selection.anchorNode)) selection.extend(caret.node, caret.offset);
+    else selection.collapse(caret.node, caret.offset);
+  };
+
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
+    const selecting = typedPress.current;
+    if (selecting?.pointerId === event.pointerId) {
+      // Dragged from where it was pressed, the words passed over are selected.
+      const el = typing.current?.el;
+      if (el && selecting.count === 1) {
+        const caret = caretAt(el, toView(event, selecting.in));
+        el.ownerDocument.getSelection()!.extend(caret.node, caret.offset);
+      }
+      return;
+    }
     if (resizing.current?.pointerId === event.pointerId) {
       resizeOnNextFrame(resizing.current, event);
       return;
@@ -669,6 +712,11 @@ export function CanvasView(props: Props) {
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (typedPress.current?.pointerId === event.pointerId) {
+      // Let go, it is still counted: the next press may make a double click of it.
+      typedPress.current.pointerId = null;
+      return;
+    }
     const click = clickPress.current?.pointerId === event.pointerId ? clickPress.current : null;
     if (click) {
       clickPress.current = null;
@@ -872,10 +920,12 @@ export function CanvasView(props: Props) {
   const beginTyping = (layer: Layer, view: View) => {
     const own = onBeginText(layer);
     const onCanvas = own.el as HTMLElement;
-    typing.current = { layer: own, html: onCanvas.innerHTML };
-    setTypingLayer(own);
+    const html = onCanvas.innerHTML;
     const typed = view.typeIn(onCanvas);
     const el = typed.el;
+    typing.current = { layer: own, html, view, el };
+    typedPress.current = null;
+    setTypingLayer(own);
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);
@@ -894,6 +944,7 @@ export function CanvasView(props: Props) {
       setTypingLayer(null);
       const saved = typing.current;
       typing.current = null;
+      typedPress.current = null;
       el.removeAttribute("contenteditable");
       const text = el.textContent!.replace(/\s+/g, " ").trim();
       typed.done();
@@ -1152,6 +1203,31 @@ export function CanvasView(props: Props) {
       {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
+}
+
+/** Whether a point is in a box, edges and all. */
+function within(box: DOMRect, { x, y }: { x: number; y: number }): boolean {
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+}
+
+/** Where the caret goes at a point in the view's px, in the element typed in; at a point beside its words, at their start or end, the nearer. */
+function caretAt(el: HTMLElement, at: { x: number; y: number }): { node: Node; offset: number } {
+  const caret = el.ownerDocument.caretPositionFromPoint(at.x, at.y);
+  if (caret && el.contains(caret.offsetNode)) return { node: caret.offsetNode, offset: caret.offset };
+  const box = el.getBoundingClientRect();
+  const before = at.y < box.top || (at.y <= box.bottom && at.x < box.left);
+  return { node: el, offset: before ? 0 : el.childNodes.length };
+}
+
+/** Selects the word at the caret, as a double click in the page does; at the end of a word, that word. Between words, the space there. */
+function selectWord(selection: Selection, { node, offset }: { node: Node; offset: number }) {
+  if (node.nodeType !== Node.TEXT_NODE) return selection.collapse(node, offset);
+  const words = new Intl.Segmenter(undefined, { granularity: "word" }).segment((node as Text).data);
+  let word = words.containing(offset);
+  const before = offset > 0 ? words.containing(offset - 1) : undefined;
+  if (before?.isWordLike && !word?.isWordLike) word = before;
+  if (!word) return selection.collapse(node, offset);
+  selection.setBaseAndExtent(node, word.index, node, word.index + word.segment.length);
 }
 
 /** Whether a layer is one of the tree's, not of one built before it. */
