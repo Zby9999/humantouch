@@ -116,11 +116,8 @@ export const styles = /* css */ `
 .tk-dock[data-corner$="right"] .tk-changes { right: 0; }
 .tk-dock[data-corner$="left"] .tk-changes { left: 0; }
 .tk-changes > * { flex: none; }
-/*
- * The small headings, the change list's, the notice's and a shadow Variable's name, set alike, a line under each as its panel's other
- * lines go (designer, 2026-11-09).
- */
-.tk-changes-title { margin: 0 0 4px; padding: 8px; border-bottom: 1px solid var(--tk-border); font: inherit; font-weight: 500; font-size: 12px; line-height: 16px; }
+/* The small headings, the change list's, the notice's and a shadow Variable's name, set alike (designer, 2026-11-09). */
+.tk-changes-title { margin: 0; padding: 8px; font: inherit; font-weight: 500; font-size: 12px; line-height: 16px; }
 .tk-changes-note { margin: 0; padding: 0 8px 8px; color: var(--tk-text-muted); }
 /*
  * Too long for the list's height, the rows alone scroll, between its title and Discard all (designer, 2026-11-09). An edge with
@@ -223,8 +220,8 @@ export const styles = /* css */ `
   color: #fff;
   font: 400 11px/16px ${EDITOR_FONT};
 }
-.tk-notice-title { margin: 0; padding: 8px 12px; border-bottom: 1px solid rgb(255 255 255 / 0.08); font: inherit; font-weight: 500; font-size: 12px; line-height: 16px; }
-.tk-notice-text { margin: 0; padding: 8px 12px 4px; color: rgb(255 255 255 / 0.7); }
+.tk-notice-title { margin: 0; padding: 8px 12px 4px; font: inherit; font-weight: 500; font-size: 12px; line-height: 16px; }
+.tk-notice-text { margin: 0; padding: 0 12px 4px; color: rgb(255 255 255 / 0.7); }
 /* The Agent seems to have stopped (ticket 67): on the toggle, where its change list opens. */
 .tk-stalled { position: absolute; width: 300px; }
 .tk-dock[data-corner^="bottom"] .tk-stalled { bottom: calc(100% + 8px); }
@@ -1988,6 +1985,7 @@ export const styles = /* css */ `
   font-size: 11px;
   pointer-events: none;
 }
+/* A line under the name, as between its layers (designer, 2026-11-09). */
 .tk-variants-details-name { overflow: hidden; padding-bottom: 8px; border-bottom: 1px solid #ebebea; font-weight: 500; font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .tk-variants-details-layer { display: flex; flex-direction: column; gap: 6px; }
 .tk-variants-details-layer + .tk-variants-details-layer { padding-top: 8px; border-top: 1px solid #ebebea; }
