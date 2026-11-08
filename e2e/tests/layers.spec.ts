@@ -1,4 +1,4 @@
-import { canvasInPlace, expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 import { readFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
@@ -205,6 +205,71 @@ test("a layer deleted, then the Layers panel hidden and shown again: the delete 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
   await expect.poll(() => listRows()).toEqual(before);
+});
+
+test("the button that hides the Layers panel and the one that shows it again are as large and in the same place (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const hide = page.getByRole("button", { name: "Hide layers" });
+  const show = page.getByRole("button", { name: "Show layers" });
+  /** Its box, and how it is drawn: its corners and its gray, the pointer away (it stays over the one shown in its place). */
+  const looks = async (button: Locator) => {
+    await page.mouse.move(700, 400);
+    const drawn = await button.evaluate((el) => ({ radius: getComputedStyle(el).borderRadius, background: getComputedStyle(el).backgroundColor }));
+    return { box: await steadyBox(button), ...drawn };
+  };
+  const near = (a: { x: number; y: number; width: number; height: number }, b: typeof a) => {
+    for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(a[key] - b[key]), `${key}: ${JSON.stringify(a)} against ${JSON.stringify(b)}`).toBeLessThanOrEqual(0.5);
+  };
+
+  const shown = await looks(hide);
+  expect(shown.box.width).toBe(24);
+  await hide.click();
+  const hidden = await looks(show);
+  near(hidden.box, shown.box);
+  expect({ radius: hidden.radius, background: hidden.background }).toEqual({ radius: shown.radius, background: shown.background });
+
+  await show.click();
+  near(await steadyBox(hide), shown.box);
+});
+
+test("no rule across the Layers panel under its top, only the one after its title, also once hidden and shown again (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const panel = page.getByRole("complementary", { name: "Layers" });
+  /** Every line drawn between the panel's top and its first row, as `who: width`: borders, and pseudo-elements 1px high. */
+  const lines = () =>
+    panel.evaluate((aside) => {
+      const header = aside.querySelector(".tk-panel-header")!.getBoundingClientRect();
+      const firstRow = aside.querySelector('[role="treeitem"]')!.getBoundingClientRect();
+      const found: string[] = [];
+      for (const el of [aside, ...aside.querySelectorAll("*")]) {
+        const r = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        if (r.top <= firstRow.top && r.bottom >= header.top) {
+          for (const side of ["Top", "Bottom"] as const) {
+            if (parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Style`] !== "none") found.push(`${el.className} border-${side.toLowerCase()}: ${r.width}`);
+          }
+        }
+        for (const pseudo of ["::before", "::after"]) {
+          const p = getComputedStyle(el, pseudo);
+          if (p.content !== "none" && p.content !== "normal" && p.height === "1px" && r.bottom <= firstRow.top) found.push(`${el.className}${pseudo}: ${p.width}`);
+        }
+      }
+      return { found, width: aside.getBoundingClientRect().width, header: header.height };
+    });
+  const noRuleAcross = async () => {
+    await expect(layerTree(page).getByRole("treeitem").first()).toBeVisible();
+    await expect
+      .poll(async () => {
+        const { found, width, header } = await lines();
+        return { found: found.map((line) => line.replace(/: .*$/, "")), fullWidth: found.filter((line) => parseFloat(line.split(": ")[1]) >= width - 32), header };
+      })
+      .toEqual({ found: ["tk-panel-title::after"], fullWidth: [], header: 28 });
+  };
+  await noRuleAcross();
+  // Shown again, the panel once took the Design panel's elements, and its header the rule under that panel's.
+  await page.getByRole("button", { name: "Hide layers" }).click();
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await noRuleAcross();
 });
 
 test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
