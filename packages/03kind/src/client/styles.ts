@@ -800,7 +800,33 @@ export const styles = /* css */ `
 .tk-segmented-field .tk-icon-button { width: 26px; height: 26px; color: var(--tk-text-muted); }
 .tk-segmented-field .tk-icon-button:hover { background: none; color: var(--tk-text); }
 .tk-segmented-field .tk-icon-button[aria-checked="true"] { color: var(--tk-text); background: var(--tk-raised); box-shadow: var(--tk-raised-shadow); }
+/* Changed in this round, the one chosen takes the accent; the group's reset inside it at its right end, 26px on blue 400 as a changed field's (designer, 2026-11-08). */
+.tk-segmented-field.is-changed .tk-icon-button[aria-checked="true"] { background: var(--tk-accent); color: #fafafa; }
+.tk-segmented-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
+.tk-segmented-field > .tk-reset:hover { background: var(--tk-accent-strong); }
+/* On a row of its own (a text's alignment): as wide as its buttons, at the left, not the row's width (designer, 2026-11-08). */
+.tk-segmented-field.tk-hug { width: fit-content; }
 .tk-select.tk-font, .tk-grid-2 > .tk-select { width: 100%; }
+/* A choice as wide as its place (a font, a font's weight): changed, too, its reset at its right end (designer, 2026-11-08). */
+.tk-select-field:is(.tk-font-field, .tk-wide) { flex: 1; min-width: 0; }
+.tk-select-field:is(.tk-font-field, .tk-wide) > .tk-select { width: 100%; }
+/* The font: "Aa" in it at its left, where a field has its icon, its name after, where a field's words are (designer, 2026-11-08). */
+.tk-font-field > .tk-select { padding-left: 32px; }
+.tk-font-sample {
+  flex: none;
+  width: 16px;
+  color: var(--tk-text-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+.tk-font-field > .tk-font-sample { position: absolute; z-index: 1; top: 50%; left: 8px; transform: translateY(-50%); pointer-events: none; }
+.tk-font-field.is-changed > .tk-font-sample { color: #fafafa; }
+/* In the font's menu, each font's "Aa" before its name, where the select has it. */
+.tk-menu-option > .tk-font-sample { margin-right: 8px; }
 .tk-text-glyph { font-size: 11px; font-weight: 500; }
 .tk-text-glyph.tk-underline { text-decoration: underline; }
 .tk-text-glyph.tk-strikethrough { text-decoration: line-through; }

@@ -853,6 +853,14 @@ const DECORATIONS: { decoration: TextDecoration; label: string; glyph: string }[
   { decoration: "strikethrough", label: "Strikethrough", glyph: "S" },
 ];
 
+/** The generic families, which name no font and are written unquoted. */
+const GENERIC_FAMILIES = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded", "math", "emoji", "fangsong"]);
+
+/** A font's name as a `font-family`: quoted; a generic one (system-ui) as it is. */
+function cssFamily(name: string): string {
+  return GENERIC_FAMILIES.has(name.toLowerCase()) ? name : `"${name.replace(/["\\]/g, "\\$&")}"`;
+}
+
 /**
  * Text, as in Figma: the font (one the page has loaded) and its weight (one it
  * has loaded) and size, line height and letter spacing, alignment, case and
@@ -892,39 +900,60 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
   return (
     <section class="tk-section" role="group" aria-label="Text">
       <h3 class="tk-section-title">Text</h3>
-      <Choice
-        label="Font"
-        class="tk-font"
-        value={family === MIXED ? null : family}
-        options={names.sort((a, b) => a.localeCompare(b)).map((name) => ({ value: name, label: name, disabled: !fonts.some((font) => font.family === name) }))}
-        onChange={changeFont}
-      />
-      <div class="tk-grid-2">
+      {/* The font, marked when changed, its reset at the right end; at its left, where a field has its icon, "Aa" in it, as in the designer's Figma (designer, 2026-11-08). */}
+      <MarkedSelect label="Font" property="fontFamily" class="tk-font-field">
+        {/* Mixed: a plain "Aa", in the editor's font. A font the page never loaded falls back, as the canvas text does. */}
+        <span class="tk-font-sample" aria-hidden="true" style={family === MIXED ? undefined : { fontFamily: cssFamily(family) }}>
+          Aa
+        </span>
         <Choice
-          label="Font weight"
-          value={weight === MIXED ? null : String(weight)}
-          options={weights.map((w) => ({ value: String(w), label: weightName(w), disabled: !loaded.includes(w) }))}
-          onChange={(w) => set("fontWeight")(Number(w))}
+          label="Font"
+          class="tk-font"
+          value={family === MIXED ? null : family}
+          options={names
+            .sort((a, b) => a.localeCompare(b))
+            .map((name) => ({ value: name, label: name, disabled: !fonts.some((font) => font.family === name), font: cssFamily(name) }))}
+          onChange={changeFont}
         />
+      </MarkedSelect>
+      <div class="tk-grid-2">
+        <MarkedSelect label="Font weight" property="fontWeight" class="tk-wide">
+          <Choice
+            label="Font weight"
+            value={weight === MIXED ? null : String(weight)}
+            options={weights.map((w) => ({ value: String(w), label: weightName(w), disabled: !loaded.includes(w) }))}
+            onChange={(w) => set("fontWeight")(Number(w))}
+          />
+        </MarkedSelect>
         <VariableSlot label="Font size" slot={fontSize} property="fontSize">
           <NumberField label="Font size" icon="font-size" property="fontSize" value={number(size)} min={1} onChange={set("fontSize")} />
         </VariableSlot>
       </div>
       <div class="tk-grid-2">
         {/* Auto is about 1.2 times the font size: a drag from it starts there. */}
-        <TextLengthField label="Line height" icon="line-height" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
-        <TextLengthField label="Letter spacing" icon="letter-spacing" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
+        <TextLengthField label="Line height" icon="line-height" property="lineHeight" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
+        <TextLengthField label="Letter spacing" icon="letter-spacing" property="letterSpacing" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
       </div>
-      <Segmented label="Text alignment" value={align} options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))} onChange={set("textAlign")} />
+      {/* On a row of its own, as wide as its buttons (and its reset), not the row's width; at the left (designer, 2026-11-08). */}
+      <Segmented
+        label="Text alignment"
+        class="tk-hug"
+        property="textAlign"
+        value={align}
+        options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))}
+        onChange={set("textAlign")}
+      />
       <div class="tk-row">
         <Segmented
           label="Case"
+          property="textCase"
           value={textCase}
           options={TEXT_CASES.map(({ textCase, label, glyph }) => ({ value: textCase, label, content: <span class="tk-text-glyph">{glyph}</span> }))}
           onChange={set("textCase")}
         />
         <Segmented
           label="Decoration"
+          property="textDecoration"
           value={decoration}
           options={DECORATIONS.map(({ decoration, label, glyph }) => ({
             value: decoration,
@@ -943,7 +972,8 @@ function Choice({ label, class: className, value, options, onChange }: {
   label: string;
   class?: string;
   value: string | null;
-  options: { value: string; label: string; disabled?: boolean }[];
+  /** `font`: a font's option, drawn with "Aa" in it in the menu (a `font-family`). */
+  options: { value: string; label: string; disabled?: boolean; font?: string }[];
   onChange(value: string): void;
 }) {
   return (
@@ -954,7 +984,7 @@ function Choice({ label, class: className, value, options, onChange }: {
         </option>
       )}
       {options.map((option) => (
-        <option key={option.value} value={option.value} disabled={option.disabled}>
+        <option key={option.value} value={option.value} disabled={option.disabled} data-font={option.font}>
           {option.label}
         </option>
       ))}
@@ -962,15 +992,23 @@ function Choice({ label, class: className, value, options, onChange }: {
   );
 }
 
-/** Buttons of which one is on, side by side; Mixed: none of them. */
-function Segmented<T extends string>({ label, value, options, onChange }: {
+/**
+ * Buttons of which one is on, side by side; Mixed: none of them. `property`
+ * changed in this round, the one on takes the accent, and the group's reset
+ * stands inside it at its right end, after its buttons (designer, 2026-11-08).
+ */
+function Segmented<T extends string>({ label, class: className, property, value, options, onChange }: {
   label: string;
+  class?: string;
+  property?: Property;
   value: Shown<T>;
   options: { value: T; label: string; content: ComponentChildren }[];
   onChange(value: T): void;
 }) {
+  const marks = useChangeMarks();
+  const changed = !!property && marks.changed(property);
   return (
-    <div class="tk-segmented-field" role="radiogroup" aria-label={label}>
+    <div class={`tk-segmented-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`} role="radiogroup" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -985,6 +1023,7 @@ function Segmented<T extends string>({ label, value, options, onChange }: {
           {option.content}
         </button>
       ))}
+      {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!])} />}
     </div>
   );
 }
@@ -994,9 +1033,11 @@ function Segmented<T extends string>({ label, value, options, onChange }: {
  * typed, and else in the unit it is in; a line height can be Auto. Stepped and
  * dragged in its unit; from Auto, in px from what Auto comes to.
  */
-function TextLengthField({ label, icon, value, min = -Infinity, auto, onChange }: {
+function TextLengthField({ label, icon, property, value, min = -Infinity, auto, onChange }: {
   label: string;
   icon: IconName;
+  /** Marked when changed in this round, with its reset at its right end, as a number field is (designer, 2026-11-08). */
+  property: Property;
   value: Shown<LineHeight>;
   min?: number;
   /** A line height: it can be Auto, which comes to this many px. */
@@ -1006,8 +1047,10 @@ function TextLengthField({ label, icon, value, min = -Infinity, auto, onChange }
   const length = value === MIXED || value === "auto" ? null : value;
   const unit = length?.unit ?? "px";
   const change = (n: number, continues?: boolean) => onChange({ value: Math.max(min, Math.round(n * 100) / 100), unit }, continues);
+  const marks = useChangeMarks();
+  const changed = marks.changed(property);
   return (
-    <label class="tk-field" title={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
       <Scrub icon={icon} value={length?.value ?? (value === "auto" ? auto! : null)} min={min} onChange={change} />
       <TextField
         label={label}
@@ -1022,6 +1065,7 @@ function TextLengthField({ label, icon, value, min = -Infinity, auto, onChange }
         step={length ? (by) => change(length.value + by) : value === "auto" ? (by) => change(auto! + by) : undefined}
         onChange={onChange}
       />
+      {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property])} />}
     </label>
   );
 }
@@ -1422,12 +1466,15 @@ const STROKE_PARTS = (() => {
   };
 })();
 
-/** A choice of part of a property: in the accent when that part is changed in this round, with its reset, as a changed field is. */
-function MarkedSelect({ label, property, part, children }: { label: string; property: Property; part: ValuePart; children: ComponentChildren }) {
+/**
+ * A choice of a property, or of `part` of one: in the accent when it is changed in this round, with its reset, as a changed field is.
+ * `class`: `tk-wide`, as wide as its place (a font's weight); `tk-font-field`, the font's, with "Aa" before its name (designer, 2026-11-08).
+ */
+function MarkedSelect({ label, property, part, class: className, children }: { label: string; property: Property; part?: ValuePart; class?: string; children: ComponentChildren }) {
   const marks = useChangeMarks();
   const changed = marks.changed(property, part);
   return (
-    <span class={`tk-select-field${changed ? " is-changed" : ""}`}>
+    <span class={`tk-select-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`}>
       {children}
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property], part)} />}
     </span>

@@ -1079,6 +1079,80 @@ test("text layers selected together show what they share, Mixed otherwise, and t
   await expect(size).toHaveValue("22");
 });
 
+test("a text's case, decoration and alignment changed are marked, each group's reset at its end taking it back (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, INTRO);
+  const text = design(page).getByRole("group", { name: "Text" });
+  const groups = [
+    { group: "Case", choice: "Upper case", reset: "Reset case", style: "textTransform", was: "none" },
+    { group: "Decoration", choice: "Underline", reset: "Reset decoration", style: "textDecorationLine", was: "none" },
+    { group: "Text alignment", choice: "Align center", reset: "Reset text alignment", style: "textAlign", was: "start" },
+  ] as const;
+  for (const { group, choice, reset, style, was } of groups) {
+    const segmented = text.getByRole("radiogroup", { name: group });
+    const resetButton = segmented.getByRole("button", { name: reset });
+    await expect(segmented).not.toHaveClass(/\bis-changed\b/);
+    await expect(resetButton).toHaveCount(0);
+
+    await segmented.getByRole("radio", { name: choice }).click();
+    await expect.poll(() => introStyle(page, style)).not.toBe(was);
+    await expect(segmented).toHaveClass(/\bis-changed\b/);
+    // The one chosen in the accent; the reset inside the group, after its last button, 26px.
+    await expect(segmented.getByRole("radio", { name: choice })).toHaveCSS("background-color", "rgb(0, 143, 240)");
+    const [box, button] = await Promise.all([steadyBox(segmented), steadyBox(resetButton)]);
+    expect(button.width).toBe(26);
+    expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
+    expect(box.x + box.width - (button.x + button.width)).toBeLessThanOrEqual(2);
+
+    await resetButton.click();
+    await expect.poll(() => introStyle(page, style)).toBe(was);
+    await expect(segmented).not.toHaveClass(/\bis-changed\b/);
+    await expect(resetButton).toHaveCount(0);
+  }
+});
+
+test("a text's font, weight, line height and letter spacing changed show their reset, which takes the change back (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, INTRO);
+  const text = design(page).getByRole("group", { name: "Text" });
+  const font = text.getByRole("combobox", { name: "Font", exact: true });
+  const fontField = text.locator(".tk-select-field.tk-font-field");
+
+  await expect(fontField).not.toHaveClass(/\bis-changed\b/);
+  await font.selectOption("Space Grotesk");
+  await expect(fontField).toHaveClass(/\bis-changed\b/);
+  await expect(text.locator(".tk-select-field:has([aria-label='Font weight'])")).toHaveClass(/\bis-changed\b/);
+  await text.getByRole("button", { name: "Reset font", exact: true }).click();
+  await expect.poll(() => introStyle(page, "fontFamily")).toContain("Georgia");
+  await expect(fontField).not.toHaveClass(/\bis-changed\b/);
+  await text.getByRole("button", { name: "Reset font weight" }).click();
+  await expect.poll(() => introStyle(page, "fontWeight")).toBe("400");
+
+  for (const [name, value] of [["Line height", "30px"], ["Letter spacing", "5"]] as const) {
+    const field = text.getByRole("textbox", { name, exact: true });
+    const was = await field.inputValue();
+    await field.fill(value);
+    await field.press("Enter");
+    await expect(text.locator(`.tk-field:has([aria-label="${name}"])`)).toHaveClass(/\bis-changed\b/);
+    await text.getByRole("button", { name: `Reset ${name.toLowerCase()}` }).click();
+    await expect(field).toHaveValue(was);
+    await expect(text.locator(`.tk-field:has([aria-label="${name}"])`)).not.toHaveClass(/\bis-changed\b/);
+  }
+});
+
+test("a text's alignment is as wide as its buttons, at the row's left; the font shows Aa in its own family (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, INTRO);
+  const text = design(page).getByRole("group", { name: "Text" });
+  const [align, row] = await Promise.all([steadyBox(text.getByRole("radiogroup", { name: "Text alignment" })), steadyBox(text.locator(".tk-select-field.tk-font-field"))]);
+  expect(align.width).toBeLessThan(row.width / 2);
+  expect(align.x).toBe(row.x);
+
+  const sample = text.locator(".tk-font-field > .tk-font-sample");
+  await expect(sample).toHaveText("Aa");
+  await expect.poll(() => sample.evaluate((el) => getComputedStyle(el).fontFamily)).toContain("Georgia");
+  await text.getByRole("combobox", { name: "Font", exact: true }).selectOption("Space Grotesk");
+  await expect.poll(() => sample.evaluate((el) => getComputedStyle(el).fontFamily)).toContain("Space Grotesk");
+  await expect(sample).toHaveCSS("font-weight", "400");
+});
+
 test("a layer that is not text has no Text section", async ({ page }) => {
   await selectRow(page, "Card");
 
