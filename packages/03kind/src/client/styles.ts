@@ -305,8 +305,8 @@ export const styles = /* css */ `
  */
 .tk-panel-header { display: flex; align-items: center; gap: 4px; min-height: 28px; }
 .tk-panel.is-design > .tk-panel-header { min-height: 30px; padding-bottom: 6px; border-bottom: 1px solid var(--tk-border); }
-/* What the Design panel shows: Design, or Variants with nothing selected (designer, 2026-11-08). */
-.tk-panel-label { margin: 0 0 0 2px; font: inherit; font-size: 12px; font-weight: 500; letter-spacing: -0.02em; color: var(--tk-panel-label); }
+/* What the Design panel shows: Design, or Variants with nothing selected (designer, 2026-11-08). Its auto margin puts the count and the way back at the right. */
+.tk-panel-label { margin: 0 auto 0 2px; font: inherit; font-size: 12px; font-weight: 500; letter-spacing: -0.02em; color: var(--tk-panel-label); }
 .tk-panel-title {
   display: flex;
   flex: 1;
