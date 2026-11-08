@@ -1126,9 +1126,11 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
   const change = (n: number, continues?: boolean) => onChange({ value: Math.max(min, Math.round(n * 100) / 100), unit }, continues);
   const marks = useChangeMarks();
   const changed = marks.changed(property);
+  /** What a drag starts from: from Auto, what it comes to. */
+  const dragged = length?.value ?? (value === "auto" ? auto! : null);
   return (
     <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
-      <Scrub icon={icon} value={length?.value ?? (value === "auto" ? auto! : null)} min={min} onChange={change} />
+      <Scrub icon={icon} value={dragged} min={min} onChange={change} />
       <TextField
         label={label}
         value={value === MIXED ? "Mixed" : value === "auto" ? "Auto" : `${value.value}${value.unit}`}
@@ -1142,7 +1144,7 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
         step={length ? (by) => change(length.value + by) : value === "auto" ? (by) => change(auto! + by) : undefined}
         onChange={onChange}
       />
-      <Scrub grip value={length?.value ?? (value === "auto" ? auto! : null)} min={min} onChange={change} />
+      <Scrub grip value={dragged} min={min} onChange={change} />
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property])} />}
     </label>
   );
@@ -2278,7 +2280,8 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     const g = prefersReducedMotion() ? null : (field?.querySelector<HTMLElement>(".tk-grip") ?? null);
     if (g) g.style.transition = "";
     drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field, grip: g };
-    if (g) tilt.current.frame = requestAnimationFrame(tiltFrame);
+    cancelAnimationFrame(tilt.current.frame);
+    tilt.current = { frameDx: 0, speed: 0, frame: g ? requestAnimationFrame(tiltFrame) : 0 };
     clearTimeout(leaving.current);
     setRuler("shown");
   };
@@ -2322,6 +2325,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
+      onLostPointerCapture={end}
       // A click on the icon is not a click on the field's label: it does not start typing.
       onClick={(event) => event.preventDefault()}
     >

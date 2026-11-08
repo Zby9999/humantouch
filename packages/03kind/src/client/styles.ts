@@ -571,7 +571,7 @@ export const styles = /* css */ `
 /* Its fields, marked with no reset of their own, keep their right inset; the sizing its width, its chevron where it was. */
 :is(.tk-size-row .tk-field:not(.tk-variable-chip), .tk-color-row > .tk-color-field).is-changed:not(.tk-popover *) { padding-right: 6px; }
 .tk-size-row > .tk-select-field.is-changed > .tk-select { width: 64px; padding-right: 24px; background-position: right 6px center; }
-.tk-scrub {
+.tk-scrub, .tk-scrub-grip {
   display: grid;
   flex: none;
   place-items: center;
@@ -615,16 +615,7 @@ export const styles = /* css */ `
  * Every number that can be dragged: a short upright bar at its right end, dragged left and right as its icon is; changed, just left of its
  * reset (designer, 2026-11-08). Its 12px reach takes 4px of the gap before it and of the inset after it, so the value keeps its room.
  */
-.tk-scrub-grip {
-  display: grid;
-  flex: none;
-  place-items: center;
-  align-self: stretch;
-  width: 12px;
-  margin: 0 -4px 0 -4px;
-  cursor: ew-resize;
-  touch-action: none;
-}
+.tk-scrub-grip { width: 12px; margin: 0 -4px; }
 /* Before a reset, just left of it: the bar 7px from it. */
 .tk-scrub-grip:has(+ .tk-reset) { margin-right: -6px; }
 /* Changed, an opacity keeps its right inset: it has no reset of its own, so its bar stays where it was. */
@@ -632,7 +623,7 @@ export const styles = /* css */ `
 /* Tilted from its foot as it is dragged, set on it directly (Scrub). */
 .tk-grip { width: 2px; height: 12px; border-radius: 1px; background: currentColor; opacity: 0.3; transform-origin: 50% 100%; }
 .tk-scrub-grip:hover > .tk-grip, .tk-field[data-scrubbing] .tk-grip { opacity: 0.6; }
-/* On the accent, white: brighter, as white at 0.3 is lost on blue. */
+/* On the accent, white: brighter, as white at 0.3 is lost on blue (designer, 2026-11-08: "white-ish"; 0.55 and 0.85 are the agent's, to confirm). */
 .tk-field.is-changed .tk-grip:not(.tk-popover *) { opacity: 0.55; }
 .tk-field.is-changed:is(:has(> .tk-scrub-grip:hover), [data-scrubbing]) .tk-grip:not(.tk-popover *) { opacity: 0.85; }
 /*
