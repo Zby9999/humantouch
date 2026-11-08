@@ -276,23 +276,23 @@ test("after edits in the Design panel, the layer around the one selected closes 
   await enterEditMode(page);
   const design = page.getByRole("complementary", { name: "Design" });
   /** A value typed into a field of the Design panel and applied. */
-  const set = async (name: string, value: string) => {
+  const setField = async (name: string, value: string) => {
     const field = design.getByRole("textbox", { name, exact: true }).first();
     await field.fill(value);
     await field.press("Enter");
   };
   const grid = layerTree(page).getByRole("treeitem", { name: "Grid", exact: true });
   await layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().click();
-  await set("Fill color", "ff0000");
-  await set("Width", "300");
-  await set("Gap", "20");
+  await setField("Fill color", "ff0000");
+  await setField("Width", "300");
+  await setField("Gap", "20");
 
   // The selected Card is in the Grid: the Grid, closed, stays closed. It was opened again at once.
   await grid.locator(".tk-tree-chevron").click();
   await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
   await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true })).toHaveCount(0);
   // Another edit to the Card, still selected, leaves it so.
-  await set("Gap", "12");
+  await setField("Gap", "12");
   await expect(design.getByRole("textbox", { name: "Gap", exact: true }).first()).toHaveValue("12");
   await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
 
@@ -311,7 +311,7 @@ test("after edits in the Design panel, the layer around the one selected closes 
   await expect(grid).toHaveAttribute("aria-expanded", "true");
 });
 
-test("a component's disclosure is drawn as every other row's; its icon stays purple (designer, 2026-11-08)", async ({ page }) => {
+test("an instance's disclosure (a row under Components) is drawn as every other row's; its icon stays purple (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   /** How a row's disclosure and its layer icon are drawn, the pointer away and over the disclosure. */
   const looks = async (row: Locator) => {
