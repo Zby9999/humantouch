@@ -1,13 +1,20 @@
 /** @jsxImportSource preact */
+import type { ComponentChildren } from "preact";
 import { LayerIcon } from "./icons";
 import { isOnlyText, role, typeLabel, type Layer, type LayerTree } from "./layers";
 
-/** Top of the Design panel: what the selected layer is and where it comes from in the source; with several, how many. */
-export function LayerInfo({ tree, layers }: { tree: LayerTree; layers: Layer[] }) {
+/**
+ * Top of the Design panel: what the selected layer is and where it comes from in the source; with several, how many.
+ * `badge`: beside the name, at its right (the breakpoint, `BreakpointBadge`).
+ */
+export function LayerInfo({ tree, layers, badge }: { tree: LayerTree; layers: Layer[]; badge?: ComponentChildren }) {
   if (layers.length > 1) {
     return (
       <section class="tk-layer-info" aria-label="Selected layers">
-        <h3 class="tk-layer-name">{layers.length} layers</h3>
+        <div class="tk-layer-head">
+          <h3 class="tk-layer-name">{layers.length} layers</h3>
+          {badge}
+        </div>
       </section>
     );
   }
@@ -15,10 +22,14 @@ export function LayerInfo({ tree, layers }: { tree: LayerTree; layers: Layer[] }
   const repeats = tree.acrossInstances(layer).length;
   return (
     <section class="tk-layer-info" aria-label="Selected layer">
-      <h3 class={`tk-layer-name${role(layer) === "instance" ? " is-instance" : ""}`}>
-        <LayerIcon layer={layer} />
-        <span>{layer.name}</span>
-      </h3>
+      <div class="tk-layer-head">
+        <h3 class={`tk-layer-name${role(layer) === "instance" ? " is-instance" : ""}`}>
+          <LayerIcon layer={layer} />
+          {/* A text layer's name is its words, as long as they are: here, what it is (designer, 2026-11-07). */}
+          <span>{layer.kind === "text" ? "Text" : layer.name}</span>
+        </h3>
+        {badge}
+      </div>
       <dl>
         <dt>Type</dt>
         <dd>{typeLabel(layer)}</dd>

@@ -36,7 +36,8 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   // Mode switches animate; tests that measure the canvas want it to settle at once. motion.spec.ts opts back in.
   // Playwright's own headless shell, not the installed Chrome: on macOS, Chrome takes focus as it starts.
-  use: { ...devices["Desktop Chrome"], trace: "retain-on-failure", reducedMotion: "reduce" },
+  // 160px wider than Desktop Chrome's 1280: the panels grew from 240px to 320px each (designer, 2026-11-07), and the canvas between them stays 800px wide.
+  use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 720 }, trace: "retain-on-failure", reducedMotion: "reduce" },
   projects: [
     { name: "page", testIgnore: PROJECT_FILES },
     // Both projects use the same dev servers, and these tests edit the examples' source (a 3px border on the

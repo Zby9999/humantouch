@@ -23,8 +23,7 @@ export function StalledNotice({ onKeepWaiting, onEndRound }: Props) {
         Your Agent seems to have stopped
       </h2>
       <p id="tk-stalled-text" class="tk-notice-text">
-        For {Math.floor(STALL_MS / 60_000)} minutes, no change has shown on the page, no change was marked done, and the code has not changed. If your Agent has stopped, tell it
-        “Continue applying my design changes”: it gets only those not applied yet. Or end this round as it is, as pressing and holding the toggle does.
+        Nothing has changed in {Math.floor(STALL_MS / 60_000)} minutes: tell it “Continue applying my design changes”, or end this round.
       </p>
       <div class="tk-changes-actions">
         <button type="button" class="tk-button" onClick={onEndRound}>

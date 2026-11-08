@@ -1,4 +1,4 @@
-import { canvasInPlace, expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 import { readFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
@@ -205,6 +205,170 @@ test("a layer deleted, then the Layers panel hidden and shown again: the delete 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(layerTree(page).getByRole("treeitem", { name: "Item 0-0" })).toHaveCount(1);
   await expect.poll(() => listRows()).toEqual(before);
+});
+
+test("the button that hides the Layers panel and the one that shows it again are as large and in the same place (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const hide = page.getByRole("button", { name: "Hide layers" });
+  const show = page.getByRole("button", { name: "Show layers" });
+  /** Its box, and its corners, the pointer away (it stays over the one shown in its place). Its color differs: hidden, it is the prominent button (designer, 2026-11-08; panel-headers.spec.ts). */
+  const looks = async (button: Locator) => {
+    await page.mouse.move(700, 400);
+    const drawn = await button.evaluate((el) => ({ radius: getComputedStyle(el).borderRadius }));
+    return { box: await steadyBox(button), ...drawn };
+  };
+  const near = (a: { x: number; y: number; width: number; height: number }, b: typeof a) => {
+    for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(a[key] - b[key]), `${key}: ${JSON.stringify(a)} against ${JSON.stringify(b)}`).toBeLessThanOrEqual(0.5);
+  };
+
+  const shown = await looks(hide);
+  // 28px, as the Design panel's × (designer, 2026-11-08).
+  expect(shown.box.width).toBe(28);
+  await hide.click();
+  const hidden = await looks(show);
+  near(hidden.box, shown.box);
+  expect(hidden.radius).toBe(shown.radius);
+
+  await show.click();
+  near(await steadyBox(hide), shown.box);
+});
+
+// Since the panels' tops are one style (designer, 2026-11-08), the line is the one under the header, as the Design panel's, and inset (panel-headers.spec.ts).
+test("one line under the Layers panel's top, the header's own, also once hidden and shown again (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const panel = page.getByRole("complementary", { name: "Layers" });
+  /** Every line drawn between the panel's top and its first row, as `who: width`: borders, and pseudo-elements 1px high. */
+  const lines = () =>
+    panel.evaluate((aside) => {
+      const header = aside.querySelector(".tk-panel-header")!.getBoundingClientRect();
+      const firstRow = aside.querySelector('[role="treeitem"]')!.getBoundingClientRect();
+      const found: string[] = [];
+      for (const el of [aside, ...aside.querySelectorAll("*")]) {
+        const r = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        if (r.top <= firstRow.top && r.bottom >= header.top) {
+          for (const side of ["Top", "Bottom"] as const) {
+            if (parseFloat(style[`border${side}Width`]) > 0 && style[`border${side}Style`] !== "none") found.push(`${el.className} border-${side.toLowerCase()}: ${r.width}`);
+          }
+        }
+        for (const pseudo of ["::before", "::after"]) {
+          const p = getComputedStyle(el, pseudo);
+          if (p.content !== "none" && p.content !== "normal" && p.height === "1px" && r.bottom <= firstRow.top) found.push(`${el.className}${pseudo}: ${p.width}`);
+        }
+      }
+      return { found, width: aside.getBoundingClientRect().width, header: header.height };
+    });
+  const noRuleAcross = async () => {
+    await expect(layerTree(page).getByRole("treeitem").first()).toBeVisible();
+    await expect
+      .poll(async () => {
+        const { found, header } = await lines();
+        return { found: found.map((line) => line.replace(/: .*$/, "")), header };
+      })
+      .toEqual({ found: ["tk-panel-header::after"], header: 47 });
+  };
+  await noRuleAcross();
+  // Shown again, the panel once took the Design panel's elements, and its header the rule under that panel's.
+  await page.getByRole("button", { name: "Hide layers" }).click();
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await noRuleAcross();
+});
+
+test("after edits in the Design panel, the layer around the one selected closes and stays closed, and the Layers panel hides and shows (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const design = page.getByRole("complementary", { name: "Design" });
+  /** A value typed into a field of the Design panel and applied. */
+  const setField = async (name: string, value: string) => {
+    const field = design.getByRole("textbox", { name, exact: true }).first();
+    await field.fill(value);
+    await field.press("Enter");
+  };
+  const grid = layerTree(page).getByRole("treeitem", { name: "Grid", exact: true });
+  await layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await setField("Fill color", "ff0000");
+  await setField("Width", "300");
+  await setField("Gap", "20");
+
+  // The selected Card is in the Grid: the Grid, closed, stays closed. It was opened again at once.
+  await grid.locator(".tk-tree-chevron").click();
+  await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true })).toHaveCount(0);
+  // Another edit to the Card, still selected, leaves it so.
+  await setField("Gap", "12");
+  await expect(design.getByRole("textbox", { name: "Gap", exact: true }).first()).toHaveValue("12");
+  await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
+
+  // Hidden and shown again, the panel starts its layers anew, open up to the selected Card.
+  await page.getByRole("button", { name: "Hide layers" }).click();
+  await expect(page.getByRole("complementary", { name: "Layers" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show layers" })).toBeFocused();
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await expect(selectedRow(page)).toHaveText("Card");
+  await expect(grid).toHaveAttribute("aria-expanded", "true");
+  // Selected anew, a layer inside a closed one opens it.
+  await grid.locator(".tk-tree-chevron").click();
+  await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
+  await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
+  await clickOn(page, "article h3", "Meta");
+  await expect(grid).toHaveAttribute("aria-expanded", "true");
+});
+
+test("a level closed folds up: its rows go a little way up and fade as the rows after rise into their places with them; with reduced motion, at once (designer, 2026-11-08)", async ({ page }) => {
+  // Motion on: the tests run with reduced motion.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await enterEditMode(page);
+  const header = layerTree(page).getByRole("treeitem", { name: "Header", exact: true });
+  const fold = layerTree(page).locator(".tk-tree-fold");
+  const next = header.locator("xpath=following-sibling::*[1]");
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+
+  await header.locator(".tk-tree-chevron").click();
+  // Closed at once, for the tree and its readers: its rows are gone from it, copies of them in a fold hidden from them.
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true })).toHaveCount(0);
+  await expect(fold).toHaveAttribute("aria-hidden", "true");
+  await expect(fold.locator(".tk-tree-row")).not.toHaveCount(0);
+  await expect(fold.locator('[role="treeitem"]')).toHaveCount(0);
+  // The copies going up 8px and fading, however many, shown only above the rows rising after them; the row after rising from where it was.
+  const keyframes = await fold.evaluate((el) =>
+    el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
+  );
+  expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
+  expect(await next.evaluate((el) => el.getAnimations().length)).toBe(1);
+  // Then gone.
+  await expect(fold).toHaveCount(0);
+
+  // With reduced motion, closed at once.
+  await header.locator(".tk-tree-chevron").click();
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await header.locator(".tk-tree-chevron").click();
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await expect(fold).toHaveCount(0);
+});
+
+test("an instance's disclosure (a row under Components) is drawn as every other row's; its icon stays purple (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  /** How a row's disclosure and its layer icon are drawn, the pointer away and over the disclosure. */
+  const looks = async (row: Locator) => {
+    const chevron = row.locator(".tk-tree-chevron");
+    const drawn = () =>
+      chevron.evaluate((el) => {
+        const icon = el.querySelector(".tk-icon")!;
+        const box = el.getBoundingClientRect();
+        const iconBox = icon.getBoundingClientRect();
+        return { color: getComputedStyle(icon).color, background: getComputedStyle(el).backgroundColor, shadow: getComputedStyle(el).boxShadow, size: [box.width, box.height, iconBox.width, iconBox.height] };
+      });
+    await page.mouse.move(700, 400);
+    const away = await drawn();
+    await chevron.hover();
+    return { away, hovered: await drawn(), layerIcon: await row.locator(":scope > .tk-icon").evaluate((el) => getComputedStyle(el).color) };
+  };
+  const card = await looks(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first());
+  const grid = await looks(layerTree(page).getByRole("treeitem", { name: "Grid", exact: true }));
+  expect({ away: card.away, hovered: card.hovered }).toEqual({ away: grid.away, hovered: grid.hovered });
+  expect(card.layerIcon).toBe("rgb(154, 60, 238)");
+  expect(grid.layerIcon).not.toBe(card.layerIcon);
 });
 
 test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
@@ -465,7 +629,7 @@ test.describe("the selection box", () => {
 
     await clickOn(page, "h1", "Meta");
 
-    await expect(box(page)).toHaveCSS("border-color", "rgb(13, 153, 255)");
+    await expect(box(page)).toHaveCSS("border-color", "rgb(0, 143, 240)");
     const outline = (await box(page).boundingBox())!;
     const h1 = (await canvas(page).locator("h1").boundingBox())!;
     for (const key of ["x", "y", "width", "height"] as const) expect(outline[key]).toBeCloseTo(h1[key], 0);
@@ -478,7 +642,7 @@ test.describe("the selection box", () => {
     await page.keyboard.press("Escape");
 
     await expect(selectedRow(page)).toHaveText("Card");
-    await expect(box(page)).toHaveCSS("border-color", "rgb(151, 71, 255)");
+    await expect(box(page)).toHaveCSS("border-color", "rgb(154, 60, 238)");
   });
 
   test("is gray with a lock on a locked layer, which a double click cannot enter", async ({ page }) => {

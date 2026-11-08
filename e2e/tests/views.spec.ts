@@ -74,10 +74,87 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
     await expect(view.contentFrame().getByTestId("hero")).toHaveCSS("height", `${height}px`);
   }
 
-  // Each view is named, and says it shows only what CSS does at its width.
-  for (const name of ["Desktop", "Tablet", "Phone"]) {
-    await expect(page.getByRole("group", { name: `${name} view` })).toContainText("CSS responsive only");
+  // Each view is named, with the widths it covers (designer, 2026-11-08): the example's `md` is 768px and `xl` 1280px.
+  // The label's text is the name and the widths alone.
+  const covers = { Desktop: "≥ 1280", Tablet: "768–1279", Phone: "≤ 767" };
+  for (const [name, widths] of Object.entries(covers)) {
+    const label = page.getByRole("group", { name: `${name} view` });
+    await expect(label).toHaveText(`${name}${widths}`);
+    await expect(label.locator(".tk-view-range")).toHaveText(widths);
+    // No tip: one was too long to be worth it (designer, 2026-11-08).
+    await expect(label.locator("[data-tk-tip]").and(label.locator(".tk-view-range"))).toHaveCount(0);
+    // The phone's, narrow, has full screen once pointed at (designer, 2026-11-08).
+    if (name === "Phone") await label.hover();
+    await expect(label.getByRole("button", { name: `Full screen ${name} view`, exact: true })).toBeVisible();
   }
+  await expect(page.getByRole("button", { name: "Delete Desktop view" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete Phone view" })).toBeVisible();
+});
+
+test("a view's name and widths, pointed at, outline its page; clicked, they select it, worked in in that view; Esc lets it go (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const title = page.getByRole("button", { name: "Select Tablet view" });
+  await expect(title).toContainText("Tablet");
+  await title.hover();
+  const hover = page.locator('.tk-hover[data-view="Tablet"]');
+  await expect(hover).toBeVisible();
+  // As wide as the view's page, on screen.
+  const frame = (await tablet(page).boundingBox())!;
+  expect(Math.abs((await steadyBox(hover)).width - frame.width)).toBeLessThanOrEqual(2);
+  await expect(page.locator('.tk-hover[data-view="Desktop"]')).toHaveCount(0);
+
+  await title.click();
+  await expect(design(page).getByRole("note", { name: "Tablet breakpoint" })).toBeVisible();
+  await expect(page.locator('.tk-selection[data-view="Tablet"]')).toBeVisible();
+  // The page is not moved, copied or deleted by the keys.
+  for (const key of ["ArrowRight", "Delete", "ControlOrMeta+d"]) await page.keyboard.press(key);
+  await expect(tablet(page).contentFrame().locator("h1")).toBeVisible();
+  await expect(page.getByRole("button", { name: /changes? not applied yet/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".tk-selection")).toHaveCount(0);
+});
+
+test("zoomed out, a view's label leaves out full screen, then its widths, then ×, keeping its name; pointed at, its buttons stay and the rest goes first (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  // Wide enough, a label shows all it has.
+  const wide = page.getByRole("group", { name: "Desktop view" });
+  for (const part of [".tk-view-name", ".tk-view-range", ".tk-view-play"]) await expect(wide.locator(part)).toBeVisible();
+  const label = page.getByRole("group", { name: "Phone view" });
+  const parts = () =>
+    label.evaluate((el) => {
+      const shown = (selector: string) => !!el.querySelector<HTMLElement>(selector)?.checkVisibility({ opacityProperty: true });
+      return { name: shown(".tk-view-name"), range: shown(".tk-view-range"), play: shown(".tk-view-play"), del: shown(".tk-view-delete"), fits: el.scrollWidth <= el.clientWidth + 1 };
+    });
+  const area = (await viewportArea(page).boundingBox())!;
+  const away = { x: area.x + area.width / 2, y: area.y + area.height - 20 };
+  const seen: { rest: Awaited<ReturnType<typeof parts>>; pointed: Awaited<ReturnType<typeof parts>> }[] = [];
+  for (let i = 0; i < 12; i++) {
+    await page.mouse.move(away.x, away.y);
+    const rest = await parts();
+    await label.hover({ position: { x: 2, y: 10 } });
+    const pointed = await parts();
+    seen.push({ rest, pointed });
+    await page.mouse.move(away.x, away.y);
+    await page.keyboard.down("ControlOrMeta");
+    await page.mouse.wheel(0, 40);
+    await page.keyboard.up("ControlOrMeta");
+    await page.waitForTimeout(150);
+  }
+  for (const { rest, pointed } of seen) {
+    expect(rest.fits && pointed.fits).toBe(true);
+    // At rest: the name always; full screen only with the widths, the widths only with ×.
+    expect(rest.name).toBe(true);
+    if (rest.play) expect(rest.range).toBe(true);
+    if (rest.range) expect(rest.del).toBe(true);
+    // Pointed at: the widths only with the name, the name only with full screen, full screen only with ×.
+    if (pointed.range) expect(pointed.name).toBe(true);
+    if (pointed.name) expect(pointed.play).toBe(true);
+    if (pointed.play) expect(pointed.del).toBe(true);
+  }
+  // Zoomed out, it comes to keep × and not full screen, then the name alone.
+  expect(seen.some(({ rest }) => rest.del && !rest.play)).toBe(true);
+  expect(seen.some(({ rest }) => !rest.del)).toBe(true);
+  expect(seen.some(({ rest, pointed }) => !rest.play && pointed.play)).toBe(true);
 });
 
 test("selecting in one view selects the same layer in every view; an edit shows in every view", async ({ page }) => {
@@ -180,7 +257,7 @@ test("a value set once in the Design panel shows in the views beside the frame a
   shown = await watchTablet(page, "border-radius", "9px", "pointermove");
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await page.mouse.up();
   await expect.poll(async () => (await shown()).ms).toBeGreaterThanOrEqual(100);
   await expect(radius).toHaveValue("9");
@@ -719,4 +796,28 @@ test("a layer dragged below the bottom of a view leaves every view as tall as it
   await page.mouse.up();
   await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
   for (const view of views) await expect(view.contentFrame().locator("article:last-child")).toBeHidden();
+});
+
+test("a layer selected, its selection in the views other than the one worked in is lighter, its handles' squares white still", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const outline = (view: string) => page.locator(`.tk-selection[data-view="${view}"]`);
+  const corner = (view: string) => page.locator(`.tk-handles[data-view="${view}"] .tk-handle[data-corner]`).first();
+  const look = (el: Locator) => el.evaluate((node) => [getComputedStyle(node).borderTopColor, getComputedStyle(node).backgroundColor]);
+
+  // Worked in the desktop view at first.
+  await expect(outline("Desktop")).not.toHaveAttribute("data-away");
+  for (const view of ["Tablet", "Phone"]) await expect(outline(view)).toHaveAttribute("data-away", "true");
+  const [near, far] = [await look(outline("Desktop")), await look(outline("Phone"))];
+  expect(far[0]).not.toBe(near[0]);
+  const [nearCorner, farCorner] = [await look(corner("Desktop")), await look(corner("Phone"))];
+  expect(farCorner[0]).not.toBe(nearCorner[0]);
+  expect(farCorner[1]).toBe("rgb(255, 255, 255)");
+
+  // Pressed in the phone view: it is the one worked in.
+  const card = (await phone(page).contentFrame().locator("article").first().boundingBox())!;
+  await page.mouse.click(card.x + 20, card.y + 10);
+  await expect(outline("Phone")).not.toHaveAttribute("data-away");
+  for (const view of ["Desktop", "Tablet"]) await expect(outline(view)).toHaveAttribute("data-away", "true");
 });

@@ -1,5 +1,6 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
+import { DOUBLE_CLICK_MS } from "../../packages/03kind/src/client/selection";
+import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -89,7 +90,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   const board = await boxOf(canvas(page).locator("#board"));
   await drawFrom(page, { x: board.x + 20, y: board.y + 20 }, { x: board.x + 20, y: board.y + 20 });
   const box = page.locator('.tk-selection[data-kind="typing"][data-view="Desktop"]');
-  await expect(box).toHaveCSS("border-color", "rgb(13, 153, 255)");
+  await expect(box).toHaveCSS("border-color", "rgb(0, 143, 240)");
   await expect(box).toHaveCSS("border-top-width", "1px");
   const narrow = (await boxOf(box)).width;
   await page.keyboard.type("A much longer line of words");
@@ -98,6 +99,37 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   await expect(box).toHaveCount(0);
   // Drawn, the tool is put down.
   await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("the chosen tool's backing slides to a tool clicked and jumps to one a key picks", async ({ page }) => {
+  await enterEditMode(page);
+  const tools = page.getByRole("toolbar", { name: "Tools" });
+  const backing = tools.locator(".tk-tools-backing");
+  const over = async (name: string) => {
+    const [a, b] = await Promise.all([backing.boundingBox(), tools.getByRole("button", { name }).boundingBox()]);
+    return a !== null && b !== null && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
+  };
+  // No motion on the first render: it starts under Select.
+  expect(await over("Select")).toBe(true);
+  // Motion allowed here, so the transition each change gets can be read (the config reduces it).
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
+  await tools.getByRole("button", { name: "Frame" }).click();
+  await expect(backing).toHaveCSS("transition-duration", "0.2s");
+  await expect.poll(() => over("Frame")).toBe(true);
+  await steadyBox(backing);
+  expect(await over("Frame")).toBe(true);
+
+  // A key: no transition, there at once.
+  await page.keyboard.press("t");
+  await expect(backing).toHaveCSS("transition-duration", "0s");
+  expect(await over("Text")).toBe(true);
+
+  // With reduced motion, a click jumps too.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await tools.getByRole("button", { name: "Select" }).click();
+  await expect(backing).toHaveCSS("transition-duration", "0s");
+  expect(await over("Select")).toBe(true);
 });
 
 test("F and a drag in a Frame's empty space make an absolute Frame, with no fill or outline; a button beside it writes its brief", async ({ page }) => {
@@ -132,7 +164,7 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await expect(frame).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
-  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
   // Marked on the canvas in the other views; in the one worked in, its button stands for the mark.
   await expect(page.locator('.tk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
   await expect(page.locator('.tk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
@@ -145,7 +177,7 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await page.keyboard.press("ControlOrMeta+d");
   const copy = canvas(page).locator("#board > div").nth(1);
   await expect(copy).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
-  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
   for (const view of ["Desktop", "Tablet", "Phone"]) await expect(page.locator(`.tk-brief-mark[data-view="${view}"]`)).toHaveCount(2);
   await expect(design(page).getByRole("group", { name: "Brief" }).getByRole("textbox", { name: "Brief" })).toHaveValue("A pricing table with three plans");
 });
@@ -264,6 +296,63 @@ test("a double click on the selected text types in it; the words change as an ed
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(canvas(page).locator("h1")).toHaveText("Third Kind");
+});
+
+/** Types in the h1 "Third Kind", double-clicked once selected; then waits, so the next press makes no double click with it. */
+async function typeInHeading(page: Page) {
+  await enterEditMode(page);
+  await layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
+  await canvas(page).locator("h1").dblclick();
+  await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
+  await page.waitForTimeout(DOUBLE_CLICK_MS);
+}
+
+/** What is selected in the canvas, as the page reads it. */
+function selectedText(page: Page) {
+  return canvas(page)
+    .locator("h1")
+    .evaluate((h1) => h1.ownerDocument.getSelection()!.toString());
+}
+
+test("while text is typed in, a double click on a word selects it, and typing goes on", async ({ page }) => {
+  await typeInHeading(page);
+  const box = await steadyBox(canvas(page).locator("h1"));
+
+  await page.mouse.dblclick(box.x + box.width * 0.1, box.y + box.height / 2);
+
+  await expect.poll(() => selectedText(page)).toBe("Third");
+  await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
+  await page.keyboard.type("Fourth");
+  await expect(canvas(page).locator("h1")).toHaveText("Fourth Kind");
+});
+
+test("while text is typed in, a click in it places the caret there, and typing goes on from there", async ({ page }) => {
+  await typeInHeading(page);
+  const box = await steadyBox(canvas(page).locator("h1"));
+  await expect.poll(() => selectedText(page)).toBe("Third Kind");
+
+  // Past the end of the words, on their line: the caret goes after them.
+  await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
+
+  await expect.poll(() => selectedText(page)).toBe("");
+  await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
+  await page.keyboard.type("!");
+  await expect(canvas(page).locator("h1")).toHaveText("Third Kind!");
+  await page.keyboard.press("Enter");
+  await expect(canvas(page).locator("h1")).not.toHaveAttribute("contenteditable");
+  await expect(canvas(page).locator("h1")).toHaveText("Third Kind!");
+});
+
+test("while text is typed in, a click outside it ends typing and sets the words as an edit", async ({ page }) => {
+  await typeInHeading(page);
+  await page.keyboard.type("Third");
+  const box = await steadyBox(canvas(page).locator("h1"));
+
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height + 40);
+
+  await expect(canvas(page).locator("h1")).not.toHaveAttribute("contenteditable");
+  await expect(canvas(page).locator("h1")).toHaveText("Third");
+  await expect(await changeRows(page)).toHaveText([/Text.*“Third Kind” → “Third”/]);
 });
 
 test("Delete deletes the selected layer; ⌘D copies a card of the loop beside it", async ({ page }) => {

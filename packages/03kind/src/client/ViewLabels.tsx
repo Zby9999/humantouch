@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
-import { useState } from "preact/hooks";
-import { tailwindOf, type Breakpoint } from "./breakpoints";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import type { Breakpoint } from "./breakpoints";
 import { Icon } from "./icons";
 
 /**
@@ -46,13 +46,103 @@ export function viewName(width: number, desktop: boolean): string {
 }
 
 /**
- * Above a view: what it is, the project's Tailwind breakpoint it stands for,
- * that it shows only what CSS does at its width, and, but for the desktop
- * view, the way to delete it.
+ * The widths the desktop view, `width` px wide, covers: those around it that
+ * none of `others`, the ranges of the views beside it, takes. Its changes hold
+ * at every width, but these are the widths it shows them alone at. Null when
+ * no other view takes any.
  */
-export function ViewLabel(props: { name: string; width: number; breakpoint: Breakpoint | null; left: number; top: number; size: number; onDelete?: () => void }) {
-  const { name, width, breakpoint, left, top, size, onDelete } = props;
-  const tailwind = tailwindOf(breakpoint);
+export function desktopRange(width: number, others: (Breakpoint | null)[]): Breakpoint | null {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const other of others) {
+    if (other?.max != null && other.max <= width && (min === null || other.max > min)) min = other.max;
+    if (other?.min != null && other.min > width && (max === null || other.min < max)) max = other.min;
+  }
+  return min === null && max === null ? null : { min, max };
+}
+
+/**
+ * The widths a view covers, as plainly as they read: `768–1279`, `≥ 1280`,
+ * `≤ 767`. A range's upper edge is the first width past it. With no range,
+ * the view's own width.
+ */
+export function rangeText(breakpoint: Breakpoint | null, width: number): string {
+  const { min, max } = breakpoint ?? { min: null, max: null };
+  if (min !== null && max !== null) return `${min}–${max - 1}`;
+  if (min !== null) return `≥ ${min}`;
+  if (max !== null) return `≤ ${max - 1}`;
+  return `${width}`;
+}
+
+/** What a view's label shows, but for its name: each can be left out where there is too little room. */
+type Part = "name" | "range" | "play" | "delete";
+/** Its buttons' width, and the gap between any two of its parts, px (styles: `.tk-view-label`). */
+const LABEL_BUTTON_PX = 20;
+const LABEL_GAP_PX = 6;
+/**
+ * Where a label has too little room (designer, 2026-11-08), what goes first. At rest: full screen, then the
+ * widths, then ×; its name stays, cut short at last. Pointed at, its buttons stay: the widths, then its name go first.
+ */
+const DROPPED_AT_REST: Part[] = ["play", "range", "delete"];
+const DROPPED_POINTED: Part[] = ["range", "name", "play", "delete"];
+
+/** An element's own width, whole, though it is left out now. */
+function wholeWidth(el: HTMLElement): number {
+  el.style.display = "block";
+  const width = el.scrollWidth;
+  el.style.display = "";
+  return width;
+}
+
+/** Which of `parts` a label `size` px wide shows, those of `dropped` left out in turn till the rest fit. */
+function fitting(size: number, parts: Part[], widths: { name: number; range: number }, dropped: Part[]): Set<Part> {
+  const shown = new Set(parts);
+  const width = () => [...shown].reduce((sum, part) => sum + (part === "name" || part === "range" ? widths[part] : LABEL_BUTTON_PX), 0) + LABEL_GAP_PX * (shown.size - 1);
+  for (const part of dropped) {
+    if (width() <= size) break;
+    shown.delete(part);
+  }
+  return shown;
+}
+
+/**
+ * Above a view, as a Frame's name in Figma: its name and the widths it covers
+ * (designer, 2026-11-08), with no tip: one telling the project's breakpoint
+ * and what the view shows was too long to be worth it (designer, 2026-11-08).
+ * Clicked, they select the view's frame, the page in it, as a Frame's name
+ * does; pointed at, it is outlined (designer, 2026-11-08). At its right end,
+ * the way to play it full screen and, but for the desktop view, to delete it.
+ * Where there is too little room, some go, as `DROPPED_AT_REST` and `DROPPED_POINTED` say.
+ */
+export function ViewLabel(props: {
+  name: string;
+  width: number;
+  /** The widths the view covers; null: its own width alone is known. */
+  breakpoint: Breakpoint | null;
+  left: number;
+  top: number;
+  size: number;
+  /** Full screen, from this button: focus comes back to it after. */
+  onPlay(button: HTMLButtonElement): void;
+  onDelete?: () => void;
+  /** Its name and widths clicked: the page in the view is selected. */
+  onSelect?: () => void;
+  /** Its name and widths pointed at, and left. */
+  onPoint?: (pointed: boolean) => void;
+}) {
+  const { name, width, breakpoint, left, top, size, onPlay, onDelete, onSelect, onPoint } = props;
+  const range = rangeText(breakpoint, width);
+  const nameEl = useRef<HTMLSpanElement>(null);
+  const rangeEl = useRef<HTMLSpanElement>(null);
+  /** Its name's and widths' own widths, whole. */
+  const [widths, setWidths] = useState({ name: 0, range: 0 });
+  useLayoutEffect(() => setWidths({ name: wholeWidth(nameEl.current!), range: wholeWidth(rangeEl.current!) }), [name, range]);
+  const parts: Part[] = ["name", "range", "play", ...(onDelete ? (["delete"] as const) : [])];
+  const [rest, pointed] = [fitting(size, parts, widths, DROPPED_AT_REST), fitting(size, parts, widths, DROPPED_POINTED)];
+  /** Left out at rest, pointed at, or both. */
+  const gone = (...of: Part[]) =>
+    [of.every((part) => !rest.has(part)) && "is-rest-hidden", of.every((part) => !pointed.has(part)) && "is-pointed-hidden"].filter(Boolean).join(" ");
+  const classOf = (base: string, ...of: Part[]) => [base, gone(...of)].filter(Boolean).join(" ");
   return (
     <div
       class="tk-view-label"
@@ -60,20 +150,23 @@ export function ViewLabel(props: { name: string; width: number; breakpoint: Brea
       aria-label={`${name} view`}
       style={{ left: `${left}px`, top: `${top}px`, width: `${size}px` }}
       onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
     >
-      <span class="tk-view-name">{name}</span>
-      <span class="tk-view-width">{width}</span>
-      {tailwind && (
-        <span class="tk-view-breakpoint" title="The project's breakpoint this view stands for: its changes are written with it">
-          {tailwind}
-        </span>
-      )}
-      <span class="tk-view-note" title="Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.">
-        CSS responsive only
-      </span>
+      <button type="button" class={classOf("tk-view-title", "name", "range")} aria-label={`Select ${name} view`} onClick={onSelect} onPointerEnter={() => onPoint?.(true)} onPointerLeave={() => onPoint?.(false)}>
+        <span ref={nameEl} class={classOf("tk-view-name", "name")}>{name}</span>
+        <span ref={rangeEl} class={classOf("tk-view-range", "range")}>{range}</span>
+      </button>
+      {/* Full screen before ×, which stays at the very end: the button pressed to play keeps its place on every view. */}
+      <button
+        type="button"
+        class={classOf("tk-icon-button tk-view-play", "play")}
+        aria-label={`Full screen ${name} view`}
+        data-tk-tip="Full screen"
+        onClick={(event) => onPlay(event.currentTarget)}
+      >
+        <Icon name="fullscreen" />
+      </button>
       {onDelete && (
-        <button type="button" class="tk-icon-button tk-view-delete" aria-label={`Delete ${name} view`} title="Delete view" onClick={onDelete}>
+        <button type="button" class={classOf("tk-icon-button tk-view-delete", "delete")} aria-label={`Delete ${name} view`} data-tk-tip="Delete view" onClick={onDelete}>
           <Icon name="close" />
         </button>
       )}
@@ -95,7 +188,6 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
       class="tk-add-view"
       style={{ left: `${left}px`, top: `${top}px` }}
       onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
     >
       {open ? (
         <input
@@ -107,7 +199,6 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
           placeholder="Width"
           aria-label="New view width"
           aria-invalid={invalid || undefined}
-          title={`A width from ${MIN_WIDTH} to ${MAX_WIDTH} px`}
           ref={(el) => el?.focus()}
           onBlur={close}
           onKeyDown={(event) => {
@@ -124,7 +215,7 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
           }}
         />
       ) : (
-        <button type="button" class="tk-icon-button" aria-label="Add view" title="Add a view of another width" onClick={() => setOpen(true)}>
+        <button type="button" class="tk-icon-button" aria-label="Add view" data-tk-tip="Add view" onClick={() => setOpen(true)}>
           <Icon name="plus" />
         </button>
       )}

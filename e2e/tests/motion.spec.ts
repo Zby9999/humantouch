@@ -1,4 +1,4 @@
-import { expect, test, type CDPSession, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type CDPSession, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 test.use({ reducedMotion: "no-preference" });
@@ -138,6 +138,156 @@ test("going back to preview grows the canvas back over the page before the edito
   await expect(canvasIframe(page)).toHaveCount(0);
   await page.getByRole("button", { name: "Get started" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("going back to preview after the window narrowed, the canvas grows into the page as it now is, not as it was frozen; turned around, it is as frozen again (designer, 2026-11-08)", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  const frozen = await canvasIframe(page).evaluate((el) => (el as HTMLElement).clientWidth);
+  // Narrower only: what answers to the window's height (vh) was settled as the page was frozen.
+  await page.setViewportSize({ width: 1078, height: 720 });
+  const real = await page.locator("h1").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.x), y: Math.round(r.y) };
+  });
+  await playbackRate(cdp, 0.02);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await holdTravel(page);
+  // Its last frame: the desktop view as wide as the window, as tall at least, its h1 where the page's is.
+  const last = await page.evaluate(() => {
+    const root = document.querySelector("third-kind")!.shadowRoot!;
+    for (const animation of root.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 10000;
+    }
+    const iframe = root.querySelector('iframe[title="Canvas"]') as HTMLIFrameElement;
+    const frame = iframe.getBoundingClientRect();
+    const h1 = iframe.contentDocument!.querySelector("h1")!.getBoundingClientRect();
+    return { width: Math.round(frame.width), height: Math.round(frame.height), h1: { x: Math.round(frame.x + h1.x), y: Math.round(frame.y + h1.y) } };
+  });
+  expect(last.width).toBe(1078);
+  expect(last.height).toBeGreaterThanOrEqual(720);
+  expect(last.h1).toEqual(real);
+
+  // Turned around on the way: the desktop view as wide as it was frozen.
+  await page.evaluate(() => {
+    for (const animation of document.querySelector("third-kind")!.shadowRoot!.getAnimations()) animation.currentTime = 40;
+  });
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await playbackRate(cdp, 1);
+  await expectSettled(page);
+  expect(await canvasIframe(page).evaluate((el) => (el as HTMLElement).clientWidth)).toBe(frozen);
+});
+
+/** Where the frame (the desktop view), the panels and the tools are, the editor's animations held `t` ms in; null, as they are. */
+function chromeAt(page: Page, t: number | null) {
+  return page.evaluate((t) => {
+    const root = document.querySelector("third-kind")!.shadowRoot!;
+    if (t !== null) {
+      for (const animation of root.getAnimations()) {
+        animation.pause();
+        animation.currentTime = t;
+      }
+    }
+    const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+    const frame = rect('iframe[title="Canvas"]');
+    const tools = rect(".tk-tools");
+    return {
+      frameLeft: frame.left,
+      frameRight: frame.right,
+      layersRight: rect(".tk-panel.is-layers").right,
+      designLeft: rect(".tk-panel.is-design").left,
+      toolsLeft: tools.left,
+      toolsMiddle: { x: tools.left + tools.width / 2, y: tools.top + tools.height / 2 },
+      width: (root.querySelector(".tk-shell") as HTMLElement).clientWidth,
+      opacity: Number(getComputedStyle(root.querySelector(".tk-panel.is-layers")!).opacity),
+    };
+  }, t);
+}
+type ChromeAt = Awaited<ReturnType<typeof chromeAt>>;
+
+/** At each time in, each panel's inner edge keeps its gap to the frame's edge on its side, as `rest` had it, and the tools move with the Design panel. */
+async function expectTravellingTogether(page: Page, rest: ChromeAt) {
+  for (const t of [0, 40, 80, 120, 160, 200]) {
+    const now = await chromeAt(page, t);
+    expect.soft(Math.abs(now.layersRight + (rest.frameLeft - rest.layersRight) - (now.frameLeft)), `Layers at ${t}ms`).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(now.designLeft - (rest.designLeft - rest.frameRight) - (now.frameRight)), `Design at ${t}ms`).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(now.toolsLeft - rest.toolsLeft - (now.designLeft - rest.designLeft)), `the tools at ${t}ms`).toBeLessThanOrEqual(1);
+    // Moved, never faded.
+    expect.soft(now.opacity).toBe(1);
+  }
+}
+
+/** Both panels and the tools wholly off the window. */
+function expectOffTheWindow(now: ChromeAt) {
+  expect(now.layersRight).toBeLessThanOrEqual(0);
+  expect(now.designLeft).toBeGreaterThanOrEqual(now.width);
+  expect(now.toolsLeft).toBeGreaterThanOrEqual(now.width);
+}
+
+/** Has the editor's animations held where they start, once edit mode has been left or entered and the canvas has started travelling. */
+async function holdTravel(page: Page) {
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector("third-kind")?.shadowRoot?.querySelector(".tk-viewport.is-travelling") !== null && document.querySelector("third-kind")!.shadowRoot!.getAnimations().length > 1))
+    .toBe(true);
+}
+
+test("going back to preview, the panels are pushed out by the growing frame, each edge travelling with the frame's, and it is drawn above what is left (designer, 2026-11-08)", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await canvasInPlace(page);
+  await steadyBox(page.getByRole("complementary", { name: "Layers" }));
+  const rest = await chromeAt(page, null);
+  const toolsClip = { x: rest.toolsMiddle.x - 12, y: rest.toolsMiddle.y - 12, width: 24, height: 24 };
+  const toolsAtRest = await page.screenshot({ clip: toolsClip });
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await holdTravel(page);
+
+  await expectTravellingTogether(page, rest);
+  // As the move starts, the tools still show as they were: the viewport's own gray is not drawn over them.
+  await chromeAt(page, 0);
+  expect((await page.screenshot({ clip: toolsClip })).equals(toolsAtRest)).toBe(true);
+  const grown = await chromeAt(page, 240);
+  expectOffTheWindow(grown);
+  // Grown, the canvas covers where the tools were: they are under it, not on it.
+  const onTools = await page.evaluate(({ x, y }) => document.querySelector("third-kind")!.shadowRoot!.elementFromPoint(x, y)?.className, rest.toolsMiddle);
+  expect(onTools).toContain("tk-stage");
+});
+
+test("entering edit mode, the panels come in with the shrinking frame, each edge travelling with the frame's (designer, 2026-11-08)", async ({ page }) => {
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await holdTravel(page);
+
+  expectOffTheWindow(await chromeAt(page, 0));
+  // Past the end, the animations no longer apply: everything in place.
+  const rest = await chromeAt(page, 240);
+  await expectTravellingTogether(page, rest);
+});
+
+test("a click while going back to preview turns the panels around from where they are, still with the frame", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await canvasInPlace(page);
+  await steadyBox(page.getByRole("complementary", { name: "Layers" }));
+  const rest = await chromeAt(page, null);
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await holdTravel(page);
+  const midway = await chromeAt(page, 120);
+
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+
+  // Turned around from where they were, not from the start or the end.
+  const turned = await chromeAt(page, 0);
+  expect(Math.abs(turned.layersRight - midway.layersRight)).toBeLessThanOrEqual(1);
+  expect(Math.abs(turned.designLeft - midway.designLeft)).toBeLessThanOrEqual(1);
+  expect(Math.abs(turned.frameLeft - midway.frameLeft)).toBeLessThanOrEqual(1);
+  await expectTravellingTogether(page, rest);
+  const back = await chromeAt(page, 240);
+  expect(Math.abs(back.layersRight - rest.layersRight)).toBeLessThanOrEqual(1);
+  expect(Math.abs(back.designLeft - rest.designLeft)).toBeLessThanOrEqual(1);
 });
 
 /** Gives the three cards of the loop a red fill. */

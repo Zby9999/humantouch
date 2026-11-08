@@ -1,10 +1,10 @@
-import { UNLOCK_HOLD_MS } from "./motion";
+import { UNLOCK_HOLD_MS } from "./toggle-motion";
 
 export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 /**
  * The toggle's styles: all the page loads with it. The rest of the editor
- * layer brings its own (`styles`) as it loads, the toggle's badge and ring
+ * layer brings its own (`styles`) as it loads, the toggle's change count and ring
  * among them: until then, there is no round for them to show. Inside the
  * Shadow DOM, they never touch the page.
  */
@@ -12,9 +12,9 @@ export const toggleStyles = /* css */ `
 :host {
   /* Cut off everything the page could pass down by inheritance. */
   all: initial !important;
-  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
-  --tk-icon-size: 14px;
-  --tk-icon-stroke: 1px;
+  /* The editor's icons: how large, and how thick their lines are on screen, whatever their size (designer, 2026-11-08, tuned with DialKit). */
+  --tk-icon-size: 13.5px;
+  --tk-icon-stroke: 1.05px;
 }
 
 .tk-dock {
@@ -36,36 +36,48 @@ export const toggleStyles = /* css */ `
 .tk-dock[data-corner="bottom-right"] { bottom: var(--tk-gap); right: var(--tk-gap); flex-direction: row-reverse; }
 .tk-dock.is-dragging { transition: none; }
 
+/*
+ * As the canvas's tools (designer, 2026-11-09): in a column on the panels' gray, a hairline round it, 4px in, its corners
+ * 10px round the buttons' 6px; the toggle nearest its corner, the count after it.
+ */
+.tk-toggle-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #f5f5f5;
+  box-shadow: 0 0 0 0.5px #d4d4d3;
+}
+.tk-dock[data-corner^="bottom"] .tk-toggle-wrap { flex-direction: column-reverse; }
+
+/* 28px, a button with an edge: the chosen tool's white and shadow (designer, 2026-11-09). */
 .tk-toggle {
   all: unset;
   box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #1e1e1e;
-  color: #fff;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 4px 12px rgb(0 0 0 / 0.18);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #fff;
+  color: #525351;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
   cursor: pointer;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: background-color 120ms ease, scale 120ms ease;
+  transition: color 120ms ease, scale 120ms ease;
 }
-.tk-toggle:hover { background: #2c2c2c; }
+.tk-toggle:hover { color: #0a0a09; }
 .tk-toggle:active { scale: 0.96; }
 .tk-dock.is-dragging .tk-toggle { cursor: grabbing; scale: 1.04; }
 .tk-toggle:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
 
-.tk-toggle-wrap { position: relative; }
-
 /* Locked while the Agent applies the round; dimmed the same while edit mode is on its way. */
-.tk-toggle:is([aria-disabled="true"], [aria-busy="true"]) { cursor: progress; color: rgb(255 255 255 / 0.5); }
-.tk-toggle:is([aria-disabled="true"], [aria-busy="true"]):hover { background: #1e1e1e; }
+.tk-toggle:is([aria-disabled="true"], [aria-busy="true"]) { cursor: progress; color: rgb(82 83 81 / 0.5); }
 
 @media (prefers-reduced-motion: reduce) {
   .tk-dock, .tk-toggle { transition: none; }

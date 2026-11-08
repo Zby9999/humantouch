@@ -8,8 +8,9 @@ export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
  * opts out with `keepRoundInMemory: false`, the round it saves stays in its
  * own browser context, so tests running side by side never see each other's.
  *
- * The Layers panel starts hidden; most tests work through it, so it is shown
- * unless a test opts out with `showLayers: false`.
+ * The Layers panel starts hidden, on every entry (designer, 2026-11-08); most
+ * tests work through it, so it is shown as edit mode is entered, each time,
+ * unless a test opts out with `showLayers: false` (`showLayersOnEntry`).
  */
 export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolean }>({
   keepRoundInMemory: [true, { option: true }],
@@ -17,7 +18,7 @@ export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolea
   context: async ({ context, keepRoundInMemory, showLayers }, use) => {
     await watchVariables(context);
     if (keepRoundInMemory) await keepRoundIn(context);
-    if (showLayers) await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
+    if (showLayers) await showLayersOnEntry(context);
     await use(context);
   },
 });
@@ -75,6 +76,41 @@ export async function keepRoundIn(context: BrowserContext) {
 export async function canvasInPlace(page: Page) {
   await page.locator(".tk-viewport.is-travelling").waitFor({ state: "detached" });
   await variablesIn(page);
+}
+
+/**
+ * Shows the Layers panel each time edit mode is entered, as the designer would with its button: as the editor's shell
+ * is put on the page, before it is first drawn. Pressed, the button hands focus to the one hiding the panel again;
+ * focus is left where it was instead, as it was when the panel was shown from the start.
+ */
+async function showLayersOnEntry(context: BrowserContext) {
+  await context.addInitScript(() => {
+    const attach = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (init) {
+      const root = attach.call(this, init);
+      if (this.localName !== "third-kind") return root;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue;
+            const shell = node.matches(".tk-shell") ? node : node.querySelector(".tk-shell");
+            const show = shell?.querySelector<HTMLButtonElement>(":scope > .tk-show-layers");
+            if (!show) continue;
+            const hide = (event: Event) => {
+              const target = event.target as HTMLElement;
+              if (target.getAttribute("aria-label") !== "Hide layers") return;
+              root.removeEventListener("focusin", hide);
+              target.blur();
+            };
+            root.addEventListener("focusin", hide);
+            setTimeout(() => root.removeEventListener("focusin", hide), 1000);
+            show.click();
+          }
+        }
+      }).observe(root, { childList: true, subtree: true });
+      return root;
+    };
+  });
 }
 
 /** Where the page counts its requests for the project's Variables (`watchVariables`). */
@@ -163,4 +199,20 @@ export async function steadyBox(locator: Locator): Promise<Box> {
     )
     .toBe(true);
   return box!;
+}
+
+/**
+ * A segmented group changed in this round (designer, 2026-11-08): the one chosen stays white, the track behind it takes the accent,
+ * and its reset, 24px, stands inside the track at its right end, there in full once it has popped out.
+ */
+export async function expectSegmentedChanged(group: Locator, chosen: Locator, reset: Locator) {
+  await expect(group).toHaveClass(/\bis-changed\b/);
+  await expect(group).toHaveCSS("background-color", "rgb(0, 143, 240)");
+  await expect(chosen).toHaveAttribute("aria-checked", "true");
+  await expect(chosen).toHaveCSS("background-color", "rgb(250, 250, 250)");
+  await expect(reset).toHaveCSS("opacity", "1");
+  const [box, button] = await Promise.all([steadyBox(group), steadyBox(reset)]);
+  expect(button.width).toBe(24);
+  expect(button.x).toBeGreaterThanOrEqual(box.x);
+  expect(Math.round(box.x + box.width - (button.x + button.width))).toBe(2);
 }

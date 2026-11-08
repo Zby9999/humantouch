@@ -12,10 +12,10 @@ import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
-import { definitionOf, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/property-table";
+import { definitionOf, type Fill, type Property, type PropertyValues, type Shadow, type Stroke } from "../src/client/property-table";
 import { resizeStep, type ResizeSession } from "../src/client/canvas-resize";
 import type { Shown } from "../src/client/view-layout";
-import { breakpointMarks } from "../src/client/BreakpointMark";
+import { changeMarks } from "../src/client/ChangeMarks";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
@@ -557,6 +557,45 @@ describe("stroke", () => {
 
     expect(style(cards[1]).borderTopWidth).toBe("1px");
     expect(editor.read(layerOf(cards[1]), "stroke")).toEqual(stroke);
+  });
+
+  test("a stroke at 0 stays a stroke, with its color and line, as in Figma; taken off, it is none; undone, the page's own again", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    // Tailwind's preflight under a border of the page's own: a line of 0 on its own is no stroke.
+    box.style.cssText = "height: 40px; border: 0 solid #e5e7eb";
+    const layer = layerOf(box);
+    expect(editor.read(layer, "stroke")).toBeNull();
+    box.style.cssText = "height: 40px; border: 2px solid #ff0000";
+    const page = editor.read(layer, "stroke")!;
+
+    editor.set(layer, "stroke", { ...page, weight: 0 });
+    expect([style(box).borderTopWidth, style(box).borderTopStyle]).toEqual(["0px", "solid"]);
+    expect(editor.read(layer, "stroke")).toEqual({ color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
+    expect(changes.list()[0]).toMatchObject({
+      before: page,
+      after: { ...page, weight: 0 },
+      style: { "border-width": "0px", "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" },
+    });
+
+    // Its line changes at 0, and its weight goes up again.
+    editor.set(layer, "stroke", { ...page, weight: 0, style: "dashed" });
+    expect(editor.read(layer, "stroke")).toEqual({ ...page, weight: 0, style: "dashed" });
+    editor.set(layer, "stroke", { ...page, weight: 3 });
+    expect(editor.read(layer, "stroke")).toEqual({ ...page, weight: 3 });
+
+    editor.set(layer, "stroke", { ...page, weight: 0 });
+    editor.set(layer, "stroke", null);
+    expect(editor.read(layer, "stroke")).toBeNull();
+
+    editor.undo();
+    expect(editor.read(layer, "stroke")).toEqual({ ...page, weight: 0 });
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    expect(editor.read(layer, "stroke")).toEqual(page);
+    expect(changes.list()).toEqual([]);
   });
 
   test("a change to the color or line alone leaves the weight out of its reference style, so the code keeps its own", () => {
@@ -3709,6 +3748,22 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1.25, style: "solid" } });
   });
 
+  test("a stroke at 0 is shown by a border of 0, or none, as both draw nothing; not by one drawn", async () => {
+    const { page, editor, changes, board, write } = open();
+    write("border: 2px solid #ff0000");
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 2, style: "solid" });
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
+    const [change] = changes.list();
+    expect(change.after).toEqual({ color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
+
+    write("border: 0 solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("border: 2px solid #ff0000");
+    expect(await check(page, change)).toMatchObject({ outcome: "not shown" });
+  });
+
   test("asked by done while the dev server brings the edit in, the page answers once it shows: still wrong, then right", async () => {
     const { page, editor, changes, board, write } = open();
     editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 1.5, style: "solid" });
@@ -5108,6 +5163,12 @@ describe("Variables", () => {
     expect(catalog.named("color", "BRA").map(({ variable }) => variable.name)).toEqual(["brand-500", "brand-600"]);
     expect(catalog.named("color", " dang ").map(({ variable }) => variable.name)).toEqual(["--danger"]);
     expect(catalog.named("spacing", "x")).toEqual([]);
+    // All of a group, the closest first, however far; of two as close, the one listed first; as listed for no value.
+    const closest = (group: Variable["group"], drawn: Parameters<typeof catalog.closest>[1]) => catalog.closest(group, drawn).map(({ variable }) => variable.name);
+    expect(closest("spacing", 30)).toEqual(["gutter", "tight", "4"]);
+    expect(closest("spacing", 21.5)).toEqual(["gutter", "tight", "4"]);
+    expect(closest("spacing", null)).toEqual(["gutter", "4", "tight"]);
+    expect(closest("color", { color: "#3A5FF0", opacity: 1 })).toEqual(["brand-600", "brand-500", "--danger"]);
     expect(catalog.named("radius", "")).toEqual([]);
   });
 
@@ -5747,11 +5808,14 @@ describe("breakpoints", () => {
     expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
   });
 
-  test("a row of the Design panel is marked where the breakpoint worked in changed its properties on their own, for any selected layer; reset, they all inherit, and one undo marks it again", async () => {
-    const { editor, phone, desktop, layer, fills } = await open();
+  test("a field of the Design panel is marked where the breakpoint worked in changed its property on its own, for any selected layer; reset, they all inherit, and one undo marks it again", async () => {
+    const { editor, changes, phone, desktop, layer, fills } = await open();
     const selected = [layer("board"), layer("list")];
     let edited = 0;
-    const marksIn = () => breakpointMarks(editor, selected, () => edited++);
+    const marksIn = () => {
+      const marks = changeMarks(changes.list(), editor, selected, () => edited++);
+      return { changed: (properties: Property[]) => properties.filter((property) => marks.changed(property)), reset: marks.reset };
+    };
 
     editor.at(phone);
     expect(marksIn().changed(["fill", "stroke"])).toEqual([]);
@@ -5773,11 +5837,10 @@ describe("breakpoints", () => {
     expect(marksIn().changed(["fill", "radius"])).toEqual(["fill", "radius"]);
   });
 
-  test("a layer placed from the right, resized in the phone view, its width and its `right` changed there together: reset from its Position row, its size row or the breakpoint's list, both inherit again, so it is back where it was (line review)", async () => {
+  test("a layer placed from the right, resized in the phone view, its width and its `right` changed there together: either reset, both inherit again, so it is back where it was (line review)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value }) as const;
-    const rows = { position: ["x", "y", "absolute", "right", "bottom"], size: ["width"], list: ["right"] } as const;
-    for (const row of Object.values(rows)) {
-      const { editor, phone, layer } = await open(ANCHORED);
+    for (const reset of ["width", "right"] as const) {
+      const { editor, changes, phone, layer } = await open(ANCHORED);
       const right = layer("right");
       const box = () => {
         const el = phone.document.getElementById("right")!;
@@ -5788,10 +5851,7 @@ describe("breakpoints", () => {
       editor.at(phone);
       editor.set(right, "width", fixed(50));
       expect(editor.changesHere(right)).toEqual(["width", "right"]);
-      const marks = breakpointMarks(editor, [right], () => {});
-
-      // What the row's mark resets, as it is clicked.
-      marks.reset(row === rows.list ? [...row] : marks.changed([...row]));
+      changeMarks(changes.list(), editor, [right], () => {}).reset([reset]);
 
       expect(editor.changesHere(right)).toEqual([]);
       phone.document.body.offsetWidth;

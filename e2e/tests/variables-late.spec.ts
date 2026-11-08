@@ -41,8 +41,6 @@ async function enterEditMode(page: Page) {
 interface Field {
   layer: string;
   label: string;
-  /** What shows once the Variables are in: the field's Variables button, or for a color its picker's button. */
-  arrived: string;
   /** Two values to type, the second after the first is applied. */
   values: [string, string];
   /** The canvas's computed style the value sets. */
@@ -56,12 +54,12 @@ const px = (value: string) => `${value}px`;
 const rgb = (hex: string) => `rgb(${[0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
 
 const FIELDS: Field[] = [
-  { layer: "Card", label: "Corner radius", arrived: "Corner radius variables", values: ["71", "72"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).borderTopLeftRadius), expected: px },
-  { layer: "Card", label: "Padding top", arrived: "Padding top variables", values: ["71", "72"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).paddingTop), expected: px },
-  { layer: "Card", label: "Width", arrived: "Width variables", values: ["171", "172"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).width), expected: px },
-  { layer: "Freeze", label: "Font size", arrived: "Font size variables", values: ["31", "32"], drawn: (page) => canvas(page).locator("h3").first().evaluate((el) => getComputedStyle(el).fontSize), expected: px },
-  { layer: "Card", label: "Fill color", arrived: "Fill color picker", values: ["123456", "654321"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).backgroundColor), expected: rgb },
-  { layer: "Grid", label: "Row gap", arrived: "Row gap variables", values: ["71", "72"], drawn: (page) => canvas(page).locator("[data-testid=features]").evaluate((el) => getComputedStyle(el).rowGap), expected: px },
+  { layer: "Card", label: "Corner radius", values: ["71", "72"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).borderTopLeftRadius), expected: px },
+  { layer: "Card", label: "Padding top", values: ["71", "72"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).paddingTop), expected: px },
+  { layer: "Card", label: "Width", values: ["171", "172"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).width), expected: px },
+  { layer: "Freeze", label: "Font size", values: ["31", "32"], drawn: (page) => canvas(page).locator("h3").first().evaluate((el) => getComputedStyle(el).fontSize), expected: px },
+  { layer: "Card", label: "Fill color", values: ["123456", "654321"], drawn: (page) => firstCard(page).evaluate((el) => getComputedStyle(el).backgroundColor), expected: rgb },
+  { layer: "Grid", label: "Row gap", values: ["71", "72"], drawn: (page) => canvas(page).locator("[data-testid=features]").evaluate((el) => getComputedStyle(el).rowGap), expected: px },
 ];
 
 /** The field as it is now: focused or not, what it shows, and what is selected in it. */
@@ -76,8 +74,9 @@ function seen(page: Page, label: string) {
 }
 
 for (const field of FIELDS) {
-  const { layer, label, arrived, values: [first, second] } = field;
-  const arrivedButton = (page: Page) => design(page).getByRole("button", { name: arrived, exact: true });
+  const { layer, label, values: [first, second] } = field;
+  // Once the Variables are in, the field focused lists them under it.
+  const listed = (page: Page) => page.getByRole("listbox", { name: "Matching variables" });
 
   test(`${label}: typed as the Variables come in, the field keeps the text, the focus and the selection, and Enter applies it`, async ({ page }) => {
     const release = await holdVariables(page);
@@ -87,13 +86,13 @@ for (const field of FIELDS) {
     // A click selects what the field shows: typing replaces it.
     await input.click();
     await page.keyboard.type(first.slice(0, -1));
-    await expect(arrivedButton(page)).toHaveCount(0);
+    await expect(listed(page)).toHaveCount(0);
 
     // The Variables come in somewhere around the last key and the select-all: before, between or after them.
     release();
     await page.keyboard.type(first.slice(-1));
     await page.keyboard.press("ControlOrMeta+a");
-    await expect(arrivedButton(page)).toBeVisible();
+    await expect(listed(page)).toBeVisible();
     await expect.poll(() => seen(page, label)).toEqual({ focused: true, value: first, selected: [0, first.length] });
 
     // Enter, on the keyboard as the designer has it: no click to focus the field again.
@@ -111,10 +110,10 @@ for (const field of FIELDS) {
     await page.keyboard.type(first);
     await page.keyboard.press("Enter");
     await expect.poll(() => field.drawn(page)).toBe(field.expected(first));
-    await expect(arrivedButton(page)).toHaveCount(0);
+    await expect(listed(page)).toHaveCount(0);
 
     release();
-    await expect(arrivedButton(page)).toBeVisible();
+    await expect(listed(page)).toBeVisible();
     // Enter selected what it applied, to type over.
     await expect.poll(() => seen(page, label)).toEqual({ focused: true, value: first.toUpperCase(), selected: [0, first.length] });
 

@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { UNLOCK_HOLD_MS } from "./motion";
+import { UNLOCK_HOLD_MS } from "./toggle-motion";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
@@ -25,8 +25,8 @@ interface Drag {
  * it unlocks it.
  */
 interface Props {
-  // Until the rest of the editor layer has loaded there is no round to show: the badge, the list and the lock come with it.
-  /** Changes not yet applied, shown as a badge, which opens the change list. */
+  // Until the rest of the editor layer has loaded there is no round to show: the count, the list and the lock come with it.
+  /** Changes not yet applied, counted on a button beside the toggle, which opens the change list. */
   changeCount?: number;
   /** The change list is open. */
   changesOpen?: boolean;
@@ -170,7 +170,7 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
           type="button"
           class="tk-toggle"
           aria-label={label}
-          title={applying ? "Applying design changes. Press and hold to unlock." : undefined}
+          data-tk-tip={applying ? "Applying design changes. Press and hold to unlock." : undefined}
           aria-disabled={applying ? "true" : undefined}
           aria-busy={busy && !applying ? "true" : undefined}
           onPointerEnter={onReady}
@@ -187,21 +187,19 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
             endHold();
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-            />
-            <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          {/*
+           * A pencil, for editing (designer, 2026-11-09), as the editor's icons are drawn: 13.5px, its line 1.05px on screen
+           * (1.24 of its 16), round at its ends and corners.
+           */}
+          <svg width="13.5" height="13.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13.05 5.15a.55.55 0 0 0-2.19-2.19L3.51 10.3a1.1 1.1 0 0 0-.27.46l-.73 2.39a.28.28 0 0 0 .34.34l2.39-.73a1.1 1.1 0 0 0 .46-.27zM9.65 4.15l2.2 2.2" />
           </svg>
         </button>
-        {applying && <ProgressRing {...applying} />}
+        {/* Not a badge on the toggle's corner, too easily pressed for it, but a button of its own after it, the two as one (designer, 2026-11-08). */}
         {changeCount > 0 && (
           <button
             type="button"
-            class="tk-badge"
+            class="tk-toggle-count"
             data-tk-changes-opener=""
             aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}
             aria-haspopup="dialog"
@@ -211,6 +209,7 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
             {changeCount}
           </button>
         )}
+        {applying && <ProgressRing {...applying} />}
       </div>
       {children}
     </div>
@@ -222,16 +221,17 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
   return (
     <svg
       class="tk-progress"
-      viewBox="0 0 48 48"
+      viewBox="0 0 36 36"
       role="progressbar"
       aria-label="Applying design changes"
       aria-valuemin={0}
       aria-valuemax={total}
       aria-valuenow={done}
     >
-      <circle class="tk-progress-track" cx="24" cy="24" r="22" pathLength={1} />
-      <circle class="tk-progress-done" cx="24" cy="24" r="22" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
-      <circle class="tk-progress-hold" cx="24" cy="24" r="22" pathLength={1} />
+      {/* Around the toggle's rounded square (designer, 2026-11-08): where and how round, the styles' (`.tk-progress rect`). */}
+      <rect class="tk-progress-track" pathLength={1} />
+      <rect class="tk-progress-done" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
+      <rect class="tk-progress-hold" pathLength={1} />
     </svg>
   );
 }

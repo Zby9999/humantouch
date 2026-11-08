@@ -1,11 +1,32 @@
 /** @jsxImportSource preact */
-import { createContext, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
+import { createContext, isValidElement, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Variable, VariableGroup } from "../service-protocol";
+import { ResetButton, useChangeMarks, type ValuePart } from "./ChangeMarks";
 import { writeShadows, type Shadow } from "./effects";
-import { Icon } from "./icons";
+import { leavingProps, useExit } from "./exit";
+import { Icon, type IconName } from "./icons";
 import { cssColor, type Color } from "./paint";
+import type { Property } from "./property-table";
 import { equal, sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
+import { palette, paletteLines, Tip } from "./VariantsPanel";
+
+/** How many named colors a row of the picker's palette holds: as many as Tailwind's steps, as before. */
+const NAMED_ROW = 11;
+
+/**
+ * The picker's palette as the Variants tab's (designer, 2026-11-08), without
+ * names: the ramps' lines, then the named colors, `NAMED_ROW` a row on as
+ * many columns, each named in its title. Undefined where a ramp has no color
+ * for a step: a named row has no placeholders, as it has no steps.
+ */
+function pickerRows(entries: Resolved[]): { cells: (Resolved | undefined)[]; columns: number }[] {
+  const { scales, named } = palette(entries);
+  const colors = named.flat();
+  const rows = scales.flatMap((scale) => paletteLines(scale).map(([, cells]) => ({ cells, columns: cells.length })));
+  for (let i = 0; i < colors.length; i += NAMED_ROW) rows.push({ cells: colors.slice(i, i + NAMED_ROW), columns: NAMED_ROW });
+  return rows;
+}
 
 const CatalogContext = createContext<Catalog | null>(null);
 
@@ -28,26 +49,38 @@ export interface Slot {
 }
 
 const POPOVER_WIDTH = 240;
+/** The most it is tall, as its styles have it (`.tk-popover`). */
+const POPOVER_MAX_HEIGHT = 520;
 const GAP = 8;
 
 /**
  * A panel over the Design panel, beside it as in Figma, for the control
  * `anchor`: it closes on Esc, or on a press outside it, giving focus back.
+ * `leaving`: closed with the pointer, it fades and moves down (`useExit`).
  */
-function Popover({ label, anchor, onClose, children }: { label: string; anchor: HTMLElement; onClose(): void; children: ComponentChildren }) {
+function Popover({ label, anchor, leaving = false, onClose, children }: { label: string; anchor: HTMLElement; leaving?: boolean; onClose(): void; children: ComponentChildren }) {
   const box = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
-    const at = anchor.getBoundingClientRect();
-    const height = box.current!.offsetHeight;
-    const left = at.left - POPOVER_WIDTH - GAP >= GAP ? at.left - POPOVER_WIDTH - GAP : Math.max(GAP, at.right - POPOVER_WIDTH);
-    setPlace({ left, top: Math.max(GAP, Math.min(at.top, window.innerHeight - height - GAP)) });
+    const place = () => {
+      const at = anchor.getBoundingClientRect();
+      // Placed as if it were as tall as it can be: it stays where it is as it grows or shrinks, a tab or a fill's type changed,
+      // and is whole in the window however tall it comes to (designer, 2026-11-05).
+      const tallest = Math.min(POPOVER_MAX_HEIGHT, window.innerHeight - 2 * GAP);
+      const left = at.left - POPOVER_WIDTH - GAP >= GAP ? at.left - POPOVER_WIDTH - GAP : Math.max(GAP, at.right - POPOVER_WIDTH);
+      setPlace({ left, top: Math.max(GAP, Math.min(at.top, window.innerHeight - tallest - GAP)) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
   }, [anchor]);
   useEffect(() => {
     const root = anchor.getRootNode() as Document | ShadowRoot;
     const away = (event: Event) => {
       const path = event.composedPath();
-      if (!path.includes(box.current!) && !path.includes(anchor)) onClose();
+      // A gradient's handles on the canvas change what it shows: pressed, it stays open.
+      const keeps = path.some((el) => el instanceof Element && el.hasAttribute("data-tk-keeps-popover"));
+      if (!leaving && !path.includes(box.current!) && !path.includes(anchor) && !keeps) onClose();
     };
     // On the document: a press on the page or canvas; on the shadow root: one elsewhere in the editor layer.
     document.addEventListener("pointerdown", away, true);
@@ -56,7 +89,7 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
       document.removeEventListener("pointerdown", away, true);
       if (root !== document) root.removeEventListener("pointerdown", away, true);
     };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, leaving]);
   const close = () => {
     onClose();
     anchor.focus();
@@ -64,8 +97,9 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
   return (
     <div
       ref={box}
-      class="tk-popover"
+      class={leaving ? "tk-popover is-leaving" : "tk-popover"}
       role="dialog"
+      {...leavingProps(leaving)}
       aria-label={label}
       // A click on it keeps its keys in it: Esc closes it, not the selection.
       tabIndex={-1}
@@ -95,7 +129,7 @@ function valueText(drawn: Drawn): string {
 }
 
 /** A small picture of what a Variable draws: a swatch of a color, a box with its shadows. */
-function Preview({ drawn }: { drawn: Drawn }) {
+export function Preview({ drawn }: { drawn: Drawn }) {
   if (typeof drawn === "number") return null;
   if (Array.isArray(drawn)) {
     return <span class="tk-variable-preview is-shadow" style={{ boxShadow: writeShadows(drawn as Shadow[])["box-shadow"] }} aria-hidden="true" />;
@@ -139,7 +173,7 @@ function Option({ as, id, entry, selected, onChoose, onPick }: {
       class="tk-variable-option"
       aria-selected={selected}
       aria-label={variable.name}
-      title={`${variable.name}: ${variable.value}`}
+      data-tk-tip={`${variable.name}: ${variable.value}`}
       onClick={() => onPick(entry)}
     >
       <Preview drawn={drawn} />
@@ -160,6 +194,9 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
   useEffect(() => search.current?.focus(), []);
   const found = !catalog ? [] : query.trim() ? catalog.named(group, query) : catalog.of(group);
   const headings = [...new Set(found.map(({ variable }) => headingOf(variable)))];
+  /** The palette's swatch pointed at or focused: its name and value in the Variants tab's dark tip, not the browser's (designer, 2026-11-08). */
+  const [pointed, setPointed] = useState<{ entry: Resolved; at: DOMRect } | null>(null);
+  const point = (entry: Resolved, swatch: HTMLElement) => setPointed({ entry, at: swatch.getBoundingClientRect() });
   return (
     <>
       <input
@@ -175,7 +212,43 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
       />
       <div class="tk-variable-list" role="listbox" aria-label="Variables">
         {!found.length && <p class="tk-layer-note">No variables match.</p>}
-        {headings.map((heading) => (
+        {/* Colors not searched for: a palette, the project's own first, as the Variants tab shows them (designer, 2026-11-07). */}
+        {group === "color" && !query.trim()
+          ? (["Project", "Tailwind"] as const).map((heading) => {
+              const part = found.filter(({ variable }) => variable.own === (heading === "Project"));
+              return part.length ? (
+                <div key={heading} role="group" aria-label={heading}>
+                  <h4 class="tk-section-title tk-subtitle">{heading}</h4>
+                  <div class="tk-variants-palette">
+                    {pickerRows(part).map(({ cells, columns }, r) => (
+                      <div key={r} class="tk-variants-ramp is-bare" style={{ "--tk-steps": `${columns}` }}>
+                        {cells.map((entry, i) =>
+                          entry ? (
+                            <button
+                              key={entry.variable.name}
+                              type="button"
+                              role="option"
+                              class="tk-variants-swatch"
+                              aria-selected={sameVariable(bound, entry.variable)}
+                              aria-label={entry.variable.name}
+                              style={{ "--tk-swatch": cssColor(entry.drawn as Color) }}
+                              onPointerEnter={(event) => point(entry, event.currentTarget)}
+                              onPointerLeave={() => setPointed(null)}
+                              onFocus={(event) => point(entry, event.currentTarget)}
+                              onBlur={() => setPointed(null)}
+                              onClick={() => onPick(entry)}
+                            />
+                          ) : (
+                            <span key={`empty ${i}`} class="tk-variants-empty" />
+                          ),
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })
+          : headings.map((heading) => (
           <div key={heading} role="group" aria-label={heading}>
             <h4 class="tk-section-title tk-subtitle">{heading}</h4>
             {found
@@ -186,8 +259,9 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
                 return <Option key={`${variable.from} ${variable.name}`} as="button" entry={entry} selected={selected} onPick={onPick} />;
               })}
           </div>
-        ))}
+            ))}
       </div>
+      {pointed && <Tip entry={pointed.entry} at={pointed.at} hint={undefined} inUse={sameVariable(bound, pointed.entry.variable)} />}
     </>
   );
 }
@@ -195,17 +269,28 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
 /**
  * A field whose value can be a Variable, as in Figma: with one picked, the
  * Variable's name shows in its place, to pick another or detach it; without,
- * the field, and beside it a button that lists the group's Variables. With no
- * Variables in the group, the field alone.
+ * the field, which lists the group's Variables as it is focused and typed
+ * into (`useTypeahead`). With no Variables in the group, the field alone.
  *
  * The field is in the same element whether the Variables are in or not: they
  * can come in after the panel is up, as the field is typed into, and it keeps
  * its focus, what is typed and what is selected in it (ticket 98). With no
  * button beside it, that element lays out as if the field were in its place.
  */
-export function VariableSlot({ label, slot, children }: { label: string; slot: Slot | undefined; children: ComponentChildren }) {
+export function VariableSlot({ label, slot, property, part, rowReset, children }: {
+  label: string;
+  /** Its reset is its row's, at the row's left (a size's, with its sizing): marked, the name has none of its own (designer, 2026-11-08). */
+  rowReset?: boolean;
+  slot: Slot | undefined;
+  /** The property the field sets, and its part: with a Variable picked, the name is marked as the field would be (`ChangeMarks`). */
+  property?: Property;
+  part?: number | ValuePart;
+  children: ComponentChildren;
+}) {
   const catalog = useCatalog();
+  const marks = useChangeMarks();
   const [open, setOpen] = useState<HTMLElement | null>(null);
+  const exit = useExit(open);
   const offered = slot && catalog?.of(slot.group).length ? slot : undefined;
   const pick = (entry: Resolved | null) => {
     setOpen(null);
@@ -214,42 +299,34 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
   const lower = label.toLowerCase();
   const typing: Typing | null = offered ? { group: offered.group, selection: offered.selection, read: readLength, naming: namesLength, onPick: pick } : null;
   const bound = offered?.bound;
+  const changed = !!bound && !!property && marks.changed(property, part);
+  /** The field's own icon, or its letter, kept by the Variable's name, so what the value is for still shows (designer, 2026-11-08). With no field (a shadow's), the Variable's mark. */
+  const own = (isValidElement(children) ? children.props : {}) as { icon?: IconName; glyph?: string; small?: boolean };
   return (
     <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"}>
       {bound ? (
-        <div class="tk-field tk-variable-chip">
-          <Icon name="variable" />
+        <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`}>
+          {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "tk-glyph is-small" : "tk-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
           <button
             type="button"
             class="tk-variable-chip-name"
             aria-label={`${label} variable`}
             aria-haspopup="dialog"
-            title={`${bound.name}: ${bound.value}`}
+            data-tk-tip={`${bound.name}: ${bound.value}`}
             onClick={(event) => setOpen(open ? null : event.currentTarget)}
           >
             {bound.name}
           </button>
-          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} title="Detach variable" onClick={() => pick(null)}>
+          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} data-tk-tip="Detach variable" onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
+          {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
         </div>
       ) : (
         <TypingProvider value={typing}>{children}</TypingProvider>
       )}
-      {offered && !bound && (
-        <button
-          type="button"
-          class="tk-icon-button tk-variable-button"
-          aria-label={`${label} variables`}
-          aria-haspopup="dialog"
-          title="Apply variable"
-          onClick={(event) => setOpen(open ? null : event.currentTarget)}
-        >
-          <Icon name="variable" />
-        </button>
-      )}
-      {offered && open && (
-        <Popover label={`${label} variables`} anchor={open} onClose={() => setOpen(null)}>
+      {offered && bound && exit.shown && (
+        <Popover key={exit.key} label={`${label} variables`} anchor={exit.shown} leaving={exit.leaving} onClose={() => setOpen(null)}>
           <VariableList group={offered.group} bound={bound ?? null} onPick={pick} />
         </Popover>
       )}
@@ -258,41 +335,61 @@ export function VariableSlot({ label, slot, children }: { label: string; slot: S
 }
 
 /**
- * A color's picker, as in Figma: a Custom tab with the system's color picker,
- * and a Variables tab listing the project's color Variables. `label`: "Fill".
+ * A color's picker, as in Figma: a Custom tab, with `top` (a fill's type and
+ * gradient) over the editor layer's own picker, and a Variables tab listing
+ * the project's color Variables when it has them (designer, 2026-11-05).
+ * `label`: "Fill". Drawn while `anchor`, the control it is open from, is
+ * there, and a moment after, as it leaves (`useExit`).
  */
-export function ColorPicker({ label, anchor, slot, custom, onClose }: {
+export function ColorPicker(props: Omit<ColorPickerProps, "anchor" | "leaving"> & { anchor: HTMLElement | null }) {
+  const exit = useExit(props.anchor);
+  return exit.shown && <PickerPopover key={exit.key} {...props} anchor={exit.shown} leaving={exit.leaving} />;
+}
+
+interface ColorPickerProps {
   label: string;
   anchor: HTMLElement;
-  slot: Slot;
-  /** The Custom tab: the system's color picker. */
-  custom: ComponentChildren;
+  leaving: boolean;
+  /** The color as a Variable: none, no Variables tab. */
+  slot?: Slot;
+  top?: ComponentChildren;
+  /** The picker; none, a fill of Mixed types say, only `top`. */
+  custom?: ComponentChildren;
   onClose(): void;
-}) {
-  const [tab, setTab] = useState<"custom" | "variables">(slot.bound ? "variables" : "custom");
+}
+
+function PickerPopover({ label, anchor, leaving, slot, top, custom, onClose }: ColorPickerProps) {
+  const [tab, setTab] = useState<"custom" | "variables">(slot?.bound ? "variables" : "custom");
   const tabs = [
     { id: "custom", label: "Custom" },
     { id: "variables", label: "Variables" },
   ] as const;
+  const tabbed = !!(custom && slot);
+  const shown = tabbed ? tab : "custom";
   return (
-    <Popover label={`${label} color`} anchor={anchor} onClose={onClose}>
-      <div class="tk-tabs" role="tablist" aria-label="Color">
-        {tabs.map(({ id, label }) => (
-          <button key={id} type="button" role="tab" class="tk-tab" aria-selected={tab === id} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" aria-label={tab === "custom" ? "Custom" : "Variables"}>
-        {tab === "custom" ? (
-          custom
+    <Popover label={`${label} color`} anchor={anchor} leaving={leaving} onClose={onClose}>
+      {tabbed && (
+        <div class="tk-tabs" role="tablist" aria-label="Color">
+          {tabs.map(({ id, label }) => (
+            <button key={id} type="button" role="tab" class="tk-tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div class="tk-tab-panel" role={tabbed ? "tabpanel" : undefined} aria-label={tabbed ? (shown === "custom" ? "Custom" : "Variables") : undefined}>
+        {shown === "custom" ? (
+          <>
+            {top}
+            {custom}
+          </>
         ) : (
           <VariableList
             group="color"
-            bound={slot.bound}
+            bound={slot!.bound}
             onPick={(entry) => {
               onClose();
-              slot.onPick(entry);
+              slot!.onPick(entry);
             }}
           />
         )}
@@ -351,14 +448,23 @@ const NONE: Typeahead = { keyDown: () => false, applied: () => {}, input: {}, af
 
 /**
  * Finds Variables as a field is typed into, as in Figma, for a field inside a
- * TypingProvider: text that is part of a name lists the group's Variables
- * that have it, under the field, to choose with ↑ / ↓ and pick with Enter (Esc
- * puts back the value); a value close to one of them (see `NEAR`) shows its
- * name quietly at the end of the field, to pick with a click. Neither takes
- * the focus or stops the typing. `text`: what is typed and not yet applied;
- * `value`: what the field shows; `reset` drops what is typed.
+ * TypingProvider. Focused, the field lists the group's Variables under it, the
+ * closest to what it shows, or what is typed, first, to pick with a click: no
+ * button beside it to open them (designer, 2026-11-05). Text that is part of
+ * a name lists those that have it, to choose with ↑ / ↓ and pick with Enter
+ * (Esc puts back the value); with a value typed, ↑ / ↓ and Enter are the
+ * field's. A value close to one of them (see `NEAR`) shows its name quietly at
+ * the end of the field, to pick with a click. None of it takes the focus or
+ * stops the typing. `text`: what is typed and not yet applied; `value`: what
+ * the field shows; `reset` drops what is typed.
  */
-export function useTypeahead({ text, value, input, reset }: { text: string | null; value: string; input: RefObject<HTMLInputElement | null>; reset(): void }): Typeahead {
+export function useTypeahead({ text, value, focused, input, reset }: {
+  text: string | null;
+  value: string;
+  focused: boolean;
+  input: RefObject<HTMLInputElement | null>;
+  reset(): void;
+}): Typeahead {
   const typing = useContext(TypingContext);
   const catalog = useCatalog();
   const id = useId();
@@ -366,12 +472,19 @@ export function useTypeahead({ text, value, input, reset }: { text: string | nul
   const [chosen, setChosen] = useState({ text, index: 0 });
   /** The value last typed in and applied, and for which layers: its hint stays while the field shows it for them, to be clicked. */
   const [typed, setTyped] = useState<{ drawn: Drawn; selection: string } | null>(null);
+  /** The list closed with Esc, for the text it was closed on: it opens again as more is typed, or the field is focused again. */
+  const [closed, setClosed] = useState<{ text: string | null } | null>(null);
+  useEffect(() => {
+    if (!focused) setClosed(null);
+  }, [focused]);
   if (!typing || !catalog) return NONE;
 
   const { group, selection, read, naming, onPick } = typing;
-  const options = text !== null && naming(text) ? catalog.named(group, text) : [];
+  const byName = text !== null && naming(text);
+  const options = closed?.text === text ? [] : byName ? catalog.named(group, text) : focused ? catalog.closest(group, read(text ?? value)) : [];
   const open = options.length > 0;
-  const active = chosen.text === text ? Math.min(chosen.index, options.length - 1) : 0;
+  // Only a name typed has an option the keys are on.
+  const active = !byName ? -1 : chosen.text === text ? Math.min(chosen.index, options.length - 1) : 0;
   const shown = read(value);
   const kept = typed?.selection === selection && shown !== null && equal(typed.drawn, shown) ? typed.drawn : null;
   const drawn = text !== null ? read(text) : kept;
@@ -386,12 +499,15 @@ export function useTypeahead({ text, value, input, reset }: { text: string | nul
 
   return {
     keyDown(event) {
-      if (!open) return false;
+      if (!open || !byName) return false;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const by = event.key === "ArrowDown" ? 1 : -1;
         setChosen({ text, index: (active + by + options.length) % options.length });
       } else if (event.key === "Enter") pick(options[active]);
-      else if (event.key === "Escape") reset();
+      else if (event.key === "Escape") {
+        reset();
+        setClosed({ text: null });
+      }
       else return false;
       event.preventDefault();
       // Esc closes the list and keeps the field, and the selection.
@@ -402,7 +518,7 @@ export function useTypeahead({ text, value, input, reset }: { text: string | nul
       const drawn = read(applied);
       setTyped(drawn === null ? null : { drawn, selection });
     },
-    input: open ? { "aria-autocomplete": "list", "aria-controls": id, "aria-activedescendant": optionId(active) } : {},
+    input: open ? { "aria-autocomplete": "list", "aria-controls": id, "aria-activedescendant": active >= 0 ? optionId(active) : undefined } : {},
     after: (
       <>
         {near && (
@@ -410,7 +526,6 @@ export function useTypeahead({ text, value, input, reset }: { text: string | nul
             type="button"
             class="tk-variable-hint"
             aria-label={`Use variable ${near.variable.name}`}
-            title={`Close to ${near.variable.name} (${valueText(near.drawn)}): use it`}
             // A press keeps the field typed into: what is typed is not applied on the way.
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => pick(near)}
@@ -419,7 +534,7 @@ export function useTypeahead({ text, value, input, reset }: { text: string | nul
           </button>
         )}
         {open && input.current && (
-          <Matches id={id} anchor={input.current} options={options} active={active} optionId={optionId} onChoose={(index) => setChosen({ text, index })} onPick={pick} />
+          <Matches id={id} anchor={input.current} options={options} active={active} optionId={optionId} onChoose={(index) => byName && setChosen({ text, index })} onPick={pick} />
         )}
       </>
     ),

@@ -1,4 +1,4 @@
-import { canvasInPlace, expect, test, type Frame, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Frame, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvasIframe(page: Page) {
@@ -257,9 +257,9 @@ test.describe("canvas navigation", () => {
 
       await expect.poll(async () => (await box(page)).width).toBeGreaterThan(before.width * 1.1);
       const after = await box(page);
-      // The spot under the pointer stays under the pointer.
-      expect((pointer.x - after.x) / after.width).toBeCloseTo((pointer.x - before.x) / before.width, 3);
-      expect((pointer.y - after.y) / after.height).toBeCloseTo((pointer.y - before.y) / before.height, 3);
+      // The spot under the pointer stays under the pointer, to within half a px as the canvas lays out in whole and part px.
+      expect(Math.abs((pointer.x - after.x) / after.width - (pointer.x - before.x) / before.width) * after.width).toBeLessThan(0.5);
+      expect(Math.abs((pointer.y - after.y) / after.height - (pointer.y - before.y) / before.height) * after.height).toBeLessThan(0.5);
     });
   }
 
@@ -306,7 +306,8 @@ test.describe("canvas navigation", () => {
 });
 
 for (const [scheme, panel, area] of [
-  ["light", "rgb(255, 255, 255)", "rgb(245, 245, 245)"],
+  // Light: the designer's palette (2026-11-07), panels on neutral 100, the canvas on neutral 200. Dark keeps the earlier greys.
+  ["light", "rgb(245, 245, 245)", "rgb(229, 229, 228)"],
   ["dark", "rgb(44, 44, 44)", "rgb(30, 30, 30)"],
 ] as const) {
   test(`the editor shell follows the system ${scheme} mode, the canvas keeps the page's look`, async ({ page }) => {
@@ -321,6 +322,49 @@ for (const [scheme, panel, area] of [
     );
   });
 }
+
+test("the Design panel's top: its label at the left, the count and the way back at the right", async ({ page }) => {
+  await enterEditMode(page);
+  const panel = page.getByRole("complementary", { name: "Design" });
+  const header = panel.locator(".tk-panel-header");
+  const label = header.getByRole("heading");
+  const back = header.getByRole("button", { name: EXIT_LABEL });
+  const count = header.locator(".tk-count");
+
+  /** With nothing after the Play button that went, the count and the way back sat by the label (designer, 2026-11-08). */
+  async function atTheEnds() {
+    const box = await steadyBox(header);
+    const [left, right] = await header.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return [parseFloat(s.paddingLeft), parseFloat(s.paddingRight)];
+    });
+    const backBox = await steadyBox(back);
+    expect(Math.abs(backBox.x + backBox.width - (box.x + box.width - right))).toBeLessThanOrEqual(1);
+    expect((await steadyBox(label)).x - (box.x + left)).toBeLessThanOrEqual(4);
+    if (await count.isVisible()) {
+      const countBox = await steadyBox(count);
+      expect(countBox.x).toBeGreaterThan(box.x + box.width / 2);
+      expect(countBox.x + countBox.width).toBeLessThanOrEqual(backBox.x);
+    }
+  }
+
+  // Nothing selected: Variants.
+  await expect(label).toHaveText("Variants");
+  await expect(count).toHaveCount(0);
+  await atTheEnds();
+
+  // A layer selected: Design.
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await expect(label).toHaveText("Design");
+  await atTheEnds();
+
+  // A change made: the count shows before the way back.
+  const hex = panel.getByRole("textbox", { name: "Fill color", exact: true });
+  await hex.fill("ff0000");
+  await hex.press("Enter");
+  await expect(count).toBeVisible();
+  await atTheEnds();
+});
 
 test("the page underneath is paused while editing", async ({ page }) => {
   await enterEditMode(page);

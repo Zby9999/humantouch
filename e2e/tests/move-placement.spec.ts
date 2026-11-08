@@ -396,12 +396,12 @@ test("placed from the right, moved in the tablet view: it stays placed from the 
   await field(page, "X").fill(String(x - 60));
   await field(page, "X").press("Enter");
   await expect.poll(views).toEqual([{ right: 40, top: 60 }, { right: 100, top: 60 }, { right: 40, top: 60 }]);
-  // Its `right` at the tablet's breakpoint: no X, and the Position row marked.
+  // Its `right` at the tablet's breakpoint: no X, so the X field is not marked changed.
   await expect(badge(page)).toHaveAccessibleName("1 change not applied yet");
-  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveText(["Right"]);
+  await expect(design(page).getByRole("button", { name: "Reset x" })).toHaveCount(0);
 });
 
-test("placed from the right, resized in the tablet view: its width and its `right` reset together from its Position row's mark, so it is back where it was, not moved by half of it (line review)", async ({ page }) => {
+test("placed from the right, resized in the tablet view: its width and its `right` reset together from the width field, so it is back where it was, not moved by half of it (line review)", async ({ page }) => {
   await addBoard(page, "top: 60px; right: 40px");
   await enterEditMode(page);
   await pickTag(page, tablet(page));
@@ -411,12 +411,12 @@ test("placed from the right, resized in the tablet view: its width and its `righ
   // Its left edge stays: 20 px from the right, 100 wide, in the tablet view only.
   await expect.poll(() => gapsIn(tablet(page)).then(({ right }) => right)).toBe(20);
   await expect.poll(() => gapsIn(desktop(page)).then(({ right }) => right)).toBe(40);
-  const marks = design(page).locator(".tk-row-mark");
-  await expect(marks).toHaveCount(2);
+  const changed = design(page).getByRole("button", { name: "Reset width" });
+  await expect(changed).toBeVisible();
 
-  await design(page).getByRole("region", { name: "Position" }).locator(".tk-row-mark").click();
+  await changed.click();
   for (const view of everyView(page)) await expect.poll(() => gapsIn(view).then(({ right }) => right)).toBe(40);
   await expect.poll(() => tablet(page).contentFrame().locator("#tag").evaluate((el) => el.getBoundingClientRect().width)).toBe(80);
-  await expect(marks).toHaveCount(0);
+  await expect(changed).toHaveCount(0);
   await expect(badge(page)).toHaveCount(0);
 });

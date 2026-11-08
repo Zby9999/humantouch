@@ -12,11 +12,19 @@
 /** The presses held, each by the pointer holding it. */
 const held = new Map<symbol, number>();
 
+/** Told when a press begins with none held, and when the last one held ends. */
+const watchers = new Set<(held: boolean) => void>();
+
 /** A pointer let go or cancelled, wherever it is: the presses it held are over. */
 const lift = (event: PointerEvent) => {
   for (const [press, pointerId] of held) if (pointerId === event.pointerId) held.delete(press);
-  if (!held.size) stopWatching();
+  if (!held.size) letGo();
 };
+
+function letGo() {
+  stopWatching();
+  for (const watcher of watchers) watcher(false);
+}
 
 /** Before anything on the page takes it: what ends with the press sees it over. */
 function watchLifts() {
@@ -36,14 +44,26 @@ function stopWatching() {
  */
 export function holdPointer(pointerId: number): () => void {
   const press = Symbol("press");
-  if (!held.size) watchLifts();
+  const first = !held.size;
+  if (first) watchLifts();
   held.set(press, pointerId);
+  if (first) for (const watcher of watchers) watcher(true);
   return () => {
-    if (held.delete(press) && !held.size) stopWatching();
+    if (held.delete(press) && !held.size) letGo();
   };
 }
 
 /** Whether a press is held now. */
 export function pointerHeld(): boolean {
   return held.size > 0;
+}
+
+/**
+ * Calls `watcher` with true as a press begins with none held, and with false
+ * as the last one held is let go, cancelled or ended sooner. Returns what
+ * stops it.
+ */
+export function watchHolds(watcher: (held: boolean) => void): () => void {
+  watchers.add(watcher);
+  return () => void watchers.delete(watcher);
 }

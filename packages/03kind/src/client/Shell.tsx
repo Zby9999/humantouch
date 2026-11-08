@@ -1,12 +1,14 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
-import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
+import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound, Variable, VariableGroup } from "../service-protocol";
+import type { Property, PropertyValues } from "./property-table";
 import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
-import { pointerHeld } from "./pointer-held";
+import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
+import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
 import type { Destination, Editor } from "./edit-commands";
@@ -17,10 +19,13 @@ import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
+import { PanelResizer } from "./PanelResizer";
+import { watchScrolled } from "./panel-scrolled";
+import { fitWidths, maxWidth, readWidths, writeWidth, type Panel, type Widths } from "./panel-widths";
 import { createFolds } from "./layer-folds";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
-import { BreakpointSection } from "./BreakpointSection";
+import { BreakpointBadge } from "./BreakpointBadge";
 import { BriefSection } from "./BriefSection";
 import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { promotedNote } from "./promote";
@@ -30,10 +35,10 @@ import { hasPartsToRead } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
-import { bind, bindRecorded, resolveVariables, type Catalog } from "./variables";
+import { bind, bindRecorded, resolveVariables, withPart, type Catalog, type Resolved } from "./variables";
+import { VariantsPanel } from "./VariantsPanel";
+import { ChangeMarksProvider, changeMarks } from "./ChangeMarks";
 import { CatalogProvider } from "./VariablePicker";
-
-const LAYERS_KEY = "03kind:layers-panel";
 
 /** What the change list does to the round while edit mode is up: on the canvas, as edits. */
 export interface RoundControl {
@@ -86,19 +91,58 @@ const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRigh
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
 export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, leaving, animate, onLeft }: Props) {
-  /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
-  const [layersShown, setLayersShown] = useState(readLayersShown);
+  /**
+   * Hidden at first: the editor often opens in a browser built into another app, where room is short. Hidden on every
+   * entry, whether it was shown or hidden the last time; shown, it stays so until edit mode is left (designer,
+   * 2026-11-08). Nothing kept for the next entry.
+   */
+  const [layersShown, setLayersShown] = useState(false);
   const layersToggle = useRef<HTMLButtonElement>(null);
   const toggledLayers = useRef(false);
   const showLayers = (shown: boolean) => {
     toggledLayers.current = true;
     setLayersShown(shown);
-    writeLayersShown(shown);
   };
   // The button pressed goes away with the panel: focus moves to the one that brings it back.
   useEffect(() => {
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
+
+  /**
+   * The panels' widths, each set by dragging its inner edge (designer, 2026-11-08): as the viewer set them last, and
+   * as they fit the window, the canvas keeping its room between them.
+   */
+  const shell = useRef<HTMLDivElement>(null);
+  const [chosenWidths, setChosenWidths] = useState<Widths>(readWidths);
+  const [room, setRoom] = useState(() => innerWidth);
+  useEffect(() => {
+    const onResize = () => setRoom(innerWidth);
+    addEventListener("resize", onResize);
+    return () => removeEventListener("resize", onResize);
+  }, []);
+  const widths = fitWidths(chosenWidths, room, layersShown);
+  /**
+   * Dragged: the width shows at once, on the shell's style alone; the shell renders anew once let go. Null: let go
+   * where it began. The width held is kept here too: the shell renders anew mid-drag (the round's status, polled,
+   * renders the editor layer), and the widths written after each render would put the panel back meanwhile.
+   */
+  const dragged = useRef<Partial<Widths>>({});
+  const dragWidth = (panel: Panel) => (width: number | null) => {
+    if (width === null) return void delete dragged.current[panel];
+    dragged.current[panel] = width;
+    shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
+  };
+  const keepWidth = (panel: Panel) => (width: number) => {
+    delete dragged.current[panel];
+    setChosenWidths((was) => ({ ...was, [panel]: width }));
+    writeWidth(panel, width);
+  };
+  // After every render, the widths as fitted, or as held: a drag wrote them on the style itself, which the style prop,
+  // unchanged since, would not undo (a drag let go where it began, or the window resized meanwhile).
+  useLayoutEffect(() => {
+    shell.current?.style.setProperty("--tk-layers-width", `${dragged.current.layers ?? widths.layers}px`);
+    shell.current?.style.setProperty("--tk-design-width", `${dragged.current.design ?? widths.design}px`);
+  });
 
   /** The toast at the bottom of the canvas: a new one takes the old one's place. */
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -107,17 +151,35 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
 
   /** The tool picked, from the toolbar or the keyboard: null to select, or what the next drag draws. */
   const [tool, setTool] = useState<Tool>(null);
-  /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
-  const [playing, setPlaying] = useState(false);
-  const playButton = useRef<HTMLButtonElement>(null);
+  /** The fill's picker is open on a gradient: its handles show on the canvas. */
+  const [gradientPicker, setGradientPicker] = useState(false);
+  /**
+   * Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010), from a
+   * view's full screen button (designer, 2026-11-08). `width`: as wide as that view, null as wide as the window.
+   */
+  const [played, setPlayed] = useState<{ width: number | null } | null>(null);
+  const playing = !!played;
+  /**
+   * The button that started playing, by its name: the view labels are not drawn while playing, so focus
+   * goes back to the one drawn in its place once it stops.
+   */
+  const playedFrom = useRef<{ root: ParentNode; label: string } | null>(null);
   /** Playing has just stopped: focus goes back to the button that started it. */
   const refocusPlay = useRef(false);
-  const play = (on: boolean) => {
-    refocusPlay.current = !on;
-    setPlaying(on);
+  const play = (width: number | null, from: HTMLButtonElement) => {
+    playedFrom.current = { root: from.getRootNode() as ParentNode, label: from.getAttribute("aria-label") ?? "" };
+    refocusPlay.current = false;
+    setPlayed({ width });
+  };
+  const stopPlaying = () => {
+    refocusPlay.current = true;
+    setPlayed(null);
   };
   useEffect(() => {
-    if (!playing && refocusPlay.current) playButton.current?.focus();
+    if (playing || !refocusPlay.current) return;
+    refocusPlay.current = false;
+    const from = playedFrom.current;
+    from?.root.querySelector<HTMLElement>(`button[aria-label="${CSS.escape(from.label)}"]`)?.focus();
   }, [playing]);
 
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
@@ -173,6 +235,31 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   useEffect(() => () => clearTimeout(settle.current), []);
 
   const round = useRef<{ canvas: Canvas; changeSet: ChangeSet; offCanvas: OffCanvas } | null>(null);
+  /**
+   * A value dragged is not marked while the press is held, and eases into the
+   * accent once let go (designer, 2026-11-08): the round's changes as the press
+   * began, and whether the fields are settling after it.
+   */
+  const heldFrom = useRef<Change[] | null>(null);
+  const [settling, setSettling] = useState(false);
+  useEffect(() => {
+    let done: ReturnType<typeof setTimeout> | undefined;
+    const stop = watchHolds((held) => {
+      const now = round.current?.changeSet.list() ?? [];
+      // Copies: a change adjusted again is updated in place.
+      if (held) return void (heldFrom.current = now.map((change) => ({ ...change })));
+      const was = heldFrom.current ?? [];
+      heldFrom.current = null;
+      if (now.length === was.length && now.every((change, i) => change.id === was[i].id && change.after === was[i].after)) return;
+      setSettling(true);
+      clearTimeout(done);
+      done = setTimeout(() => setSettling(false), FIELD_SETTLE_MS);
+    });
+    return () => {
+      stop();
+      clearTimeout(done);
+    };
+  }, []);
   const pendingSave = useRef<ReturnType<typeof setTimeout>>(undefined);
   const latestOnSave = useRef(onSave);
   latestOnSave.current = onSave;
@@ -244,6 +331,43 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     }
   };
   /** An edit made: the panel and the Layers panel follow it; `adjust`, a value set, the selection box steps aside meanwhile. Resized by a handle, it stays. */
+  /** Where a Variable of each group goes on `layer`, as the Variants list sets one: the property, and the part of it; none for spacing, which could be any of several. */
+  const slotFor = (layer: Layer, group: VariableGroup): [Property, string] | null => {
+    const editor = editorOf(layer);
+    const at = ({ color: editor?.can(layer, "textColor") ? ["textColor", ""] : ["fill", "color"], radius: ["radius", ""], fontSize: ["fontSize", ""], shadow: ["shadows", ""] } as Partial<Record<VariableGroup, [Property, string]>>)[group];
+    return at && editor?.can(layer, at[0]) ? at : null;
+  };
+  /** The groups a Variable picked in the Variants list can be set on every selected layer for, by what it sets there. */
+  const takenBy = (layers: Layer[]) => {
+    const names: Partial<Record<VariableGroup, string>> = { color: "Fill", radius: "corner radius", fontSize: "font size", shadow: "shadow" };
+    return Object.fromEntries(Object.entries(names).filter(([group]) => layers.length && layers.every((layer) => slotFor(layer, group as VariableGroup)))) as Partial<Record<VariableGroup, string>>;
+  };
+  /** The Variables the layer selected alone has where the Variants list sets them. */
+  const usedBy = (layers: Layer[]): Variable[] => {
+    if (layers.length !== 1) return [];
+    const [layer] = layers;
+    const editor = editorOf(layer);
+    return (["color", "radius", "fontSize", "shadow"] as VariableGroup[]).flatMap((group) => {
+      const at = slotFor(layer, group);
+      const bound = at && editor?.variables(layer, at[0])?.[at[1]];
+      return bound ? [bound] : [];
+    });
+  };
+  /** Sets the Variable picked in the Variants list on each selected layer, where it takes one of its group, as one edit. */
+  const applyVariable = (entry: Resolved) => {
+    const editor = editorOf(selected[0]);
+    if (!editor) return;
+    editor.batch(() => {
+      for (const layer of selected) {
+        const at = slotFor(layer, entry.variable.group);
+        if (!at) continue;
+        const [property, part] = at;
+        const next = withPart(property, editor.read(layer, property), part, entry.drawn);
+        if (next !== null) editor.set(layer, property, next as PropertyValues[Property], { variables: { [part]: entry.variable } });
+      }
+    });
+    onEdit();
+  };
   const onEdit = (adjust = true) => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
@@ -520,15 +644,26 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  /** Layers selected: the Design panel shows their design; none, the project's Variables (designer, 2026-11-08). */
+  const designing = !!(tree && editor && selected.length);
   return (
-    <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
+    <div
+      ref={shell}
+      class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}
+      style={{ "--tk-layers-width": `${widths.layers}px`, "--tk-design-width": `${widths.design}px` }}
+    >
+      {/*
+        Keyed, the panels and the button keep their own elements: unkeyed, the Layers panel shown again took the Design
+        panel's, and with them, stale, its header's rule and 6px under it: a rule across the Layers that Figma has not
+        (designer, 2026-11-08). The Design panel was built anew besides.
+      */}
       {layersShown ? (
-        <aside class="tk-panel is-layers" aria-label="Layers">
+        <aside key="layers" class="tk-panel is-layers" aria-label="Layers">
           <div class="tk-panel-header">
-            <h2 class="tk-panel-title">Layers</h2>
             <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
+            <h2 class="tk-panel-title">Layers</h2>
           </div>
           {tree && (
             <LayerTreeView
@@ -542,9 +677,19 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           )}
         </aside>
       ) : (
-        <button ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+        <button key="show-layers" ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
+      )}
+      {layersShown && !playing && (
+        <PanelResizer
+          key="layers-edge"
+          panel="layers"
+          width={widths.layers}
+          max={maxWidth("layers", widths, room, true)}
+          onDrag={dragWidth("layers")}
+          onCommit={keepWidth("layers")}
+        />
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
@@ -650,6 +795,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           editorOf(layer)!.takeBack();
           onEdit(false);
         }}
+        gradientHandles={gradientPicker}
+        // As a resize: dragged on the canvas, the selection stays.
+        onFillEdited={() => onEdit(false)}
         tool={tool}
         onTool={setTool}
         onDuplicate={(layer: Layer, to: Destination) => {
@@ -696,7 +844,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           setWorked(view && { view, name });
         }}
         playing={playing}
-        onStopPlaying={() => play(false)}
+        playedWidth={played?.width ?? null}
+        onPlay={play}
+        onStopPlaying={stopPlaying}
         leaving={leaving}
         animate={animate}
         changed={!!round.current?.changeSet.list().length}
@@ -705,36 +855,55 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
       {notice}
-      <aside class="tk-panel is-design" aria-label="Design">
-        <div class="tk-panel-header">
-          <h2 class="tk-panel-title">Design</h2>
-          {tree && (
-            <button ref={playButton} type="button" class="tk-icon-button tk-play" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
-              <Icon name="play" />
-            </button>
-          )}
+      {!playing && (
+        <PanelResizer
+          key="design-edge"
+          panel="design"
+          width={widths.design}
+          max={maxWidth("design", widths, room, layersShown)}
+          onDrag={dragWidth("design")}
+          onCommit={keepWidth("design")}
+        />
+      )}
+      <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
+        <div ref={watchPanelScrolled} class="tk-panel-header">
+          {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
+          {/* In the Layers' title's type: one header style for both panels (designer, 2026-11-08). */}
+          <h2 class="tk-panel-title">{designing ? "Design" : "Variants"}</h2>
           {controls}
         </div>
-        {tree && editor && selected.length ? (
+        {!designing ? (
+          <VariantsPanel catalog={catalog} takes={takenBy(selected)} inUse={usedBy(selected)} onApply={applyVariable} />
+        ) : (
           <>
-            <LayerInfo tree={treeOf(selected[0])!} layers={selected} />
-            {/* Off the canvas, a layer has no breakpoints: its look is frozen, at no width. */}
-            {!outsideOf(selected[0]) && <BreakpointSection editor={editor} layers={selected} view={worked?.name ?? "Desktop"} onEdit={onEdit} />}
+            <LayerInfo
+              tree={treeOf(selected[0])!}
+              layers={selected}
+              // Off the canvas, a layer has no breakpoints: its look is frozen, at no width.
+              badge={!outsideOf(selected[0]) && <BreakpointBadge editor={editor} layers={selected} view={worked?.name ?? "Desktop"} />}
+            />
             {/* The Design panel's short notes show in the toast. */}
             <ToastProvider value={showToast}>
               <CatalogProvider value={catalog}>
-                <Properties editor={editorOf(selected[0])!} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+                <ChangeMarksProvider value={changeMarks(round.current?.changeSet.list() ?? [], editorOf(selected[0])!, selected, onEdit, heldFrom.current)}>
+                <Properties
+                  editor={editorOf(selected[0])!}
+                  layers={selected}
+                  onEdit={onEdit}
+                  onStack={() => makeStack(selected)}
+                  onDissolve={() => dissolve(selected)}
+                  onGradientPicker={setGradientPicker}
+                />
+                </ChangeMarksProvider>
               </CatalogProvider>
             </ToastProvider>
             {/* A brief is on one layer of the canvas at a time; off the canvas, a layer is kept as it looks. */}
             {selected.length === 1 && !outsideOf(selected[0]) && <BriefSection editor={editor} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />}
           </>
-        ) : (
-          <p class="tk-panel-empty">Select a layer to see its properties.</p>
         )}
       </aside>
       {playing && (
-        <button type="button" class="tk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={() => play(false)}>
+        <button type="button" class="tk-stop-playing" aria-label="Stop playing" data-tk-tip="Back to editing (Esc)" onClick={stopPlaying}>
           <Icon name="close" />
         </button>
       )}
@@ -753,29 +922,124 @@ interface ToolsProps {
   onTool(tool: Tool): void;
 }
 
-/** At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. */
+/**
+ * At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. The chosen one is raised
+ * on a backing of its own, which slides to a tool clicked and jumps to one a key picks (designer, 2026-11-08).
+ * A tool pointed at or focused tells its name and key in the editor's dark tip, at the toolbar's left, level with it,
+ * in place of the browser's gray one (designer, 2026-11-08).
+ */
 function Tools({ tool, onTool }: ToolsProps) {
+  // The tool last clicked, until the choice changes; whether that change slides is kept until the next one, so a
+  // render meanwhile doesn't take the transition off halfway. On the first render nothing has changed: no slide.
+  const clicked = useRef<Tool | undefined>(undefined);
+  const placedAt = useRef(tool);
+  const sliding = useRef(false);
+  if (tool !== placedAt.current) {
+    sliding.current = clicked.current === tool;
+    placedAt.current = tool;
+    clicked.current = undefined;
+  }
+  const index = TOOLS.findIndex((t) => t.tool === tool);
+  /**
+   * The tool told, the middle of its button from the toolbar's top, whether it eases in, and whether focus showed it.
+   * The pointer rests on a tool `TIP_DELAY_MS` before its tip shows, easing in; passing over shows nothing. Once one shows,
+   * the toolbar is warm: another tool pointed at swaps the tip at once, text and place, without motion, and so within
+   * `TIP_GRACE_MS` of the pointer leaving the toolbar. Focus from the keyboard shows it at once; a press hides it, and the next
+   * tool pointed at, still warm, shows at once (designer, 2026-11-08). A touch shows nothing.
+   */
+  const [tip, setTip] = useState<{ text: string; middle: number; easing: boolean; byFocus: boolean } | null>(null);
+  const waiting = useRef<number | undefined>(undefined);
+  const cooling = useRef<number | undefined>(undefined);
+  const warm = useRef(false);
+  useEffect(
+    () => () => {
+      clearTimeout(waiting.current);
+      clearTimeout(cooling.current);
+    },
+    [],
+  );
+  const tipOf = (t: (typeof TOOLS)[number], button: HTMLElement, easing: boolean, byFocus: boolean) => ({
+    text: `${t.label} (${t.key})`,
+    middle: button.offsetTop + button.offsetHeight / 2,
+    easing,
+    byFocus,
+  });
   return (
-    <div class="tk-tools" role="toolbar" aria-label="Tools">
+    <div
+      class="tk-tools"
+      role="toolbar"
+      aria-label="Tools"
+      // Back on the toolbar, a gap or its edge too, within the grace: still warm.
+      onPointerEnter={() => clearTimeout(cooling.current)}
+      onPointerLeave={() => {
+        clearTimeout(waiting.current);
+        // A tip the keyboard's focus shows stays with the focus.
+        setTip((shown) => (shown?.byFocus ? shown : null));
+        if (!warm.current) return;
+        clearTimeout(cooling.current);
+        cooling.current = window.setTimeout(() => (warm.current = false), TIP_GRACE_MS);
+      }}
+    >
+      <div class={sliding.current ? "tk-tools-backing is-sliding" : "tk-tools-backing"} style={{ "--tk-tool-index": index }} aria-hidden="true" />
       {TOOLS.map((t) => (
-        <button key={t.label} type="button" class="tk-icon-button" aria-label={t.label} aria-pressed={tool === t.tool} title={`${t.label} (${t.key})`} onClick={() => onTool(t.tool)}>
+        <button
+          key={t.label}
+          type="button"
+          class="tk-icon-button"
+          aria-label={t.label}
+          aria-pressed={tool === t.tool}
+          aria-keyshortcuts={t.key}
+          onPointerEnter={(event) => {
+            if (event.pointerType === "touch") return;
+            clearTimeout(waiting.current);
+            const button = event.currentTarget;
+            if (warm.current || tip) {
+              clearTimeout(cooling.current);
+              warm.current = true;
+              setTip(tipOf(t, button, false, false));
+              return;
+            }
+            waiting.current = window.setTimeout(() => {
+              warm.current = true;
+              setTip(tipOf(t, button, true, false));
+            }, TIP_DELAY_MS);
+          }}
+          // Off a tool before its tip shows, the wait ends; a tip shown stays till the next tool or the toolbar left.
+          onPointerLeave={() => clearTimeout(waiting.current)}
+          onFocus={(event) => {
+            // A click focuses too, but only the keyboard's focus tells.
+            if (!event.currentTarget.matches(":focus-visible")) return;
+            clearTimeout(waiting.current);
+            setTip(tipOf(t, event.currentTarget, false, true));
+          }}
+          onBlur={() => setTip((shown) => (shown?.byFocus ? null : shown))}
+          onClick={() => {
+            clearTimeout(waiting.current);
+            setTip(null);
+            clicked.current = t.tool;
+            onTool(t.tool);
+          }}
+        >
           <Icon name={t.icon} />
         </button>
       ))}
+      {tip && (
+        <div class={tip.easing ? "tk-variants-tip tk-tools-tip is-easing" : "tk-variants-tip tk-tools-tip"} role="tooltip" style={{ top: `${tip.middle}px` }}>
+          {tip.text}
+        </div>
+      )}
     </div>
   );
 }
 
-function readLayersShown(): boolean {
-  try {
-    return localStorage.getItem(LAYERS_KEY) === "shown";
-  } catch {
-    return false;
-  }
+/** The Design panel, its scrolling watched: its header's ref is called again on every render. */
+const watchedPanels = new WeakSet<Element>();
+
+/** The Design panel's header: the panel scrolls under it (`watchScrolled`). The Layers' tree watches its own scrolling. */
+function watchPanelScrolled(header: HTMLElement | null) {
+  const panel = header?.parentElement;
+  if (!panel || watchedPanels.has(panel)) return;
+  watchedPanels.add(panel);
+  watchScrolled(panel, panel);
 }
 
-function writeLayersShown(shown: boolean) {
-  try {
-    localStorage.setItem(LAYERS_KEY, shown ? "shown" : "hidden");
-  } catch {}
-}

@@ -29,7 +29,7 @@ test("page styles do not reach the editor layer", async ({ page }) => {
     const s = getComputedStyle(el);
     return { background: s.backgroundColor, radius: s.borderRadius, padding: s.padding, width: s.width };
   });
-  expect(toggleStyle).toEqual({ background: "rgb(30, 30, 30)", radius: "50%", padding: "0px", width: "40px" });
+  expect(toggleStyle).toEqual({ background: "rgb(255, 255, 255)", radius: "6px", padding: "0px", width: "28px" });
 
   await toggle.click();
   const panelTitle = page.getByRole("complementary", { name: "Layers" }).getByRole("heading");
@@ -49,11 +49,12 @@ test("page styles do not reach the editor layer", async ({ page }) => {
   });
   expect(titleStyle).toEqual({
     fontStyle: "normal",
-    fontSize: "11px",
+    // A panel's title as the designer drew it (2026-11-07): Geist Medium 14px, neutral 700.
+    fontSize: "14px",
     lineHeight: "16px",
-    letterSpacing: "0.055px",
+    letterSpacing: "normal",
     textTransform: "none",
-    color: "rgb(30, 30, 30)",
+    color: "rgb(63, 64, 63)",
     serif: false,
   });
 });

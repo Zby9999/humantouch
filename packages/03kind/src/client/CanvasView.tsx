@@ -11,20 +11,22 @@ import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scr
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
-import { freeze, restore } from "./freezer";
+import { fitHeight, freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
-import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
+import { chromePush, EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
+import { GradientHandles } from "./GradientHandles";
 import { holdPointer, pointerHeld } from "./pointer-held";
-import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
+import { DOUBLE_CLICK_MS, DOUBLE_CLICK_PX, selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances } from "./snap";
 import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import type { Handle } from "./resize";
 import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
-import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
+import { AddView, desktopRange, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
+import type { Breakpoint } from "./breakpoints";
 
 export type { Tool } from "./canvas-keys";
 
@@ -65,6 +67,10 @@ interface Props {
   onResize(layer: Layer, to: ResizeStep["to"], continues: boolean): void;
   /** Esc, while a handle is dragged: the resize taken back, as if never made. */
   onCancelResize(layer: Layer): void;
+  /** The fill's picker is open on a gradient: its handles show on the layer selected, in every view, and change it. */
+  gradientHandles: boolean;
+  /** A gradient's handle dragged: one step of the change made to the layer's fill. */
+  onFillEdited(): void;
   /** A dragged layer let go with ⌥ held: a copy goes there. */
   onDuplicate(layer: Layer, to: Destination): void;
   tool: Tool;
@@ -84,6 +90,10 @@ interface Props {
   onWorkIn(view: View | null, name: string): void;
   /** Playing: the canvas alone at 100%, scrolled like a page; nothing on it can be selected or edited. */
   playing: boolean;
+  /** While playing, how wide: as the view played (designer, 2026-11-08); null, as wide as the viewport. */
+  playedWidth: number | null;
+  /** A view's full screen button pressed: plays it `width` px wide, null as wide as the viewport (the desktop view). */
+  onPlay(width: number | null, from: HTMLButtonElement): void;
   /** Esc, while playing. */
   onStopPlaying(): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
@@ -97,7 +107,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -119,6 +129,8 @@ export function CanvasView(props: Props) {
   const attached = useRef(new Map<number, { view: View | null; gone: boolean }>());
   /** The view the designer last pressed in: a new Frame's brief shows there. */
   const [active, setActive] = useState<View | null>(null);
+  /** The view whose name and widths above it are pointed at (`keyOf`): its page is outlined, as a Frame's is in Figma. */
+  const [titled, setTitled] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -134,6 +146,14 @@ export function CanvasView(props: Props) {
    */
   const press = useRef<{ pointerId: number; layer: Layer; in: Shown; x: number; y: number; release(): void } | null>(null);
   const dragging = useRef<DragSession | null>(null);
+  /**
+   * A press that selects on the canvas, till it is let go: `second` when it comes close enough after
+   * a click to make a double click of it, `dragged` once it has moved into a drag; `plain`, with no
+   * ⌘, Ctrl or ⇧ held, as only a plain click starts a double click.
+   */
+  const clickPress = useRef<{ pointerId: number; time: number; x: number; y: number; second: boolean; plain: boolean; dragged: boolean } | null>(null);
+  /** The last plain press let go as a click, which the next press may make a double click of. */
+  const lastClick = useRef<{ time: number; x: number; y: number } | null>(null);
   /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
   const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean } | null>(null);
   /**
@@ -150,8 +170,14 @@ export function CanvasView(props: Props) {
   /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. Held until let go (ADR 0012). */
   const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number }; release(): void } | null>(null);
   const [drawn, setDrawn] = useState<{ in: Shown; box: DOMRect } | null>(null);
-  /** The text being typed in, and what was in it. */
-  const typing = useRef<{ layer: Layer; html: string } | null>(null);
+  /** The text being typed in, and what was in it; the view it is typed in, and its element there. */
+  const typing = useRef<{ layer: Layer; html: string; view: View; el: HTMLElement } | null>(null);
+  /**
+   * The last press in the text typed in, which places the caret there as the browser would: `pointerId`
+   * till it is let go, as a drag selects the words it passes; `count`, the presses close enough in a row
+   * to make a double click of it (a word) or a triple click (all of it).
+   */
+  const typedPress = useRef<{ pointerId: number | null; in: Shown; time: number; x: number; y: number; count: number } | null>(null);
   /** The text being typed in, outlined in blue; null when none is. */
   const [typingLayer, setTypingLayer] = useState<Layer | null>(null);
   /** Bumped as the words are typed: the blue outline grows with them. */
@@ -178,6 +204,15 @@ export function CanvasView(props: Props) {
   const [playWidth, setPlayWidth] = useState<number | null>(null);
   /** What playing shows: the desktop view, as wide as it is played, as tall as it is now. */
   const played: Bounds | null = placed[0] ? { width: playWidth ?? placed[0].width, height: placed[0].height } : null;
+  /**
+   * The widths each view covers, as its label says (designer, 2026-11-08): its own range, or for the
+   * desktop view, and one in its range, the widths around it no other view's range takes.
+   */
+  const coveredBy = (shown: Placed): Breakpoint | null => {
+    const own = shown.desktop || !editor ? null : editor.breakpointAt(shown.width);
+    if (own || !editor || !canvas) return own;
+    return desktopRange(canvas.width, placed.filter((p) => !p.desktop).map((p) => editor.breakpointAt(p.width)));
+  };
 
   /** Where on the stage its views and the layers off the canvas reach, in canvas px. */
   const extent = canvas ? boundsOf([...placed, ...outside]) : null;
@@ -253,6 +288,48 @@ export function CanvasView(props: Props) {
     return transformOf({ x: -area.left - scrollX, y: -area.top - scrollY, zoom: 1 });
   };
 
+  /** The panels and the tools moving out with the frame as edit mode is left, or in with it as it starts or a click turns it around. */
+  const chromeMoves = useRef<Animation[]>([]);
+  /**
+   * The panels and the tools travel with the frame (the desktop view), each side's edge with the frame's edge on that
+   * side, at its speed and on its curve (designer, 2026-11-08: "跟着 Frame 一起走", "完全一致"): pushed off the window as
+   * the page grows over it (`out`), brought in as it shrinks into the canvas. The Layers side (the panel, or the button
+   * showing it, and its edge's grip) moves with the left edge; the Design side (the panel, its grip, the tools) with
+   * the right. From where they are now, so a click on the way turns them around with the frame; `fromOut`, from off
+   * the window, as edit mode starts. `atRest`: the camera with the canvas in place; `canvasWidth`: the desktop view's.
+   */
+  const moveChrome = (atRest: Camera, canvasWidth: number, out: boolean, fromOut = false) => {
+    const shell = viewport.current!.parentElement!;
+    const sideOf = (selector: string) => [...shell.querySelectorAll<HTMLElement>(`:scope > :is(${selector})`)];
+    const layersSide = sideOf(".tk-panel.is-layers, .tk-show-layers, .tk-resizer.is-layers");
+    const designSide = sideOf(".tk-panel.is-design, .tk-tools, .tk-resizer.is-design");
+    const width = shell.clientWidth;
+    // Where they are laid out, as offsets have them: their transforms aside, partway through a move too.
+    const layersRight = Math.max(0, ...layersSide.map((el) => el.offsetLeft + el.offsetWidth));
+    const designLeft = Math.min(width, ...designSide.map((el) => el.offsetLeft));
+    const restLeft = viewport.current!.getBoundingClientRect().left + atRest.x;
+    const push = chromePush(
+      {
+        atRest: { left: restLeft, right: restLeft + canvasWidth * atRest.zoom },
+        overPage: { left: -scrollX, right: canvasWidth - scrollX },
+      },
+      { layersRight, designLeft },
+      width,
+    );
+    const parts = [...layersSide, ...designSide];
+    const away = (i: number) => `translateX(${i < layersSide.length ? push.left : push.right}px)`;
+    const now = parts.map((el, i) => (fromOut ? away(i) : `translateX(${new DOMMatrix(getComputedStyle(el).transform).e}px)`));
+    for (const move of chromeMoves.current) move.cancel();
+    chromeMoves.current = parts.map((el, i) =>
+      el.animate([{ transform: now[i] }, { transform: out ? away(i) : "translateX(0px)" }], {
+        duration: MODE_SWITCH_MS,
+        easing: EASE_IN_OUT,
+        // Out, they stay off the window until the shell is gone.
+        fill: out ? "forwards" : "none",
+      }),
+    );
+  };
+
   // A layout effect, so freezing starts in the same task as the click.
   useLayoutEffect(() => {
     let mounted = true;
@@ -278,11 +355,12 @@ export function CanvasView(props: Props) {
       } else if (animate && prefersReducedMotion()) {
         play(shell, [{ opacity: 0 }, { opacity: 1 }], { duration: MODE_FADE_MS, easing: EASE_OUT });
       } else if (animate) {
-        // The page shrinks from where it is in the window into its place on the canvas.
+        // The page shrinks from where it is in the window into its place on the canvas, the panels coming in with it.
         play(stage.current!, [{ transform: overPage() }, { transform: transformOf(start) }], {
           duration: MODE_SWITCH_MS,
           easing: EASE_IN_OUT,
         });
+        moveChrome(start, frozen.width, false, true);
       }
       // The task after the next frame: the canvas has been painted by then.
       requestAnimationFrame(() =>
@@ -384,7 +462,13 @@ export function CanvasView(props: Props) {
     setPlayWidth(width);
     return { ...played, width: width ?? canvas.width };
   };
-  // Playing shows the canvas at 100%, as wide as the viewport, from the part at the top of it; stopping puts the canvas and the camera back as they were.
+  /**
+   * How wide playing shows the canvas in a viewport `area` px wide: as wide as the view played
+   * (designer, 2026-11-08), or as the viewport for the desktop view. A view wider than the
+   * viewport is played as wide as the viewport, as the window would show the page.
+   */
+  const widthToPlay = (area: number, width: number | null) => Math.round(Math.min(width ?? area, area));
+  // Playing shows the canvas at 100%, as wide as the view played, from the part at the top of it, in the middle; stopping puts the canvas and the camera back as they were.
   const playingRef = useRef(playing);
   playingRef.current = playing;
   const beforePlaying = useRef<Camera | null>(null);
@@ -398,7 +482,7 @@ export function CanvasView(props: Props) {
       setHover(null);
       const area = viewport.current!.getBoundingClientRect();
       const top = Math.max(0, -camera.y / camera.zoom);
-      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, playAt(Math.round(area.width))!, area));
+      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, playAt(widthToPlay(area.width, playedWidth))!, area));
       viewport.current!.focus({ preventScroll: true });
     } else if (beforePlaying.current) {
       playAt(null);
@@ -409,6 +493,8 @@ export function CanvasView(props: Props) {
 
   // Leaving grows the canvas back over the page; a click on the way turns it around.
   const wasLeaving = useRef(false);
+  /** Leaving, the views held as tall as the page now is; turned around, let go, each as tall as what it shows. */
+  const heightsPinned = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     if (leaving === wasLeaving.current) return;
     wasLeaving.current = leaving;
@@ -422,9 +508,27 @@ export function CanvasView(props: Props) {
     if (prefersReducedMotion()) {
       const shell = viewport.current!.parentElement!;
       const from = getComputedStyle(shell).opacity;
+      // With reduced motion, nothing is pushed (designer, 2026-11-08): any push left from before goes, the shell alone fades.
+      for (const move of chromeMoves.current) move.cancel();
       play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
       return;
     }
+    // The window resized since the page was frozen: leaving, the desktop view is laid out again as wide as the page now is,
+    // so it grows into the page as the page is, not as it was (designer, 2026-11-08); turned around, as frozen again.
+    // Playing sets its own width, and is left as it is.
+    const width = leaving ? document.documentElement.clientWidth : canvas.width;
+    if (!playing) {
+      heightsPinned.current?.();
+      heightsPinned.current = null;
+      iframe.current!.style.width = `${width}px`;
+      if (leaving) {
+        // No shorter than the window now is, either, so the page's foot is not the canvas's gray: held so as it grows.
+        fitHeight(canvas.document, iframe.current!, Math.max(canvas.windowHeight, innerHeight));
+        heightsPinned.current = views?.pinHeights() ?? null;
+      }
+    }
+    // Toward where the camera has the canvas, turned around: what the panels keep their gap to, either way.
+    moveChrome(camera, playing ? canvas.width : width, leaving);
     const from = transformOf(currentCamera(stage.current!));
     const to = leaving ? overPage() : transformOf(camera);
     // Over the page, a changed canvas would cut to a page without the changes.
@@ -452,9 +556,10 @@ export function CanvasView(props: Props) {
     tool,
     onTool,
     playing,
+    playedWidth,
     onStopPlaying,
   });
-  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, modifiersChanged, resizeNow, tool, onTool, playing, onStopPlaying };
+  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, modifiersChanged, resizeNow, tool, onTool, playing, playedWidth, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -520,9 +625,9 @@ export function CanvasView(props: Props) {
     const observer = new ResizeObserver(([entry]) => {
       viewportSize.current = { width: entry.contentRect.width, height: entry.contentRect.height };
       if (playingRef.current) {
-        // The window resized while playing: the canvas is as wide as it now.
+        // The window resized while playing: the canvas is as wide as it now, or as the view played, in the middle.
         const area = el.getBoundingClientRect();
-        const played = latest.current.playAt(Math.round(area.width));
+        const played = latest.current.playAt(widthToPlay(area.width, latest.current.playedWidth));
         if (played) setCamera((v) => scrolled(v, played, area));
         return;
       }
@@ -584,6 +689,12 @@ export function CanvasView(props: Props) {
     if (playing) return;
     // What is pressed on is read as the view pressed in shows it now: one beside a value just changed catches up first (ADR 0011).
     const over = viewAt(event);
+    // While text is typed in, a press in it places the caret, as in the page; anywhere else, typing ends as the viewport takes the focus.
+    const typed = typing.current;
+    if (typed && over && event.button === 0 && !spaceHeld && over.at.view === typed.view && within(typed.el.getBoundingClientRect(), over)) {
+      pressInTyped(event, typed.el, over.at, over);
+      return;
+    }
     if (over && !over.at.offCanvasLayer) views?.sync(over.at.view);
     if (event.button === 0 && !spaceHeld && tool && editor) {
       // Drawn in the view pressed in, or in a layer off the canvas; outside them all, nothing is.
@@ -595,6 +706,10 @@ export function CanvasView(props: Props) {
       return;
     }
     if (event.button === 0 && !spaceHeld) {
+      const last = lastClick.current;
+      const second = !!last && event.timeStamp - last.time <= DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= DOUBLE_CLICK_PX;
+      const plain = !event.metaKey && !event.ctrlKey && !event.shiftKey;
+      clickPress.current = { pointerId: event.pointerId, time: event.timeStamp, x: event.clientX, y: event.clientY, second, plain, dragged: false };
       if (over && !over.at.offCanvasLayer) setActive(over.at.view);
       const hit = layerAt(event);
       const layer = hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, primary));
@@ -616,8 +731,39 @@ export function CanvasView(props: Props) {
     setPanning(true);
   };
 
+  /**
+   * A press in the text typed in, in the view it is typed in: it keeps the focus, and places the caret where
+   * pressed; with ⇧ held, the words selected reach there. Pressed twice in a row it selects the word there,
+   * three times all the words.
+   */
+  const pressInTyped = (event: TargetedPointerEvent<HTMLDivElement>, el: HTMLElement, shown: Shown, at: { x: number; y: number }) => {
+    // Pressed on, the viewport would take the focus, and typing would end.
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const last = typedPress.current;
+    const again = !!last && event.timeStamp - last.time <= DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= DOUBLE_CLICK_PX;
+    const count = again ? Math.min(last.count + 1, 3) : 1;
+    typedPress.current = { pointerId: event.pointerId, in: shown, time: event.timeStamp, x: event.clientX, y: event.clientY, count };
+    const selection = el.ownerDocument.getSelection()!;
+    const caret = caretAt(el, at);
+    if (count === 3) selection.selectAllChildren(el);
+    else if (count === 2) selectWord(selection, caret);
+    else if (event.shiftKey && selection.anchorNode && el.contains(selection.anchorNode)) selection.extend(caret.node, caret.offset);
+    else selection.collapse(caret.node, caret.offset);
+  };
+
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
+    const selecting = typedPress.current;
+    if (selecting?.pointerId === event.pointerId) {
+      // Dragged from where it was pressed, the words passed over are selected.
+      const el = typing.current?.el;
+      if (el && selecting.count === 1) {
+        const caret = caretAt(el, toView(event, selecting.in));
+        el.ownerDocument.getSelection()!.extend(caret.node, caret.offset);
+      }
+      return;
+    }
     if (resizing.current?.pointerId === event.pointerId) {
       resizeOnNextFrame(resizing.current, event);
       return;
@@ -629,6 +775,7 @@ export function CanvasView(props: Props) {
     const pressed = press.current;
     if (pressed?.pointerId === event.pointerId) {
       if (!dragging.current && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < DRAG_THRESHOLD) return;
+      if (clickPress.current?.pointerId === event.pointerId) clickPress.current.dragged = true;
       dragging.current ??= startDrag(pressed.layer, pressed.in);
       moveDrag(dragging.current, event, pressed);
       return;
@@ -651,6 +798,19 @@ export function CanvasView(props: Props) {
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    if (typedPress.current?.pointerId === event.pointerId) {
+      // Let go, it is still counted: the next press may make a double click of it.
+      typedPress.current.pointerId = null;
+      return;
+    }
+    const click = clickPress.current?.pointerId === event.pointerId ? clickPress.current : null;
+    if (click) {
+      clickPress.current = null;
+      // Let go without moving into a drag, it is a click; the second of two, a double click, and the next press starts afresh.
+      const clicked = event.type === "pointerup" && !click.dragged;
+      lastClick.current = clicked && !click.second && click.plain ? click : null;
+      if (clicked && click.second) doubleClick(event);
+    }
     if (resizing.current?.pointerId === event.pointerId) {
       // Let go, where it is let go; a pointer cancelled takes the resize back, as a drag cancelled puts the layer back.
       if (event.type === "pointerup") resizeNow();
@@ -765,6 +925,8 @@ export function CanvasView(props: Props) {
     // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
     views?.sync(shown.view);
     setActive(shown.view);
+    // Pressed twice, a handle resizes twice: a click before it makes no double click with the press after.
+    lastClick.current = null;
     viewport.current!.setPointerCapture(event.pointerId);
     const { pointerId, clientX, clientY } = event;
     resizing.current = { pointerId, layer, in: shown, handle, from: { clientX, clientY }, begun: null, stepped: false, set: new Set(), release: holdPointer(pointerId) };
@@ -844,10 +1006,12 @@ export function CanvasView(props: Props) {
   const beginTyping = (layer: Layer, view: View) => {
     const own = onBeginText(layer);
     const onCanvas = own.el as HTMLElement;
-    typing.current = { layer: own, html: onCanvas.innerHTML };
-    setTypingLayer(own);
+    const html = onCanvas.innerHTML;
     const typed = view.typeIn(onCanvas);
     const el = typed.el;
+    typing.current = { layer: own, html, view, el };
+    typedPress.current = null;
+    setTypingLayer(own);
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);
@@ -866,6 +1030,7 @@ export function CanvasView(props: Props) {
       setTypingLayer(null);
       const saved = typing.current;
       typing.current = null;
+      typedPress.current = null;
       el.removeAttribute("contenteditable");
       const text = el.textContent!.replace(/\s+/g, " ").trim();
       typed.done();
@@ -878,6 +1043,17 @@ export function CanvasView(props: Props) {
     el.addEventListener("input", onInput);
     el.addEventListener("blur", end);
   };
+
+  /** A double click, where the second press is let go: one layer deeper, or typing in the text selected. */
+  function doubleClick(event: TargetedPointerEvent<HTMLDivElement>) {
+    const over = viewAt(event);
+    const hit = layerAt(event);
+    const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
+    // On the text selected, a double click types in it, in the view clicked in; on a Frame drawn around its text alone selected, as a button is, in its text.
+    const text = layer && (layer === primary ? (layer.kind === "text" ? layer : framedText(layer)) : primary && layer === framedText(primary) ? layer : null);
+    if (text && over && editor) beginTyping(text, over.at.view);
+    else if (layer) onSelect([layer]);
+  }
 
   /** The press on a layer is over: moving the pointer drags nothing, and the keys edit again. */
   function endPress() {
@@ -941,8 +1117,16 @@ export function CanvasView(props: Props) {
    * The layer of the canvas selected alone that can be resized, with handles in every view: not the page,
    * not text with no element of its own, nor a layer shown inline. While it is resized, the handles stay.
    */
+  /**
+   * The layer selected alone whose fill's picker is open on a gradient: its gradient's handles in every view, in place of
+   * the resize handles. They stay while a value steps, the selection hidden, as they are what is being changed.
+   */
+  const withGradient =
+    gradientHandles && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !typingLayer
+      ? primary
+      : null;
   const withHandles =
-    resize?.layer ??
+    withGradient ? null : resize?.layer ??
     (editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && primary !== tree?.root && !travelling && !playing && !drag && !hideSelection && !typingLayer && !tool && (editor.can(primary, "width") || editor.can(primary, "height"))
       ? primary
       : null);
@@ -980,16 +1164,6 @@ export function CanvasView(props: Props) {
       onPointerUp={endPan}
       onPointerCancel={endPan}
       onPointerLeave={() => setHover(null)}
-      onDblClick={(event) => {
-        if (playing) return;
-        const over = viewAt(event);
-        const hit = layerAt(event);
-        const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
-        // On the text selected, a double click types in it, in the view clicked in; on a Frame drawn around its text alone selected, as a button is, in its text.
-        const text = layer && (layer === primary ? (layer.kind === "text" ? layer : framedText(layer)) : primary && layer === framedText(primary) ? layer : null);
-        if (text && over && editor) beginTyping(text, over.at.view);
-        else if (layer) onSelect([layer]);
-      }}
     >
       <div
         ref={stage}
@@ -1032,13 +1206,31 @@ export function CanvasView(props: Props) {
         [...shownViews, ...outside].map((shown) => {
           const { view, name } = shown;
           const at = cameraIn(camera, shown);
+          // The selection lighter in the views other than the one worked in, pressed in last (designer, 2026-11-09).
+          const away = !shown.offCanvasLayer && view !== (active ?? views?.list()[0]);
           return (
             <Fragment key={keyOf(shown)}>
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
-              {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} />)}
+              {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
+              {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
               {withHandles && !shown.offCanvasLayer && (!spaceHeld || resize) && (
-                <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+                <Handles layer={withHandles} view={view} name={name} camera={at} away={away} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+              )}
+              {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
+                <GradientHandles
+                  layer={withGradient}
+                  view={view}
+                  name={name}
+                  camera={at}
+                  editor={editor!}
+                  onBegin={() => {
+                    // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
+                    views?.sync(view);
+                    setActive(view);
+                  }}
+                  onEdit={onFillEdited}
+                />
               )}
               {briefed.map(
                 (layer, i) =>
@@ -1074,11 +1266,26 @@ export function CanvasView(props: Props) {
             key={keyOf(p)}
             name={p.name}
             width={p.width}
-            breakpoint={p.desktop ? null : (editor?.breakpointAt(p.width) ?? null)}
+            breakpoint={coveredBy(p)}
             left={camera.x + p.x * camera.zoom}
             top={camera.y - LABEL_OFFSET}
             size={p.width * camera.zoom}
+            onPlay={(button) => {
+              setTitled(null);
+              onPlay(p.desktop ? null : p.width, button);
+            }}
             onDelete={p.desktop ? undefined : () => setViewWidths(widths.filter((width) => width !== p.width))}
+            // The page in the view, selected as a Frame is by its name: the view is the one worked in from then on (ADR 0011).
+            onSelect={
+              p.view && tree
+                ? () => {
+                    views?.sync(p.view!);
+                    setActive(p.view);
+                    onSelect([tree.root]);
+                  }
+                : undefined
+            }
+            onPoint={(pointed) => setTitled(pointed ? keyOf(p) : null)}
           />
         ))}
       {bounds && !travelling && !playing && (
@@ -1100,6 +1307,31 @@ export function CanvasView(props: Props) {
       {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );
+}
+
+/** Whether a point is in a box, edges and all. */
+function within(box: DOMRect, { x, y }: { x: number; y: number }): boolean {
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+}
+
+/** Where the caret goes at a point in the view's px, in the element typed in; at a point beside its words, at their start or end, the nearer. */
+function caretAt(el: HTMLElement, at: { x: number; y: number }): { node: Node; offset: number } {
+  const caret = el.ownerDocument.caretPositionFromPoint(at.x, at.y);
+  if (caret && el.contains(caret.offsetNode)) return { node: caret.offsetNode, offset: caret.offset };
+  const box = el.getBoundingClientRect();
+  const before = at.y < box.top || (at.y <= box.bottom && at.x < box.left);
+  return { node: el, offset: before ? 0 : el.childNodes.length };
+}
+
+/** Selects the word at the caret, as a double click in the page does; at the end of a word, that word. Between words, the space there. */
+function selectWord(selection: Selection, { node, offset }: { node: Node; offset: number }) {
+  if (node.nodeType !== Node.TEXT_NODE) return selection.collapse(node, offset);
+  const words = new Intl.Segmenter(undefined, { granularity: "word" }).segment((node as Text).data);
+  let word = words.containing(offset);
+  const before = offset > 0 ? words.containing(offset - 1) : undefined;
+  if (before?.isWordLike && !word?.isWordLike) word = before;
+  if (!word) return selection.collapse(node, offset);
+  selection.setBaseAndExtent(node, word.index, node, word.index + word.segment.length);
 }
 
 /** Whether a layer is one of the tree's, not of one built before it. */

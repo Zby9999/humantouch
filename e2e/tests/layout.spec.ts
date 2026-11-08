@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, expectSegmentedChanged, steadyBox, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -47,7 +47,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("h1")).toBeVisible();
 });
 
-test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a Stack", async ({ page }) => {
+test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a Stack or a Grid", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Button").click();
   const sizing = design(page).getByRole("combobox", { name: "Width sizing" });
@@ -60,10 +60,130 @@ test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a 
   await expect(sizing).toHaveValue("fixed");
   await expect.poll(() => widthOf(page, `${HERO} > button`)).toBe(200);
 
-  // A card sits in a Grid: no Stack gives it room to fill.
+  // A card sits in a Grid, left to it: it fills its cell, its column's width and its row's height.
   await rows(page, "Card").first().click();
-  await expect(design(page).getByRole("combobox", { name: "Width sizing" }).getByRole("option", { name: "Fill" })).toBeDisabled();
+  const cardWidth = design(page).getByRole("combobox", { name: "Width sizing" });
+  const cardHeight = design(page).getByRole("combobox", { name: "Height sizing" });
+  await expect(cardWidth).toHaveValue("fill");
+  await expect(cardHeight).toHaveValue("fill");
+  await expect(cardWidth.getByRole("option", { name: "Fill" })).toBeEnabled();
   await expect(design(page).getByRole("textbox", { name: /margin/i })).toHaveCount(0);
+  // One card taller, as with more in it, the row is too: the card beside it, filling it, as tall; Hug takes it to its content, Fill back to the
+  // row (designer, 2026-11-09).
+  await canvas(page).locator("article").first().evaluate((el: HTMLElement) => (el.style.minHeight = "240px"));
+  await rows(page, "Card").nth(1).click();
+  await expect(cardHeight).toHaveValue("fill");
+  const heightOf = () => canvas(page).locator("article").nth(1).evaluate((el) => el.getBoundingClientRect().height);
+  await expect.poll(heightOf).toBe(240);
+  await cardHeight.selectOption("hug");
+  await expect.poll(heightOf).toBeLessThan(200);
+  await expect(cardHeight).toHaveValue("hug");
+  await cardHeight.selectOption("fill");
+  await expect.poll(heightOf).toBe(240);
+});
+
+test("Hug made Fixed marks its sizing, not its number, until the number changes too; the row's one reset puts Hug back (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Button").click();
+  const sizing = design(page).getByRole("combobox", { name: "Width sizing" });
+  const sizingField = design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`);
+  const widthField = design(page).locator(`.tk-field:has([aria-label="Width"])`);
+  const reset = design(page).getByRole("button", { name: /^Reset width/ });
+
+  await sizing.selectOption("fixed");
+  await expect(reset).toHaveCount(1);
+  await expect(sizingField).toHaveClass(/\bis-changed\b/);
+  await expect(widthField).not.toHaveClass(/\bis-changed\b/);
+
+  await setField(page, "Width", "200");
+  await expect(widthField).toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(1);
+
+  await reset.click();
+  await expect(sizing).toHaveValue("hug");
+  await expect(reset).toHaveCount(0);
+  await expect(widthField).not.toHaveClass(/\bis-changed\b/);
+  await expect(sizingField).not.toHaveClass(/\bis-changed\b/);
+});
+
+test("a size typed in stays as typed, though the browser lays it out to 1/64 px (139.74 is drawn 139.734)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Button").click();
+  const width = design(page).getByRole("textbox", { name: "Width", exact: true });
+
+  await setField(page, "Width", "150");
+  await expect(width).toHaveValue("150");
+  await setField(page, "Width", "139.74");
+  await expect(width).toHaveValue("139.74");
+  await expect.poll(() => widthOf(page, `${HERO} > button`)).toBeCloseTo(139.734, 2);
+});
+
+test("Wrap alone brings no Stack reset, nor one of its own; Wrap and the gap bring the Stack's, which takes both back (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const reset = panel.getByRole("button", { name: "Reset Stack" });
+  const wrap = panel.getByRole("button", { name: "Wrap", exact: true });
+  const gap = panel.getByRole("textbox", { name: "Gap" });
+  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "true");
+  await expect(wrap).toHaveClass(/\bis-changed\b/);
+  await expect(panel.getByRole("button", { name: /^Reset wrap/i })).toHaveCount(0);
+  await expect(reset).toHaveCount(0);
+
+  await setField(page, "Gap", "30");
+  await expect(reset).toBeVisible();
+  await reset.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+  await expect(wrap).not.toHaveClass(/\bis-changed\b/);
+  await expect(gap).toHaveValue("12");
+  await expect(reset).toHaveCount(0);
+  await expect.poll(() => canvasStyle(page, "header", "flex-wrap")).toBe("nowrap");
+});
+
+test("a Stack's direction changed: its track in the accent, the one chosen white, its reset at the track's end taking it back; undone, grey again; it counts for the Stack's reset (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const direction = panel.getByRole("radiogroup", { name: "Direction" });
+  const vertical = direction.getByRole("radio", { name: "Vertical" });
+  const reset = direction.getByRole("button", { name: "Reset direction" });
+  const stackReset = panel.getByRole("button", { name: "Reset Stack" });
+  const track = () => direction.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const grey = await track();
+  await expect(direction).not.toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+
+  await vertical.click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
+  await expectSegmentedChanged(direction, vertical, reset);
+  await expect(stackReset).toHaveCount(0);
+
+  // Its own reset takes it back; the track eases back to grey.
+  await reset.click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("row");
+  await expect(reset).toHaveCount(0);
+  await expect.poll(track).toBe(grey);
+
+  // Undone, the same.
+  await vertical.click();
+  await expectSegmentedChanged(direction, vertical, reset);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("row");
+  await expect(direction).not.toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+  await expect.poll(track).toBe(grey);
+
+  // With the gap, the Stack's reset, which takes both back.
+  await vertical.click();
+  await setField(page, "Gap", "30");
+  await expect(stackReset).toBeVisible();
+  await stackReset.click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("row");
+  await expect(reset).toHaveCount(0);
+  await expect.poll(track).toBe(grey);
 });
 
 test("a Stack's direction, gap, padding and alignment, in design language", async ({ page }) => {
@@ -82,12 +202,126 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
     .locator("header")
     .evaluate((header) => header.children[1].getBoundingClientRect().left - header.children[0].getBoundingClientRect().right);
   expect(gap).toBe(24);
-  await setField(page, "Padding left", "10");
-  await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
   await stack.getByRole("radio", { name: "Vertical" }).click();
   await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
-  await stack.getByRole("checkbox", { name: "Distribute evenly" }).check();
+  // Distributed evenly: the gap's Auto, as Figma has it (designer, 2026-11-07).
+  await stack.getByRole("combobox", { name: "Gap sizing" }).selectOption("auto");
   await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("space-between");
+  // Last: the Variables the padding field lists as it is typed into stay open over the rows above it.
+  await setField(page, "Padding left", "10");
+  await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
+});
+
+test("the gap's sizing opens its menu from the gap typed into: the Variables listed under it close, and stay closed once Auto is picked (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const matches = page.getByRole("listbox", { name: "Matching variables" });
+  await panel.getByRole("textbox", { name: "Gap" }).click();
+  await expect(matches).toBeVisible();
+
+  // In the field's label, the click let go on the menu opened over the chevron would take the focus back to the gap, and its Variables.
+  const sizing = panel.getByRole("combobox", { name: "Gap sizing" });
+  await sizing.click();
+  const menu = page.getByRole("listbox", { name: "Gap sizing" });
+  await expect(menu).toBeVisible();
+  await expect(sizing).toBeFocused();
+  await expect(matches).toHaveCount(0);
+
+  await menu.getByRole("option", { name: "Auto" }).click();
+  await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("space-between");
+  await expect(menu).toHaveCount(0);
+  await expect(matches).toHaveCount(0);
+  await expect(panel.getByRole("textbox", { name: "Gap" })).toHaveCount(0);
+});
+
+test("the alignment grid: half the row, its point dark till it changes, then the accent with where it was drawn larger (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const grid = panel.getByRole("radiogroup", { name: "Alignment" });
+
+  // Half the row each, the grid's right edge at the left padding field's.
+  const row = await steadyBox(panel.locator(".tk-align-row"));
+  const box = await steadyBox(grid);
+  const options = await steadyBox(panel.locator(".tk-align-options"));
+  const top = await steadyBox(panel.getByRole("group", { name: "Padding" }).locator(":scope > *").first());
+  expect(Math.abs(box.width - options.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.width - (row.width - 4) / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.x + box.width - (top.x + top.width))).toBeLessThanOrEqual(1);
+
+  const point = (name: string) => grid.getByRole("radio", { name, exact: true });
+  // Each point the whole of its third, to click on; its mark where the lines cross, at 5/24, half and 19/24 across and down (designer, 2026-11-08).
+  const AT = [5 / 24, 1 / 2, 19 / 24];
+  const NAMES = [
+    ["Top left", "Top center", "Top right"],
+    ["Center left", "Center", "Center right"],
+    ["Bottom left", "Bottom center", "Bottom right"],
+  ];
+  // The lines: 0.5px wide, 6px in from the edges; each `calc(p% ± c px)` placed in that box, its middle at AT (across, then down).
+  const lines = await grid.evaluate((el) => {
+    const style = getComputedStyle(el, "::before");
+    return { x: style.backgroundPositionX, y: style.backgroundPositionY };
+  });
+  const middles = (positions: string, size: number) =>
+    positions.split(",").map((position) => {
+      const percent = parseFloat(/(-?[\d.]+)%/.exec(position)?.[1] ?? "0");
+      const px = parseFloat(/([-+]\s*[\d.]+)px/.exec(position)?.[1]?.replace(/\s/g, "") ?? "0");
+      return 6 + ((size - 12 - 0.5) * percent) / 100 + px + 0.25;
+    });
+  const across = middles(lines.x, box.width).slice(0, 3);
+  const down = middles(lines.y, box.height).slice(3);
+  for (const [i, at] of AT.entries()) {
+    expect(Math.abs(across[i]! - box.width * at)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(down[i]! - box.height * at)).toBeLessThanOrEqual(0.5);
+  }
+  for (const [row, names] of NAMES.entries()) {
+    for (const [column, name] of names.entries()) {
+      const third = await steadyBox(point(name));
+      expect(Math.abs(third.width - box.width / 3)).toBeLessThanOrEqual(1);
+      expect(Math.abs(third.height - box.height / 3)).toBeLessThanOrEqual(1);
+      const offset = await point(name).evaluate((el) => {
+        const style = getComputedStyle(el, "::before");
+        return { x: parseFloat(style.left) || 0, y: parseFloat(style.top) || 0 };
+      });
+      const x = third.x + third.width / 2 + offset.x - box.x;
+      const y = third.y + third.height / 2 + offset.y - box.y;
+      expect(Math.abs(x - box.width * AT[column]!)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(y - box.height * AT[row]!)).toBeLessThanOrEqual(0.5);
+    }
+  }
+
+  const mark = (name: string) =>
+    point(name).evaluate((el) => {
+      const style = getComputedStyle(el, "::before");
+      return { color: style.backgroundColor, width: parseFloat(style.width) };
+    });
+  const DARK = "rgb(38, 38, 37)";
+  await expect(point("Center left")).toBeChecked();
+  await expect.poll(async () => (await mark("Center left")).color).toBe(DARK);
+
+  await point("Bottom right").click();
+  await expect(point("Bottom right")).toBeChecked();
+  const accent = await panel.evaluate((el) => {
+    const probe = el.appendChild(document.createElement("i"));
+    probe.style.color = "var(--tk-accent)";
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+  await expect.poll(async () => (await mark("Bottom right")).color).toBe(accent);
+  // Where it was: larger than the points around it.
+  const before = await mark("Center left");
+  const other = await mark("Top center");
+  expect(before.width).toBeGreaterThan(other.width);
+
+  await point("Bottom right").blur();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(point("Center left")).toBeChecked();
+  await expect.poll(async () => (await mark("Center left")).color).toBe(DARK);
+  await expect.poll(async () => (await mark("Bottom right")).width).toBe(other.width);
+  expect((await mark("Top center")).width).toBe(other.width);
+  await expect(grid.locator(".is-before")).toHaveCount(0);
 });
 
 test("a plain top-to-bottom flow shows as a vertical Stack, and becomes a real one once its gap changes", async ({ page }) => {
@@ -188,7 +422,7 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await rows(page, "Card").first().click();
   await setField(page, "Gap", "8");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByRole("button", { name: "Full screen Desktop view", exact: true }).click();
 
   const button = canvas(page).locator(`${HERO} > button`);
   await expect(async () =>
@@ -198,20 +432,48 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "8px");
 });
 
-test("minimum and maximum sizes sit in two columns: width on the left, height on the right, minimum above maximum", async ({ page }) => {
+test("a minimum or maximum size is added from its field's menu, the width's or the height's, as a row of its own, and taken off with its minus", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Card").first().click();
-  const at = async (name: string) => (await design(page).getByRole("textbox", { name, exact: true }).boundingBox())!;
-  const [minW, maxW, minH, maxH] = await Promise.all(["Min width", "Max width", "Min height", "Max height"].map(at));
+  // None set: none shown until one is added (designer, 2026-11-07).
+  await expect(design(page).getByRole("textbox", { name: "Min width", exact: true })).toHaveCount(0);
+  const widthMenu = page.getByRole("dialog", { name: "Add min or max width" });
+  await design(page).getByRole("button", { name: "Add min or max width" }).click();
+  await expect(widthMenu.getByRole("option")).toHaveText(["Min width", "Max width"]);
+  await page.keyboard.press("Escape");
+  const heightMenu = page.getByRole("dialog", { name: "Add min or max height" });
+  await design(page).getByRole("button", { name: "Add min or max height" }).click();
+  await expect(heightMenu.getByRole("option")).toHaveText(["Min height", "Max height"]);
+  await heightMenu.getByRole("option", { name: "Max height", exact: true }).click();
 
-  expect(maxW.x).toBe(minW.x);
-  expect(maxW.y).toBeGreaterThan(minW.y);
-  expect(minH.x).toBeGreaterThan(minW.x);
-  expect(minH.y).toBe(minW.y);
-  expect([maxH.x, maxH.y]).toEqual([minH.x, maxW.y]);
+  // That one alone comes in, and its menu no longer lists it.
+  const maxHeight = design(page).getByRole("textbox", { name: "Max height", exact: true });
+  await expect(maxHeight).toHaveValue("");
+  await expect(design(page).getByRole("textbox", { name: /^(Min width|Max width|Min height)$/ })).toHaveCount(0);
+  await design(page).getByRole("button", { name: "Add min or max height" }).click();
+  await expect(heightMenu.getByRole("option")).toHaveText(["Min height"]);
+  await page.keyboard.press("Escape");
+
+  await maxHeight.fill("120");
+  await maxHeight.press("Enter");
+  await expect.poll(() => canvasStyle(page, "article", "max-height")).toBe("120px");
+
+  await design(page).getByRole("button", { name: "Remove max height" }).click();
+  await expect(maxHeight).toHaveCount(0);
+  await expect.poll(() => canvasStyle(page, "article", "max-height")).toBe("none");
 });
 
-test("dragging left and right on the opacity icon changes it, 1% per px", async ({ page }) => {
+test("the width and height fields' menus show while the field is hovered", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Card").first().click();
+  const add = design(page).getByRole("button", { name: "Add min or max width" });
+  await page.mouse.move(0, 0);
+  await expect(add).toHaveCSS("opacity", "0");
+  await design(page).getByRole("textbox", { name: "Width", exact: true }).hover();
+  await expect(add).toHaveCSS("opacity", "1");
+});
+
+test("dragging left and right on the opacity icon changes it, 1% per 2px", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Card").first().click();
   const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
@@ -220,7 +482,7 @@ test("dragging left and right on the opacity icon changes it, 1% per px", async 
 
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 30; i++) await page.mouse.move(x + 4 - i, y + 4);
+  for (let i = 1; i <= 30; i++) await page.mouse.move(x + 4 - i * 2, y + 4);
   await page.mouse.up();
 
   await expect(opacity).toHaveValue("70%");
@@ -228,7 +490,7 @@ test("dragging left and right on the opacity icon changes it, 1% per px", async 
   // It stops at 100%.
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 40; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 40; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await page.mouse.up();
   await expect(opacity).toHaveValue("100%");
 });

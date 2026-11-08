@@ -57,7 +57,7 @@ test("a brief written on a layer from the Design panel marks it on the canvas, i
   // Three cards of the loop take it, in each of the three views; the fourth card is another usage.
   for (const view of ["Desktop", "Tablet", "Phone"]) await expect(marks(page, view)).toHaveCount(3);
   await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().locator(".tk-tree-brief")).toHaveAttribute(
-    "title",
+    "data-tk-tip",
     "Brief: Bounce back harder when pressed",
   );
   await expect(badge(page)).toHaveText("1");

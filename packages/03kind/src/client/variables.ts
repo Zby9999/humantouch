@@ -36,6 +36,8 @@ export interface Catalog {
   near(group: VariableGroup, drawn: Drawn): Resolved | null;
   /** Those of a group whose name has `text` in it, in any case; none for no text. */
   named(group: VariableGroup, text: string): Resolved[];
+  /** All of a group, the closest to `drawn` first, of two as close the one listed first; as listed for none, and for shadows. */
+  closest(group: VariableGroup, drawn: Drawn | null): Resolved[];
 }
 
 /**
@@ -104,7 +106,23 @@ export function resolveVariables(variables: Variable[], doc: Document): Catalog 
       const part = text.trim().toLowerCase();
       return part ? of(group).filter(({ variable }) => variable.name.toLowerCase().includes(part)) : [];
     },
+    closest: (group, drawn) => {
+      const entries = of(group);
+      if (drawn === null) return entries;
+      return entries
+        .map((entry, i) => ({ entry, i, apart: apartOf(entry.drawn, drawn) }))
+        .sort((a, b) => a.apart - b.apart || a.i - b.i)
+        .map(({ entry }) => entry);
+    },
   };
+}
+
+/** How far `drawn` is from a Variable's value, however far: px for a length, OKLab and opacity for a color; shadows all alike. */
+function apartOf(variable: Drawn, drawn: Drawn): number {
+  if (typeof variable === "number" && typeof drawn === "number") return Math.abs(variable - drawn);
+  if (typeof variable === "number" || typeof drawn === "number" || Array.isArray(variable) || Array.isArray(drawn)) return 0;
+  const [a, b] = [oklab(variable.color), oklab(drawn.color)];
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) + Math.abs(variable.opacity - drawn.opacity);
 }
 
 /**

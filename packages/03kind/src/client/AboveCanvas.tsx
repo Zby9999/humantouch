@@ -43,9 +43,8 @@ export function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
       style={{ left: `${camera.x + r.right * camera.zoom + 8}px`, top: `${camera.y + r.top * camera.zoom}px` }}
       // A press here is not on the canvas.
       onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
     >
-      <button type="button" class="tk-brief-button" aria-expanded={open} title={brief || undefined} onClick={() => setOpen(!open)}>
+      <button type="button" class="tk-brief-button" aria-expanded={open} data-tk-tip={brief || undefined} onClick={() => setOpen(!open)}>
         <Icon name="brief" />
         {brief ? "Brief" : "Add brief"}
       </button>
@@ -92,7 +91,6 @@ interface SelectionToolbarProps {
 export function SelectionToolbar({ layer, view, camera, promote, onPromote }: SelectionToolbarProps) {
   const r = view.boxOf(layer);
   if (!r || !promote) return null;
-  const component = layer.chain[0]?.component;
   return (
     <div
       class="tk-selection-toolbar"
@@ -101,10 +99,9 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote }: Se
       style={{ left: `${camera.x + r.right * camera.zoom}px`, top: `${camera.y + r.top * camera.zoom}px` }}
       // A press here is not on the canvas.
       onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
     >
       {/* States (second version, ADR 0007): first in the row, for a component. */}
-      <button type="button" class="tk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
+      <button type="button" class="tk-selection-tool" onClick={() => onPromote(layer)}>
         <Icon name="promote" />
         Promote
       </button>
@@ -162,6 +159,8 @@ interface OutlineProps {
   /** The text being typed in: blue, whatever the layer is. */
   typing?: boolean;
   hidden?: boolean;
+  /** In a view other than the one worked in: lighter (designer, 2026-11-09). */
+  away?: boolean;
 }
 
 /**
@@ -169,7 +168,7 @@ interface OutlineProps {
  * above the canvas, so its lines stay 1px at any zoom. Blue, purple for an
  * instance, gray for a locked layer.
  */
-export function Outline({ layer, view, name, camera, hover, hidden, typing }: OutlineProps) {
+export function Outline({ layer, view, name, camera, hover, hidden, typing, away }: OutlineProps) {
   const r = view.boxOf(layer);
   if (!r) return null;
   const kind = typing ? "typing" : role(layer);
@@ -179,6 +178,7 @@ export function Outline({ layer, view, name, camera, hover, hidden, typing }: Ou
       data-kind={kind}
       data-view={name}
       data-hidden={hidden || undefined}
+      data-away={away || undefined}
       aria-hidden="true"
       style={{
         left: `${camera.x + r.left * camera.zoom}px`,
@@ -219,6 +219,8 @@ interface HandlesProps {
   /** What the view is called. */
   name: string;
   camera: Camera;
+  /** In a view other than the one worked in: lighter (designer, 2026-11-09). */
+  away?: boolean;
   /** A handle pressed: true when it is taken, to resize; false, the press is the canvas's (Space held: it pans). */
   onPress(handle: Handle, event: TargetedPointerEvent<HTMLDivElement>): boolean;
 }
@@ -231,7 +233,7 @@ interface HandlesProps {
  * of its size, into it, so a small layer can still be dragged by its middle;
  * shorter on screen than `SMALL`, its middle third is over the corners'.
  */
-export function Handles({ layer, view, name, camera, onPress }: HandlesProps) {
+export function Handles({ layer, view, name, camera, away, onPress }: HandlesProps) {
   const r = view.boxOf(layer);
   if (!r) return null;
   const [left, top, width, height] = [camera.x + r.left * camera.zoom, camera.y + r.top * camera.zoom, r.width * camera.zoom, r.height * camera.zoom];
@@ -259,7 +261,7 @@ export function Handles({ layer, view, name, camera, onPress }: HandlesProps) {
       : { left: `${from}px`, top: `${along}px`, width: `${EDGE_REACH + inward}px`, height: `${length}px`, ...over };
   };
   return (
-    <div class="tk-handles" data-kind={role(layer)} data-view={name} data-small={Math.min(width, height) < SMALL || undefined} aria-hidden="true">
+    <div class="tk-handles" data-kind={role(layer)} data-view={name} data-small={Math.min(width, height) < SMALL || undefined} data-away={away || undefined} aria-hidden="true">
       {/* The edges' first, under the corners'. */}
       {[...HANDLES].reverse().map((handle) => {
         return (
@@ -272,8 +274,6 @@ export function Handles({ layer, view, name, camera, onPress }: HandlesProps) {
             onPointerDown={(event) => {
               if (onPress(handle, event)) event.stopPropagation();
             }}
-            // Pressed twice, a handle resizes twice: it does not type in the text under it.
-            onDblClick={(event) => event.stopPropagation()}
           />
         );
       })}
