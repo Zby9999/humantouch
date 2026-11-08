@@ -1350,13 +1350,13 @@ export const styles = /* css */ `
  * A length's bar is as long as it is, 1px a px (designer, 2026-11-08). One
  * longer than its track, by however much, runs on behind the value, which
  * sits on the panel's color, and shows past it up to the row's edge, the
- * panel's inner edge: (length - track) * 1000 is 0 or less for a bar that
- * fits, and past the row for one that does not. Clipped there, it does not
- * scroll the panel sideways.
+ * panel's inner edge: (length - track) * 100000 is 0 or less for a bar that
+ * fits, and past the row for one that does not, even by a hundredth of a px.
+ * Clipped there, it does not scroll the panel sideways.
  */
 .tk-variants-row.is-length { overflow: clip; }
 .tk-variants-row.is-length .tk-variants-track { container-type: inline-size; }
-.tk-variants-row.is-length .tk-variants-bar { width: max(1px, var(--tk-length), (var(--tk-length) - 100cqw) * 1000); }
+.tk-variants-row.is-length .tk-variants-bar { width: max(1px, var(--tk-length), (var(--tk-length) - 100cqw) * 100000); }
 .tk-variants-row.is-length .tk-variants-value { padding: 0 2px 0 4px; margin-right: -2px; background: var(--tk-panel); }
 /* Pointed at, a bar too long for its row shows whole, on white, out over the canvas. */
 .tk-variants-whole {

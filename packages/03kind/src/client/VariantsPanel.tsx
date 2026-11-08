@@ -211,7 +211,8 @@ function Lengths({ entries }: { entries: Resolved[] }) {
           if (event.pointerType !== "mouse") return;
           const row = event.currentTarget as HTMLElement;
           const track = row.querySelector(".tk-variants-track")!;
-          if (length > track.clientWidth) setWhole({ length, at: row.getBoundingClientRect() });
+          // Measured as the CSS draws it, to the fraction of a px: a bar shown past its value shows whole.
+          if (length > track.getBoundingClientRect().width) setWhole({ length, at: row.getBoundingClientRect() });
         };
         return (
           <div key={entry.variable.name} class="tk-variants-row is-length" onPointerEnter={show} onPointerLeave={() => setWhole(null)}>
@@ -228,10 +229,14 @@ function Lengths({ entries }: { entries: Resolved[] }) {
   );
 }
 
+/** How far the whole bar's box keeps from its row, and from the window's left. */
+const ABOVE = 4;
+const GAP = 8;
+
 /** A bar too long for its row, whole: above the row, ending at its right, out over the canvas; cut only by the window. */
 function WholeLength({ length, at }: { length: number; at: DOMRect }) {
   return (
-    <div class="tk-variants-whole" aria-hidden="true" style={{ right: `${window.innerWidth - at.right}px`, top: `${at.top - 4}px`, maxWidth: `${at.right - 8}px` }}>
+    <div class="tk-variants-whole" aria-hidden="true" style={{ right: `${window.innerWidth - at.right}px`, top: `${at.top - ABOVE}px`, maxWidth: `${at.right - GAP}px` }}>
       <span class="tk-variants-bar" style={{ width: `${length}px` }} />
     </div>
   );
