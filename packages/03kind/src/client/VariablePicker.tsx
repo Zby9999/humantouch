@@ -526,7 +526,6 @@ export function useTypeahead({ text, value, focused, input, reset }: {
             type="button"
             class="tk-variable-hint"
             aria-label={`Use variable ${near.variable.name}`}
-            data-tk-tip={`Close to ${near.variable.name} (${valueText(near.drawn)}): use it`}
             // A press keeps the field typed into: what is typed is not applied on the way.
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => pick(near)}

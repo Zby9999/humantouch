@@ -191,7 +191,7 @@ test("a change made in the tablet view is at the range of the project's own Tail
   await page.keyboard.down("Meta");
   await page.mouse.click(box.x + 4, box.y + 4);
   await page.keyboard.up("Meta");
-  await expect(page.getByRole("region", { name: "Tablet breakpoint" })).toContainText("560px to 1119px");
+  await expect(page.getByRole("note", { name: "Tablet breakpoint" })).toContainText("560px to 1119px");
   await setField(page, "Fill color", "eef4ff");
   await expect.poll(() => savedChanges()?.[0]?.breakpoint).toEqual({ min: 560, max: 1120, project: { tailwind: "sm:max-lg:" } });
 

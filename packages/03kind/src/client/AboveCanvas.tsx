@@ -91,7 +91,6 @@ interface SelectionToolbarProps {
 export function SelectionToolbar({ layer, view, camera, promote, onPromote }: SelectionToolbarProps) {
   const r = view.boxOf(layer);
   if (!r || !promote) return null;
-  const component = layer.chain[0]?.component;
   return (
     <div
       class="tk-selection-toolbar"
@@ -102,7 +101,7 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote }: Se
       onPointerDown={(event) => event.stopPropagation()}
     >
       {/* States (second version, ADR 0007): first in the row, for a component. */}
-      <button type="button" class="tk-selection-tool" data-tk-tip={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
+      <button type="button" class="tk-selection-tool" onClick={() => onPromote(layer)}>
         <Icon name="promote" />
         Promote
       </button>

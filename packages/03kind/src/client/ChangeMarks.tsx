@@ -208,7 +208,7 @@ export function ResetButton({ label, onReset }: { label: string; onReset(): void
       type="button"
       class="tk-reset"
       aria-label={`Reset ${label}`}
-      data-tk-tip={`Reset ${label}: take its change in this round back out`}
+      data-tk-tip={`Reset ${label}`}
       onPointerDown={(event) => event.preventDefault()}
       onClick={(event) => {
         event.preventDefault();

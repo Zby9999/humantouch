@@ -70,10 +70,10 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
   await enterEditMode(page);
 
   await pick(page, phone(page), "article");
-  const section = design(page).getByRole("region", { name: "Phone breakpoint" });
+  const section = design(page).getByRole("note", { name: "Phone breakpoint" });
   // Tailwind's own breakpoints, which the example keeps: the phone reaches up to `md`, where the tablet's range starts.
-  await expect(section).toContainText("below 768px");
-  await expect(section).toContainText("max-md:");
+  // Beside the layer's name, its widths alone (designer, 2026-11-08).
+  await expect(section).toHaveText("below 768px");
   // Marked on their fields, each with its reset; not listed at the breakpoint too (designer, 2026-11-07).
   const resetFill = design(page).getByRole("button", { name: "Reset fill" });
   const resetRadius = design(page).getByRole("button", { name: "Reset corner radius" });
@@ -148,13 +148,13 @@ test("each view stands for the range of the project's Tailwind breakpoints its w
   await page.keyboard.press("Shift+Digit1");
 
   await pick(page, phone(page), "article");
-  await expect(design(page).getByRole("region", { name: "Phone breakpoint" })).toContainText("below 768px");
+  await expect(design(page).getByRole("note", { name: "Phone breakpoint" })).toContainText("below 768px");
   await setField(page, "Fill color", "ff0000");
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, RED]);
   await expect(custom.contentFrame().locator("article").first()).toHaveCSS("background-color", RED);
   // Told and reset in the other view of the range too.
   await pick(page, custom, "article");
-  await expect(design(page).getByRole("region", { name: "Custom breakpoint" })).toBeVisible();
+  await expect(design(page).getByRole("note", { name: "Custom breakpoint" })).toBeVisible();
   await design(page).getByRole("button", { name: "Reset fill" }).click();
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, WHITE]);
 });
@@ -291,7 +291,7 @@ test("a view wider than the desktop view's range stands for its own range, `2xl:
   await expectRange(page, "Desktop", "1280–1535");
 
   await pickCard(page, wide);
-  await expect(design(page).getByRole("region", { name: "Custom breakpoint" })).toContainText("1536px and wider");
+  await expect(design(page).getByRole("note", { name: "Custom breakpoint" })).toContainText("1536px and wider");
   await setField(page, "Fill color", "ff0000");
   await expect.poll(() => fills(desktop(page), tablet(page), phone(page), wide)).toEqual([WHITE, WHITE, WHITE, RED]);
 });

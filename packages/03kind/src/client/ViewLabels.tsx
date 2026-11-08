@@ -160,7 +160,7 @@ export function ViewLabel(props: {
         type="button"
         class={classOf("tk-icon-button tk-view-play", "play")}
         aria-label={`Full screen ${name} view`}
-        data-tk-tip={onDelete ? `Full screen, ${width}px wide (Esc to come back)` : "Full screen, as wide as the window (Esc to come back)"}
+        data-tk-tip="Full screen"
         onClick={(event) => onPlay(event.currentTarget)}
       >
         <Icon name="fullscreen" />
@@ -199,7 +199,6 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
           placeholder="Width"
           aria-label="New view width"
           aria-invalid={invalid || undefined}
-          data-tk-tip={`A width from ${MIN_WIDTH} to ${MAX_WIDTH} px`}
           ref={(el) => el?.focus()}
           onBlur={close}
           onKeyDown={(event) => {
@@ -216,7 +215,7 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
           }}
         />
       ) : (
-        <button type="button" class="tk-icon-button" aria-label="Add view" data-tk-tip="Add a view of another width" onClick={() => setOpen(true)}>
+        <button type="button" class="tk-icon-button" aria-label="Add view" data-tk-tip="Add view" onClick={() => setOpen(true)}>
           <Icon name="plus" />
         </button>
       )}

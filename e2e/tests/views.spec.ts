@@ -104,7 +104,7 @@ test("a view's name and widths, pointed at, outline its page; clicked, they sele
   await expect(page.locator('.tk-hover[data-view="Desktop"]')).toHaveCount(0);
 
   await title.click();
-  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" })).toBeVisible();
+  await expect(design(page).getByRole("note", { name: "Tablet breakpoint" })).toBeVisible();
   await expect(page.locator('.tk-selection[data-view="Tablet"]')).toBeVisible();
   // The page is not moved, copied or deleted by the keys.
   for (const key of ["ArrowRight", "Delete", "ControlOrMeta+d"]) await page.keyboard.press(key);
@@ -122,7 +122,7 @@ test("zoomed out, a view's label leaves out full screen, then its widths, then Ã
   const label = page.getByRole("group", { name: "Phone view" });
   const parts = () =>
     label.evaluate((el) => {
-      const shown = (selector: string) => !!el.querySelector<HTMLElement>(selector)?.checkVisibility();
+      const shown = (selector: string) => !!el.querySelector<HTMLElement>(selector)?.checkVisibility({ opacityProperty: true });
       return { name: shown(".tk-view-name"), range: shown(".tk-view-range"), play: shown(".tk-view-play"), del: shown(".tk-view-delete"), fits: el.scrollWidth <= el.clientWidth + 1 };
     });
   const area = (await viewportArea(page).boundingBox())!;

@@ -567,7 +567,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           operations={[{ property: "direction" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
         />
         {added ? (
-          <RemoveButton label="Dissolve Stack" title="Dissolve Stack: made in this round, it is taken back out" added onClick={() => outer.unstack()} />
+          <RemoveButton label="Dissolve Stack" added onClick={() => outer.unstack()} />
         ) : (
           dissolve && <RemoveButton label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve} />
         )}
@@ -635,7 +635,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
  */
 function RemoveButton({ label, title, added = false, disabled, onClick }: { label: string; title?: string; added?: boolean; disabled?: boolean; onClick(): void }) {
   return (
-    <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} data-tk-tip={title ?? (added ? `${label}: added in this round` : undefined)} disabled={disabled} onClick={onClick}>
+    <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} data-tk-tip={title ?? label} disabled={disabled} onClick={onClick}>
       <Icon name="minus" />
     </button>
   );

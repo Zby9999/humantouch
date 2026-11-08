@@ -267,7 +267,6 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await expect(design(page).getByRole("button", { name: "Reset width", exact: true })).toBeVisible();
   await expect(design(page).getByRole("button", { name: /^Reset width/ })).toHaveCount(1);
   await expect(design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`)).toHaveClass(/\bis-changed\b/);
-  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("list")).toHaveCount(0);
 
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
   await expect.poll(() => boxIn(phone(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 20));

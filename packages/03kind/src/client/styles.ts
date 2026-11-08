@@ -588,9 +588,12 @@ export const styles = /* css */ `
 .tk-tree-guide.is-through { top: -2px; height: 30px; }
 
 .tk-layer-info { display: flex; flex-direction: column; gap: 0; }
+/* The layer's name, and at its right the breakpoint worked at, if any (designer, 2026-11-08). */
+.tk-layer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .tk-layer-name {
   display: flex;
   align-self: flex-start;
+  min-width: 0;
   align-items: center;
   gap: 4px;
   height: 24px;
@@ -616,11 +619,23 @@ export const styles = /* css */ `
 .tk-layer-info dd { justify-content: flex-end; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .tk-layer-note { margin: 0; color: var(--tk-text-muted); }
 /* The breakpoint the view worked in stands for, and the properties changed there on their own (ADR 0008). */
-:is(.tk-breakpoint, .tk-changes) { --tk-breakpoint: #8a38f5; }
-@media (prefers-color-scheme: dark) { :is(.tk-breakpoint, .tk-changes) { --tk-breakpoint: #b48aff; } }
-.tk-breakpoint-range { color: var(--tk-breakpoint); font-variant-numeric: tabular-nums; }
-.tk-breakpoint-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
-.tk-breakpoint .tk-layer-note { margin: 0; }
+:is(.tk-breakpoint-badge, .tk-changes) { --tk-breakpoint: #8a38f5; }
+@media (prefers-color-scheme: dark) { :is(.tk-breakpoint-badge, .tk-changes) { --tk-breakpoint: #b48aff; } }
+/* As the layer's name is shown, in the breakpoint's purple, as an instance's name is in its own (designer, 2026-11-08). */
+.tk-breakpoint-badge {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tk-breakpoint) 10%, transparent);
+  color: var(--tk-breakpoint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
 .tk-change-breakpoint { color: var(--tk-breakpoint); }
 .tk-source { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .tk-unlocated { color: var(--tk-text-muted); }
@@ -1254,8 +1269,19 @@ export const styles = /* css */ `
 .tk-view-title { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin-right: auto; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; font: inherit; color: inherit; cursor: default; }
 .tk-view-title:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
 .tk-view-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--tk-text); font-weight: 500; }
-/* Where there is too little room, what goes (ViewLabel): at rest, and pointed at or focused in (designer, 2026-11-08). */
-.tk-view-label:not(:hover, :focus-within) .is-rest-hidden, .tk-view-label:is(:hover, :focus-within) .is-pointed-hidden { display: none; }
+/*
+ * Where there is too little room, what goes (ViewLabel): at rest, and pointed at or focused in (designer, 2026-11-08). Out of sight
+ * but still there to be focused, as full screen is again once played: focused, the label is as pointed at, and shows it.
+ */
+.tk-view-label:not(:hover, :focus-within) .is-rest-hidden, .tk-view-label:is(:hover, :focus-within) .is-pointed-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  opacity: 0;
+  pointer-events: none;
+}
 .tk-view-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .tk-view-play, .tk-view-delete { flex: none; width: 20px; height: 20px; }
 .tk-add-view { position: absolute; display: flex; height: 20px; align-items: center; }

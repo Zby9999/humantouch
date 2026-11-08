@@ -25,7 +25,7 @@ import { fitWidths, maxWidth, readWidths, writeWidth, type Panel, type Widths } 
 import { createFolds } from "./layer-folds";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
-import { BreakpointSection } from "./BreakpointSection";
+import { BreakpointBadge } from "./BreakpointBadge";
 import { BriefSection } from "./BriefSection";
 import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { promotedNote } from "./promote";
@@ -876,9 +876,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           <VariantsPanel catalog={catalog} takes={takenBy(selected)} inUse={usedBy(selected)} onApply={applyVariable} />
         ) : (
           <>
-            <LayerInfo tree={treeOf(selected[0])!} layers={selected} />
-            {/* Off the canvas, a layer has no breakpoints: its look is frozen, at no width. */}
-            {!outsideOf(selected[0]) && <BreakpointSection editor={editor} layers={selected} view={worked?.name ?? "Desktop"} />}
+            <LayerInfo
+              tree={treeOf(selected[0])!}
+              layers={selected}
+              // Off the canvas, a layer has no breakpoints: its look is frozen, at no width.
+              badge={!outsideOf(selected[0]) && <BreakpointBadge editor={editor} layers={selected} view={worked?.name ?? "Desktop"} />}
+            />
             {/* The Design panel's short notes show in the toast. */}
             <ToastProvider value={showToast}>
               <CatalogProvider value={catalog}>

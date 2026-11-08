@@ -44,6 +44,8 @@ export function Tips() {
 
     const show = (el: HTMLElement, easing: boolean) => {
       clearTimeout(wait);
+      // Taken away or left out while it waited (a view's full screen, gone once the pointer left its label): no tip, at the window's corner.
+      if (!el.isConnected || !el.checkVisibility({ opacityProperty: true })) return hide();
       clearTimeout(cooling);
       if (target && target !== el) target.removeAttribute("aria-describedby");
       target = el;
@@ -61,7 +63,7 @@ export function Tips() {
 
     const onOver = (event: Event) => {
       // Taken away under the pointer, what it told of: its tip goes too.
-      if (target && !target.isConnected) hide();
+      if (target && (!target.isConnected || !target.checkVisibility({ opacityProperty: true }))) hide();
       const el = tipOf(event.target);
       if (!el || el === target || el === pressed || byFocus) return;
       clearTimeout(wait);
