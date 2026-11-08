@@ -207,7 +207,7 @@ export const styles = /* css */ `
   z-index: 2147483646;
   display: grid;
   grid-template-columns: var(--tk-layers-width) minmax(0, 1fr) var(--tk-design-width);
-  /* The canvas's gray under the panels: as they fade out on leaving, the canvas shows there, not the page under the editor (designer, 2026-11-08). */
+  /* The canvas's gray under the panels: as they move out with the frame on leaving, and in as it starts, the canvas shows where they were, not the page under the editor (designer, 2026-11-08). */
   background: var(--tk-canvas);
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--tk-text);
@@ -1229,10 +1229,13 @@ export const styles = /* css */ `
 }
 .tk-viewport.is-panning { cursor: grabbing; }
 /*
- * While the page shrinks into the canvas or grows back, it passes over the panels: drawn above all of the shell, the
- * tools, the Layers' chevrons and any menu open (z-index up to 3) too, so nothing of the editor shows on it (designer, 2026-11-08).
+ * While the page shrinks into the canvas or grows back, it is drawn above all of the shell, the tools, the Layers'
+ * chevrons and any menu open (z-index up to 3) too, so nothing of the editor shows on it (designer, 2026-11-08): the
+ * panels move with its edges, but the tools and the toasts are over the canvas, and a panel the frame starts under
+ * stays under it. Its own gray goes meanwhile, the shell's showing instead: drawn above them, it hid the tools from
+ * the first frame of the move, as they still sat over the canvas.
  */
-.tk-viewport.is-travelling { overflow: visible; z-index: 4; }
+.tk-viewport.is-travelling { overflow: visible; z-index: 4; background: transparent; }
 .tk-stage {
   position: absolute;
   top: 0;

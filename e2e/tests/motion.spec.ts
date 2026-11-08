@@ -140,42 +140,115 @@ test("going back to preview grows the canvas back over the page before the edito
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
-test("going back to preview, the panels are gone before the growing canvas reaches them, and it is drawn above what is left", async ({ page }) => {
-  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
-  await expectSettled(page);
-  await canvasInPlace(page);
-  const layers = await steadyBox(page.getByRole("complementary", { name: "Layers" }));
-  const layersRight = layers.x + layers.width;
-  await playbackRate(cdp, 0);
-  await page.getByRole("button", { name: EXIT_LABEL }).click();
-  await expect.poll(() => page.evaluate(() => document.querySelector("third-kind")!.shadowRoot!.getAnimations().length)).toBeGreaterThan(0);
-
-  /** The editor's animations held `t` ms in: where the canvas's left edge is, how visible the Layers panel is, and what is drawn on top where the tools are. */
-  const at = (t: number) =>
-    page.evaluate((t) => {
-      const root = document.querySelector("third-kind")!.shadowRoot!;
+/** Where the frame (the desktop view), the panels and the tools are, the editor's animations held `t` ms in; null, as they are. */
+function chromeAt(page: Page, t: number | null) {
+  return page.evaluate((t) => {
+    const root = document.querySelector("third-kind")!.shadowRoot!;
+    if (t !== null) {
       for (const animation of root.getAnimations()) {
         animation.pause();
         animation.currentTime = t;
       }
-      const layers = root.querySelector(".tk-panel.is-layers")!;
-      const tools = root.querySelector(".tk-tools")!.getBoundingClientRect();
-      return {
-        left: root.querySelector('iframe[title="Canvas"]')!.getBoundingClientRect().left,
-        opacity: Number(getComputedStyle(layers).opacity),
-        onTools: root.elementFromPoint(tools.left + tools.width / 2, tools.top + tools.height / 2)?.className,
-      };
-    }, t);
+    }
+    const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+    const frame = rect('iframe[title="Canvas"]');
+    const tools = rect(".tk-tools");
+    return {
+      frameLeft: frame.left,
+      frameRight: frame.right,
+      layersRight: rect(".tk-panel.is-layers").right,
+      designLeft: rect(".tk-panel.is-design").left,
+      toolsLeft: tools.left,
+      toolsMiddle: { x: tools.left + tools.width / 2, y: tools.top + tools.height / 2 },
+      width: (root.querySelector(".tk-shell") as HTMLElement).clientWidth,
+      opacity: Number(getComputedStyle(root.querySelector(".tk-panel.is-layers")!).opacity),
+    };
+  }, t);
+}
+type ChromeAt = Awaited<ReturnType<typeof chromeAt>>;
 
-  let passed = null;
-  for (let t = 0; t <= 240 && !passed; t += 10) {
-    const now = await at(t);
-    if (now.left < layersRight) passed = now;
+/** At each time in, each panel's inner edge keeps its gap to the frame's edge on its side, as `rest` had it, and the tools move with the Design panel. */
+async function expectTravellingTogether(page: Page, rest: ChromeAt) {
+  for (const t of [0, 40, 80, 120, 160, 200]) {
+    const now = await chromeAt(page, t);
+    expect.soft(Math.abs(now.layersRight + (rest.frameLeft - rest.layersRight) - (now.frameLeft)), `Layers at ${t}ms`).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(now.designLeft - (rest.designLeft - rest.frameRight) - (now.frameRight)), `Design at ${t}ms`).toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(now.toolsLeft - rest.toolsLeft - (now.designLeft - rest.designLeft)), `the tools at ${t}ms`).toBeLessThanOrEqual(1);
+    // Moved, never faded.
+    expect.soft(now.opacity).toBe(1);
   }
-  expect(passed).not.toBeNull();
-  expect(passed!.opacity).toBeLessThanOrEqual(0.05);
-  // Grown, the canvas covers the tools: they are under it, not on it.
-  expect((await at(240)).onTools).toContain("tk-stage");
+}
+
+/** Both panels and the tools wholly off the window. */
+function expectOffTheWindow(now: ChromeAt) {
+  expect(now.layersRight).toBeLessThanOrEqual(0);
+  expect(now.designLeft).toBeGreaterThanOrEqual(now.width);
+  expect(now.toolsLeft).toBeGreaterThanOrEqual(now.width);
+}
+
+/** Has the editor's animations held where they start, once edit mode has been left or entered and the canvas has started travelling. */
+async function holdTravel(page: Page) {
+  await expect
+    .poll(() => page.evaluate(() => document.querySelector("third-kind")?.shadowRoot?.querySelector(".tk-viewport.is-travelling") !== null && document.querySelector("third-kind")!.shadowRoot!.getAnimations().length > 1))
+    .toBe(true);
+}
+
+test("going back to preview, the panels are pushed out by the growing frame, each edge travelling with the frame's, and it is drawn above what is left (designer, 2026-11-08)", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await canvasInPlace(page);
+  await steadyBox(page.getByRole("complementary", { name: "Layers" }));
+  const rest = await chromeAt(page, null);
+  const toolsClip = { x: rest.toolsMiddle.x - 12, y: rest.toolsMiddle.y - 12, width: 24, height: 24 };
+  const toolsAtRest = await page.screenshot({ clip: toolsClip });
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await holdTravel(page);
+
+  await expectTravellingTogether(page, rest);
+  // As the move starts, the tools still show as they were: the viewport's own gray is not drawn over them.
+  await chromeAt(page, 0);
+  expect((await page.screenshot({ clip: toolsClip })).equals(toolsAtRest)).toBe(true);
+  const grown = await chromeAt(page, 240);
+  expectOffTheWindow(grown);
+  // Grown, the canvas covers where the tools were: they are under it, not on it.
+  const onTools = await page.evaluate(({ x, y }) => document.querySelector("third-kind")!.shadowRoot!.elementFromPoint(x, y)?.className, rest.toolsMiddle);
+  expect(onTools).toContain("tk-stage");
+});
+
+test("entering edit mode, the panels come in with the shrinking frame, each edge travelling with the frame's (designer, 2026-11-08)", async ({ page }) => {
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await holdTravel(page);
+
+  expectOffTheWindow(await chromeAt(page, 0));
+  // Past the end, the animations no longer apply: everything in place.
+  const rest = await chromeAt(page, 240);
+  await expectTravellingTogether(page, rest);
+});
+
+test("a click while going back to preview turns the panels around from where they are, still with the frame", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await canvasInPlace(page);
+  await steadyBox(page.getByRole("complementary", { name: "Layers" }));
+  const rest = await chromeAt(page, null);
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await holdTravel(page);
+  const midway = await chromeAt(page, 120);
+
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+
+  // Turned around from where they were, not from the start or the end.
+  const turned = await chromeAt(page, 0);
+  expect(Math.abs(turned.layersRight - midway.layersRight)).toBeLessThanOrEqual(1);
+  expect(Math.abs(turned.designLeft - midway.designLeft)).toBeLessThanOrEqual(1);
+  expect(Math.abs(turned.frameLeft - midway.frameLeft)).toBeLessThanOrEqual(1);
+  await expectTravellingTogether(page, rest);
+  const back = await chromeAt(page, 240);
+  expect(Math.abs(back.layersRight - rest.layersRight)).toBeLessThanOrEqual(1);
+  expect(Math.abs(back.designLeft - rest.designLeft)).toBeLessThanOrEqual(1);
 });
 
 /** Gives the three cards of the loop a red fill. */
