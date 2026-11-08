@@ -1,5 +1,5 @@
 import { DEV_URL, NEXT_URL, REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Page } from "./fixtures";
 
 /** Variables on the React 18 + Tailwind v3 example: its config's own, and Tailwind's defaults. */
 
@@ -323,4 +323,43 @@ test("on a Tailwind v4 project, its default theme's Variables are offered; with 
   await design(page).getByRole("button", { name: "Fill color picker" }).click();
   await expect(page.getByRole("dialog", { name: /color$/ }).getByRole("slider", { name: "Hue" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: /color$/ }).getByRole("tab")).toHaveCount(0);
+});
+
+test("with nothing selected, a spacing Variable's bar is as long as it is; one too long for its row shows past its value, and whole on white when pointed at", async ({ page }) => {
+  await enterEditMode(page);
+  const panel = design(page);
+  const spacing = panel.getByRole("region", { name: "Spacing" });
+  const row = (name: string) => spacing.locator(".tk-variants-row").filter({ has: page.locator(".tk-variants-name").getByText(name, { exact: true }) });
+  const whole = page.locator(".tk-variants-whole");
+
+  // 1px of bar a px.
+  const short = row("4");
+  await short.scrollIntoViewIfNeeded();
+  expect((await steadyBox(short.locator(".tk-variants-bar"))).width).toBe(16);
+
+  // Longer than its track, a bar runs on past the value's right up to the row's edge, however little longer (44, 176px) or much (96, 384px);
+  // the panel does not scroll sideways.
+  const long = row("96");
+  for (const over of [row("44"), long]) {
+    await over.scrollIntoViewIfNeeded();
+    const [bar, value, track, edge] = await Promise.all([".tk-variants-bar", ".tk-variants-value", ".tk-variants-track"].map((part) => steadyBox(over.locator(part))).concat(steadyBox(over)));
+    expect(bar.width).toBeGreaterThan(track.width);
+    expect(bar.x + bar.width).toBeGreaterThanOrEqual(edge.x + edge.width);
+    expect(edge.x + edge.width).toBeGreaterThan(value.x + value.width + 2);
+  }
+  expect(await panel.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+
+  // Pointed at, it shows whole, on white, out over the canvas, and nothing else.
+  await long.hover();
+  await expect(whole).toBeVisible();
+  await expect.poll(async () => (await whole.locator(".tk-variants-bar").boundingBox())?.width).toBe(384);
+  expect(await whole.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
+  expect((await steadyBox(whole)).x).toBeLessThan((await steadyBox(panel)).x);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+
+  // A short one shows nothing more; the box goes as the pointer leaves.
+  await short.scrollIntoViewIfNeeded();
+  await short.hover();
+  await expect(whole).toHaveCount(0);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
 });

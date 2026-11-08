@@ -1346,6 +1346,31 @@ export const styles = /* css */ `
 .tk-variants-track { flex: 1; min-width: 0; }
 .tk-variants-bar { display: block; height: 6px; border-radius: 2px; background: #bcddff; }
 .tk-variants-value { flex: none; margin-left: auto; color: var(--tk-text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+/*
+ * A length's bar is as long as it is, 1px a px (designer, 2026-11-08). One
+ * longer than its track, by however much, runs on behind the value, which
+ * sits on the panel's color, and shows past it up to the row's edge, the
+ * panel's inner edge: (length - track) * 1000 is 0 or less for a bar that
+ * fits, and past the row for one that does not. Clipped there, it does not
+ * scroll the panel sideways.
+ */
+.tk-variants-row.is-length { overflow: clip; }
+.tk-variants-row.is-length .tk-variants-track { container-type: inline-size; }
+.tk-variants-row.is-length .tk-variants-bar { width: max(1px, var(--tk-length), (var(--tk-length) - 100cqw) * 1000); }
+.tk-variants-row.is-length .tk-variants-value { padding: 0 2px 0 4px; margin-right: -2px; background: var(--tk-panel); }
+/* Pointed at, a bar too long for its row shows whole, on white, out over the canvas. */
+.tk-variants-whole {
+  position: fixed;
+  z-index: 3;
+  box-sizing: border-box;
+  padding: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12);
+  transform: translateY(-100%);
+  pointer-events: none;
+}
 .tk-variants-sample { flex: none; width: 48px; overflow: hidden; color: #171716; font-weight: 500; line-height: 1.15; white-space: nowrap; }
 .tk-variants-tiles { display: grid; gap: 6px; }
 .tk-variants-tiles.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
