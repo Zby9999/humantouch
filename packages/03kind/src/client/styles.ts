@@ -754,33 +754,33 @@ export const styles = /* css */ `
 .tk-text-glyph.tk-underline { text-decoration: underline; }
 .tk-text-glyph.tk-strikethrough { text-decoration: line-through; }
 /* A Stack's alignment, at the left of its rows, as large as the two rows beside it. */
-.tk-align-row { align-items: stretch; gap: 4px; }
+/* Half the row each, the grid and the column beside it, in line with the padding fields' two columns below (designer, 2026-11-08). */
+.tk-align-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 4px; }
 .tk-align {
   position: relative;
   display: grid;
-  flex: 1;
-  /* The points where the lines cross, a quarter, half and three quarters of the way across and down (designer, 2026-11-07). */
-  grid-template-columns: 1fr 2fr 2fr 2fr 1fr;
-  grid-template-rows: 1fr 2fr 2fr 2fr 1fr;
+  /* Each point the whole of its third, across and down: the lines cross at the thirds' middles, a sixth, half and five sixths of the way (designer, 2026-11-08). */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   box-sizing: border-box;
+  min-width: 0;
   min-height: 64px;
-  padding: 6px;
   border-radius: 8px;
   background: var(--tk-field);
 }
-/* The lines, 0.5px, inside the field's padding. */
+/* The lines, 0.5px, 6px in from the field's edges. Inside that box a sixth of the field is a sixth of the box less 4px, five sixths, five sixths of it and 4px. */
 .tk-align::before {
   content: "";
   position: absolute;
   inset: 6px;
   --tk-line: linear-gradient(var(--tk-border), var(--tk-border));
   background:
-    var(--tk-line) 25% 0 / 0.5px 100% no-repeat,
+    var(--tk-line) calc(100% / 6 - 4px) 0 / 0.5px 100% no-repeat,
     var(--tk-line) 50% 0 / 0.5px 100% no-repeat,
-    var(--tk-line) 75% 0 / 0.5px 100% no-repeat,
-    var(--tk-line) 0 25% / 100% 0.5px no-repeat,
+    var(--tk-line) calc(500% / 6 + 4px) 0 / 0.5px 100% no-repeat,
+    var(--tk-line) 0 calc(100% / 6 - 4px) / 100% 0.5px no-repeat,
     var(--tk-line) 0 50% / 100% 0.5px no-repeat,
-    var(--tk-line) 0 75% / 100% 0.5px no-repeat;
+    var(--tk-line) 0 calc(500% / 6 + 4px) / 100% 0.5px no-repeat;
   pointer-events: none;
 }
 .tk-align-point {
@@ -789,12 +789,6 @@ export const styles = /* css */ `
   display: grid;
   place-items: center;
 }
-.tk-align-point:nth-child(3n + 1) { grid-column: 2; }
-.tk-align-point:nth-child(3n + 2) { grid-column: 3; }
-.tk-align-point:nth-child(3n) { grid-column: 4; }
-.tk-align-point:nth-child(-n + 3) { grid-row: 2; }
-.tk-align-point:nth-child(n + 4):nth-child(-n + 6) { grid-row: 3; }
-.tk-align-point:nth-child(n + 7) { grid-row: 4; }
 .tk-align-point::before {
   content: "";
   width: 8px;
@@ -803,9 +797,13 @@ export const styles = /* css */ `
   background: var(--tk-border);
 }
 .tk-align-point:hover::before { background: #a0a19f; }
-.tk-align-point[aria-checked="true"]::before { width: 24px; height: 12px; border-radius: 4px; background: var(--tk-accent); box-shadow: inset 0 0 0 0.5px var(--tk-accent-on), 0 1px 1.5px rgb(13 153 255 / 0.4); }
+/* Where it was before this round's change: a larger dash, muted (designer, 2026-11-08). */
+.tk-align-point.is-before::before { width: 12px; height: 6px; border-radius: 2px; background: #a0a19f; }
+/* The point chosen: dark, as a check ticked, till it changes in this round; then the accent (designer, 2026-11-08). */
+.tk-align-point[aria-checked="true"]::before { width: 24px; height: 12px; border-radius: 4px; background: #262625; box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.25); }
+.tk-align.is-changed .tk-align-point[aria-checked="true"]::before { background: var(--tk-accent); box-shadow: inset 0 0 0 0.5px var(--tk-accent-on), 0 1px 1.5px rgb(13 153 255 / 0.4); }
 .tk-align-point:focus-visible { outline: 1px solid var(--tk-accent); }
-.tk-align-options { display: grid; flex: 1; gap: 4px; align-content: start; }
+.tk-align-options { display: grid; min-width: 0; gap: 4px; align-content: start; }
 /* A check: its box, then its words, on the panel (designer, 2026-11-08). Half a row, beside a field or another check; alone in its row, the whole of it. */
 .tk-grid-2 > .tk-check:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .tk-check {

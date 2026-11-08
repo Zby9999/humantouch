@@ -24,6 +24,12 @@ export interface ChangeMarks {
    * of the one property alone, the rest kept as it is.
    */
   reset(properties: Property[], part?: ValuePart): void;
+  /**
+   * The selected layers' value of `property` before this round's first change
+   * to it, as the alignment grid shows where it was (designer, 2026-11-08);
+   * null when one of them has none, when they differ, or at a breakpoint.
+   */
+  before(property: Property): unknown;
 }
 
 /** A part of a value its own field shows (a stroke's color, weight, line or sides): marked and reset on its own (designer, 2026-11-07). */
@@ -44,7 +50,7 @@ export function useChangeMarks(): ChangeMarks {
   return useContext(ChangeMarksContext) ?? NONE;
 }
 
-const NONE: ChangeMarks = { changed: () => false, reset: () => {} };
+const NONE: ChangeMarks = { changed: () => false, reset: () => {}, before: () => null };
 
 /**
  * The marks of `layers`, from the round's changes: those to a property of
@@ -109,6 +115,13 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
         for (const change of going) editor.revert(change.id);
       });
       onEdit();
+    },
+    before(property) {
+      // At a breakpoint, `changed` asks the editor what changed there on its own; what was there before is left unshown.
+      if (here) return null;
+      const found = runs(property);
+      if (found.length !== layers.length || found.some(({ before }) => !same(before, found[0].before))) return null;
+      return found[0].before;
     },
   };
 }
