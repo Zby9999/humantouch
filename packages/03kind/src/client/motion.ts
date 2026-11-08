@@ -69,11 +69,11 @@ export const GRIP_SWAY_MAX_PX = 3;
  * as it falls. Quick, as a scrub changes it many times a second; a change mid-roll takes each digit on from where it is. With reduced
  * motion, the digits only fade, quicker (80ms: the agent's, to confirm). Typed, stepped with the keys or undone, a number changes at once.
  */
-export const DIGIT_ROLL_MS = 120;
+export const DIGIT_ROLL_MS = 100;
 export const DIGIT_FADE_MS = 80;
-/** How far a digit rolls, in em of its own size (the agent's, to confirm), and how blurred it starts and ends (designer, 2026-11-08). */
-export const DIGIT_ROLL_EM = 0.5;
-export const DIGIT_BLUR_PX = 2;
+/** How far a digit rolls, in em of its own size, and how blurred it starts and ends (designer, 2026-11-08, tuned with DialKit). */
+export const DIGIT_ROLL_EM = 0.25;
+export const DIGIT_BLUR_PX = 1;
 
 /** The line under a panel's header running to the panel's edges once the panel is scrolled, and back at its top (designer, 2026-11-08); with reduced motion, at once. */
 export const HEADER_LINE_MS = 200;
