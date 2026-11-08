@@ -13,7 +13,7 @@ import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
 import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
-import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, PANEL_EXIT_MS, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
@@ -448,6 +448,27 @@ export function CanvasView(props: Props) {
 
   // Leaving grows the canvas back over the page; a click on the way turns it around.
   const wasLeaving = useRef(false);
+  /** The panels' and the tools' fades as edit mode is left, or as a click turns it around. */
+  const chromeFades = useRef<Animation[]>([]);
+  /**
+   * Leaving, the shell's parts around the canvas (the panels, the tools, the toasts) fade out at once, the panels and
+   * the tools 8px outward, well before the growing page reaches them (designer, 2026-11-08); turned around, they come
+   * back from where they had got to.
+   */
+  const fadeChrome = (leaving: boolean) => {
+    const shell = viewport.current!.parentElement!;
+    const parts = [...shell.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== viewport.current);
+    const now = parts.map((el) => {
+      const style = getComputedStyle(el);
+      return { opacity: style.opacity, transform: style.transform };
+    });
+    for (const fade of chromeFades.current) fade.cancel();
+    chromeFades.current = parts.map((el, i) => {
+      const outward = el.matches(".is-layers, .tk-show-layers") ? -8 : el.matches(".is-design, .tk-tools") ? 8 : 0;
+      const to = leaving ? { opacity: "0", transform: `translateX(${outward}px)` } : { opacity: "1", transform: "none" };
+      return el.animate([now[i], to], { duration: PANEL_EXIT_MS, easing: EASE_OUT, fill: leaving ? "forwards" : "none" });
+    });
+  };
   useLayoutEffect(() => {
     if (leaving === wasLeaving.current) return;
     wasLeaving.current = leaving;
@@ -464,6 +485,7 @@ export function CanvasView(props: Props) {
       play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
       return;
     }
+    fadeChrome(leaving);
     const from = transformOf(currentCamera(stage.current!));
     const to = leaving ? overPage() : transformOf(camera);
     // Over the page, a changed canvas would cut to a page without the changes.
