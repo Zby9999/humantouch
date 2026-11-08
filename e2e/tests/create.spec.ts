@@ -101,6 +101,37 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
 });
 
+test("the chosen tool's backing slides to a tool clicked and jumps to one a key picks", async ({ page }) => {
+  await enterEditMode(page);
+  const tools = page.getByRole("toolbar", { name: "Tools" });
+  const backing = tools.locator(".tk-tools-backing");
+  const over = async (name: string) => {
+    const [a, b] = await Promise.all([backing.boundingBox(), tools.getByRole("button", { name }).boundingBox()]);
+    return a !== null && b !== null && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
+  };
+  // No motion on the first render: it starts under Select.
+  expect(await over("Select")).toBe(true);
+  // Motion allowed here, so the transition each change gets can be read (the config reduces it).
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+
+  await tools.getByRole("button", { name: "Frame" }).click();
+  await expect(backing).toHaveCSS("transition-duration", "0.2s");
+  await expect.poll(() => over("Frame")).toBe(true);
+  await steadyBox(backing);
+  expect(await over("Frame")).toBe(true);
+
+  // A key: no transition, there at once.
+  await page.keyboard.press("t");
+  await expect(backing).toHaveCSS("transition-duration", "0s");
+  expect(await over("Text")).toBe(true);
+
+  // With reduced motion, a click jumps too.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await tools.getByRole("button", { name: "Select" }).click();
+  await expect(backing).toHaveCSS("transition-duration", "0s");
+  expect(await over("Select")).toBe(true);
+});
+
 test("F and a drag in a Frame's empty space make an absolute Frame, with no fill or outline; a button beside it writes its brief", async ({ page }) => {
   await addBoard(page);
   await enterEditMode(page);

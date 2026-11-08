@@ -849,12 +849,38 @@ interface ToolsProps {
   onTool(tool: Tool): void;
 }
 
-/** At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. */
+/**
+ * At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. The chosen one is raised
+ * on a backing of its own, which slides to a tool clicked and jumps to one a key picks (designer, 2026-11-08).
+ */
 function Tools({ tool, onTool }: ToolsProps) {
+  // The tool last clicked, until the choice changes; whether that change slides is kept until the next one, so a
+  // render meanwhile doesn't take the transition off halfway. On the first render nothing has changed: no slide.
+  const clicked = useRef<Tool | undefined>(undefined);
+  const shown = useRef(tool);
+  const sliding = useRef(false);
+  if (tool !== shown.current) {
+    sliding.current = clicked.current === tool;
+    shown.current = tool;
+    clicked.current = undefined;
+  }
+  const index = TOOLS.findIndex((t) => t.tool === tool);
   return (
     <div class="tk-tools" role="toolbar" aria-label="Tools">
+      <div class={sliding.current ? "tk-tools-backing is-sliding" : "tk-tools-backing"} style={{ "--tk-tool-index": index }} aria-hidden="true" />
       {TOOLS.map((t) => (
-        <button key={t.label} type="button" class="tk-icon-button" aria-label={t.label} aria-pressed={tool === t.tool} title={`${t.label} (${t.key})`} onClick={() => onTool(t.tool)}>
+        <button
+          key={t.label}
+          type="button"
+          class="tk-icon-button"
+          aria-label={t.label}
+          aria-pressed={tool === t.tool}
+          title={`${t.label} (${t.key})`}
+          onClick={() => {
+            clicked.current = t.tool;
+            onTool(t.tool);
+          }}
+        >
           <Icon name={t.icon} />
         </button>
       ))}
