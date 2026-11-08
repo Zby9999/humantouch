@@ -23,12 +23,17 @@ interface Props {
 
 /**
  * Opened from the count beside the toggle: the changes not yet applied, each of which
- * can be undone on its own, and Discard all, which asks first.
+ * can be undone on its own, and Discard all, which asks first. Too many for its height,
+ * its title and Discard all stay where they are and the rows scroll between them, an
+ * edge with rows past it fading out (designer, 2026-11-09).
  */
 export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDiscard, onClose }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+  /** Rows out of sight above and below the list's edges: each such edge fades. */
+  const [hidden, setHidden] = useState({ above: false, below: false });
   const latestOnClose = useRef(onClose);
   latestOnClose.current = onClose;
 
@@ -48,6 +53,18 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
   useEffect(() => {
     if (confirming) cancel.current?.focus();
   }, [confirming]);
+  const measure = () => {
+    const el = list.current!;
+    const next = { above: el.scrollTop > 0, below: el.scrollTop + el.clientHeight < el.scrollHeight - 1 };
+    setHidden((was) => (was.above === next.above && was.below === next.below ? was : next));
+  };
+  // Rows gone or the window made shorter, the list may scroll no longer, or now.
+  useLayoutEffect(() => {
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list.current!);
+    return () => observer.disconnect();
+  }, [changes.length]);
 
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
     // The editor's keys, by the editor's judgment (`historyKey`): ⌘Z undoes, ⇧⌘Z and Ctrl+Y redo; ⌘Y is the browser's.
@@ -75,7 +92,11 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
       <h2 class="tk-changes-title">{count} not applied yet</h2>
       {readOnly && <p class="tk-changes-note">The Agent is applying these changes.</p>}
       {!changes.length && <p class="tk-changes-note">No changes left.</p>}
-      <ul class="tk-changes-list">
+      <ul
+        ref={list}
+        class={["tk-changes-list", hidden.above && "is-above", hidden.below && "is-below"].filter(Boolean).join(" ")}
+        onScroll={measure}
+      >
         {changes.map((change) => (
           <li key={change.id} class="tk-change">
             <span class="tk-change-text">

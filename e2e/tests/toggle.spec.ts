@@ -103,3 +103,38 @@ test("with changes, the toggle and the count are two buttons in a column, the to
   await toggle.click();
   await expect(canvas.locator("h1")).toBeVisible();
 });
+
+/** Too many for its height, the rows scroll between the title and Discard all, an edge with rows past it fading (designer, 2026-11-09). */
+test("the change list too long for the window: its title and Discard all stay, the rows scroll between them, an edge with rows past it fading", async ({ page }) => {
+  await page.goto(DEV_URL);
+  const toggle = page.getByRole("button", { name: TOGGLE_LABEL });
+  await toggle.click();
+  const canvas = page.locator('iframe[title="Canvas"]').contentFrame();
+  await expect(canvas.locator("h1")).toBeVisible();
+  await canvasInPlace(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).first().click();
+  const fill = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Fill color", exact: true });
+  await fill.fill("2563eb");
+  await fill.press("Enter");
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
+
+  // So short a window that the one row does not fit.
+  await page.setViewportSize({ width: 800, height: 200 });
+  await page.getByRole("button", { name: /not applied yet/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Changes" });
+  const rows = dialog.locator(".tk-changes-list");
+  await expect(dialog.getByRole("heading")).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Discard all" })).toBeInViewport();
+  const [box, title, discard] = [await steadyBox(dialog), await steadyBox(dialog.getByRole("heading")), await steadyBox(dialog.getByRole("button", { name: "Discard all" }))];
+  expect(title.y).toBeGreaterThanOrEqual(box.y);
+  expect(discard.y + discard.height).toBeLessThanOrEqual(box.y + box.height);
+  expect(await rows.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(rows).toHaveClass(/is-below/);
+  await expect(rows).not.toHaveClass(/is-above/);
+
+  await rows.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  await expect(rows).toHaveClass(/is-above/);
+  await expect(rows).not.toHaveClass(/is-below/);
+  await expect(rows).toHaveCSS("mask-image", /linear-gradient/);
+});

@@ -98,10 +98,11 @@ export const styles = /* css */ `
 .tk-changes {
   position: absolute;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: 280px;
   max-height: min(400px, calc(100vh - 96px));
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   padding: 4px;
   border-radius: 12px;
   background: var(--tk-panel);
@@ -116,9 +117,27 @@ export const styles = /* css */ `
 .tk-dock[data-corner^="top"] .tk-changes { top: calc(100% + 8px); }
 .tk-dock[data-corner$="right"] .tk-changes { right: 0; }
 .tk-dock[data-corner$="left"] .tk-changes { left: 0; }
+.tk-changes > * { flex: none; }
 .tk-changes-title { margin: 0; padding: 8px; font: inherit; font-weight: 600; }
 .tk-changes-note { margin: 0; padding: 0 8px 8px; color: var(--tk-text-muted); }
-.tk-changes-list { margin: 0; padding: 0; list-style: none; }
+/*
+ * Too long for the list's height, the rows alone scroll, between its title and Discard all (designer, 2026-11-09). An edge with
+ * rows past it fades out over 24px, telling there are more.
+ */
+.tk-changes > .tk-changes-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  --tk-fade-above: 0px;
+  --tk-fade-below: 0px;
+  mask-image: linear-gradient(transparent, #000 var(--tk-fade-above), #000 calc(100% - var(--tk-fade-below)), transparent);
+}
+.tk-changes-list.is-above { --tk-fade-above: 24px; }
+.tk-changes-list.is-below { --tk-fade-below: 24px; }
 /* A row as a menu's option, two lines high: light grey under the pointer; its undo muted, darker under the pointer. */
 .tk-change {
   display: flex;
