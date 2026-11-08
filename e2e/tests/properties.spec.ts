@@ -894,6 +894,23 @@ test("dragging left and right on a number's icon changes it, 1 per px and 10 wit
   await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["0px", "0px", "0px", "12px"]);
 });
 
+test("dragging left and right on the bar at the end of a color's opacity changes it, 1% per px (designer, 2026-11-08)", async ({ page }) => {
+  test.setTimeout(90_000);
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("textbox", { name: "Fill color", exact: true });
+  await fill.fill("ff0000");
+  await fill.press("Enter");
+  const opacity = design(page).getByRole("textbox", { name: "Fill opacity" });
+  await expect(opacity).toHaveValue("100%");
+  const grip = page.locator('.tk-color-opacity:has([aria-label="Fill opacity"]) .tk-scrub');
+  const { x, y } = await steadyBox(grip);
+  await page.mouse.move(x + 6, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(x + 6 - i, y + 4);
+  await page.mouse.up();
+  await expect(opacity).toHaveValue("90%");
+});
+
 const INTRO = "A Framer-style editor layer for any page.";
 
 /** A computed style of the intro paragraph on the canvas, and of the bold run in it. */

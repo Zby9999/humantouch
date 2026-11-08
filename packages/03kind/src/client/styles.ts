@@ -541,6 +541,10 @@ export const styles = /* css */ `
 .tk-color-field { padding-left: 6px; }
 .tk-color-field.is-joined { border-radius: 8px 2px 2px 8px; }
 .tk-color-opacity { flex: none; width: 64px; border-radius: 2px 8px 8px 2px; }
+/* A field with no icon to drag on (an opacity beside its color): a short upright bar at its right end, dragged left and right (designer, 2026-11-08). */
+.tk-scrub.is-grip { width: 12px; margin-right: -4px; }
+.tk-grip { width: 2px; height: 12px; border-radius: 1px; background: currentColor; opacity: 0.3; }
+.tk-scrub.is-grip:hover > .tk-grip { opacity: 0.6; }
 /* A paint's row: its field, then its remove button, 2px apart. */
 .tk-row.tk-paint-row { gap: 2px; }
 /* 20px with its 0.5px line, 5px in from the field's top and bottom, 6px from its left (designer, 2026-11-08). */

@@ -1776,6 +1776,8 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
             }}
             onChange={(opacity) => onChange({ color: color.color, opacity })}
           />
+          {/* Dragged left and right, 1% per px, as a number's icon is (designer, 2026-11-08). */}
+          <Scrub grip value={Math.round(color.opacity * 100)} min={0} max={100} onChange={(percent, continues) => onChange({ color: color.color, opacity: percent / 100 }, continues)} />
         </label>
       )}
     </div>
@@ -1898,10 +1900,12 @@ function SectionReset({ title, properties }: { title: string; properties: Proper
  * px (10 with ⇧), as in Figma. The pointer is locked while dragging, so it
  * never runs into the edge of the screen.
  */
-function Scrub({ icon, glyph, small, value, min, max = Infinity, onChange }: {
+function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange }: {
   icon?: IconName;
   glyph?: string;
   small?: boolean;
+  /** A short upright bar at the field's right end, for a field with no icon to drag on (an opacity beside its color). */
+  grip?: boolean;
   value: number | null;
   min: number;
   max?: number;
@@ -1944,7 +1948,7 @@ function Scrub({ icon, glyph, small, value, min, max = Infinity, onChange }: {
 
   return (
     <span
-      class="tk-scrub"
+      class={grip ? "tk-scrub is-grip" : "tk-scrub"}
       aria-hidden="true"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -1953,7 +1957,7 @@ function Scrub({ icon, glyph, small, value, min, max = Infinity, onChange }: {
       // A click on the icon is not a click on the field's label: it does not start typing.
       onClick={(event) => event.preventDefault()}
     >
-      {icon ? <Icon name={icon} /> : <span class={small ? "tk-glyph is-small" : "tk-glyph"}>{glyph}</span>}
+      {grip ? <span class="tk-grip" /> : icon ? <Icon name={icon} /> : <span class={small ? "tk-glyph is-small" : "tk-glyph"}>{glyph}</span>}
     </span>
   );
 }
