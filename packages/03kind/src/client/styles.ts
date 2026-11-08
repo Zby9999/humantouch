@@ -695,9 +695,12 @@ export const styles = /* css */ `
  */
 .tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only) { color: #fafafa; }
 .tk-popover .tk-field.is-changed { padding-right: 6px; }
-/* A shadow's type, changed: as wide as it was, its reset at its right end. */
-.tk-effect-type-field { flex: 1; min-width: 0; border-radius: 8px; }
-.tk-effect-type-field.is-changed > .tk-select { flex: 1; width: auto; min-width: 0; }
+/*
+ * A shadow's type fills its row up to its −, which stands at the right end, as a blur's does; changed, its reset at its right end
+ * (designer, 2026-11-08). With .tk-select-field, so it wins over that rule's flex: none further down: on its own class it lost, and hugged its text.
+ */
+.tk-select-field.tk-effect-type-field { flex: 1; min-width: 0; }
+.tk-select-field.tk-effect-type-field > .tk-select { flex: 1; width: auto; min-width: 0; }
 /*
  * Clicked again to go back (Wrap), a toggle has no reset of its own: changed, it is marked in the accent (designer, 2026-11-08).
  * Wrap on is in the accent already; changed to off, its icon in the accent on the accent's tint.

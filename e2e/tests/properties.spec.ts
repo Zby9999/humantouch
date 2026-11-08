@@ -1663,3 +1663,29 @@ test("a Stack made in this round: its fields unmarked, only its − in the accen
   await expect.poll(() => hero.evaluateAll((els) => els.map((el) => el.localName))).toEqual(was);
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
+
+test("an effect's type fills its row, its − at the right end: a shadow's, changed or not, and a blur's (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  await addEffect(effects, "Layer blur");
+  await effects.getByRole("combobox", { name: "Shadow 1 type" }).selectOption("Inner shadow");
+  await expect(effects.getByRole("group", { name: "Shadow 1" }).locator(".tk-select-field.is-changed")).toBeVisible();
+
+  for (const [name, remove] of [
+    ["Shadow 1", "Remove shadow 1"],
+    ["Shadow 2", "Remove shadow 2"],
+    ["Layer blur", "Remove layer blur"],
+  ]) {
+    const row = effects.getByRole("group", { name, exact: true }).locator(".tk-paint-row");
+    const [rowBox, type, minus] = await Promise.all([
+      steadyBox(row),
+      // A shadow's select inside its wrapper, with its reset; a blur's on its own.
+      steadyBox(row.locator(":scope > :first-child")),
+      steadyBox(row.getByRole("button", { name: remove })),
+    ]);
+    expect(Math.abs(type.x - rowBox.x), `${name}: its type at the row's left`).toBeLessThanOrEqual(1);
+    // The 2px gap of a paint's row between them.
+    expect(Math.abs(type.x + type.width + 2 - minus.x), `${name}: its type up to its −`).toBeLessThanOrEqual(1);
+    expect(Math.abs(minus.x + minus.width - (rowBox.x + rowBox.width)), `${name}: its − at the row's right end`).toBeLessThanOrEqual(1);
+  }
+});
