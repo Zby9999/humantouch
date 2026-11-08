@@ -80,6 +80,11 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
   await expect(badge(page)).toHaveText("2");
+  // Around the toggle's rounded square, 4px out from it on every side (designer, 2026-11-08).
+  const ringBox = await progress(page).boundingBox();
+  const toggleBox = await toggle.boundingBox();
+  expect([ringBox!.x - toggleBox!.x, ringBox!.y - toggleBox!.y, ringBox!.width, ringBox!.height]).toEqual([-4, -4, 48, 48]);
+  expect(await progress(page).locator("rect").first().evaluate((rect: SVGRectElement) => [rect.getBBox().width, getComputedStyle(rect).rx])).toEqual([44, "14px"]);
   await toggle.click({ force: true });
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 

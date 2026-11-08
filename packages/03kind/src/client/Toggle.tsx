@@ -25,8 +25,8 @@ interface Drag {
  * it unlocks it.
  */
 interface Props {
-  // Until the rest of the editor layer has loaded there is no round to show: the badge, the list and the lock come with it.
-  /** Changes not yet applied, shown as a badge, which opens the change list. */
+  // Until the rest of the editor layer has loaded there is no round to show: the count, the list and the lock come with it.
+  /** Changes not yet applied, counted on a button beside the toggle, which opens the change list. */
   changeCount?: number;
   /** The change list is open. */
   changesOpen?: boolean;
@@ -187,21 +187,19 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
             endHold();
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-            />
-            <path d="M9.5 9.5 15 11.5l-2.25.75L12 14.5z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          {/*
+           * IconMCP's Pointer, in place of a cursor in a frame drawn for the toggle (designer, 2026-11-08): its path and
+           * line as `icons.tsx` has them, to two decimals rather than three, for the toggle's budget.
+           */}
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2.64 2.83L6.85 13.14C6.91 13.27 7.09 13.27 7.13 13.14L8.73 8.82C8.74 8.77 8.77 8.74 8.82 8.73L13.14 7.13C13.27 7.09 13.27 6.91 13.14 6.85L2.83 2.64C2.71 2.59 2.59 2.71 2.64 2.83ZM9.25 9.25 13.25 13.25" />
           </svg>
         </button>
-        {applying && <ProgressRing {...applying} />}
+        {/* Not a badge on the toggle's corner, too easily pressed for it, but a button of its own beside it, the two as one (designer, 2026-11-08). */}
         {changeCount > 0 && (
           <button
             type="button"
-            class="tk-badge"
+            class="tk-toggle-count"
             data-tk-changes-opener=""
             aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}
             aria-haspopup="dialog"
@@ -211,6 +209,7 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
             {changeCount}
           </button>
         )}
+        {applying && <ProgressRing {...applying} />}
       </div>
       {children}
     </div>
@@ -229,9 +228,10 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={done}
     >
-      <circle class="tk-progress-track" cx="24" cy="24" r="22" pathLength={1} />
-      <circle class="tk-progress-done" cx="24" cy="24" r="22" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
-      <circle class="tk-progress-hold" cx="24" cy="24" r="22" pathLength={1} />
+      {/* Around the toggle's rounded square (designer, 2026-11-08): where and how round, the styles' (`.tk-progress rect`). */}
+      <rect class="tk-progress-track" pathLength={1} />
+      <rect class="tk-progress-done" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
+      <rect class="tk-progress-hold" pathLength={1} />
     </svg>
   );
 }

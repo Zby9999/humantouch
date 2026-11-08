@@ -22,7 +22,7 @@ interface Props {
 }
 
 /**
- * Opened from the toggle's badge: the changes not yet applied, each of which
+ * Opened from the count beside the toggle: the changes not yet applied, each of which
  * can be undone on its own, and Discard all, which asks first.
  */
 export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDiscard, onClose }: Props) {
@@ -35,7 +35,7 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
   // As it goes on the page, not a frame later: a key pressed meanwhile would go to what opened it, and Esc would not close it.
   useLayoutEffect(() => {
     dialog.current!.focus({ preventScroll: true });
-    // A press anywhere else closes it; what opened it (the badge, or the count in edit mode) toggles it itself.
+    // A press anywhere else closes it; what opened it (the count beside the toggle, or the one in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
       if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.hasAttribute("data-tk-changes-opener"))) {

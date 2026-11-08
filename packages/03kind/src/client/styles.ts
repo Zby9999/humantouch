@@ -13,13 +13,15 @@ export const styles = /* css */ `
 /* The toggle while the Agent applies the round: a ring fills as changes are done. */
 .tk-progress {
   position: absolute;
-  inset: -4px;
+  /* Around the toggle, at the start of the row, the count after it: on a right-to-left page too. */
+  top: -4px;
+  inset-inline-start: -4px;
   width: 48px;
   height: 48px;
-  rotate: -90deg;
   pointer-events: none;
 }
-.tk-progress circle { fill: none; stroke-width: 2.5; stroke-dasharray: 1; }
+/* A rounded square, as far out as the circle was, its corners 2px rounder than the toggle's (designer, 2026-11-08). */
+.tk-progress rect { x: 2px; y: 2px; width: 44px; height: 44px; rx: 14px; fill: none; stroke-width: 2.5; stroke-dasharray: 1; }
 .tk-progress-track { stroke: rgb(30 30 30 / 0.16); }
 .tk-progress-done {
   stroke: #0d99ff;
@@ -31,30 +33,42 @@ export const styles = /* css */ `
 .is-holding .tk-progress-hold { opacity: 1; animation: tk-hold var(--tk-hold) linear forwards; }
 @keyframes tk-hold { to { stroke-dashoffset: 0; } }
 
-/* Changes not yet applied, on the toggle's top-right edge. It opens the change list. */
-.tk-badge {
+/*
+ * Changes not yet applied, counted on a button of their own beside the toggle: not a badge on its corner, too easily
+ * pressed for the toggle. The two sit as one, 2px apart, their outer corners as round as the toggle's alone, the inner
+ * ones squarer (designer, 2026-11-08). The count on the accent, as the count beside the Design title in edit mode, so
+ * it reads as a count and not as a second toggle: the designer left the color to us, dark as the toggle being the other
+ * choice (designer, 2026-11-08). It opens the change list. Corners by the row's start and end, for right-to-left pages.
+ */
+.tk-toggle-wrap { display: flex; gap: 2px; }
+/* Locked, the ring around the toggle needs the room. */
+.tk-toggle-wrap:has(.tk-progress) { gap: 6px; }
+.tk-toggle-wrap:has(.tk-toggle-count) .tk-toggle { border-start-end-radius: 4px; border-end-end-radius: 4px; }
+.tk-toggle-count {
   all: unset;
-  position: absolute;
-  top: -4px;
-  right: -4px;
   box-sizing: border-box;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 5px;
-  background: #0d99ff;
-  box-shadow: 0 0 0 2px #fff;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border-start-start-radius: 4px;
+  border-end-start-radius: 4px;
+  background: #008ff0;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 4px 12px rgb(0 0 0 / 0.18);
   color: #fff;
-  font: 600 11px/18px ${EDITOR_FONT};
+  font: 600 13px/40px ${EDITOR_FONT};
   font-variant-numeric: tabular-nums;
   text-align: center;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  transition: background-color 120ms ease;
 }
-/* A larger target than it looks. */
-.tk-badge::before { content: ""; position: absolute; inset: -6px; }
-.tk-badge:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
+.tk-toggle-count:hover { background: #007dd2; }
+.tk-toggle-count:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
 
 /*
  * The change list: light as the editor's menus and popovers, in their colors, opening toward the middle of the window

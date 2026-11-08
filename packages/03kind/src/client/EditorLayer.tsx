@@ -57,7 +57,7 @@ function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): Sav
  * The page always shows the code as it is: the changes are seen on the canvas,
  * played at full size (ADR 0010). Once the Agent claims the round, the editor
  * folds into the toggle, locked until the round ends, while the page checks
- * the changes as the code changes, its ring filling as they show (ADR 0013). The toggle's badge opens the change list, where changes
+ * the changes as the code changes, its ring filling as they show (ADR 0013). The count beside the toggle opens the change list, where changes
  * are undone one by one, or all discarded, in either mode.
  *
  * It loads after the toggle (`LazyEditorLayer`): `enter` when edit mode was
@@ -73,7 +73,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const [round, setRound] = useState<SavedRound | null | undefined>(store ? saved : null);
   /** The layers off the canvas (ADR 0009), which belong to no round; undefined until they have loaded. */
   const [offCanvas, setOffCanvas] = useState<SavedOffCanvasLayer[] | undefined>(store ? undefined : []);
-  /** Changes not yet applied, for the toggle's badge: the canvas's as of its last edit while edit mode is up, else the saved round's. */
+  /** Changes not yet applied, for the count beside the toggle: the canvas's as of its last edit while edit mode is up, else the saved round's. */
   const [live, setLive] = useState<Change[] | null>(null);
   const [listOpen, setListOpen] = useState(false);
   /**
@@ -457,7 +457,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
         <Shell
           // Frozen afresh: a new canvas, in place of the last.
           key={freezes}
-          // Only while in edit mode: leaving, the toggle is back with its badge.
+          // Only while in edit mode: leaving, the toggle is back with its count.
           controls={
             editing && (
               <>
@@ -519,7 +519,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           busy={mode === "edit" && !ready}
         >
           {list}
-          {/* Not over the change list, opened from the badge to look at what is left. */}
+          {/* Not over the change list, opened from the count to look at what is left. */}
           {claimed && stalled && !list && <StalledNotice onKeepWaiting={() => stall.current?.moved()} onEndRound={endRound} />}
         </Toggle>
       )}
