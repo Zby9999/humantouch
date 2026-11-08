@@ -1328,6 +1328,9 @@ export const styles = /* css */ `
 .tk-variants-ramp { display: grid; grid-template-columns: 50px repeat(11, minmax(0, 1fr)); gap: 2px; align-items: center; }
 .tk-variants-ramp-name { overflow: hidden; color: #525351; text-overflow: ellipsis; white-space: nowrap; }
 .tk-variants-swatch, .tk-variants-empty { aspect-ratio: 1; border-radius: 4px; }
+/* A step the ramp has no color for: a placeholder in its column, the size of a swatch, outlined dashed and not
+   filled, so it reads as no color here rather than a white one (designer, 2026-11-08). Not a control: nothing on hover. */
+.tk-variants-empty { box-sizing: border-box; border: 1px dashed var(--tk-border); pointer-events: none; }
 .tk-variants-swatch {
   all: unset;
   aspect-ratio: 1;

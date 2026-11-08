@@ -363,3 +363,26 @@ test("with nothing selected, a spacing Variable's bar is as long as it is; one t
   await expect(whole).toHaveCount(0);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
 });
+
+test("with nothing selected, a step a ramp has no color for shows as a placeholder the size of a swatch, outlined, in its column", async ({ page }) => {
+  await enterEditMode(page);
+  // brand has 50, 100, 500 and 700 only: 200 is its first gap (designer, 2026-11-08).
+  const brand = design(page)
+    .getByRole("region", { name: "Color" })
+    .locator(".tk-variants-ramp")
+    .filter({ has: page.locator(".tk-variants-ramp-name").getByText("brand", { exact: true }) });
+  await brand.scrollIntoViewIfNeeded();
+  const cells = brand.locator(".tk-variants-swatch, .tk-variants-empty");
+  await expect(cells).toHaveCount(11);
+  expect(await cells.nth(2).getAttribute("class")).toBe("tk-variants-empty");
+  const [swatch, empty] = await Promise.all([steadyBox(cells.nth(1)), steadyBox(cells.nth(2))]);
+  expect(empty.width).toBeCloseTo(swatch.width, 0);
+  expect(empty.height).toBeCloseTo(swatch.height, 0);
+  expect(empty.y).toBeCloseTo(swatch.y, 0);
+  const look = await cells.nth(2).evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor, fill: style.backgroundColor, events: style.pointerEvents };
+  });
+  expect(look).toMatchObject({ width: "1px", style: "dashed", fill: "rgba(0, 0, 0, 0)", events: "none" });
+  expect(look.color).not.toBe("rgba(0, 0, 0, 0)");
+});
