@@ -1426,6 +1426,40 @@ export const styles = /* css */ `
 .tk-variants-tip-name { font-weight: 500; }
 .tk-variants-tip-value { color: #a0a19f; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tk-variants-tip-hint { color: #a0a19f; }
+/*
+ * A shadow Variable's layers, pointed at: white, as the popovers' shape, out
+ * over the canvas at the Design panel's left (designer, 2026-11-08). Its name,
+ * then a block a shadow, a thin rule between; each value under a muted label,
+ * four to a row, the color across the row below.
+ */
+.tk-variants-details {
+  position: fixed;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12);
+  color: #0a0a09;
+  font-size: 11px;
+  pointer-events: none;
+}
+.tk-variants-details-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.tk-variants-details-layer { display: flex; flex-direction: column; gap: 6px; }
+.tk-variants-details-layer + .tk-variants-details-layer { padding-top: 8px; border-top: 1px solid #ebebea; }
+.tk-variants-details-head { display: flex; justify-content: space-between; gap: 8px; }
+.tk-variants-details-title { font-weight: 500; }
+.tk-variants-details-label { color: #737472; }
+.tk-variants-details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; margin: 0; }
+.tk-variants-details-pair { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tk-variants-details-pair.is-color { grid-column: 1 / -1; }
+.tk-variants-details-value { display: flex; align-items: center; gap: 6px; margin: 0; font-variant-numeric: tabular-nums; }
+.tk-variants-details-swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; background: var(--tk-swatch); box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15); }
+.tk-variants-details-opacity { margin-left: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .tk-segment, .tk-selection, .tk-progress-done { transition: none; }

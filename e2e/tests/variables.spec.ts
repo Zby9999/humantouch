@@ -430,3 +430,57 @@ test("with nothing selected, a radius tile has its name over its value, in it wh
   await tile("full").hover();
   await expect.poll(() => tip.count()).toBe(0);
 });
+
+/** Two frames: what pointing at something shows has had time to show. */
+const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+
+test("with nothing selected, a font size's row tells nothing pointed at: its name and value are on it; a color swatch, showing neither, tells them", async ({ page }) => {
+  await enterEditMode(page);
+  const tip = page.getByRole("tooltip");
+  const swatch = design(page).getByRole("region", { name: "Color" }).locator(".tk-variants-swatch").first();
+  await swatch.scrollIntoViewIfNeeded();
+  const name = (await swatch.getAttribute("aria-label"))!.split(",")[0];
+  await swatch.hover();
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText(name);
+
+  const sizes = design(page).getByRole("region", { name: "Font size" });
+  await sizes.scrollIntoViewIfNeeded();
+  for (const row of await sizes.locator(".tk-variants-row.is-button").all()) {
+    await row.hover();
+    await frames(page);
+    await expect.poll(() => tip.count()).toBe(0);
+  }
+});
+
+test("with nothing selected, a shadow pointed at shows its layers in a white panel at the Design panel's left, each value named; it goes as the pointer leaves", async ({ page }) => {
+  await enterEditMode(page);
+  const shadows = design(page).getByRole("region", { name: "Shadow" });
+  await shadows.scrollIntoViewIfNeeded();
+  const card = shadows.locator(".tk-variants-tile").filter({ hasText: /^card$/ });
+  const details = page.locator(".tk-variants-details");
+  await card.hover();
+  await expect(details).toBeVisible();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+
+  // `card`: 0 1px 2px rgb(27 29 42 / 0.06), 0 4px 12px rgb(27 29 42 / 0.08), a block each.
+  await expect(details.locator(".tk-variants-details-name")).toHaveText("card");
+  const layers = details.locator(".tk-variants-details-layer");
+  await expect(layers).toHaveCount(2);
+  const pairs = (n: number) => layers.nth(n).evaluate((layer) => [...layer.querySelectorAll(".tk-variants-details-pair")].map((pair) => pair.textContent!.replace(/\s+/g, "")));
+  await expect(layers.nth(0).locator(".tk-variants-details-head")).toHaveText(/Shadow 1\s*Drop shadow/);
+  expect(await pairs(0)).toEqual(["X0", "Y1", "Blur2", "Spread0", "Color1B1D2A6%"]);
+  await expect(layers.nth(1).locator(".tk-variants-details-head")).toHaveText(/Shadow 2\s*Drop shadow/);
+  expect(await pairs(1)).toEqual(["X0", "Y4", "Blur12", "Spread0", "Color1B1D2A8%"]);
+
+  // White, read-only, wholly left of the Design panel, over the canvas, in the window.
+  const look = await details.evaluate((el) => ({ fill: getComputedStyle(el).backgroundColor, events: getComputedStyle(el).pointerEvents, controls: el.querySelectorAll("input, button, select").length }));
+  expect(look).toEqual({ fill: "rgb(255, 255, 255)", events: "none", controls: 0 });
+  const [box, panel] = await Promise.all([steadyBox(details), steadyBox(design(page))]);
+  expect(box.x + box.width).toBeLessThan(panel.x);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  await page.mouse.move(5, 5);
+  await expect(details).toHaveCount(0);
+});
