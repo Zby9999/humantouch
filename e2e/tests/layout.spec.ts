@@ -141,6 +141,29 @@ test("the alignment grid: half the row, its point dark till it changes, then the
   expect(Math.abs(box.x + box.width - (top.x + top.width))).toBeLessThanOrEqual(1);
 
   const point = (name: string) => grid.getByRole("radio", { name, exact: true });
+  // Each point the whole of its third, to click on; its mark where the lines cross, at 5/24, half and 19/24 across and down (designer, 2026-11-08).
+  const AT = [5 / 24, 1 / 2, 19 / 24];
+  const NAMES = [
+    ["Top left", "Top center", "Top right"],
+    ["Center left", "Center", "Center right"],
+    ["Bottom left", "Bottom center", "Bottom right"],
+  ];
+  for (const [row, names] of NAMES.entries()) {
+    for (const [column, name] of names.entries()) {
+      const third = await steadyBox(point(name));
+      expect(Math.abs(third.width - box.width / 3)).toBeLessThanOrEqual(1);
+      expect(Math.abs(third.height - box.height / 3)).toBeLessThanOrEqual(1);
+      const offset = await point(name).evaluate((el) => {
+        const style = getComputedStyle(el, "::before");
+        return { x: parseFloat(style.left) || 0, y: parseFloat(style.top) || 0 };
+      });
+      const x = third.x + third.width / 2 + offset.x - box.x;
+      const y = third.y + third.height / 2 + offset.y - box.y;
+      expect(Math.abs(x - box.width * AT[column]!)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(y - box.height * AT[row]!)).toBeLessThanOrEqual(0.5);
+    }
+  }
+
   const mark = (name: string) =>
     point(name).evaluate((el) => {
       const style = getComputedStyle(el, "::before");

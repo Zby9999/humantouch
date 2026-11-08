@@ -569,6 +569,10 @@ export const styles = /* css */ `
 .tk-field.is-changed.tk-color-opacity { padding-right: 6px; }
 .tk-grip { width: 2px; height: 12px; border-radius: 1px; background: currentColor; opacity: 0.3; }
 .tk-scrub.is-grip:hover > .tk-grip { opacity: 0.6; }
+/* Dragged on its icon, label or grip, a field is the one chosen: the hover's darker ground and the 1px accent edge it has focused, till let go (designer, 2026-11-08). */
+.tk-field[data-scrubbing] { box-shadow: inset 0 0 0 1px var(--tk-accent); }
+.tk-field[data-scrubbing]:not(.is-changed) { background-color: var(--tk-button); }
+.tk-field.is-changed[data-scrubbing] { box-shadow: inset 0 0 0 1px var(--tk-accent-strong); }
 /* A paint's row: its field, then its remove button, 2px apart. */
 .tk-row.tk-paint-row { gap: 2px; }
 /* 20px with its 0.5px line, 5px in from the field's top and bottom, 6px from its left (designer, 2026-11-08). */
@@ -779,7 +783,7 @@ export const styles = /* css */ `
 .tk-align {
   position: relative;
   display: grid;
-  /* Each point the whole of its third, across and down: the lines cross at the thirds' middles, a sixth, half and five sixths of the way (designer, 2026-11-08). */
+  /* Each point the whole of its third, across and down, to click on. The outer lines, at a sixth and five sixths, sat too far out: they come back half that way, to 5/24 and 19/24; the middle ones stay at half (designer, 2026-11-08). */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: repeat(3, minmax(0, 1fr));
   box-sizing: border-box;
@@ -788,19 +792,19 @@ export const styles = /* css */ `
   border-radius: 8px;
   background: var(--tk-field);
 }
-/* The lines, 0.5px, 6px in from the field's edges. Inside that box a sixth of the field is a sixth of the box less 4px, five sixths, five sixths of it and 4px. */
+/* The lines, 0.5px, 6px in from the field's edges. Inside that box 5/24 of the field is 5/24 of the box less 3.5px; 19/24, 19/24 of it and 3.5px. */
 .tk-align::before {
   content: "";
   position: absolute;
   inset: 6px;
   --tk-line: linear-gradient(var(--tk-border), var(--tk-border));
   background:
-    var(--tk-line) calc(100% / 6 - 4px) 0 / 0.5px 100% no-repeat,
+    var(--tk-line) calc(500% / 24 - 3.5px) 0 / 0.5px 100% no-repeat,
     var(--tk-line) 50% 0 / 0.5px 100% no-repeat,
-    var(--tk-line) calc(500% / 6 + 4px) 0 / 0.5px 100% no-repeat,
-    var(--tk-line) 0 calc(100% / 6 - 4px) / 100% 0.5px no-repeat,
+    var(--tk-line) calc(1900% / 24 + 3.5px) 0 / 0.5px 100% no-repeat,
+    var(--tk-line) 0 calc(500% / 24 - 3.5px) / 100% 0.5px no-repeat,
     var(--tk-line) 0 50% / 100% 0.5px no-repeat,
-    var(--tk-line) 0 calc(500% / 6 + 4px) / 100% 0.5px no-repeat;
+    var(--tk-line) 0 calc(1900% / 24 + 3.5px) / 100% 0.5px no-repeat;
   pointer-events: none;
 }
 .tk-align-point {
@@ -811,17 +815,24 @@ export const styles = /* css */ `
 }
 .tk-align-point::before {
   content: "";
+  position: relative;
   width: 8px;
   height: 4px;
   border-radius: 1px;
   background: var(--tk-border);
 }
+/* Each mark where its lines cross, not at its third's middle: an outer third's mark a 24th of the grid, an eighth of the third, toward the middle (designer, 2026-11-08). */
+.tk-align-point:nth-child(3n + 1)::before { left: 12.5%; }
+.tk-align-point:nth-child(3n)::before { left: -12.5%; }
+.tk-align-point:nth-child(-n + 3)::before { top: 12.5%; }
+.tk-align-point:nth-child(n + 7)::before { top: -12.5%; }
 .tk-align-point:hover::before { background: #a0a19f; }
 /* Where it was before this round's change: a larger dash, muted (designer, 2026-11-08). */
 .tk-align-point.is-before::before { width: 12px; height: 6px; border-radius: 2px; background: #a0a19f; }
 /* The point chosen: dark, as a check ticked, till it changes in this round; then the accent (designer, 2026-11-08). */
 .tk-align-point[aria-checked="true"]::before { width: 24px; height: 12px; border-radius: 4px; background: #262625; box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.25); }
-.tk-align.is-changed .tk-align-point[aria-checked="true"]::before { background: var(--tk-accent); box-shadow: inset 0 0 0 0.5px var(--tk-accent-on), 0 1px 1.5px rgb(13 153 255 / 0.4); }
+/* Its blue edge 1px, as every selected edge: 0.5px was hard to see (designer, 2026-11-08). */
+.tk-align.is-changed .tk-align-point[aria-checked="true"]::before { background: var(--tk-accent); box-shadow: inset 0 0 0 1px var(--tk-accent-on), 0 1px 1.5px rgb(13 153 255 / 0.4); }
 .tk-align-point:focus-visible { outline: 1px solid var(--tk-accent); }
 .tk-align-options { display: grid; min-width: 0; gap: 4px; align-content: start; }
 /* A check: its box, then its words, on the panel (designer, 2026-11-08). Half a row, beside a field or another check; alone in its row, the whole of it. */

@@ -968,6 +968,54 @@ test("a number dragged is marked changed once let go, not while held; typed, at 
   expect(await field.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
 });
 
+/** A color the panel's CSS gives a custom property, as computed: "rgb(…)". */
+function panelColor(page: Page, property: string) {
+  return design(page).evaluate((el, property) => {
+    const probe = el.appendChild(document.createElement("i"));
+    probe.style.color = `var(${property})`;
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, property);
+}
+
+/** A field's edge and ground, as computed. */
+function fieldLook(field: Locator) {
+  return field.evaluate((el) => ({ edge: getComputedStyle(el).boxShadow, ground: getComputedStyle(el).backgroundColor }));
+}
+
+test("a field focused, and a number held mid-drag, have the 1px accent edge; let go, the drag's edge is gone (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const accent = await panelColor(page, "--tk-accent");
+  const darker = await panelColor(page, "--tk-button");
+  const EDGE = `${accent} 0px 0px 0px 1px inset`;
+
+  // Focused: the 1px accent edge.
+  const width = design(page).getByRole("textbox", { name: "Width" });
+  const widthField = page.locator('.tk-field:has([aria-label="Width"])');
+  await width.focus();
+  await expect.poll(async () => (await fieldLook(widthField)).edge).toBe(EDGE);
+  await width.blur();
+  await expect.poll(async () => (await fieldLook(widthField)).edge).not.toContain(accent);
+
+  // Held mid-drag on its icon: the same edge, on the hover's darker ground.
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const { x, y } = await steadyBox(field.locator(".tk-scrub"));
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  await expect(radius).toHaveValue("15");
+  await expect.poll(() => fieldLook(field)).toEqual({ edge: EDGE, ground: darker });
+  await expect(radius).not.toBeFocused();
+
+  // Let go, the field takes the accent, with no edge of its own: it is not focused.
+  await page.mouse.up();
+  await expect(field).toHaveClass(/\bis-changed\b/);
+  await expect(field).not.toHaveAttribute("data-scrubbing");
+  await expect.poll(async () => (await fieldLook(field)).edge).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 1px inset");
+});
+
 test("dragging left and right on the bar at the end of a color's opacity changes it, 1% per px (designer, 2026-11-08)", async ({ page }) => {
   test.setTimeout(90_000);
   await selectRow(page, "Card");
@@ -981,7 +1029,13 @@ test("dragging left and right on the bar at the end of a color's opacity changes
   await page.mouse.move(x + 6, y + 4);
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) await page.mouse.move(x + 6 - i, y + 4);
+  // Held, its field has the 1px edge, as a number's does (designer, 2026-11-08): changed already by the fill typed, on the accent, the stronger accent, as it has focused.
+  const field = page.locator('.tk-field:has([aria-label="Fill opacity"])');
+  await expect(field).toHaveClass(/\bis-changed\b/);
+  await expect(field).toHaveAttribute("data-scrubbing", "");
+  await expect.poll(async () => (await fieldLook(field)).edge).toBe(`${await panelColor(page, "--tk-accent-strong")} 0px 0px 0px 1px inset`);
   await page.mouse.up();
+  await expect(field).not.toHaveAttribute("data-scrubbing");
   await expect(opacity).toHaveValue("90%");
 });
 
