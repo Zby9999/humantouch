@@ -540,11 +540,12 @@ export function readStroke(el: Element, colors: ColorReader): Stroke | null {
 
 /**
  * The stroke drawn at `weight`, as the editor reads it back: every side alike
- * is one weight, and no side drawn is no stroke.
+ * is one weight. No side drawn is a stroke at 0, as in Figma: only taking the
+ * stroke off is no stroke.
  */
-export function strokeWith({ color, opacity, style }: Stroke, weight: Stroke["weight"]): Stroke | null {
+export function strokeWith({ color, opacity, style }: Stroke, weight: Stroke["weight"]): Stroke {
   const alike = typeof weight === "number" ? weight : weight.every((w) => w === weight[0]) ? weight[0] : weight;
-  return alike === 0 ? null : { color, opacity, weight: alike, style };
+  return { color, opacity, weight: alike, style };
 }
 
 /** The CSS that draws the stroke; no stroke takes the border off and leaves its color as it is. */
