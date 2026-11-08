@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useState } from "preact/hooks";
-import { tailwindOf, type Breakpoint } from "./breakpoints";
+import type { Breakpoint } from "./breakpoints";
 import { Icon } from "./icons";
 
 /**
@@ -76,10 +76,10 @@ export function rangeText(breakpoint: Breakpoint | null, width: number): string 
 
 /**
  * Above a view, as a Frame's name in Figma: its name and the widths it covers
- * (designer, 2026-11-08). The project's breakpoint its changes are written
- * with, and that it shows only what CSS does at its width, are in the range's
- * title. At its right end, the way to play it full screen and, but for the
- * desktop view, to delete it.
+ * (designer, 2026-11-08), with no tip: one telling the project's breakpoint
+ * and what the view shows was too long to be worth it (designer, 2026-11-08).
+ * At its right end, the way to play it full screen and, but for the desktop
+ * view, to delete it.
  */
 export function ViewLabel(props: {
   name: string;
@@ -94,13 +94,6 @@ export function ViewLabel(props: {
   onDelete?: () => void;
 }) {
   const { name, width, breakpoint, left, top, size, onPlay, onDelete } = props;
-  const tailwind = tailwindOf(breakpoint);
-  const title = [
-    tailwind ? `Changes here are written with the project's breakpoint ${tailwind}` : onDelete ? null : "Changes here apply at every width the other views don't cover",
-    "Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.",
-  ]
-    .filter(Boolean)
-    .join("\n");
   return (
     <div
       class="tk-view-label"
@@ -110,7 +103,7 @@ export function ViewLabel(props: {
       onPointerDown={(event) => event.stopPropagation()}
     >
       <span class="tk-view-name">{name}</span>
-      <span class="tk-view-range" data-tk-tip={title}>
+      <span class="tk-view-range">
         {rangeText(breakpoint, width)}
       </span>
       {/* Full screen before ×, which stays at the very end: the button pressed to play keeps its place on every view. */}

@@ -18,11 +18,9 @@ async function enterEditMode(page: Page) {
   await canvasInPlace(page);
 }
 
-/** A view's label says the widths it covers, and, in their tip, the project's variant they are written with, if any. */
-async function expectRange(page: Page, name: string, widths: string, variant?: string) {
-  const range = page.getByRole("group", { name: `${name} view` }).locator(".tk-view-range");
-  await expect(range).toHaveText(widths);
-  if (variant) await expect(range).toHaveAttribute("data-tk-tip", new RegExp(`breakpoint ${variant}`));
+/** A view's label says the widths it covers. */
+async function expectRange(page: Page, name: string, widths: string) {
+  await expect(page.getByRole("group", { name: `${name} view` }).locator(".tk-view-range")).toHaveText(widths);
 }
 
 /** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */
@@ -133,9 +131,9 @@ test("in the tablet view, a property the breakpoint changed on its own is marked
 test("each view stands for the range of the project's Tailwind breakpoints its width is in and those above it up to the next view's, and its label says which; a view added in the same range shares it", async ({ page }) => {
   await enterEditMode(page);
   const label = (name: string) => page.getByRole("group", { name: `${name} view` });
-  // The desktop view, 1280px wide, is from `xl` up. The label says the widths; the variant is in its title (designer, 2026-11-08).
-  await expectRange(page, "Tablet", "768–1279", "md:max-xl:");
-  await expectRange(page, "Phone", "≤ 767", "max-md:");
+  // The desktop view, 1280px wide, is from `xl` up. The label says the widths (designer, 2026-11-08).
+  await expectRange(page, "Tablet", "768–1279");
+  await expectRange(page, "Phone", "≤ 767");
   await expectRange(page, "Desktop", "≥ 1280");
   await expect(label("Desktop")).not.toContainText(":");
 
@@ -145,7 +143,7 @@ test("each view stands for the range of the project's Tailwind breakpoints its w
   await page.getByRole("spinbutton", { name: "New view width" }).press("Enter");
   const custom = page.locator('iframe[title="Custom 500"]');
   await expect(custom.contentFrame().locator("h1")).toBeVisible();
-  await expectRange(page, "Custom", "≤ 767", "max-md:");
+  await expectRange(page, "Custom", "≤ 767");
   // Every view in sight again (⇧1).
   await page.keyboard.press("Shift+Digit1");
 
@@ -255,8 +253,8 @@ test("a view added at 1100px narrows the tablet's range; edited there, the table
   await pick(page, tablet(page), "article");
   await setField(page, "Fill color", "ff0000");
   const custom = await addView(page, 1100);
-  await expectRange(page, "Tablet", "768–1023", "md:max-lg:");
-  await expectRange(page, "Custom", "1024–1279", "lg:max-xl:");
+  await expectRange(page, "Tablet", "768–1023");
+  await expectRange(page, "Custom", "1024–1279");
   await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, RED]);
 
   await pickCard(page, custom);
@@ -289,7 +287,7 @@ test("a view wider than the desktop view's range stands for its own range, `2xl:
   await enterEditMode(page);
   const wide = await addView(page, 1920);
   // The desktop view, 1280px wide, is in `xl`; 1920px is in `2xl`, the range above it, and the desktop view's label stops below it.
-  await expectRange(page, "Custom", "≥ 1536", "2xl:");
+  await expectRange(page, "Custom", "≥ 1536");
   await expectRange(page, "Desktop", "1280–1535");
 
   await pickCard(page, wide);
