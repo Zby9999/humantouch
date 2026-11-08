@@ -5,6 +5,7 @@ import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
 import { ChangeMarksProvider, ResetButton, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { Icon, type IconName } from "./icons";
+import { RESET_POP_MS } from "./motion";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -118,15 +119,6 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
     onEdit();
   };
   const set = <P extends Property>(property: P) => (value: PropertyValues[P], continues = false) => update(property, () => value, continues);
-  /** Changes several properties of each selected layer, to what `next` makes of the layer, as one edit. */
-  const updateEach = (next: (layer: Layer) => Partial<PropertyValues>) => {
-    editor.batch(() => {
-      for (const layer of layers) {
-        for (const [property, value] of Object.entries(next(layer))) editor.set(layer, property as Property, value as PropertyValues[Property]);
-      }
-    });
-    onEdit();
-  };
 
   const catalog = useCatalog();
   /**
@@ -367,7 +359,6 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
           fonts={fontsOf(layers[0].el.ownerDocument)}
           fontSize={variable("fontSize")}
           set={set}
-          updateEach={updateEach}
         />
       )}
       {textColor !== undefined && (
@@ -554,7 +545,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
   // The point alone: the gap's Auto, kept in the alignment too, marks the gap's field, not the grid.
   const changed = marks.changed("align", ALIGN_POINT);
   const was = changed ? (marks.before("align") as Align | null) : null;
-  // Wrap is clicked again to go back: marked, with no reset of its own (designer, 2026-11-08). The direction, a segmented group, keeps its look here: its changed look comes later; its change still counts for the section's reset.
+  // Wrap is clicked again to go back: marked, with no reset of its own (designer, 2026-11-08). The direction, a segmented group, has its own, and counts for the section's reset too.
   const wrapChanged = marks.changed("wrap");
   return (
     <section class="tk-section" aria-labelledby="tk-stack">
@@ -596,21 +587,18 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
         <div class="tk-align-options">
           <GapField gap={gap} align={align} set={set} update={update} variable={variable} />
           <div class="tk-row">
-            <div class="tk-segmented-field" role="radiogroup" aria-label="Direction">
-              {(["horizontal", "vertical"] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  role="radio"
-                  class="tk-icon-button"
-                  aria-checked={direction === d}
-                  aria-label={d === "horizontal" ? "Horizontal" : "Vertical"}
-                  onClick={() => set("direction")(d)}
-                >
-                  <Icon name={d === "horizontal" ? "stack-horizontal" : "stack-vertical"} />
-                </button>
-              ))}
-            </div>
+            {/* Marked as the Text's groups: its track in the accent, its reset at its right end (designer, 2026-11-08). */}
+            <Segmented
+              label="Direction"
+              property="direction"
+              value={direction}
+              options={(["horizontal", "vertical"] as const).map((d) => ({
+                value: d,
+                label: d === "horizontal" ? "Horizontal" : "Vertical",
+                content: <Icon name={d === "horizontal" ? "stack-horizontal" : "stack-vertical"} />,
+              }))}
+              onChange={set("direction")}
+            />
             {/* Wrap: a button that stays on, as Figma's; Mixed shows it off. */}
             <button
               type="button"
@@ -937,7 +925,7 @@ function cssFamily(name: string): string {
  * has loaded) and size, line height and letter spacing, alignment, case and
  * decoration. Its color is its Fill.
  */
-function TextSection({ size, families, weight, lineHeight, letterSpacing, align, textCase, decoration, fonts, fontSize, set, updateEach }: {
+function TextSection({ size, families, weight, lineHeight, letterSpacing, align, textCase, decoration, fonts, fontSize, set }: {
   size: Shown<number>;
   /** Each selected layer's font. */
   families: string[];
@@ -952,22 +940,17 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
   /** The font size as a Variable, when the project has them. */
   fontSize: Slot | undefined;
   set: Setter;
-  updateEach(next: (layer: Layer) => Partial<PropertyValues>): void;
 }) {
   const family = shared(families);
   const loaded = fonts.filter((font) => families.includes(font.family)).flatMap((font) => font.weights);
   // The text's own font and weight show where the page has not loaded them, and cannot be chosen again.
   const names = [...fonts.map((font) => font.family), ...(family === MIXED || fonts.some((font) => font.family === family) ? [] : [family])];
   const weights = [...new Set([...loaded, ...(weight === MIXED ? [] : [weight])])].sort((a, b) => a - b);
-  /** A font changed, as in Figma: in the weight the text has, where the font has it loaded, else the nearest that it has. */
-  const changeFont = (next: string) => {
-    const has = fonts.find((font) => font.family === next)?.weights ?? [];
-    updateEach(() => {
-      const own = weight === MIXED ? null : weight;
-      if (own === null || !has.length || has.includes(own)) return { fontFamily: next };
-      return { fontFamily: next, fontWeight: has.reduce((a, b) => (Math.abs(b - own) < Math.abs(a - own) ? b : a)) };
-    });
-  };
+  /**
+   * A font changed: the font alone, the weight kept as it is, though the new font has not loaded it; the browser then draws the
+   * nearest it has, or makes it bolder itself (designer, 2026-11-08).
+   */
+  const changeFont = (next: string) => set("fontFamily")(next);
   return (
     <section class="tk-section" role="group" aria-label="Text">
       <div class="tk-section-header">
@@ -1068,8 +1051,10 @@ function Choice({ label, class: className, value, options, onChange }: {
 
 /**
  * Buttons of which one is on, side by side; Mixed: none of them. `property`
- * changed in this round, the one on takes the accent, and the group's reset
- * stands inside it at its right end, after its buttons (designer, 2026-11-08).
+ * changed in this round, the one on stays white, the track behind them takes
+ * the accent, and the group's reset pops out inside it at its right end, after
+ * its buttons (designer, 2026-11-08). Taken back by a click or undo, the reset
+ * fades before it goes; changed or taken back by a key, it comes and goes at once.
  */
 function Segmented<T extends string>({ label, class: className, property, value, options, onChange }: {
   label: string;
@@ -1081,8 +1066,30 @@ function Segmented<T extends string>({ label, class: className, property, value,
 }) {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
+  /** Whether the last click on the group came from a key (Space, Enter): no motion then. */
+  const keyed = useRef(false);
+  const shownBefore = useRef(changed);
+  const [leaving, setLeaving] = useState(false);
+  // Its reset kept while it fades: from the render that takes the change back, so the same button fades, not a new one.
+  const goes = !changed && (leaving || (shownBefore.current && !keyed.current));
+  useEffect(() => {
+    const was = shownBefore.current;
+    shownBefore.current = changed;
+    if (changed || !was || keyed.current) return setLeaving(false);
+    setLeaving(true);
+    const timer = setTimeout(() => setLeaving(false), RESET_POP_MS);
+    return () => clearTimeout(timer);
+  }, [changed]);
   return (
-    <div class={`tk-segmented-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`} role="radiogroup" aria-label={label}>
+    <div
+      class={`tk-segmented-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}${goes ? " is-leaving" : ""}`}
+      role="radiogroup"
+      aria-label={label}
+      data-keyed={keyed.current || undefined}
+      onClickCapture={(event) => {
+        keyed.current = event.detail === 0;
+      }}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -1097,7 +1104,7 @@ function Segmented<T extends string>({ label, class: className, property, value,
           {option.content}
         </button>
       ))}
-      {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!])} />}
+      {(changed || goes) && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!])} />}
     </div>
   );
 }

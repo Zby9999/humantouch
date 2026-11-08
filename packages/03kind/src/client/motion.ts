@@ -24,3 +24,6 @@ export function prefersReducedMotion(): boolean {
 
 /** The chosen tool's backing sliding to a tool clicked (designer, 2026-11-08); a key picking one, or reduced motion, jumps it. */
 export const TOOL_SLIDE_MS = 200;
+
+/** A segmented group's reset popping out at its right end once a click changes the group, and fading as it goes (designer, 2026-11-08); a key, or reduced motion, drops the pop. */
+export const RESET_POP_MS = 150;

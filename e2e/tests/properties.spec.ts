@@ -1,4 +1,4 @@
-import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expectSegmentedChanged, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvas(page: Page) {
@@ -1065,14 +1065,16 @@ test("a text layer's font, weight and size, line height and letter spacing, alig
   await expect(weight).toHaveValue("400");
   await font.selectOption("Space Grotesk");
   await expect.poll(() => introStyle(page, "fontFamily")).toBe('"Space Grotesk", sans-serif');
-  // As in Figma, the text takes the nearest weight the font has loaded: it has only bold.
-  await expect.poll(() => introStyle(page, "fontWeight")).toBe("700");
-  await expect(weight).toHaveValue("700");
-  await expect(weight.getByRole("option")).toHaveText(["Bold"]);
-  // One undo takes back the font and its weight together.
-  await page.keyboard.press("ControlOrMeta+z");
+  // The weight kept, though the font has only bold loaded: the browser draws what it has (designer, 2026-11-08). Not marked changed.
   await expect.poll(() => introStyle(page, "fontWeight")).toBe("400");
+  await expect(weight).toHaveValue("400");
+  await expect(weight.getByRole("option")).toHaveText(["Regular", "Bold"]);
+  await expect(text.locator(".tk-select-field:has([aria-label='Font weight'])")).not.toHaveClass(/\bis-changed\b/);
+  // One undo takes the font back.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => introStyle(page, "fontFamily")).toContain("Georgia");
   await expect(font).toHaveValue("Georgia");
+  await expect(weight).toHaveValue("400");
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(font).toHaveValue("Space Grotesk");
 
@@ -1147,21 +1149,38 @@ test("a text's case, decoration and alignment changed are marked, each group's r
     await expect(segmented).not.toHaveClass(/\bis-changed\b/);
     await expect(resetButton).toHaveCount(0);
 
+    const grey = await segmented.evaluate((el) => getComputedStyle(el).backgroundColor);
     await segmented.getByRole("radio", { name: choice }).click();
     await expect.poll(() => introStyle(page, style)).not.toBe(was);
-    await expect(segmented).toHaveClass(/\bis-changed\b/);
-    // The one chosen in the accent; the reset inside the group, after its last button, 26px.
-    await expect(segmented.getByRole("radio", { name: choice })).toHaveCSS("background-color", "rgb(0, 143, 240)");
-    const [box, button] = await Promise.all([steadyBox(segmented), steadyBox(resetButton)]);
-    expect(button.width).toBe(26);
-    expect(button.x + button.width).toBeLessThanOrEqual(box.x + box.width);
-    expect(box.x + box.width - (button.x + button.width)).toBeLessThanOrEqual(2);
+    await expectSegmentedChanged(segmented, segmented.getByRole("radio", { name: choice }), resetButton);
 
+    // Taken back: the track eases back to its grey, the reset gone.
     await resetButton.click();
     await expect.poll(() => introStyle(page, style)).toBe(was);
     await expect(segmented).not.toHaveClass(/\bis-changed\b/);
     await expect(resetButton).toHaveCount(0);
+    await expect.poll(() => segmented.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(grey);
   }
+});
+
+test("a font and its weight have a field's corners, as the font size beside them, changed or not (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, INTRO);
+  const text = design(page).getByRole("group", { name: "Text" });
+  const radius = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).borderRadius);
+  const font = text.getByRole("combobox", { name: "Font", exact: true });
+  const weight = text.getByRole("combobox", { name: "Font weight" });
+  const size = text.locator(".tk-field:has([aria-label='Font size'])");
+  const sizeRadius = await radius(size);
+  expect(sizeRadius).toBe("8px");
+  expect(await radius(font)).toBe(sizeRadius);
+  expect(await radius(weight)).toBe(sizeRadius);
+
+  await font.selectOption("Space Grotesk");
+  await weight.selectOption("700");
+  await expect(text.locator(".tk-select-field.tk-font-field")).toHaveClass(/\bis-changed\b/);
+  await expect(text.locator(".tk-select-field:has([aria-label='Font weight'])")).toHaveClass(/\bis-changed\b/);
+  expect(await radius(font)).toBe(sizeRadius);
+  expect(await radius(weight)).toBe(sizeRadius);
 });
 
 test("a text's font, weight, line height and letter spacing changed show their reset, which takes the change back (designer, 2026-11-08)", async ({ page }) => {
@@ -1171,9 +1190,13 @@ test("a text's font, weight, line height and letter spacing changed show their r
   const fontField = text.locator(".tk-select-field.tk-font-field");
 
   await expect(fontField).not.toHaveClass(/\bis-changed\b/);
+  const weightField = text.locator(".tk-select-field:has([aria-label='Font weight'])");
   await font.selectOption("Space Grotesk");
   await expect(fontField).toHaveClass(/\bis-changed\b/);
-  await expect(text.locator(".tk-select-field:has([aria-label='Font weight'])")).toHaveClass(/\bis-changed\b/);
+  // The font alone changes: the weight stays as it was, unmarked (designer, 2026-11-08); changed itself, it is marked.
+  await expect(weightField).not.toHaveClass(/\bis-changed\b/);
+  await text.getByRole("combobox", { name: "Font weight" }).selectOption("700");
+  await expect(weightField).toHaveClass(/\bis-changed\b/);
   await text.getByRole("button", { name: "Reset font", exact: true }).click();
   await expect.poll(() => introStyle(page, "fontFamily")).toContain("Georgia");
   await expect(fontField).not.toHaveClass(/\bis-changed\b/);
@@ -1239,7 +1262,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
       // Left of it, 4px apart, centered on it.
       return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
     })
-    .toEqual({ gap: 4, size: 26, center: 0 });
+    .toEqual({ gap: 4, size: 30, center: 0 });
 
   // It takes both back.
   await resetWidth.click();
@@ -1269,7 +1292,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
       const [reset, field] = await Promise.all([steadyBox(resetFill), steadyBox(hexField)]);
       return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
     })
-    .toEqual({ gap: 4, size: 26, center: 0 });
+    .toEqual({ gap: 4, size: 30, center: 0 });
   await resetFill.click();
   await expect(hex).toHaveValue(wasHex);
   await expect(resetFill).toHaveCount(0);
@@ -1289,9 +1312,13 @@ test("a reset taking several fields back stands at its row's left, outside them,
     .toBe(2);
 });
 
-test("the row's reset looks as a changed field's own: its size, its corners and its ground, not bare on the panel (designer, 2026-11-08)", async ({ page }) => {
-  await selectRow(page, "Card");
+test("the row's reset looks as a button that stays on (Wrap, on): its size, its corners, its ground and icon, and hovered; a field's own reset stays 26px (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Header");
   const panel = design(page);
+  const wrap = panel.getByRole("button", { name: "Wrap", exact: true });
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "true");
+  // The radius first: the Variables listed as it is typed close once the width is typed into.
   const radius = panel.getByRole("textbox", { name: "Corner radius" });
   await radius.fill("20");
   await radius.press("Enter");
@@ -1302,20 +1329,21 @@ test("the row's reset looks as a changed field's own: its size, its corners and 
   const fieldReset = panel.locator(".tk-field").getByRole("button", { name: "Reset corner radius" });
   await expect(rowReset).toHaveCount(1);
   await expect(fieldReset).toBeVisible();
-  const look = (reset: Locator) =>
-    reset.evaluate((el) => {
+  const look = (button: Locator) =>
+    button.evaluate((el) => {
       const style = getComputedStyle(el);
-      return { background: style.backgroundColor, color: style.color, radius: style.borderRadius };
+      return { width: style.width, height: style.height, radius: style.borderRadius, background: style.backgroundColor, color: style.color };
     });
-  await expect
-    .poll(async () => {
-      const [row, field] = await Promise.all([steadyBox(rowReset), steadyBox(fieldReset)]);
-      return { width: Math.round(row.width - field.width), height: Math.round(row.height - field.height) };
-    })
-    .toEqual({ width: 0, height: 0 });
-  const [row, field] = await Promise.all([look(rowReset), look(fieldReset)]);
-  expect(row.background).not.toBe("rgba(0, 0, 0, 0)");
-  expect(row).toEqual(field);
+  // Neither hovered (the pointer left on Wrap since its click): once the colors have settled, as alike as the same rules make them.
+  await page.mouse.move(0, 0);
+  await expect.poll(() => look(rowReset)).toEqual(await look(wrap));
+  expect((await look(rowReset)).width).toBe("30px");
+  expect((await look(fieldReset)).width).toBe("26px");
+  // Hovered, the same blue 600.
+  await rowReset.hover();
+  await expect.poll(() => look(rowReset)).toEqual({ width: "30px", height: "30px", radius: "8px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
+  await wrap.hover();
+  await expect.poll(() => look(wrap)).toEqual({ width: "30px", height: "30px", radius: "8px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
 });
 
 test("a section's reset shows for two of its changes, not for one, in every section: Appearance's opacity and radius (designer, 2026-11-08)", async ({ page }) => {
