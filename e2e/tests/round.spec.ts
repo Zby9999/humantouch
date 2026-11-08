@@ -80,11 +80,18 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
   await expect(badge(page)).toHaveText("2");
-  // Around the toggle's rounded square, 4px out from it on every side (designer, 2026-11-08).
+  // Its 1.5px line right round the toggle's rounded square, nothing between, its corners round the toggle's 6px (designer, 2026-11-09).
   const ringBox = await progress(page).boundingBox();
   const toggleBox = await toggle.boundingBox();
-  expect([ringBox!.x - toggleBox!.x, ringBox!.y - toggleBox!.y, ringBox!.width, ringBox!.height]).toEqual([-4, -4, 48, 48]);
-  expect(await progress(page).locator("rect").first().evaluate((rect: SVGRectElement) => [rect.getBBox().width, getComputedStyle(rect).rx])).toEqual([44, "14px"]);
+  expect([ringBox!.x - toggleBox!.x, ringBox!.y - toggleBox!.y, ringBox!.width, ringBox!.height]).toEqual([-4, -4, 36, 36]);
+  const line = await progress(page).locator("rect").first().evaluate((rect: SVGRectElement) => {
+    const { x, y, width, height } = rect.getBBox();
+    const { strokeWidth, rx } = getComputedStyle(rect);
+    const inner = parseFloat(strokeWidth) / 2;
+    return { strokeWidth, rx, inside: [x + inner, y + inner, width - 2 * inner, height - 2 * inner] };
+  });
+  // Its inside edge on the toggle's edges: 4px into the ring, as wide as the toggle.
+  expect(line).toEqual({ strokeWidth: "1.5px", rx: "6.75px", inside: [4, 4, toggleBox!.width, toggleBox!.height] });
   await toggle.click({ force: true });
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
