@@ -56,49 +56,74 @@ export const styles = /* css */ `
 .tk-badge::before { content: ""; position: absolute; inset: -6px; }
 .tk-badge:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
 
-/* The change list: dark like the toggle, opening toward the middle of the window. */
+/*
+ * The change list: light as the editor's menus and popovers, in their colors, opening toward the middle of the window
+ * (designer, 2026-11-08). In edit mode it is in the shell and takes its colors; on the toggle, outside it, the same ones.
+ */
+.tk-dock .tk-changes {
+  --tk-panel: #f5f5f5;
+  --tk-border: #d4d4d3;
+  --tk-text: #0a0a09;
+  --tk-text-muted: #737472;
+  --tk-field: #ededec;
+  --tk-button: #e5e5e4;
+  --tk-accent: #008ff0;
+}
+@media (prefers-color-scheme: dark) {
+  .tk-dock .tk-changes {
+    --tk-panel: #2c2c2c;
+    --tk-border: #444444;
+    --tk-text: #ffffff;
+    --tk-text-muted: #a6a6a6;
+    --tk-field: #383838;
+    --tk-button: #383838;
+  }
+}
 .tk-changes {
-  --tk-text: #fff;
-  --tk-field: #383838;
-  --tk-accent: #0d99ff;
   position: absolute;
   box-sizing: border-box;
   width: 280px;
   max-height: min(400px, calc(100vh - 96px));
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 4px 0;
+  padding: 4px;
   border-radius: 12px;
-  background: #1e1e1e;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 8px 24px rgb(0 0 0 / 0.24);
-  color: #fff;
+  background: var(--tk-panel);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12);
+  color: var(--tk-text);
   font: 400 11px/16px ${EDITOR_FONT};
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   outline: none;
 }
 .tk-dock[data-corner^="bottom"] .tk-changes { bottom: calc(100% + 8px); }
 .tk-dock[data-corner^="top"] .tk-changes { top: calc(100% + 8px); }
 .tk-dock[data-corner$="right"] .tk-changes { right: 0; }
 .tk-dock[data-corner$="left"] .tk-changes { left: 0; }
-.tk-changes-title { margin: 0; padding: 8px 12px; font: inherit; font-weight: 600; }
-.tk-changes-note { margin: 0; padding: 0 12px 8px; color: rgb(255 255 255 / 0.6); }
+.tk-changes-title { margin: 0; padding: 8px; font: inherit; font-weight: 600; }
+.tk-changes-note { margin: 0; padding: 0 8px 8px; color: var(--tk-text-muted); }
 .tk-changes-list { margin: 0; padding: 0; list-style: none; }
+/* A row as a menu's option, two lines high: light grey under the pointer; its undo muted, darker under the pointer. */
 .tk-change {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  padding: 0 8px 0 12px;
+  padding: 0 4px 0 8px;
+  border-radius: 8px;
 }
-.tk-change:hover { background: rgb(255 255 255 / 0.06); }
+.tk-change:hover { background: var(--tk-field); }
+.tk-change .tk-icon-button { color: var(--tk-text-muted); }
+.tk-change .tk-icon-button:hover { background: var(--tk-button); color: var(--tk-text); }
 .tk-change-text { display: grid; flex: 1; min-width: 0; }
 .tk-change-name, .tk-change-values { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-change-values { color: rgb(255 255 255 / 0.6); }
-.tk-changes-confirm { padding: 8px 12px 0; border-top: 1px solid rgb(255 255 255 / 0.08); }
+.tk-change-values { color: var(--tk-text-muted); }
+.tk-changes-confirm { margin-top: 4px; padding: 8px 8px 0; border-top: 1px solid var(--tk-border); }
 .tk-changes-confirm p { margin: 0; }
-.tk-changes-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; }
+.tk-changes-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 8px 4px; }
+/* Its buttons as the panels' top ones, on the light panel; Discard stays red. */
+.tk-changes .tk-button:not(.is-danger) { background: var(--tk-button); color: var(--tk-text); }
+.tk-changes .tk-button:not(.is-danger):hover { background: var(--tk-border); }
 .tk-button {
   all: unset;
   height: 24px;
@@ -110,12 +135,12 @@ export const styles = /* css */ `
 }
 .tk-button:hover { background: #444444; }
 .tk-button:focus-visible { outline: 2px solid #0d99ff; outline-offset: 1px; }
-.tk-button.is-danger { background: #f24822; }
+.tk-button.is-danger { background: #f24822; color: #fff; }
 .tk-button.is-danger:hover { background: #dc3412; }
 .tk-button.is-primary { background: #0d99ff; color: #fff; }
 .tk-button.is-primary:hover { background: #007be5; }
 
-/* A notice, dark like the change list: the Agent seems to have stopped (ticket 67). */
+/* A notice, dark like the toggle: the Agent seems to have stopped (ticket 67). */
 .tk-notice {
   box-sizing: border-box;
   width: min(360px, 100%);
@@ -462,12 +487,12 @@ export const styles = /* css */ `
 .tk-layer-info dd { justify-content: flex-end; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .tk-layer-note { margin: 0; color: var(--tk-text-muted); }
 /* The breakpoint the view worked in stands for, and the properties changed there on their own (ADR 0008). */
-.tk-breakpoint { --tk-breakpoint: #8a38f5; }
-@media (prefers-color-scheme: dark) { .tk-breakpoint { --tk-breakpoint: #b48aff; } }
+:is(.tk-breakpoint, .tk-changes) { --tk-breakpoint: #8a38f5; }
+@media (prefers-color-scheme: dark) { :is(.tk-breakpoint, .tk-changes) { --tk-breakpoint: #b48aff; } }
 .tk-breakpoint-range { color: var(--tk-breakpoint); font-variant-numeric: tabular-nums; }
 .tk-breakpoint-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .tk-breakpoint .tk-layer-note { margin: 0; }
-.tk-change-breakpoint { color: #b48aff; }
+.tk-change-breakpoint { color: var(--tk-breakpoint); }
 .tk-source { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .tk-unlocated { color: var(--tk-text-muted); }
 
