@@ -1,4 +1,4 @@
-import { UNLOCK_HOLD_MS } from "./motion";
+import { UNLOCK_HOLD_MS } from "./toggle-motion";
 
 export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 

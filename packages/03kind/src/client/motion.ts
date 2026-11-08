@@ -1,4 +1,8 @@
-/** Motion tokens for the editor layer, shared by its CSS and its scripted animations. */
+/**
+ * Motion tokens for the editor layer, shared by its CSS and its scripted animations. Only the editor imports this
+ * module, so it loads once edit mode is first entered; the toggle's tokens are in `toggle-motion.ts`, and nothing
+ * the toggle loads may import from here, or every token below ships within the toggle's budget.
+ */
 
 /** Something entering or leaving: starts fast, settles gently. */
 export const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -7,8 +11,6 @@ export const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
 
 /** The page shrinking into the canvas when edit mode starts, and growing back when it ends. */
 export const MODE_SWITCH_MS = 240;
-/** How long the locked toggle is pressed and held to unlock it; a ring runs out meanwhile. */
-export const UNLOCK_HOLD_MS = 1000;
 /**
  * Leaving edit mode, the panels and the tools fade out, 8px outward, at once and quicker than the page grows
  * (designer, 2026-11-08): gone before the page's edge reaches them (about 80ms in), so no panel shows beside a
