@@ -1,4 +1,4 @@
-import { canvasInPlace, expect, test, type Frame, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Frame, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvasIframe(page: Page) {
@@ -322,6 +322,49 @@ for (const [scheme, panel, area] of [
     );
   });
 }
+
+test("the Design panel's top: its label at the left, the count and the way back at the right", async ({ page }) => {
+  await enterEditMode(page);
+  const panel = page.getByRole("complementary", { name: "Design" });
+  const header = panel.locator(".tk-panel-header");
+  const label = header.getByRole("heading");
+  const back = header.getByRole("button", { name: EXIT_LABEL });
+  const count = header.locator(".tk-count");
+
+  /** With nothing after the Play button that went, the count and the way back sat by the label (designer, 2026-11-08). */
+  async function atTheEnds() {
+    const box = await steadyBox(header);
+    const [left, right] = await header.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return [parseFloat(s.paddingLeft), parseFloat(s.paddingRight)];
+    });
+    const backBox = await steadyBox(back);
+    expect(Math.abs(backBox.x + backBox.width - (box.x + box.width - right))).toBeLessThanOrEqual(1);
+    expect((await steadyBox(label)).x - (box.x + left)).toBeLessThanOrEqual(4);
+    if (await count.isVisible()) {
+      const countBox = await steadyBox(count);
+      expect(countBox.x).toBeGreaterThan(box.x + box.width / 2);
+      expect(countBox.x + countBox.width).toBeLessThanOrEqual(backBox.x);
+    }
+  }
+
+  // Nothing selected: Variants.
+  await expect(label).toHaveText("Variants");
+  await expect(count).toHaveCount(0);
+  await atTheEnds();
+
+  // A layer selected: Design.
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await expect(label).toHaveText("Design");
+  await atTheEnds();
+
+  // A change made: the count shows before the way back.
+  const hex = panel.getByRole("textbox", { name: "Fill color", exact: true });
+  await hex.fill("ff0000");
+  await hex.press("Enter");
+  await expect(count).toBeVisible();
+  await atTheEnds();
+});
 
 test("the page underneath is paused while editing", async ({ page }) => {
   await enterEditMode(page);
