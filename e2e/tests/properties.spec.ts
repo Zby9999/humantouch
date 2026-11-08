@@ -1182,6 +1182,171 @@ test("with reduced motion, a number's grip does not sway as it is dragged", asyn
   expect(await grip.evaluate((el: HTMLElement & { tilted?: boolean }) => el.tilted ?? false)).toBe(false);
 });
 
+/** A number's rolling digits, as shown: the text of those not rolling out, and whether each runs an animation now. */
+function rolled(field: Locator) {
+  return field.evaluate((el) => {
+    const roll = el.querySelector(":scope > .tk-roll");
+    if (!roll) return null;
+    const glyphs = [...roll.querySelectorAll<HTMLElement>(".tk-roll-glyph:not(.is-leaving)")];
+    return {
+      hidden: roll.getAttribute("aria-hidden"),
+      text: glyphs.map((glyph) => glyph.textContent).join(""),
+      running: glyphs.map((glyph) => glyph.getAnimations().some((anim) => anim.playState === "running")),
+      // Of every digit, in or out: what its animations move.
+      moves: [...new Set([...roll.querySelectorAll(".tk-roll-glyph")].flatMap((glyph) => glyph.getAnimations().flatMap((anim) => (anim.effect as KeyframeEffect).getKeyframes().flatMap((frame) => Object.keys(frame)))))].filter((key) => !["offset", "easing", "composite", "computedOffset"].includes(key)).sort(),
+    };
+  });
+}
+
+/** Whether the field's input shows its own text: clear while its digits roll over it. */
+function inputClear(field: Locator) {
+  return field.locator(".tk-input").evaluate((el) => getComputedStyle(el).webkitTextFillColor === "rgba(0, 0, 0, 0)");
+}
+
+/** From now on, notes whether the field ever shows rolling digits. */
+async function watchRolls(field: Locator) {
+  await field.evaluate((el: HTMLElement & { rolled?: boolean }) => {
+    el.rolled = false;
+    new MutationObserver(() => {
+      if (el.querySelector(".tk-roll, .tk-roll-glyph")) el.rolled = true;
+    }).observe(el, { childList: true, subtree: true });
+  });
+}
+
+test.describe("a number's digits rolling (designer, 2026-11-08)", () => {
+  test.use({ reducedMotion: "no-preference" });
+
+  test("scrubbed, a number's digits roll over its text, hidden from screen readers, the changed digit alone moving; let go, its own text is back", async ({ page }) => {
+    await selectRow(page, "Card");
+    // Slowed tenfold, so a digit's roll is still under way when it is looked at.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Animation.enable");
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.1 });
+    const width = design(page).getByRole("textbox", { name: "Width" });
+    const field = page.locator('.tk-field:has([aria-label="Width"])');
+    const start = Number(await width.inputValue());
+    expect(await rolled(field)).toBeNull();
+    const at = await holdGrip(page, field, 1);
+    await expect(width).toHaveValue(String(start + 1));
+    await expect.poll(async () => (await rolled(field))?.text).toBe(await width.inputValue());
+    const shown = (await rolled(field))!;
+    expect(shown.hidden).toBe("true");
+    expect(shown.moves).toEqual(["filter", "opacity", "transform"]);
+    // One step up: the last digit rolls, the first stays still (unless every digit is a 9).
+    expect(shown.running.at(-1)).toBe(true);
+    if (!/^9+$/.test(String(start))) expect(shown.running[0]).toBe(false);
+    expect(await inputClear(field)).toBe(true);
+    // The value read out is the input's own.
+    await expect(width).toHaveValue(String(start + 1));
+
+    // Down again: the overlay stays while held, its text the input's.
+    for (let i = 1; i <= 3; i++) await page.mouse.move(at.x + 2 - i * 2, at.y);
+    await expect(width).toHaveValue(String(start - 2));
+    await expect.poll(async () => (await rolled(field))?.text).toBe(String(start - 2));
+    await page.mouse.up();
+    await expect.poll(() => rolled(field)).toBeNull();
+    expect(await inputClear(field)).toBe(false);
+
+    // Its reset clicked: the number rolls back.
+    await design(page).getByRole("button", { name: "Reset width" }).click();
+    await expect(width).toHaveValue(String(start));
+    await expect.poll(async () => (await rolled(field))?.text).toBe(String(start));
+    await expect.poll(() => rolled(field), { timeout: 10_000 }).toBeNull();
+  });
+
+  test("typed, or stepped with the arrow keys, a number changes at once: no digits roll", async ({ page }) => {
+    await selectRow(page, "Card");
+    const width = design(page).getByRole("textbox", { name: "Width" });
+    const field = page.locator('.tk-field:has([aria-label="Width"])');
+    await watchRolls(field);
+    await width.fill("250");
+    await width.press("Enter");
+    await expect(width).toHaveValue("250");
+    await width.press("ArrowUp");
+    await expect(width).toHaveValue("251");
+    await width.blur();
+    // Undone from the keyboard, too.
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(width).toHaveValue("250");
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await field.evaluate((el: HTMLElement & { rolled?: boolean }) => el.rolled)).toBe(false);
+    expect(await inputClear(field)).toBe(false);
+  });
+
+  test("focused mid-roll, the field shows its own text at once", async ({ page }) => {
+    await selectRow(page, "Card");
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Animation.enable");
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.05 });
+    const width = design(page).getByRole("textbox", { name: "Width" });
+    const field = page.locator('.tk-field:has([aria-label="Width"])');
+    await holdGrip(page, field, 3);
+    await page.mouse.up();
+    await expect.poll(() => rolled(field)).not.toBeNull();
+    await width.focus();
+    await expect.poll(() => rolled(field)).toBeNull();
+    expect(await inputClear(field)).toBe(false);
+  });
+});
+
+test("with reduced motion, a number's digits only fade as it is scrubbed: no move, no blur", async ({ page }) => {
+  await selectRow(page, "Card");
+  const width = design(page).getByRole("textbox", { name: "Width" });
+  const field = page.locator('.tk-field:has([aria-label="Width"])');
+  await holdGrip(page, field, 4);
+  await expect.poll(async () => (await rolled(field))?.text).toBe(await width.inputValue());
+  expect((await rolled(field))!.moves).toEqual(["opacity"]);
+  await page.mouse.up();
+  await expect.poll(() => rolled(field)).toBeNull();
+});
+
+test("reset, then dragged twice, a number stays gray while held and takes the accent once let go; dragged again back past where it started, it stays marked till let go (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const reset = design(page).getByRole("button", { name: "Reset corner radius" });
+  const start = Number(await radius.inputValue());
+  await holdGrip(page, field, 4);
+  await page.mouse.up();
+  await expect(field).toHaveClass(/\bis-changed\b/);
+  await reset.click();
+  await expect(field).not.toHaveClass(/\bis-changed\b/);
+  await expect(radius).toHaveValue(String(start));
+
+  // The first drag: gray while held, the accent once let go.
+  await holdGrip(page, field, 3);
+  await expect(radius).toHaveValue(String(start + 3));
+  await expect(field).not.toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+  await page.mouse.up();
+  await expect(field).toHaveClass(/\bis-changed\b/);
+
+  // The second, left, past where the round began: marked all the while it is held, with its reset, never easing to gray midway.
+  await field.evaluate((el: HTMLElement & { held?: string[] }) => {
+    el.held = [];
+    const look = () => {
+      if (el.hasAttribute("data-scrubbing")) el.held!.push(`${el.classList.contains("is-changed")} ${!!el.querySelector(".tk-reset")}`);
+      if (el.isConnected) requestAnimationFrame(look);
+    };
+    look();
+  });
+  const at = await holdGrip(page, field, 0);
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(at.x - i * 2, at.y);
+    if (i === 3) {
+      // Back where it started: the round has no change to it for now, but it stays as it was when pressed.
+      await expect(radius).toHaveValue(String(start));
+      await expect(field).toHaveClass(/\bis-changed\b/);
+      await expect(reset).toBeVisible();
+    }
+  }
+  await expect(radius).toHaveValue(String(start - 3));
+  await page.mouse.up();
+  await expect(field).toHaveClass(/\bis-changed\b/);
+  const held = await field.evaluate((el: HTMLElement & { held?: string[] }) => [...new Set(el.held)]);
+  expect(held).toEqual(["true true"]);
+});
+
 const INTRO = "A Framer-style editor layer for any page.";
 
 /** A computed style of the intro paragraph on the canvas, and of the bold run in it. */

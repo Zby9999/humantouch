@@ -649,7 +649,7 @@ export const styles = /* css */ `
 .tk-field.is-changed, .tk-check.is-changed, .tk-select-field.is-changed > .tk-select { transition: none; }
 /* Dragged, it stays as it was until let go, then eases into the accent, its words with it (designer, 2026-11-08). */
 .is-settling :is(.tk-field.is-changed, .tk-check.is-changed, .tk-select-field.is-changed > .tk-select),
-.is-settling .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only):not(.tk-popover *) { transition: background-color ${FIELD_SETTLE_MS}ms ease, color ${FIELD_SETTLE_MS}ms ease; }
+.is-settling .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only, .tk-roll):not(.tk-popover *) { transition: background-color ${FIELD_SETTLE_MS}ms ease, color ${FIELD_SETTLE_MS}ms ease; }
 @media (hover: hover) and (pointer: fine) {
   .tk-field:not(.is-changed, :focus-within):hover,
   .tk-select:not(:disabled, :focus-visible, [aria-expanded="true"], .tk-gap-mode, .is-changed > *):hover { background-color: var(--tk-button); }
@@ -660,7 +660,7 @@ export const styles = /* css */ `
 /* Changed in this round (designer, 2026-11-07): the accent, reversed; its reset at its right end. */
 .tk-field.is-changed { background: var(--tk-accent); color: #fafafa; padding-right: 2px; }
 /* Not in a picker open from the field: it is inside it, with its own colors. */
-.tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input):not(.tk-popover *) { color: #fafafa; }
+.tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-roll):not(.tk-popover *) { color: #fafafa; }
 .tk-field.is-changed:focus-within { box-shadow: inset 0 0 0 1px var(--tk-accent-strong); }
 .tk-reset {
   all: unset;
@@ -693,7 +693,7 @@ export const styles = /* css */ `
  * A changed field inside a picker (a gradient's angle, a stop): light on the accent, with no reset, keeping its right inset and its width:
  * the color's row has the one reset, for all of it (designer, 2026-11-08).
  */
-.tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only) { color: #fafafa; }
+.tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only, .tk-roll) { color: #fafafa; }
 .tk-popover .tk-field.is-changed { padding-right: 6px; }
 /*
  * A shadow's type fills its row up to its −, which stands at the right end, as a blur's does; changed, its reset at its right end
@@ -727,6 +727,28 @@ export const styles = /* css */ `
   cursor: default;
 }
 .tk-input:focus { cursor: text; }
+/* A number: its figures all as wide, so a digit rolling in takes the room the one before had (designer, 2026-11-08). */
+.tk-input.tk-number { font-variant-numeric: tabular-nums; }
+/*
+ * A number rolling (DigitRoll; designer, 2026-11-08): its digits over its own text, in the same type and place, the input's text clear
+ * beneath; the overlay goes once they settle, or as the field is focused. Placed by DigitRoll, over the input, from the field's own box.
+ */
+.tk-input.is-rolled { -webkit-text-fill-color: transparent; }
+.tk-field:has(> .tk-roll) { position: relative; }
+.tk-roll {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  color: var(--tk-text);
+  pointer-events: none;
+}
+.tk-roll-cell { position: relative; display: flex; }
+.tk-roll-glyph { display: block; }
+/* Rolling out, over the digit rolling in, in the same place. */
+.tk-roll-glyph.is-leaving { position: absolute; top: 0; left: 0; }
 .tk-textarea {
   all: unset;
   display: block;

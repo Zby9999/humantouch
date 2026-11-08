@@ -1,12 +1,12 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
-import { ChangeMarksProvider, NO_MARKS, ResetButton, STACK_PROPERTIES, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
+import { ChangeMarksProvider, NO_MARKS, ResetButton, resetJustClicked, STACK_PROPERTIES, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { matchItems } from "./list-match";
 import { Icon, type IconName } from "./icons";
-import { EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_DEG, GRIP_SWAY_MAX_PX, prefersReducedMotion, RESET_POP_MS, SCRUB_RULER_OUT_MS } from "./motion";
+import { DIGIT_BLUR_PX, DIGIT_FADE_MS, DIGIT_ROLL_EM, DIGIT_ROLL_MS, EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_DEG, GRIP_SWAY_MAX_PX, prefersReducedMotion, RESET_POP_MS, SCRUB_RULER_OUT_MS } from "./motion";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -775,6 +775,7 @@ function PercentField({ label, icon, value, onChange, property }: {
       <Scrub icon={icon} {...scrubbed} />
       <TextField
         label={label}
+        rolls
         value={value === null ? "Mixed" : `${Math.round(value * 100)}%`}
         parse={(text) => {
           const percent = parseNumber(text, 0, 100);
@@ -1153,6 +1154,7 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
       <Scrub icon={icon} value={dragged} min={min} onChange={change} />
       <TextField
         label={label}
+        rolls
         value={value === MIXED ? "Mixed" : value === "auto" ? "Auto" : `${value.value}${value.unit}`}
         parse={(text): LineHeight | null => {
           if (/^\s*auto\s*$/i.test(text)) return auto === undefined ? null : "auto";
@@ -2257,6 +2259,7 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
       <Scrub icon={icon} glyph={glyph} small={small} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}
+        rolls
         value={value === null ? "Mixed" : `${value}${unit}`}
         parse={(text) => parseNumber(text, min)}
         step={(by) => onChange(Math.max(min, (value ?? 0) + by))}
@@ -2489,6 +2492,8 @@ interface TextFieldProps<T> {
   /** ↑ / ↓ pressed: change the value by this much. */
   step?(by: number): void;
   onChange(value: T): void;
+  /** A number: its digits roll as it is scrubbed or reset (`DigitRoll`), shown with figures all as wide. */
+  rolls?: boolean;
 }
 
 /**
@@ -2496,7 +2501,7 @@ interface TextFieldProps<T> {
  * Esc puts back what it showed. What is typed applies to the layer it was typed
  * for, even when leaving the field selects another layer.
  */
-export function TextField<T>({ label, class: className, value, placeholder, parse, step, onChange }: TextFieldProps<T>) {
+export function TextField<T>({ label, class: className, value, placeholder, parse, step, onChange, rolls = false }: TextFieldProps<T>) {
   const [draft, setShownDraft] = useState<string | null>(null);
   /** The draft as of now, for a blur that follows at once: Esc drops it before the blur would apply it. */
   const draftNow = useRef<string | null>(null);
@@ -2510,6 +2515,7 @@ export function TextField<T>({ label, class: className, value, placeholder, pars
   /** Where the field's value can be a Variable: those found as it is typed into. */
   const [focused, setFocused] = useState(false);
   const typeahead = useTypeahead({ text: draft, value, focused, input, reset: () => setDraft(null) });
+  const roll = useRoll(rolls, value, input, draftNow);
 
   const commit = () => {
     const typed = draftNow.current;
@@ -2543,7 +2549,7 @@ export function TextField<T>({ label, class: className, value, placeholder, pars
     <input
       ref={input}
       type="text"
-      class={`tk-input${className ? ` ${className}` : ""}`}
+      class={`tk-input${className ? ` ${className}` : ""}${rolls ? " tk-number" : ""}${roll.shown ? " is-rolled" : ""}`}
       aria-label={label}
       {...typeahead.input}
       // Something typed, not yet applied: ⌘Z is the field's own until then.
@@ -2553,6 +2559,8 @@ export function TextField<T>({ label, class: className, value, placeholder, pars
       autocomplete="off"
       value={draft ?? value}
       onFocus={(event: TargetedFocusEvent<HTMLInputElement>) => {
+        // Edited, the field's own text, at once.
+        roll.stop();
         target.current = onChange;
         setFocused(true);
         event.currentTarget.select();
@@ -2564,9 +2572,171 @@ export function TextField<T>({ label, class: className, value, placeholder, pars
         commit();
       }}
     />
+    {roll.shown && input.current && <DigitRoll input={input.current} from={roll.shown.from} to={roll.shown.to} up={roll.shown.up} />}
     {typeahead.after}
     </>
   );
+}
+
+/** A number's text as a number, for which way it rolls: null when it is not one (Mixed, Auto). */
+function rolledNumber(text: string): number | null {
+  return /^\s*-?\.?\d/.test(text) ? parseFloat(text) : null;
+}
+
+/** A roll under way: the text its digits started from, the text they roll to, and whether the number grew. */
+interface Roll {
+  from: string;
+  to: string;
+  up: boolean;
+}
+
+/**
+ * Whether a number field's digits roll to its value now (designer, 2026-11-08): as it is scrubbed on its icon or grip, and as its reset
+ * is clicked; never as it is typed, stepped with ↑ / ↓, undone or otherwise changed from the keyboard, nor while it is focused. The roll
+ * lasts till its digits have settled and the field is let go; focused, it stops at once.
+ */
+function useRoll(rolls: boolean, value: string, input: { current: HTMLInputElement | null }, draft: { current: string | null }) {
+  const [shown, setShown] = useState<Roll | null>(null);
+  const was = useRef(value);
+  const settle = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(settle.current), []);
+  const stop = () => {
+    clearTimeout(settle.current);
+    setShown(null);
+  };
+  useLayoutEffect(() => {
+    const before = was.current;
+    was.current = value;
+    if (!rolls || before === value) return;
+    const el = input.current;
+    const field = el?.closest(".tk-field");
+    const by = !!field?.hasAttribute("data-scrubbing") || resetJustClicked();
+    const [a, b] = [rolledNumber(before), rolledNumber(value)];
+    if (!el || !by || draft.current !== null || el.matches(":focus") || a === null || b === null || a === b) return void stop();
+    setShown((roll) => ({ from: roll?.from ?? before, to: value, up: b > a }));
+    clearTimeout(settle.current);
+    // Gone once the last digit has settled, but not while the field is still held: its next step rolls on from where it is.
+    const rolling = () => !!field?.querySelector(":scope > .tk-roll")?.getAnimations({ subtree: true }).some((anim) => anim.playState === "running");
+    const later = () => {
+      settle.current = setTimeout(() => (field?.hasAttribute("data-scrubbing") || rolling() ? later() : setShown(null)), DIGIT_ROLL_MS + 40);
+    };
+    later();
+  }, [value]);
+  return { shown, stop };
+}
+
+/** A digit's place as it rolls: how far below its place, in em (above, less than 0), how opaque, how blurred, in px. */
+type Pose = [y: number, opacity: number, blur: number];
+const SETTLED: Pose = [0, 1, 0];
+
+/** A digit shown, and its roll: from where, to where. */
+interface Glyph {
+  el: HTMLSpanElement;
+  from: Pose;
+  to: Pose;
+  anim: Animation | null;
+}
+
+/** One digit's place, counted from the text's end: the digit there, and those still rolling out of it. */
+interface Cell {
+  el: HTMLSpanElement;
+  char: string;
+  glyph: Glyph | null;
+}
+
+/**
+ * Over a number field's text while it rolls (designer, 2026-11-08): the same text in the same place, a digit to each place, the input's
+ * own text clear beneath it. A digit that changes rolls out as its new one rolls in, over `DIGIT_ROLL_MS`, eased out; the others stay
+ * still. Places are counted from the text's end, so a unit stays put and a new leading digit comes in at the start. Hidden from screen
+ * readers: the input keeps the value. Digits move with the Web Animations API, on transform, opacity and filter alone: one mid-roll,
+ * rolled again, goes on from where it is now, as its animation's own progress says, read without the page working out its styles.
+ */
+function DigitRoll({ input, from, to, up }: { input: HTMLInputElement; from: string; to: string; up: boolean }) {
+  const root = useRef<HTMLSpanElement>(null);
+  /** From the text's end. */
+  const cells = useRef<Cell[]>([]);
+  const reduce = useRef(prefersReducedMotion());
+
+  /** A new place, at the text's start. */
+  const place = (): Cell => {
+    const cell: Cell = { el: document.createElement("span"), char: "", glyph: null };
+    cell.el.className = "tk-roll-cell";
+    root.current!.prepend(cell.el);
+    cells.current.push(cell);
+    return cell;
+  };
+
+  useLayoutEffect(() => {
+    const el = root.current!;
+    // Over the input's text: read once, as the roll begins, not as it goes on.
+    el.style.left = `${input.offsetLeft - input.scrollLeft}px`;
+    el.style.top = `${input.offsetTop}px`;
+    el.style.height = `${input.offsetHeight}px`;
+    // The text as it was before this change, still: it rolls from there.
+    for (const char of [...from].reverse()) {
+      const cell = place();
+      cell.char = char;
+      cell.glyph = { el: glyphIn(cell, char), from: SETTLED, to: SETTLED, anim: null };
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    const chars = [...to].reverse();
+    const ms = reduce.current ? DIGIT_FADE_MS : DIGIT_ROLL_MS;
+    const away = reduce.current ? 0 : up ? DIGIT_ROLL_EM : -DIGIT_ROLL_EM;
+    const blur = reduce.current ? 0 : DIGIT_BLUR_PX;
+    for (let i = 0; i < Math.max(chars.length, cells.current.length); i++) {
+      const cell = cells.current[i] ?? place();
+      const char = chars[i] ?? "";
+      if (cell.char === char) continue;
+      cell.char = char;
+      // Out the way the number goes, up as it grows, down as it falls; then taken away.
+      const going = cell.glyph;
+      if (going) {
+        going.el.classList.add("is-leaving");
+        rollGlyph(going, [-away, 0, blur], ms, reduce.current);
+        going.anim!.onfinish = () => going.el.remove();
+      }
+      // In from the other side, out of a blur.
+      cell.glyph = null;
+      if (char) {
+        const start: Pose = [away, 0, blur];
+        cell.glyph = { el: glyphIn(cell, char), from: start, to: start, anim: null };
+        rollGlyph(cell.glyph, SETTLED, ms, reduce.current);
+      }
+    }
+  }, [to]);
+
+  return <span ref={root} class="tk-roll" aria-hidden="true" />;
+}
+
+/** A digit's own element, in its place. */
+function glyphIn(cell: Cell, char: string): HTMLSpanElement {
+  const el = document.createElement("span");
+  el.className = "tk-roll-glyph";
+  el.textContent = char;
+  cell.el.append(el);
+  return el;
+}
+
+/** Where a digit is in its roll now. */
+function poseOf(glyph: Glyph): Pose {
+  const progress = glyph.anim?.effect?.getComputedTiming().progress;
+  if (progress === null || progress === undefined) return glyph.to;
+  return glyph.from.map((at, i) => at + (glyph.to[i] - at) * progress) as Pose;
+}
+
+/** As a keyframe; with reduced motion, its opacity alone. */
+function frameOf([y, opacity, blur]: Pose, reduce: boolean): Keyframe {
+  return reduce ? { opacity } : { transform: `translateY(${y}em)`, opacity, filter: `blur(${blur}px)` };
+}
+
+/** Rolls a digit to `to` from wherever it is now. */
+function rollGlyph(glyph: Glyph, to: Pose, ms: number, reduce: boolean) {
+  const from = poseOf(glyph);
+  glyph.anim?.cancel();
+  Object.assign(glyph, { from, to });
+  glyph.anim = glyph.el.animate([frameOf(from, reduce), frameOf(to, reduce)], { duration: ms, easing: EASE_OUT, fill: "forwards" });
 }
 
 /** A number typed in, kept within bounds and to two decimals. */
