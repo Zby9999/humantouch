@@ -88,10 +88,10 @@ export type HistoryKey = "undo" | "redo" | "ignored";
  */
 export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): HistoryKey | null {
   const target = event.composedPath()[0];
-  // A panel field with nothing typed in it, or a slider: ⌘Z is the editor's.
+  // A panel field with nothing typed in it, a slider, or a panel's edge: ⌘Z is the editor's.
   const field =
     target instanceof HTMLElement &&
-    ((target.classList.contains("tk-input") && !target.hasAttribute("data-tk-typing")) || target.getAttribute("role") === "slider");
+    ((target.classList.contains("tk-input") && !target.hasAttribute("data-tk-typing")) || movesWithArrows(target));
   if (isEditable(target) && !field) return null;
   const command = editorCommand(event);
   if (command !== "undo" && command !== "redo") return null;
@@ -164,7 +164,15 @@ function takesText(target: EventTarget | undefined): boolean {
   return target instanceof HTMLInputElement && !/^(checkbox|radio|range|color|button|submit|reset|file|image)$/.test(target.type);
 }
 
-/** Whether keys pressed on the target are its own: a field, or a slider (a gradient's stops), which moves with the arrow keys. */
+/**
+ * Whether keys pressed on the target are its own: a field, or what moves with the arrow keys: a slider (a gradient's
+ * stops), or a panel's edge (designer, 2026-11-08).
+ */
 export function isEditable(target: EventTarget | undefined): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || target.getAttribute("role") === "slider");
+  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || movesWithArrows(target));
+}
+
+/** A slider (a gradient's stop) or a panel's edge (designer, 2026-11-08): it moves with the arrow keys. */
+function movesWithArrows(target: HTMLElement): boolean {
+  return /^(slider|separator)$/.test(target.getAttribute("role") ?? "");
 }

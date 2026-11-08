@@ -45,3 +45,11 @@ export const GRIP_TILT_MAX_DEG = 12;
 
 /** The line under a panel's header running to the panel's edges once the panel is scrolled, and back at its top (designer, 2026-11-08); with reduced motion, at once. */
 export const HEADER_LINE_MS = 200;
+
+/**
+ * A panel edge's grip appearing where the pointer rests on its edge: fading in and growing from half its height
+ * about its middle, at the pointer (designer, 2026-11-08). With reduced motion it only fades.
+ */
+export const GRIP_ENTER_MS = 150;
+/** The grip leaving as the pointer does, fading alone, a little faster than it came (designer, 2026-11-08). */
+export const GRIP_EXIT_MS = 120;

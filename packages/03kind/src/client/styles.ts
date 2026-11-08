@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -184,12 +184,15 @@ export const styles = /* css */ `
   --tk-panel-label: #525351; /* neutral 600: the tools' icons */
   --tk-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
   --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variants tabs */
+  /* The panels' widths: each set by its edge (designer, 2026-11-08), on the shell's style, as panel-widths.ts fits them. */
+  --tk-layers-width: 320px;
+  --tk-design-width: 320px;
   color-scheme: light;
   position: fixed;
   inset: 0;
   z-index: 2147483646;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-columns: var(--tk-layers-width) minmax(0, 1fr) var(--tk-design-width);
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--tk-text);
   /* Grayscale smoothing for the editor's UI, its muted labels kept at 500 (designer, 2026-11-08); the page on the canvas is in iframes, so it doesn't inherit this. */
@@ -235,7 +238,7 @@ export const styles = /* css */ `
 .tk-panel { user-select: none; -webkit-user-select: none; }
 .tk-panel :is(input, textarea, [contenteditable="true"]) { user-select: text; -webkit-user-select: text; }
 /* The Layers panel starts hidden: the canvas takes its column, and a button at its top left brings it back. */
-.tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) 320px; }
+.tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) var(--tk-design-width); }
 /*
  * Its size, corners and place on the screen those of the button in the Layers panel's top that hid them, so
  * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 24px, 6px corners, the panel's padding
@@ -282,12 +285,73 @@ export const styles = /* css */ `
 .tk-shell.is-playing .tk-canvas { box-shadow: none; }
 .tk-stop-playing { left: auto; right: 8px; }
 
+/*
+ * A panel's inner edge, to resize it (designer, 2026-11-08): 6px straddling the edge, over the panel and the canvas.
+ * The pointer resting on it, the grip drawn in Figma (03 Kind, node 169:1379) shows at the pointer: a 10 × 48 pill
+ * of the accent, a 0.5px white outline. It fades in and grows from half its height about its middle, where the pointer
+ * is, and leaves by fading alone; with reduced motion it only fades. Pressed, the panel's whole edge takes the accent
+ * at once (Figma: node 169:958's left border), and lets it go over a field's state change.
+ */
+.tk-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.tk-resizer.is-layers { left: calc(var(--tk-layers-width) - 3px); }
+.tk-resizer.is-design { right: calc(var(--tk-design-width) - 3px); }
+/* The edge's line, inside the panel: the Layers' last pixel, the Design panel's first. */
+.tk-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--tk-accent);
+  opacity: 0;
+  transition: opacity ${FIELD_STATE_MS}ms ${EASE_OUT};
+}
+.tk-resizer.is-layers::before { left: 2px; }
+.tk-resizer.is-pressed::before { opacity: 1; transition: none; }
+.tk-resizer-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: 10px;
+  height: 48px;
+  margin: -24px 0 0 -5px;
+  border: 0.5px solid #ffffff; /* neutral 0 */
+  border-radius: 99px;
+  background: var(--tk-accent);
+  pointer-events: none;
+  opacity: 0;
+  transform: scaleY(0.5);
+  /* Leaving: a fade; at half its height again only once gone, so shown again meanwhile it doesn't grow twice. */
+  transition: opacity ${GRIP_EXIT_MS}ms ${EASE_OUT}, transform 0s linear ${GRIP_EXIT_MS}ms;
+}
+.tk-resizer.is-shown .tk-resizer-grip {
+  opacity: 1;
+  transform: none;
+  transition: opacity ${GRIP_ENTER_MS}ms ${EASE_OUT}, transform ${GRIP_ENTER_MS}ms ${EASE_OUT};
+}
+/* Focused from the keyboard: the grip there at once, no motion for a key. */
+.tk-resizer:focus-visible .tk-resizer-grip { opacity: 1; transform: none; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-resizer-grip { transform: none; }
+}
+
 /* The tools, at the top right of the canvas, 8px from the Design panel: one above another, the one chosen raised in white (designer, 2026-11-08). As high as the views' tops, under their labels: higher, they would cover the last view's label and its +. */
 /* Figma (03 Kind, node 169:1359): 4px around the tools, 3px between, a 0.5px neutral 300 outline; the icons neutral 600, the chosen one's neutral 500 (designer, 2026-11-08). */
 .tk-tools {
   position: absolute;
   top: 72px;
-  right: 328px;
+  right: calc(var(--tk-design-width) + 8px);
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -322,8 +386,8 @@ export const styles = /* css */ `
 .tk-toasts {
   position: absolute;
   bottom: 16px;
-  left: 320px;
-  right: 320px;
+  left: var(--tk-layers-width);
+  right: var(--tk-design-width);
   z-index: 1;
   display: flex;
   justify-content: center;
@@ -355,13 +419,13 @@ export const styles = /* css */ `
 .tk-page-toasts {
   position: absolute;
   bottom: 16px;
-  left: 336px;
+  left: calc(var(--tk-layers-width) + 16px);
   z-index: 1;
   display: flex;
-  max-width: calc(100% - 672px);
+  max-width: calc(100% - var(--tk-layers-width) - var(--tk-design-width) - 32px);
   pointer-events: none;
 }
-.tk-shell:is(.is-layers-hidden, .is-playing) > .tk-page-toasts { left: 16px; max-width: calc(100% - 352px); }
+.tk-shell:is(.is-layers-hidden, .is-playing) > .tk-page-toasts { left: 16px; max-width: calc(100% - var(--tk-design-width) - 32px); }
 .tk-toast.is-page { display: flex; align-items: center; gap: 8px; }
 .tk-toast.is-page > span { overflow: hidden; text-overflow: ellipsis; }
 .tk-toast.is-page:has(.tk-button) { padding-block: 4px; padding-right: 4px; }
@@ -454,7 +518,14 @@ export const styles = /* css */ `
  * The Layers, as the designer drew them (2026-11-07): rows 28px high and 2px apart, a level 26px in, a white
  * disclosure before a layer with layers in it, and guides from each layer down to those in it.
  */
-.tk-tree { display: flex; flex-direction: column; gap: 2px; margin: 0 -16px; }
+/*
+ * Long names in full, as in Figma (designer, 2026-11-08): the list, not the panel, scrolls, both ways, under the
+ * panel's top, which stays; its rows are as wide as the widest, so a row's hover and selection span the scroll.
+ */
+.tk-panel.is-layers { overflow: hidden; }
+.tk-panel.is-layers > .tk-tree { flex: 1 1 auto; min-height: 0; }
+.tk-tree { margin: 0 -16px -16px; padding-bottom: 16px; overflow: auto; overscroll-behavior: contain; }
+.tk-tree-rows { display: flex; flex-direction: column; gap: 2px; width: max-content; min-width: 100%; }
 .tk-tree-row {
   position: relative;
   display: flex;
@@ -475,7 +546,7 @@ export const styles = /* css */ `
 /* An instance's icons purple; its disclosure as every other row's (designer, 2026-11-08). */
 .tk-tree-row.is-instance .tk-icon:not(.tk-tree-chevron > .tk-icon) { color: var(--tk-instance); }
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
-.tk-tree-name { overflow: hidden; text-overflow: ellipsis; }
+.tk-tree-name { flex: none; }
 .tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }
 .tk-tree-chevron { position: relative; z-index: 1; display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 .tk-tree-chevron[data-open] { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }

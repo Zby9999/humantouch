@@ -67,13 +67,19 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
       return closed.length ? new Set([...collapsed].filter((layer) => !closed.includes(layer))) : collapsed;
     });
   }, [selected]);
-  // Once its row is listed: it may be listed only as the layers around it open.
+  // Once its row is listed: it may be listed only as the layers around it open. Up or down only: scrolled sideways to
+  // read a long name, the list stays so (designer, 2026-11-08), and the panel around it doesn't scroll.
   useEffect(() => {
     if (!scrollToSelected.current) return;
-    const row = list.current?.querySelector('[aria-selected="true"]');
-    if (!row) return;
+    const box = list.current;
+    const row = box?.querySelector('[aria-selected="true"]');
+    if (!box || !row) return;
     scrollToSelected.current = false;
-    row.scrollIntoView({ block: "nearest" });
+    const rowBox = row.getBoundingClientRect();
+    const top = box.getBoundingClientRect().top + box.clientTop;
+    const bottom = top + box.clientHeight;
+    if (rowBox.top < top) box.scrollTop -= top - rowBox.top;
+    else if (rowBox.bottom > bottom) box.scrollTop += Math.min(rowBox.bottom - bottom, rowBox.top - top);
   });
 
   /** `past`: the levels whose guides go on down past this row, to a later layer in them. `more`: this layer has a later one in its own. */
@@ -96,7 +102,9 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
   };
 
   return (
+    // Long names in full, as in Figma: the list scrolls sideways, its rows as wide as the widest (designer, 2026-11-08).
     <div ref={list} class="tk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
+      <div class="tk-tree-rows">
       {rows.map(({ layer, level, outside, past, more }, i) => {
         const open = layer.children.length ? !collapsed.has(layer) : undefined;
         return (
@@ -144,6 +152,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
