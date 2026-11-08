@@ -396,23 +396,25 @@ export const styles = /* css */ `
   flex-direction: column;
   gap: 3px;
   padding: 4px;
-  border-radius: 12px;
+  /* Its tools' 6px corners and its 4px padding, nested (designer, 2026-11-08). */
+  border-radius: 10px;
   background: var(--tk-panel);
   box-shadow: 0 0 0 0.5px var(--tk-border);
 }
-.tk-tools .tk-icon-button { position: relative; width: 32px; height: 32px; border-radius: 8px; color: var(--tk-panel-label); }
+/* 28px, as the panel's buttons, with their 6px corners (designer, 2026-11-08). */
+.tk-tools .tk-icon-button { position: relative; width: 28px; height: 28px; border-radius: 6px; color: var(--tk-panel-label); }
 .tk-tools .tk-icon-button[aria-pressed="true"] { background: none; color: var(--tk-text-muted); }
-/* The white under the chosen tool, one for all three: it moves by transform alone, a tool (32px) and a gap (3px) a step (designer, 2026-11-08). */
+/* The white under the chosen tool, one for all three: it moves by transform alone, a tool (28px) and a gap (3px) a step (designer, 2026-11-08). */
 .tk-tools-backing {
   position: absolute;
   top: 4px;
   left: 4px;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   background: var(--tk-tool-chosen);
   box-shadow: var(--tk-prominent-shadow);
-  transform: translateY(calc(var(--tk-tool-index, 0) * 35px));
+  transform: translateY(calc(var(--tk-tool-index, 0) * 31px));
 }
 .tk-tools-backing.is-sliding { transition: transform ${TOOL_SLIDE_MS}ms ${EASE_IN_OUT}; }
 @media (prefers-reduced-motion: reduce) {
