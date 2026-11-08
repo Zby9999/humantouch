@@ -830,7 +830,7 @@ export const styles = /* css */ `
 .tk-color-row { display: flex; flex: 1; gap: 2px; min-width: 0; }
 .tk-color-field { padding-left: 6px; }
 .tk-color-field.is-joined { border-radius: 6px 2px 2px 6px; }
-.tk-color-opacity { flex: none; width: 64px; border-radius: 2px 8px 8px 2px; }
+.tk-color-opacity { flex: none; width: 64px; border-radius: 2px 6px 6px 2px; }
 /*
  * Every number that can be dragged: a short upright bar at its right end, dragged left and right as its icon is; changed, just left of its
  * reset (designer, 2026-11-08). Its 12px reach takes 4px of the gap before it and of the inset after it, so the value keeps its room.
@@ -957,7 +957,7 @@ export const styles = /* css */ `
 .tk-size-row { gap: 2px; }
 /* The size and its sizing, joined: 2px corners where they meet, as a color and its opacity (designer, 2026-11-07). */
 .tk-size-row > .tk-variable-slot > .tk-field { border-radius: 6px 2px 2px 6px; }
-.tk-size-row > .tk-select-field { border-radius: 2px 8px 8px 2px; }
+.tk-size-row > .tk-select-field { border-radius: 2px 6px 6px 2px; }
 /* Parts side by side as one control (a stroke's weight, style and sides): 2px apart, 2px corners where they meet, 8px at the ends. */
 .tk-row.tk-joined { gap: 2px; }
 .tk-joined > :is(.tk-field, .tk-select, .tk-select-field) { border-radius: 2px; }
