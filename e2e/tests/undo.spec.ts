@@ -86,7 +86,7 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   const { x, y } = await steadyBox(icon);
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await page.mouse.up();
   await expect(radius).toHaveValue("17");
 
@@ -111,7 +111,7 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
   const { x, y } = await steadyBox(icon);
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await expect(radius).toHaveValue("15");
   for (const key of ["ControlOrMeta+z", "ControlOrMeta+Shift+z", "ArrowUp", "Enter", "Tab"]) {
     await page.keyboard.press(key);
@@ -122,7 +122,7 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
     await expect.poll(() => cardStyles(page, "borderRadius", "canvas"), key).toEqual(["15px", "15px", "15px", "12px"]);
     await expect(badge(page), key).toHaveText("2");
   }
-  for (let i = 4; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 4; i <= 5; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await page.mouse.up();
   await expect(radius).toHaveValue("17");
 

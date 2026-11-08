@@ -188,7 +188,7 @@ test("a value set once in the Design panel shows in the views beside the frame a
   shown = await watchTablet(page, "border-radius", "9px", "pointermove");
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await page.mouse.up();
   await expect.poll(async () => (await shown()).ms).toBeGreaterThanOrEqual(100);
   await expect(radius).toHaveValue("9");

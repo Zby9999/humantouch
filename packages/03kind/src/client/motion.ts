@@ -33,3 +33,12 @@ export const POPOVER_EXIT_MS = 150;
 
 /** A segmented group's reset popping out at its right end once a click changes the group, and fading as it goes (designer, 2026-11-08); a key, or reduced motion, drops the pop. */
 export const RESET_POP_MS = 150;
+
+/**
+ * A number scrubbed (designer, 2026-11-08): the ruler under its field fading and sliding 4px down into place as the drag starts,
+ * and fading out once let go; with reduced motion, it only fades. Its grip tilts with the drag's speed, up to `GRIP_TILT_MAX_DEG`,
+ * and settles upright over `FIELD_SETTLE_MS`; with reduced motion, it stays upright.
+ */
+export const SCRUB_RULER_IN_MS = 150;
+export const SCRUB_RULER_OUT_MS = 120;
+export const GRIP_TILT_MAX_DEG = 12;
