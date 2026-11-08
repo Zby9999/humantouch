@@ -18,6 +18,20 @@ async function enterEditMode(page: Page, url = REACT18_URL) {
   await canvasInPlace(page);
 }
 
+/** A field's Variables, listed under it as it is focused, the closest to its value first. */
+async function variablesOf(page: Page, field: string) {
+  await design(page).getByRole("textbox", { name: field, exact: true }).click();
+  const list = page.getByRole("listbox", { name: "Matching variables" });
+  await expect(list).toBeVisible();
+  return list;
+}
+
+/** An effect, or a shadow Variable, added from the menu of Effects' +. */
+async function addEffect(page: Page, name: string) {
+  await design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" }).click();
+  await page.getByRole("dialog", { name: "Add effect" }).getByRole("option", { name, exact: true }).click();
+}
+
 async function selectRow(page: Page, name: string, nth = 0) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).nth(nth).click();
 }
@@ -29,23 +43,25 @@ function cardStyles(page: Page, property: "backgroundColor" | "paddingTop" | "pa
     .evaluateAll((cards, property) => cards.map((card) => getComputedStyle(card)[property]), property);
 }
 
-test("the color picker's Variables tab lists the project's colors first, by family, with swatches, and finds them by name", async ({ page }) => {
+test("the color picker's Variables tab shows the project's colors first, as a palette, and finds them by name in a list", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
 
   await design(page).getByRole("button", { name: "Fill color picker" }).click();
   const picker = page.getByRole("dialog", { name: "Fill color" });
-  // The system's picker is in the Custom tab.
-  await expect(picker.getByLabel("Pick fill color")).toBeVisible();
+  // The editor layer's own picker is in the Custom tab.
+  await expect(picker.getByRole("slider", { name: "Saturation and brightness" })).toBeVisible();
   await picker.getByRole("tab", { name: "Variables" }).click();
 
+  // A palette (designer, 2026-11-07): the project's own, its ramps and the colors of none, then Tailwind's.
   const groups = picker.getByRole("listbox", { name: "Variables" }).getByRole("group");
-  await expect(groups.first()).toHaveAccessibleName("This project · brand");
-  await expect(groups.nth(1)).toHaveAccessibleName("This project");
-  await expect(groups.nth(1).getByRole("option")).toHaveText([/^ink#1B1D2A$/, /^muted#5B6075$/]);
-  await expect(picker.getByRole("option", { name: "red-500" })).toBeVisible();
-  const swatch = picker.getByRole("option", { name: "brand-500" }).locator(".tk-variable-preview");
-  await expect(swatch).toHaveCSS("background-color", "rgb(61, 99, 245)");
+  await expect(groups).toHaveCount(2);
+  await expect(groups.first()).toHaveAccessibleName("Project");
+  for (const name of ["brand-500", "ink", "muted"]) await expect(groups.first().getByRole("option", { name, exact: true })).toBeVisible();
+  await expect(groups.nth(1)).toHaveAccessibleName("Tailwind");
+  await expect(groups.nth(1).getByRole("option", { name: "red-500" })).toBeVisible();
+  await expect(picker.getByRole("option", { name: "ink", exact: true })).toHaveAttribute("title", "ink: #1B1D2A");
+  await expect(picker.getByRole("option", { name: "brand-500" })).toHaveCSS("background-color", "rgb(61, 99, 245)");
 
   await picker.getByRole("searchbox", { name: "Search variables" }).fill("brand-5");
   await expect(picker.getByRole("option")).toHaveText([/^brand-50#EEF4FF$/, /^brand-500#3D63F5$/]);
@@ -75,16 +91,14 @@ test("the color picker's Variables tab lists the project's colors first, by fami
   await expect.poll(async () => (await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(27, 29, 42)");
 });
 
-test("a field's variable button lists its group's Variables; one picked shows by name, to swap or detach, and undoes with the edit", async ({ page }) => {
+test("a field focused lists its group's Variables, the closest to its value first; one picked shows by name, to swap or detach, and undoes with the edit", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
 
-  await design(page).getByRole("button", { name: "Padding top variables" }).click();
-  const list = page.getByRole("dialog", { name: "Padding top variables" });
-  // Spacing: the project's own first, each with what it comes to.
+  const list = await variablesOf(page, "Padding top");
+  // Spacing, each with what it comes to: 22px is the project's gutter.
   await expect(list.getByRole("option").first()).toHaveText(/^gutter22px$/);
-  await expect(list.getByRole("option").nth(1)).toHaveText(/^section72px$/);
-  await list.getByRole("searchbox", { name: "Search variables" }).fill("sect");
+  await page.keyboard.type("sect");
   await expect(list.getByRole("option")).toHaveCount(1);
   await list.getByRole("option", { name: "section" }).click();
 
@@ -106,43 +120,41 @@ test("a field's variable button lists its group's Variables; one picked shows by
   await page.keyboard.press("ControlOrMeta+z");
   await expect(chip).toHaveText("section");
 
-  // Esc closes the list and leaves the field as it is.
-  await design(page).getByRole("button", { name: "Corner radius variables" }).click();
-  await page.getByRole("dialog", { name: "Corner radius variables" }).press("Escape");
-  await expect(page.getByRole("dialog", { name: "Corner radius variables" })).toBeHidden();
+  // Esc leaves the field as it is, and the list closes.
+  const radius = await variablesOf(page, "Corner radius");
+  await page.keyboard.press("Escape");
+  await expect(radius).toBeHidden();
+  await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("14");
 });
 
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
 
-  await design(page).getByRole("button", { name: "Corner radius variables" }).click();
-  await page.getByRole("dialog", { name: "Corner radius variables" }).getByRole("option", { name: "pill" }).click();
+  await (await variablesOf(page, "Corner radius")).getByRole("option", { name: "pill" }).click();
   await expect.poll(async () => (await cardStyles(page, "borderTopLeftRadius"))[0]).toBe("999px");
   await expect(design(page).getByRole("button", { name: "Corner radius variable", exact: true })).toHaveText("pill");
 
-  // Shadows: one Variable for all of them, shown by name in Effects.
+  // Shadows: one Variable for all of them, from the menu of +, shown by name in Effects.
   const effects = design(page).getByRole("group", { name: "Effects" });
-  await effects.getByRole("button", { name: "Shadow variables" }).click();
-  await page.getByRole("dialog", { name: "Shadow variables" }).getByRole("option", { name: "md" }).click();
+  await addEffect(page, "md");
   await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.1) 0px 4px 6px -1px, rgba(0, 0, 0, 0.1) 0px 2px 4px -2px");
   await expect(effects.getByRole("button", { name: "Shadow variable", exact: true })).toHaveText("md");
   await expect(effects.getByRole("group", { name: "Shadow 1" })).toBeHidden();
   await effects.getByRole("button", { name: "Detach shadow variable" }).click();
   await expect(effects.getByRole("group", { name: "Shadow 2" })).toBeVisible();
 
-  await design(page).getByRole("button", { name: "Width variables", exact: true }).click();
-  await page.getByRole("dialog", { name: "Width variables" }).getByRole("option", { name: "64", exact: true }).click();
+  await (await variablesOf(page, "Width")).getByRole("option", { name: "64", exact: true }).click();
   await expect(canvas(page).locator("article").first()).toHaveCSS("width", "256px");
 
   await selectRow(page, "Freeze");
-  await design(page).getByRole("button", { name: "Font size variables" }).click();
-  const sizes = page.getByRole("dialog", { name: "Font size variables" });
-  await expect(sizes.getByRole("option").first()).toHaveText(/^display44px$/);
+  const sizes = await variablesOf(page, "Font size");
+  await expect(sizes.getByRole("option", { name: "display" })).toHaveText(/^display44px$/);
   await sizes.getByRole("option", { name: "lead" }).click();
   await expect(canvas(page).locator("h3").first()).toHaveCSS("font-size", "19px");
-  // Line height, letter spacing and stroke weight are in none of the groups.
-  await expect(design(page).getByRole("button", { name: "Line height variables" })).toHaveCount(0);
+  // Line height, letter spacing and stroke weight are in none of the groups: focused, they list nothing.
+  await design(page).getByRole("textbox", { name: "Line height" }).click();
+  await expect(page.getByRole("listbox", { name: "Matching variables" })).toHaveCount(0);
 });
 
 test("a Grid's row and column gaps take spacing Variables, each its own", async ({ page }) => {
@@ -150,16 +162,14 @@ test("a Grid's row and column gaps take spacing Variables, each its own", async 
   await selectRow(page, "Grid");
   const grid = canvas(page).locator("[data-testid=features]");
 
-  await design(page).getByRole("button", { name: "Row gap variables" }).click();
-  const list = page.getByRole("dialog", { name: "Row gap variables" });
+  const list = await variablesOf(page, "Row gap");
   await expect(list.getByRole("option").first()).toHaveText(/^gutter22px$/);
   await list.getByRole("option", { name: "section" }).click();
   await expect(grid).toHaveCSS("row-gap", "72px");
   await expect(design(page).getByRole("button", { name: "Row gap variable", exact: true })).toHaveText("section");
   // The column gap is still a value, and takes one of its own.
   await expect(design(page).getByRole("textbox", { name: "Column gap" })).toHaveValue("22");
-  await design(page).getByRole("button", { name: "Column gap variables" }).click();
-  await page.getByRole("dialog", { name: "Column gap variables" }).getByRole("option", { name: "4", exact: true }).click();
+  await (await variablesOf(page, "Column gap")).getByRole("option", { name: "4", exact: true }).click();
   await expect(grid).toHaveCSS("column-gap", "16px");
   await expect(design(page).getByRole("button", { name: "Column gap variable", exact: true })).toHaveText("4");
 
@@ -186,7 +196,7 @@ test("a shadow's color takes a color Variable from the color picker, shown by na
 
   // A text layer's shadow: its color picked by typing part of the name.
   await selectRow(page, "Freeze");
-  await effects.getByRole("button", { name: "Add effect" }).click();
+  await addEffect(page, "Drop shadow");
   const hex = effects.getByRole("textbox", { name: "Shadow 1 color", exact: true });
   await hex.click();
   await hex.pressSequentially("ink");
@@ -237,9 +247,9 @@ test("typing part of a name in a field lists its group's Variables that have it,
   await expect(right).toHaveValue("22");
   await expect(design(page).getByRole("button", { name: "Padding right variable", exact: true })).toHaveCount(0);
 
-  // A number lists nothing: it is a value, ↑ steps it.
+  // A number is a value: the list stays, the closest to it first, and ↑ steps the number.
   await right.fill("2");
-  await expect(matching).toBeHidden();
+  await expect(matching.getByRole("option").first()).toHaveText(/^0\.52px$/);
   await right.press("ArrowUp");
   await expect.poll(async () => (await cardStyles(page, "paddingRight"))[0]).toBe("23px");
 });
@@ -300,14 +310,17 @@ test("a value typed close to a Variable of the field's group shows its name in t
 test("on a Tailwind v4 project, its default theme's Variables are offered; with none, the panel offers values only", async ({ page }) => {
   await enterEditMode(page, DEV_URL);
   await selectRow(page, "Card");
-  await design(page).getByRole("button", { name: "Gap variables" }).or(design(page).getByRole("button", { name: "Padding top variables" })).first().click();
-  const list = page.getByRole("dialog").filter({ has: page.getByRole("listbox", { name: "Variables" }) });
+  const list = await variablesOf(page, "Padding top");
   await expect(list.getByRole("option", { name: "4", exact: true })).toHaveText(/^416px$/);
-  await list.press("Escape");
+  await page.keyboard.press("Escape");
 
-  // The Next.js example has no Variables: no variable buttons, the color swatch is the system's picker.
+  // The Next.js example has no Variables: a field focused lists none, and a color's picker has no Variables tab.
   await enterEditMode(page, NEXT_URL);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem").nth(1).click();
-  await expect(design(page).getByRole("button", { name: /variables$/ })).toHaveCount(0);
-  await expect(design(page).getByRole("button", { name: /color picker$/ })).toHaveCount(0);
+  await design(page).getByRole("textbox").first().click();
+  await expect(page.getByRole("listbox", { name: "Matching variables" })).toHaveCount(0);
+  await design(page).getByRole("button", { name: "Add fill" }).click();
+  await design(page).getByRole("button", { name: "Fill color picker" }).click();
+  await expect(page.getByRole("dialog", { name: /color$/ }).getByRole("slider", { name: "Hue" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: /color$/ }).getByRole("tab")).toHaveCount(0);
 });

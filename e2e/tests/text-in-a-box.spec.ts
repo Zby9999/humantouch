@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
+import { DOUBLE_CLICK_MS } from "../../packages/03kind/src/client/selection";
 
 /**
  * A button with only text in it that draws a box (ticket 56): a Frame, with a
@@ -114,6 +115,8 @@ test("a click on the Close button selects it; a double click types in its words"
   await page.mouse.click(box.x + 4, box.y + box.height / 2);
   await expect(selectedRow(page)).toHaveText("Button");
 
+  // A press this soon after the click, as near on the canvas zoomed out, would make a double click of the two.
+  await page.waitForTimeout(DOUBLE_CLICK_MS);
   await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.type("Done");
   await page.keyboard.press("Enter");

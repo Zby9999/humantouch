@@ -49,11 +49,12 @@ test("page styles do not reach the editor layer", async ({ page }) => {
   });
   expect(titleStyle).toEqual({
     fontStyle: "normal",
-    fontSize: "11px",
+    // A panel's title as the designer drew it (2026-11-07): Geist Medium 14px, neutral 700.
+    fontSize: "14px",
     lineHeight: "16px",
-    letterSpacing: "0.055px",
+    letterSpacing: "normal",
     textTransform: "none",
-    color: "rgb(30, 30, 30)",
+    color: "rgb(63, 64, 63)",
     serif: false,
   });
 });

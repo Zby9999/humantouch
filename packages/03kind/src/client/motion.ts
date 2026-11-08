@@ -13,6 +13,8 @@ export const UNLOCK_HOLD_MS = 1000;
 export const MODE_FADE_MS = 150;
 /** A toast fading in and out; with reduced motion, it only fades. */
 export const TOAST_FADE_MS = 180;
+/** A field darkening while hovered, and taking the accent once changed: a color alone, kept with reduced motion. */
+export const FIELD_STATE_MS = 120;
 
 export function prefersReducedMotion(): boolean {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;

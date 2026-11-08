@@ -17,7 +17,8 @@ export function LayerInfo({ tree, layers }: { tree: LayerTree; layers: Layer[] }
     <section class="tk-layer-info" aria-label="Selected layer">
       <h3 class={`tk-layer-name${role(layer) === "instance" ? " is-instance" : ""}`}>
         <LayerIcon layer={layer} />
-        <span>{layer.name}</span>
+        {/* A text layer's name is its words, as long as they are: here, what it is (designer, 2026-11-07). */}
+        <span>{layer.kind === "text" ? "Text" : layer.name}</span>
       </h3>
       <dl>
         <dt>Type</dt>

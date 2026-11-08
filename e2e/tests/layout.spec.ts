@@ -66,6 +66,27 @@ test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a 
   await expect(design(page).getByRole("textbox", { name: /margin/i })).toHaveCount(0);
 });
 
+test("Hug made Fixed marks its sizing, not its number, until the number changes too; the sizing's reset puts Hug back (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Button").click();
+  const sizing = design(page).getByRole("combobox", { name: "Width sizing" });
+  const width = design(page).getByRole("button", { name: "Reset width", exact: true });
+  const sizingReset = design(page).getByRole("button", { name: "Reset width sizing" });
+
+  await sizing.selectOption("fixed");
+  await expect(sizingReset).toBeVisible();
+  await expect(width).toHaveCount(0);
+
+  await setField(page, "Width", "200");
+  await expect(width).toBeVisible();
+  await expect(sizingReset).toBeVisible();
+
+  await sizingReset.click();
+  await expect(sizing).toHaveValue("hug");
+  await expect(width).toHaveCount(0);
+  await expect(sizingReset).toHaveCount(0);
+});
+
 test("a Stack's direction, gap, padding and alignment, in design language", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Header").click();
@@ -82,12 +103,14 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
     .locator("header")
     .evaluate((header) => header.children[1].getBoundingClientRect().left - header.children[0].getBoundingClientRect().right);
   expect(gap).toBe(24);
-  await setField(page, "Padding left", "10");
-  await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
   await stack.getByRole("radio", { name: "Vertical" }).click();
   await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
-  await stack.getByRole("checkbox", { name: "Distribute evenly" }).check();
+  // Distributed evenly: the gap's Auto, as Figma has it (designer, 2026-11-07).
+  await stack.getByRole("combobox", { name: "Gap sizing" }).selectOption("auto");
   await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("space-between");
+  // Last: the Variables the padding field lists as it is typed into stay open over the rows above it.
+  await setField(page, "Padding left", "10");
+  await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
 });
 
 test("a plain top-to-bottom flow shows as a vertical Stack, and becomes a real one once its gap changes", async ({ page }) => {
@@ -198,17 +221,45 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "8px");
 });
 
-test("minimum and maximum sizes sit in two columns: width on the left, height on the right, minimum above maximum", async ({ page }) => {
+test("a minimum or maximum size is added from its field's menu, the width's or the height's, as a row of its own, and taken off with its minus", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Card").first().click();
-  const at = async (name: string) => (await design(page).getByRole("textbox", { name, exact: true }).boundingBox())!;
-  const [minW, maxW, minH, maxH] = await Promise.all(["Min width", "Max width", "Min height", "Max height"].map(at));
+  // None set: none shown until one is added (designer, 2026-11-07).
+  await expect(design(page).getByRole("textbox", { name: "Min width", exact: true })).toHaveCount(0);
+  const widthMenu = page.getByRole("dialog", { name: "Add min or max width" });
+  await design(page).getByRole("button", { name: "Add min or max width" }).click();
+  await expect(widthMenu.getByRole("option")).toHaveText(["Min width", "Max width"]);
+  await page.keyboard.press("Escape");
+  const heightMenu = page.getByRole("dialog", { name: "Add min or max height" });
+  await design(page).getByRole("button", { name: "Add min or max height" }).click();
+  await expect(heightMenu.getByRole("option")).toHaveText(["Min height", "Max height"]);
+  await heightMenu.getByRole("option", { name: "Max height", exact: true }).click();
 
-  expect(maxW.x).toBe(minW.x);
-  expect(maxW.y).toBeGreaterThan(minW.y);
-  expect(minH.x).toBeGreaterThan(minW.x);
-  expect(minH.y).toBe(minW.y);
-  expect([maxH.x, maxH.y]).toEqual([minH.x, maxW.y]);
+  // That one alone comes in, and its menu no longer lists it.
+  const maxHeight = design(page).getByRole("textbox", { name: "Max height", exact: true });
+  await expect(maxHeight).toHaveValue("");
+  await expect(design(page).getByRole("textbox", { name: /^(Min width|Max width|Min height)$/ })).toHaveCount(0);
+  await design(page).getByRole("button", { name: "Add min or max height" }).click();
+  await expect(heightMenu.getByRole("option")).toHaveText(["Min height"]);
+  await page.keyboard.press("Escape");
+
+  await maxHeight.fill("120");
+  await maxHeight.press("Enter");
+  await expect.poll(() => canvasStyle(page, "article", "max-height")).toBe("120px");
+
+  await design(page).getByRole("button", { name: "Remove max height" }).click();
+  await expect(maxHeight).toHaveCount(0);
+  await expect.poll(() => canvasStyle(page, "article", "max-height")).toBe("none");
+});
+
+test("the width and height fields' menus show while the field is hovered", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Card").first().click();
+  const add = design(page).getByRole("button", { name: "Add min or max width" });
+  await page.mouse.move(0, 0);
+  await expect(add).toHaveCSS("opacity", "0");
+  await design(page).getByRole("textbox", { name: "Width", exact: true }).hover();
+  await expect(add).toHaveCSS("opacity", "1");
 });
 
 test("dragging left and right on the opacity icon changes it, 1% per px", async ({ page }) => {

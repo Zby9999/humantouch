@@ -89,7 +89,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   const board = await boxOf(canvas(page).locator("#board"));
   await drawFrom(page, { x: board.x + 20, y: board.y + 20 }, { x: board.x + 20, y: board.y + 20 });
   const box = page.locator('.tk-selection[data-kind="typing"][data-view="Desktop"]');
-  await expect(box).toHaveCSS("border-color", "rgb(13, 153, 255)");
+  await expect(box).toHaveCSS("border-color", "rgb(0, 143, 240)");
   await expect(box).toHaveCSS("border-top-width", "1px");
   const narrow = (await boxOf(box)).width;
   await page.keyboard.type("A much longer line of words");

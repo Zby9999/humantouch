@@ -16,6 +16,14 @@ export function selectOnClick(hit: Layer, selected: Layer | null): Layer | null 
   return selectable(path[path.indexOf(context) + 1] ?? context);
 }
 
+/**
+ * A second press this soon (ms) after the first, and this near it on screen (px), each let go before it
+ * moved into a drag, is a double click: judged here, not by the system's double-click speed, which asked
+ * the designer for quicker presses than felt right (2026-11-05).
+ */
+export const DOUBLE_CLICK_MS = 700;
+export const DOUBLE_CLICK_PX = 8;
+
 /** A double click goes one layer deeper, toward `hit`. Locked layers cannot be entered. */
 export function selectOnDoubleClick(hit: Layer, selected: Layer | null): Layer | null {
   if (!selected || selected.kind === "locked") return selectOnClick(hit, selected);

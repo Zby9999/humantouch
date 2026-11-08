@@ -765,6 +765,7 @@ export const SCENARIOS: Scenario[] = [
       await setField(page, "Padding left", "8");
       const effects = design(page).getByRole("group", { name: "Effects" });
       await effects.getByRole("button", { name: "Add effect" }).click();
+      await page.getByRole("dialog", { name: "Add effect" }).getByRole("option", { name: "Drop shadow", exact: true }).click();
       await setField(page, "Shadow 1 Y", "8");
       await setField(page, "Shadow 1 blur", "16");
       await layer(page, "Third Kind").click();

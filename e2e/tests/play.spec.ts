@@ -36,6 +36,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("played, the canvas is as wide as the window: a change made in the phone view shows once the window is as narrow, and at no other width", async ({ page }) => {
+  const frozenAt = page.viewportSize()!.width;
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   const phone = page.locator('iframe[title="Phone 390"]');
   await expect(phone.contentFrame().locator("h1")).toBeVisible();
@@ -60,11 +61,11 @@ test("played, the canvas is as wide as the window: a change made in the phone vi
   await expect(card).toHaveCSS("background-color", WHITE);
 
   // Back to editing, the desktop view is as wide as the page was frozen at again.
-  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.setViewportSize({ width: frozenAt, height: 720 });
   await page.keyboard.press("Escape");
   await expect(design(page)).toBeVisible();
   await expect(card).toHaveCSS("background-color", WHITE);
-  await expect.poll(() => width()).toBe(1280);
+  await expect.poll(() => width()).toBe(frozenAt);
 });
 
 test("play shows the canvas alone, at full size, with its changes; Esc goes back to editing as it was", async ({ page }) => {

@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
-import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound } from "../service-protocol";
+import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound, Variable, VariableGroup } from "../service-protocol";
+import type { Property, PropertyValues } from "./property-table";
 import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
@@ -30,7 +31,9 @@ import { hasPartsToRead } from "./range-parts";
 import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
-import { bind, bindRecorded, resolveVariables, type Catalog } from "./variables";
+import { bind, bindRecorded, resolveVariables, withPart, type Catalog, type Resolved } from "./variables";
+import { VariantsPanel } from "./VariantsPanel";
+import { ChangeMarksProvider, changeMarks } from "./ChangeMarks";
 import { CatalogProvider } from "./VariablePicker";
 
 const LAYERS_KEY = "03kind:layers-panel";
@@ -107,8 +110,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
 
   /** The tool picked, from the toolbar or the keyboard: null to select, or what the next drag draws. */
   const [tool, setTool] = useState<Tool>(null);
+  /** The fill's picker is open on a gradient: its handles show on the canvas. */
+  const [gradientPicker, setGradientPicker] = useState(false);
   /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
   const [playing, setPlaying] = useState(false);
+  /** The Design panel's tab: the selected layers' properties, or the project's Variables. */
   const playButton = useRef<HTMLButtonElement>(null);
   /** Playing has just stopped: focus goes back to the button that started it. */
   const refocusPlay = useRef(false);
@@ -244,6 +250,43 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     }
   };
   /** An edit made: the panel and the Layers panel follow it; `adjust`, a value set, the selection box steps aside meanwhile. Resized by a handle, it stays. */
+  /** Where a Variable of each group goes on `layer`, as the Variants list sets one: the property, and the part of it; none for spacing, which could be any of several. */
+  const slotFor = (layer: Layer, group: VariableGroup): [Property, string] | null => {
+    const editor = editorOf(layer);
+    const at = ({ color: editor?.can(layer, "textColor") ? ["textColor", ""] : ["fill", "color"], radius: ["radius", ""], fontSize: ["fontSize", ""], shadow: ["shadows", ""] } as Partial<Record<VariableGroup, [Property, string]>>)[group];
+    return at && editor?.can(layer, at[0]) ? at : null;
+  };
+  /** The groups a Variable picked in the Variants list can be set on every selected layer for, by what it sets there. */
+  const takenBy = (layers: Layer[]) => {
+    const names: Partial<Record<VariableGroup, string>> = { color: "Fill", radius: "corner radius", fontSize: "font size", shadow: "shadow" };
+    return Object.fromEntries(Object.entries(names).filter(([group]) => layers.length && layers.every((layer) => slotFor(layer, group as VariableGroup)))) as Partial<Record<VariableGroup, string>>;
+  };
+  /** The Variables the layer selected alone has where the Variants list sets them. */
+  const usedBy = (layers: Layer[]): Variable[] => {
+    if (layers.length !== 1) return [];
+    const [layer] = layers;
+    const editor = editorOf(layer);
+    return (["color", "radius", "fontSize", "shadow"] as VariableGroup[]).flatMap((group) => {
+      const at = slotFor(layer, group);
+      const bound = at && editor?.variables(layer, at[0])?.[at[1]];
+      return bound ? [bound] : [];
+    });
+  };
+  /** Sets the Variable picked in the Variants list on each selected layer, where it takes one of its group, as one edit. */
+  const applyVariable = (entry: Resolved) => {
+    const editor = editorOf(selected[0]);
+    if (!editor) return;
+    editor.batch(() => {
+      for (const layer of selected) {
+        const at = slotFor(layer, entry.variable.group);
+        if (!at) continue;
+        const [property, part] = at;
+        const next = withPart(property, editor.read(layer, property), part, entry.drawn);
+        if (next !== null) editor.set(layer, property, next as PropertyValues[Property], { variables: { [part]: entry.variable } });
+      }
+    });
+    onEdit();
+  };
   const onEdit = (adjust = true) => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
@@ -520,15 +563,17 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  /** Layers selected: the Design panel shows their design; none, the project's Variables (designer, 2026-11-08). */
+  const designing = !!(tree && editor && selected.length);
   return (
     <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
       {layersShown ? (
         <aside class="tk-panel is-layers" aria-label="Layers">
           <div class="tk-panel-header">
-            <h2 class="tk-panel-title">Layers</h2>
             <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
+            <h2 class="tk-panel-title">Layers</h2>
           </div>
           {tree && (
             <LayerTreeView
@@ -650,6 +695,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           editorOf(layer)!.takeBack();
           onEdit(false);
         }}
+        gradientHandles={gradientPicker}
+        // As a resize: dragged on the canvas, the selection stays.
+        onFillEdited={() => onEdit(false)}
         tool={tool}
         onTool={setTool}
         onDuplicate={(layer: Layer, to: Destination) => {
@@ -707,7 +755,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       {notice}
       <aside class="tk-panel is-design" aria-label="Design">
         <div class="tk-panel-header">
-          <h2 class="tk-panel-title">Design</h2>
+          {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
+          <h2 class="tk-panel-label">{designing ? "Design" : "Variants"}</h2>
           {tree && (
             <button ref={playButton} type="button" class="tk-icon-button tk-play" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
               <Icon name="play" />
@@ -715,22 +764,31 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           )}
           {controls}
         </div>
-        {tree && editor && selected.length ? (
+        {!designing ? (
+          <VariantsPanel catalog={catalog} takes={takenBy(selected)} inUse={usedBy(selected)} onApply={applyVariable} />
+        ) : (
           <>
             <LayerInfo tree={treeOf(selected[0])!} layers={selected} />
             {/* Off the canvas, a layer has no breakpoints: its look is frozen, at no width. */}
-            {!outsideOf(selected[0]) && <BreakpointSection editor={editor} layers={selected} view={worked?.name ?? "Desktop"} onEdit={onEdit} />}
+            {!outsideOf(selected[0]) && <BreakpointSection editor={editor} layers={selected} view={worked?.name ?? "Desktop"} />}
             {/* The Design panel's short notes show in the toast. */}
             <ToastProvider value={showToast}>
               <CatalogProvider value={catalog}>
-                <Properties editor={editorOf(selected[0])!} layers={selected} onEdit={onEdit} onStack={() => makeStack(selected)} onDissolve={() => dissolve(selected)} />
+                <ChangeMarksProvider value={changeMarks(round.current?.changeSet.list() ?? [], editorOf(selected[0])!, selected, onEdit)}>
+                <Properties
+                  editor={editorOf(selected[0])!}
+                  layers={selected}
+                  onEdit={onEdit}
+                  onStack={() => makeStack(selected)}
+                  onDissolve={() => dissolve(selected)}
+                  onGradientPicker={setGradientPicker}
+                />
+                </ChangeMarksProvider>
               </CatalogProvider>
             </ToastProvider>
             {/* A brief is on one layer of the canvas at a time; off the canvas, a layer is kept as it looks. */}
             {selected.length === 1 && !outsideOf(selected[0]) && <BriefSection editor={editor} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />}
           </>
-        ) : (
-          <p class="tk-panel-empty">Select a layer to see its properties.</p>
         )}
       </aside>
       {playing && (

@@ -257,9 +257,9 @@ test.describe("canvas navigation", () => {
 
       await expect.poll(async () => (await box(page)).width).toBeGreaterThan(before.width * 1.1);
       const after = await box(page);
-      // The spot under the pointer stays under the pointer.
-      expect((pointer.x - after.x) / after.width).toBeCloseTo((pointer.x - before.x) / before.width, 3);
-      expect((pointer.y - after.y) / after.height).toBeCloseTo((pointer.y - before.y) / before.height, 3);
+      // The spot under the pointer stays under the pointer, to within half a px as the canvas lays out in whole and part px.
+      expect(Math.abs((pointer.x - after.x) / after.width - (pointer.x - before.x) / before.width) * after.width).toBeLessThan(0.5);
+      expect(Math.abs((pointer.y - after.y) / after.height - (pointer.y - before.y) / before.height) * after.height).toBeLessThan(0.5);
     });
   }
 
@@ -306,7 +306,8 @@ test.describe("canvas navigation", () => {
 });
 
 for (const [scheme, panel, area] of [
-  ["light", "rgb(255, 255, 255)", "rgb(245, 245, 245)"],
+  // Light: the designer's palette (2026-11-07), panels on neutral 100, the canvas on neutral 200. Dark keeps the earlier greys.
+  ["light", "rgb(245, 245, 245)", "rgb(229, 229, 228)"],
   ["dark", "rgb(44, 44, 44)", "rgb(30, 30, 30)"],
 ] as const) {
   test(`the editor shell follows the system ${scheme} mode, the canvas keeps the page's look`, async ({ page }) => {

@@ -14,7 +14,7 @@ export const toggleStyles = /* css */ `
   all: initial !important;
   /* The editor's icons: how large, and how thick their lines are on screen, whatever their size. */
   --tk-icon-size: 14px;
-  --tk-icon-stroke: 1px;
+  --tk-icon-stroke: 1.25px;
 }
 
 .tk-dock {

@@ -166,9 +166,10 @@ test("several layers edited together go back together with ⌘Z, the focus still
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click({ modifiers: ["Shift"] });
   await expect(design(page).getByRole("heading", { name: "2 layers" })).toBeVisible();
 
-  await design(page).getByRole("checkbox", { name: "Distribute evenly" }).check();
-  await setField(page, "Width", "120");
   await setField(page, "Gap", "30");
+  // Distributed evenly: the gap's Auto, which leaves no number to type (designer, 2026-11-07).
+  await design(page).getByRole("combobox", { name: "Gap sizing" }).selectOption("auto");
+  await setField(page, "Width", "120");
   await expect(badge(page)).toHaveText("6");
 
   for (let i = 0; i < 3; i++) await page.keyboard.press("ControlOrMeta+z");

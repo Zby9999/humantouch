@@ -1,10 +1,7 @@
 /** @jsxImportSource preact */
-import { propertyTitle } from "../design-values";
 import { breakpointName, tailwindOf } from "./breakpoints";
-import { breakpointMarks } from "./BreakpointMark";
 import type { Editor } from "./edit-commands";
 import type { Property } from "./property-table";
-import { Icon } from "./icons";
 import type { Layer } from "./layers";
 
 interface Props {
@@ -13,28 +10,21 @@ interface Props {
   layers: Layer[];
   /** What the view worked in is called: "Phone". */
   view: string;
-  /** Called after a property is set back to inherit, so the panel shows the values it inherits. */
-  onEdit(): void;
 }
 
 /**
  * At the top of the Design panel, in a view other than the desktop view: the
- * breakpoint edits there apply at (ADR 0008), and the properties of the
- * selected layers changed there on their own, each of which can be set back
- * to inherit what the layer shows at every width. The rows of those
- * properties are marked and reset too (`BreakpointMark`), from the same
- * changes; the list also holds those whose row the panel does not show, as
- * for several layers that do not all offer the property.
+ * breakpoint edits there apply at (ADR 0008). What the selected layers have
+ * changed there shows on its fields, each with its reset, not in a list here
+ * too (designer, 2026-11-07).
  */
-export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
+export function BreakpointSection({ editor, layers, view }: Props) {
   const breakpoint = editor.breakpoint();
   const changed: Property[] = [];
   for (const layer of layers) for (const property of editor.changesHere(layer)) if (!changed.includes(property)) changed.push(property);
   // A view in the desktop view's range edits every width, as it does; only what a narrower range recorded before holds there is shown.
   if (!breakpoint && !changed.length) return null;
   const tailwind = tailwindOf(breakpoint);
-  // Reset as its row resets it.
-  const inherit = (property: Property) => breakpointMarks(editor, layers, onEdit).reset([property]);
   return (
     <section class="tk-section tk-breakpoint" aria-labelledby="tk-breakpoint">
       <div class="tk-section-header">
@@ -59,25 +49,6 @@ export function BreakpointSection({ editor, layers, view, onEdit }: Props) {
           "This view is in the desktop view's range: style and layout changed here apply at every width, but where these were changed on their own."
         )}
       </p>
-      {changed.length > 0 && (
-        <ul class="tk-breakpoint-changes" aria-label={`Changed at the ${view.toLowerCase()} breakpoint`}>
-          {changed.map((property) => (
-            <li key={property} class="tk-breakpoint-change" data-tk-property={property}>
-              <span class="tk-breakpoint-mark" aria-hidden="true" />
-              <span class="tk-breakpoint-name">{propertyTitle(property)}</span>
-              <button
-                type="button"
-                class="tk-icon-button"
-                aria-label={`Reset ${propertyTitle(property)} to inherit`}
-                title="Reset to inherit from every width"
-                onClick={() => inherit(property)}
-              >
-                <Icon name="undo" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   );
 }

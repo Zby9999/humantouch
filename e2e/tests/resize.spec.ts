@@ -228,7 +228,7 @@ test("a locked layer is resized as a whole, its outer size", async ({ page }) =>
   await expect(field(page, "Width")).toHaveValue(String(Math.round(before.width + 20)));
 });
 
-test("dragged in the tablet view, it is resized at the tablet's breakpoint only, its row marked; in the desktop view, at every width", async ({ page }) => {
+test("dragged in the tablet view, it is resized at the tablet's breakpoint only, its width field marked changed; in the desktop view, at every width", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
   const before = await boxIn(desktop(page), `${HERO} > button`);
@@ -238,12 +238,12 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await expect.poll(() => boxIn(tablet(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 30));
   await expect.poll(async () => (await boxIn(desktop(page), `${HERO} > button`)).width).toBe(before.width);
   await expect.poll(async () => (await boxIn(phone(page), `${HERO} > button`)).width).toBe(before.width);
-  // The row's mark (ticket 57), and the breakpoint's list.
-  await expect(design(page).locator(".tk-row-mark").and(design(page).getByRole("button", { name: "Reset Width to inherit" }))).toBeVisible();
-  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveText(["Width"]);
+  // Marked on its field, with its reset; not listed at the breakpoint too (designer, 2026-11-07). Hug before, it is Fixed now: its sizing is marked too (designer, 2026-11-08).
+  await expect(design(page).getByRole("button", { name: "Reset width", exact: true })).toBeVisible();
+  await expect(design(page).getByRole("button", { name: "Reset width sizing" })).toBeVisible();
+  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("list")).toHaveCount(0);
 
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
-  await expect(design(page).getByRole("button", { name: /to inherit$/ })).toHaveCount(0);
   await expect.poll(() => boxIn(phone(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 20));
   // The tablet keeps its own.
   await expect.poll(async () => (await boxIn(tablet(page), `${HERO} > button`)).width).toBe(Math.round(before.width + 30));

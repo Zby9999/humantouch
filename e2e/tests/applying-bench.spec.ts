@@ -2039,8 +2039,9 @@ test.describe("a change at a breakpoint, the widths outside its range kept (tick
     );
     record("breakpoint-outside-pi-run-3", kept(result));
     // Ticket 104: not applied, each width outside the range named with the fill there then and now; under ⚠️, and the ring does not count it.
+    // The widest width checked: the window's, as wide as the page was frozen at.
     expect(result.done).toContain(
-      "Checked on the page: it shows the change, but outside its range too: at 1280px wide, its fill from #FFFFFF to no fill; at 768px wide, its fill from #FFFFFF to no fill since the round was claimed. The change applies below 768px only (`max-md:`)",
+      `Checked on the page: it shows the change, but outside its range too: at ${page.viewportSize()!.width}px wide, its fill from #FFFFFF to no fill; at 768px wide, its fill from #FFFFFF to no fill since the round was claimed. The change applies below 768px only (\`max-md:\`)`,
     );
     expect(result.checks.outcomes[1]).toBe("not shown");
     expect(result.finished).toContain("Shown outside its breakpoint's range too: 1.");
@@ -2055,7 +2056,7 @@ test.describe("a change at a breakpoint, the widths outside its range kept (tick
       (await loopFills(page)).every((fill) => fill === "rgb(255, 0, 0)"),
     );
     record("breakpoint-outside-no-prefix", kept(result));
-    expect(result.done).toContain("outside its range too: at 1280px wide, its fill from #FFFFFF to #FF0000; at 768px wide, its fill from #FFFFFF to #FF0000 since the round was claimed");
+    expect(result.done).toContain(`outside its range too: at ${page.viewportSize()!.width}px wide, its fill from #FFFFFF to #FF0000; at 768px wide, its fill from #FFFFFF to #FF0000 since the round was claimed`);
     expect(result.checks.outcomes[1]).toBe("not shown");
     expect(result.ticked).toEqual([]);
   });

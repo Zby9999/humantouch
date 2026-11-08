@@ -465,7 +465,7 @@ test.describe("the selection box", () => {
 
     await clickOn(page, "h1", "Meta");
 
-    await expect(box(page)).toHaveCSS("border-color", "rgb(13, 153, 255)");
+    await expect(box(page)).toHaveCSS("border-color", "rgb(0, 143, 240)");
     const outline = (await box(page).boundingBox())!;
     const h1 = (await canvas(page).locator("h1").boundingBox())!;
     for (const key of ["x", "y", "width", "height"] as const) expect(outline[key]).toBeCloseTo(h1[key], 0);
@@ -478,7 +478,7 @@ test.describe("the selection box", () => {
     await page.keyboard.press("Escape");
 
     await expect(selectedRow(page)).toHaveText("Card");
-    await expect(box(page)).toHaveCSS("border-color", "rgb(151, 71, 255)");
+    await expect(box(page)).toHaveCSS("border-color", "rgb(154, 60, 238)");
   });
 
   test("is gray with a lock on a locked layer, which a double click cannot enter", async ({ page }) => {

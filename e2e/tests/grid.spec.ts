@@ -103,13 +103,11 @@ test("in the phone view, the Grid's columns and gaps change at its breakpoint on
   await setField(page, "Row gap", "8");
   await expect.poll(() => grids(page)).toEqual(["3 16px 16px", "3 16px 16px", "2 8px 16px"]);
 
-  const breakpoint = design(page).getByRole("region", { name: "Phone breakpoint" });
-  await expect(breakpoint.getByRole("listitem")).toHaveText(["Columns", "Row gap"]);
-  // Each row marked where it is: Columns on its own, the gaps on theirs.
-  const grid = design(page).getByRole("region", { name: "Grid" });
-  await expect(grid.getByRole("button", { name: "Reset Row gap to inherit" })).toBeVisible();
-  await grid.getByRole("button", { name: "Reset Columns to inherit" }).click();
-  await expect(grid.getByRole("button", { name: "Reset Columns to inherit" })).toHaveCount(0);
+  // Each marked on its field and reset on its own (designer, 2026-11-07); the row gap's Variables, listed as it was typed in, closed first.
+  await field(page, "Row gap").blur();
+  await expect(design(page).getByRole("button", { name: "Reset row gap" })).toBeVisible();
+  await design(page).getByRole("button", { name: "Reset columns" }).click();
+  await expect(design(page).getByRole("button", { name: "Reset columns" })).toHaveCount(0);
   await expect.poll(() => grids(page)).toEqual(["3 16px 16px", "3 16px 16px", "1 8px 16px"]);
   await expect(field(page, "Columns")).toHaveValue("1");
   await expect(await changeRows(page)).toHaveText([/Row gap.*Grid.*below 768px/]);

@@ -17,8 +17,9 @@ import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMoti
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
+import { GradientHandles } from "./GradientHandles";
 import { holdPointer, pointerHeld } from "./pointer-held";
-import { selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
+import { DOUBLE_CLICK_MS, DOUBLE_CLICK_PX, selectDeepest, selectOnClick, selectOnDoubleClick, selectParents, toggleIn } from "./selection";
 import { distances } from "./snap";
 import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import type { Handle } from "./resize";
@@ -65,6 +66,10 @@ interface Props {
   onResize(layer: Layer, to: ResizeStep["to"], continues: boolean): void;
   /** Esc, while a handle is dragged: the resize taken back, as if never made. */
   onCancelResize(layer: Layer): void;
+  /** The fill's picker is open on a gradient: its handles show on the layer selected, in every view, and change it. */
+  gradientHandles: boolean;
+  /** A gradient's handle dragged: one step of the change made to the layer's fill. */
+  onFillEdited(): void;
   /** A dragged layer let go with ⌥ held: a copy goes there. */
   onDuplicate(layer: Layer, to: Destination): void;
   tool: Tool;
@@ -97,7 +102,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -134,6 +139,14 @@ export function CanvasView(props: Props) {
    */
   const press = useRef<{ pointerId: number; layer: Layer; in: Shown; x: number; y: number; release(): void } | null>(null);
   const dragging = useRef<DragSession | null>(null);
+  /**
+   * A press that selects on the canvas, till it is let go: `second` when it comes close enough after
+   * a click to make a double click of it, `dragged` once it has moved into a drag; `plain`, with no
+   * ⌘, Ctrl or ⇧ held, as only a plain click starts a double click.
+   */
+  const clickPress = useRef<{ pointerId: number; time: number; x: number; y: number; second: boolean; plain: boolean; dragged: boolean } | null>(null);
+  /** The last plain press let go as a click, which the next press may make a double click of. */
+  const lastClick = useRef<{ time: number; x: number; y: number } | null>(null);
   /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
   const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean } | null>(null);
   /**
@@ -595,6 +608,10 @@ export function CanvasView(props: Props) {
       return;
     }
     if (event.button === 0 && !spaceHeld) {
+      const last = lastClick.current;
+      const second = !!last && event.timeStamp - last.time <= DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= DOUBLE_CLICK_PX;
+      const plain = !event.metaKey && !event.ctrlKey && !event.shiftKey;
+      clickPress.current = { pointerId: event.pointerId, time: event.timeStamp, x: event.clientX, y: event.clientY, second, plain, dragged: false };
       if (over && !over.at.offCanvasLayer) setActive(over.at.view);
       const hit = layerAt(event);
       const layer = hit && (event.metaKey || event.ctrlKey ? selectDeepest(hit) : selectOnClick(hit, primary));
@@ -629,6 +646,7 @@ export function CanvasView(props: Props) {
     const pressed = press.current;
     if (pressed?.pointerId === event.pointerId) {
       if (!dragging.current && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < DRAG_THRESHOLD) return;
+      if (clickPress.current?.pointerId === event.pointerId) clickPress.current.dragged = true;
       dragging.current ??= startDrag(pressed.layer, pressed.in);
       moveDrag(dragging.current, event, pressed);
       return;
@@ -651,6 +669,14 @@ export function CanvasView(props: Props) {
   };
 
   const endPan = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    const click = clickPress.current?.pointerId === event.pointerId ? clickPress.current : null;
+    if (click) {
+      clickPress.current = null;
+      // Let go without moving into a drag, it is a click; the second of two, a double click, and the next press starts afresh.
+      const clicked = event.type === "pointerup" && !click.dragged;
+      lastClick.current = clicked && !click.second && click.plain ? click : null;
+      if (clicked && click.second) doubleClick(event);
+    }
     if (resizing.current?.pointerId === event.pointerId) {
       // Let go, where it is let go; a pointer cancelled takes the resize back, as a drag cancelled puts the layer back.
       if (event.type === "pointerup") resizeNow();
@@ -765,6 +791,8 @@ export function CanvasView(props: Props) {
     // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
     views?.sync(shown.view);
     setActive(shown.view);
+    // Pressed twice, a handle resizes twice: a click before it makes no double click with the press after.
+    lastClick.current = null;
     viewport.current!.setPointerCapture(event.pointerId);
     const { pointerId, clientX, clientY } = event;
     resizing.current = { pointerId, layer, in: shown, handle, from: { clientX, clientY }, begun: null, stepped: false, set: new Set(), release: holdPointer(pointerId) };
@@ -879,6 +907,17 @@ export function CanvasView(props: Props) {
     el.addEventListener("blur", end);
   };
 
+  /** A double click, where the second press is let go: one layer deeper, or typing in the text selected. */
+  function doubleClick(event: TargetedPointerEvent<HTMLDivElement>) {
+    const over = viewAt(event);
+    const hit = layerAt(event);
+    const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
+    // On the text selected, a double click types in it, in the view clicked in; on a Frame drawn around its text alone selected, as a button is, in its text.
+    const text = layer && (layer === primary ? (layer.kind === "text" ? layer : framedText(layer)) : primary && layer === framedText(primary) ? layer : null);
+    if (text && over && editor) beginTyping(text, over.at.view);
+    else if (layer) onSelect([layer]);
+  }
+
   /** The press on a layer is over: moving the pointer drags nothing, and the keys edit again. */
   function endPress() {
     press.current?.release();
@@ -941,8 +980,16 @@ export function CanvasView(props: Props) {
    * The layer of the canvas selected alone that can be resized, with handles in every view: not the page,
    * not text with no element of its own, nor a layer shown inline. While it is resized, the handles stay.
    */
+  /**
+   * The layer selected alone whose fill's picker is open on a gradient: its gradient's handles in every view, in place of
+   * the resize handles. They stay while a value steps, the selection hidden, as they are what is being changed.
+   */
+  const withGradient =
+    gradientHandles && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !typingLayer
+      ? primary
+      : null;
   const withHandles =
-    resize?.layer ??
+    withGradient ? null : resize?.layer ??
     (editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && primary !== tree?.root && !travelling && !playing && !drag && !hideSelection && !typingLayer && !tool && (editor.can(primary, "width") || editor.can(primary, "height"))
       ? primary
       : null);
@@ -980,16 +1027,6 @@ export function CanvasView(props: Props) {
       onPointerUp={endPan}
       onPointerCancel={endPan}
       onPointerLeave={() => setHover(null)}
-      onDblClick={(event) => {
-        if (playing) return;
-        const over = viewAt(event);
-        const hit = layerAt(event);
-        const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
-        // On the text selected, a double click types in it, in the view clicked in; on a Frame drawn around its text alone selected, as a button is, in its text.
-        const text = layer && (layer === primary ? (layer.kind === "text" ? layer : framedText(layer)) : primary && layer === framedText(primary) ? layer : null);
-        if (text && over && editor) beginTyping(text, over.at.view);
-        else if (layer) onSelect([layer]);
-      }}
     >
       <div
         ref={stage}
@@ -1039,6 +1076,21 @@ export function CanvasView(props: Props) {
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
               {withHandles && !shown.offCanvasLayer && (!spaceHeld || resize) && (
                 <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+              )}
+              {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
+                <GradientHandles
+                  layer={withGradient}
+                  view={view}
+                  name={name}
+                  camera={at}
+                  editor={editor!}
+                  onBegin={() => {
+                    // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
+                    views?.sync(view);
+                    setActive(view);
+                  }}
+                  onEdit={onFillEdited}
+                />
               )}
               {briefed.map(
                 (layer, i) =>

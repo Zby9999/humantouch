@@ -258,13 +258,13 @@ test("nudged in the phone view, a free layer moves there only, at the phone's br
 
   await expect.poll(() => placeIn(phone(page), "#mark")).toEqual({ x: 110, y: 120 });
   await expect.poll(() => placeIn(desktop(page), "#mark")).toEqual({ x: 100, y: 120 });
-  // Its Position row is marked as changed at the phone's breakpoint.
-  await expect(design(page).getByRole("region", { name: "Position" }).getByRole("button", { name: /^Reset .*X.* to inherit$/ })).toBeVisible();
+  // Marked changed on its field, at the phone's breakpoint.
+  await expect(design(page).getByRole("button", { name: "Reset x" })).toBeVisible();
   await page.locator("[data-tk-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toContainText(["below 768px"]);
 });
 
-test("nudged in the phone view, a layer in a Frame's flow is placed freely there only, which the breakpoint panel lists and its Position row resets to the flow", async ({ page }) => {
+test("nudged in the phone view, a layer in a Frame's flow is placed freely there only, which the change list tells and undoes back into the flow", async ({ page }) => {
   await page.evaluate(() => {
     const board = Object.assign(document.createElement("div"), { id: "board" });
     board.style.cssText = "height: 240px; margin: 16px 0; padding: 8px; background: #eee";
@@ -285,14 +285,11 @@ test("nudged in the phone view, a layer in a Frame's flow is placed freely there
   await expect.poll(() => position(phone(page))).toBe("absolute");
   await expect.poll(() => position(desktop(page))).toBe("static");
   await expect.poll(() => placeIn(desktop(page), "#chip")).toEqual(was);
-  const changed = design(page).locator('.tk-breakpoint-change[data-tk-property="absolute"]');
-  await expect(changed).toHaveText("Absolute");
   await page.locator("[data-tk-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Absolute.*in the layout → X 8px, Y 18px.*below 768px/]);
-  await page.keyboard.press("Escape");
 
-  // Its X and Y there are what places it: the Position row is marked, and reset there.
-  await design(page).getByRole("region", { name: "Position" }).getByRole("button", { name: "Reset Absolute to inherit" }).click();
+  // Its X and Y there are what places it: undone from the change list (the breakpoint lists none, designer, 2026-11-07), it is in the flow again.
+  await page.getByRole("dialog", { name: "Changes" }).getByRole("button", { name: /^Undo the absolute/ }).click();
   await expect.poll(() => position(phone(page))).toBe("static");
   await expect.poll(() => placeIn(phone(page), "#chip")).toEqual(was);
   await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);

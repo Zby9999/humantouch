@@ -18,6 +18,11 @@ interface Props {
   onSelect(layer: Layer, extend: boolean): void;
 }
 
+/** How far in a level's rows start: a disclosure and the gap after it. */
+const LEVEL_INDENT = 26;
+/** Where a level's guides run: down the middle of its disclosures. */
+const guideX = (level: number) => 16 + (level - 1) * LEVEL_INDENT + 11;
+
 /** Rows shown open at first. Deeper levels start collapsed, so a large page's tree is quick to show. */
 const MAX_OPEN_ROWS = 200;
 
@@ -57,14 +62,18 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selected, collapsed]);
 
-  const rows: { layer: Layer; level: number; outside: boolean }[] = [];
-  const add = (layer: Layer, level: number, outside: boolean) => {
-    rows.push({ layer, level, outside });
-    if (!collapsed.has(layer)) for (const child of layer.children) add(child, level + 1, outside);
+  /** `past`: the levels whose guides go on down past this row, to a later layer in them. `more`: this layer has a later one in its own. */
+  const rows: { layer: Layer; level: number; outside: boolean; past: number[]; more: boolean }[] = [];
+  const add = (layer: Layer, level: number, outside: boolean, past: number[], more: boolean) => {
+    rows.push({ layer, level, outside, past, more });
+    if (collapsed.has(layer)) return;
+    // Its own level's guide goes on past the layers in it, to its later one; the outermost level has none.
+    const inner = more && level > 1 ? [...past, level - 1] : past;
+    layer.children.forEach((child, i) => add(child, level + 1, outside, inner, i < layer.children.length - 1));
   };
-  for (const t of offCanvas) for (const layer of t.root.children) add(layer, 1, true);
+  for (const t of offCanvas) for (const layer of t.root.children) add(layer, 1, true, [], false);
   const canvasStart = rows.length;
-  for (const layer of tree.root.children) add(layer, 1, false);
+  for (const layer of tree.root.children) add(layer, 1, false, [], false);
 
   const toggle = (layer: Layer) => {
     const next = new Set(collapsed);
@@ -74,7 +83,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
 
   return (
     <div ref={list} class="tk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
-      {rows.map(({ layer, level, outside }, i) => {
+      {rows.map(({ layer, level, outside, past, more }, i) => {
         const open = layer.children.length ? !collapsed.has(layer) : undefined;
         return (
           <div
@@ -86,11 +95,18 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
             aria-expanded={open}
             aria-description={outside && level === 1 ? `${typeLabel(layer)} · Off canvas` : typeLabel(layer)}
             data-off-canvas={outside || undefined}
-            style={{ paddingLeft: `${8 + (level - 1) * 12}px` }}
+            style={{ paddingLeft: `${16 + (level - 1) * LEVEL_INDENT}px` }}
             onPointerDown={(event) => {
               if (event.button === 0) onSelect(layer, event.shiftKey);
             }}
           >
+            {/* Guides: in to this layer from the one it is in, and on down past it to the later layers of those above it. */}
+            {/* In to the row's chevron; a row with none, on across its place to its icon (designer, 2026-11-07). */}
+            {level > 1 && <span class={`tk-tree-guide is-in${open === undefined ? " is-leaf" : ""}`} style={{ left: `${guideX(level - 1)}px` }} />}
+            {level > 1 && more && <span class="tk-tree-guide is-past" style={{ left: `${guideX(level - 1)}px` }} />}
+            {past.filter((at) => at < level - 1).map((at) => (
+              <span key={at} class="tk-tree-guide is-past is-through" style={{ left: `${guideX(at)}px` }} />
+            ))}
             <span
               class="tk-tree-chevron"
               aria-hidden="true"
@@ -100,7 +116,9 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
                 event.stopPropagation();
                 toggle(layer);
               }}
-            />
+            >
+              {open !== undefined && <Icon name="chevron-down" />}
+            </span>
             <LayerIcon layer={layer} />
             <span class="tk-tree-name">{layer.name}</span>
             {/* A layer the designer wrote a brief for: what the Agent is to achieve in it, or make in a new Frame. */}

@@ -60,7 +60,6 @@ export function ViewLabel(props: { name: string; width: number; breakpoint: Brea
       aria-label={`${name} view`}
       style={{ left: `${left}px`, top: `${top}px`, width: `${size}px` }}
       onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
     >
       <span class="tk-view-name">{name}</span>
       <span class="tk-view-width">{width}</span>
@@ -95,7 +94,6 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
       class="tk-add-view"
       style={{ left: `${left}px`, top: `${top}px` }}
       onPointerDown={(event) => event.stopPropagation()}
-      onDblClick={(event) => event.stopPropagation()}
     >
       {open ? (
         <input

@@ -69,10 +69,15 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
   // Tailwind's own breakpoints, which the example keeps: the phone reaches up to `md`, where the tablet's range starts.
   await expect(section).toContainText("below 768px");
   await expect(section).toContainText("max-md:");
-  await expect(section.getByRole("listitem")).toHaveCount(0);
+  // Marked on their fields, each with its reset; not listed at the breakpoint too (designer, 2026-11-07).
+  const resetFill = design(page).getByRole("button", { name: "Reset fill" });
+  const resetRadius = design(page).getByRole("button", { name: "Reset corner radius" });
+  await expect(resetFill).toHaveCount(0);
   await setField(page, "Fill color", "ff0000");
   await setField(page, "Corner radius", "4");
-  await expect(section.getByRole("listitem")).toHaveText(["Fill", "Corner radius"]);
+  await expect(resetFill).toBeVisible();
+  await expect(resetRadius).toBeVisible();
+  await expect(section.getByRole("list")).toHaveCount(0);
 
   // Not changed on its own at every width: the desktop view has no breakpoint to mark.
   await pick(page, desktop(page), "article");
@@ -80,40 +85,37 @@ test("the panel marks the properties the breakpoint changed on its own; reset, t
   await setField(page, "Fill color", "2563eb");
 
   await pick(page, phone(page), "article");
-  await section.getByRole("button", { name: "Reset Fill to inherit" }).click();
+  await resetFill.click();
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([BLUE, BLUE, BLUE]);
-  await expect(section.getByRole("listitem")).toHaveText(["Corner radius"]);
+  await expect(resetFill).toHaveCount(0);
+  await expect(resetRadius).toBeVisible();
   await expect(design(page).getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("2563EB");
 
   // ⌘Z brings the phone's own fill back, as the change it was.
   await page.keyboard.press("Meta+z");
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([BLUE, BLUE, RED]);
-  await expect(section.getByRole("listitem")).toHaveText(["Fill", "Corner radius"]);
+  await expect(resetFill).toBeVisible();
 });
 
-test("in the tablet view, the row of a property the breakpoint changed on its own is marked, and reset there it inherits the desktop view's value; the desktop view marks no row", async ({ page }) => {
+test("in the tablet view, a property the breakpoint changed on its own is marked on its field, and reset there it inherits the desktop view's value; the desktop view marks none", async ({ page }) => {
   await enterEditMode(page);
 
   await pick(page, tablet(page), "article");
-  const fillRow = design(page).getByRole("group", { name: "Fill" });
-  const reset = fillRow.getByRole("button", { name: "Reset Fill to inherit" });
+  const reset = design(page).getByRole("button", { name: "Reset fill" });
   await expect(reset).toHaveCount(0);
   await setField(page, "Fill color", "ff0000");
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, RED, WHITE]);
   await expect(reset).toBeVisible();
-  // The breakpoint's list says the same.
-  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveText(["Fill"]);
 
-  // The desktop view edits every width: no row of it is marked.
+  // The desktop view has no change of its own to mark.
   await pick(page, desktop(page), "article");
-  await expect(design(page).getByRole("button", { name: /to inherit$/ })).toHaveCount(0);
+  await expect(reset).toHaveCount(0);
 
   await pick(page, tablet(page), "article");
   await reset.click();
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, WHITE]);
   await expect(reset).toHaveCount(0);
   await expect(design(page).getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FFFFFF");
-  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("listitem")).toHaveCount(0);
 
   // One undo brings the tablet's own fill back, marked again.
   await page.keyboard.press("Meta+z");
@@ -146,9 +148,8 @@ test("each view stands for the range of the project's Tailwind breakpoints its w
   await expect(custom.contentFrame().locator("article").first()).toHaveCSS("background-color", RED);
   // Told and reset in the other view of the range too.
   await pick(page, custom, "article");
-  const section = design(page).getByRole("region", { name: "Custom breakpoint" });
-  await expect(section.getByRole("listitem")).toHaveText(["Fill"]);
-  await section.getByRole("button", { name: "Reset Fill to inherit" }).click();
+  await expect(design(page).getByRole("region", { name: "Custom breakpoint" })).toBeVisible();
+  await design(page).getByRole("button", { name: "Reset fill" }).click();
   await expect.poll(() => shown(page, "article", "background-color")).toEqual([WHITE, WHITE, WHITE]);
 });
 
@@ -162,8 +163,7 @@ test("a layer hidden at a breakpoint is hidden in that view only, and stays in t
 
   await expect.poll(() => shown(page, hero, "display")).toEqual(["flex", "flex", "none"]);
   await expect(layers(page).getByRole("treeitem", { name: "Button", exact: true })).toBeVisible();
-  await expect(design(page).getByRole("region", { name: "Phone breakpoint" }).getByRole("listitem")).toHaveText(["Visibility"]);
-  await expect(design(page).getByRole("region", { name: "Appearance" }).getByRole("button", { name: "Reset Visibility to inherit" })).toBeVisible();
+  await expect(design(page).getByRole("button", { name: "Reset visible" })).toBeVisible();
 
   // Selected from the tree, it is still the phone view worked in: shown again there.
   await layers(page).getByRole("treeitem", { name: "Button", exact: true }).click();
@@ -251,7 +251,8 @@ test("a view added at 1100px narrows the tablet's range; edited there, the table
   await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, RED]);
 
   await pickCard(page, custom);
-  await expect(design(page).getByRole("region", { name: "Custom breakpoint" }).getByRole("listitem")).toHaveText(["Fill"]);
+  // The tablet's change holds here too: marked on its field.
+  await expect(design(page).getByRole("button", { name: "Reset fill" })).toBeVisible();
   await setField(page, "Fill color", "2563eb");
   await expect.poll(() => fills(desktop(page), tablet(page), custom, phone(page))).toEqual([WHITE, RED, BLUE, WHITE]);
 
@@ -266,12 +267,9 @@ test("reset in a view, a change reaching past the view's range inherits in that 
   const custom = await addView(page, 1100);
 
   await pickCard(page, custom);
-  const section = design(page).getByRole("region", { name: "Custom breakpoint" });
-  // Reset on the Fill row, as in the breakpoint's list.
-  const reset = design(page).getByRole("group", { name: "Fill" }).getByRole("button", { name: "Reset Fill to inherit" });
+  const reset = design(page).getByRole("button", { name: "Reset fill" });
   await reset.click();
   await expect.poll(() => fills(tablet(page), custom)).toEqual([RED, WHITE]);
-  await expect(section.getByRole("listitem")).toHaveCount(0);
   await expect(reset).toHaveCount(0);
 
   await page.keyboard.press("Meta+z");

@@ -12,10 +12,10 @@ import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
 import { createEditor } from "../src/client/edits";
-import { definitionOf, type Fill, type PropertyValues, type Shadow, type Stroke } from "../src/client/property-table";
+import { definitionOf, type Fill, type Property, type PropertyValues, type Shadow, type Stroke } from "../src/client/property-table";
 import { resizeStep, type ResizeSession } from "../src/client/canvas-resize";
 import type { Shown } from "../src/client/view-layout";
-import { breakpointMarks } from "../src/client/BreakpointMark";
+import { changeMarks } from "../src/client/ChangeMarks";
 import { serializeCanvas } from "../src/client/freezer";
 import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { revertSaved } from "../src/client/saved-round";
@@ -5108,6 +5108,12 @@ describe("Variables", () => {
     expect(catalog.named("color", "BRA").map(({ variable }) => variable.name)).toEqual(["brand-500", "brand-600"]);
     expect(catalog.named("color", " dang ").map(({ variable }) => variable.name)).toEqual(["--danger"]);
     expect(catalog.named("spacing", "x")).toEqual([]);
+    // All of a group, the closest first, however far; of two as close, the one listed first; as listed for no value.
+    const closest = (group: Variable["group"], drawn: Parameters<typeof catalog.closest>[1]) => catalog.closest(group, drawn).map(({ variable }) => variable.name);
+    expect(closest("spacing", 30)).toEqual(["gutter", "tight", "4"]);
+    expect(closest("spacing", 21.5)).toEqual(["gutter", "tight", "4"]);
+    expect(closest("spacing", null)).toEqual(["gutter", "4", "tight"]);
+    expect(closest("color", { color: "#3A5FF0", opacity: 1 })).toEqual(["brand-600", "brand-500", "--danger"]);
     expect(catalog.named("radius", "")).toEqual([]);
   });
 
@@ -5747,11 +5753,14 @@ describe("breakpoints", () => {
     expect(fills("board")).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)"]);
   });
 
-  test("a row of the Design panel is marked where the breakpoint worked in changed its properties on their own, for any selected layer; reset, they all inherit, and one undo marks it again", async () => {
-    const { editor, phone, desktop, layer, fills } = await open();
+  test("a field of the Design panel is marked where the breakpoint worked in changed its property on its own, for any selected layer; reset, they all inherit, and one undo marks it again", async () => {
+    const { editor, changes, phone, desktop, layer, fills } = await open();
     const selected = [layer("board"), layer("list")];
     let edited = 0;
-    const marksIn = () => breakpointMarks(editor, selected, () => edited++);
+    const marksIn = () => {
+      const marks = changeMarks(changes.list(), editor, selected, () => edited++);
+      return { changed: (properties: Property[]) => properties.filter((property) => marks.changed(property)), reset: marks.reset };
+    };
 
     editor.at(phone);
     expect(marksIn().changed(["fill", "stroke"])).toEqual([]);
@@ -5773,11 +5782,10 @@ describe("breakpoints", () => {
     expect(marksIn().changed(["fill", "radius"])).toEqual(["fill", "radius"]);
   });
 
-  test("a layer placed from the right, resized in the phone view, its width and its `right` changed there together: reset from its Position row, its size row or the breakpoint's list, both inherit again, so it is back where it was (line review)", async () => {
+  test("a layer placed from the right, resized in the phone view, its width and its `right` changed there together: either reset, both inherit again, so it is back where it was (line review)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value }) as const;
-    const rows = { position: ["x", "y", "absolute", "right", "bottom"], size: ["width"], list: ["right"] } as const;
-    for (const row of Object.values(rows)) {
-      const { editor, phone, layer } = await open(ANCHORED);
+    for (const reset of ["width", "right"] as const) {
+      const { editor, changes, phone, layer } = await open(ANCHORED);
       const right = layer("right");
       const box = () => {
         const el = phone.document.getElementById("right")!;
@@ -5788,10 +5796,7 @@ describe("breakpoints", () => {
       editor.at(phone);
       editor.set(right, "width", fixed(50));
       expect(editor.changesHere(right)).toEqual(["width", "right"]);
-      const marks = breakpointMarks(editor, [right], () => {});
-
-      // What the row's mark resets, as it is clicked.
-      marks.reset(row === rows.list ? [...row] : marks.changed([...row]));
+      changeMarks(changes.list(), editor, [right], () => {}).reset([reset]);
 
       expect(editor.changesHere(right)).toEqual([]);
       phone.document.body.offsetWidth;
