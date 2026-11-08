@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { watchScrolled } from "./panel-scrolled";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
 import { BRIEF_ATTR } from "./canvas-style";
@@ -90,41 +90,6 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     if (box && panel) return watchScrolled(box, panel);
   }, []);
 
-  /*
-   * Long names read in full, as in Figma, but only the names scroll sideways (designer, 2026-11-08): each row's
-   * indent, disclosure and icon stay at the left, so the tree still shows where a layer is. Scrolled sideways over the
-   * list, every name moves by the one offset, each clipped in its own cell; the offset goes as far as the longest
-   * of the names in view needs to show its end, the panel's padding after it. Set on the names themselves, as a
-   * transform: nothing laid out anew.
-   */
-  const nameOffset = useRef(0);
-  const placeNames = () => {
-    const box = list.current;
-    if (!box) return;
-    const transform = nameOffset.current ? `translateX(${-nameOffset.current}px)` : "";
-    for (const name of box.querySelectorAll<HTMLElement>(".tk-tree-name")) name.style.transform = transform;
-  };
-  // Rows rendered anew (opened, closed, renamed): their names where the others are.
-  useLayoutEffect(() => {
-    if (nameOffset.current) placeNames();
-  });
-  useEffect(() => {
-    const box = list.current;
-    if (!box) return;
-    const onWheel = (event: WheelEvent) => {
-      // Sideways: a trackpad's, or a wheel's with Shift. Up and down, the list scrolls as it does.
-      const dx = event.deltaX || (event.shiftKey ? event.deltaY : 0);
-      if (!dx || (event.deltaX && Math.abs(event.deltaX) < Math.abs(event.deltaY))) return;
-      event.preventDefault();
-      const next = Math.round(Math.min(Math.max(nameOffset.current + dx, 0), Math.max(longestOverflow(box), 0)));
-      if (next === nameOffset.current) return;
-      nameOffset.current = next;
-      placeNames();
-    };
-    box.addEventListener("wheel", onWheel, { passive: false });
-    return () => box.removeEventListener("wheel", onWheel);
-  }, []);
-
   /** `past`: the levels whose guides go on down past this row, to a later layer in them. `more`: this layer has a later one in its own. */
   const rows: { layer: Layer; level: number; outside: boolean; past: number[]; more: boolean }[] = [];
   const add = (layer: Layer, level: number, outside: boolean, past: number[], more: boolean) => {
@@ -145,7 +110,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
   };
 
   return (
-    // Long names in full, as in Figma: the names scroll sideways, the tree around them stays (designer, 2026-11-08).
+    // Long names in full, as in Figma: the list scrolls sideways, the tree with the names, its rows as wide as the widest (designer, 2026-11-08).
     <div ref={list} class="tk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
       <div class="tk-tree-rows">
       {rows.map(({ layer, level, outside, past, more }, i) => {
@@ -185,9 +150,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
               {open !== undefined && <Icon name="chevron-down" />}
             </span>
             <LayerIcon layer={layer} />
-            <span class="tk-tree-name-cell">
-              <span class="tk-tree-name">{layer.name}</span>
-            </span>
+            <span class="tk-tree-name">{layer.name}</span>
             {/* A layer the designer wrote a brief for: what the Agent is to achieve in it, or make in a new Frame. */}
             {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
               <span class="tk-tree-brief" title={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
@@ -200,23 +163,6 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
       </div>
     </div>
   );
-}
-
-/** The panel's padding after a name scrolled to its end (designer, 2026-11-08). */
-const NAME_END_ROOM = 16;
-
-/** How far the longest name among the rows in view runs past its cell, with the room after it: the names' offset at most. */
-function longestOverflow(box: HTMLElement): number {
-  const top = box.scrollTop;
-  const bottom = top + box.clientHeight;
-  let most = 0;
-  for (const cell of box.querySelectorAll<HTMLElement>(".tk-tree-name-cell")) {
-    const row = cell.parentElement!;
-    if (row.offsetTop + row.offsetHeight < top || row.offsetTop > bottom) continue;
-    const name = cell.firstElementChild as HTMLElement;
-    most = Math.max(most, name.offsetWidth + NAME_END_ROOM - cell.clientWidth);
-  }
-  return most;
 }
 
 /** Opens level after level while the rows fit; everything from the first level that does not fit stays closed. */

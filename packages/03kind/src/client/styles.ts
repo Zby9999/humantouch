@@ -546,19 +546,20 @@ export const styles = /* css */ `
 /*
  * The list, not the panel, scrolls up and down, under the panel's top, which stays as the Design panel's does: the
  * list starts right under the header's line, its padding in the gap, so rows scroll up under the line, not 16px short
- * of it (designer, 2026-11-08). Long names in full, as in Figma, but only the names scroll sideways, each clipped in
- * its cell to the panel's edge; the indents, disclosures and icons stay (designer, 2026-11-08; LayerTreeView).
+ * of it (designer, 2026-11-08). Long names in full, as in Figma: the list scrolls sideways, the tree with the names,
+ * its rows as wide as the widest, the panel's padding after it (designer, 2026-11-08).
  */
 .tk-panel.is-layers { overflow: hidden; }
 .tk-panel.is-layers > .tk-tree { flex: 1 1 auto; min-height: 0; }
-.tk-tree { position: relative; margin: -16px -16px -16px; padding: 16px 0; overflow: hidden auto; overscroll-behavior: contain; }
-.tk-tree-rows { display: flex; flex-direction: column; gap: 2px; }
+.tk-tree { position: relative; margin: -16px -16px -16px; padding: 16px 0; overflow: auto; overscroll-behavior: contain; }
+.tk-tree-rows { display: flex; flex-direction: column; gap: 2px; width: max-content; min-width: 100%; }
 .tk-tree-row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   height: 28px;
+  padding-right: 16px;
   white-space: nowrap;
   cursor: default;
   user-select: none;
@@ -572,9 +573,8 @@ export const styles = /* css */ `
 /* An instance's icons purple; its disclosure as every other row's (designer, 2026-11-08). */
 .tk-tree-row.is-instance .tk-icon:not(.tk-tree-chevron > .tk-icon) { color: var(--tk-instance); }
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
-.tk-tree-name-cell { flex: 1 1 auto; min-width: 0; overflow: hidden; }
-.tk-tree-name { display: inline-block; vertical-align: top; }
-.tk-tree-brief { display: flex; margin-right: 16px; color: var(--tk-text-muted); }
+.tk-tree-name { flex: none; }
+.tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }
 .tk-tree-chevron { position: relative; z-index: 1; display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 .tk-tree-chevron[data-open] { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
 .tk-tree-chevron[data-open="false"] .tk-icon { rotate: -90deg; }
@@ -689,9 +689,9 @@ export const styles = /* css */ `
   border-radius: 6px;
   color: inherit;
 }
-/* In a changed field, 26px on blue 400, 2px in from its end (designer, 2026-11-08). */
-.tk-field.is-changed .tk-reset:not(.tk-popover *), .tk-select-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); }
-.tk-field.is-changed .tk-reset:not(.tk-popover *):hover, .tk-select-field > .tk-reset:hover { background: var(--tk-accent-strong); }
+/* In a changed field, 26px, 2px in from its end, on the field's own blue; pointed at, on blue 400 (designer, 2026-11-08). */
+.tk-field.is-changed .tk-reset:not(.tk-popover *), .tk-select-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent); }
+.tk-field.is-changed .tk-reset:not(.tk-popover *):hover, .tk-select-field > .tk-reset:hover { background: var(--tk-accent-on); }
 /* At the field's right end, after a gradient's name too. */
 .tk-color-field > .tk-reset { margin-left: auto; }
 /* A Variable's name, a gradient's, and their buttons, in a changed field: light on the accent too. */
@@ -1074,8 +1074,8 @@ export const styles = /* css */ `
 /* Clicked, the accent at once, the click answered; taken back (its reset, undo), it eases back to the track's grey, as a check does. */
 .tk-segmented-field, .tk-segmented-field .tk-icon-button { transition: background-color ${FIELD_STATE_MS}ms ${EASE_OUT}, color ${FIELD_STATE_MS}ms ${EASE_OUT}; }
 .tk-segmented-field.is-changed, .tk-segmented-field.is-changed .tk-icon-button { transition: none; }
-.tk-segmented-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
-.tk-segmented-field > .tk-reset:hover { background: var(--tk-accent-strong); }
+.tk-segmented-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent); color: #fafafa; }
+.tk-segmented-field > .tk-reset:hover { background: var(--tk-accent-on); }
 /*
  * The reset coming: from 90% at its left, where it grows out of the buttons, and transparent; going: it fades where it is. Changed by a key,
  * it is there at once; with reduced motion, it only fades (designer, 2026-11-08).

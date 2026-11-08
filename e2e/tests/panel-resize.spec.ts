@@ -214,7 +214,7 @@ test("focused, an edge moves with the arrow keys: 8px, 32px with Shift", async (
   await expect.poll(() => width(page, "Design")).toBe(320);
 });
 
-test("a long name shows in full: only the names scroll sideways, the tree's indents and icons stay at the left (designer, 2026-11-08)", async ({ page }) => {
+test("a long name shows in full: the Layers scroll sideways, the tree with the names, under their still top (designer, 2026-11-08)", async ({ page }) => {
   const name = "A very long paragraph whose layer name runs well past the Layers panel's edge";
   await page.evaluate((name) => {
     const box = document.createElement("section");
@@ -227,49 +227,37 @@ test("a long name shows in full: only the names scroll sideways, the tree's inde
   await row.scrollIntoViewIfNeeded();
   await expect(row.locator(".tk-tree-name")).toHaveText(name);
 
-  // The list itself doesn't scroll sideways: its rows are as wide as it, so hovering one shades it across the panel.
-  expect(await tree.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
-  const client = await tree.evaluate((el) => el.clientWidth);
+  const { scroll, client } = await tree.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(scroll).toBeGreaterThan(client);
+  // Every row as wide as the widest, so hovering one shades it all the way across.
   const rowWidths = await tree.getByRole("treeitem").evaluateAll((rows) => [...new Set(rows.map((row) => (row as HTMLElement).offsetWidth))]);
-  expect(rowWidths).toEqual([client]);
+  expect(rowWidths).toEqual([scroll]);
 
-  /** Where a row's parts are, in the window: its disclosure, its icon, its name's start and end, and its name's cell's right. */
+  /** Where a row's parts are, in the window: its disclosure, its icon, and its name's start and end. */
   const parts = (locator: typeof row) =>
     locator.evaluate((el) => {
       const left = (selector: string) => Math.round(el.querySelector(selector)!.getBoundingClientRect().left);
       const name = el.querySelector(".tk-tree-name")!.getBoundingClientRect();
-      return {
-        chevron: left(".tk-tree-chevron"),
-        icon: left(".tk-tree-chevron + *"),
-        start: Math.round(name.left),
-        end: Math.round(name.right),
-        cellRight: Math.round(el.querySelector(".tk-tree-name-cell")!.getBoundingClientRect().right),
-      };
+      return { chevron: left(".tk-tree-chevron"), icon: left(".tk-tree-chevron + *"), start: Math.round(name.left), end: Math.round(name.right) };
     });
   const before = await parts(row);
   const header = layers(page).locator(".tk-panel-header");
   const headerBefore = await header.boundingBox();
-  const panel = (await layers(page).boundingBox())!;
-  // The name runs past the panel, clipped in its cell at the panel's edge.
-  expect(before.end).toBeGreaterThan(panel.x + panel.width);
-  expect(before.cellRight).toBe(Math.round(panel.x + panel.width));
 
   // Sideways over the list, as a trackpad does, far past the end.
   const treeBox = (await tree.boundingBox())!;
   await page.mouse.move(treeBox.x + treeBox.width / 2, treeBox.y + 60);
   for (let i = 0; i < 8; i++) await page.mouse.wheel(200, 0);
-  await expect.poll(async () => (await parts(row)).start).toBeLessThan(before.start);
+  await expect.poll(() => tree.evaluate((el) => el.scrollLeft)).toBe(scroll - client);
   const after = await parts(row);
-  // The tree stays: its disclosure and icon where they were.
-  expect({ chevron: after.chevron, icon: after.icon }).toEqual({ chevron: before.chevron, icon: before.icon });
-  // The name's end now shows, the panel's padding after it, and no further: the longest name sets how far.
-  expect(after.end).toBe(Math.round(panel.x + panel.width) - 16);
-  // Every name moved as far.
-  const shifts = await tree.locator(".tk-tree-name").evaluateAll((names) => [...new Set(names.map((name) => (name as HTMLElement).style.transform))]);
-  expect(shifts).toEqual([`translateX(${after.end - before.end}px)`]);
-  // Up and down is the list's own: the panel's top stays put, and the list hasn't scrolled sideways.
+  // The tree and the name moved as one.
+  const moved = after.start - before.start;
+  expect(moved).toBeLessThan(0);
+  expect({ chevron: after.chevron - before.chevron, icon: after.icon - before.icon }).toEqual({ chevron: moved, icon: moved });
+  // The name's end now shows, the panel's padding after it.
+  expect(after.end).toBe(Math.round(treeBox.x + client) - 16);
+  // The top stays put.
   expect(await header.boundingBox()).toEqual(headerBefore);
-  expect(await tree.evaluate((el) => el.scrollLeft)).toBe(0);
 
   // Hovered, a row is shaded across the panel.
   const box = await steadyBox(row);

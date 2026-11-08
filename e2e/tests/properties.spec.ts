@@ -957,6 +957,11 @@ test("a number dragged is marked changed once let go, not while held; typed, at 
   await page.mouse.up();
   await expect(field).toHaveClass(/\bis-changed\b/);
   await expect(reset).toBeVisible();
+  // Its reset on the field's own blue; pointed at, the lighter blue 400 (designer, 2026-11-08).
+  await expect(field).toHaveCSS("background-color", "rgb(0, 143, 240)");
+  await expect(reset).toHaveCSS("background-color", "rgb(0, 143, 240)");
+  await reset.hover();
+  await expect(reset).toHaveCSS("background-color", "rgb(63, 165, 254)");
 
   // Taken back, then typed: the accent at once, with no easing.
   await reset.click();
