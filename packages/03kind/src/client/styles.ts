@@ -21,8 +21,8 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 .tk-dock[data-corner^="bottom"] .tk-progress { top: auto; bottom: 0; }
-/* A rounded square 2px out from the toggle, its corners 2px rounder than the toggle's (designer, 2026-11-08); its line 1px (designer, 2026-11-09). */
-.tk-progress rect { x: 2px; y: 2px; width: 32px; height: 32px; rx: 8px; fill: none; stroke-width: 1; stroke-dasharray: 1; }
+/* Its 1.5px line right round the toggle, nothing between, its corners round the toggle's 6px (designer, 2026-11-09). */
+.tk-progress rect { x: 3.25px; y: 3.25px; width: 29.5px; height: 29.5px; rx: 6.75px; fill: none; stroke-width: 1.5; stroke-dasharray: 1; }
 .tk-progress-track { stroke: rgb(30 30 30 / 0.16); }
 .tk-progress-done {
   stroke: #0d99ff;
