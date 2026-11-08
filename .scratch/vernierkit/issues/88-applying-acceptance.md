@@ -356,3 +356,34 @@ pi 34 次，除了 1 次撤销，都不改项目里的文件（跑构建工具�
 - 页面核对：88 里 pi 在 next-server-usage-text 被读错元素（99 修的）；复验里中途 `done` 说没显示的只有 next-server-usage-text run-2（填色起初没生效）和 dissolve-place-frame run-3（起初去掉了 margin，`done` 照 100 的说法指出来），都是 Agent 先写错、`done` 说对了。最后的核对结果和 88 一样：180 条显示，27 条照原因不核对。
 - **虚假的 ✓**：`phone-breakpoints` run-3 第 1 条（手机断点上循环里三张卡片填红，768 及以上四张都是白）。pi 给 Card 加了 `fillClassName` 参数、默认 `bg-white`，在使用处传 `fillClassName="max-md:bg-[#FF0000]"`，把默认的 `bg-white` 整个换掉了：768 以下是红的，768 及以上卡片没有填色（透明），不是白。`done` 说「shows the change」，pi 列在 ✓ 下。原因在页面核对：断点改动只在它的范围里的宽度核对（`check.ts` 的 `widthsOf`），范围外的宽度该保持原样，没看。不是 97–101 带来的，88 里没碰上。
 - 设计师定：为这条虚假的 ✓ 开 ticket 104（断点上的改动也核对范围外的宽度），发布前修。ticket 103 放到发布以后（复验里页面核对没有读错元素）。Skill 第 2 步那一句等 Claude 一侧跑完再定。
+
+### 复验结果：Claude 一侧（2026-11-09，规划会话）
+
+设计师 2026-11-09：「claude的额度可以用了，跑sonnet med」。在 main 639a757（97–101、104 和调前端第 1 轮都在；第 1 轮之后 24 个场景的改动说明和 2d371c0 逐字一样，`--claim-out` 对比过）上跑 `TK_BENCH_PORT=5620 pnpm bench:agents --agents claude --runs 2`（claude-sonnet-5-5，`--effort medium`），北京时间 03:28–03:48，48 次；两次不一样的只有 third-party（报告一次 ✓ 一次 ✗），补第 3 次（`--out … --first-run 3`），共 49 次，没有出错、超时。开跑时负载约 2（设计师在休息，没有别的线在跑）。原始记录在主检出的 `bench-results/agents/2026-11-08T19-28-52-618Z/`（git 忽略）。和 88 的 Claude（`88-real`，50 次）比，数从两份 `measures.json` 算：
+
+| 指标 | 标准 | 88 | 复验 |
+|---|---|---|---|
+| 1:1 落地率（按 `done` 的核对） | ≥ 95% | 98%（122/124） | 100%（121/121） |
+| 1:1 落地率（按结束时页面上的预期） | ≥ 95% | 99%（141/142） | 100%（137/137） |
+| 虚假的 ✓ | 0 | 1 | **0** |
+| 每条改动的工具调用，含被拦的（合计） | ≤ 3 | 3.08 | 2.98 |
+| 同上，不含被拦的 | ≤ 3 | 2.80 | 2.70 |
+| 全仓搜索 | 0 | 15 次，9 次跑里 | 7 次，5 次跑里 |
+| 读 `node_modules/03kind` | | 0 | 0 |
+| 被权限拦下的调用 | 单列 | 43 次 | 43 次 |
+| 读入字数（全部工具输出）中位 / 最多 | 基线 | 12914 / 19247 | 12965 / 18231 |
+| Agent 总用时中位 | 基线 | 26.1 秒 | 19.5 秒 |
+| 一轮 `claim`→`finish` 中位（每条） | 基线 | 16.06 秒（5.5） | 11.52 秒（4.17） |
+| 报告格式合规 | | 94%（45/48） | 98%（46/47） |
+| 落地不了 1:1 的改动报得对 | | 100%（2/2） | 67%（2/3） |
+| 设计变量使用率、跑了 `done` / `finish`、场景整体预期 | | 都 100% | 都 100% |
+
+- 88 里那条虚假的 ✓（dissolve-place-frame 去掉了 margin，100 修的）这次没有再出现；88 里同一条列两次的 3 次报告问题（dissolve-place-frame、put-back-and-new-text）也没有了。
+- **third-party run-2**：acme-ui 的 Badge 不收 class、style，按场景应留在 ⚠️ 下报告。Claude 没改第三方代码，而是在使用处包了一层 `<span className="contents [&>span]:w-[90px] [&>span]:shrink-0">`，用后代选择器把宽度写到 Badge 里面那个 span 上，页面上确实变成 90px，报告列在 ✓ 下（同一条还在 ⚠️ 下列了一次，所以格式也算不合规）。写法规则只说「Never change third-party code」，没说不能从外面伸进第三方组件的元素里改；这种写法依赖组件库内部怎么画，库一升级就可能失效。run-1、run-3 照预期报在 ⚠️ 下。
+- 剩下的 7 次全仓搜索都是有目标的查找：查 Card、Surface、Badge 别的使用处（phone-breakpoints run-2 两次、third-party 三次跑各一两次），查一个设计变量 `brand-50` 在哪定义（r18-phone-and-stack run-1）。不是找不到位置乱搜。pi 复验是 19 次、15 次跑里。
+- 拦下的 43 次照 88 的口径（`sed -i` 等被名单拦下后改用别的写法），每次跑中位 1 次，和 88 一样。
+
+#### 待设计师定（规划会话的建议）
+
+1. **Skill 第 2 步那一句加不加**（101 分诊时留到这里定：「The notes name the file and line of each change: read those, and search the project only where a section says the layer is not located.」）：建议**不加**。Claude 剩下的全仓搜索是在查其他使用处、变量定义，属于落地前的核实，这句话会把这些也劝掉；pi 从 46 次降到 19 次、Claude 从 15 次降到 7 次，靠的是 101 让 `claim` 写明位置，Skill 不用再加。
+2. **第三方组件**：建议在写法规则「Never change third-party code」后面补半句，例如「nor reach into its elements from the usage (a wrapper with descendant selectors such as `[&>span]:…`, a global rule on its class names): it depends on how the library draws them, and a change that needs it is left out and reported」。只有含第三方组件的改动说明会变；改了以后用真实 Agent 只重跑 third-party 一个场景（Claude 3 次、pi 3 次，约 5 分钟）。也可以不改，把它当作 Agent 的合理变通。
