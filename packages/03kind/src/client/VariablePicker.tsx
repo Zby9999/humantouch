@@ -9,7 +9,7 @@ import { Icon } from "./icons";
 import { cssColor, type Color } from "./paint";
 import type { Property } from "./property-table";
 import { equal, sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
-import { palette, paletteLines } from "./VariantsPanel";
+import { palette, paletteLines, Tip } from "./VariantsPanel";
 
 /** How many named colors a row of the picker's palette holds: as many as Tailwind's steps, as before. */
 const NAMED_ROW = 11;
@@ -194,6 +194,9 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
   useEffect(() => search.current?.focus(), []);
   const found = !catalog ? [] : query.trim() ? catalog.named(group, query) : catalog.of(group);
   const headings = [...new Set(found.map(({ variable }) => headingOf(variable)))];
+  /** The palette's swatch pointed at or focused: its name and value in the Variants tab's dark tip, not the browser's (designer, 2026-11-08). */
+  const [pointed, setPointed] = useState<{ entry: Resolved; at: DOMRect } | null>(null);
+  const point = (entry: Resolved, swatch: HTMLElement) => setPointed({ entry, at: swatch.getBoundingClientRect() });
   return (
     <>
       <input
@@ -228,8 +231,11 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
                               class="tk-variants-swatch"
                               aria-selected={sameVariable(bound, entry.variable)}
                               aria-label={entry.variable.name}
-                              title={`${entry.variable.name}: ${valueText(entry.drawn)}`}
                               style={{ "--tk-swatch": cssColor(entry.drawn as Color) }}
+                              onPointerEnter={(event) => point(entry, event.currentTarget)}
+                              onPointerLeave={() => setPointed(null)}
+                              onFocus={(event) => point(entry, event.currentTarget)}
+                              onBlur={() => setPointed(null)}
                               onClick={() => onPick(entry)}
                             />
                           ) : (
@@ -255,6 +261,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
           </div>
             ))}
       </div>
+      {pointed && <Tip entry={pointed.entry} at={pointed.at} hint={undefined} inUse={sameVariable(bound, pointed.entry.variable)} />}
     </>
   );
 }

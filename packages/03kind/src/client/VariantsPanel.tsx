@@ -402,8 +402,8 @@ function Palette({ entries, item }: { entries: Resolved[]; item: Item }) {
   );
 }
 
-/** Over the Variable pointed at: its name and value, and what clicking it does. */
-function Tip({ entry, at, hint, inUse }: { entry: Resolved; at: DOMRect; hint: string | undefined; inUse: boolean }) {
+/** Over the Variable pointed at: its name and value, and what clicking it does. The color picker's palette shows it too (designer, 2026-11-08). */
+export function Tip({ entry, at, hint, inUse }: { entry: Resolved; at: DOMRect; hint: string | undefined; inUse: boolean }) {
   return (
     <div class="tk-variants-tip" role="tooltip" style={{ left: `${at.left + at.width / 2}px`, top: `${at.top - 4}px` }}>
       <span>

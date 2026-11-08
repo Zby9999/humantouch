@@ -60,7 +60,17 @@ test("the color picker's Variables tab shows the project's colors first, as a pa
   for (const name of ["brand-500", "ink", "muted"]) await expect(groups.first().getByRole("option", { name, exact: true })).toBeVisible();
   await expect(groups.nth(1)).toHaveAccessibleName("Tailwind");
   await expect(groups.nth(1).getByRole("option", { name: "red-500" })).toBeVisible();
-  await expect(picker.getByRole("option", { name: "ink", exact: true })).toHaveAttribute("title", "ink: #1B1D2A");
+  // Pointed at, a swatch tells its name and value in the Variants tab's dark tip, not the browser's (designer, 2026-11-08).
+  const ink = picker.getByRole("option", { name: "ink", exact: true });
+  await expect(ink).not.toHaveAttribute("title");
+  await ink.hover();
+  const tip = page.getByRole("tooltip");
+  await expect(tip).toHaveText("ink #1B1D2A");
+  await expect(tip).toHaveCSS("background-color", "rgb(23, 23, 22)");
+  const [swatchBox, tipBox] = [await ink.boundingBox(), await tip.boundingBox()];
+  expect(tipBox!.y + tipBox!.height).toBeLessThanOrEqual(swatchBox!.y);
+  await picker.getByRole("searchbox", { name: "Search variables" }).hover();
+  await expect(tip).toBeHidden();
   await expect(picker.getByRole("option", { name: "brand-500" })).toHaveCSS("background-color", "rgb(61, 99, 245)");
 
   await picker.getByRole("searchbox", { name: "Search variables" }).fill("brand-5");
