@@ -102,7 +102,7 @@ export const TIP_GRACE_MS = 300;
 
 /**
  * A level closed in the Layers (designer, 2026-11-08): its rows go `LAYERS_FOLD_RISE_PX` up and fade over
- * `LAYERS_FOLD_MS`, however many they are, over the rows after, which are in their places at once. With reduced
+ * `LAYERS_FOLD_MS`, however many they are, while the rows after rise into their places with them. With reduced
  * motion it closes at once.
  */
 export const LAYERS_FOLD_MS = 200;

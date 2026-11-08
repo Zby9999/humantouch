@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { watchScrolled } from "./panel-scrolled";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
 import { BRIEF_ATTR } from "./canvas-style";
@@ -108,10 +108,12 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
   const canvasStart = rows.length;
   for (const layer of tree.root.children) add(layer, 1, false, [], false);
 
-  /** The fold under way: its rows' copies and their motion, finished at once as another level opens or closes. */
-  const folding = useRef<{ copies: HTMLElement; motion: Animation } | null>(null);
+  /** The fold under way: its rows' copies and the motion, finished at once as another level opens or closes. */
+  const folding = useRef<{ copies: HTMLElement; motion: Animation[] } | null>(null);
+  /** A level just closed: the row it is, how many rows went with it, and where every row was, for the rows after to rise from. */
+  const fold = useRef<{ at: number; hidden: number; tops: number[] } | null>(null);
   const settleFold = () => {
-    folding.current?.motion.finish();
+    folding.current?.motion.forEach((animation) => animation.finish());
     folding.current?.copies.remove();
     folding.current = null;
   };
@@ -125,8 +127,9 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     setCollapsed(next);
   };
   /**
-   * Row `at` closed (designer, 2026-11-08): its rows, copied as they are over the rows coming up into their place,
-   * go a little way up and fade, however many they are; the rows after are in their places at once, under them.
+   * Row `at` closed (designer, 2026-11-08): its rows, copied as they are, go a little way up and fade, however many
+   * they are, while the rows after rise from where they were into their places, in step (`useLayoutEffect`); the
+   * copies show only above them, clipped at their foot as they come, so the two never cross.
    */
   const foldUp = (at: number) => {
     const box = list.current;
@@ -134,7 +137,8 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     let hidden = 0;
     while (rows[at + 1 + hidden] && rows[at + 1 + hidden].level > rows[at].level) hidden++;
     if (!box || !shown || !hidden) return;
-    const els = [...shown].slice(at + 1, at + 1 + hidden) as HTMLElement[];
+    const all = [...shown] as HTMLElement[];
+    const els = all.slice(at + 1, at + 1 + hidden);
     const first = els[0];
     const last = els[hidden - 1];
     const copies = document.createElement("div");
@@ -152,11 +156,27 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     }
     box.append(copies);
     const timing = { duration: LAYERS_FOLD_MS, easing: EASE_OUT };
-    inner.animate([{ transform: "none" }, { transform: `translateY(${-LAYERS_FOLD_RISE_PX}px)` }], timing);
-    const motion = copies.animate([{ opacity: 1 }, { opacity: 0 }], { ...timing, fill: "forwards" });
-    motion.onfinish = () => copies.remove();
-    folding.current = { copies, motion };
+    const rise = inner.animate([{ transform: "none", opacity: 1 }, { transform: `translateY(${-LAYERS_FOLD_RISE_PX}px)`, opacity: 0 }], { ...timing, fill: "forwards" });
+    const clip = copies.animate([{ clipPath: "inset(0 0 0 0)" }, { clipPath: "inset(0 0 100% 0)" }], { ...timing, fill: "forwards" });
+    clip.onfinish = () => copies.remove();
+    folding.current = { copies, motion: [rise, clip] };
+    fold.current = { at, hidden, tops: all.map((el) => el.getBoundingClientRect().top) };
   };
+  // The rows after a level closed rise from where they were, those in view, in step with its rows' copies: a row now `i` was `i + hidden`.
+  useLayoutEffect(() => {
+    const was = fold.current;
+    const box = list.current;
+    fold.current = null;
+    if (!was || !box || !folding.current) return;
+    const bottom = box.getBoundingClientRect().bottom;
+    const shown = [...(box.querySelector(".tk-tree-rows")?.children ?? [])] as HTMLElement[];
+    for (let i = was.at + 1; i < shown.length; i++) {
+      const top = shown[i].getBoundingClientRect().top;
+      if (top > bottom) break;
+      const from = was.tops[i + was.hidden] - top;
+      if (from) folding.current.motion.push(shown[i].animate([{ transform: `translateY(${from}px)` }, { transform: "none" }], { duration: LAYERS_FOLD_MS, easing: EASE_OUT }));
+    }
+  });
 
   return (
     // Long names in full, as in Figma: the list scrolls sideways, the tree with the names, its rows as wide as the widest (designer, 2026-11-08).

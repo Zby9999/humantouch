@@ -312,7 +312,7 @@ test("after edits in the Design panel, the layer around the one selected closes 
   await expect(grid).toHaveAttribute("aria-expanded", "true");
 });
 
-test("a level closed folds up: its rows go a little way up and fade over the rows after, in their places at once; with reduced motion, at once (designer, 2026-11-08)", async ({ page }) => {
+test("a level closed folds up: its rows go a little way up and fade as the rows after rise into their places with them; with reduced motion, at once (designer, 2026-11-08)", async ({ page }) => {
   // Motion on: the tests run with reduced motion.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await enterEditMode(page);
@@ -328,12 +328,12 @@ test("a level closed folds up: its rows go a little way up and fade over the row
   await expect(fold).toHaveAttribute("aria-hidden", "true");
   await expect(fold.locator(".tk-tree-row")).not.toHaveCount(0);
   await expect(fold.locator('[role="treeitem"]')).toHaveCount(0);
-  // The copies going up 8px and fading, however many; the row after in its place, still.
+  // The copies going up 8px and fading, however many, shown only above the rows rising after them; the row after rising from where it was.
   const keyframes = await fold.evaluate((el) =>
-    el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.opacity)),
+    el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
   );
-  expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["1", "0"]]));
-  expect(await next.evaluate((el) => el.getAnimations().length)).toBe(0);
+  expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
+  expect(await next.evaluate((el) => el.getAnimations().length)).toBe(1);
   // Then gone.
   await expect(fold).toHaveCount(0);
 
