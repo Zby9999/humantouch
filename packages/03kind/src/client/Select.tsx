@@ -212,9 +212,10 @@ export interface MenuItem {
   preview?: ComponentChildren;
   heading?: string;
   /**
-   * 1: in a second column, to the right of the others, in the same menu: the
-   * shadow Variables beside the effect types, so the menu is not one tall
-   * strip (designer, 2026-11-08). With no such item, or only such items, one column.
+   * 1: in a second panel, to the left of the others: the shadow Variables
+   * beside the effect types, which stay nearer the button, so the menu is not
+   * one tall strip (designer, 2026-11-08). With no such item, or only such
+   * items, one panel.
    */
   column?: 1;
 }
@@ -224,7 +225,7 @@ export interface MenuItem {
  * select's, and right-aligned with it: Effects' + (designer, 2026-11-05).
  * The menu is in a dialog of its own, so no shortcut of the canvas takes its
  * keys: ↑ / ↓ to move, Enter to choose, Esc to close; a press elsewhere closes it.
- * With items in a second column, ↑ / ↓ keep to a column and ← / → go across (designer, 2026-11-08).
+ * With items in a second panel, ↑ / ↓ keep to a panel and ← / → go across (designer, 2026-11-08).
  */
 export function MenuButton({ label, icon, items, onChoose, class: className }: { label: string; icon: IconName; items: MenuItem[]; onChoose(value: string): void; class?: string }) {
   const [open, setOpen] = useState<HTMLButtonElement | null>(null);
@@ -308,7 +309,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
       if (root !== document) root.removeEventListener("pointerdown", away, true);
     };
   }, [anchor, onClose, leaving]);
-  /** Two columns when some items, and not all, are in the second (designer, 2026-11-08). */
+  /** Two panels, as columns of the one list, when some items, and not all, are in the second, at the left (designer, 2026-11-08). */
   const columns = items.some((item) => item.column === 1) && items.some((item) => item.column !== 1);
   const columnOf = (i: number) => (columns ? (items[i]?.column ?? 0) : 0);
   /** Where item `i` is in its column. */
@@ -342,7 +343,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
       key === "ArrowDown" || key === "ArrowUp" ? step(active, key === "ArrowDown" ? 1 : -1)
       : key === "Home" ? step(-1, 1)
       : key === "End" ? step(items.length, -1)
-      : across(active, key === "ArrowRight" ? 1 : 0);
+      : across(active, key === "ArrowLeft" ? 1 : 0);
     setActive(next);
     // A column scrolls on its own: the item moved to is brought into it.
     list.current!.querySelector(`[data-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
@@ -376,7 +377,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
   return (
     <div
       ref={box}
-      class={leaving ? "tk-menu is-plain is-leaving" : "tk-menu is-plain"}
+      class={`tk-menu is-plain${columns ? " is-split" : ""}${leaving ? " is-leaving" : ""}`}
       role="dialog"
       {...leavingProps(leaving)}
       aria-label={label}
@@ -392,7 +393,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
         onKeyDown={onKeyDown}
       >
         {columns
-          ? [0, 1].map((column) => (
+          ? [1, 0].map((column) => (
               <div key={column} class="tk-menu-column" role="presentation">
                 {items.map((item, i) => columnOf(i) === column && option(item, i))}
               </div>

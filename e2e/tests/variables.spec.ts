@@ -137,38 +137,42 @@ test("a field focused lists its group's Variables, the closest to its value firs
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("14");
 });
 
-test("the menu of Effects' + has the effect types in one column and the shadow Variables in another to their right, tops aligned, wholly in the window; ← / → move between them", async ({ page }) => {
+test("the menu of Effects' + is two panels: the effect types nearer the button, the shadow Variables in another to their left, tops aligned, wholly in the window; ← / → move between them (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
-  await design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" }).click();
+  const add = design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" });
+  await add.click();
   const menu = page.getByRole("dialog", { name: "Add effect" });
-  const [types, variables] = [menu.locator(".tk-menu-column").nth(0), menu.locator(".tk-menu-column").nth(1)];
+  const [variables, types] = [menu.locator(".tk-menu-column").nth(0), menu.locator(".tk-menu-column").nth(1)];
   await expect(types.getByRole("option")).toHaveText(["Drop shadow", "Inner shadow", "Layer blur", "Background blur"]);
   await expect(variables.locator(".tk-menu-heading")).toHaveText("Variables");
   await expect(variables.getByRole("option", { name: "md", exact: true })).toBeVisible();
 
-  const left = await steadyBox(types);
-  const right = await steadyBox(variables);
-  expect(right.x).toBeGreaterThanOrEqual(left.x + left.width);
+  // Two panels, each its own white card, 8px apart, the menu itself none; the types' right edge at the button's.
+  const left = await steadyBox(variables);
+  const right = await steadyBox(types);
+  expect(Math.round(right.x - (left.x + left.width))).toBe(8);
   expect(Math.abs(right.y - left.y)).toBeLessThan(1);
+  await expect(menu).toHaveCSS("box-shadow", "none");
+  await expect(types).not.toHaveCSS("box-shadow", "none");
+  await expect(variables).not.toHaveCSS("box-shadow", "none");
+  const button = await steadyBox(add);
+  expect(Math.round(right.x + right.width)).toBe(Math.round(button.x + button.width));
   const box = await steadyBox(menu);
   const window = page.viewportSize()!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(window.width);
   expect(box.y + box.height).toBeLessThanOrEqual(window.height);
-  // Not past the panel's right edge: it opens toward the left, over the canvas.
-  const panel = await steadyBox(design(page));
-  expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width);
 
-  // ↑ / ↓ keep to a column, ← / → go across at the nearest row, Esc closes.
+  // ↑ / ↓ keep to a panel, ← / → go across at the nearest row, Esc closes.
   const active = menu.locator(".tk-menu-option.is-active");
   await expect(active).toHaveText("Drop shadow");
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft");
   await expect(active).toHaveText(await variables.getByRole("option").first().innerText());
   await page.keyboard.press("ArrowDown");
   await expect(active).toHaveText(await variables.getByRole("option").nth(1).innerText());
-  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowRight");
   await expect(active).toHaveText("Inner shadow");
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
