@@ -138,3 +138,54 @@ test("the change list too long for the window: its title and Discard all stay, t
   await expect(rows).not.toHaveClass(/is-below/);
   await expect(rows).toHaveCSS("mask-image", /linear-gradient/);
 });
+
+/**
+ * As the Agent applies the round, the change list opens by itself, taking no focus; the change it is at darker, turning at its
+ * right; each applied goes back and fades where it was, those after it rising into its place (designer, 2026-11-09).
+ */
+test("the round claimed, the change list opens by itself, the change the Agent is at marked; each applied leaves it", async ({ page, context }) => {
+  await page.goto(DEV_URL);
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await canvasInPlace(page);
+  const design = page.getByRole("complementary", { name: "Design" });
+  for (const [layer, color] of [["Button", "2563eb"], ["Card", "fef3c7"]] as const) {
+    await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: layer, exact: true }).first().click();
+    const fill = design.getByRole("textbox", { name: "Fill color", exact: true });
+    await fill.fill(color);
+    await fill.press("Enter");
+  }
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveText("2");
+  const list = page.getByRole("dialog", { name: "Changes" });
+  await expect(list).toHaveCount(0);
+
+  // The local service, as the Agent claims the round and applies its first change; the round as the page saved it.
+  let applied: number[] = [];
+  let claimed = false;
+  await context.route(
+    (url) => url.hostname === "127.0.0.1" && ["/events", "/status"].includes(url.pathname),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type" },
+        contentType: route.request().url().endsWith("/events") ? "application/x-ndjson" : "application/json",
+        body: `${JSON.stringify(claimed ? { status: "claimed", done: applied, applied } : { status: "editing" })}\n`,
+      }),
+  );
+  claimed = true;
+  await expect(list).toBeVisible();
+  expect(await list.evaluate((el) => el.matches(":focus-within"))).toBe(false);
+  const rows = list.getByRole("listitem");
+  await expect(rows).toHaveText([/Fill · Button/, /Fill · Card/]);
+  await expect(rows.first()).toHaveAttribute("aria-current", "step");
+  await expect(rows.first()).toHaveClass(/is-current/);
+  await expect(rows.first().locator(".tk-change-spinner")).toBeVisible();
+  await expect(rows.nth(1).locator(".tk-change-spinner")).toHaveCount(0);
+
+  // The round's changes are numbered from 1, in the order made.
+  applied = [1];
+  // Gone from the list; its row going back and fading where it was, out of the way of the rows.
+  await expect(rows).toHaveText([/Fill · Card/]);
+  await expect(rows.first()).toHaveAttribute("aria-current", "step");
+  await expect(list.locator(".tk-change.is-applied")).toHaveCount(0);
+});

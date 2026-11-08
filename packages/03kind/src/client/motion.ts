@@ -102,3 +102,12 @@ export const TIP_GRACE_MS = 300;
  */
 export const LAYERS_FOLD_MS = 200;
 export const LAYERS_FOLD_RISE_PX = 8;
+
+/**
+ * A change the Agent has applied, in the list open while it applies the round (designer, 2026-11-09): its row goes back,
+ * to `APPLIED_SCALE` and fading, over `APPLIED_LEAVE_MS`, while the rows after it rise into its place over `APPLIED_RISE_MS`.
+ * With reduced motion it only fades, the others in their places at once.
+ */
+export const APPLIED_LEAVE_MS = 200;
+export const APPLIED_SCALE = 0.94;
+export const APPLIED_RISE_MS = 240;

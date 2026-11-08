@@ -213,6 +213,19 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       setStalled(false);
     };
   }, [isClaimed]);
+  /**
+   * Claimed, the change list opens by itself, the Agent working down it (designer, 2026-11-09), taking no focus: the designer
+   * may be at work on the page. The notice that the Agent seems to have stopped shows in its place; the round ended, it closes.
+   */
+  const openedBySelf = useRef(false);
+  const wasClaimed = useRef(false);
+  useEffect(() => {
+    if (isClaimed) {
+      openedBySelf.current = !stalled;
+      setListOpen(!stalled);
+    } else if (wasClaimed.current) setListOpen(false);
+    wasClaimed.current = isClaimed;
+  }, [isClaimed, stalled]);
   const moves = claimed && [applied.map((change) => change.id).join(), claimed.done.join(), claimed.check?.key, claimed.closing?.key].join("|");
   useEffect(() => stall.current?.moved(), [moves]);
   /** Ends a claimed round as it is: pressing and holding the toggle, or the notice that the Agent seems to have stopped. */
@@ -345,6 +358,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     <ChangeList
       changes={listed}
       readOnly={!!claimed}
+      takeFocus={!openedBySelf.current}
       onRevert={revert}
       // In edit mode ⌘Z is the canvas's already, list undos included.
       onUndo={shellShown.current ? undefined : () => replayList(false)}
@@ -512,7 +526,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
         <Toggle
           changeCount={listed.length}
           changesOpen={listOpen && listed.length > 0}
-          onShowChanges={() => setListOpen(!listOpen)}
+          onShowChanges={() => {
+            openedBySelf.current = false;
+            setListOpen(!listOpen);
+          }}
           applying={claimed && { done: applied.length, total: changes.length }}
           onUnlock={endRound}
           onToggle={switchMode}

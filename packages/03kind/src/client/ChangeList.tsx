@@ -6,12 +6,18 @@ import { breakpointName } from "./breakpoints";
 import { historyKey } from "./canvas-keys";
 import type { Change } from "./changeset";
 import { Icon } from "./icons";
+import { APPLIED_RISE_MS, EASE_OUT, prefersReducedMotion } from "./motion";
 import { pointerHeld } from "./pointer-held";
 
 interface Props {
   changes: Change[];
-  /** The Agent is applying them: nothing can be undone or discarded meanwhile. */
+  /**
+   * The Agent is applying them: nothing can be undone or discarded meanwhile. The first is taken as the one it is at,
+   * the order it is given them in; each goes from the list as the page shows it.
+   */
   readOnly: boolean;
+  /** Focused as it opens, for Esc and the keys; opened by itself as the Agent applies the round, it takes none. */
+  takeFocus?: boolean;
   onRevert(id: number): void;
   /** ⌘Z / ⇧⌘Z (and Ctrl+Y) in the list, as on the canvas: undo or redo what was undone from it. Without them, the keys are left alone. */
   onUndo?(): void;
@@ -27,19 +33,59 @@ interface Props {
  * its title and Discard all stay where they are and the rows scroll between them, an
  * edge with rows past it fading out (designer, 2026-11-09).
  */
-export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDiscard, onClose }: Props) {
+export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUndo, onRedo, onDiscard, onClose }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
   /** Rows out of sight above and below the list's edges: each such edge fades. */
   const [hidden, setHidden] = useState({ above: false, below: false });
+  /** Each row's top in the list as last drawn: those after one applied rise from there into their places. */
+  const rows = useRef(new Map<number, HTMLLIElement>());
+  const tops = useRef(new Map<number, number>());
+  /** Applied while the list is open: kept, where they were, as they go back and fade, till they are gone. */
+  const leaving = useRef<{ change: Change; top: number; current: boolean }[]>([]);
+  const [, setGone] = useState(0);
+  const shown = useRef(changes);
+  if (shown.current !== changes) {
+    if (readOnly) {
+      shown.current.forEach((change, index) => {
+        if (changes.some(({ id }) => id === change.id) || !tops.current.has(change.id)) return;
+        leaving.current.push({ change, top: tops.current.get(change.id)!, current: index === 0 });
+      });
+    }
+    shown.current = changes;
+  }
+  /** The list's height as last drawn: a row applied, it closes up over the rise, not at once. */
+  const height = useRef(0);
+  useLayoutEffect(() => {
+    const rise = readOnly && !prefersReducedMotion();
+    const moving: Animation[] = [];
+    const next = new Map<number, number>();
+    for (const [id, row] of rows.current) {
+      const top = row.offsetTop;
+      const was = tops.current.get(id);
+      if (rise && was !== undefined && was !== top) {
+        moving.push(row.animate([{ transform: `translateY(${was - top}px)` }, { transform: "none" }], { duration: APPLIED_RISE_MS, easing: EASE_OUT }));
+      }
+      next.set(id, top);
+    }
+    tops.current = next;
+    const el = list.current!;
+    const now = el.offsetHeight;
+    if (rise && height.current && now < height.current) {
+      moving.push(el.animate([{ height: `${height.current}px` }, { height: `${now}px` }], { duration: APPLIED_RISE_MS, easing: EASE_OUT }));
+    }
+    height.current = now;
+    // Risen, the list scrolls as far as its rows go, no further: its edges' fades as they are then.
+    if (moving.length) void Promise.all(moving.map((animation) => animation.finished)).then(measure, () => {});
+  });
   const latestOnClose = useRef(onClose);
   latestOnClose.current = onClose;
 
   // As it goes on the page, not a frame later: a key pressed meanwhile would go to what opened it, and Esc would not close it.
   useLayoutEffect(() => {
-    dialog.current!.focus({ preventScroll: true });
+    if (takeFocus) dialog.current!.focus({ preventScroll: true });
     // A press anywhere else closes it; what opened it (the count beside the toggle, or the one in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
@@ -97,19 +143,18 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
         class={["tk-changes-list", hidden.above && "is-above", hidden.below && "is-below"].filter(Boolean).join(" ")}
         onScroll={measure}
       >
-        {changes.map((change) => (
-          <li key={change.id} class="tk-change">
-            <span class="tk-change-text">
-              <span class="tk-change-name">
-                {changeTitle(change)} · {layerName(change)}
-              </span>
-              <span class="tk-change-values">
-                {changeValues(change)}
-                {change.scope === "component" && <span> · {change.target.component} itself</span>}
-                {change.breakpoint && <span class="tk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
-                {!!change.copiedBreakpoints?.length && <span class="tk-change-breakpoint"> · with copied breakpoints</span>}
-              </span>
-            </span>
+        {changes.map((change, index) => (
+          <li
+            key={change.id}
+            ref={(row) => {
+              if (row) rows.current.set(change.id, row);
+              else rows.current.delete(change.id);
+            }}
+            class={readOnly && index === 0 ? "tk-change is-current" : "tk-change"}
+            aria-current={readOnly && index === 0 ? "step" : undefined}
+          >
+            {rowText(change)}
+            {readOnly && index === 0 && <span class="tk-change-spinner" aria-hidden="true" />}
             {!readOnly && (
               <button
                 type="button"
@@ -125,6 +170,23 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
                 <Icon name="undo" />
               </button>
             )}
+          </li>
+        ))}
+        {/* Applied: gone from the list, its row goes back and fades where it was, those after it rising into its place. */}
+        {leaving.current.map(({ change, top, current }) => (
+          <li
+            key={`applied-${change.id}`}
+            class={current ? "tk-change is-current is-applied" : "tk-change is-applied"}
+            style={{ top: `${top}px` }}
+            aria-hidden="true"
+            onAnimationEnd={(event) => {
+              if (event.target !== event.currentTarget) return;
+              leaving.current = leaving.current.filter((row) => row.change !== change);
+              setGone((n) => n + 1);
+            }}
+          >
+            {rowText(change)}
+            {current && <span class="tk-change-spinner" />}
           </li>
         ))}
       </ul>
@@ -150,5 +212,22 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
           </div>
         ))}
     </div>
+  );
+}
+
+/** A change's name and values, as its row in the list shows them. */
+function rowText(change: Change) {
+  return (
+    <span class="tk-change-text">
+      <span class="tk-change-name">
+        {changeTitle(change)} · {layerName(change)}
+      </span>
+      <span class="tk-change-values">
+        {changeValues(change)}
+        {change.scope === "component" && <span> · {change.target.component} itself</span>}
+        {change.breakpoint && <span class="tk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+        {!!change.copiedBreakpoints?.length && <span class="tk-change-breakpoint"> · with copied breakpoints</span>}
+      </span>
+    </span>
   );
 }

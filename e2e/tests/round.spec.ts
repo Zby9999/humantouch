@@ -221,7 +221,7 @@ test("while the round is being applied, the change list only shows what is left 
   await applyToCard(page, "fill");
   await expect(badge(page)).toHaveText("1");
 
-  await badge(page).click();
+  // Open by itself as the round is claimed (designer, 2026-11-09).
   const list = page.getByRole("dialog", { name: "Changes" });
 
   await expect(list.getByText("The Agent is applying these changes.")).toBeVisible();

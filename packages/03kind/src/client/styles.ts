@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { APPLIED_LEAVE_MS, APPLIED_SCALE, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -125,6 +125,7 @@ export const styles = /* css */ `
  * rows past it fades out over 24px, telling there are more.
  */
 .tk-changes > .tk-changes-list {
+  position: relative;
   flex: 0 1 auto;
   min-height: 0;
   margin: 0;
@@ -150,6 +151,35 @@ export const styles = /* css */ `
 .tk-change:hover { background: var(--tk-field); }
 .tk-change .tk-icon-button { color: var(--tk-text-muted); }
 .tk-change .tk-icon-button:hover { background: var(--tk-button); color: var(--tk-text); }
+/* The change the Agent is at, as it applies the round: darker, turning at its right where undo is otherwise (designer, 2026-11-09). */
+.tk-change.is-current { background: var(--tk-button); transition: background-color ${APPLIED_LEAVE_MS}ms ease; }
+.tk-change-spinner {
+  flex: none;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin: 0 6px;
+  border: 1.5px solid var(--tk-border);
+  border-top-color: var(--tk-text-muted);
+  border-radius: 50%;
+  animation: tk-spin 800ms linear infinite;
+}
+@keyframes tk-spin { to { rotate: 1turn; } }
+/* Applied: kept where it was, out of the rows' flow, it goes back and fades; with reduced motion it only fades (designer, 2026-11-09). */
+.tk-change.is-applied {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Under the rows rising into its place. */
+  z-index: -1;
+  pointer-events: none;
+  animation: tk-change-applied ${APPLIED_LEAVE_MS}ms ${EASE_OUT} forwards;
+}
+@keyframes tk-change-applied { to { opacity: 0; scale: ${APPLIED_SCALE}; } }
+@media (prefers-reduced-motion: reduce) {
+  .tk-change.is-applied { animation-name: tk-change-applied-fade; }
+}
+@keyframes tk-change-applied-fade { to { opacity: 0; } }
 .tk-change-text { display: grid; flex: 1; min-width: 0; }
 .tk-change-name, .tk-change-values { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-change-values { color: var(--tk-text-muted); }
