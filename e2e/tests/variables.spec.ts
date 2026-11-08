@@ -228,6 +228,12 @@ test("with very many shadow Variables, Effects' + keeps its types by the button:
   expect(variablesBox.y).toBeGreaterThanOrEqual(8);
   expect(variablesBox.y + variablesBox.height).toBeLessThanOrEqual(page.viewportSize()!.height - 8);
   expect(await variables.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  // However tall the window, at most 400px.
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 1400 });
+  await add.click();
+  await expect(variables.getByRole("option", { name: "elevation-40" })).toHaveCount(1);
+  expect(Math.round((await steadyBox(variables)).height)).toBe(400);
 });
 
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {

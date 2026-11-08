@@ -1056,7 +1056,8 @@ export const styles = /* css */ `
 .tk-menu.is-above .tk-menu-list.is-columns { align-items: flex-end; }
 .tk-menu-column {
   box-sizing: border-box;
-  max-height: var(--tk-menu-room, calc(100vh - 16px));
+  /* At most 400px however tall the window, a long one scrolling: one as tall as the window looked out of place (designer, 2026-11-08). */
+  max-height: min(var(--tk-menu-room, calc(100vh - 16px)), 400px);
   overflow-y: auto;
   padding: 4px;
   border-radius: 12px;
