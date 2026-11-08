@@ -403,14 +403,16 @@ test("with nothing selected, a radius tile has its name over its value, in it wh
   await expect(tile(LONG)).toHaveCount(1);
   await expect(tile("full")).toHaveCount(1);
 
-  // The name over the value, both at the tile's left; nothing past the tile's right, the longest name and value (9999px) included.
+  // The name over the value, both centered in the tile (a cut name fills it, so it is centered too); nothing past the tile's right, the longest name and value (9999px) included.
   for (const t of await tiles.all()) {
     const [edge, label, name, value] = await Promise.all([t, t.locator(".tk-variants-label"), t.locator(".tk-variants-tile-name"), t.locator(".tk-variants-value")].map(steadyBox));
     expect(label.x + label.width).toBeLessThanOrEqual(edge.x + edge.width);
     expect(name.x + name.width).toBeLessThanOrEqual(edge.x + edge.width);
     expect(value.x + value.width).toBeLessThanOrEqual(edge.x + edge.width);
     expect(value.y).toBeGreaterThanOrEqual(name.y + name.height - 0.5);
-    expect(value.x).toBe(name.x);
+    const center = edge.x + edge.width / 2;
+    expect(Math.abs(name.x + name.width / 2 - center)).toBeLessThanOrEqual(1);
+    expect(Math.abs(value.x + value.width / 2 - center)).toBeLessThanOrEqual(1);
   }
   expect(await design(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
 
