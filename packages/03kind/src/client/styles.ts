@@ -192,6 +192,20 @@ export const styles = /* css */ `
   --tk-field: #ededec; /* neutral 150 */
   --tk-button: #e5e5e4; /* neutral 200: the buttons at the panels' tops */
   --tk-raised: #fafafa; /* neutral 50: the choice of a segmented control, the Layers' disclosures */
+  /*
+   * A field, a choice, the alignment's grid (Figma: 03 Kind, 86:557; designer, 2026-11-08): raised on neutral 50, a hairline and a soft
+   * shadow under it; pointed at or chosen, on neutral 100. Every edge drawn inward (designer, 2026-11-08). Each shadow is three, the
+   * chosen edge, the shadow, the hairline, so one eases into the next.
+   */
+  --tk-input: #fafafa;
+  --tk-input-hover: #f5f5f5;
+  --tk-input-shadow: inset 0 0 0 1px transparent, 0 1px 1px rgb(0 0 0 / 0.15), inset 0 0 0 0.5px rgb(0 0 0 / 0.1);
+  --tk-input-focus-shadow: inset 0 0 0 1px var(--tk-accent-strong), 0 1px 1px rgb(0 143 240 / 0.6), inset 0 0 0 0.5px rgb(0 0 0 / 0.1);
+  /* Changed, on the accent: a darker hairline, the same shadow under it. */
+  --tk-changed-shadow: inset 0 0 0 1px transparent, 0 1px 1px rgb(0 0 0 / 0.15), inset 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  --tk-changed-focus-shadow: inset 0 0 0 1px var(--tk-accent-strong), 0 1px 1px rgb(0 0 0 / 0.15), inset 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  /* The choice of a segmented control, raised: its hairline inward too. */
+  --tk-chosen-shadow: 0 1px 1px rgb(0 0 0 / 0.15), inset 0 0 0 0.5px rgb(0 0 0 / 0.15);
   --tk-tool-chosen: #ffffff; /* neutral 0: the tool chosen */
   /* The editor's prominent button, on the tool chosen's white: the chosen tool's backing, the Show layers button (designer, 2026-11-08). */
   --tk-prominent-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
@@ -227,6 +241,14 @@ export const styles = /* css */ `
     --tk-field: #383838;
     --tk-button: #383838;
     --tk-raised: #4a4a4a;
+    /* The dark fields as they were, flat, till the designer draws them. */
+    --tk-input: #383838;
+    --tk-input-hover: #383838;
+    --tk-input-shadow: inset 0 0 0 1px transparent, 0 0 0 0 transparent, inset 0 0 0 0 transparent;
+    --tk-input-focus-shadow: inset 0 0 0 1px var(--tk-accent), 0 0 0 0 transparent, inset 0 0 0 0 transparent;
+    --tk-changed-shadow: inset 0 0 0 1px transparent, 0 0 0 0 transparent, inset 0 0 0 0 transparent;
+    --tk-changed-focus-shadow: inset 0 0 0 1px var(--tk-accent-strong), 0 0 0 0 transparent, inset 0 0 0 0 transparent;
+    --tk-chosen-shadow: 0 1px 1px rgb(0 0 0 / 0.3), inset 0 0 0 0.5px rgb(0 0 0 / 0.4);
     --tk-tool-chosen: #4a4a4a;
     --tk-panel-label: #e6e6e6;
     --tk-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.4), 0 1px 1px rgb(0 0 0 / 0.3);
@@ -505,7 +527,7 @@ export const styles = /* css */ `
   color: var(--tk-title);
 }
 .tk-panel.is-design .tk-panel-title { padding-left: 2px; }
-.tk-panel-header > .tk-icon-button { width: 30px; height: 30px; border-radius: 8px; background: var(--tk-button); }
+.tk-panel-header > .tk-icon-button { width: 30px; height: 30px; border-radius: 6px; background: var(--tk-button); }
 .tk-panel.is-layers .tk-panel-header > .tk-icon-button { width: 24px; height: 24px; border-radius: 6px; }
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }
 .tk-count {
@@ -514,15 +536,18 @@ export const styles = /* css */ `
   min-width: 30px;
   height: 30px;
   padding: 0 8px;
-  border-radius: 8px;
-  background: var(--tk-accent);
+  border-radius: 6px;
+  /* Blue 400 into blue 500, a hairline and a soft shadow (Figma: 03 Kind, 86:567; designer, 2026-11-08); 30px, as the buttons beside it. */
+  background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
   color: #daecff;
   font: 500 12px/30px ${EDITOR_FONT};
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   text-align: center;
   cursor: pointer;
 }
-.tk-count:hover { background: var(--tk-accent-strong); }
+.tk-count:hover { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
 .tk-count:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
 /* Opened from the count: below the panel's top, over the panel, which would clip it. */
 .tk-panel-header .tk-changes { position: fixed; top: 52px; right: 16px; z-index: 1; }
@@ -662,7 +687,8 @@ export const styles = /* css */ `
 /* A section with nothing under its title yet (Fill, Stroke): its title alone, 24px. */
 .tk-section > :is(.tk-section-title, .tk-section-header):last-child { margin-bottom: 0; }
 .tk-row { display: flex; align-items: center; gap: 4px; }
-/* A field: 30px high (designer, 2026-11-08), on neutral 150, its label (an icon or a word) before what it holds. */
+/* A field: 30px high (designer, 2026-11-08), raised on neutral 50 (--tk-input), its label (an icon or a word) before what it holds. */
+/* Its corners 6px, as every field, choice and button in the panel (designer, 2026-11-08). */
 .tk-field {
   display: flex;
   flex: 1;
@@ -672,11 +698,11 @@ export const styles = /* css */ `
   min-width: 0;
   height: 30px;
   padding: 0 6px 0 8px;
-  border-radius: 8px;
-  background: var(--tk-field);
-  box-shadow: inset 0 0 0 1px transparent;
+  border-radius: 6px;
+  background: var(--tk-input);
+  box-shadow: var(--tk-input-shadow);
 }
-.tk-field:focus-within { box-shadow: inset 0 0 0 1px var(--tk-accent); }
+.tk-field:focus-within { background-color: var(--tk-input-hover); box-shadow: var(--tk-input-focus-shadow); }
 /* Hovered, as it can be adjusted, a field darkens; chosen, it has the accent's edge; adjusted, it takes the accent (designer, 2026-11-08). The color eases between them. */
 .tk-field, .tk-select, .tk-check { transition: background-color ${FIELD_STATE_MS}ms ease, box-shadow ${FIELD_STATE_MS}ms ease, color ${FIELD_STATE_MS}ms ease; }
 /* Adjusted, it takes the accent at once, the click answered; reset, it eases back (designer, 2026-11-08). */
@@ -686,16 +712,16 @@ export const styles = /* css */ `
 .is-settling .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only, .tk-roll):not(.tk-popover *) { transition: background-color ${FIELD_SETTLE_MS}ms ease, color ${FIELD_SETTLE_MS}ms ease; }
 @media (hover: hover) and (pointer: fine) {
   .tk-field:not(.is-changed, :focus-within):hover,
-  .tk-select:not(:disabled, :focus-visible, [aria-expanded="true"], .tk-gap-mode, .is-changed > *):hover { background-color: var(--tk-button); }
+  .tk-select:not(:disabled, :focus-visible, [aria-expanded="true"], .tk-gap-mode, .is-changed > *):hover { background-color: var(--tk-input-hover); }
   /* A check, on the panel, takes the ground the buttons beside it take. */
   .tk-check:not(.is-changed):hover { background-color: var(--tk-field); }
 }
 .tk-field .tk-icon { flex: none; color: var(--tk-text-muted); }
 /* Changed in this round (designer, 2026-11-07): the accent, reversed; its reset at its right end. */
-.tk-field.is-changed { background: var(--tk-accent); color: #fafafa; padding-right: 2px; }
+.tk-field.is-changed { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #fafafa; padding-right: 2px; }
 /* Not in a picker open from the field: it is inside it, with its own colors. */
 .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-roll):not(.tk-popover *) { color: #fafafa; }
-.tk-field.is-changed:focus-within { box-shadow: inset 0 0 0 1px var(--tk-accent-strong); }
+.tk-field.is-changed:focus-within { background-color: var(--tk-accent); box-shadow: var(--tk-changed-focus-shadow); }
 .tk-reset {
   all: unset;
   display: grid;
@@ -707,7 +733,7 @@ export const styles = /* css */ `
   color: inherit;
 }
 /* In a changed field, 26px, 2px in from its end, on the field's own blue; pointed at, on blue 400 (designer, 2026-11-08). */
-.tk-field.is-changed .tk-reset:not(.tk-popover *), .tk-select-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent); }
+.tk-field.is-changed .tk-reset:not(.tk-popover *), .tk-select-field > .tk-reset { width: 26px; height: 26px; border-radius: 4px; background: var(--tk-accent); }
 .tk-field.is-changed .tk-reset:not(.tk-popover *):hover, .tk-select-field > .tk-reset:hover { background: var(--tk-accent-on); }
 /* At the field's right end, after a gradient's name too. */
 .tk-color-field > .tk-reset { margin-left: auto; }
@@ -720,7 +746,7 @@ export const styles = /* css */ `
 /*
  * One reset taking several fields back (a size with its sizing, a color with its opacity): a button of the row's own, at its left, outside
  * the fields, which make room for it, 4px from the fields as unjoined things in a row are. It looks as a button that stays on (Wrap, on)
- * does, from the same rules below: 30px as the fields, 8px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
+ * does, from the same rules below: 30px as the fields, 6px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
  */
 :is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 2px; }
 /*
@@ -790,20 +816,20 @@ export const styles = /* css */ `
   width: 100%;
   min-height: 64px;
   padding: 6px 8px;
-  border-radius: 8px;
-  background: var(--tk-field);
+  border-radius: 6px;
+  background: var(--tk-input);
   color: var(--tk-text);
   font: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  box-shadow: inset 0 0 0 1px transparent;
+  box-shadow: var(--tk-input-shadow);
 }
-.tk-textarea:focus { box-shadow: inset 0 0 0 1px var(--tk-accent); cursor: text; }
+.tk-textarea:focus { background-color: var(--tk-input-hover); box-shadow: var(--tk-input-focus-shadow); cursor: text; }
 .tk-textarea::placeholder { color: var(--tk-text-muted); }
 /* A color, as the designer drew it (2026-11-07): its swatch 3px in from the field's edge, its hex, then its opacity in a field of its own joined to it. */
 .tk-color-row { display: flex; flex: 1; gap: 2px; min-width: 0; }
 .tk-color-field { padding-left: 6px; }
-.tk-color-field.is-joined { border-radius: 8px 2px 2px 8px; }
+.tk-color-field.is-joined { border-radius: 6px 2px 2px 6px; }
 .tk-color-opacity { flex: none; width: 64px; border-radius: 2px 8px 8px 2px; }
 /*
  * Every number that can be dragged: a short upright bar at its right end, dragged left and right as its icon is; changed, just left of its
@@ -821,9 +847,9 @@ export const styles = /* css */ `
 .tk-field.is-changed .tk-grip:not(.tk-popover *) { opacity: 0.55; }
 .tk-field.is-changed:is(:has(> .tk-scrub-grip:hover), [data-scrubbing]) .tk-grip:not(.tk-popover *) { opacity: 0.85; }
 /* Dragged on its icon, label or grip, a field is the one chosen: the hover's darker ground and the 1px accent edge it has focused, till let go (designer, 2026-11-08). */
-.tk-field[data-scrubbing] { box-shadow: inset 0 0 0 1px var(--tk-accent); }
-.tk-field[data-scrubbing]:not(.is-changed) { background-color: var(--tk-button); }
-.tk-field.is-changed[data-scrubbing] { box-shadow: inset 0 0 0 1px var(--tk-accent-strong); }
+.tk-field[data-scrubbing] { box-shadow: var(--tk-input-focus-shadow); }
+.tk-field[data-scrubbing]:not(.is-changed) { background-color: var(--tk-input-hover); }
+.tk-field.is-changed[data-scrubbing] { box-shadow: var(--tk-changed-focus-shadow); }
 /* A paint's row: its field, then its remove button, 2px apart. */
 .tk-row.tk-paint-row { gap: 2px; }
 /* 20px with its 0.5px line, 5px in from the field's top and bottom, 6px from its left (designer, 2026-11-08). */
@@ -908,7 +934,7 @@ export const styles = /* css */ `
 .tk-icon-button.is-added { background: var(--tk-accent); color: #ffffff; }
 .tk-icon-button.is-added:hover { background: var(--tk-accent-strong); }
 /* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
-.tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 30px; height: 30px; border-radius: 8px; }
+.tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 30px; height: 30px; border-radius: 6px; }
 .tk-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -930,19 +956,19 @@ export const styles = /* css */ `
 .tk-size-row .tk-field { flex: 1; }
 .tk-size-row { gap: 2px; }
 /* The size and its sizing, joined: 2px corners where they meet, as a color and its opacity (designer, 2026-11-07). */
-.tk-size-row > .tk-variable-slot > .tk-field { border-radius: 8px 2px 2px 8px; }
+.tk-size-row > .tk-variable-slot > .tk-field { border-radius: 6px 2px 2px 6px; }
 .tk-size-row > .tk-select-field { border-radius: 2px 8px 8px 2px; }
 /* Parts side by side as one control (a stroke's weight, style and sides): 2px apart, 2px corners where they meet, 8px at the ends. */
 .tk-row.tk-joined { gap: 2px; }
 .tk-joined > :is(.tk-field, .tk-select, .tk-select-field) { border-radius: 2px; }
-.tk-joined > :first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
-.tk-joined > :is(.tk-select:last-of-type, .tk-select-field:last-child) { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+.tk-joined > :first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+.tk-joined > :is(.tk-select:last-of-type, .tk-select-field:last-child) { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
 /* A choice of part of a value (a stroke's line, its sides): changed in this round, in the accent with its reset at the right end, after the chevron, as a changed field (designer, 2026-11-07). */
 /*
- * Its select takes the wrapper's corners, so the wrapper has a select's own 8px: without them, a choice on its own (the font, its weight)
+ * Its select takes the wrapper's corners, so the wrapper has a select's own 6px: without them, a choice on its own (the font, its weight)
  * came out square (designer, 2026-11-08). Where it is joined (the size's sizing, a stroke's parts), the joined corners above win.
  */
-.tk-select-field { position: relative; display: flex; flex: none; border-radius: 8px; }
+.tk-select-field { position: relative; display: flex; flex: none; border-radius: 6px; }
 .tk-select-field > .tk-select { border-radius: inherit; }
 .tk-select-field.is-changed > .tk-select {
   --tk-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fafafa' stroke-width='1.67' stroke-linecap='round' stroke-linejoin='round' d='M12.25 5.875L8 10.125L3.75 5.875'/%3E%3C/svg%3E");
@@ -950,9 +976,10 @@ export const styles = /* css */ `
   padding-right: 48px;
   background-position: right 32px center;
   background-color: var(--tk-accent);
+  box-shadow: var(--tk-changed-shadow);
   color: #fafafa;
 }
-.tk-select-field.is-changed > .tk-select:is([aria-expanded="true"], :focus-visible) { box-shadow: inset 0 0 0 1px var(--tk-accent-strong); }
+.tk-select-field.is-changed > .tk-select:is([aria-expanded="true"], :focus-visible) { background-color: var(--tk-accent); box-shadow: var(--tk-changed-focus-shadow); }
 .tk-select-field > .tk-reset { position: absolute; top: 2px; right: 2px; color: #fafafa; }
 /* A choice: the select, with a chevron of its own (IconMCP's, its line as wide as the icons' at 12px); its options open in the menu below. */
 .tk-select {
@@ -963,9 +990,9 @@ export const styles = /* css */ `
   height: 30px;
   padding: 0 24px 0 8px;
   border: 0;
-  border-radius: 8px;
-  background: var(--tk-chevron) no-repeat right 6px center / 12px 12px, var(--tk-field);
-  box-shadow: inset 0 0 0 1px transparent;
+  border-radius: 6px;
+  background: var(--tk-chevron) no-repeat right 6px center / 12px 12px, var(--tk-input);
+  box-shadow: var(--tk-input-shadow);
   color: var(--tk-text);
   font: inherit;
   text-align: left;
@@ -975,9 +1002,9 @@ export const styles = /* css */ `
 @media (prefers-color-scheme: dark) {
   .tk-select { --tk-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23a6a6a6' stroke-width='1.67' stroke-linecap='round' stroke-linejoin='round' d='M12.25 5.875L8 10.125L3.75 5.875'/%3E%3C/svg%3E"); }
 }
-.tk-select[aria-expanded="true"], .tk-select:focus-visible { box-shadow: inset 0 0 0 1px var(--tk-accent); outline: none; }
+.tk-select[aria-expanded="true"], .tk-select:focus-visible { background-color: var(--tk-input-hover); box-shadow: var(--tk-input-focus-shadow); outline: none; }
 /* Inside the gap's field, at its end: its chevron alone, which chooses a number or Auto. */
-.tk-select.tk-gap-mode { width: 20px; height: 20px; margin-left: auto; padding: 0; background: var(--tk-chevron) no-repeat center / 12px 12px; color: transparent; }
+.tk-select.tk-gap-mode { width: 20px; height: 20px; margin-left: auto; padding: 0; background: var(--tk-chevron) no-repeat center / 12px 12px; box-shadow: none; color: transparent; }
 .tk-field.is-changed .tk-select.tk-gap-mode { filter: brightness(0) invert(1); }
 .tk-auto { display: flex; align-items: center; }
 /* A field's own button at its end (Min and max): 24px, on the field. */
@@ -1043,12 +1070,12 @@ export const styles = /* css */ `
   flex: none;
   gap: 2px;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--tk-field);
 }
-.tk-segmented-field .tk-icon-button { width: 26px; height: 26px; color: var(--tk-text-muted); }
+.tk-segmented-field .tk-icon-button { width: 26px; height: 26px; border-radius: 4px; color: var(--tk-text-muted); }
 .tk-segmented-field .tk-icon-button:hover { background: none; color: var(--tk-text); }
-.tk-segmented-field .tk-icon-button[aria-checked="true"] { color: var(--tk-text); background: var(--tk-raised); box-shadow: var(--tk-raised-shadow); }
+.tk-segmented-field .tk-icon-button[aria-checked="true"] { color: var(--tk-text); background: var(--tk-raised); box-shadow: var(--tk-chosen-shadow); }
 /*
  * Changed in this round, the one chosen stays raised and white; the track behind the buttons takes the accent, the others' glyphs light on
  * it (white on blue 500 is 3.4:1), a light tint under one hovered; the group's reset pops out inside it at its right end, 26px on blue 400
@@ -1060,7 +1087,7 @@ export const styles = /* css */ `
 /* Clicked, the accent at once, the click answered; taken back (its reset, undo), it eases back to the track's grey, as a check does. */
 .tk-segmented-field, .tk-segmented-field .tk-icon-button { transition: background-color ${FIELD_STATE_MS}ms ${EASE_OUT}, color ${FIELD_STATE_MS}ms ${EASE_OUT}; }
 .tk-segmented-field.is-changed, .tk-segmented-field.is-changed .tk-icon-button { transition: none; }
-.tk-segmented-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent); color: #fafafa; }
+.tk-segmented-field > .tk-reset { width: 26px; height: 26px; border-radius: 4px; background: var(--tk-accent); color: #fafafa; }
 .tk-segmented-field > .tk-reset:hover { background: var(--tk-accent-on); }
 /*
  * The reset coming: from 90% at its left, where it grows out of the buttons, and transparent; going: it fades where it is. Changed by a key,
@@ -1111,8 +1138,9 @@ export const styles = /* css */ `
   box-sizing: border-box;
   min-width: 0;
   min-height: 64px;
-  border-radius: 8px;
-  background: var(--tk-field);
+  border-radius: 6px;
+  background: var(--tk-input);
+  box-shadow: var(--tk-input-shadow);
 }
 /* The lines, 0.5px, 6px in from the field's edges. Inside that box 5/24 of the field is 5/24 of the box less 3.5px; 19/24, 19/24 of it and 3.5px. */
 .tk-align::before {
@@ -1166,7 +1194,7 @@ export const styles = /* css */ `
   box-sizing: border-box;
   height: 30px;
   padding: 0 6px 0 5px;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--tk-text-muted);
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -1577,7 +1605,7 @@ export const styles = /* css */ `
 .tk-color-oklch-row > .tk-glyph { flex: none; width: 12px; color: var(--tk-text-muted); text-align: center; }
 .tk-color-oklch-row > .tk-field { flex: none; width: 56px; }
 /* The stop the picker sets. */
-.tk-stop-row.is-chosen .tk-color-field { box-shadow: inset 0 0 0 1px var(--tk-accent); }
+.tk-stop-row.is-chosen .tk-color-field { box-shadow: var(--tk-input-focus-shadow); }
 .tk-stop-handle.is-chosen { border-color: var(--tk-accent); }
 /* The popovers of the Design panel (the color picker, the Variables): floating at its left, in its colors (designer, 2026-11-07). */
 .tk-popover {
@@ -1643,7 +1671,7 @@ export const styles = /* css */ `
   box-sizing: border-box;
   height: 28px;
   padding: 0 8px 0 30px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--tk-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23737472' stroke-width='1.43' stroke-linecap='round'%3E%3Ccircle cx='7.25' cy='7.25' r='4.5'/%3E%3Cline x1='10.5' y1='10.5' x2='13.25' y2='13.25'/%3E%3C/svg%3E") no-repeat 8px center / 14px 14px;
 }
 .tk-variable-search::placeholder { color: var(--tk-text-muted); font-weight: 500; }

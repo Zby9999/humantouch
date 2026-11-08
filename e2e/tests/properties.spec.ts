@@ -1011,18 +1011,18 @@ function panelColor(page: Page, property: string) {
   }, property);
 }
 
-/** A field's edge and ground, as computed. */
+/** A field's edge, the first of its shadows (the others, its shadow and hairline, as they always are), and its ground. */
 function fieldLook(field: Locator) {
-  return field.evaluate((el) => ({ edge: getComputedStyle(el).boxShadow, ground: getComputedStyle(el).backgroundColor }));
+  return field.evaluate((el) => ({ edge: getComputedStyle(el).boxShadow.split(/,(?![^(]*\))/)[0].trim(), ground: getComputedStyle(el).backgroundColor }));
 }
 
-test("a field focused, and a number held mid-drag, have the 1px accent edge; let go, the drag's edge is gone (designer, 2026-11-08)", async ({ page }) => {
+test("a field focused, and a number held mid-drag, have the 1px blue 600 edge; let go, the drag's edge is gone (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
-  const accent = await panelColor(page, "--tk-accent");
-  const darker = await panelColor(page, "--tk-button");
+  const accent = await panelColor(page, "--tk-accent-strong");
+  const darker = await panelColor(page, "--tk-input-hover");
   const EDGE = `${accent} 0px 0px 0px 1px inset`;
 
-  // Focused: the 1px accent edge.
+  // Focused: the 1px blue 600 edge, drawn inward (Figma: 03 Kind, 109:1169).
   const width = design(page).getByRole("textbox", { name: "Width" });
   const widthField = page.locator('.tk-field:has([aria-label="Width"])');
   await width.focus();
@@ -1030,7 +1030,7 @@ test("a field focused, and a number held mid-drag, have the 1px accent edge; let
   await width.blur();
   await expect.poll(async () => (await fieldLook(widthField)).edge).not.toContain(accent);
 
-  // Held mid-drag on its icon: the same edge, on the hover's darker ground.
+  // Held mid-drag on its icon: the same edge, on the hover's ground.
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
   const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
   const { x, y } = await steadyBox(field.locator(".tk-scrub"));
@@ -1504,7 +1504,7 @@ test("a font and its weight have a field's corners, as the font size beside them
   const weight = text.getByRole("combobox", { name: "Font weight" });
   const size = text.locator(".tk-field:has([aria-label='Font size'])");
   const sizeRadius = await radius(size);
-  expect(sizeRadius).toBe("8px");
+  expect(sizeRadius).toBe("6px");
   expect(await radius(font)).toBe(sizeRadius);
   expect(await radius(weight)).toBe(sizeRadius);
 
@@ -1674,9 +1674,9 @@ test("the row's reset looks as a button that stays on (Wrap, on): its size, its 
   expect((await look(fieldReset)).width).toBe("26px");
   // Hovered, the same blue 600.
   await rowReset.hover();
-  await expect.poll(() => look(rowReset)).toEqual({ width: "30px", height: "30px", radius: "8px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
+  await expect.poll(() => look(rowReset)).toEqual({ width: "30px", height: "30px", radius: "6px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
   await wrap.hover();
-  await expect.poll(() => look(wrap)).toEqual({ width: "30px", height: "30px", radius: "8px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
+  await expect.poll(() => look(wrap)).toEqual({ width: "30px", height: "30px", radius: "6px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
 });
 
 test("a section's reset shows for two of its changes, not for one, in every section: Appearance's opacity and radius (designer, 2026-11-08)", async ({ page }) => {
