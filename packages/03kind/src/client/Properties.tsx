@@ -2610,12 +2610,13 @@ function useRoll(rolls: boolean, value: string, input: { current: HTMLInputEleme
     if (!rolls || before === value) return;
     const el = input.current;
     const field = el?.closest(".tk-field");
-    const by = !!field?.hasAttribute("data-scrubbing") || resetJustClicked();
-    const [a, b] = [rolledNumber(before), rolledNumber(value)];
-    if (!el || !by || draft.current !== null || el.matches(":focus") || a === null || b === null || a === b) return void stop();
-    setShown((roll) => ({ from: roll?.from ?? before, to: value, up: b > a }));
+    const scrubbedOrReset = !!field?.hasAttribute("data-scrubbing") || resetJustClicked();
+    const [older, newer] = [rolledNumber(before), rolledNumber(value)];
+    if (!el || !scrubbedOrReset || draft.current !== null || el.matches(":focus") || older === null || newer === null || older === newer) return void stop();
+    setShown((roll) => ({ from: roll?.from ?? before, to: value, up: newer > older }));
     clearTimeout(settle.current);
-    // Gone once the last digit has settled, but not while the field is still held: its next step rolls on from where it is.
+    // Gone once the last digit has settled (40ms past its roll, a frame or two to spare), but not while the field is still held, so the
+    // overlay is not taken down and put up again between steps: the next step rolls on from where it is (the agent's, to confirm).
     const rolling = () => !!field?.querySelector(":scope > .tk-roll")?.getAnimations({ subtree: true }).some((anim) => anim.playState === "running");
     const later = () => {
       settle.current = setTimeout(() => (field?.hasAttribute("data-scrubbing") || rolling() ? later() : setShown(null)), DIGIT_ROLL_MS + 40);

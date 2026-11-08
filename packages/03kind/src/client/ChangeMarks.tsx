@@ -191,8 +191,10 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
 
 /** When a reset was last clicked (not pressed from the keyboard). */
 let resetClickedAt = -Infinity;
-/** How long after a reset is clicked a number it changes still counts as changed by it: the panel shows it a render or two later. */
+/** How long after a reset is clicked a number it changes still counts as changed by it: the panel shows it a render or two later (agent's, to confirm). */
 const RESET_ROLL_WINDOW_MS = 150;
+/** A key pressed meanwhile (⌘Z, say) changes numbers itself: from then on they change at once, unrolled. */
+if (typeof window !== "undefined") window.addEventListener("keydown", () => void (resetClickedAt = -Infinity), true);
 
 /** Whether a reset was clicked just now: a number changing now was taken back by it, and rolls to its value (designer, 2026-11-08). */
 export function resetJustClicked(): boolean {
