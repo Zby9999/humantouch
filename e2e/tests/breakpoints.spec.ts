@@ -171,7 +171,9 @@ test("a layer hidden at a breakpoint is hidden in that view only, and stays in t
 
   await expect.poll(() => shown(page, hero, "display")).toEqual(["flex", "flex", "none"]);
   await expect(layers(page).getByRole("treeitem", { name: "Button", exact: true })).toBeVisible();
-  await expect(design(page).getByRole("button", { name: "Reset visible" })).toBeVisible();
+  // Marked; checked again to go back, it has no reset of its own (designer, 2026-11-08).
+  await expect(design(page).locator(".tk-check", { hasText: "Visible" })).toHaveClass(/\bis-changed\b/);
+  await expect(design(page).getByRole("button", { name: "Reset visible" })).toHaveCount(0);
 
   // Selected from the tree, it is still the phone view worked in: shown again there.
   await layers(page).getByRole("treeitem", { name: "Button", exact: true }).click();

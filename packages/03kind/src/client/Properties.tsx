@@ -3,7 +3,7 @@ import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, Targ
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
-import { ResetButton, useChangeMarks, type ValuePart } from "./ChangeMarks";
+import { ChangeMarksProvider, ResetButton, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { Icon, type IconName } from "./icons";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
@@ -254,12 +254,16 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
   const shadows = shownEffect("shadows");
   const fontSize = shown("fontSize");
   const textColor = shown("textColor");
+  const marks = useChangeMarks();
   return (
     <>
       {locked && <p class="tk-layer-note tk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
       {x !== undefined && y !== undefined && (
         <section class="tk-section" aria-labelledby="tk-position">
-          <h3 id="tk-position" class="tk-section-title">Position</h3>
+          <div class="tk-section-header">
+            <h3 id="tk-position" class="tk-section-title">Position</h3>
+            <SectionReset title="Position" properties={["x", "y"]} />
+          </div>
           <div class="tk-grid-2">
             <NumberField label="X" glyph="X" property="x" value={number(x)} onChange={set("x")} />
             <NumberField label="Y" glyph="Y" property="y" value={number(y)} onChange={set("y")} />
@@ -268,7 +272,11 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       )}
       {(width !== undefined || height !== undefined) && (
         <section class="tk-section" aria-labelledby="tk-size">
-          <h3 id="tk-size" class="tk-section-title">Size</h3>
+          <div class="tk-section-header">
+            <h3 id="tk-size" class="tk-section-title">Size</h3>
+            {/* A size row is one operation, its number and sizing together, as its one reset takes them; each minimum or maximum, another. */}
+            <SectionReset title="Size" properties={[...(width !== undefined ? ["width" as const] : []), ...(height !== undefined ? ["height" as const] : []), ...limits]} />
+          </div>
           {width !== undefined && (
             <SizeRow
               axis="width"
@@ -326,7 +334,10 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       {padding !== undefined && layers.some((layer) => layer.kind === "frame" && layer.framesText) && (
         // A Frame around its text alone, as a button is: the room around the text.
         <section class="tk-section" aria-labelledby="tk-padding">
-          <h3 id="tk-padding" class="tk-section-title">Padding</h3>
+          <div class="tk-section-header">
+            <h3 id="tk-padding" class="tk-section-title">Padding</h3>
+            <SectionReset title="Padding" properties={["padding"]} operations={PADDING_SIDES} />
+          </div>
           <PaddingFields padding={padding} update={update} variable={variable} />
         </section>
       )}
@@ -362,7 +373,10 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       {textColor !== undefined && (
         // Text is filled with its color, as in Figma.
         <section class="tk-section" role="group" aria-label="Fill">
-          <h3 class="tk-section-title">Fill</h3>
+          <div class="tk-section-header">
+            <h3 class="tk-section-title">Fill</h3>
+            <SectionReset title="Fill" properties={["textColor"]} />
+          </div>
           {textColor === MIXED ? <span class="tk-field tk-mixed">Mixed</span> : <ColorField name="Fill" property="textColor" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
         </section>
       )}
@@ -379,17 +393,20 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       )}
       {stroke !== undefined && <StrokeSection key={keyOf(layers)} stroke={stroke} onChange={set("stroke")} update={update} variable={variable("stroke", "color")} />}
       {shadows !== undefined && (
-        <EffectsSection
-          shadows={shadows}
-          layerBlur={shownEffect("layerBlur")}
-          backgroundBlur={shownEffect("backgroundBlur")}
-          withText={texts.length > 0}
-          variable={texts.length ? undefined : variable("shadows")}
-          colorVariable={shadowColor}
-          read={readEffect}
-          update={updateEffect}
-          updateEach={updateEffects}
-        />
+        // A text layer keeps its shadows as text shadows: its fields marked and reset by them as by a box's shadows.
+        <ChangeMarksProvider value={texts.length ? withTextShadows(marks) : marks}>
+          <EffectsSection
+            shadows={shadows}
+            layerBlur={shownEffect("layerBlur")}
+            backgroundBlur={shownEffect("backgroundBlur")}
+            withText={texts.length > 0}
+            variable={texts.length ? undefined : variable("shadows")}
+            colorVariable={shadowColor}
+            read={readEffect}
+            update={updateEffect}
+            updateEach={updateEffects}
+          />
+        </ChangeMarksProvider>
       )}
     </>
   );
@@ -534,13 +551,20 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
 }) {
   // The chosen point dark till the alignment changes in this round, then the accent; the point it was at before, drawn larger (designer, 2026-11-08).
   const marks = useChangeMarks();
-  const changed = marks.changed("align");
+  // The point alone: the gap's Auto, kept in the alignment too, marks the gap's field, not the grid.
+  const changed = marks.changed("align", ALIGN_POINT);
   const was = changed ? (marks.before("align") as Align | null) : null;
+  // Wrap is clicked again to go back: marked, with no reset of its own (designer, 2026-11-08). The direction, a segmented group, keeps its look here: its changed look comes later; its change still counts for the section's reset.
+  const wrapChanged = marks.changed("wrap");
   return (
     <section class="tk-section" aria-labelledby="tk-stack">
       <div class="tk-section-header">
         <h3 id="tk-stack" class="tk-section-title">Stack</h3>
-        <SectionReset title="Stack" properties={["direction", "gap", "align", "wrap", "padding"]} />
+        <SectionReset
+          title="Stack"
+          properties={["direction", "gap", "align", "wrap", "padding"]}
+          operations={[{ property: "direction" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
+        />
         {dissolve && (
           <button type="button" class="tk-icon-button" aria-label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve}>
             <Icon name="minus" />
@@ -588,7 +612,14 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
               ))}
             </div>
             {/* Wrap: a button that stays on, as Figma's; Mixed shows it off. */}
-            <button type="button" class="tk-icon-button" aria-label="Wrap" title="Wrap" aria-pressed={wrap === true} onClick={() => set("wrap")(wrap !== true)}>
+            <button
+              type="button"
+              class={`tk-icon-button${wrapChanged ? " is-changed" : ""}`}
+              aria-label="Wrap"
+              title="Wrap"
+              aria-pressed={wrap === true}
+              onClick={() => set("wrap")(wrap !== true)}
+            >
               <Icon name="wrap" />
             </button>
           </div>
@@ -624,13 +655,14 @@ function GapField({ gap, align, set, update, variable }: { gap: Shown<number>; a
     </Select>
   );
   if (auto === true) {
-    const changed = marks.changed("align");
+    // Auto, as the alignment keeps it: marked when that part of it changed, the point left as it is.
+    const changed = marks.changed("align", DISTRIBUTE);
     return (
       <div class={`tk-field${changed ? " is-changed" : ""}`} title="Gap">
         <Icon name="gap" />
         <span class="tk-input tk-auto">Auto</span>
         {mode}
-        {changed && <ResetButton label="gap" onReset={() => marks.reset(["align"])} />}
+        {changed && <ResetButton label="gap" onReset={() => marks.reset(["align"], DISTRIBUTE)} />}
       </div>
     );
   }
@@ -657,7 +689,25 @@ function PaddingFields({ padding, update, variable }: { padding: Shown<Padding>;
   );
 }
 
-/** A checkbox; Mixed shows as neither checked nor not. `property`: the one it sets, marked when changed in this round, with its reset. */
+/** Each side of the padding, its own field: each its own operation for a section's reset. */
+const PADDING_SIDES: Operation[] = [0, 1, 2, 3].map((part) => ({ property: "padding", part }));
+
+/** A Stack's alignment point, the part of its alignment the grid shows. */
+const ALIGN_POINT: ValuePart = {
+  of: (value) => (value ? [(value as Align).x, (value as Align).y] : null),
+  back: (value, before) => (value && before ? { ...(value as Align), x: (before as Align).x, y: (before as Align).y } : before),
+};
+/** Whether a Stack's layers spread to fill it (the gap's Auto): the part of its alignment the gap's field shows. */
+const DISTRIBUTE: ValuePart = {
+  of: (value) => (value ? (value as Align).distribute : null),
+  back: (value, before) => (value && before ? { ...(value as Align), distribute: (before as Align).distribute } : before),
+};
+
+/**
+ * A checkbox; Mixed shows as neither checked nor not. `property`: the one it
+ * sets, marked when changed in this round. Clicked again it goes back, so it
+ * has no reset of its own (designer, 2026-11-08); a section's reset takes it back.
+ */
 function Check({ label, checked, onChange, property }: { label: string; checked: Shown<boolean>; onChange(checked: boolean): void; property?: Property }) {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
@@ -670,7 +720,6 @@ function Check({ label, checked, onChange, property }: { label: string; checked:
         onChange={(event) => onChange(event.currentTarget.checked)}
       />
       {label}
-      {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!])} />}
     </label>
   );
 }
@@ -752,6 +801,16 @@ function radiusOf(corners: [number, number, number, number]): Radius {
   return corners.every((r) => r === corners[0]) ? corners[0] : corners;
 }
 
+/** Each corner of a radius, in the order of a radius: marked and reset on its own, as its field shows it. */
+const CORNER_PARTS: ValuePart[] = [0, 1, 2, 3].map((i) => ({
+  of: (value) => (value === null || value === undefined ? null : cornersOf(value as Radius)[i]),
+  back: (value, before) => {
+    if (value === null || value === undefined || before === null || before === undefined) return before;
+    const was = cornersOf(before as Radius)[i];
+    return radiusOf(cornersOf(value as Radius).map((r, j) => (i === j ? was : r)) as [number, number, number, number]);
+  },
+}));
+
 /**
  * Opacity, corner radius, visibility and clipping. The corner radius is one
  * for all corners, or each its own, as in Figma: the corners show while
@@ -784,9 +843,19 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
     return values.every((v) => v === values[0]) ? values[0] : null;
   };
   const uniform = radii && radii.every((radius) => typeof radius === "number" && radius === radii[0]) ? (radii[0] as number) : null;
+  /** What the section's reset counts: the corner radius one operation, or, its corners shown, each corner its own; the field for all of them shows theirs. */
+  const operations: Operation[] = [
+    ...(opacity !== undefined ? [{ property: "opacity" as const }] : []),
+    ...(radii ? (independent ? CORNER_PARTS.map((part) => ({ property: "radius" as const, part })) : [{ property: "radius" as const }]) : []),
+    ...(visible !== undefined ? [{ property: "visible" as const }] : []),
+    ...(clip !== undefined ? [{ property: "clip" as const }] : []),
+  ];
   return (
     <section class="tk-section" aria-labelledby="tk-appearance">
-      <h3 id="tk-appearance" class="tk-section-title">Appearance</h3>
+      <div class="tk-section-header">
+        <h3 id="tk-appearance" class="tk-section-title">Appearance</h3>
+        <SectionReset title="Appearance" properties={operations.map(({ property }) => property)} operations={operations} />
+      </div>
       {/* The fields first, then the checks, two to a row: opacity beside the corner radius, Visible beside Clip content; with no radius, opacity beside Visible (designer, 2026-11-08). A check alone at the end takes the whole row. */}
       <div class="tk-grid-2">
         {opacity !== undefined && <PercentField label="Opacity" icon="opacity" property="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
@@ -813,10 +882,12 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
       {radii && independent && (
         <div class="tk-grid-2" role="group" aria-label="Radius per corner">
           {CORNER_GRID.map((i) => (
-            <VariableSlot key={i} label={`${CORNER_NAMES[i]} radius`} slot={variable("radius", CORNER_NAMES[i].toLowerCase().replace(" ", "-"))}>
+            <VariableSlot key={i} label={`${CORNER_NAMES[i]} radius`} slot={variable("radius", CORNER_NAMES[i].toLowerCase().replace(" ", "-"))} property="radius" part={CORNER_PARTS[i]}>
             <NumberField
               label={`${CORNER_NAMES[i]} radius`}
               icon={CORNER_ICONS[i]}
+              property="radius"
+              part={CORNER_PARTS[i]}
               value={corner(i)}
               min={0}
               onChange={(value, continues) => {
@@ -891,7 +962,10 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
   };
   return (
     <section class="tk-section" role="group" aria-label="Text">
-      <h3 class="tk-section-title">Text</h3>
+      <div class="tk-section-header">
+        <h3 class="tk-section-title">Text</h3>
+        <SectionReset title="Text" properties={["fontFamily", "fontWeight", "fontSize", "lineHeight", "letterSpacing", "textAlign", "textCase", "textDecoration"]} />
+      </div>
       <Choice
         label="Font"
         class="tk-font"
@@ -1087,6 +1161,8 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
     <section class="tk-section" role="group" aria-label="Fill">
       <div class="tk-section-header">
         <h3 class="tk-section-title">Fill</h3>
+        {/* The fill's one row, its gradient's angle and stops in it, is one operation, as its one reset takes it back: no reset of its own here till a fill has more than one row. */}
+        <SectionReset title="Fill" properties={["fill"]} />
         {!fill && (
           <button type="button" class="tk-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
             <Icon name="plus" />
@@ -1136,6 +1212,8 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
                   <NumberField
                     label="Angle"
                     icon="angle"
+                    property="fill"
+                    part={GRADIENT_ANGLE}
                     value={gradient.angle}
                     onChange={(angle, continues) => onChange({ ...gradient, angle: turned(angle) }, continues)}
                   />
@@ -1175,6 +1253,61 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
   );
 }
 
+/** A fill that is a linear or radial gradient; null for another. */
+function gradientOf(value: unknown): Gradient | null {
+  const fill = value as Fill | null;
+  return fill && (fill.type === "linear" || fill.type === "radial") ? fill : null;
+}
+
+/**
+ * A part of a gradient fill, its own field in the picker: marked and reset on its own (designer, 2026-11-08).
+ * `of` reads it, `back` puts it in a gradient as it was in another; a fill not a gradient then, or now, goes back whole.
+ */
+function gradientPart(of: (gradient: Gradient) => unknown, back: (gradient: Gradient, before: Gradient) => Gradient | null): ValuePart {
+  return {
+    of: (value) => {
+      const gradient = gradientOf(value);
+      return gradient ? (of(gradient) ?? null) : null;
+    },
+    back: (value, before) => {
+      const [now, was] = [gradientOf(value), gradientOf(before)];
+      return (now && was && back(now, was)) ?? before;
+    },
+  };
+}
+
+/** A linear gradient's angle. */
+const GRADIENT_ANGLE = gradientPart(
+  (g) => (g.type === "linear" ? g.angle : null),
+  (g, before) => (g.type === "linear" && before.type === "linear" ? { ...g, angle: before.angle } : null),
+);
+
+/** A radial gradient's center, or reach, along one axis. */
+const radialPart = (key: "center" | "size", axis: "x" | "y") =>
+  gradientPart(
+    (g) => (g.type === "radial" && "center" in g && axis in g[key] ? JSON.stringify((g[key] as Record<"x" | "y", unknown>)[axis]) : null),
+    (g, before) => {
+      if (g.type !== "radial" || before.type !== "radial" || !("center" in g) || !("center" in before) || !(axis in g[key]) || !(axis in before[key])) return null;
+      return { ...g, [key]: { ...g[key], [axis]: (before[key] as Record<"x" | "y", unknown>)[axis] } } as Gradient;
+    },
+  );
+const RADIAL_PARTS = { center: { x: radialPart("center", "x"), y: radialPart("center", "y") }, size: { x: radialPart("size", "x"), y: radialPart("size", "y") } };
+
+/** Stop `i` of a gradient: its position, or its color with its opacity. A stop added in this round goes back with the whole fill. */
+const stopPart = (i: number, which: "position" | "color") =>
+  gradientPart(
+    (g) => {
+      const s = g.stops[i];
+      return s ? (which === "position" ? [s.position, s.unit] : [s.color, s.opacity]) : null;
+    },
+    (g, before) => {
+      const [s, was] = [g.stops[i], before.stops[i]];
+      if (!s || !was) return null;
+      const back = which === "position" ? stop(s, was.position, was.unit) : stop(was, s.position, s.unit);
+      return { ...g, stops: g.stops.map((other, j) => (i === j ? back : other)) } as Gradient;
+    },
+  );
+
 /** A gradient as its swatch in the panel shows it. */
 function gradientSwatch(gradient: Gradient, box: PaintArea): string {
   const length = gradientLength(gradient, box);
@@ -1199,6 +1332,8 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
           label={`Center ${axis.toUpperCase()}`}
           glyph={axis.toUpperCase()}
           unit="%"
+          property="fill"
+          part={RADIAL_PARTS.center[axis]}
           value={centerPercent(gradient, axis, box)}
           onChange={change((current, value, box) => withCenter(current, axis, value, box))}
         />
@@ -1208,6 +1343,8 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
           key={axis}
           label={`Radius ${axis.toUpperCase()}`}
           icon={axis === "x" ? "width" : "height"}
+          property="fill"
+          part={RADIAL_PARTS.size[axis]}
           // To a tenth of a px: a radius typed in px and kept in % reads back as typed.
           value={Math.round(radii[axis] * 10) / 10}
           min={0}
@@ -1237,6 +1374,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
 }) {
   const bar = useRef<HTMLDivElement>(null);
   const catalog = useCatalog();
+  const marks = useChangeMarks();
   /** The handle being dragged: the stop, by where it is in the sorted stops as it moves among them, and whether it has moved yet. */
   const drag = useRef<{ pointerId: number; index: number; moved: boolean } | null>(null);
   const { stops } = gradient;
@@ -1340,6 +1478,9 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
       </div>
       {stops.map((s, index) => {
         const slot = variable(index);
+        // Its position and its color, each marked when changed in this round, with its reset (designer, 2026-11-08).
+        const [atPart, colorPart] = [stopPart(index, "position"), stopPart(index, "color")];
+        const [movedHere, coloredHere] = [marks.changed("fill", atPart), marks.changed("fill", colorPart)];
         return (
           <div
             class={`tk-row tk-stop-row${index === chosen ? " is-chosen" : ""}`}
@@ -1349,7 +1490,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
             // Pressed anywhere in its row, the stop is the one the picker sets.
             onPointerDown={() => onChoose(index)}
           >
-            <label class="tk-field tk-stop-position" title="Position">
+            <label class={`tk-field tk-stop-position${movedHere ? " is-changed" : ""}`} title="Position">
               <TextField
                 label={`Stop ${index + 1} at`}
                 value={`${s.position}${s.unit}`}
@@ -1357,8 +1498,9 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 step={(by) => place(index, s.position + by, s.unit)}
                 onChange={({ position, unit }) => place(index, position, unit)}
               />
+              {movedHere && <ResetButton label={`stop ${index + 1} position`} onReset={() => marks.reset(["fill"], atPart)} />}
             </label>
-            <div class="tk-field tk-color-field">
+            <div class={`tk-field tk-color-field${coloredHere ? " is-changed" : ""}`}>
               <button type="button" class="tk-swatch tk-swatch-button" aria-label={`Choose stop ${index + 1}`} style={{ "--tk-swatch": cssColor(s) }} onClick={() => onChoose(index)} />
               <ColorValue
                 name={`Stop ${index + 1}`}
@@ -1367,6 +1509,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 offered={slot && catalog?.of("color").length ? slot : undefined}
                 onOpen={() => onChoose(index)}
               />
+              {coloredHere && <ResetButton label={`stop ${index + 1} color`} onReset={() => marks.reset(["fill"], colorPart)} />}
             </div>
             <button type="button" class="tk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
               <Icon name="minus" />
@@ -1419,15 +1562,27 @@ const STROKE_PARTS = (() => {
       (stroke, before) =>
         strokeWith(stroke, typeof before.weight === "number" ? widest(stroke.weight) : sidesOf(before.weight) === "custom" ? before.weight : (before.weight.map((w) => (w > 0 ? widest(stroke.weight) : 0)) as Stroke["weight"])),
     ),
+    /** Each side's weight, as Custom shows it in a field of its own. */
+    side: SIDE_NAMES.map((_, i) =>
+      part(
+        ({ weight }) => weightsOf(weight)[i],
+        (stroke, before) => strokeWith(stroke, weightsOf(stroke.weight).map((w, j) => (i === j ? weightsOf(before.weight)[i] : w)) as Stroke["weight"]),
+      ),
+    ),
   };
 })();
 
+/** A stroke's weight on each side, top first. */
+function weightsOf(weight: Stroke["weight"]): [number, number, number, number] {
+  return typeof weight === "number" ? [weight, weight, weight, weight] : weight;
+}
+
 /** A choice of part of a property: in the accent when that part is changed in this round, with its reset, as a changed field is. */
-function MarkedSelect({ label, property, part, children }: { label: string; property: Property; part: ValuePart; children: ComponentChildren }) {
+function MarkedSelect({ label, property, part, class: className, children }: { label: string; property: Property; part: ValuePart; class?: string; children: ComponentChildren }) {
   const marks = useChangeMarks();
   const changed = marks.changed(property, part);
   return (
-    <span class={`tk-select-field${changed ? " is-changed" : ""}`}>
+    <span class={`tk-select-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`}>
       {children}
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property], part)} />}
     </span>
@@ -1456,10 +1611,16 @@ function StrokeSection({ stroke, onChange, update, variable }: {
     onChange(next, continues);
   };
   const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
+  /** Each field its own operation: the color row, the weight (or, Custom, each side's), the line, the sides. */
+  const operations: Operation[] = [STROKE_PARTS.color, ...(sides === "custom" ? STROKE_PARTS.side : [STROKE_PARTS.weight]), STROKE_PARTS.style, STROKE_PARTS.sides].map((part) => ({
+    property: "stroke",
+    part,
+  }));
   return (
     <section class="tk-section" role="group" aria-label="Stroke">
       <div class="tk-section-header">
         <h3 class="tk-section-title">Stroke</h3>
+        <SectionReset title="Stroke" properties={["stroke"]} operations={operations} />
         {!stroke && (
           <button type="button" class="tk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
             <Icon name="plus" />
@@ -1548,6 +1709,8 @@ function StrokeSection({ stroke, onChange, update, variable }: {
                 key={name}
                 label={`Stroke ${name.toLowerCase()}`}
                 icon={`stroke-${name.toLowerCase()}` as IconName}
+                property="stroke"
+                part={STROKE_PARTS.side[i]}
                 value={weights[i]}
                 min={0}
                 onChange={(typed, continues) => changeWeight(typed, (weight) => strokeWith(stroke, weights.map((w, j) => (i === j ? weight : w)) as Stroke["weight"]), continues)}
@@ -1567,6 +1730,44 @@ type EffectUpdate = <P extends EffectProperty>(property: P, next: (current: Prop
 type EffectType = Shadow["type"] | BlurProperty;
 
 const isShadow = (type: EffectType): type is Shadow["type"] => type === "drop" || type === "inner";
+
+/** A shadow's fields, each marked and reset on its own; its color with its opacity, one. */
+type ShadowKey = "type" | "x" | "y" | "blur" | "spread" | "color";
+const SHADOW_KEYS: ShadowKey[] = ["type", "x", "y", "blur", "spread", "color"];
+
+/**
+ * Shadow `i`'s field `key`, a part of the shadows, marked and reset on its own (designer, 2026-11-08).
+ * A shadow added in this round had none before: its reset takes the shadow off.
+ */
+function shadowPart(i: number, key: ShadowKey): ValuePart {
+  const read = (s: Shadow) => (key === "color" ? [s.color, s.opacity] : s[key]);
+  return {
+    of: (value) => {
+      const s = (value as Shadow[] | null)?.[i];
+      return s ? read(s) : null;
+    },
+    back: (value, before) => {
+      const now = (value as Shadow[] | null) ?? [];
+      const was = (before as Shadow[] | null)?.[i];
+      if (!was) return now.filter((_, j) => j !== i);
+      return now.map((s, j) => (i !== j ? s : key === "color" ? { ...s, color: was.color, opacity: was.opacity } : { ...s, [key]: was[key] }));
+    },
+  };
+}
+
+/** The marks, with a text layer's text shadows marked and reset as its shadows are: the Effects section shows both as shadows. */
+function withTextShadows(marks: ChangeMarks): ChangeMarks {
+  const kept = (property: Property): Property[] => (property === "shadows" ? ["shadows", "textShadows"] : [property]);
+  return {
+    changed: (property, part) => kept(property).some((each) => marks.changed(each, part)),
+    reset: (properties, part) => {
+      const all = properties.flatMap(kept);
+      if (!part) return marks.reset(all);
+      for (const each of all) if (marks.changed(each, part)) marks.reset([each], part);
+    },
+    before: (property) => kept(property).map((each) => marks.before(each)).find((value) => value !== null) ?? null,
+  };
+}
 
 const EFFECT_TYPES: { type: EffectType; label: string }[] = [
   { type: "drop", label: "Drop shadow" },
@@ -1656,15 +1857,24 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
       ))}
     </Select>
   );
+  /** Each field its own operation: each shadow's type, numbers and color row, each blur; a shadow Variable, one. */
+  const operations: Operation[] = [
+    ...(variable?.bound || shadows === MIXED
+      ? [{ property: "shadows" as const }]
+      : shadows.flatMap((_, i) => SHADOW_KEYS.filter((key) => !withText || key !== "spread").map((key) => ({ property: "shadows" as const, part: shadowPart(i, key) })))),
+    { property: "layerBlur" },
+    { property: "backgroundBlur" },
+  ];
   return (
     <section class="tk-section" role="group" aria-label="Effects">
       <div class="tk-section-header">
         <h3 class="tk-section-title">Effects</h3>
+        <SectionReset title="Effects" properties={["shadows", "layerBlur", "backgroundBlur"]} operations={operations} />
         <MenuButton label="Add effect" icon="plus" items={addable} onChoose={add} />
       </div>
       {variable?.bound ? (
         // A shadow Variable stands for the shadows, as an effect style does in Figma.
-        <VariableSlot label="Shadow" slot={variable}>{null}</VariableSlot>
+        <VariableSlot label="Shadow" slot={variable} property="shadows">{null}</VariableSlot>
       ) : shadows === MIXED ? (
         <div class="tk-row">
           <span class="tk-field tk-mixed">Mixed shadows</span>
@@ -1680,6 +1890,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
               label={`${name} ${label}`}
               glyph={glyph}
               small={glyph.length > 1}
+              property="shadows"
+              part={shadowPart(i, key)}
               value={s[key]}
               min={min}
               onChange={(value, continues) => changeShadow(i, (current) => ({ ...current, [key]: value }), continues)}
@@ -1689,7 +1901,9 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
             // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
             <div class="tk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
               <div class="tk-row tk-paint-row">
-                {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
+                <MarkedSelect label={`${name} type`} property="shadows" part={shadowPart(i, "type")} class="tk-effect-type-field">
+                  {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
+                </MarkedSelect>
                 <button type="button" class="tk-icon-button" aria-label={`Remove shadow ${i + 1}`} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))}>
                   <Icon name="minus" />
                 </button>
@@ -1701,7 +1915,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
                 {lengthField("blur", "blur", "Blur", 0)}
                 {!withText && lengthField("spread", "spread", "Spread")}
               </div>
-              <ColorField name={name} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
+              <ColorField name={name} property="shadows" part={shadowPart(i, "color")} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
             </div>
           );
         })
@@ -1901,11 +2115,25 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
   );
 }
 
-/** In a section's header: its reset, while some of its properties are changed in this round; it takes them all back out. */
-function SectionReset({ title, properties }: { title: string; properties: Property[] }) {
+/** What the user takes back as one: a field, a row with one reset, a toggle; `part`, the part of `property` it shows. */
+export interface Operation {
+  property: Property;
+  part?: number | ValuePart;
+}
+
+/**
+ * In a section's header: its reset, which takes all of the section's changes
+ * in this round back out. Every section with something to reset has one; it
+ * shows only while two or more of its operations are changed, each counted as
+ * the user sees it, a row with one reset as one (designer, 2026-11-08): one
+ * change alone has its own reset, or is clicked again to go back.
+ * `operations`: what it counts; by default, each of `properties` one.
+ */
+export function SectionReset({ title, properties, operations }: { title: string; properties: Property[]; operations?: Operation[] }) {
   const marks = useChangeMarks();
-  const changed = properties.filter((property) => marks.changed(property));
-  return changed.length ? <ResetButton label={title} onReset={() => marks.reset(changed)} /> : null;
+  const counted = (operations ?? properties.map((property) => ({ property }))).filter(({ property, part }) => marks.changed(property, part)).length;
+  if (counted < 2) return null;
+  return <ResetButton label={title} onReset={() => marks.reset(properties.filter((property) => marks.changed(property)))} />;
 }
 
 /**

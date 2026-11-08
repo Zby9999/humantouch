@@ -2,7 +2,7 @@
 import { createContext, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Variable, VariableGroup } from "../service-protocol";
-import { ResetButton, useChangeMarks } from "./ChangeMarks";
+import { ResetButton, useChangeMarks, type ValuePart } from "./ChangeMarks";
 import { writeShadows, type Shadow } from "./effects";
 import { Icon } from "./icons";
 import { cssColor, type Color } from "./paint";
@@ -257,7 +257,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   slot: Slot | undefined;
   /** The property the field sets, and its part: with a Variable picked, the name is marked as the field would be (`ChangeMarks`). */
   property?: Property;
-  part?: number;
+  part?: number | ValuePart;
   children: ComponentChildren;
 }) {
   const catalog = useCatalog();
@@ -290,7 +290,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
           <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} title="Detach variable" onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
-          {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!])} />}
+          {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
         </div>
       ) : (
         <TypingProvider value={typing}>{children}</TypingProvider>
