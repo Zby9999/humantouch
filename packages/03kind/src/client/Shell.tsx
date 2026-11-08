@@ -20,6 +20,7 @@ import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { PanelResizer } from "./PanelResizer";
+import { watchScrolled } from "./panel-scrolled";
 import { fitWidths, maxWidth, readWidths, writeWidth, type Panel, type Widths } from "./panel-widths";
 import { createFolds } from "./layer-folds";
 import { LayerTreeView } from "./LayerTreeView";
@@ -38,8 +39,6 @@ import { bind, bindRecorded, resolveVariables, withPart, type Catalog, type Reso
 import { VariantsPanel } from "./VariantsPanel";
 import { ChangeMarksProvider, changeMarks } from "./ChangeMarks";
 import { CatalogProvider } from "./VariablePicker";
-
-const LAYERS_KEY = "03kind:layers-panel";
 
 /** What the change list does to the round while edit mode is up: on the canvas, as edits. */
 export interface RoundControl {
@@ -92,14 +91,17 @@ const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRigh
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
 export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, leaving, animate, onLeft }: Props) {
-  /** Hidden at first: the editor often opens in a browser built into another app, where room is short. */
-  const [layersShown, setLayersShown] = useState(readLayersShown);
+  /**
+   * Hidden at first: the editor often opens in a browser built into another app, where room is short. Hidden on every
+   * entry, whether it was shown or hidden the last time; shown, it stays so until edit mode is left (designer,
+   * 2026-11-08). Nothing kept for the next entry.
+   */
+  const [layersShown, setLayersShown] = useState(false);
   const layersToggle = useRef<HTMLButtonElement>(null);
   const toggledLayers = useRef(false);
   const showLayers = (shown: boolean) => {
     toggledLayers.current = true;
     setLayersShown(shown);
-    writeLayersShown(shown);
   };
   // The button pressed goes away with the panel: focus moves to the one that brings it back.
   useEffect(() => {
@@ -119,17 +121,27 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     return () => removeEventListener("resize", onResize);
   }, []);
   const widths = fitWidths(chosenWidths, room, layersShown);
-  /** Dragged: the width shows at once, on the shell's style alone; the shell renders anew once let go. */
-  const dragWidth = (panel: Panel) => (width: number) => shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
+  /**
+   * Dragged: the width shows at once, on the shell's style alone; the shell renders anew once let go. Null: let go
+   * where it began. The width held is kept here too: the shell renders anew mid-drag (the round's status, polled,
+   * renders the editor layer), and the widths written after each render would put the panel back meanwhile.
+   */
+  const dragged = useRef<Partial<Widths>>({});
+  const dragWidth = (panel: Panel) => (width: number | null) => {
+    if (width === null) return void delete dragged.current[panel];
+    dragged.current[panel] = width;
+    shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
+  };
   const keepWidth = (panel: Panel) => (width: number) => {
+    delete dragged.current[panel];
     setChosenWidths((was) => ({ ...was, [panel]: width }));
     writeWidth(panel, width);
   };
-  // After every render, the widths as fitted: a drag wrote them on the style itself, which the style prop, unchanged
-  // since, would not undo (a drag let go where it began, or the window resized meanwhile).
+  // After every render, the widths as fitted, or as held: a drag wrote them on the style itself, which the style prop,
+  // unchanged since, would not undo (a drag let go where it began, or the window resized meanwhile).
   useLayoutEffect(() => {
-    shell.current?.style.setProperty("--tk-layers-width", `${widths.layers}px`);
-    shell.current?.style.setProperty("--tk-design-width", `${widths.design}px`);
+    shell.current?.style.setProperty("--tk-layers-width", `${dragged.current.layers ?? widths.layers}px`);
+    shell.current?.style.setProperty("--tk-design-width", `${dragged.current.design ?? widths.design}px`);
   });
 
   /** The toast at the bottom of the canvas: a new one takes the old one's place. */
@@ -647,7 +659,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       */}
       {layersShown ? (
         <aside key="layers" class="tk-panel is-layers" aria-label="Layers">
-          <div ref={watchScrolled} class="tk-panel-header">
+          <div class="tk-panel-header">
             <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
@@ -854,7 +866,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         />
       )}
       <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
-        <div ref={watchScrolled} class="tk-panel-header">
+        <div ref={watchPanelScrolled} class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
           {/* In the Layers' title's type: one header style for both panels (designer, 2026-11-08). */}
           <h2 class="tk-panel-title">{designing ? "Design" : "Variants"}</h2>
@@ -1017,40 +1029,14 @@ function Tools({ tool, onTool }: ToolsProps) {
   );
 }
 
-/** The panels whose scrolling is watched: a header's ref is called again on every render. */
+/** The Design panel, its scrolling watched: its header's ref is called again on every render. */
 const watchedPanels = new WeakSet<Element>();
 
-/**
- * A panel's header stays at its top, over what scrolls under it; once the panel is scrolled, the line under the header
- * runs to the panel's edges, and back to its inset at the top again (designer, 2026-11-08). The panel is marked only
- * when that flips, from a passive listener, and the line's CSS transition does the rest. A data attribute, as Preact
- * sets the panel's class.
- */
-function watchScrolled(header: HTMLElement | null) {
+/** The Design panel's header: the panel scrolls under it (`watchScrolled`). The Layers' tree watches its own scrolling. */
+function watchPanelScrolled(header: HTMLElement | null) {
   const panel = header?.parentElement;
   if (!panel || watchedPanels.has(panel)) return;
   watchedPanels.add(panel);
-  let scrolled = false;
-  const mark = () => {
-    const now = panel.scrollTop > 0;
-    if (now === scrolled) return;
-    scrolled = now;
-    panel.toggleAttribute("data-scrolled", now);
-  };
-  panel.addEventListener("scroll", mark, { passive: true });
-  mark();
+  watchScrolled(panel, panel);
 }
 
-function readLayersShown(): boolean {
-  try {
-    return localStorage.getItem(LAYERS_KEY) === "shown";
-  } catch {
-    return false;
-  }
-}
-
-function writeLayersShown(shown: boolean) {
-  try {
-    localStorage.setItem(LAYERS_KEY, shown ? "shown" : "hidden");
-  } catch {}
-}

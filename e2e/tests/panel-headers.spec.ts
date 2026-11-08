@@ -102,6 +102,56 @@ test("the Design panel scrolled: its header stays at its top over what scrolls u
   await expect.poll(async () => (await headerOf(panel)).line).toEqual(atTop.line);
 });
 
+test("the Layers' tree scrolled: their header stays at its top, the rows going up under its line, the line from edge to edge; back at the top, inset again, as the Design panel's (designer, 2026-11-08)", async ({ page }) => {
+  // Rows enough for the list to scroll; entered anew, so they are listed.
+  await page.goto(DEV_URL);
+  await page.evaluate(() => {
+    const many = document.createElement("div");
+    many.innerHTML = Array.from({ length: 40 }, (_, i) => `<p>Row ${i}</p>`).join("");
+    document.body.prepend(many);
+  });
+  await enterEditMode(page);
+  const panel = layers(page);
+  const tree = panel.getByRole("tree", { name: "Layers" });
+  await expect(tree.getByRole("treeitem").first()).toBeVisible();
+  const atTop = await headerOf(panel);
+  expect(atTop.line).toMatchObject({ fromLeft: 16, fromRight: 16 });
+
+  // The list starts right under the header's line, so rows scroll up to it, not 16px short of it.
+  const edges = () =>
+    panel.evaluate((aside) => {
+      const header = aside.querySelector(":scope > .tk-panel-header")!.getBoundingClientRect();
+      const list = aside.querySelector(":scope > .tk-tree")!.getBoundingClientRect();
+      return { headerBottom: Math.round(header.bottom), listTop: Math.round(list.top), headerLeft: Math.round(header.left) };
+    });
+  const before = await edges();
+  expect(before.listTop).toBe(before.headerBottom);
+
+  await tree.evaluate((el) => (el.scrollTop = 120));
+  expect(await tree.evaluate((el) => el.scrollTop)).toBe(120);
+  await expect.poll(async () => (await headerOf(panel)).line).toMatchObject({ fromLeft: 0, fromRight: 0, top: atTop.line.top });
+  expect(await edges()).toEqual(before);
+  // A row scrolled up to the line is cut there, under the header: at the header's bottom, the header is what shows.
+  const covered = await panel.evaluate((aside) => {
+    const header = aside.querySelector(":scope > .tk-panel-header")!;
+    const box = header.getBoundingClientRect();
+    const root = aside.getRootNode() as ShadowRoot;
+    const shown = root.elementFromPoint(box.left + box.width / 2, box.bottom - 2);
+    const rowBelow = root.elementFromPoint(box.left + box.width / 2, box.bottom + 2)?.closest('[role="treeitem"]');
+    return { onTop: !!shown && header.contains(shown), rowBelow: !!rowBelow };
+  });
+  expect(covered).toEqual({ onTop: true, rowBelow: true });
+
+  // Sideways over the list, the header doesn't move.
+  const list = (await tree.boundingBox())!;
+  await page.mouse.move(list.x + list.width / 2, list.y + 80);
+  await page.mouse.wheel(200, 0);
+  expect(await edges()).toEqual(before);
+
+  await tree.evaluate((el) => (el.scrollTop = 0));
+  await expect.poll(async () => (await headerOf(panel)).line).toEqual(atTop.line);
+});
+
 test("the button showing the Layers panel, alone over the canvas, is the editor's prominent one: the chosen tool's white and shadow, as large and where the one hiding them is (designer, 2026-11-08)", async ({ page }) => {
   const hide = page.getByRole("button", { name: "Hide layers" });
   const show = page.getByRole("button", { name: "Show layers" });

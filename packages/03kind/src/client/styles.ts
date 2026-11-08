@@ -312,7 +312,8 @@ export const styles = /* css */ `
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 2;
+  /* Over the panels' sticky headers (z-index 2; the Design panel's comes after its edge in the page, so at an equal z-index it covered the edge's top): the edge, its grip and its line run the panels' whole height (designer, 2026-11-08). */
+  z-index: 3;
   width: 6px;
   cursor: col-resize;
   touch-action: none;
@@ -543,20 +544,21 @@ export const styles = /* css */ `
  * disclosure before a layer with layers in it, and guides from each layer down to those in it.
  */
 /*
- * Long names in full, as in Figma (designer, 2026-11-08): the list, not the panel, scrolls, both ways, under the
- * panel's top, which stays; its rows are as wide as the widest, so a row's hover and selection span the scroll.
+ * The list, not the panel, scrolls up and down, under the panel's top, which stays as the Design panel's does: the
+ * list starts right under the header's line, its padding in the gap, so rows scroll up under the line, not 16px short
+ * of it (designer, 2026-11-08). Long names in full, as in Figma, but only the names scroll sideways, each clipped in
+ * its cell to the panel's edge; the indents, disclosures and icons stay (designer, 2026-11-08; LayerTreeView).
  */
 .tk-panel.is-layers { overflow: hidden; }
 .tk-panel.is-layers > .tk-tree { flex: 1 1 auto; min-height: 0; }
-.tk-tree { margin: 0 -16px -16px; padding-bottom: 16px; overflow: auto; overscroll-behavior: contain; }
-.tk-tree-rows { display: flex; flex-direction: column; gap: 2px; width: max-content; min-width: 100%; }
+.tk-tree { position: relative; margin: -16px -16px -16px; padding: 16px 0; overflow: hidden auto; overscroll-behavior: contain; }
+.tk-tree-rows { display: flex; flex-direction: column; gap: 2px; }
 .tk-tree-row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   height: 28px;
-  padding-right: 16px;
   white-space: nowrap;
   cursor: default;
   user-select: none;
@@ -570,8 +572,9 @@ export const styles = /* css */ `
 /* An instance's icons purple; its disclosure as every other row's (designer, 2026-11-08). */
 .tk-tree-row.is-instance .tk-icon:not(.tk-tree-chevron > .tk-icon) { color: var(--tk-instance); }
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
-.tk-tree-name { flex: none; }
-.tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }
+.tk-tree-name-cell { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.tk-tree-name { display: inline-block; vertical-align: top; }
+.tk-tree-brief { display: flex; margin-right: 16px; color: var(--tk-text-muted); }
 .tk-tree-chevron { position: relative; z-index: 1; display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 .tk-tree-chevron[data-open] { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
 .tk-tree-chevron[data-open="false"] .tk-icon { rotate: -90deg; }
@@ -1542,7 +1545,8 @@ export const styles = /* css */ `
 /* The popovers of the Design panel (the color picker, the Variables): floating at its left, in its colors (designer, 2026-11-07). */
 .tk-popover {
   position: fixed;
-  z-index: 2;
+  /* As high as the panels' edges, and after the Design panel's in the page: over it, where the popover reaches across it. */
+  z-index: 3;
   box-sizing: border-box;
   max-height: min(520px, calc(100vh - 16px));
   display: flex;

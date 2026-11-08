@@ -127,6 +127,54 @@ test("pressed, the grip and the panel's whole edge take the accent; let go, the 
   await expect.poll(async () => (await line(page, "Design")).opacity).toBe("0");
 });
 
+test("pressed, the edge's line runs the panel's whole height, over its header, on both panels (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  for (const panel of ["Layers", "Design"] as const) {
+    const aside = await (panel === "Layers" ? layers : design)(page).boundingBox();
+    const at = await edgeAt(page, panel);
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    await expect(edge(page, panel)).toHaveClass(/is-pressed/);
+    const drawn = await edge(page, panel).evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const line = getComputedStyle(el, "::before");
+      const x = box.left + parseFloat(line.left);
+      const root = el.getRootNode() as ShadowRoot;
+      // At the panel's very top, by the header, and at its bottom: the edge is what is there.
+      return {
+        top: Math.round(box.top),
+        bottom: Math.round(box.top + parseFloat(line.height)),
+        atTop: root.elementFromPoint(x, 0) === el,
+        atHeader: root.elementFromPoint(x, 20) === el,
+        atBottom: root.elementFromPoint(x, innerHeight - 1) === el,
+      };
+    });
+    expect(drawn).toEqual({ top: Math.round(aside!.y), bottom: Math.round(aside!.y + aside!.height), atTop: true, atHeader: true, atBottom: true });
+    await page.mouse.up();
+  }
+});
+
+test("an edge is there at the headers' height too: the grip shows, and the Design panel's edge drags (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  for (const panel of ["Layers", "Design"] as const) {
+    const header = await (panel === "Layers" ? layers : design)(page).locator(".tk-panel-header").boundingBox();
+    const y = Math.round(header!.y + header!.height / 2);
+    const at = await edgeAt(page, panel, y);
+    await page.mouse.move(at.x, at.y);
+    await expect.poll(() => grip(page, panel)).toEqual({ opacity: "1", middle: Math.max(y, 24) });
+    await page.mouse.move(at.x + (panel === "Layers" ? 200 : -200), at.y);
+  }
+
+  const header = await design(page).locator(".tk-panel-header").boundingBox();
+  const right = await edgeAt(page, "Design", Math.round(header!.y + header!.height / 2));
+  await page.mouse.move(right.x, right.y);
+  await page.mouse.down();
+  await page.mouse.move(right.x - 100, right.y, { steps: 4 });
+  await expect.poll(() => width(page, "Design")).toBe(420);
+  await page.mouse.up();
+  await expect(edge(page, "Design")).toHaveAttribute("aria-valuenow", "420");
+});
+
 test("a panel's width is kept for the viewer: reloaded, it is as left", async ({ page }) => {
   await enterEditMode(page);
   const at = await edgeAt(page, "Layers");
@@ -166,7 +214,7 @@ test("focused, an edge moves with the arrow keys: 8px, 32px with Shift", async (
   await expect.poll(() => width(page, "Design")).toBe(320);
 });
 
-test("a long name shows in full: the Layers scroll sideways under their still top, a row's hover across the whole", async ({ page }) => {
+test("a long name shows in full: only the names scroll sideways, the tree's indents and icons stay at the left (designer, 2026-11-08)", async ({ page }) => {
   const name = "A very long paragraph whose layer name runs well past the Layers panel's edge";
   await page.evaluate((name) => {
     const box = document.createElement("section");
@@ -179,30 +227,59 @@ test("a long name shows in full: the Layers scroll sideways under their still to
   await row.scrollIntoViewIfNeeded();
   await expect(row.locator(".tk-tree-name")).toHaveText(name);
 
-  const sizes = () => tree.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
-  const { scroll, client } = await sizes();
-  expect(scroll).toBeGreaterThan(client);
-  // Every row as wide as the scroll, so hovering one shades it all the way across.
+  // The list itself doesn't scroll sideways: its rows are as wide as it, so hovering one shades it across the panel.
+  expect(await tree.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  const client = await tree.evaluate((el) => el.clientWidth);
   const rowWidths = await tree.getByRole("treeitem").evaluateAll((rows) => [...new Set(rows.map((row) => (row as HTMLElement).offsetWidth))]);
-  expect(rowWidths).toEqual([scroll]);
+  expect(rowWidths).toEqual([client]);
 
+  /** Where a row's parts are, in the window: its disclosure, its icon, its name's start and end, and its name's cell's right. */
+  const parts = (locator: typeof row) =>
+    locator.evaluate((el) => {
+      const left = (selector: string) => Math.round(el.querySelector(selector)!.getBoundingClientRect().left);
+      const name = el.querySelector(".tk-tree-name")!.getBoundingClientRect();
+      return {
+        chevron: left(".tk-tree-chevron"),
+        icon: left(".tk-tree-chevron + *"),
+        start: Math.round(name.left),
+        end: Math.round(name.right),
+        cellRight: Math.round(el.querySelector(".tk-tree-name-cell")!.getBoundingClientRect().right),
+      };
+    });
+  const before = await parts(row);
   const header = layers(page).locator(".tk-panel-header");
   const headerBefore = await header.boundingBox();
-  await tree.evaluate((el) => (el.scrollLeft = el.scrollWidth));
-  await expect.poll(() => tree.evaluate((el) => el.scrollLeft)).toBe(scroll - client);
-  // The name's end now shows inside the list.
-  const end = await row.locator(".tk-tree-name").evaluate((el) => el.getBoundingClientRect().right);
-  const treeBox = (await tree.boundingBox())!;
-  expect(end).toBeLessThanOrEqual(treeBox.x + treeBox.width);
-  // The top stays put.
-  expect(await header.boundingBox()).toEqual(headerBefore);
+  const panel = (await layers(page).boundingBox())!;
+  // The name runs past the panel, clipped in its cell at the panel's edge.
+  expect(before.end).toBeGreaterThan(panel.x + panel.width);
+  expect(before.cellRight).toBe(Math.round(panel.x + panel.width));
 
-  // Scrolled to its end, the row is still there under the pointer, and shaded as it is hovered. The hovered row
-  // reaches past the list's right edge: its background goes on to the end of the scroll.
+  // Sideways over the list, as a trackpad does, far past the end.
+  const treeBox = (await tree.boundingBox())!;
+  await page.mouse.move(treeBox.x + treeBox.width / 2, treeBox.y + 60);
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(200, 0);
+  await expect.poll(async () => (await parts(row)).start).toBeLessThan(before.start);
+  const after = await parts(row);
+  // The tree stays: its disclosure and icon where they were.
+  expect({ chevron: after.chevron, icon: after.icon }).toEqual({ chevron: before.chevron, icon: before.icon });
+  // The name's end now shows, the panel's padding after it, and no further: the longest name sets how far.
+  expect(after.end).toBe(Math.round(panel.x + panel.width) - 16);
+  // Every name moved as far.
+  const shifts = await tree.locator(".tk-tree-name").evaluateAll((names) => [...new Set(names.map((name) => (name as HTMLElement).style.transform))]);
+  expect(shifts).toEqual([`translateX(${after.end - before.end}px)`]);
+  // Up and down is the list's own: the panel's top stays put, and the list hasn't scrolled sideways.
+  expect(await header.boundingBox()).toEqual(headerBefore);
+  expect(await tree.evaluate((el) => el.scrollLeft)).toBe(0);
+
+  // Hovered, a row is shaded across the panel.
   const box = await steadyBox(row);
   await page.mouse.move(treeBox.x + treeBox.width - 24, box.y + box.height / 2);
   await expect(row).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  expect(Math.abs(box.x + box.width - (treeBox.x + client))).toBeLessThan(1);
+  expect(Math.round(box.x + box.width)).toBe(Math.round(treeBox.x + client));
+
+  // And back.
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(-200, 0);
+  await expect.poll(() => parts(row)).toEqual(before);
 });
 
 test("the Layers still scroll up and down, and a layer selected on the canvas comes into view there", async ({ page }) => {
