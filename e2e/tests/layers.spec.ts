@@ -211,10 +211,10 @@ test("the button that hides the Layers panel and the one that shows it again are
   await enterEditMode(page);
   const hide = page.getByRole("button", { name: "Hide layers" });
   const show = page.getByRole("button", { name: "Show layers" });
-  /** Its box, and how it is drawn: its corners and its gray, the pointer away (it stays over the one shown in its place). */
+  /** Its box, and its corners, the pointer away (it stays over the one shown in its place). Its color differs: hidden, it is the prominent button (designer, 2026-11-08; panel-headers.spec.ts). */
   const looks = async (button: Locator) => {
     await page.mouse.move(700, 400);
-    const drawn = await button.evaluate((el) => ({ radius: getComputedStyle(el).borderRadius, background: getComputedStyle(el).backgroundColor }));
+    const drawn = await button.evaluate((el) => ({ radius: getComputedStyle(el).borderRadius }));
     return { box: await steadyBox(button), ...drawn };
   };
   const near = (a: { x: number; y: number; width: number; height: number }, b: typeof a) => {
@@ -226,13 +226,14 @@ test("the button that hides the Layers panel and the one that shows it again are
   await hide.click();
   const hidden = await looks(show);
   near(hidden.box, shown.box);
-  expect({ radius: hidden.radius, background: hidden.background }).toEqual({ radius: shown.radius, background: shown.background });
+  expect(hidden.radius).toBe(shown.radius);
 
   await show.click();
   near(await steadyBox(hide), shown.box);
 });
 
-test("no rule across the Layers panel under its top, only the one after its title, also once hidden and shown again (designer, 2026-11-08)", async ({ page }) => {
+// Since the panels' tops are one style (designer, 2026-11-08), the line is the one under the header, as the Design panel's, and inset (panel-headers.spec.ts).
+test("one line under the Layers panel's top, the header's own, also once hidden and shown again (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   const panel = page.getByRole("complementary", { name: "Layers" });
   /** Every line drawn between the panel's top and its first row, as `who: width`: borders, and pseudo-elements 1px high. */
@@ -260,10 +261,10 @@ test("no rule across the Layers panel under its top, only the one after its titl
     await expect(layerTree(page).getByRole("treeitem").first()).toBeVisible();
     await expect
       .poll(async () => {
-        const { found, width, header } = await lines();
-        return { found: found.map((line) => line.replace(/: .*$/, "")), fullWidth: found.filter((line) => parseFloat(line.split(": ")[1]) >= width - 32), header };
+        const { found, header } = await lines();
+        return { found: found.map((line) => line.replace(/: .*$/, "")), header };
       })
-      .toEqual({ found: ["tk-panel-title::after"], fullWidth: [], header: 28 });
+      .toEqual({ found: ["tk-panel-header::after"], header: 53 });
   };
   await noRuleAcross();
   // Shown again, the panel once took the Design panel's elements, and its header the rule under that panel's.

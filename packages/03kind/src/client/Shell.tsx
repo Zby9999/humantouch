@@ -615,7 +615,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       */}
       {layersShown ? (
         <aside key="layers" class="tk-panel is-layers" aria-label="Layers">
-          <div class="tk-panel-header">
+          <div ref={watchScrolled} class="tk-panel-header">
             <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
@@ -802,9 +802,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       <Toast message={toast} />
       {notice}
       <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
-        <div class="tk-panel-header">
+        <div ref={watchScrolled} class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
-          <h2 class="tk-panel-label">{designing ? "Design" : "Variants"}</h2>
+          {/* In the Layers' title's type: one header style for both panels (designer, 2026-11-08). */}
+          <h2 class="tk-panel-title">{designing ? "Design" : "Variants"}</h2>
           {controls}
         </div>
         {!designing ? (
@@ -904,6 +905,30 @@ function Tools({ tool, onTool }: ToolsProps) {
       )}
     </div>
   );
+}
+
+/** The panels whose scrolling is watched: a header's ref is called again on every render. */
+const watchedPanels = new WeakSet<Element>();
+
+/**
+ * A panel's header stays at its top, over what scrolls under it; once the panel is scrolled, the line under the header
+ * runs to the panel's edges, and back to its inset at the top again (designer, 2026-11-08). The panel is marked only
+ * when that flips, from a passive listener, and the line's CSS transition does the rest. A data attribute, as Preact
+ * sets the panel's class.
+ */
+function watchScrolled(header: HTMLElement | null) {
+  const panel = header?.parentElement;
+  if (!panel || watchedPanels.has(panel)) return;
+  watchedPanels.add(panel);
+  let scrolled = false;
+  const mark = () => {
+    const now = panel.scrollTop > 0;
+    if (now === scrolled) return;
+    scrolled = now;
+    panel.toggleAttribute("data-scrolled", now);
+  };
+  panel.addEventListener("scroll", mark, { passive: true });
+  mark();
 }
 
 function readLayersShown(): boolean {
