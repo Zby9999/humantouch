@@ -1924,8 +1924,11 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
   max?: number;
   onChange(value: number, continues: boolean): void;
 }) {
-  /** The drag under way: the value so far, movement of less than 1px not yet counted, and whether it has changed the value yet. */
-  const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean } | null>(null);
+  /** The drag under way: the value so far, movement of less than 1px not yet counted, whether it has changed the value yet, and the field it marks as chosen. */
+  const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean; field: Element | null } | null>(null);
+
+  // Gone mid-drag while its field stays, it takes the field's mark with it.
+  useEffect(() => () => drag.current?.field?.removeAttribute("data-scrubbing"), []);
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
@@ -1935,7 +1938,10 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     Promise.resolve(handle.requestPointerLock()).catch(() => {}); // Without the lock, the drag still works.
     // Until it is let go, no key edits: the next move would set again a value undone (ADR 0012).
     holdPointer(event.pointerId);
-    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false };
+    // Held, the field is the one chosen: its darker ground and accent edge, till let go (designer, 2026-11-08).
+    const field = handle.closest(".tk-field");
+    field?.setAttribute("data-scrubbing", "");
+    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field };
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLSpanElement>) => {
@@ -1954,6 +1960,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
 
   const end = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current.field?.removeAttribute("data-scrubbing");
     drag.current = null;
     const root = event.currentTarget.getRootNode() as Document | ShadowRoot;
     if (root.pointerLockElement === event.currentTarget) document.exitPointerLock();

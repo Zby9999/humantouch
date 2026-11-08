@@ -144,6 +144,46 @@ test("the alignment grid: half the row, its point dark till it changes, then the
   expect(Math.abs(box.x + box.width - (top.x + top.width))).toBeLessThanOrEqual(1);
 
   const point = (name: string) => grid.getByRole("radio", { name, exact: true });
+  // Each point the whole of its third, to click on; its mark where the lines cross, at 5/24, half and 19/24 across and down (designer, 2026-11-08).
+  const AT = [5 / 24, 1 / 2, 19 / 24];
+  const NAMES = [
+    ["Top left", "Top center", "Top right"],
+    ["Center left", "Center", "Center right"],
+    ["Bottom left", "Bottom center", "Bottom right"],
+  ];
+  // The lines: 0.5px wide, 6px in from the edges; each `calc(p% ± c px)` placed in that box, its middle at AT (across, then down).
+  const lines = await grid.evaluate((el) => {
+    const style = getComputedStyle(el, "::before");
+    return { x: style.backgroundPositionX, y: style.backgroundPositionY };
+  });
+  const middles = (positions: string, size: number) =>
+    positions.split(",").map((position) => {
+      const percent = parseFloat(/(-?[\d.]+)%/.exec(position)?.[1] ?? "0");
+      const px = parseFloat(/([-+]\s*[\d.]+)px/.exec(position)?.[1]?.replace(/\s/g, "") ?? "0");
+      return 6 + ((size - 12 - 0.5) * percent) / 100 + px + 0.25;
+    });
+  const across = middles(lines.x, box.width).slice(0, 3);
+  const down = middles(lines.y, box.height).slice(3);
+  for (const [i, at] of AT.entries()) {
+    expect(Math.abs(across[i]! - box.width * at)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(down[i]! - box.height * at)).toBeLessThanOrEqual(0.5);
+  }
+  for (const [row, names] of NAMES.entries()) {
+    for (const [column, name] of names.entries()) {
+      const third = await steadyBox(point(name));
+      expect(Math.abs(third.width - box.width / 3)).toBeLessThanOrEqual(1);
+      expect(Math.abs(third.height - box.height / 3)).toBeLessThanOrEqual(1);
+      const offset = await point(name).evaluate((el) => {
+        const style = getComputedStyle(el, "::before");
+        return { x: parseFloat(style.left) || 0, y: parseFloat(style.top) || 0 };
+      });
+      const x = third.x + third.width / 2 + offset.x - box.x;
+      const y = third.y + third.height / 2 + offset.y - box.y;
+      expect(Math.abs(x - box.width * AT[column]!)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(y - box.height * AT[row]!)).toBeLessThanOrEqual(0.5);
+    }
+  }
+
   const mark = (name: string) =>
     point(name).evaluate((el) => {
       const style = getComputedStyle(el, "::before");
