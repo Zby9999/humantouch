@@ -21,3 +21,6 @@ export const FIELD_SETTLE_MS = 200;
 export function prefersReducedMotion(): boolean {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
+
+/** The chosen tool's backing sliding to a tool clicked (designer, 2026-11-08); a key picking one, or reduced motion, jumps it. */
+export const TOOL_SLIDE_MS = 200;

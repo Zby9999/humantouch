@@ -1,4 +1,4 @@
-import { EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, TOAST_FADE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -233,6 +233,7 @@ export const styles = /* css */ `
 .tk-stop-playing { left: auto; right: 8px; }
 
 /* The tools, at the top right of the canvas, 8px from the Design panel: one above another, the one chosen raised in white (designer, 2026-11-08). As high as the views' tops, under their labels: higher, they would cover the last view's label and its +. */
+/* Figma (03 Kind, node 169:1359): 4px around the tools, 3px between, a 0.5px neutral 300 outline; the icons neutral 600, the chosen one's neutral 500 (designer, 2026-11-08). */
 .tk-tools {
   position: absolute;
   top: 72px;
@@ -241,13 +242,29 @@ export const styles = /* css */ `
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 3px;
+  padding: 4px;
   border-radius: 12px;
   background: var(--tk-panel);
   box-shadow: 0 0 0 0.5px var(--tk-border);
 }
-.tk-tools .tk-icon-button { width: 32px; height: 32px; border-radius: 8px; }
-.tk-tools .tk-icon-button[aria-pressed="true"] { background: var(--tk-tool-chosen); box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15); color: var(--tk-text); }
+.tk-tools .tk-icon-button { position: relative; width: 32px; height: 32px; border-radius: 8px; color: var(--tk-panel-label); }
+.tk-tools .tk-icon-button[aria-pressed="true"] { background: none; color: var(--tk-text-muted); }
+/* The white under the chosen tool, one for all three: it moves by transform alone, a tool (32px) and a gap (3px) a step (designer, 2026-11-08). */
+.tk-tools-backing {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--tk-tool-chosen);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  transform: translateY(calc(var(--tk-tool-index, 0) * 35px));
+}
+.tk-tools-backing.is-sliding { transition: transform ${TOOL_SLIDE_MS}ms ${EASE_IN_OUT}; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-tools-backing.is-sliding { transition: none; }
+}
 .tk-shell.is-playing > .tk-tools { display: none; }
 /* A toast, as in Figma: a dark pill of one line, at the bottom middle of the canvas, over it. */
 .tk-toasts {
