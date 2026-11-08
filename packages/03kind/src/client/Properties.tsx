@@ -2184,7 +2184,7 @@ export interface Operation {
  */
 export function SectionReset({ title, properties, operations }: { title: string; properties: Property[]; operations?: Operation[] }) {
   const marks = useChangeMarks();
-  const counted = (operations ?? properties.map((property) => ({ property }))).filter(({ property, part }) => marks.changed(property, part)).length;
+  const counted = (operations ?? properties.map((property): Operation => ({ property }))).filter(({ property, part }) => marks.changed(property, part)).length;
   if (counted < 2) return null;
   return <ResetButton label={title} onReset={() => marks.reset(properties.filter((property) => marks.changed(property)))} />;
 }
@@ -2224,7 +2224,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
   const strip = useRef<HTMLSpanElement>(null);
   /** How far the ruler's ticks have moved, in px. */
   const offset = useRef(0);
-  const leaving = useRef<ReturnType<typeof setTimeout>>();
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
   /** The grip's tilt: movement in this frame, its speed smoothed, the frame asked for. */
   const tilt = useRef({ frameDx: 0, speed: 0, frame: 0 });
 
