@@ -779,35 +779,29 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
   return (
     <section class="tk-section" aria-labelledby="tk-appearance">
       <h3 id="tk-appearance" class="tk-section-title">Appearance</h3>
-      {/* Opacity beside the corner radius, then Visible beside Clip content (designer, 2026-11-08); a check alone in its row takes the whole of it. */}
-      {(opacity !== undefined || radii) && (
-        <div class="tk-grid-2">
-          {opacity !== undefined && <PercentField label="Opacity" icon="opacity" property="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
-          {radii && (
-            <div class="tk-row">
-              <VariableSlot label="Corner radius" slot={variable("radius")} property="radius">
-                <NumberField label="Corner radius" icon="radius" property="radius" value={uniform} min={0} onChange={set("radius")} />
-              </VariableSlot>
-              <button
-                type="button"
-                class="tk-icon-button"
-                aria-label="Independent corners"
-                title="Independent corners"
-                aria-pressed={independent}
-                onClick={() => toggle(!independent)}
-              >
-                <Icon name="corners" />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-      {(visible !== undefined || clip !== undefined) && (
-        <div class="tk-grid-2">
-          {visible !== undefined && <Check label="Visible" property="visible" checked={visible} onChange={set("visible")} />}
-          {clip !== undefined && <Check label="Clip content" property="clip" checked={clip} onChange={set("clip")} />}
-        </div>
-      )}
+      {/* The fields first, then the checks, two to a row: opacity beside the corner radius, Visible beside Clip content; with no radius, opacity beside Visible (designer, 2026-11-08). A check alone at the end takes the whole row. */}
+      <div class="tk-grid-2">
+        {opacity !== undefined && <PercentField label="Opacity" icon="opacity" property="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
+        {radii && (
+          <div class="tk-row">
+            <VariableSlot label="Corner radius" slot={variable("radius")} property="radius">
+              <NumberField label="Corner radius" icon="radius" property="radius" value={uniform} min={0} onChange={set("radius")} />
+            </VariableSlot>
+            <button
+              type="button"
+              class="tk-icon-button"
+              aria-label="Independent corners"
+              title="Independent corners"
+              aria-pressed={independent}
+              onClick={() => toggle(!independent)}
+            >
+              <Icon name="corners" />
+            </button>
+          </div>
+        )}
+        {visible !== undefined && <Check label="Visible" property="visible" checked={visible} onChange={set("visible")} />}
+        {clip !== undefined && <Check label="Clip content" property="clip" checked={clip} onChange={set("clip")} />}
+      </div>
       {radii && independent && (
         <div class="tk-grid-2" role="group" aria-label="Radius per corner">
           {CORNER_GRID.map((i) => (
