@@ -416,7 +416,8 @@ export const styles = /* css */ `
 /* The canvas's layers after those off it. */
 .tk-tree-row.is-first-on-canvas { margin-top: 4px; }
 .tk-tree-row.is-first-on-canvas::after { content: ""; position: absolute; top: -4px; left: 16px; right: 16px; height: 1px; background: var(--tk-border); }
-.tk-tree-row.is-instance .tk-icon { color: var(--tk-instance); }
+/* A component's icons purple; its disclosure as every other row's (designer, 2026-11-08). */
+.tk-tree-row.is-instance .tk-icon:not(.tk-tree-chevron > .tk-icon) { color: var(--tk-instance); }
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
 .tk-tree-name { overflow: hidden; text-overflow: ellipsis; }
 .tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }

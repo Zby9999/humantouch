@@ -272,6 +272,69 @@ test("no rule across the Layers panel under its top, only the one after its titl
   await noRuleAcross();
 });
 
+test("after edits in the Design panel, the layer around the one selected closes and stays closed, and the Layers panel hides and shows (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const design = page.getByRole("complementary", { name: "Design" });
+  /** A value typed into a field of the Design panel and applied. */
+  const set = async (name: string, value: string) => {
+    const field = design.getByRole("textbox", { name, exact: true }).first();
+    await field.fill(value);
+    await field.press("Enter");
+  };
+  const grid = layerTree(page).getByRole("treeitem", { name: "Grid", exact: true });
+  await layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  await set("Fill color", "ff0000");
+  await set("Width", "300");
+  await set("Gap", "20");
+
+  // The selected Card is in the Grid: the Grid, closed, stays closed. It was opened again at once.
+  await grid.locator(".tk-tree-chevron").click();
+  await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true })).toHaveCount(0);
+  // Another edit to the Card, still selected, leaves it so.
+  await set("Gap", "12");
+  await expect(design.getByRole("textbox", { name: "Gap", exact: true }).first()).toHaveValue("12");
+  await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
+
+  // Hidden and shown again, the panel starts its layers anew, open up to the selected Card.
+  await page.getByRole("button", { name: "Hide layers" }).click();
+  await expect(page.getByRole("complementary", { name: "Layers" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show layers" })).toBeFocused();
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await expect(selectedRow(page)).toHaveText("Card");
+  await expect(grid).toHaveAttribute("aria-expanded", "true");
+  // Selected anew, a layer inside a closed one opens it.
+  await grid.locator(".tk-tree-chevron").click();
+  await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
+  await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
+  await clickOn(page, "article h3", "Meta");
+  await expect(grid).toHaveAttribute("aria-expanded", "true");
+});
+
+test("a component's disclosure is drawn as every other row's; its icon stays purple (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  /** How a row's disclosure and its layer icon are drawn, the pointer away and over the disclosure. */
+  const looks = async (row: Locator) => {
+    const chevron = row.locator(".tk-tree-chevron");
+    const drawn = () =>
+      chevron.evaluate((el) => {
+        const icon = el.querySelector(".tk-icon")!;
+        const box = el.getBoundingClientRect();
+        const iconBox = icon.getBoundingClientRect();
+        return { color: getComputedStyle(icon).color, background: getComputedStyle(el).backgroundColor, shadow: getComputedStyle(el).boxShadow, size: [box.width, box.height, iconBox.width, iconBox.height] };
+      });
+    await page.mouse.move(700, 400);
+    const away = await drawn();
+    await chevron.hover();
+    return { away, hovered: await drawn(), layerIcon: await row.locator(":scope > .tk-icon").evaluate((el) => getComputedStyle(el).color) };
+  };
+  const card = await looks(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first());
+  const grid = await looks(layerTree(page).getByRole("treeitem", { name: "Grid", exact: true }));
+  expect({ away: card.away, hovered: card.hovered }).toEqual({ away: grid.away, hovered: grid.hovered });
+  expect(card.layerIcon).toBe("rgb(154, 60, 238)");
+  expect(grid.layerIcon).not.toBe(card.layerIcon);
+});
+
 test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
   await enterEditMode(page);
   // The header closed by hand, then the Stack it is in deleted: the button beside it is open.
