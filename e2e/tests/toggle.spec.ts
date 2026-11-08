@@ -193,19 +193,20 @@ test("the round claimed, the change list opens by itself, the change the Agent i
   await expect(rows.first()).toHaveAttribute("aria-current", "step");
   await expect(list.locator(".tk-change.is-applied")).toHaveCount(0);
 
-  // The last applied: its row goes as the others did, the title still counting it; then the list leaves by itself, as a popover does.
-  // Each lasts a moment: what showed is kept as it shows.
+  // The last applied: the list fades out at once, as it was, its last row and title in it (designer, 2026-11-09). It lasts a moment:
+  // what showed is kept as it shows.
   await page.evaluate(() => {
     const root = document.querySelector("third-kind")!.shadowRoot!;
     const seen: string[] = ((window as unknown as { seen: string[] }).seen = []);
     new MutationObserver(() => {
       const dialog = root.querySelector(".tk-changes");
-      if (dialog?.querySelector(".tk-change.is-applied")) seen.push(`applied:${dialog.querySelector(".tk-changes-title")!.textContent}:${!!dialog.querySelector(".tk-changes-note:nth-of-type(2)")}`);
-      if (dialog?.classList.contains("is-leaving")) seen.push("leaving");
+      if (dialog?.classList.contains("is-leaving")) {
+        seen.push(`leaving:${dialog.querySelector(".tk-changes-title")!.textContent}:${dialog.querySelectorAll(".tk-change:not(.is-applied)").length}:${dialog.querySelectorAll(".is-applied").length}`);
+      }
     }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
   });
   applied = [1, 2];
   await expect(list).toHaveCount(0);
   const seen = await page.evaluate(() => [...new Set((window as unknown as { seen: string[] }).seen)]);
-  expect(seen).toEqual(["applied:1 change not applied yet:false", "leaving"]);
+  expect(seen).toEqual(["leaving:1 change not applied yet:1:0"]);
 });

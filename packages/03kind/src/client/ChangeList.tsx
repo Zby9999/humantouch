@@ -48,7 +48,8 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
   const [, setGone] = useState(0);
   const shown = useRef(changes);
   if (shown.current !== changes) {
-    if (readOnly) {
+    // The last applied stays as it was, the list fading as a whole (`allApplied`).
+    if (readOnly && changes.length) {
       shown.current.forEach((change, index) => {
         if (changes.some(({ id }) => id === change.id) || !tops.current.has(change.id)) return;
         leaving.current.push({ change, top: tops.current.get(change.id)!, current: index === 0 });
@@ -60,19 +61,20 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
   latestOnClose.current = onClose;
   /** The list's height as last drawn: a row applied, it closes up over the rise, not at once. */
   const height = useRef(0);
-  /** Every change applied: the last row goes back as the others did, then the list leaves as a popover does (designer, 2026-11-09). */
+  /** The rows as last drawn with any: every change applied, the list fades out at once as it was, its last row in it (designer, 2026-11-09). */
+  const last = useRef(changes);
+  if (changes.length) last.current = changes;
   const allApplied = readOnly && !changes.length;
+  const rowsShown = allApplied ? last.current : changes;
   const [closing, setClosing] = useState(false);
-  /** What the title counted last, kept as the last row goes. */
-  const counted = useRef(changes.length);
-  if (changes.length) counted.current = changes.length;
   useLayoutEffect(() => {
-    if (!allApplied || leaving.current.length || closing) return;
+    if (!allApplied || closing) return;
     // Opened with nothing left: nothing to see go.
-    if (!height.current) latestOnClose.current();
+    if (!last.current.length) latestOnClose.current();
     else setClosing(true);
   });
   useLayoutEffect(() => {
+    if (allApplied) return;
     const rise = readOnly && !prefersReducedMotion();
     const moving: Animation[] = [];
     const next = new Map<number, number>();
@@ -86,11 +88,6 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
     }
     tops.current = next;
     const el = list.current!;
-    // The last row applied: the list keeps its height as it goes, till the list leaves.
-    if (allApplied) {
-      if (height.current) el.style.minHeight = `${height.current}px`;
-      return;
-    }
     const now = el.offsetHeight;
     if (rise && height.current && now < height.current) {
       moving.push(el.animate([{ height: `${height.current}px` }, { height: `${now}px` }], { duration: APPLIED_RISE_MS, easing: EASE_OUT }));
@@ -148,8 +145,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
     opener?.focus();
   };
 
-  const shownCount = allApplied ? counted.current : changes.length;
-  const count = shownCount === 1 ? "1 change" : `${shownCount} changes`;
+  const count = rowsShown.length === 1 ? "1 change" : `${rowsShown.length} changes`;
   return (
     <div
       ref={dialog}
@@ -170,7 +166,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
         class={["tk-changes-list", hidden.above && "is-above", hidden.below && "is-below"].filter(Boolean).join(" ")}
         onScroll={measure}
       >
-        {changes.map((change, index) => (
+        {rowsShown.map((change, index) => (
           <li
             key={change.id}
             ref={(row) => {

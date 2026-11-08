@@ -1708,17 +1708,18 @@ export const styles = /* css */ `
 /*
  * A popover or menu closed with the pointer leaves: it fades and moves 4px down, interruptible, taking no clicks
  * meanwhile; opened, or closed with a key, it is there or gone at once (designer, 2026-11-08). With reduced motion it only fades.
- * So does the change list once the Agent has applied every change in it, its last row gone (designer, 2026-11-09).
  */
-:is(.tk-menu, .tk-popover, .tk-changes).is-leaving {
+:is(.tk-menu, .tk-popover).is-leaving {
   opacity: 0;
   transform: translateY(4px);
   pointer-events: none;
   transition: opacity ${POPOVER_EXIT_MS}ms ${EASE_OUT}, transform ${POPOVER_EXIT_MS}ms ${EASE_OUT};
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.tk-menu, .tk-popover, .tk-changes).is-leaving { transform: none; }
+  :is(.tk-menu, .tk-popover).is-leaving { transform: none; }
 }
+/* The change list, every change in it applied: it fades out at once, as it was, taking no clicks meanwhile (designer, 2026-11-09). */
+.tk-changes.is-leaving { opacity: 0; pointer-events: none; transition: opacity ${POPOVER_EXIT_MS}ms ${EASE_OUT}; }
 .tk-popover-header { display: flex; align-items: center; justify-content: space-between; }
 .tk-popover-header .tk-section-title { min-height: 0; margin: 0; padding: 0; }
 .tk-popover-header .tk-section-title::after { display: none; }
