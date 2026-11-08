@@ -196,6 +196,29 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
   await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
 });
 
+test("the gap's sizing opens its menu from the gap typed into: the Variables listed under it close, and stay closed once Auto is picked (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const matches = page.getByRole("listbox", { name: "Matching variables" });
+  await panel.getByRole("textbox", { name: "Gap" }).click();
+  await expect(matches).toBeVisible();
+
+  // In the field's label, the click let go on the menu opened over the chevron would take the focus back to the gap, and its Variables.
+  const sizing = panel.getByRole("combobox", { name: "Gap sizing" });
+  await sizing.click();
+  const menu = page.getByRole("listbox", { name: "Gap sizing" });
+  await expect(menu).toBeVisible();
+  await expect(sizing).toBeFocused();
+  await expect(matches).toHaveCount(0);
+
+  await menu.getByRole("option", { name: "Auto" }).click();
+  await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("space-between");
+  await expect(menu).toHaveCount(0);
+  await expect(matches).toHaveCount(0);
+  await expect(panel.getByRole("textbox", { name: "Gap" })).toHaveCount(0);
+});
+
 test("the alignment grid: half the row, its point dark till it changes, then the accent with where it was drawn larger (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Header").click();

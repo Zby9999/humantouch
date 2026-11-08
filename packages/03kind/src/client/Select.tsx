@@ -99,6 +99,14 @@ export function Select(props: JSX.IntrinsicElements["select"]) {
           // Not the system's menu: ours, or closed again.
           event.preventDefault();
           event.currentTarget.focus({ preventScroll: true });
+          // In a field's label (the gap's sizing), the menu opens over the select: let go on it, the click is the label's, which would
+          // take the focus to the field's input, closing the menu and listing the Variables there in its place. This press's click is not.
+          const label = event.currentTarget.closest("label");
+          if (label) {
+            const keep = (click: Event) => click.preventDefault();
+            label.addEventListener("click", keep);
+            window.addEventListener("mouseup", () => setTimeout(() => label.removeEventListener("click", keep)), { once: true, capture: true });
+          }
           if (open) close();
           else show();
         }}
@@ -176,6 +184,8 @@ function Menu({ id, select, options, active, leaving, onActive, onChoose, onClos
       {...leavingProps(leaving)}
       aria-label={select.getAttribute("aria-label") ?? undefined}
       style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, minWidth: `${place?.minWidth ?? 0}px`, visibility: place ? "visible" : "hidden" }}
+      // In a field's label, an option clicked does not go on to the field's input.
+      onClick={(event) => event.preventDefault()}
     >
       {options.map((option, i) => (
         <div
