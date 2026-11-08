@@ -1499,6 +1499,13 @@ export const styles = /* css */ `
   background: var(--tk-swatch);
 }
 .tk-swatch-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
+/* A color pointed at, wherever one is chosen: a white line inside it and a darker one round it, as the Variants tab's swatches have;
+   in a color's field, pointing anywhere on the field does it, not over its open picker (designer, 2026-11-08). */
+.tk-swatch-button:hover,
+.tk-color-field:hover:not(:has(.tk-popover:hover)) > .tk-swatch-button,
+.tk-variants-named-item:hover > .tk-variants-named-swatch,
+.tk-variants-named-item:focus-visible > .tk-variants-named-swatch,
+.tk-variable-option:hover > .tk-variable-preview:not(.is-shadow) { box-shadow: inset 0 0 0 1.5px #fff, 0 0 0 1px rgb(0 0 0 / 0.35); }
 .tk-mixed-swatch { background: repeating-conic-gradient(#e6e6e6 0% 25%, #ffffff 0% 50%) 0 0 / 8px 8px; }
 
 /* The color picker's own, as in Figma: a square of saturation and brightness, bars of hue and opacity, the color typed. */

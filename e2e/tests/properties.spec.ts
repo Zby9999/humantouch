@@ -1889,3 +1889,21 @@ test("an effect's type fills its row, its − at the right end: a shadow's, chan
     expect(Math.abs(minus.x + minus.width - (rowBox.x + rowBox.width)), `${name}: its − at the row's right end`).toBeLessThanOrEqual(1);
   }
 });
+
+test("a color pointed at, wherever one is chosen, has the Variants tab's white line inside it and a darker one round it", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  const ring = "rgb(255, 255, 255) 0px 0px 0px 1.5px inset, rgba(0, 0, 0, 0.35) 0px 0px 0px 1px";
+  // The fill's swatch, which opens its picker.
+  const swatch = design(page).getByRole("button", { name: "Fill color picker" });
+  await expect(swatch).not.toHaveCSS("box-shadow", ring);
+  await swatch.hover();
+  await expect(swatch).toHaveCSS("box-shadow", ring);
+  // Left, it goes.
+  await page.mouse.move(0, 0);
+  await expect(swatch).not.toHaveCSS("box-shadow", ring);
+  // Pointing at its hex, on the same field, does it too.
+  await design(page).getByRole("textbox", { name: "Fill color", exact: true }).hover();
+  await expect(swatch).toHaveCSS("box-shadow", ring);
+});
