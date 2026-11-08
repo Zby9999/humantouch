@@ -89,6 +89,10 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     const panel = box?.closest(".tk-panel");
     if (box && panel) return watchScrolled(box, panel);
   }, []);
+  useEffect(() => {
+    const box = list.current;
+    if (box) return lockAxis(box);
+  }, []);
 
   /** `past`: the levels whose guides go on down past this row, to a later layer in them. `more`: this layer has a later one in its own. */
   const rows: { layer: Layer; level: number; outside: boolean; past: number[]; more: boolean }[] = [];
@@ -163,6 +167,55 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
       </div>
     </div>
   );
+}
+
+/** A swipe goes on while its wheel events come this close together, its momentum's too. */
+const SWIPE_GAP_MS = 200;
+/** How far a swipe goes sideways, and how many times as far as up or down, before the list scrolls sideways. */
+const SIDEWAYS_PX = 24;
+const SIDEWAYS_RATIO = 2;
+/** How far a swipe goes up or down before it is that, for its whole length. */
+const UPRIGHT_PX = 6;
+
+/**
+ * Each swipe over the list scrolls it one way only (designer, 2026-11-08): up and down unless it goes clearly
+ * sideways from its start, so a swipe meant to go down does not drift sideways. A wheel's turn, straight up or
+ * down, is left to the browser; a swipe's other way, dropped.
+ */
+function lockAxis(box: HTMLElement): () => void {
+  let axis: "x" | "y" | null = null;
+  let along = 0;
+  let across = 0;
+  let last = -Infinity;
+  const onWheel = (event: WheelEvent) => {
+    if (event.ctrlKey) return;
+    if (event.timeStamp - last > SWIPE_GAP_MS) {
+      axis = null;
+      along = across = 0;
+    }
+    last = event.timeStamp;
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? box.clientHeight : 1;
+    const dx = event.deltaX * unit;
+    const dy = event.deltaY * unit;
+    if (axis === null) {
+      across += Math.abs(dx);
+      along += Math.abs(dy);
+      if (across >= SIDEWAYS_PX && across > along * SIDEWAYS_RATIO) axis = "x";
+      else if (along >= UPRIGHT_PX) axis = "y";
+    }
+    // Till the swipe has a way, up and down.
+    if ((axis ?? "y") === "y") {
+      if (!dx) return;
+      event.preventDefault();
+      box.scrollTop += dy;
+    } else {
+      if (!dy) return;
+      event.preventDefault();
+      box.scrollLeft += dx;
+    }
+  };
+  box.addEventListener("wheel", onWheel, { passive: false });
+  return () => box.removeEventListener("wheel", onWheel);
 }
 
 /** Opens level after level while the rows fit; everything from the first level that does not fit stays closed. */

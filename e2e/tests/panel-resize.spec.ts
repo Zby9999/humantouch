@@ -270,6 +270,38 @@ test("a long name shows in full: the Layers scroll sideways, the tree with the n
   await expect.poll(() => parts(row)).toEqual(before);
 });
 
+test("a swipe over the Layers goes one way: up and down unless clearly sideways from its start (designer, 2026-11-08)", async ({ page }) => {
+  await page.evaluate(() => {
+    const many = document.createElement("div");
+    many.innerHTML = `<p>A very long paragraph whose layer name runs well past the Layers panel's edge</p>` + Array.from({ length: 40 }, (_, i) => `<p>Row ${i}</p>`).join("");
+    document.body.prepend(many);
+  });
+  await enterEditMode(page);
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const scrolled = () => tree.evaluate((el) => ({ left: el.scrollLeft, top: el.scrollTop }));
+  expect(await tree.evaluate((el) => el.scrollWidth > el.clientWidth && el.scrollHeight > el.clientHeight)).toBe(true);
+  const box = (await tree.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+  // Down, drifting sideways a little: down only.
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(10, 30);
+  await expect.poll(async () => (await scrolled()).top).toBeGreaterThan(100);
+  expect((await scrolled()).left).toBe(0);
+
+  // A new swipe, sideways a little only: nothing.
+  await page.waitForTimeout(400);
+  const before = await scrolled();
+  await page.mouse.wheel(12, 0);
+  await page.waitForTimeout(100);
+  expect(await scrolled()).toEqual(before);
+
+  // A new swipe, clearly sideways, drifting down a little: sideways only.
+  await page.waitForTimeout(400);
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(40, 6);
+  await expect.poll(async () => (await scrolled()).left).toBeGreaterThan(100);
+  expect((await scrolled()).top).toBe(before.top);
+});
+
 test("the Layers still scroll up and down, and a layer selected on the canvas comes into view there", async ({ page }) => {
   await page.evaluate(() => {
     const first = document.createElement("p");
