@@ -142,19 +142,8 @@ function view(group: VariableGroup, entries: Resolved[], item: Item) {
   switch (group) {
     case "color":
       return <Palette entries={entries} item={item} />;
-    case "spacing": {
-      // A length's bar, as long as it is next to the longest of the list: the longest fills the row between name and value.
-      const longest = Math.max(...entries.map((entry) => entry.drawn as number), 1);
-      return entries.map((entry) => (
-        <div key={entry.variable.name} class="tk-variants-row">
-          <span class="tk-variants-name">{entry.variable.name}</span>
-          <span class="tk-variants-track">
-            <span class="tk-variants-bar" style={{ width: `max(1px, ${((entry.drawn as number) / longest) * 100}%)` }} />
-          </span>
-          <span class="tk-variants-value">{valueOf(entry)}</span>
-        </div>
-      ));
-    }
+    case "spacing":
+      return <Lengths entries={entries} />;
     case "radius":
       return (
         <div class="tk-variants-tiles is-four">
@@ -203,6 +192,54 @@ function view(group: VariableGroup, entries: Resolved[], item: Item) {
         </div>
       );
   }
+}
+
+/**
+ * Lengths as bars, each as long as it is: 1px of bar a px (designer,
+ * 2026-11-08). One longer than the room between its name and value runs on
+ * behind the value and shows past it, up to the panel's inner edge; pointed
+ * at with a mouse, it shows whole in a box over the canvas. Pointed at, the
+ * others show nothing more: their name and value are on the row.
+ */
+function Lengths({ entries }: { entries: Resolved[] }) {
+  const [whole, setWhole] = useState<{ length: number; at: DOMRect } | null>(null);
+  return (
+    <>
+      {entries.map((entry) => {
+        const length = entry.drawn as number;
+        const show = (event: PointerEvent) => {
+          if (event.pointerType !== "mouse") return;
+          const row = event.currentTarget as HTMLElement;
+          const track = row.querySelector(".tk-variants-track")!;
+          // Measured as the CSS draws it, to the fraction of a px: a bar shown past its value shows whole.
+          if (length > track.getBoundingClientRect().width) setWhole({ length, at: row.getBoundingClientRect() });
+        };
+        return (
+          <div key={entry.variable.name} class="tk-variants-row is-length" onPointerEnter={show} onPointerLeave={() => setWhole(null)}>
+            <span class="tk-variants-name">{entry.variable.name}</span>
+            <span class="tk-variants-track">
+              <span class="tk-variants-bar" style={{ "--tk-length": `${length}px` }} />
+            </span>
+            <span class="tk-variants-value">{valueOf(entry)}</span>
+          </div>
+        );
+      })}
+      {whole && <WholeLength length={whole.length} at={whole.at} />}
+    </>
+  );
+}
+
+/** How far the whole bar's box keeps from its row, and from the window's left. */
+const ABOVE = 4;
+const GAP = 8;
+
+/** A bar too long for its row, whole: above the row, ending at its right, out over the canvas; cut only by the window. */
+function WholeLength({ length, at }: { length: number; at: DOMRect }) {
+  return (
+    <div class="tk-variants-whole" aria-hidden="true" style={{ right: `${window.innerWidth - at.right}px`, top: `${at.top - ABOVE}px`, maxWidth: `${at.right - GAP}px` }}>
+      <span class="tk-variants-bar" style={{ width: `${length}px` }} />
+    </div>
+  );
 }
 
 /**
