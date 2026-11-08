@@ -70,6 +70,8 @@ test("full screen plays a view at its own width: the desktop view's as wide as t
   await expect.poll(() => width()).toBe(frozenAt);
 
   // The phone view's: 390px wide whatever the window's width, in the middle of it, with the phone's change.
+  // Narrow, its label has full screen once pointed at (designer, 2026-11-08).
+  await page.getByRole("group", { name: "Phone view" }).hover();
   await fullScreen(page, "Phone").click();
   await expect(design(page)).toBeHidden();
   await expect.poll(width).toBe(390);

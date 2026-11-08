@@ -75,7 +75,7 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
   }
 
   // Each view is named, with the widths it covers (designer, 2026-11-08): the example's `md` is 768px and `xl` 1280px.
-  // That it shows only what CSS does at its width is in their title; the label's text is the name and the widths alone.
+  // The label's text is the name and the widths alone.
   const covers = { Desktop: "≥ 1280", Tablet: "768–1279", Phone: "≤ 767" };
   for (const [name, widths] of Object.entries(covers)) {
     const label = page.getByRole("group", { name: `${name} view` });
@@ -83,6 +83,8 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
     await expect(label.locator(".tk-view-range")).toHaveText(widths);
     // No tip: one was too long to be worth it (designer, 2026-11-08).
     await expect(label.locator("[data-tk-tip]").and(label.locator(".tk-view-range"))).toHaveCount(0);
+    // The phone's, narrow, has full screen once pointed at (designer, 2026-11-08).
+    if (name === "Phone") await label.hover();
     await expect(label.getByRole("button", { name: `Full screen ${name} view`, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("button", { name: "Delete Desktop view" })).toHaveCount(0);
@@ -110,6 +112,49 @@ test("a view's name and widths, pointed at, outline its page; clicked, they sele
   await expect(page.getByRole("button", { name: /changes? not applied yet/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.locator(".tk-selection")).toHaveCount(0);
+});
+
+test("zoomed out, a view's label leaves out full screen, then its widths, then ×, keeping its name; pointed at, its buttons stay and the rest goes first (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  // Wide enough, a label shows all it has.
+  const wide = page.getByRole("group", { name: "Desktop view" });
+  for (const part of [".tk-view-name", ".tk-view-range", ".tk-view-play"]) await expect(wide.locator(part)).toBeVisible();
+  const label = page.getByRole("group", { name: "Phone view" });
+  const parts = () =>
+    label.evaluate((el) => {
+      const shown = (selector: string) => !!el.querySelector<HTMLElement>(selector)?.checkVisibility();
+      return { name: shown(".tk-view-name"), range: shown(".tk-view-range"), play: shown(".tk-view-play"), del: shown(".tk-view-delete"), fits: el.scrollWidth <= el.clientWidth + 1 };
+    });
+  const area = (await viewportArea(page).boundingBox())!;
+  const away = { x: area.x + area.width / 2, y: area.y + area.height - 20 };
+  const seen: { rest: Awaited<ReturnType<typeof parts>>; pointed: Awaited<ReturnType<typeof parts>> }[] = [];
+  for (let i = 0; i < 12; i++) {
+    await page.mouse.move(away.x, away.y);
+    const rest = await parts();
+    await label.hover({ position: { x: 2, y: 10 } });
+    const pointed = await parts();
+    seen.push({ rest, pointed });
+    await page.mouse.move(away.x, away.y);
+    await page.keyboard.down("ControlOrMeta");
+    await page.mouse.wheel(0, 40);
+    await page.keyboard.up("ControlOrMeta");
+    await page.waitForTimeout(150);
+  }
+  for (const { rest, pointed } of seen) {
+    expect(rest.fits && pointed.fits).toBe(true);
+    // At rest: the name always; full screen only with the widths, the widths only with ×.
+    expect(rest.name).toBe(true);
+    if (rest.play) expect(rest.range).toBe(true);
+    if (rest.range) expect(rest.del).toBe(true);
+    // Pointed at: the widths only with the name, the name only with full screen, full screen only with ×.
+    if (pointed.range) expect(pointed.name).toBe(true);
+    if (pointed.name) expect(pointed.play).toBe(true);
+    if (pointed.play) expect(pointed.del).toBe(true);
+  }
+  // Zoomed out, it comes to keep × and not full screen, then the name alone.
+  expect(seen.some(({ rest }) => rest.del && !rest.play)).toBe(true);
+  expect(seen.some(({ rest }) => !rest.del)).toBe(true);
+  expect(seen.some(({ rest, pointed }) => !rest.play && pointed.play)).toBe(true);
 });
 
 test("selecting in one view selects the same layer in every view; an edit shows in every view", async ({ page }) => {

@@ -1241,6 +1241,8 @@ export const styles = /* css */ `
   position: absolute;
   display: flex;
   align-items: center;
+  /* Its buttons at its right end, its name and widths taking up the room before them, or gone. */
+  justify-content: flex-end;
   gap: 6px;
   min-width: 0;
   height: 20px;
@@ -1249,12 +1251,13 @@ export const styles = /* css */ `
   white-space: nowrap;
 }
 /* Its name and widths: a button selecting the page in the view (designer, 2026-11-08). */
-.tk-view-title { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; font: inherit; color: inherit; cursor: default; }
+.tk-view-title { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin-right: auto; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; font: inherit; color: inherit; cursor: default; }
 .tk-view-title:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
-.tk-view-name { flex: none; color: var(--tk-text); font-weight: 500; }
+.tk-view-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--tk-text); font-weight: 500; }
+/* Where there is too little room, what goes (ViewLabel): at rest, and pointed at or focused in (designer, 2026-11-08). */
+.tk-view-label:not(:hover, :focus-within) .is-rest-hidden, .tk-view-label:is(:hover, :focus-within) .is-pointed-hidden { display: none; }
 .tk-view-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .tk-view-play, .tk-view-delete { flex: none; width: 20px; height: 20px; }
-.tk-view-play { margin-left: auto; }
 .tk-add-view { position: absolute; display: flex; height: 20px; align-items: center; }
 .tk-add-view .tk-icon-button { width: 20px; height: 20px; }
 .tk-add-view-width {
