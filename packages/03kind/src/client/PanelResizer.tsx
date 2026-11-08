@@ -18,8 +18,8 @@ interface Props {
   width: number;
   /** The widest it can go now: within its own limit, leaving the canvas its room. */
   max: number;
-  /** While dragged: the width to show, at once, without rendering the shell anew. */
-  onDrag(width: number): void;
+  /** While dragged: the width to show, at once, without rendering the shell anew. Null: let go where it began. */
+  onDrag(width: number | null): void;
   /** Let go, or moved by a key: the width to keep. */
   onCommit(width: number): void;
 }
@@ -57,6 +57,7 @@ export function PanelResizer({ panel, width, max, onDrag, onCommit }: Props) {
     if (zone.current?.hasPointerCapture(event.pointerId)) zone.current.releasePointerCapture(event.pointerId);
     setPressed(false);
     if (now.now !== now.from) onCommit(now.now);
+    else onDrag(null);
   };
 
   return (

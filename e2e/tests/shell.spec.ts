@@ -1,4 +1,4 @@
-import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
+import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, expect, test, type Page } from "./fixtures";
 
 // What the designer sees the first time: no Layers panel yet.
@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto(DEV_URL);
 });
 
-test("the Layers panel starts hidden; a button shows it, another hides it, and it stays as set after a reload", async ({ page }) => {
+test("the Layers panel starts hidden; a button shows it, another hides it", async ({ page }) => {
   await enterEditMode(page);
   await expect(layers(page)).toHaveCount(0);
   await expect(design(page)).toBeVisible();
@@ -33,12 +33,31 @@ test("the Layers panel starts hidden; a button shows it, another hides it, and i
   // Focus moves to the button that hides it again.
   await expect(page.getByRole("button", { name: "Hide layers" })).toBeFocused();
 
-  await page.reload();
-  await enterEditMode(page);
-  await expect(layers(page)).toBeVisible();
   await page.getByRole("button", { name: "Hide layers" }).click();
   await expect(layers(page)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Show layers" })).toBeFocused();
+});
+
+test("the Layers panel is hidden on every entry, shown or hidden the last time; shown, it stays so while editing (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await expect(layers(page).getByRole("tree", { name: "Layers" })).toBeVisible();
+  // Shown, it stays so as the designer works: a layer selected, the panel still there.
+  await layers(page).getByRole("treeitem").first().click();
+  await expect(layers(page)).toBeVisible();
+
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(design(page)).toHaveCount(0);
+  await enterEditMode(page);
+  await expect(layers(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show layers" })).toBeVisible();
+
+  // Nor does a reload bring it back.
+  await page.getByRole("button", { name: "Show layers" }).click();
+  await expect(layers(page)).toBeVisible();
+  await page.reload();
+  await enterEditMode(page);
+  await expect(layers(page)).toHaveCount(0);
 });
 
 test("with the Layers panel hidden, the canvas takes its room; shown, the panel takes it back", async ({ page }) => {
