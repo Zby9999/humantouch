@@ -31,7 +31,8 @@ const GROUPS: { group: VariableGroup; title: string }[] = [
 
 /** A ramp's steps, as Tailwind names them: a color named so (`brand-500`) is a step of one. */
 const STEPS = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"];
-const STEP_OF = /^(.+)-(50|[1-9]00|950)$/;
+/** A color named so (`brand-500`, `gray-1`) is a step of a ramp, numbered. */
+const STEP_NUMBER = /^(.+)-(\d+)$/;
 
 /** The largest a font size's sample is drawn: larger ones are told by their numbers. */
 const SAMPLE_MAX = 32;
@@ -270,48 +271,126 @@ function WholeLength({ length, at }: { length: number; at: DOMRect }) {
   );
 }
 
+/** At least this many colors a prefix numbers (`brand-1`, `brand-2`, `brand-3`) make a ramp; fewer are named colors (designer, 2026-11-08). */
+const RAMP_MIN = 3;
 /**
- * Colors as the rows of a palette: a ramp (`brand-50` … `brand-950`) a row,
- * each step in its column; the colors of no ramp after them, "other", on the
- * same columns. Empty columns are undefined.
+ * The most steps a palette line holds: past them a ramp goes on in a line
+ * under its first, the steps shared evenly (designer, 2026-11-08). In the
+ * Design panel's 320px, 16 steps are still 12px wide each.
  */
-export function paletteRows(entries: Resolved[]): [string, (Resolved | undefined)[]][] {
-  const ramps = new Map<string, (Resolved | undefined)[]>();
-  const others: Resolved[] = [];
-  for (const entry of entries) {
-    const step = STEP_OF.exec(entry.variable.name.replace(/^--(color-)?/, ""));
-    if (!step) {
-      others.push(entry);
-      continue;
-    }
-    const row = ramps.get(step[1]) ?? Array<Resolved | undefined>(STEPS.length).fill(undefined);
-    row[STEPS.indexOf(step[2])] = entry;
-    ramps.set(step[1], row);
-  }
-  const rows: [string, (Resolved | undefined)[]][] = [...ramps];
-  for (let i = 0; i < others.length; i += STEPS.length) {
-    const part: (Resolved | undefined)[] = others.slice(i, i + STEPS.length);
-    rows.push(["other", [...part, ...Array<undefined>(STEPS.length - part.length).fill(undefined)]]);
-  }
-  return rows;
+const LINE_MAX = 16;
+
+/** Ramps on the same steps: a row each, each step in its column; undefined where a ramp has no color for it. */
+export interface Scale {
+  steps: string[];
+  ramps: [string, (Resolved | undefined)[]][];
 }
 
 /**
- * Colors as a palette: a ramp (`brand-50` … `brand-950`) a row, under its
- * name, each step in its column; the colors of no ramp in a row of their own
- * at the end, on the same columns, named when pointed at.
+ * A group's colors as a palette (designer, 2026-11-08): the ramps, by scale,
+ * then the named colors, in groups by the first word of their name, in the
+ * order the project defines them. A prefix with a numbered suffix and
+ * `RAMP_MIN` colors or more is a ramp (`brand-50`, `gray-1`, `blue-10`,
+ * `gray-1000`). Ramps on Tailwind's steps share its 11 columns, as before;
+ * the others share columns, sorted by number, with the ramps mostly on their
+ * steps, and are not put on Tailwind's. A name a prefix numbers too few times
+ * (a lone `accent-500`), or with a word for a suffix (`brand-hover`), is
+ * named: its name tells what it is.
+ */
+export function palette(entries: Resolved[]): { scales: Scale[]; named: Resolved[][] } {
+  const numbered = new Map<string, [string, Resolved][]>();
+  for (const entry of entries) {
+    const step = STEP_NUMBER.exec(bare(entry));
+    if (step) numbered.set(step[1], [...(numbered.get(step[1]) ?? []), [step[2], entry]]);
+  }
+  const inRamp = new Set<Resolved>();
+  const scales: { steps: Set<string>; tailwind: boolean; ramps: [string, [string, Resolved][]][] }[] = [];
+  for (const [name, colors] of numbered) {
+    if (colors.length < RAMP_MIN) continue;
+    for (const [, entry] of colors) inRamp.add(entry);
+    const steps = new Set(colors.map(([step]) => step));
+    const tailwind = [...steps].every((step) => STEPS.includes(step));
+    // A scale of its own shares columns with one mostly on its steps: Radix's 1–12 with a 1–11, not with a 10–90.
+    const into = scales.find((scale) =>
+      tailwind ? scale.tailwind : !scale.tailwind && [...steps].filter((step) => scale.steps.has(step)).length * 2 >= Math.min(steps.size, scale.steps.size),
+    );
+    if (into) {
+      for (const step of steps) into.steps.add(step);
+      into.ramps.push([name, colors]);
+    } else scales.push({ steps: tailwind ? new Set(STEPS) : steps, tailwind, ramps: [[name, colors]] });
+  }
+  const named = new Map<string, Resolved[]>();
+  for (const entry of entries) {
+    if (inRamp.has(entry)) continue;
+    const word = bare(entry).split("-")[0];
+    named.set(word, [...(named.get(word) ?? []), entry]);
+  }
+  return {
+    scales: scales.map(({ steps, tailwind, ramps }) => {
+      const order = tailwind ? STEPS : [...steps].sort((a, b) => Number(a) - Number(b));
+      return { steps: order, ramps: ramps.map(([name, colors]) => [name, order.map((step) => colors.find(([s]) => s === step)?.[1])]) };
+    }),
+    named: [...named.values()],
+  };
+}
+
+/** A color's name without what CSS adds to it: `--color-brand-500` as `brand-500`. */
+const bare = (entry: Resolved) => entry.variable.name.replace(/^--(color-)?/, "");
+
+/** A scale's ramps as palette lines, a ramp of more than `LINE_MAX` steps in more than one; a ramp's lines after its first are unnamed. */
+export function paletteLines({ steps, ramps }: Scale): [string, (Resolved | undefined)[]][] {
+  const lines = Math.ceil(steps.length / LINE_MAX);
+  const width = Math.ceil(steps.length / lines);
+  return ramps.flatMap(([name, cells]) =>
+    Array.from({ length: lines }, (_, i): [string, (Resolved | undefined)[]] => [i ? "" : name, cells.slice(i * width, (i + 1) * width)]),
+  );
+}
+
+/**
+ * Colors as a palette: a ramp a row, under its name, each step in its
+ * column; ramps on other steps than Tailwind's in rows of their own columns.
+ * Then the named colors (designer, 2026-11-08), under "Named": each its
+ * swatch and its name, two a row; the names sharing a first word (`primary`,
+ * `primary-foreground`) together, from a row's start, the next after them on
+ * a row of its own; a word's only color pairs with the next such. A ramp's
+ * state (`brand-hover`) is named too, not after the ramp's row: there it
+ * would break the ramps' columns, and its name, starting with the ramp's,
+ * tells whose it is.
  */
 function Palette({ entries, item }: { entries: Resolved[]; item: Item }) {
+  const { scales, named } = palette(entries);
   const swatch = (entry: Resolved | undefined, i: number) =>
     entry ? item(entry, "tk-variants-swatch", undefined, { "--tk-swatch": cssColor(entry.drawn as Color) }) : <span key={`empty ${i}`} class="tk-variants-empty" />;
   return (
     <div class="tk-variants-palette">
-      {paletteRows(entries).map(([name, steps], r) => (
-        <div key={`${name} ${r}`} class="tk-variants-ramp">
-          <span class="tk-variants-ramp-name">{name}</span>
-          {steps.map(swatch)}
+      {scales.flatMap((scale, s) =>
+        paletteLines(scale).map(([name, steps], r) => (
+          <div key={`${s} ${r}`} class="tk-variants-ramp" style={{ "--tk-steps": `${steps.length}` }}>
+            <span class="tk-variants-ramp-name">{name}</span>
+            {steps.map(swatch)}
+          </div>
+        )),
+      )}
+      {named.length > 0 && (
+        <div class="tk-variants-named" role="group" aria-label="Named">
+          {scales.length > 0 && <p class="tk-variants-named-title">Named</p>}
+          <div class="tk-variants-names">
+            {named.flatMap((group, g) =>
+              group.map((entry, i) =>
+                item(
+                  entry,
+                  // A group starts a row; so does the color after one.
+                  `tk-variants-named-item${(group.length > 1 && !i) || (!i && named[g - 1]?.length > 1) ? " is-start" : ""}`,
+                  <>
+                    <span class="tk-variants-named-swatch" style={{ "--tk-swatch": cssColor(entry.drawn as Color) }} />
+                    <span class="tk-variants-named-name">{bare(entry)}</span>
+                  </>,
+                ),
+              ),
+            )}
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }

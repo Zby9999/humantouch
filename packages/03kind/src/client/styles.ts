@@ -1471,7 +1471,7 @@ export const styles = /* css */ `
 }
 .tk-variable-search::placeholder { color: var(--tk-text-muted); font-weight: 500; }
 /* The picker's colors: the palette of the Variants tab, without its ramps' names. */
-.tk-variants-ramp.is-bare { grid-template-columns: repeat(11, minmax(0, 1fr)); }
+.tk-variants-ramp.is-bare { grid-template-columns: repeat(var(--tk-steps, 11), minmax(0, 1fr)); }
 .tk-variants-swatch[aria-selected="true"] { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--tk-accent); }
 .tk-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
 .tk-variable-list .tk-subtitle { margin: 8px 0 4px; }
@@ -1547,12 +1547,26 @@ export const styles = /* css */ `
 .tk-variants-part + .tk-variants-part { margin-top: 6px; }
 .tk-variants-subtitle { margin: 0; padding: 4px 0 2px; color: var(--tk-text-muted); font-weight: 500; letter-spacing: -0.02em; }
 .tk-variants-palette { display: flex; flex-direction: column; gap: 2px; }
-.tk-variants-ramp { display: grid; grid-template-columns: 50px repeat(11, minmax(0, 1fr)); gap: 2px; align-items: center; }
+/* A ramp's row on its scale's columns: Tailwind's 11, or its own steps (designer, 2026-11-08). */
+.tk-variants-ramp { display: grid; grid-template-columns: 50px repeat(var(--tk-steps, 11), minmax(0, 1fr)); gap: 2px; align-items: center; }
 .tk-variants-ramp-name { overflow: hidden; color: #525351; text-overflow: ellipsis; white-space: nowrap; }
 .tk-variants-swatch, .tk-variants-empty { aspect-ratio: 1; border-radius: 4px; }
 /* A step the ramp has no color for: a placeholder in its column, the size of a swatch, outlined dashed and not
    filled, so it reads as no color here rather than a white one (designer, 2026-11-08). Not a control: nothing on hover. */
 .tk-variants-empty { box-sizing: border-box; border: 1px dashed var(--tk-border); pointer-events: none; }
+/* The named colors (designer, 2026-11-08): under the ramps, each its swatch and its name, two a row; a group of
+   names, and the color after one, from a row's start. */
+.tk-variants-named { display: flex; flex-direction: column; gap: 2px; }
+.tk-variants-palette > .tk-variants-ramp + .tk-variants-named { margin-top: 6px; }
+.tk-variants-named-title { margin: 0; padding: 2px 0; color: #525351; }
+.tk-variants-names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 4px; }
+.tk-variants-named-item { all: unset; display: flex; align-items: center; gap: 6px; min-width: 0; box-sizing: border-box; height: 24px; padding: 0 4px; border-radius: 6px; }
+.tk-variants-named-item.is-start { grid-column: 1; }
+.tk-variants-named-item:hover, .tk-variants-named-item:focus-visible { background: var(--tk-field); outline: none; }
+.tk-variants-named-item[aria-disabled="true"] { cursor: default; }
+.tk-variants-named-swatch { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--tk-swatch); box-shadow: inset 0 0 0 0.5px var(--tk-border); }
+.tk-variants-named-item.is-in-use .tk-variants-named-swatch { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--tk-accent); }
+.tk-variants-named-name { overflow: hidden; color: #525351; text-overflow: ellipsis; white-space: nowrap; }
 .tk-variants-swatch {
   all: unset;
   aspect-ratio: 1;

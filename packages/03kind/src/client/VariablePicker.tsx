@@ -9,7 +9,24 @@ import { Icon } from "./icons";
 import { cssColor, type Color } from "./paint";
 import type { Property } from "./property-table";
 import { equal, sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
-import { paletteRows } from "./VariantsPanel";
+import { palette, paletteLines } from "./VariantsPanel";
+
+/** How many named colors a row of the picker's palette holds: as many as Tailwind's steps, as before. */
+const NAMED_ROW = 11;
+
+/**
+ * The picker's palette as the Variants tab's (designer, 2026-11-08), without
+ * names: the ramps' lines, then the named colors, `NAMED_ROW` a row on as
+ * many columns, each named in its title. Undefined where a ramp has no color
+ * for a step: a named row has no placeholders, as it has no steps.
+ */
+function pickerRows(entries: Resolved[]): { cells: (Resolved | undefined)[]; columns: number }[] {
+  const { scales, named } = palette(entries);
+  const colors = named.flat();
+  const rows = scales.flatMap((scale) => paletteLines(scale).map(([, cells]) => ({ cells, columns: cells.length })));
+  for (let i = 0; i < colors.length; i += NAMED_ROW) rows.push({ cells: colors.slice(i, i + NAMED_ROW), columns: NAMED_ROW });
+  return rows;
+}
 
 const CatalogContext = createContext<Catalog | null>(null);
 
@@ -200,9 +217,9 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
                 <div key={heading} role="group" aria-label={heading}>
                   <h4 class="tk-section-title tk-subtitle">{heading}</h4>
                   <div class="tk-variants-palette">
-                    {paletteRows(part).map(([name, steps], r) => (
-                      <div key={`${name} ${r}`} class="tk-variants-ramp is-bare">
-                        {steps.map((entry, i) =>
+                    {pickerRows(part).map(({ cells, columns }, r) => (
+                      <div key={r} class="tk-variants-ramp is-bare" style={{ "--tk-steps": `${columns}` }}>
+                        {cells.map((entry, i) =>
                           entry ? (
                             <button
                               key={entry.variable.name}

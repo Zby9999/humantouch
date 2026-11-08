@@ -521,3 +521,61 @@ test("with nothing selected, a shadow pointed at shows its layers in a white pan
   await page.mouse.move(5, 5);
   await expect(details).toHaveCount(0);
 });
+
+/** Colors of the project's own, added to what the example has, as a project naming them otherwise than Tailwind would. */
+async function addColors(page: Page, colors: [string, string][]) {
+  await page.route("**/variables", async (route) => {
+    const response = await route.fetch();
+    const variables = await response.json();
+    await route.fulfill({ response, json: [...variables, ...colors.map(([name, value]) => ({ name, group: "color", value, from: "tailwind", own: true }))] });
+  });
+}
+
+test("with nothing selected, a ramp on steps of its own (1–12) has a column a step, its swatches narrower to fit the panel, not Tailwind's 11", async ({ page }) => {
+  const grays = ["#fcfcfc", "#f9f9f9", "#f0f0f0", "#e8e8e8", "#e0e0e0", "#d9d9d9", "#cecece", "#bbbbbb", "#8d8d8d", "#838383", "#646464", "#202020"];
+  await addColors(page, grays.map((value, i) => [`gray-${i + 1}`, value]));
+  await enterEditMode(page);
+  const colors = design(page).getByRole("region", { name: "Color" });
+  const gray = colors.locator(".tk-variants-ramp").filter({ has: page.locator(".tk-variants-ramp-name").getByText("gray", { exact: true }) });
+  await gray.first().scrollIntoViewIfNeeded();
+  const cells = gray.first().locator(".tk-variants-swatch, .tk-variants-empty");
+  await expect(cells).toHaveCount(12);
+  await expect(cells.first()).toHaveAccessibleName("gray-1, #FCFCFC");
+  await expect(cells.last()).toHaveAccessibleName("gray-12, #202020");
+  const [row, first, last] = await Promise.all([steadyBox(gray.first()), steadyBox(cells.first()), steadyBox(cells.last())]);
+  expect(first.width).toBeGreaterThanOrEqual(12);
+  expect(last.x + last.width).toBeLessThanOrEqual(row.x + row.width + 0.5);
+  // brand, on Tailwind's steps, keeps its 11.
+  const brand = colors.locator(".tk-variants-ramp").filter({ has: page.locator(".tk-variants-ramp-name").getByText("brand", { exact: true }) });
+  await expect(brand.locator(".tk-variants-swatch, .tk-variants-empty")).toHaveCount(11);
+});
+
+test("with nothing selected, colors of no ramp are named: each its swatch and its name, two a row, a name's group together; pointed at, it tells its value", async ({ page }) => {
+  await addColors(page, [
+    ["primary", "#18181b"],
+    ["primary-foreground", "#fafafa"],
+    ["brand-hover", "#2f50d8"],
+    ["accent-500", "#f59e0b"],
+  ]);
+  await enterEditMode(page);
+  const named = design(page).getByRole("region", { name: "Color" }).getByRole("group", { name: "Named" }).first();
+  await named.scrollIntoViewIfNeeded();
+  const items = named.locator(".tk-variants-named-item");
+  // The example's own ink and muted, then the added: none is a ramp, as none has 3 numbered colors.
+  await expect(items).toHaveText(["ink", "muted", "primary", "primary-foreground", "brand-hover", "accent-500"]);
+  const [ink, muted, primary, foreground, hover] = await Promise.all([0, 1, 2, 3, 4].map((i) => steadyBox(items.nth(i))));
+  expect(muted.y).toBeCloseTo(ink.y, 0);
+  expect(foreground.y).toBeCloseTo(primary.y, 0);
+  expect(primary.y).toBeGreaterThan(ink.y);
+  // After a group, a row of its own.
+  expect(hover.x).toBeCloseTo(primary.x, 0);
+  expect(hover.y).toBeGreaterThan(primary.y);
+  await expect(items.nth(2).locator(".tk-variants-named-swatch")).toHaveCSS("background-color", "rgb(24, 24, 27)");
+
+  const tip = page.getByRole("tooltip");
+  await items.nth(2).hover();
+  await expect(tip).toContainText("#18181B");
+  await expect(tip).toContainText("primary");
+  await page.mouse.move(5, 5);
+  await expect(tip).toHaveCount(0);
+});
