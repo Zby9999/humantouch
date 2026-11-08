@@ -177,10 +177,17 @@ test("the menu of Effects' + has the effect types in one column and the shadow V
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
+  const radiusIcon = await design(page).locator('.tk-field:has([aria-label="Corner radius"]) .tk-icon').first().innerHTML();
 
   await (await variablesOf(page, "Corner radius")).getByRole("option", { name: "pill" }).click();
   await expect.poll(async () => (await cardStyles(page, "borderTopLeftRadius"))[0]).toBe("999px");
   await expect(design(page).getByRole("button", { name: "Corner radius variable", exact: true })).toHaveText("pill");
+  // The field keeps its own icon by the Variable's name; its detach and its reset side by side (designer, 2026-11-08).
+  const chip = design(page).locator('.tk-variable-chip:has([aria-label="Corner radius variable"])');
+  expect(await chip.locator("> .tk-icon").first().innerHTML()).toBe(radiusIcon);
+  const detach = (await chip.getByRole("button", { name: "Detach corner radius variable" }).boundingBox())!;
+  const reset = (await chip.getByRole("button", { name: "Reset corner radius" }).boundingBox())!;
+  expect(Math.round(reset.x - (detach.x + detach.width))).toBe(0);
 
   // Shadows: one Variable for all of them, from the menu of +, shown by name in Effects.
   const effects = design(page).getByRole("group", { name: "Effects" });

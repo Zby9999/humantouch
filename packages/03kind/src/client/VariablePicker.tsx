@@ -1,11 +1,11 @@
 /** @jsxImportSource preact */
-import { createContext, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
+import { createContext, isValidElement, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Variable, VariableGroup } from "../service-protocol";
 import { ResetButton, useChangeMarks, type ValuePart } from "./ChangeMarks";
 import { writeShadows, type Shadow } from "./effects";
 import { leavingProps, useExit } from "./exit";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { cssColor, type Color } from "./paint";
 import type { Property } from "./property-table";
 import { equal, sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
@@ -300,11 +300,13 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   const typing: Typing | null = offered ? { group: offered.group, selection: offered.selection, read: readLength, naming: namesLength, onPick: pick } : null;
   const bound = offered?.bound;
   const changed = !!bound && !!property && marks.changed(property, part);
+  /** The field's own icon, or its letter, kept by the Variable's name, so what the value is for still shows (designer, 2026-11-08). With no field (a shadow's), the Variable's mark. */
+  const own = (isValidElement(children) ? children.props : {}) as { icon?: IconName; glyph?: string; small?: boolean };
   return (
     <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"}>
       {bound ? (
         <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`}>
-          <Icon name="variable" />
+          {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "tk-glyph is-small" : "tk-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
           <button
             type="button"
             class="tk-variable-chip-name"

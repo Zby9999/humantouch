@@ -941,8 +941,9 @@ export const styles = /* css */ `
   gap: 4px;
 }
 /* A field's word label (Width, X, Blur): 32px wide at least, at its start (designer, 2026-11-08); a long one (Blur, Spread) at 9px. */
-.tk-scrub > .tk-glyph { min-width: 32px; place-items: center start; }
-.tk-scrub > .tk-glyph.is-small { font-size: 9px; letter-spacing: -0.02em; }
+/* By a Variable's name too, as the field had it (designer, 2026-11-08). */
+:is(.tk-scrub, .tk-variable-chip) > .tk-glyph { min-width: 32px; place-items: center start; }
+:is(.tk-scrub, .tk-variable-chip) > .tk-glyph.is-small { font-size: 9px; letter-spacing: -0.02em; }
 .tk-glyph {
   display: grid;
   place-items: center;
@@ -1441,6 +1442,8 @@ export const styles = /* css */ `
 /* A field with no Variables to offer (yet): laid out as if it were where its slot is, so the slot stays around it as they come in. */
 .tk-variable-slot.is-alone { display: contents; }
 .tk-variable-chip { gap: 4px; padding-right: 0; }
+/* Its detach and its reset side by side, with no room between (designer, 2026-11-08). */
+.tk-variable-chip > .tk-icon-button + .tk-reset { margin-left: -4px; }
 .tk-variable-chip-name {
   all: unset;
   flex: 1;
