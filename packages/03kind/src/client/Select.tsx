@@ -195,6 +195,12 @@ export interface MenuItem {
   /** Drawn before its label: a Variable's swatch, say. */
   preview?: ComponentChildren;
   heading?: string;
+  /**
+   * 1: in a second column, to the right of the others, in the same menu: the
+   * shadow Variables beside the effect types, so the menu is not one tall
+   * strip (designer, 2026-11-08). With no such item, or only such items, one column.
+   */
+  column?: 1;
 }
 
 /**
@@ -202,6 +208,7 @@ export interface MenuItem {
  * select's, and right-aligned with it: Effects' + (designer, 2026-11-05).
  * The menu is in a dialog of its own, so no shortcut of the canvas takes its
  * keys: ↑ / ↓ to move, Enter to choose, Esc to close; a press elsewhere closes it.
+ * With items in a second column, ↑ / ↓ keep to a column and ← / → go across (designer, 2026-11-08).
  */
 export function MenuButton({ label, icon, items, onChoose, class: className }: { label: string; icon: IconName; items: MenuItem[]; onChoose(value: string): void; class?: string }) {
   const [open, setOpen] = useState<HTMLButtonElement | null>(null);
@@ -280,22 +287,71 @@ function ButtonMenu({ label, anchor, items, onChoose, onClose }: {
       if (root !== document) root.removeEventListener("pointerdown", away, true);
     };
   }, [anchor, onClose]);
-  const step = (from: number, by: number) => {
-    for (let i = from + by; i >= 0 && i < items.length; i += by) if (!items[i].disabled) return i;
+  /** Two columns when some items, and not all, are in the second (designer, 2026-11-08). */
+  const columns = items.some((item) => item.column === 1) && items.some((item) => item.column !== 1);
+  const columnOf = (i: number) => (columns ? (items[i]?.column ?? 0) : 0);
+  /** Where item `i` is in its column. */
+  const rowOf = (i: number) => items.slice(0, i).filter((_, j) => columnOf(j) === columnOf(i)).length;
+  /** The next item that can be chosen from `from` by `by`, in `column`: ↑ / ↓, Home and End keep to the column. */
+  const step = (from: number, by: number, column = columnOf(active)) => {
+    for (let i = from + by; i >= 0 && i < items.length; i += by) if (!items[i].disabled && columnOf(i) === column) return i;
     return from;
+  };
+  /** ← / →: the item of the other column at the nearest row; none there, it stays (designer, 2026-11-08). */
+  const across = (from: number, column: number) => {
+    if (!columns || from < 0 || column === columnOf(from)) return from;
+    const row = rowOf(from);
+    let best = from;
+    items.forEach((item, i) => {
+      if (item.disabled || columnOf(i) !== column) return;
+      if (best === from || Math.abs(rowOf(i) - row) < Math.abs(rowOf(best) - row)) best = i;
+    });
+    return best;
   };
   const onKeyDown = (event: TargetedKeyboardEvent<HTMLDivElement>) => {
     const { key } = event;
     if (key === "Tab") return onClose(false);
-    if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"].includes(key)) return;
+    const arrows = columns ? ["ArrowLeft", "ArrowRight"] : [];
+    if (![...arrows, "ArrowDown", "ArrowUp", "Home", "End", "Enter", " ", "Escape"].includes(key)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (key === "Escape") onClose(true);
-    else if (key === "ArrowDown" || key === "ArrowUp") setActive((i) => step(i, key === "ArrowDown" ? 1 : -1));
-    else if (key === "Home") setActive(step(-1, 1));
-    else if (key === "End") setActive(step(items.length, -1));
-    else if (items[active]) onChoose(items[active].value);
+    if (key === "Escape") return onClose(true);
+    if (key === "Enter" || key === " ") return items[active] && onChoose(items[active].value);
+    const next =
+      key === "ArrowDown" || key === "ArrowUp" ? step(active, key === "ArrowDown" ? 1 : -1)
+      : key === "Home" ? step(-1, 1)
+      : key === "End" ? step(items.length, -1)
+      : across(active, key === "ArrowRight" ? 1 : 0);
+    setActive(next);
+    // A column scrolls on its own: the item moved to is brought into it.
+    list.current!.querySelector(`[data-index="${next}"]`)?.scrollIntoView({ block: "nearest" });
   };
+  const option = (item: MenuItem, i: number) => (
+    <Fragment key={item.value}>
+      {item.heading && (
+        <div class="tk-menu-heading" role="presentation">
+          {item.heading}
+        </div>
+      )}
+      <div
+        id={`${id}-${i}`}
+        data-index={i}
+        class={`tk-menu-option${i === active ? " is-active" : ""}`}
+        role="option"
+        aria-selected={false}
+        aria-disabled={item.disabled || undefined}
+        onPointerDown={(event) => event.preventDefault()}
+        onPointerEnter={() => !item.disabled && setActive(i)}
+        onClick={(event) => {
+          event.preventDefault();
+          if (!item.disabled) onChoose(item.value);
+        }}
+      >
+        {item.preview}
+        {item.label}
+      </div>
+    </Fragment>
+  );
   return (
     <div
       ref={box}
@@ -304,32 +360,22 @@ function ButtonMenu({ label, anchor, items, onChoose, onClose }: {
       aria-label={label}
       style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden" }}
     >
-      <div ref={list} role="listbox" aria-label={label} tabIndex={-1} aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined} class="tk-menu-list" onKeyDown={onKeyDown}>
-        {items.map((item, i) => (
-          <Fragment key={item.value}>
-            {item.heading && (
-              <div class="tk-menu-heading" role="presentation">
-                {item.heading}
+      <div
+        ref={list}
+        role="listbox"
+        aria-label={label}
+        tabIndex={-1}
+        aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
+        class={columns ? "tk-menu-list is-columns" : "tk-menu-list"}
+        onKeyDown={onKeyDown}
+      >
+        {columns
+          ? [0, 1].map((column) => (
+              <div key={column} class="tk-menu-column" role="presentation">
+                {items.map((item, i) => columnOf(i) === column && option(item, i))}
               </div>
-            )}
-            <div
-              id={`${id}-${i}`}
-              class={`tk-menu-option${i === active ? " is-active" : ""}`}
-              role="option"
-              aria-selected={false}
-              aria-disabled={item.disabled || undefined}
-              onPointerDown={(event) => event.preventDefault()}
-              onPointerEnter={() => !item.disabled && setActive(i)}
-              onClick={(event) => {
-                event.preventDefault();
-                if (!item.disabled) onChoose(item.value);
-              }}
-            >
-              {item.preview}
-              {item.label}
-            </div>
-          </Fragment>
-        ))}
+            ))
+          : items.map(option)}
       </div>
     </div>
   );

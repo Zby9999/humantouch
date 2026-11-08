@@ -127,6 +127,43 @@ test("a field focused lists its group's Variables, the closest to its value firs
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("14");
 });
 
+test("the menu of Effects' + has the effect types in one column and the shadow Variables in another to their right, tops aligned, wholly in the window; ← / → move between them", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  await design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" }).click();
+  const menu = page.getByRole("dialog", { name: "Add effect" });
+  const [types, variables] = [menu.locator(".tk-menu-column").nth(0), menu.locator(".tk-menu-column").nth(1)];
+  await expect(types.getByRole("option")).toHaveText(["Drop shadow", "Inner shadow", "Layer blur", "Background blur"]);
+  await expect(variables.locator(".tk-menu-heading")).toHaveText("Variables");
+  await expect(variables.getByRole("option", { name: "md", exact: true })).toBeVisible();
+
+  const left = await steadyBox(types);
+  const right = await steadyBox(variables);
+  expect(right.x).toBeGreaterThanOrEqual(left.x + left.width);
+  expect(Math.abs(right.y - left.y)).toBeLessThan(1);
+  const box = await steadyBox(menu);
+  const window = page.viewportSize()!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(window.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(window.height);
+  // Not past the panel's right edge: it opens toward the left, over the canvas.
+  const panel = await steadyBox(design(page));
+  expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width);
+
+  // ↑ / ↓ keep to a column, ← / → go across at the nearest row, Esc closes.
+  const active = menu.locator(".tk-menu-option.is-active");
+  await expect(active).toHaveText("Drop shadow");
+  await page.keyboard.press("ArrowRight");
+  await expect(active).toHaveText(await variables.getByRole("option").first().innerText());
+  await page.keyboard.press("ArrowDown");
+  await expect(active).toHaveText(await variables.getByRole("option").nth(1).innerText());
+  await page.keyboard.press("ArrowLeft");
+  await expect(active).toHaveText("Inner shadow");
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+});
+
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
