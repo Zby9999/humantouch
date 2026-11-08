@@ -140,6 +140,45 @@ test("going back to preview grows the canvas back over the page before the edito
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
+test("going back to preview after the window narrowed, the canvas grows into the page as it now is, not as it was frozen; turned around, it is as frozen again (designer, 2026-11-08)", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  const frozen = await canvasIframe(page).evaluate((el) => (el as HTMLElement).clientWidth);
+  // Narrower only: what answers to the window's height (vh) was settled as the page was frozen.
+  await page.setViewportSize({ width: 1078, height: 720 });
+  const real = await page.locator("h1").evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.x), y: Math.round(r.y) };
+  });
+  await playbackRate(cdp, 0.02);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await holdTravel(page);
+  // Its last frame: the desktop view as wide as the window, as tall at least, its h1 where the page's is.
+  const last = await page.evaluate(() => {
+    const root = document.querySelector("third-kind")!.shadowRoot!;
+    for (const animation of root.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 10000;
+    }
+    const iframe = root.querySelector('iframe[title="Canvas"]') as HTMLIFrameElement;
+    const frame = iframe.getBoundingClientRect();
+    const h1 = iframe.contentDocument!.querySelector("h1")!.getBoundingClientRect();
+    return { width: Math.round(frame.width), height: Math.round(frame.height), h1: { x: Math.round(frame.x + h1.x), y: Math.round(frame.y + h1.y) } };
+  });
+  expect(last.width).toBe(1078);
+  expect(last.height).toBeGreaterThanOrEqual(720);
+  expect(last.h1).toEqual(real);
+
+  // Turned around on the way: the desktop view as wide as it was frozen.
+  await page.evaluate(() => {
+    for (const animation of document.querySelector("third-kind")!.shadowRoot!.getAnimations()) animation.currentTime = 40;
+  });
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await playbackRate(cdp, 1);
+  await expectSettled(page);
+  expect(await canvasIframe(page).evaluate((el) => (el as HTMLElement).clientWidth)).toBe(frozen);
+});
+
 /** Where the frame (the desktop view), the panels and the tools are, the editor's animations held `t` ms in; null, as they are. */
 function chromeAt(page: Page, t: number | null) {
   return page.evaluate((t) => {

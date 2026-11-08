@@ -11,7 +11,7 @@ import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scr
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
-import { freeze, restore } from "./freezer";
+import { fitHeight, freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { chromePush, EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -491,6 +491,8 @@ export function CanvasView(props: Props) {
 
   // Leaving grows the canvas back over the page; a click on the way turns it around.
   const wasLeaving = useRef(false);
+  /** Leaving, the views held as tall as the page now is; turned around, let go, each as tall as what it shows. */
+  const heightsPinned = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     if (leaving === wasLeaving.current) return;
     wasLeaving.current = leaving;
@@ -509,8 +511,22 @@ export function CanvasView(props: Props) {
       play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
       return;
     }
+    // The window resized since the page was frozen: leaving, the desktop view is laid out again as wide as the page now is,
+    // so it grows into the page as the page is, not as it was (designer, 2026-11-08); turned around, as frozen again.
+    // Playing sets its own width, and is left as it is.
+    const width = leaving ? document.documentElement.clientWidth : canvas.width;
+    if (!playing) {
+      heightsPinned.current?.();
+      heightsPinned.current = null;
+      iframe.current!.style.width = `${width}px`;
+      if (leaving) {
+        // No shorter than the window now is, either, so the page's foot is not the canvas's gray: held so as it grows.
+        fitHeight(canvas.document, iframe.current!, Math.max(canvas.windowHeight, innerHeight));
+        heightsPinned.current = views?.pinHeights() ?? null;
+      }
+    }
     // Toward where the camera has the canvas, turned around: what the panels keep their gap to, either way.
-    moveChrome(camera, canvas.width, leaving);
+    moveChrome(camera, playing ? canvas.width : width, leaving);
     const from = transformOf(currentCamera(stage.current!));
     const to = leaving ? overPage() : transformOf(camera);
     // Over the page, a changed canvas would cut to a page without the changes.
