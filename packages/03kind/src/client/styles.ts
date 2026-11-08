@@ -1658,8 +1658,10 @@ export const styles = /* css */ `
 .tk-variants-part + .tk-variants-part { margin-top: 6px; }
 .tk-variants-subtitle { margin: 0; padding: 4px 0 2px; color: var(--tk-text-muted); font-weight: 500; letter-spacing: -0.02em; }
 .tk-variants-palette { display: flex; flex-direction: column; gap: 2px; }
-/* A ramp's row on its scale's columns: Tailwind's 11, or its own steps (designer, 2026-11-08). */
-.tk-variants-ramp { display: grid; grid-template-columns: 50px repeat(var(--tk-steps, 11), minmax(0, 1fr)); gap: 2px; align-items: center; }
+/* A ramp's row on its scale's columns: Tailwind's 11, or its own steps (designer, 2026-11-08). A swatch is at most
+   20px, its size in the 320px panel: the panel widened, only the room between the name and the swatches grows, the
+   swatches at the right; narrower, as with 12 steps or more, they shrink to fit (designer, 2026-11-08). */
+.tk-variants-ramp { display: grid; grid-template-columns: minmax(50px, 1fr) repeat(var(--tk-steps, 11), minmax(0, 20px)); gap: 2px; align-items: center; }
 .tk-variants-ramp-name { overflow: hidden; color: #525351; text-overflow: ellipsis; white-space: nowrap; }
 .tk-variants-swatch, .tk-variants-empty { aspect-ratio: 1; border-radius: 4px; }
 /* A step the ramp has no color for: a placeholder in its column, the size of a swatch, outlined dashed and not

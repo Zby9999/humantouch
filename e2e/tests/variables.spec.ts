@@ -579,3 +579,27 @@ test("with nothing selected, colors of no ramp are named: each its swatch and it
   await page.mouse.move(5, 5);
   await expect(tip).toHaveCount(0);
 });
+
+test("with nothing selected, the Design panel widened, a ramp's swatches keep their size at its right: only the room between its name and them grows", async ({ page }) => {
+  await enterEditMode(page);
+  const brand = design(page)
+    .getByRole("region", { name: "Color" })
+    .locator(".tk-variants-ramp")
+    .filter({ has: page.locator(".tk-variants-ramp-name").getByText("brand", { exact: true }) });
+  await brand.scrollIntoViewIfNeeded();
+  const first = brand.locator(".tk-variants-swatch").first();
+  const [row, before] = await Promise.all([steadyBox(brand), steadyBox(first)]);
+
+  const edge = await steadyBox(page.getByRole("separator", { name: "Resize the Design panel" }));
+  await page.mouse.move(edge.x + edge.width / 2, 400);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 - 160, 400, { steps: 8 });
+  await page.mouse.up();
+
+  await expect.poll(async () => (await steadyBox(brand)).width).toBeCloseTo(row.width + 160, 0);
+  const [wide, after] = await Promise.all([steadyBox(brand), steadyBox(first)]);
+  // At most 20px each, as in the 320px panel, nearly: 11 of them and their 2px gaps at the row's right, the rest the name's.
+  expect(before.width).toBeGreaterThan(19);
+  expect(after.width).toBeCloseTo(20, 0);
+  expect(wide.x + wide.width - after.x).toBeCloseTo(11 * 20 + 10 * 2, 0);
+});

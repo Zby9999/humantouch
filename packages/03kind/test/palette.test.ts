@@ -13,7 +13,7 @@ const ramp = (prefix: string, steps: (string | number)[]) => steps.map((step) =>
 function names(entries: Resolved[]) {
   const { scales, named } = palette(entries);
   return {
-    scales: scales.map(({ steps, ramps }) => ({ steps, ramps: ramps.map(([name, cells]) => [name, cells.map((cell) => cell?.variable.name ?? null)]) })),
+    scales: scales.map(({ steps, ramps }) => ({ steps, ramps: ramps.map(([name, cells]) => [name, cells.map((cell) => cell?.variable.name ?? null)] as const) })),
     named: named.map((group) => group.map((entry) => entry.variable.name)),
   };
 }
@@ -78,6 +78,15 @@ describe("palette", () => {
       ["gray", "gray-25", null],
       ["slate", null, "slate-1000"],
     ]);
+  });
+});
+
+describe("palette, names twice or near", () => {
+  it("names a step named twice, not losing it, and a ramp's state of a two-word name under the ramp's name", () => {
+    const { scales, named } = names(colors(...ramp("--gray", [1, 2, 3]), "--color-gray-1", "gray-01", ...ramp("blue-gray", [100, 200, 300]), "blue-gray-hover", "blue-500"));
+    expect(scales[0].ramps.map(([name, cells]) => [name, cells.filter(Boolean)])).toEqual([["gray", ramp("--gray", [1, 2, 3])]]);
+    expect(scales[1].ramps[0][0]).toBe("blue-gray");
+    expect(named).toEqual([["--color-gray-1", "gray-01"], ["blue-gray-hover"], ["blue-500"]]);
   });
 });
 

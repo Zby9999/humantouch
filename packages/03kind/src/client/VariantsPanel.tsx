@@ -29,7 +29,7 @@ const GROUPS: { group: VariableGroup; title: string }[] = [
   { group: "shadow", title: "Shadow" },
 ];
 
-/** A ramp's steps, as Tailwind names them: a color named so (`brand-500`) is a step of one. */
+/** Tailwind's steps: a ramp on these only shares their 11 columns. */
 const STEPS = ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"];
 /** A color named so (`brand-500`, `gray-1`) is a step of a ramp, numbered. */
 const STEP_NUMBER = /^(.+)-(\d+)$/;
@@ -301,7 +301,11 @@ export function palette(entries: Resolved[]): { scales: Scale[]; named: Resolved
   const numbered = new Map<string, [string, Resolved][]>();
   for (const entry of entries) {
     const step = STEP_NUMBER.exec(bare(entry));
-    if (step) numbered.set(step[1], [...(numbered.get(step[1]) ?? []), [step[2], entry]]);
+    if (!step) continue;
+    // A step named twice (`--gray-1`, `--color-gray-1`; `gray-01`, `gray-1`): the second is named, not lost.
+    const steps = numbered.get(step[1]) ?? [];
+    const number = `${Number(step[2])}`;
+    if (!steps.some(([s]) => s === number)) numbered.set(step[1], [...steps, [number, entry]]);
   }
   const inRamp = new Set<Resolved>();
   const scales: { steps: Set<string>; tailwind: boolean; ramps: [string, [string, Resolved][]][] }[] = [];
@@ -319,10 +323,13 @@ export function palette(entries: Resolved[]): { scales: Scale[]; named: Resolved
       into.ramps.push([name, colors]);
     } else scales.push({ steps: tailwind ? new Set(STEPS) : steps, tailwind, ramps: [[name, colors]] });
   }
+  const rampNames = scales.flatMap(({ ramps }) => ramps.map(([name]) => name)).sort((a, b) => b.length - a.length);
   const named = new Map<string, Resolved[]>();
   for (const entry of entries) {
     if (inRamp.has(entry)) continue;
-    const word = bare(entry).split("-")[0];
+    // A ramp's state (`blue-gray-hover`) under the ramp's name, the others under the first word of theirs.
+    const name = bare(entry);
+    const word = rampNames.find((ramp) => name.startsWith(`${ramp}-`)) ?? name.split("-")[0];
     named.set(word, [...(named.get(word) ?? []), entry]);
   }
   return {
@@ -380,7 +387,7 @@ function Palette({ entries, item }: { entries: Resolved[]; item: Item }) {
                 item(
                   entry,
                   // A group starts a row; so does the color after one.
-                  `tk-variants-named-item${(group.length > 1 && !i) || (!i && named[g - 1]?.length > 1) ? " is-start" : ""}`,
+                  `tk-variants-named-item${!i && (group.length > 1 || named[g - 1]?.length > 1) ? " is-start" : ""}`,
                   <>
                     <span class="tk-variants-named-swatch" style={{ "--tk-swatch": cssColor(entry.drawn as Color) }} />
                     <span class="tk-variants-named-name">{bare(entry)}</span>
