@@ -1635,6 +1635,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
       label: entry.variable.name,
       preview: <Preview drawn={entry.drawn} />,
       heading: i === 0 ? "Variables" : undefined,
+      // In a column of their own, to the right of the types: the menu was one tall strip (designer, 2026-11-08).
+      column: 1 as const,
     })),
   ];
   const add = (value: string) => {

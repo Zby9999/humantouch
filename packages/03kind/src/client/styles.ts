@@ -788,6 +788,12 @@ export const styles = /* css */ `
 .tk-menu-list { outline: none; }
 .tk-menu.is-plain .tk-menu-option { gap: 8px; padding-left: 8px; }
 .tk-menu-heading { margin-top: 4px; padding: 8px 8px 4px; border-top: 1px solid var(--tk-border); color: var(--tk-text-muted); font-weight: 500; }
+/* Two columns side by side, as Effects' + has its types and, to their right, its shadow Variables; tops aligned, a rule between
+   them as between a menu's groups, each scrolling on its own when long (designer, 2026-11-08). */
+.tk-menu-list.is-columns { display: flex; }
+.tk-menu-column { max-height: calc(100vh - 24px); overflow-y: auto; }
+.tk-menu-column + .tk-menu-column { margin-left: 4px; padding-left: 4px; border-left: 1px solid var(--tk-border); }
+.tk-menu-column > .tk-menu-heading:first-child { margin-top: 0; border-top: 0; }
 /* A segmented control: its choices on neutral 150, the one chosen raised on neutral 50. */
 .tk-segmented-field {
   display: flex;
