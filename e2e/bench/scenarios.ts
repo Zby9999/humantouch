@@ -175,11 +175,16 @@ export async function boxOf(locator: Locator) {
   return box;
 }
 
-/** Selects, in a view, the deepest layer just inside the top left of what `selector` finds there: the view is the one worked in from then on. */
+/**
+ * Selects, in a view, the deepest layer just inside the top left of what `selector` finds there: the view is the one worked in from then on.
+ * Pressed 14px in, in the page's px whatever the canvas's zoom: where 4px on screen was at the zoom the bench had before tuning round 1, whose
+ * wider panels leave the canvas less room in the bench's 1280px window, and so a smaller zoom, where 4px reached the text inside a button.
+ */
 export async function pick(page: Page, view: Locator, selector: string) {
   const box = await boxOf(view.contentFrame().locator(selector).first());
+  const zoom = await view.evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
   await page.keyboard.down("ControlOrMeta");
-  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.mouse.click(box.x + 14 * zoom, box.y + 14 * zoom);
   await page.keyboard.up("ControlOrMeta");
 }
 
@@ -588,10 +593,12 @@ export const SCENARIOS: Scenario[] = [
       });
       await saved(desk, 1);
       const paragraph = await boxOf(canvas.locator(`${HERO} > p`));
+      // In the page's px, whatever the canvas's zoom: the text as wide as before tuning round 1 left the canvas less room (649.5px).
+      const zoom = await desktop(page).evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
       await page.keyboard.press("t");
-      await page.mouse.move(paragraph.x + 20, paragraph.y + paragraph.height - 2);
+      await page.mouse.move(paragraph.x + 72 * zoom, paragraph.y + paragraph.height - 7 * zoom);
       await page.mouse.down();
-      await page.mouse.move(paragraph.x + 200, paragraph.y + paragraph.height + 10, { steps: 6 });
+      await page.mouse.move(paragraph.x + 721.5 * zoom, paragraph.y + paragraph.height + 36 * zoom, { steps: 6 });
       await page.mouse.up();
       await page.keyboard.type("Works with any Agent.");
       await page.keyboard.press("Enter");
