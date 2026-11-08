@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import { useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { VariableGroup } from "../service-protocol";
 import type { Shadow } from "./effects";
 import { Icon } from "./icons";
@@ -44,12 +44,17 @@ const SAMPLE_MAX = 32;
  * layers that take one of its group, as the Design tab's Variables are. A
  * radius tile has its name over its value (designer, 2026-11-08): pointed at,
  * it tells them only when its name is cut short, as nothing on screen repeats.
+ * No tip repeats what is on screen (designer, 2026-11-08): a font size's row
+ * has its name and value, so it tells nothing; a color's swatch has neither,
+ * so it tells both. A shadow, pointed at with a mouse, shows its layers in a
+ * panel at the Design panel's left, each value named (`ShadowDetails`).
  */
 export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
   const [search, setSearch] = useState("");
   const [source, setSource] = useState<Source>("all");
   const [closed, setClosed] = useState<ReadonlySet<VariableGroup>>(new Set());
   const [pointed, setPointed] = useState<{ entry: Resolved; at: DOMRect } | null>(null);
+  const [detailed, setDetailed] = useState<{ entry: Resolved; at: DOMRect; panel: DOMRect } | null>(null);
 
   if (!catalog) return <p class="tk-panel-empty">Loading the project's Variables…</p>;
   const text = search.trim().toLowerCase();
@@ -65,10 +70,24 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
     const can = !!takes[entry.variable.group];
     const show = (event: Event) => {
       const button = event.currentTarget as Element;
+      const { group } = entry.variable;
+      // A font size's row has its name and value on it: pointed at, it tells nothing more (designer, 2026-11-08).
+      if (group === "fontSize") return;
+      if (group === "shadow") {
+        // A shadow's layers, in a panel over the canvas; on a mouse's pointing only, as a spacing bar's whole length (designer, 2026-11-08).
+        if (!(event instanceof PointerEvent) || event.pointerType !== "mouse") return;
+        const panel = (button.closest(".tk-panel") ?? button).getBoundingClientRect();
+        setDetailed({ entry, at: button.getBoundingClientRect(), panel });
+        return;
+      }
       // A tile that shows its name whole tells nothing more pointed at (designer, 2026-11-08).
       const name = button.querySelector(".tk-variants-tile-name");
       if (name && name.scrollWidth <= name.clientWidth) return;
       setPointed({ entry, at: button.getBoundingClientRect() });
+    };
+    const hide = () => {
+      setPointed(null);
+      setDetailed(null);
     };
     return (
       <button
@@ -79,9 +98,9 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
         aria-label={`${entry.variable.name}, ${valueOf(entry)}`}
         aria-disabled={!can || undefined}
         onPointerEnter={show}
-        onPointerLeave={() => setPointed(null)}
+        onPointerLeave={hide}
         onFocus={show}
-        onBlur={() => setPointed(null)}
+        onBlur={hide}
         onClick={() => can && onApply(entry)}
       >
         {children}
@@ -138,6 +157,7 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
           </section>
         );
       })}
+      {detailed && <ShadowDetails entry={detailed.entry} at={detailed.at} panel={detailed.panel} />}
       {pointed && <Tip entry={pointed.entry} at={pointed.at} hint={takes[pointed.entry.variable.group]} inUse={used(pointed.entry)} />}
     </div>
   );
@@ -304,6 +324,64 @@ function Tip({ entry, at, hint, inUse }: { entry: Resolved; at: DOMRect; hint: s
         <span class="tk-variants-tip-name">{entry.variable.name}</span> <span class="tk-variants-tip-value">{valueOf(entry)}</span>
       </span>
       {inUse ? <span class="tk-variants-tip-hint">In use</span> : hint && <span class="tk-variants-tip-hint">Click to set the {hint}</span>}
+    </div>
+  );
+}
+
+/** How far the shadow's panel keeps from the Design panel, and from the window's top and bottom. */
+const BESIDE = 8;
+
+/**
+ * A shadow Variable's layers, read-only, in a white panel at the Design
+ * panel's left, over the canvas, level with its tile (designer, 2026-11-08:
+ * its CSS in one line was hard to read). Its name, then each shadow as the
+ * Effects section has it: numbered, its type, X, Y, Blur and Spread, and its
+ * color as a swatch, hex and opacity.
+ */
+function ShadowDetails({ entry, at, panel }: { entry: Resolved; at: DOMRect; panel: DOMRect }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(at.top);
+  // Whole in the window: one taller than the room under its tile rises.
+  useLayoutEffect(() => {
+    const height = box.current!.getBoundingClientRect().height;
+    setTop(Math.max(BESIDE, Math.min(at.top, window.innerHeight - height - BESIDE)));
+  }, [entry, at]);
+  const number = (n: number) => `${Math.round(n * 100) / 100}`;
+  return (
+    <div ref={box} class="tk-variants-details" aria-hidden="true" style={{ right: `${window.innerWidth - panel.left + BESIDE}px`, top: `${top}px` }}>
+      <span class="tk-variants-details-name">{entry.variable.name}</span>
+      {(entry.drawn as Shadow[]).map((s, i) => (
+        <div key={i} class="tk-variants-details-layer">
+          <div class="tk-variants-details-head">
+            <span class="tk-variants-details-title">Shadow {i + 1}</span>
+            <span class="tk-variants-details-label">{s.type === "inner" ? "Inner shadow" : "Drop shadow"}</span>
+          </div>
+          <dl class="tk-variants-details-grid">
+            {(
+              [
+                ["X", s.x],
+                ["Y", s.y],
+                ["Blur", s.blur],
+                ["Spread", s.spread],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label} class="tk-variants-details-pair">
+                <dt class="tk-variants-details-label">{label}</dt>
+                <dd class="tk-variants-details-value">{number(value)}</dd>
+              </div>
+            ))}
+            <div class="tk-variants-details-pair is-color">
+              <dt class="tk-variants-details-label">Color</dt>
+              <dd class="tk-variants-details-value">
+                {/* The swatch whole: a shadow's color is often a few % opaque, and would show as nothing; its opacity is told beside it. */}
+                <span class="tk-variants-details-swatch" style={{ "--tk-swatch": s.color }} />
+                {s.color.slice(1).toUpperCase()}
+                <span class="tk-variants-details-opacity">{Math.round(s.opacity * 100)}%</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      ))}
     </div>
   );
 }
