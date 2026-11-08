@@ -534,14 +534,13 @@ export const styles = /* css */ `
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }
 .tk-count {
   all: unset;
+  position: relative;
+  isolation: isolate;
   box-sizing: border-box;
   min-width: 28px;
   height: 28px;
   padding: 0 8px;
   border-radius: 6px;
-  /* Blue 400 into blue 500, a hairline and a soft shadow (Figma: 03 Kind, 86:567; designer, 2026-11-08); 28px, as the buttons beside it. */
-  background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
-  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
   color: #daecff;
   font: 500 12px/28px ${EDITOR_FONT};
   letter-spacing: -0.02em;
@@ -549,8 +548,21 @@ export const styles = /* css */ `
   text-align: center;
   cursor: pointer;
 }
-.tk-count:hover { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
-.tk-count:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
+/*
+ * Drawn 24px, 2px in from its 28px, which it is clicked in still, as large as the buttons beside it (designer, 2026-11-08): blue 400 into
+ * blue 500, a hairline and a soft shadow (Figma: 03 Kind, 86:567; designer, 2026-11-08).
+ */
+.tk-count::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  border-radius: 6px;
+  background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
+}
+.tk-count:hover::before { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
+.tk-count:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 0; }
 /* Opened from the count: below the panel's top, over the panel, which would clip it. */
 .tk-panel-header .tk-changes { position: fixed; top: 48px; right: 16px; z-index: 1; }
 
