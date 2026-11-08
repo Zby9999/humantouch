@@ -48,6 +48,7 @@ import { shellDenied } from "./pi-extension.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
 import { designProblems, exampleOf, held, openObservers, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
 import { STANDARD_SCENARIOS } from "./scenarios-other-examples.ts";
+import { showLayersOnEntry } from "../layers-on-entry.ts";
 
 /** Whether something answers on `port` of this machine, as a dev server there would. */
 function answers(port: number): Promise<boolean> {
@@ -286,7 +287,8 @@ async function withScenario<T>(
   try {
     server = await startDevServer(project.dir, port, exampleOf(scenario));
     context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: "reduce" });
-    await context.addInitScript(() => localStorage.setItem("03kind:layers-panel", "shown"));
+    // The Layers panel starts hidden on every entry (designer, 2026-11-08): shown as the e2e tests show it, before the canvas is first laid out.
+    await showLayersOnEntry(context);
     await recordNotices(context);
     const page = await context.newPage();
     await page.goto(server.url);

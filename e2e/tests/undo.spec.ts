@@ -46,7 +46,7 @@ const changeList = (page: Page) => page.getByRole("dialog", { name: "Changes" })
 async function expectLightList(page: Page) {
   await expect(changeList(page)).toHaveCSS("background-color", "rgb(245, 245, 245)");
   await expect(changeList(page).getByRole("heading")).toHaveCSS("color", "rgb(10, 10, 9)");
-  await expect(changeList(page).getByRole("heading")).toHaveCSS("font-weight", "600");
+  await expect(changeList(page).getByRole("heading")).toHaveCSS("font-weight", "500");
 }
 
 /** The cards of the loop: red, then corner radius 2px. The Get started button: blue. Three changes. */
