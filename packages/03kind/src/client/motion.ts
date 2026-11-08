@@ -58,15 +58,10 @@ export const POPOVER_EXIT_MS = 150;
 export const RESET_POP_MS = 150;
 
 /**
- * A number scrubbed (designer, 2026-11-08): a short scale inside its field, under its grip, fading and rising 2px into place as the
- * drag starts, the grip lifting to make room; fading out once let go. With reduced motion, the scale only fades and the grip lifts at once.
- * The whole grip sways left and right with the drag's speed, up to `GRIP_SWAY_MAX_PX`, leaning up to `GRIP_SWAY_MAX_DEG` about its
- * centre, and settles back over `FIELD_SETTLE_MS`; with reduced motion, it stays still.
+ * A number scrubbed (designer, 2026-11-08): the whole grip sways left and right with the drag's speed, up to `GRIP_SWAY_MAX_PX`,
+ * upright, and settles back over `FIELD_SETTLE_MS`; with reduced motion, it stays still.
  */
-export const SCRUB_RULER_IN_MS = 150;
-export const SCRUB_RULER_OUT_MS = 120;
 export const GRIP_SWAY_MAX_PX = 3;
-export const GRIP_SWAY_MAX_DEG = 4;
 
 /**
  * A number's digits rolling as it is scrubbed, or taken back by its reset, as a counter's drum turns (designer, 2026-11-08): each digit

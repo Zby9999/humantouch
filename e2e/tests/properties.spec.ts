@@ -1071,7 +1071,6 @@ test("dragging left and right on the bar at the end of a color's opacity changes
   await expect(opacity).toHaveValue("90%");
 });
 
-/** A grip's tilt, in degrees, as set on it: 0 upright. */
 /** How far across a grip's sway has it, in px, from its computed transform. */
 function gripShift(grip: Locator) {
   return grip.evaluate((el: HTMLElement) => new DOMMatrix(getComputedStyle(el).transform === "none" ? undefined : getComputedStyle(el).transform).e);
@@ -1120,69 +1119,36 @@ test("dragged on its grip, a number changes 1 per 2px: 20px, 10 (designer, 2026-
   await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["22px", "22px", "22px", "12px"]);
 });
 
-/** A ruler held in its field: inside the field's box, short, centred under the grip, below it, and clear of the value and of a reset. */
-async function expectRulerUnderGrip(field: Locator) {
-  const ruler = field.locator(".tk-ruler");
-  await expect(ruler).toBeVisible();
-  await expect(ruler).toHaveAttribute("aria-hidden", "true");
-  const fieldBox = await steadyBox(field);
-  const rulerBox = await steadyBox(ruler);
-  const gripBox = await steadyBox(field.locator(".tk-grip"));
-  expect(rulerBox.x).toBeGreaterThanOrEqual(fieldBox.x);
-  expect(rulerBox.x + rulerBox.width).toBeLessThanOrEqual(fieldBox.x + fieldBox.width);
-  expect(rulerBox.y).toBeGreaterThanOrEqual(fieldBox.y);
-  expect(rulerBox.y + rulerBox.height).toBeLessThanOrEqual(fieldBox.y + fieldBox.height);
-  expect(rulerBox.width).toBeGreaterThan(8);
-  expect(rulerBox.width).toBeLessThan(40);
-  expect(Math.abs(rulerBox.x + rulerBox.width / 2 - (gripBox.x + gripBox.width / 2))).toBeLessThanOrEqual(1);
-  // The grip, lifted, points at it from above.
-  expect(gripBox.y + gripBox.height).toBeLessThanOrEqual(rulerBox.y + 0.5);
-  const reset = field.locator(".tk-reset");
-  if (await reset.count()) expect(rulerBox.x + rulerBox.width).toBeLessThanOrEqual((await steadyBox(reset)).x);
-  const input = await steadyBox(field.locator(".tk-input"));
-  expect(rulerBox.x).toBeGreaterThanOrEqual(input.x + input.width - 1);
-}
-
-test("held, a number has a short ruler inside its field, under its grip, its ticks moving with the value; let go, it is gone (designer, 2026-11-08)", async ({ page }) => {
+test("held, a number has no scale under its grip, and its grip stays where it is: only its sway moves it (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
-  const ruler = field.locator(".tk-ruler");
-  await expect(ruler).toHaveCount(0);
-  const at = await holdGrip(page, field, 3);
-  await expectRulerUnderGrip(field);
-  const strip = field.locator(".tk-ruler-strip");
-  const before = await strip.evaluate((el: HTMLElement) => el.style.transform);
-  await page.mouse.move(at.x + 3 * 2 + 4, at.y);
-  await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("17");
-  await expect.poll(() => strip.evaluate((el: HTMLElement) => el.style.transform)).not.toBe(before);
+  const grip = field.locator(".tk-grip");
+  const before = await steadyBox(grip);
+  await holdGrip(page, field, 3);
+  await expect(field).toHaveAttribute("data-scrubbing");
+  await expect(field.locator(".tk-ruler")).toHaveCount(0);
+  expect((await steadyBox(grip)).y).toBe(before.y);
   await page.mouse.up();
-  await expect(ruler).toHaveCount(0);
-
-  // Changed, held again: the same, left of its reset, its ticks white.
-  await holdGrip(page, field, 2);
-  await expect(design(page).getByRole("button", { name: "Reset corner radius" })).toBeVisible();
-  await expectRulerUnderGrip(field);
-  expect(await ruler.evaluate((el) => getComputedStyle(el).color)).toBe("rgb(250, 250, 250)");
-  await page.mouse.up();
-  await expect(ruler).toHaveCount(0);
 });
 
 test.describe("with motion", () => {
   test.use({ reducedMotion: "no-preference" });
 
-  test("dragged, a number's whole grip sways across with the drag, 3px at most, and settles back once let go (designer, 2026-11-08)", async ({ page }) => {
+  test("dragged, a number's whole grip sways across with the drag, 3px at most, upright, and settles back once let go (designer, 2026-11-08)", async ({ page }) => {
     await selectRow(page, "Card");
     const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
     const grip = field.locator(".tk-grip");
     // The sway eases away as soon as the pointer stops: watch for it rather than poll.
-    await grip.evaluate((el: HTMLElement & { most?: number; least?: number }) => {
+    await grip.evaluate((el: HTMLElement & { most?: number; least?: number; leaned?: boolean }) => {
       el.most = 0;
       el.least = 0;
       new MutationObserver(() => {
         const t = getComputedStyle(el).transform;
-        const x = t === "none" ? 0 : new DOMMatrix(t).e;
-        el.most = Math.max(el.most!, x);
-        el.least = Math.min(el.least!, x);
+        const m = new DOMMatrix(t === "none" ? undefined : t);
+        el.most = Math.max(el.most!, m.e);
+        el.least = Math.min(el.least!, m.e);
+        // Only across: never turned.
+        if (Math.abs(m.b) > 1e-6 || Math.abs(m.c) > 1e-6) el.leaned = true;
       }).observe(el, { attributes: true, attributeFilter: ["style"] });
     });
     const at = await holdGrip(page, field, 15);
@@ -1192,6 +1158,7 @@ test.describe("with motion", () => {
     const { most, least } = await grip.evaluate((el: HTMLElement & { most?: number; least?: number }) => ({ most: el.most!, least: el.least! }));
     expect(most).toBeLessThanOrEqual(3);
     expect(least).toBeGreaterThanOrEqual(-3);
+    expect(await grip.evaluate((el: HTMLElement & { leaned?: boolean }) => el.leaned ?? false)).toBe(false);
     await page.mouse.up();
     await expect.poll(() => gripShift(grip)).toBe(0);
     await expect.poll(() => grip.evaluate((el) => getComputedStyle(el).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);

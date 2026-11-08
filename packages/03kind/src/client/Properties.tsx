@@ -6,7 +6,7 @@ import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, Pr
 import { ChangeMarksProvider, NO_MARKS, ResetButton, resetJustClicked, STACK_PROPERTIES, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { matchItems } from "./list-match";
 import { Icon, type IconName } from "./icons";
-import { DIGIT_BLUR_PX, DIGIT_FADE_MS, DIGIT_ROLL_EM, DIGIT_ROLL_MS, EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_DEG, GRIP_SWAY_MAX_PX, prefersReducedMotion, RESET_POP_MS, SCRUB_RULER_OUT_MS } from "./motion";
+import { DIGIT_BLUR_PX, DIGIT_FADE_MS, DIGIT_ROLL_EM, DIGIT_ROLL_MS, EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_PX, prefersReducedMotion, RESET_POP_MS } from "./motion";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -2358,36 +2358,10 @@ export function SectionReset({ title, properties, operations }: { title: string;
 
 /** Pointer travel per unit scrubbed, in px: half as fast as Figma's 1 per px, which was hard to land on (designer, 2026-11-08). */
 const SCRUB_PX_PER_STEP = 2;
-/** The ruler's ticks: one per unit, `SCRUB_PX_PER_STEP` apart, a taller one every 10. */
-const RULER_PERIOD_PX = 10 * SCRUB_PX_PER_STEP;
-/** The ruler at its widest: a short scale, centred under the grip (designer, 2026-11-08). */
-const RULER_MAX_PX = 32;
-/** Kept off the field's rounded right end, where no reset is: 1px in, as its 8px corner curves only so far 4px from its foot (agent's). */
-const RULER_EDGE_INSET_PX = 1;
 /** How much of the last frame's movement the grip's speed takes in, frame by frame: smoothed, so it does not jitter. */
 const SWAY_SMOOTHING = 0.3;
-/** The grip's sway per px moved in a frame, across and leaning about its centre: at 8px a frame, both at their most. */
+/** The grip's sway per px moved in a frame: at 8px a frame, at its most. */
 const SWAY_PX_PER_PX = GRIP_SWAY_MAX_PX / 8;
-const SWAY_DEG_PER_PX = GRIP_SWAY_MAX_DEG / 8;
-
-/**
- * Where a field's ruler goes, in the field's own px: centred under its grip, as wide as the room on both sides of the grip
- * allows, up to `RULER_MAX_PX`; never under its reset or past its end (designer, 2026-11-08).
- */
-function rulerPlace(field: Element | null, handle: Element): { left: number; width: number } | null {
-  if (!field) return null;
-  const box = field.getBoundingClientRect();
-  if (!box.width) return null;
-  // The panel may be scaled: back into the field's own px.
-  const scale = box.width / ((field as HTMLElement).offsetWidth || box.width);
-  const anchor = field.querySelector(":scope > .tk-scrub-grip") ?? handle;
-  const at = anchor.getBoundingClientRect();
-  const centre = (at.left + at.width / 2 - box.left) / scale;
-  const next = anchor.nextElementSibling;
-  const end = next?.classList.contains("tk-reset") ? (next.getBoundingClientRect().left - box.left) / scale : box.width / scale - RULER_EDGE_INSET_PX;
-  const half = Math.max(0, Math.min(RULER_MAX_PX / 2, centre - RULER_EDGE_INSET_PX, end - centre));
-  return { left: centre - half, width: 2 * half };
-}
 
 /**
  * What drags a number field's value left and right: its icon or label, at its
@@ -2395,8 +2369,7 @@ function rulerPlace(field: Element | null, handle: Element): { left: number; wid
  * reset when it has one (designer, 2026-11-08). 1 per 2px (10 with ⇧). The
  * pointer is locked while dragging, so it never runs into the edge of the
  * screen. Held, the field's whole grip sways left and right with the drag's
- * speed, and a short scale inside the field, under the grip, moves with the
- * value as a camera lens's: the grip is its indicator (designer, 2026-11-08).
+ * speed, upright, and nothing else moves (designer, 2026-11-08).
  */
 function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange }: {
   icon?: IconName;
@@ -2411,35 +2384,18 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
 }) {
   /** The drag under way: the value so far, movement of less than a step not yet counted, whether it has changed the value yet, the field it marks as chosen and the grip it sways. */
   const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean; field: Element | null; grip: HTMLElement | null } | null>(null);
-  /** The ruler: shown while held, fading out once let go; where it is in its field. */
-  const [ruler, setRuler] = useState<{ leaving: boolean; left: number; width: number } | null>(null);
-  const strip = useRef<HTMLSpanElement>(null);
-  /** How far the ruler's ticks have moved, in px. */
-  const offset = useRef(0);
-  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
   /** The grip's sway: movement in this frame, its speed smoothed, the frame asked for. */
   const sway = useRef({ frameDx: 0, speed: 0, frame: 0 });
 
-  const placeStrip = () => {
-    if (strip.current) strip.current.style.transform = `translateX(${((offset.current % RULER_PERIOD_PX) + RULER_PERIOD_PX) % RULER_PERIOD_PX}px)`;
-  };
-
-  /** Each frame while held: the grip's sway, and the ruler kept under the grip, which moves as the field's reset comes or goes. */
+  /** Each frame while held: the grip's sway. */
   const heldFrame = () => {
     const d = drag.current;
     const t = sway.current;
     t.speed += (t.frameDx - t.speed) * SWAY_SMOOTHING;
     t.frameDx = 0;
     const x = Math.max(-GRIP_SWAY_MAX_PX, Math.min(GRIP_SWAY_MAX_PX, t.speed * SWAY_PX_PER_PX));
-    const angle = Math.max(-GRIP_SWAY_MAX_DEG, Math.min(GRIP_SWAY_MAX_DEG, t.speed * SWAY_DEG_PER_PX));
-    // The whole bar moves, not only its top, leaning a little the way it goes (designer, 2026-11-08).
-    if (d?.grip) d.grip.style.transform = Math.abs(x) < 0.02 ? "translateX(0px) rotate(0deg)" : `translateX(${x.toFixed(2)}px) rotate(${angle.toFixed(2)}deg)`;
-    const shown = strip.current?.parentElement;
-    const place = d && shown && rulerPlace(d.field, shown.parentElement!);
-    if (shown && place) {
-      shown.style.left = `${place.left}px`;
-      shown.style.width = `${place.width}px`;
-    }
+    // The whole bar moves across, upright: it does not lean (designer, 2026-11-08).
+    if (d?.grip) d.grip.style.transform = `translateX(${Math.abs(x) < 0.02 ? 0 : x.toFixed(2)}px)`;
     t.frame = d ? requestAnimationFrame(heldFrame) : 0;
   };
 
@@ -2448,9 +2404,8 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     sway.current = { frameDx: 0, speed: 0, frame: 0 };
     if (!g?.style.transform) return;
     // Let go, it settles back to the middle, eased (designer, 2026-11-08).
-    // Its lift (styles) eases back down as it would without this.
-    g.style.transition = `transform ${FIELD_SETTLE_MS}ms ${EASE_OUT}, translate ${SCRUB_RULER_OUT_MS}ms ${EASE_OUT}`;
-    g.style.transform = "translateX(0px) rotate(0deg)";
+    g.style.transition = `transform ${FIELD_SETTLE_MS}ms ${EASE_OUT}`;
+    g.style.transform = "translateX(0px)";
   };
 
   // Gone mid-drag while its field stays, it takes the field's mark with it, and its grip's sway.
@@ -2459,13 +2414,9 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
       drag.current?.field?.removeAttribute("data-scrubbing");
       if (drag.current?.grip) drag.current.grip.style.transform = "";
       cancelAnimationFrame(sway.current.frame);
-      clearTimeout(leaving.current);
     },
     [],
   );
-
-  // The ruler just shown: its ticks where the last drag left them.
-  useEffect(placeStrip, [ruler]);
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
@@ -2476,7 +2427,6 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     // Until it is let go, no key edits: the next move would set again a value undone (ADR 0012).
     holdPointer(event.pointerId);
     const field = handle.closest(".tk-field");
-    const place = rulerPlace(field, handle);
     // Held, the field is the one chosen: its darker ground and accent edge, till let go (designer, 2026-11-08).
     field?.setAttribute("data-scrubbing", "");
     // Its grip sways as it is dragged, by either end; with reduced motion, it stays still.
@@ -2485,8 +2435,6 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field, grip: g };
     cancelAnimationFrame(sway.current.frame);
     sway.current = { frameDx: 0, speed: 0, frame: requestAnimationFrame(heldFrame) };
-    clearTimeout(leaving.current);
-    setRuler(place && { leaving: false, ...place });
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLSpanElement>) => {
@@ -2500,9 +2448,6 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     const by = event.shiftKey ? 10 : 1;
     const next = Math.min(max, Math.max(min, d.value + steps * by));
     if (next === d.value) return;
-    // The ruler follows the hand: 2px per unit, and per 10 with ⇧, which would else move it a whole period, still; at a limit, it stops too.
-    offset.current += ((next - d.value) / by) * SCRUB_PX_PER_STEP;
-    placeStrip();
     d.value = next;
     asStep(() => onChange(next, d.moved));
     d.moved = true;
@@ -2514,8 +2459,6 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     d.field?.removeAttribute("data-scrubbing");
     drag.current = null;
     settle(d.grip);
-    setRuler((shown) => shown && { ...shown, leaving: true });
-    leaving.current = setTimeout(() => setRuler(null), SCRUB_RULER_OUT_MS + 40);
     const root = event.currentTarget.getRootNode() as Document | ShadowRoot;
     if (root.pointerLockElement === event.currentTarget) document.exitPointerLock();
   };
@@ -2533,12 +2476,6 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
       onClick={(event) => event.preventDefault()}
     >
       {grip ? <span class="tk-grip" /> : icon ? <Icon name={icon} /> : <span class={small ? "tk-glyph is-small" : "tk-glyph"}>{glyph}</span>}
-      {/* Inside the field, under its grip, whichever end is dragged. Its ticks are information: they move with reduced motion too. */}
-      {ruler && (
-        <span class={ruler.leaving ? "tk-ruler is-leaving" : "tk-ruler"} style={{ left: `${ruler.left}px`, width: `${ruler.width}px` }} aria-hidden="true">
-          <span ref={strip} class="tk-ruler-strip" />
-        </span>
-      )}
     </span>
   );
 }
