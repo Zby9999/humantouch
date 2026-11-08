@@ -129,6 +129,8 @@ test("the change list too long for the window: its title and Discard all stay, t
   const [box, title, discard] = [await steadyBox(dialog), await steadyBox(dialog.getByRole("heading")), await steadyBox(dialog.getByRole("button", { name: "Discard all" }))];
   expect(title.y).toBeGreaterThanOrEqual(box.y);
   expect(discard.y + discard.height).toBeLessThanOrEqual(box.y + box.height);
+  // Discard all as far from the list's bottom as from its right (designer, 2026-11-09).
+  expect(box.y + box.height - (discard.y + discard.height)).toBeCloseTo(box.x + box.width - (discard.x + discard.width), 0);
   expect(await rows.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await expect(rows).toHaveClass(/is-below/);
   await expect(rows).not.toHaveClass(/is-above/);

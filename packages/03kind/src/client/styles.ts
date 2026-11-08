@@ -116,7 +116,8 @@ export const styles = /* css */ `
 .tk-dock[data-corner$="right"] .tk-changes { right: 0; }
 .tk-dock[data-corner$="left"] .tk-changes { left: 0; }
 .tk-changes > * { flex: none; }
-.tk-changes-title { margin: 0; padding: 8px; font: inherit; font-weight: 600; }
+/* The small headings, the change list's, the notice's and a shadow Variable's name, set alike (designer, 2026-11-09). */
+.tk-changes-title { margin: 0; padding: 8px; font: inherit; font-weight: 500; font-size: 12px; line-height: 16px; }
 .tk-changes-note { margin: 0; padding: 0 8px 8px; color: var(--tk-text-muted); }
 /*
  * Too long for the list's height, the rows alone scroll, between its title and Discard all (designer, 2026-11-09). An edge with
@@ -184,6 +185,8 @@ export const styles = /* css */ `
 .tk-changes-confirm { margin-top: 4px; padding: 8px 8px 0; border-top: 1px solid var(--tk-border); }
 .tk-changes-confirm p { margin: 0; }
 .tk-changes-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 8px 4px; }
+/* Discard all as far from the list's bottom as from its right (designer, 2026-11-09). */
+.tk-changes > .tk-changes-actions { padding-bottom: 8px; }
 /* Its buttons as the panels' top ones, on the light panel; Discard stays red. */
 .tk-changes .tk-button:not(.is-danger) { background: var(--tk-button); color: var(--tk-text); }
 .tk-changes .tk-button:not(.is-danger):hover { background: var(--tk-border); }
@@ -217,7 +220,7 @@ export const styles = /* css */ `
   color: #fff;
   font: 400 11px/16px ${EDITOR_FONT};
 }
-.tk-notice-title { margin: 0; padding: 8px 12px 4px; font: inherit; font-weight: 600; }
+.tk-notice-title { margin: 0; padding: 8px 12px 4px; font: inherit; font-weight: 500; font-size: 12px; line-height: 16px; }
 .tk-notice-text { margin: 0; padding: 0 12px 4px; color: rgb(255 255 255 / 0.7); }
 /* The Agent seems to have stopped (ticket 67): on the toggle, where its change list opens. */
 .tk-stalled { position: absolute; width: 300px; }
@@ -1982,7 +1985,7 @@ export const styles = /* css */ `
   font-size: 11px;
   pointer-events: none;
 }
-.tk-variants-details-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.tk-variants-details-name { overflow: hidden; font-weight: 500; font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .tk-variants-details-layer { display: flex; flex-direction: column; gap: 6px; }
 .tk-variants-details-layer + .tk-variants-details-layer { padding-top: 8px; border-top: 1px solid #ebebea; }
 .tk-variants-details-head { display: flex; justify-content: space-between; gap: 8px; }
