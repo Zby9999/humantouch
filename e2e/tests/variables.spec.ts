@@ -200,6 +200,36 @@ test("the menu of Effects' + is two panels: the effect types nearer the button, 
   expect(Math.round((await steadyBox(variables)).y + (await steadyBox(variables)).height)).toBe(Math.round(over.y + over.height));
 });
 
+test("with very many shadow Variables, Effects' + keeps its types by the button: the Variables' panel goes only as tall as the room on that side, and scrolls (designer, 2026-11-08)", async ({ page }) => {
+  await page.route(/\/variables(\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const list = await response.json();
+    for (let i = 1; i <= 40; i++) list.push({ name: `elevation-${i}`, group: "shadow", value: `0 ${i}px ${2 * i}px rgb(0 0 0 / 0.1)`, from: "tailwind", own: true });
+    await route.fulfill({ response, json: list });
+  });
+  await page.reload();
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  const add = design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" });
+  await add.click();
+  const menu = page.getByRole("dialog", { name: "Add effect" });
+  const [variables, types] = [menu.locator(".tk-menu-column").nth(0), menu.locator(".tk-menu-column").nth(1)];
+  await expect(variables.getByRole("option", { name: "elevation-40" })).toHaveCount(1);
+  const button = await steadyBox(add);
+  const typesBox = await steadyBox(types);
+  const variablesBox = await steadyBox(variables);
+  // By the button, under or over it, and the Variables' panel level with the types' on that side, inside the window.
+  const under = Math.round(typesBox.y) === Math.round(button.y + button.height + 4);
+  if (under) expect(Math.round(variablesBox.y)).toBe(Math.round(typesBox.y));
+  else {
+    expect(Math.round(typesBox.y + typesBox.height)).toBe(Math.round(button.y) - 4);
+    expect(Math.round(variablesBox.y + variablesBox.height)).toBe(Math.round(typesBox.y + typesBox.height));
+  }
+  expect(variablesBox.y).toBeGreaterThanOrEqual(8);
+  expect(variablesBox.y + variablesBox.height).toBeLessThanOrEqual(page.viewportSize()!.height - 8);
+  expect(await variables.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+});
+
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");

@@ -1021,7 +1021,7 @@ export const styles = /* css */ `
   position: fixed;
   z-index: 3;
   box-sizing: border-box;
-  max-height: calc(100vh - 16px);
+  max-height: var(--tk-menu-room, calc(100vh - 16px));
   overflow-y: auto;
   padding: 4px;
   border-radius: 12px;
@@ -1056,7 +1056,7 @@ export const styles = /* css */ `
 .tk-menu.is-above .tk-menu-list.is-columns { align-items: flex-end; }
 .tk-menu-column {
   box-sizing: border-box;
-  max-height: calc(100vh - 16px);
+  max-height: var(--tk-menu-room, calc(100vh - 16px));
   overflow-y: auto;
   padding: 4px;
   border-radius: 12px;

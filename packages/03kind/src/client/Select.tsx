@@ -285,8 +285,12 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
 }) {
   const box = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  /** Where it is: under its button, or over it when there is no room under; two panels then have their feet level, by the button (designer, 2026-11-08). */
-  const [place, setPlace] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  /**
+   * Where it is: under its button, or over it when there is more room there and not enough under; two panels then have
+   * their feet level, by the button. `room`: as tall as it goes on its side, a long panel scrolling in it, so a short
+   * one stays by the button however long the other is (designer, 2026-11-08).
+   */
+  const [place, setPlace] = useState<{ left: number; top: number; above: boolean; room: number } | null>(null);
   /** The item a mouse points at that has details to show, where it is, and the panel it is in. */
   const [pointed, setPointed] = useState<{ index: number; at: DOMRect; beside: DOMRect } | null>(null);
   const [active, setActive] = useState(() => items.findIndex((item) => !item.disabled));
@@ -295,11 +299,15 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
     const at = anchor.getBoundingClientRect();
     const { offsetWidth: width, offsetHeight: height } = box.current!;
     const below = at.bottom + 4;
-    const above = below + height + GAP > window.innerHeight;
+    const under = window.innerHeight - below - GAP;
+    const over = at.top - 4 - GAP;
+    const above = height > under && over > under;
+    const room = above ? over : under;
     setPlace({
       left: Math.max(GAP, Math.min(at.right - width, window.innerWidth - width - GAP)),
-      top: above ? Math.max(GAP, at.top - 4 - height) : below,
+      top: above ? at.top - 4 - Math.min(height, room) : below,
       above,
+      room,
     });
   }, [anchor]);
   // Focused once placed: until then it is hidden, and a hidden list takes no focus (its keys went to the canvas).
@@ -398,7 +406,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
       role="dialog"
       {...leavingProps(leaving)}
       aria-label={label}
-      style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden" }}
+      style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden", ...(place && { "--tk-menu-room": `${place.room}px` }) }}
     >
       <div
         ref={list}
