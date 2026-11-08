@@ -99,3 +99,11 @@ export const GRIP_EXIT_MS = 120;
 export const TIP_DELAY_MS = 500;
 export const TIP_IN_MS = 125;
 export const TIP_GRACE_MS = 300;
+
+/**
+ * A level closed in the Layers (designer, 2026-11-08): its rows go `LAYERS_FOLD_RISE_PX` up and fade over
+ * `LAYERS_FOLD_MS`, however many they are, over the rows after, which are in their places at once. With reduced
+ * motion it closes at once.
+ */
+export const LAYERS_FOLD_MS = 200;
+export const LAYERS_FOLD_RISE_PX = 8;

@@ -5,6 +5,7 @@ import { role, typeLabel, type Layer, type LayerTree } from "./layers";
 import { BRIEF_ATTR } from "./canvas-style";
 import { closedOutside, type Folds } from "./layer-folds";
 import { Icon, LayerIcon } from "./icons";
+import { EASE_OUT, LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX, prefersReducedMotion } from "./motion";
 
 interface Props {
   tree: LayerTree;
@@ -107,10 +108,54 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
   const canvasStart = rows.length;
   for (const layer of tree.root.children) add(layer, 1, false, [], false);
 
-  const toggle = (layer: Layer) => {
+  /** The fold under way: its rows' copies and their motion, finished at once as another level opens or closes. */
+  const folding = useRef<{ copies: HTMLElement; motion: Animation } | null>(null);
+  const settleFold = () => {
+    folding.current?.motion.finish();
+    folding.current?.copies.remove();
+    folding.current = null;
+  };
+  const toggle = (layer: Layer, at: number) => {
+    settleFold();
     const next = new Set(collapsed);
-    if (!next.delete(layer)) next.add(layer);
+    if (!next.delete(layer)) {
+      next.add(layer);
+      if (!prefersReducedMotion()) foldUp(at);
+    }
     setCollapsed(next);
+  };
+  /**
+   * Row `at` closed (designer, 2026-11-08): its rows, copied as they are over the rows coming up into their place,
+   * go a little way up and fade, however many they are; the rows after are in their places at once, under them.
+   */
+  const foldUp = (at: number) => {
+    const box = list.current;
+    const shown = box?.querySelector(".tk-tree-rows")?.children;
+    let hidden = 0;
+    while (rows[at + 1 + hidden] && rows[at + 1 + hidden].level > rows[at].level) hidden++;
+    if (!box || !shown || !hidden) return;
+    const els = [...shown].slice(at + 1, at + 1 + hidden) as HTMLElement[];
+    const first = els[0];
+    const last = els[hidden - 1];
+    const copies = document.createElement("div");
+    copies.className = "tk-tree-fold";
+    copies.setAttribute("aria-hidden", "true");
+    copies.inert = true;
+    Object.assign(copies.style, { top: `${first.offsetTop}px`, height: `${last.offsetTop + last.offsetHeight - first.offsetTop}px`, width: `${first.offsetWidth}px` });
+    const inner = copies.appendChild(document.createElement("div"));
+    inner.className = "tk-tree-rows";
+    for (const el of els) {
+      // Copies only: no rows of the tree.
+      const copy = el.cloneNode(true) as HTMLElement;
+      for (const name of copy.getAttributeNames()) if (name === "role" || name.startsWith("aria-")) copy.removeAttribute(name);
+      inner.append(copy);
+    }
+    box.append(copies);
+    const timing = { duration: LAYERS_FOLD_MS, easing: EASE_OUT };
+    inner.animate([{ transform: "none" }, { transform: `translateY(${-LAYERS_FOLD_RISE_PX}px)` }], timing);
+    const motion = copies.animate([{ opacity: 1 }, { opacity: 0 }], { ...timing, fill: "forwards" });
+    motion.onfinish = () => copies.remove();
+    folding.current = { copies, motion };
   };
 
   return (
@@ -148,7 +193,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
               onPointerDown={(event) => {
                 if (open === undefined) return;
                 event.stopPropagation();
-                toggle(layer);
+                toggle(layer, i);
               }}
             >
               {open !== undefined && <Icon name="chevron-down" />}

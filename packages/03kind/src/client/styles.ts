@@ -553,6 +553,8 @@ export const styles = /* css */ `
 .tk-panel.is-layers > .tk-tree { flex: 1 1 auto; min-height: 0; }
 .tk-tree { position: relative; margin: -16px -16px -16px; padding: 16px 0; overflow: auto; overscroll-behavior: contain; }
 .tk-tree-rows { display: flex; flex-direction: column; gap: 2px; width: max-content; min-width: 100%; }
+/* A level closed: its rows' copies going a little way up and fading, over the rows come up into their place, clipped at its foot (designer, 2026-11-08; LayerTreeView). */
+.tk-tree-fold { position: absolute; left: 0; overflow: hidden; pointer-events: none; background: var(--tk-panel); }
 .tk-tree-row {
   position: relative;
   display: flex;

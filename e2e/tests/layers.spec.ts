@@ -312,6 +312,40 @@ test("after edits in the Design panel, the layer around the one selected closes 
   await expect(grid).toHaveAttribute("aria-expanded", "true");
 });
 
+test("a level closed folds up: its rows go a little way up and fade over the rows after, in their places at once; with reduced motion, at once (designer, 2026-11-08)", async ({ page }) => {
+  // Motion on: the tests run with reduced motion.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await enterEditMode(page);
+  const header = layerTree(page).getByRole("treeitem", { name: "Header", exact: true });
+  const fold = layerTree(page).locator(".tk-tree-fold");
+  const next = header.locator("xpath=following-sibling::*[1]");
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+
+  await header.locator(".tk-tree-chevron").click();
+  // Closed at once, for the tree and its readers: its rows are gone from it, copies of them in a fold hidden from them.
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true })).toHaveCount(0);
+  await expect(fold).toHaveAttribute("aria-hidden", "true");
+  await expect(fold.locator(".tk-tree-row")).not.toHaveCount(0);
+  await expect(fold.locator('[role="treeitem"]')).toHaveCount(0);
+  // The copies going up 8px and fading, however many; the row after in its place, still.
+  const keyframes = await fold.evaluate((el) =>
+    el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.opacity)),
+  );
+  expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["1", "0"]]));
+  expect(await next.evaluate((el) => el.getAnimations().length)).toBe(0);
+  // Then gone.
+  await expect(fold).toHaveCount(0);
+
+  // With reduced motion, closed at once.
+  await header.locator(".tk-tree-chevron").click();
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await header.locator(".tk-tree-chevron").click();
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await expect(fold).toHaveCount(0);
+});
+
 test("an instance's disclosure (a row under Components) is drawn as every other row's; its icon stays purple (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   /** How a row's disclosure and its layer icon are drawn, the pointer away and over the disclosure. */
