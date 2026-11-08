@@ -484,7 +484,7 @@ test("a stroke at weight 0, typed or dragged, stays a stroke with its color and 
   const drag = async (dx: number) => {
     await page.mouse.move(x + 4, y + 4);
     await page.mouse.down();
-    for (let i = 1; i <= Math.abs(dx); i++) await page.mouse.move(x + 4 + Math.sign(dx) * i, y + 4);
+    for (let i = 1; i <= Math.abs(dx); i++) await page.mouse.move(x + 4 + Math.sign(dx) * i * 2, y + 4);
     await page.mouse.up();
   };
   await drag(-5);
@@ -650,7 +650,7 @@ test("a shadow dragged until it draws nothing is taken off, and the rest of the 
   // Down to 0, and back up, in one drag.
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
-  for (const dx of [-1, -2, -3, -1, 1, 3]) await page.mouse.move(at.x + dx, at.y);
+  for (const dx of [-2, -4, -6, -2, 2, 6]) await page.mouse.move(at.x + dx, at.y);
   await page.mouse.up();
 
   await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe("rgba(0, 0, 0, 0.1) 0px 1px 2px -1px");
@@ -914,7 +914,7 @@ test("the selection box steps aside while a value changes, so the change can be 
   await expect.poll(() => box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => el.stepsAside)).toBe(true);
 });
 
-test("dragging left and right on a number's icon changes it, 1 per px and 10 with Shift", async ({ page }) => {
+test("dragging left and right on a number's icon changes it, 1 per 2px and 10 with Shift (designer, 2026-11-08)", async ({ page }) => {
   // 57 pointer moves, one px at a time, each a round trip to the browser: on a busy machine, more than the 30 seconds a test has (ticket 93).
   test.setTimeout(90_000);
   await selectRow(page, "Card");
@@ -924,7 +924,7 @@ test("dragging left and right on a number's icon changes it, 1 per px and 10 wit
   const drag = async (dx: number) => {
     await page.mouse.move(x + 4, y + 4);
     await page.mouse.down();
-    for (let i = 1; i <= Math.abs(dx); i++) await page.mouse.move(x + 4 + Math.sign(dx) * i, y + 4);
+    for (let i = 1; i <= Math.abs(dx); i++) await page.mouse.move(x + 4 + Math.sign(dx) * i * 2, y + 4);
     await page.mouse.up();
   };
 
@@ -949,7 +949,7 @@ test("a number dragged is marked changed once let go, not while held; typed, at 
   const { x, y } = await steadyBox(field.locator(".tk-scrub"));
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   // Held: the value shows as it goes, the field gray, with no reset.
   await expect(radius).toHaveValue("17");
   await expect(field).not.toHaveClass(/\bis-changed\b/);
@@ -1004,7 +1004,7 @@ test("a field focused, and a number held mid-drag, have the 1px accent edge; let
   const { x, y } = await steadyBox(field.locator(".tk-scrub"));
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await expect(radius).toHaveValue("15");
   await expect.poll(() => fieldLook(field)).toEqual({ edge: EDGE, ground: darker });
   await expect(radius).not.toBeFocused();
@@ -1016,7 +1016,7 @@ test("a field focused, and a number held mid-drag, have the 1px accent edge; let
   await expect.poll(async () => (await fieldLook(field)).edge).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 1px inset");
 });
 
-test("dragging left and right on the bar at the end of a color's opacity changes it, 1% per px (designer, 2026-11-08)", async ({ page }) => {
+test("dragging left and right on the bar at the end of a color's opacity changes it, 1% per 2px (designer, 2026-11-08)", async ({ page }) => {
   test.setTimeout(90_000);
   await selectRow(page, "Card");
   const fill = design(page).getByRole("textbox", { name: "Fill color", exact: true });
@@ -1024,11 +1024,11 @@ test("dragging left and right on the bar at the end of a color's opacity changes
   await fill.press("Enter");
   const opacity = design(page).getByRole("textbox", { name: "Fill opacity" });
   await expect(opacity).toHaveValue("100%");
-  const grip = page.locator('.tk-color-opacity:has([aria-label="Fill opacity"]) .tk-scrub');
+  const grip = page.locator('.tk-color-opacity:has([aria-label="Fill opacity"]) .tk-scrub-grip');
   const { x, y } = await steadyBox(grip);
   await page.mouse.move(x + 6, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 10; i++) await page.mouse.move(x + 6 - i, y + 4);
+  for (let i = 1; i <= 10; i++) await page.mouse.move(x + 6 - i * 2, y + 4);
   // Held, its field has the 1px edge, as a number's does (designer, 2026-11-08): changed already by the fill typed, on the accent, the stronger accent, as it has focused.
   const field = page.locator('.tk-field:has([aria-label="Fill opacity"])');
   await expect(field).toHaveClass(/\bis-changed\b/);
@@ -1037,6 +1037,114 @@ test("dragging left and right on the bar at the end of a color's opacity changes
   await page.mouse.up();
   await expect(field).not.toHaveAttribute("data-scrubbing");
   await expect(opacity).toHaveValue("90%");
+});
+
+/** A grip's tilt, in degrees, as set on it: 0 upright. */
+function gripAngle(grip: Locator) {
+  return grip.evaluate((el: HTMLElement) => Number(/rotate\((-?[\d.]+)deg\)/.exec(el.style.transform)?.[1] ?? 0));
+}
+
+/** Pressed on a field's grip and moved right `steps` times, 2px at a time; left held. */
+async function holdGrip(page: Page, field: Locator, steps: number) {
+  const { x, y, width, height } = await steadyBox(field.locator(".tk-scrub-grip"));
+  const at = { x: x + width / 2, y: y + height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  for (let i = 1; i <= steps; i++) await page.mouse.move(at.x + i * 2, at.y);
+  return at;
+}
+
+test("every number that can be dragged has a grip at its right end, after its value, left of its reset once changed (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  for (const label of ["Width", "Height", "Gap", "Corner radius", "Opacity"]) {
+    const field = page.locator(`.tk-field:has([aria-label="${label}"])`);
+    await expect(field.locator(".tk-scrub-grip > .tk-grip"), label).toBeVisible();
+    const input = await steadyBox(field.getByRole("textbox", { name: label, exact: true }));
+    const grip = await steadyBox(field.locator(".tk-scrub-grip"));
+    expect(grip.x, label).toBeGreaterThanOrEqual(input.x + input.width - 1);
+  }
+
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  await radius.fill("20");
+  await radius.press("Enter");
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const reset = design(page).getByRole("button", { name: "Reset corner radius" });
+  await expect(reset).toBeVisible();
+  const grip = await steadyBox(field.locator(".tk-scrub-grip"));
+  const resetBox = await steadyBox(reset);
+  expect(grip.x + grip.width).toBeLessThanOrEqual(resetBox.x);
+  // The value keeps its room: what it shows is not cut off.
+  expect(await radius.evaluate((el: HTMLInputElement) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test("dragged on its grip, a number changes 1 per 2px: 20px, 10 (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  await expect(radius).toHaveValue("12");
+  await holdGrip(page, page.locator('.tk-field:has([aria-label="Corner radius"])'), 10);
+  await page.mouse.up();
+  await expect(radius).toHaveValue("22");
+  await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["22px", "22px", "22px", "12px"]);
+});
+
+test("held, a number has a ruler under its field, its ticks moving with the value; let go, it is gone (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const ruler = field.locator(".tk-ruler");
+  await expect(ruler).toHaveCount(0);
+  const at = await holdGrip(page, field, 3);
+  await expect(ruler).toBeVisible();
+  await expect(ruler).toHaveAttribute("aria-hidden", "true");
+  const fieldBox = await steadyBox(field);
+  const rulerBox = await steadyBox(ruler);
+  expect(rulerBox.y).toBeGreaterThanOrEqual(fieldBox.y + fieldBox.height);
+  expect(rulerBox.width).toBeCloseTo(fieldBox.width, 0);
+  const strip = field.locator(".tk-ruler-strip");
+  const before = await strip.evaluate((el: HTMLElement) => el.style.transform);
+  await page.mouse.move(at.x + 3 * 2 + 4, at.y);
+  await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("17");
+  await expect.poll(() => strip.evaluate((el: HTMLElement) => el.style.transform)).not.toBe(before);
+  await page.mouse.up();
+  await expect(ruler).toHaveCount(0);
+});
+
+test.describe("with motion", () => {
+  test.use({ reducedMotion: "no-preference" });
+
+  test("dragged, a number's grip tilts with the drag, and settles upright once let go (designer, 2026-11-08)", async ({ page }) => {
+    await selectRow(page, "Card");
+    const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+    const grip = field.locator(".tk-grip");
+    // The tilt eases away as soon as the pointer stops: watch for it rather than poll.
+    await grip.evaluate((el: HTMLElement & { most?: number }) => {
+      el.most = 0;
+      new MutationObserver(() => {
+        const angle = Number(/rotate\((-?[\d.]+)deg\)/.exec(el.style.transform)?.[1] ?? 0);
+        if (angle > el.most!) el.most = angle;
+      }).observe(el, { attributes: true, attributeFilter: ["style"] });
+    });
+    await holdGrip(page, field, 15);
+    await expect.poll(() => grip.evaluate((el: HTMLElement & { most?: number }) => el.most)).toBeGreaterThan(1);
+    expect(await grip.evaluate((el: HTMLElement & { most?: number }) => el.most)).toBeLessThanOrEqual(12);
+    await page.mouse.up();
+    await expect.poll(() => gripAngle(grip)).toBe(0);
+    await expect.poll(() => grip.evaluate((el) => getComputedStyle(el).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+  });
+});
+
+test("with reduced motion, a number's grip stays upright as it is dragged", async ({ page }) => {
+  await selectRow(page, "Card");
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const grip = field.locator(".tk-grip");
+  await grip.evaluate((el: HTMLElement & { tilted?: boolean }) => {
+    new MutationObserver(() => {
+      if (el.style.transform) el.tilted = true;
+    }).observe(el, { attributes: true, attributeFilter: ["style"] });
+  });
+  await holdGrip(page, field, 15);
+  await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("27");
+  await page.mouse.up();
+  expect(await grip.evaluate((el: HTMLElement & { tilted?: boolean }) => el.tilted ?? false)).toBe(false);
 });
 
 const INTRO = "A Framer-style editor layer for any page.";

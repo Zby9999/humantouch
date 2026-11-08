@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -596,7 +596,7 @@ export const styles = /* css */ `
 /* Its fields, marked with no reset of their own, keep their right inset; the sizing its width, its chevron where it was. */
 :is(.tk-size-row .tk-field:not(.tk-variable-chip), .tk-color-row > .tk-color-field).is-changed:not(.tk-popover *) { padding-right: 6px; }
 .tk-size-row > .tk-select-field.is-changed > .tk-select { width: 64px; padding-right: 24px; background-position: right 6px center; }
-.tk-scrub {
+.tk-scrub, .tk-scrub-grip {
   display: grid;
   flex: none;
   place-items: center;
@@ -636,12 +636,61 @@ export const styles = /* css */ `
 .tk-color-field { padding-left: 6px; }
 .tk-color-field.is-joined { border-radius: 8px 2px 2px 8px; }
 .tk-color-opacity { flex: none; width: 64px; border-radius: 2px 8px 8px 2px; }
-/* A field with no icon to drag on (an opacity beside its color): a short upright bar at its right end, dragged left and right (designer, 2026-11-08). */
-.tk-scrub.is-grip { width: 12px; margin-right: -4px; }
+/*
+ * Every number that can be dragged: a short upright bar at its right end, dragged left and right as its icon is; changed, just left of its
+ * reset (designer, 2026-11-08). Its 12px reach takes 4px of the gap before it and of the inset after it, so the value keeps its room.
+ */
+.tk-scrub-grip { width: 12px; margin: 0 -4px; }
+/* Before a reset, just left of it: the bar 7px from it. */
+.tk-scrub-grip:has(+ .tk-reset) { margin-right: -6px; }
 /* Changed, an opacity keeps its right inset: it has no reset of its own, so its bar stays where it was. */
 .tk-field.is-changed.tk-color-opacity { padding-right: 6px; }
-.tk-grip { width: 2px; height: 12px; border-radius: 1px; background: currentColor; opacity: 0.3; }
-.tk-scrub.is-grip:hover > .tk-grip { opacity: 0.6; }
+/* Tilted from its foot as it is dragged, set on it directly (Scrub). */
+.tk-grip { width: 2px; height: 12px; border-radius: 1px; background: currentColor; opacity: 0.3; transform-origin: 50% 100%; }
+.tk-scrub-grip:hover > .tk-grip, .tk-field[data-scrubbing] .tk-grip { opacity: 0.6; }
+/* On the accent, white: brighter, as white at 0.3 is lost on blue (designer, 2026-11-08: "white-ish"; 0.55 and 0.85 are the agent's, to confirm). */
+.tk-field.is-changed .tk-grip:not(.tk-popover *) { opacity: 0.55; }
+.tk-field.is-changed:is(:has(> .tk-scrub-grip:hover), [data-scrubbing]) .tk-grip:not(.tk-popover *) { opacity: 0.85; }
+/*
+ * Held, a ruler under the field, as wide as it, over what is below, its ticks moving with the value as a camera lens's ring, 2px per unit,
+ * taller every 10, the centre marked in the accent; it fades out at both ends, so it reads as curving away (designer, 2026-11-08).
+ * It fades and slides 4px down into place, and fades out once let go; with reduced motion, it only fades.
+ */
+.tk-field:has(> :is(.tk-scrub, .tk-scrub-grip) > .tk-ruler) { position: relative; }
+.tk-ruler {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--tk-panel);
+  color: var(--tk-text-muted);
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 30%, #000 70%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 30%, #000 70%, transparent);
+  transition: opacity ${SCRUB_RULER_IN_MS}ms ${EASE_OUT}, transform ${SCRUB_RULER_IN_MS}ms ${EASE_OUT};
+}
+@starting-style { .tk-ruler { opacity: 0; transform: translateY(-4px); } }
+.tk-ruler.is-leaving { opacity: 0; transition: opacity ${SCRUB_RULER_OUT_MS}ms ${EASE_OUT}; }
+.tk-ruler-strip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -20px;
+  right: -20px;
+  background:
+    linear-gradient(to right, currentColor 1px, transparent 1px) 0 0 / 20px 7px repeat-x,
+    linear-gradient(to right, currentColor 1px, transparent 1px) 0 0 / 2px 4px repeat-x;
+  opacity: 0.7;
+}
+/* The centre: where the value is read. */
+.tk-ruler::after { content: ""; position: absolute; top: 0; left: calc(50% - 0.5px); width: 1px; height: 10px; background: var(--tk-accent); }
+@media (prefers-reduced-motion: reduce) {
+  @starting-style { .tk-ruler { transform: none; } }
+}
 /* Dragged on its icon, label or grip, a field is the one chosen: the hover's darker ground and the 1px accent edge it has focused, till let go (designer, 2026-11-08). */
 .tk-field[data-scrubbing] { box-shadow: inset 0 0 0 1px var(--tk-accent); }
 .tk-field[data-scrubbing]:not(.is-changed) { background-color: var(--tk-button); }

@@ -434,7 +434,7 @@ test("the width and height fields' menus show while the field is hovered", async
   await expect(add).toHaveCSS("opacity", "1");
 });
 
-test("dragging left and right on the opacity icon changes it, 1% per px", async ({ page }) => {
+test("dragging left and right on the opacity icon changes it, 1% per 2px", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Card").first().click();
   const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
@@ -443,7 +443,7 @@ test("dragging left and right on the opacity icon changes it, 1% per px", async 
 
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 30; i++) await page.mouse.move(x + 4 - i, y + 4);
+  for (let i = 1; i <= 30; i++) await page.mouse.move(x + 4 - i * 2, y + 4);
   await page.mouse.up();
 
   await expect(opacity).toHaveValue("70%");
@@ -451,7 +451,7 @@ test("dragging left and right on the opacity icon changes it, 1% per px", async 
   // It stops at 100%.
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
-  for (let i = 1; i <= 40; i++) await page.mouse.move(x + 4 + i, y + 4);
+  for (let i = 1; i <= 40; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
   await page.mouse.up();
   await expect(opacity).toHaveValue("100%");
 });

@@ -5,7 +5,7 @@ import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
 import { ChangeMarksProvider, ResetButton, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { Icon, type IconName } from "./icons";
-import { RESET_POP_MS } from "./motion";
+import { EASE_OUT, FIELD_SETTLE_MS, GRIP_TILT_MAX_DEG, prefersReducedMotion, RESET_POP_MS, SCRUB_RULER_OUT_MS } from "./motion";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -738,7 +738,7 @@ function LimitField({ label, icon, value, onChange, property }: {
   );
 }
 
-/** A value from 0 to 1, shown and typed as a percentage, and dragged on its icon 1% per px (10% with ⇧). */
+/** A value from 0 to 1, shown and typed as a percentage, and dragged on its icon or grip 1% per 2px (10% with ⇧). */
 function PercentField({ label, icon, value, onChange, property }: {
   label: string;
   icon: IconName;
@@ -749,15 +749,10 @@ function PercentField({ label, icon, value, onChange, property }: {
 }) {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
+  const scrubbed = { value: value === null ? null : Math.round(value * 100), min: 0, max: 100, onChange: (percent: number, continues: boolean) => onChange(percent / 100, continues) };
   return (
     <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
-      <Scrub
-        icon={icon}
-        value={value === null ? null : Math.round(value * 100)}
-        min={0}
-        max={100}
-        onChange={(percent, continues) => onChange(percent / 100, continues)}
-      />
+      <Scrub icon={icon} {...scrubbed} />
       <TextField
         label={label}
         value={value === null ? "Mixed" : `${Math.round(value * 100)}%`}
@@ -768,6 +763,7 @@ function PercentField({ label, icon, value, onChange, property }: {
         step={(by) => onChange(Math.min(1, Math.max(0, Math.round(((value ?? 1) * 100 + by)) / 100)))}
         onChange={onChange}
       />
+      <Scrub grip {...scrubbed} />
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!])} />}
     </label>
   );
@@ -1130,9 +1126,11 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
   const change = (n: number, continues?: boolean) => onChange({ value: Math.max(min, Math.round(n * 100) / 100), unit }, continues);
   const marks = useChangeMarks();
   const changed = marks.changed(property);
+  /** What a drag starts from: from Auto, what it comes to. */
+  const dragged = length?.value ?? (value === "auto" ? auto! : null);
   return (
     <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
-      <Scrub icon={icon} value={length?.value ?? (value === "auto" ? auto! : null)} min={min} onChange={change} />
+      <Scrub icon={icon} value={dragged} min={min} onChange={change} />
       <TextField
         label={label}
         value={value === MIXED ? "Mixed" : value === "auto" ? "Auto" : `${value.value}${value.unit}`}
@@ -1146,6 +1144,7 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
         step={length ? (by) => change(length.value + by) : value === "auto" ? (by) => change(auto! + by) : undefined}
         onChange={onChange}
       />
+      <Scrub grip value={dragged} min={min} onChange={change} />
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property])} />}
     </label>
   );
@@ -2053,7 +2052,7 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
             }}
             onChange={(opacity) => onChange({ color: color.color, opacity })}
           />
-          {/* Dragged left and right, 1% per px, as a number's icon is (designer, 2026-11-08). */}
+          {/* Dragged left and right, 1% per 2px, on its grip, as every number is (designer, 2026-11-08): with no icon, its grip alone. */}
           <Scrub grip value={Math.round(color.opacity * 100)} min={0} max={100} onChange={(percent, continues) => onChange({ color: color.color, opacity: percent / 100 }, continues)} />
         </label>
       )}
@@ -2162,6 +2161,8 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
         onChange={onChange}
       />
       {after}
+      {/* Every number that can be dragged has a grip at its right end, left of its reset (designer, 2026-11-08). */}
+      <Scrub grip value={value} min={min} onChange={onChange} />
       {changed && !rowReset && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
     </label>
   );
@@ -2188,27 +2189,81 @@ export function SectionReset({ title, properties, operations }: { title: string;
   return <ResetButton label={title} onReset={() => marks.reset(properties.filter((property) => marks.changed(property)))} />;
 }
 
+/** Pointer travel per unit scrubbed, in px: half as fast as Figma's 1 per px, which was hard to land on (designer, 2026-11-08). */
+const SCRUB_PX_PER_STEP = 2;
+/** The ruler's ticks: one per unit, `SCRUB_PX_PER_STEP` apart, a taller one every 10. */
+const RULER_PERIOD_PX = 10 * SCRUB_PX_PER_STEP;
+/** How much of the last frame's movement the grip's speed takes in, frame by frame: smoothed, so it does not jitter. */
+const TILT_SMOOTHING = 0.3;
+/** Degrees of tilt per px moved in a frame. */
+const TILT_PER_PX = 1.5;
+
 /**
- * The icon of a number field: dragging left and right changes the value, 1 per
- * px (10 with ⇧), as in Figma. The pointer is locked while dragging, so it
- * never runs into the edge of the screen.
+ * What drags a number field's value left and right: its icon or label, at its
+ * start, and its grip, a short upright bar at its right end, just left of its
+ * reset when it has one (designer, 2026-11-08). 1 per 2px (10 with ⇧). The
+ * pointer is locked while dragging, so it never runs into the edge of the
+ * screen. Held, the field's grip tilts with the drag's speed and a ruler under
+ * the field moves with it, as a camera lens's (designer, 2026-11-08).
  */
 function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange }: {
   icon?: IconName;
   glyph?: string;
   small?: boolean;
-  /** A short upright bar at the field's right end, for a field with no icon to drag on (an opacity beside its color). */
+  /** The grip, at the field's right end; else, its icon or label. */
   grip?: boolean;
   value: number | null;
   min: number;
   max?: number;
   onChange(value: number, continues: boolean): void;
 }) {
-  /** The drag under way: the value so far, movement of less than 1px not yet counted, whether it has changed the value yet, and the field it marks as chosen. */
-  const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean; field: Element | null } | null>(null);
+  /** The drag under way: the value so far, movement of less than a step not yet counted, whether it has changed the value yet, the field it marks as chosen and the grip it tilts. */
+  const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean; field: Element | null; grip: HTMLElement | null } | null>(null);
+  /** The ruler: shown while held, fading out once let go. */
+  const [ruler, setRuler] = useState<"shown" | "leaving" | null>(null);
+  const strip = useRef<HTMLSpanElement>(null);
+  /** How far the ruler's ticks have moved, in px. */
+  const offset = useRef(0);
+  const leaving = useRef<ReturnType<typeof setTimeout>>();
+  /** The grip's tilt: movement in this frame, its speed smoothed, the frame asked for. */
+  const tilt = useRef({ frameDx: 0, speed: 0, frame: 0 });
 
-  // Gone mid-drag while its field stays, it takes the field's mark with it.
-  useEffect(() => () => drag.current?.field?.removeAttribute("data-scrubbing"), []);
+  const placeStrip = () => {
+    if (strip.current) strip.current.style.transform = `translateX(${((offset.current % RULER_PERIOD_PX) + RULER_PERIOD_PX) % RULER_PERIOD_PX}px)`;
+  };
+
+  const tiltFrame = () => {
+    const t = tilt.current;
+    t.speed += (t.frameDx - t.speed) * TILT_SMOOTHING;
+    t.frameDx = 0;
+    const angle = Math.max(-GRIP_TILT_MAX_DEG, Math.min(GRIP_TILT_MAX_DEG, t.speed * TILT_PER_PX));
+    const g = drag.current?.grip;
+    if (g) g.style.transform = `rotate(${Math.abs(angle) < 0.05 ? 0 : angle.toFixed(2)}deg)`;
+    t.frame = drag.current ? requestAnimationFrame(tiltFrame) : 0;
+  };
+
+  const settle = (g: HTMLElement | null) => {
+    cancelAnimationFrame(tilt.current.frame);
+    tilt.current = { frameDx: 0, speed: 0, frame: 0 };
+    if (!g?.style.transform) return;
+    // Let go, it settles back upright, eased (designer, 2026-11-08).
+    g.style.transition = `transform ${FIELD_SETTLE_MS}ms ${EASE_OUT}`;
+    g.style.transform = "rotate(0deg)";
+  };
+
+  // Gone mid-drag while its field stays, it takes the field's mark with it, and its grip's tilt.
+  useEffect(
+    () => () => {
+      drag.current?.field?.removeAttribute("data-scrubbing");
+      if (drag.current?.grip) drag.current.grip.style.transform = "";
+      cancelAnimationFrame(tilt.current.frame);
+      clearTimeout(leaving.current);
+    },
+    [],
+  );
+
+  // The ruler just shown: its ticks where the last drag left them.
+  useEffect(placeStrip, [ruler]);
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
@@ -2221,43 +2276,66 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     // Held, the field is the one chosen: its darker ground and accent edge, till let go (designer, 2026-11-08).
     const field = handle.closest(".tk-field");
     field?.setAttribute("data-scrubbing", "");
-    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field };
+    // Its grip tilts as it is dragged, by either end; with reduced motion, it stays upright.
+    const g = prefersReducedMotion() ? null : (field?.querySelector<HTMLElement>(".tk-grip") ?? null);
+    if (g) g.style.transition = "";
+    drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field, grip: g };
+    cancelAnimationFrame(tilt.current.frame);
+    tilt.current = { frameDx: 0, speed: 0, frame: g ? requestAnimationFrame(tiltFrame) : 0 };
+    clearTimeout(leaving.current);
+    setRuler("shown");
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     const d = drag.current;
     if (d?.pointerId !== event.pointerId) return;
-    d.rest += event.movementX;
-    const px = Math.trunc(d.rest);
-    if (!px) return;
-    d.rest -= px;
-    const next = Math.min(max, Math.max(min, d.value + px * (event.shiftKey ? 10 : 1)));
+    tilt.current.frameDx += event.movementX;
+    d.rest += event.movementX / SCRUB_PX_PER_STEP;
+    const steps = Math.trunc(d.rest);
+    if (!steps) return;
+    d.rest -= steps;
+    const by = event.shiftKey ? 10 : 1;
+    const next = Math.min(max, Math.max(min, d.value + steps * by));
     if (next === d.value) return;
+    // The ruler follows the hand: 2px per unit, and per 10 with ⇧, which would else move it a whole period, still; at a limit, it stops too.
+    offset.current += ((next - d.value) / by) * SCRUB_PX_PER_STEP;
+    placeStrip();
     d.value = next;
     asStep(() => onChange(next, d.moved));
     d.moved = true;
   };
 
   const end = (event: TargetedPointerEvent<HTMLSpanElement>) => {
-    if (drag.current?.pointerId !== event.pointerId) return;
-    drag.current.field?.removeAttribute("data-scrubbing");
+    const d = drag.current;
+    if (d?.pointerId !== event.pointerId) return;
+    d.field?.removeAttribute("data-scrubbing");
     drag.current = null;
+    settle(d.grip);
+    setRuler("leaving");
+    leaving.current = setTimeout(() => setRuler(null), SCRUB_RULER_OUT_MS + 40);
     const root = event.currentTarget.getRootNode() as Document | ShadowRoot;
     if (root.pointerLockElement === event.currentTarget) document.exitPointerLock();
   };
 
   return (
     <span
-      class={grip ? "tk-scrub is-grip" : "tk-scrub"}
+      class={grip ? "tk-scrub-grip" : "tk-scrub"}
       aria-hidden="true"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
+      onLostPointerCapture={end}
       // A click on the icon is not a click on the field's label: it does not start typing.
       onClick={(event) => event.preventDefault()}
     >
       {grip ? <span class="tk-grip" /> : icon ? <Icon name={icon} /> : <span class={small ? "tk-glyph is-small" : "tk-glyph"}>{glyph}</span>}
+      {/* Under the field, over what is below it. Its ticks are information: they move with reduced motion too. */}
+      {ruler && (
+        <span class={ruler === "leaving" ? "tk-ruler is-leaving" : "tk-ruler"} aria-hidden="true">
+          <span ref={strip} class="tk-ruler-strip" />
+        </span>
+      )}
     </span>
   );
 }
