@@ -134,7 +134,9 @@ const ICONS: Record<string, string> = {
   // Drawn for a view's full screen button (designer, 2026-11-08), in IconMCP's manner: four corner brackets.
   fullscreen: '<path d="M2.75 6 V2.75 H6"/><path d="M10 2.75 H13.25 V6"/><path d="M13.25 10 V13.25 H10"/><path d="M6 13.25 H2.75 V10"/>',
   // Pointer
-  pointer: '<path d="M2.635 2.831 L6.854 13.143 C6.906 13.269 7.086 13.266 7.133 13.138 L8.726 8.815 C8.741 8.774 8.774 8.741 8.815 8.726 L13.138 7.133 C13.266 7.086 13.269 6.906 13.143 6.854 L2.831 2.635 C2.708 2.585 2.585 2.708 2.635 2.831 Z"/><line x1="9.25" y1="9.25" x2="13.25" y2="13.25"/>',
+  // A cursor's head alone, its tail gone (designer, 2026-11-08): moved 0.4 down and right, its middle halfway between its box's and its
+  // area's (7.95 and 7.19), on the 16px square's, as it reads centred: its tip, the most of it, otherwise pulls it up and left.
+  pointer: '<path d="M3.035 3.231 L7.254 13.543 C7.306 13.669 7.486 13.666 7.533 13.538 L9.126 9.215 C9.141 9.174 9.174 9.141 9.215 9.126 L13.538 7.533 C13.666 7.486 13.669 7.306 13.543 7.254 L3.231 3.035 C3.108 2.985 2.985 3.108 3.035 3.231 Z"/>',
   // Align left
   "align-left": '<line x1="2.25" y1="3.25" x2="13.75" y2="3.25"/><line x1="2.25" y1="6.375" x2="9.75" y2="6.375"/><line x1="2.25" y1="9.625" x2="13.75" y2="9.625"/><line x1="2.25" y1="12.75" x2="9.75" y2="12.75"/>',
   // Align center
