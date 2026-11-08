@@ -3,7 +3,7 @@ import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, Targ
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
-import { ChangeMarksProvider, NO_MARKS, ResetButton, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
+import { ChangeMarksProvider, NO_MARKS, ResetButton, STACK_PROPERTIES, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { matchItems } from "./list-match";
 import { Icon, type IconName } from "./icons";
 import { RESET_POP_MS } from "./motion";
@@ -289,15 +289,15 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
             // Each its own row, with its button to take it off.
             const label = LIMIT_LABELS[property];
             // Set in this round where there was none: its field unmarked, its − in the accent (designer, 2026-11-08).
-            const isNew = marks.added(property);
+            const addedHere = marks.added(property);
             return (
               <div key={property} class="tk-row tk-paint-row">
-                <ChangeMarksProvider value={isNew ? NO_MARKS : marks}>
+                <ChangeMarksProvider value={addedHere ? NO_MARKS : marks}>
                   <VariableSlot label={label} slot={variable(property)} property={property}>
                     <LimitField label={label} icon={LIMIT_ICONS[property]} property={property} value={shown(property)!} onChange={set(property)} />
                   </VariableSlot>
                 </ChangeMarksProvider>
-                <RemoveButton label={`Remove ${label.toLowerCase()}`} added={isNew} onClick={() => removeLimit(property)} />
+                <RemoveButton label={`Remove ${label.toLowerCase()}`} added={addedHere} onClick={() => removeLimit(property)} />
               </div>
             );
           })}
@@ -560,11 +560,11 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
         <h3 id="tk-stack" class="tk-section-title">Stack</h3>
         <SectionReset
           title="Stack"
-          properties={["direction", "gap", "align", "wrap", "padding"]}
+          properties={STACK_PROPERTIES}
           operations={[{ property: "direction" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
         />
         {added ? (
-          <RemoveButton label="Dissolve Stack" title="Dissolve Stack (⌥⇧A): take it back out" added onClick={() => outer.unstack()} />
+          <RemoveButton label="Dissolve Stack" title="Dissolve Stack: made in this round, it is taken back out" added onClick={() => outer.unstack()} />
         ) : (
           dissolve && <RemoveButton label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve} />
         )}
@@ -1605,7 +1605,6 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
               />
             </div>
             <RemoveButton label={`Remove stop ${index + 1}`} added={added} disabled={stops.length <= 2} onClick={() => remove(index)} />
-
           </div>
         );
       })}
@@ -1866,7 +1865,8 @@ function shadowPart(i: number, key: ShadowKey): ValuePart {
       return s ? readShadow(s, key) : null;
     },
     was: (before, after) => {
-      const was = shadowBefore(i, before, after);
+      // One with none of its own before (new on some of the layers only): its fields unmarked, as a new one's, with no reset that would do nothing.
+      const was = shadowBefore(i, before, after) ?? (after as Shadow[] | null)?.[i];
       return was ? readShadow(was, key) : null;
     },
     back: (value, before) => {
@@ -2078,14 +2078,14 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
         if (value === undefined || value === null) return null;
         const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
         // Added in this round: its field unmarked, its − alone in the accent (designer, 2026-11-08).
-        const isNew = marks.added(property);
+        const addedHere = marks.added(property);
         return (
           <div class="tk-effect" key={property} role="group" aria-label={label}>
             <div class="tk-row tk-paint-row">
               {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
-              <RemoveButton label={`Remove ${label.toLowerCase()}`} added={isNew} onClick={() => set(property)(null)} />
+              <RemoveButton label={`Remove ${label.toLowerCase()}`} added={addedHere} onClick={() => set(property)(null)} />
             </div>
-            <NumberField label={label} icon="blur" property={isNew ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
+            <NumberField label={label} icon="blur" property={addedHere ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
           </div>
         );
       })}

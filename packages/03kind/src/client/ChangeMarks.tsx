@@ -63,18 +63,17 @@ export const ChangeMarksProvider = ChangeMarksContext.Provider;
 
 /** The marks of the selected layers inside a `ChangeMarksProvider`; none outside. */
 export function useChangeMarks(): ChangeMarks {
-  return useContext(ChangeMarksContext) ?? NONE;
+  return useContext(ChangeMarksContext) ?? NO_MARKS;
 }
 
 /** No marks: what is inside an item added in this round, its fields unmarked, with no resets (designer, 2026-11-08). */
 export const NO_MARKS: ChangeMarks = { changed: () => false, reset: () => {}, before: () => null, added: () => false, stacked: () => false, unstack: () => {} };
-const NONE = NO_MARKS;
 
 /** The part `part` is of `before`, matched to it as it is in `after`. */
 const wasOf = (part: ValuePart, before: unknown, after: unknown) => (part.was ? part.was(before, after) : part.of(before));
 
 /** What a Stack sets of its layout: taken back with a Stack made in this round. */
-const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding"];
+export const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding"];
 
 /**
  * The marks of `layers`, from the round's changes: those to a property of
