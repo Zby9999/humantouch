@@ -19,6 +19,8 @@ import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
+import { PanelResizer } from "./PanelResizer";
+import { fitWidths, maxWidth, readWidths, writeWidth, type Panel, type Widths } from "./panel-widths";
 import { createFolds } from "./layer-folds";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -103,6 +105,26 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   useEffect(() => {
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
+
+  /**
+   * The panels' widths, each set by dragging its inner edge (designer, 2026-11-08): as the viewer set them last, and
+   * as they fit the window, the canvas keeping its room between them.
+   */
+  const shell = useRef<HTMLDivElement>(null);
+  const [setWidths, setSetWidths] = useState<Widths>(readWidths);
+  const [room, setRoom] = useState(() => innerWidth);
+  useEffect(() => {
+    const onResize = () => setRoom(innerWidth);
+    addEventListener("resize", onResize);
+    return () => removeEventListener("resize", onResize);
+  }, []);
+  const widths = fitWidths(setWidths, room, layersShown);
+  /** Dragged: the width shows at once, on the shell's style alone; the shell renders anew once let go. */
+  const dragWidth = (panel: Panel) => (width: number) => shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
+  const keepWidth = (panel: Panel) => (width: number) => {
+    setSetWidths((was) => ({ ...was, [panel]: width }));
+    writeWidth(panel, width);
+  };
 
   /** The toast at the bottom of the canvas: a new one takes the old one's place. */
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -607,7 +629,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** Layers selected: the Design panel shows their design; none, the project's Variables (designer, 2026-11-08). */
   const designing = !!(tree && editor && selected.length);
   return (
-    <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
+    <div
+      ref={shell}
+      class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}
+      style={{ "--tk-layers-width": `${widths.layers}px`, "--tk-design-width": `${widths.design}px` }}
+    >
       {/*
         Keyed, the panels and the button keep their own elements: unkeyed, the Layers panel shown again took the Design
         panel's, and with them, stale, its header's rule and 6px under it: a rule across the Layers that Figma has not
@@ -636,6 +662,16 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         <button key="show-layers" ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
+      )}
+      {layersShown && !playing && (
+        <PanelResizer
+          key="layers-edge"
+          panel="layers"
+          width={widths.layers}
+          max={maxWidth("layers", widths, room, true)}
+          onDrag={dragWidth("layers")}
+          onCommit={keepWidth("layers")}
+        />
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
@@ -801,6 +837,16 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
       {notice}
+      {!playing && (
+        <PanelResizer
+          key="design-edge"
+          panel="design"
+          width={widths.design}
+          max={maxWidth("design", widths, room, layersShown)}
+          onDrag={dragWidth("design")}
+          onCommit={keepWidth("design")}
+        />
+      )}
       <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
         <div class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
