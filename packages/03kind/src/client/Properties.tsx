@@ -530,6 +530,10 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
   update: Update;
   variable: SlotOf;
 }) {
+  // The chosen point dark till the alignment changes in this round, then the accent; the point it was at before, drawn larger (designer, 2026-11-08).
+  const marks = useChangeMarks();
+  const changed = marks.changed("align");
+  const was = changed ? (marks.before("align") as Align | null) : null;
   return (
     <section class="tk-section" aria-labelledby="tk-stack">
       <div class="tk-section-header">
@@ -543,17 +547,18 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
       </div>
       {/* As the designer drew it (2026-11-07): the alignment at the left; the gap, then the direction and wrap, beside it. */}
       <div class="tk-row tk-align-row">
-        <div class="tk-align" role="radiogroup" aria-label="Alignment">
+        <div class={`tk-align${changed ? " is-changed" : ""}`} role="radiogroup" aria-label="Alignment">
           {ALIGNMENTS.map((y) =>
             ALIGNMENTS.map((x) => {
               const name = y === "center" && x === "center" ? "Center" : `${ROWS[y]} ${COLUMNS[x]}`;
               const checked = align !== MIXED && align.x === x && align.y === y;
+              const before = !!was && was.x === x && was.y === y;
               return (
                 <button
                   key={name}
                   type="button"
                   role="radio"
-                  class="tk-align-point"
+                  class={`tk-align-point${before ? " is-before" : ""}`}
                   aria-checked={checked}
                   aria-label={name}
                   onClick={() => update("align", (current) => ({ ...current, x, y }))}

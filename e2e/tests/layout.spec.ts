@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -123,6 +123,55 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
   // Last: the Variables the padding field lists as it is typed into stay open over the rows above it.
   await setField(page, "Padding left", "10");
   await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
+});
+
+test("the alignment grid: half the row, its point dark till it changes, then the accent with where it was drawn larger (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const grid = panel.getByRole("radiogroup", { name: "Alignment" });
+
+  // Half the row each, the grid's right edge at the left padding field's.
+  const row = await steadyBox(panel.locator(".tk-align-row"));
+  const box = await steadyBox(grid);
+  const options = await steadyBox(panel.locator(".tk-align-options"));
+  const top = await steadyBox(panel.getByRole("group", { name: "Padding" }).locator(":scope > *").first());
+  expect(Math.abs(box.width - options.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.width - (row.width - 4) / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box.x + box.width - (top.x + top.width))).toBeLessThanOrEqual(1);
+
+  const point = (name: string) => grid.getByRole("radio", { name, exact: true });
+  const mark = (name: string) =>
+    point(name).evaluate((el) => {
+      const style = getComputedStyle(el, "::before");
+      return { color: style.backgroundColor, width: parseFloat(style.width) };
+    });
+  const DARK = "rgb(38, 38, 37)";
+  await expect(point("Center left")).toBeChecked();
+  await expect.poll(async () => (await mark("Center left")).color).toBe(DARK);
+
+  await point("Bottom right").click();
+  await expect(point("Bottom right")).toBeChecked();
+  const accent = await panel.evaluate((el) => {
+    const probe = el.appendChild(document.createElement("i"));
+    probe.style.color = "var(--tk-accent)";
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+  await expect.poll(async () => (await mark("Bottom right")).color).toBe(accent);
+  // Where it was: larger than the points around it.
+  const before = await mark("Center left");
+  const other = await mark("Top center");
+  expect(before.width).toBeGreaterThan(other.width);
+
+  await point("Bottom right").blur();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(point("Center left")).toBeChecked();
+  await expect.poll(async () => (await mark("Center left")).color).toBe(DARK);
+  await expect.poll(async () => (await mark("Bottom right")).width).toBe(other.width);
+  expect((await mark("Top center")).width).toBe(other.width);
+  await expect(grid.locator(".is-before")).toHaveCount(0);
 });
 
 test("a plain top-to-bottom flow shows as a vertical Stack, and becomes a real one once its gap changes", async ({ page }) => {
