@@ -13,7 +13,7 @@ import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
 import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
-import { EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, PANEL_EXIT_MS, prefersReducedMotion } from "./motion";
+import { chromePush, EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
@@ -286,6 +286,48 @@ export function CanvasView(props: Props) {
     return transformOf({ x: -area.left - scrollX, y: -area.top - scrollY, zoom: 1 });
   };
 
+  /** The panels and the tools moving out with the frame as edit mode is left, or in with it as it starts or a click turns it around. */
+  const chromeMoves = useRef<Animation[]>([]);
+  /**
+   * The panels and the tools travel with the frame (the desktop view), each side's edge with the frame's edge on that
+   * side, at its speed and on its curve (designer, 2026-11-08: "跟着 Frame 一起走", "完全一致"): pushed off the window as
+   * the page grows over it (`out`), brought in as it shrinks into the canvas. The Layers side (the panel, or the button
+   * showing it, and its edge's grip) moves with the left edge; the Design side (the panel, its grip, the tools) with
+   * the right. From where they are now, so a click on the way turns them around with the frame; `fromOut`, from off
+   * the window, as edit mode starts. `atRest`: the camera with the canvas in place; `canvasWidth`: the desktop view's.
+   */
+  const moveChrome = (atRest: Camera, canvasWidth: number, out: boolean, fromOut = false) => {
+    const shell = viewport.current!.parentElement!;
+    const sideOf = (selector: string) => [...shell.querySelectorAll<HTMLElement>(`:scope > :is(${selector})`)];
+    const layersSide = sideOf(".tk-panel.is-layers, .tk-show-layers, .tk-resizer.is-layers");
+    const designSide = sideOf(".tk-panel.is-design, .tk-tools, .tk-resizer.is-design");
+    const width = shell.clientWidth;
+    // Where they are laid out, as offsets have them: their transforms aside, partway through a move too.
+    const layersRight = Math.max(0, ...layersSide.map((el) => el.offsetLeft + el.offsetWidth));
+    const designLeft = Math.min(width, ...designSide.map((el) => el.offsetLeft));
+    const restLeft = viewport.current!.getBoundingClientRect().left + atRest.x;
+    const push = chromePush(
+      {
+        atRest: { left: restLeft, right: restLeft + canvasWidth * atRest.zoom },
+        overPage: { left: -scrollX, right: canvasWidth - scrollX },
+      },
+      { layersRight, designLeft },
+      width,
+    );
+    const parts = [...layersSide, ...designSide];
+    const away = (i: number) => `translateX(${i < layersSide.length ? push.left : push.right}px)`;
+    const now = parts.map((el, i) => (fromOut ? away(i) : `translateX(${new DOMMatrix(getComputedStyle(el).transform).e}px)`));
+    for (const move of chromeMoves.current) move.cancel();
+    chromeMoves.current = parts.map((el, i) =>
+      el.animate([{ transform: now[i] }, { transform: out ? away(i) : "translateX(0px)" }], {
+        duration: MODE_SWITCH_MS,
+        easing: EASE_IN_OUT,
+        // Out, they stay off the window until the shell is gone.
+        fill: out ? "forwards" : "none",
+      }),
+    );
+  };
+
   // A layout effect, so freezing starts in the same task as the click.
   useLayoutEffect(() => {
     let mounted = true;
@@ -311,11 +353,12 @@ export function CanvasView(props: Props) {
       } else if (animate && prefersReducedMotion()) {
         play(shell, [{ opacity: 0 }, { opacity: 1 }], { duration: MODE_FADE_MS, easing: EASE_OUT });
       } else if (animate) {
-        // The page shrinks from where it is in the window into its place on the canvas.
+        // The page shrinks from where it is in the window into its place on the canvas, the panels coming in with it.
         play(stage.current!, [{ transform: overPage() }, { transform: transformOf(start) }], {
           duration: MODE_SWITCH_MS,
           easing: EASE_IN_OUT,
         });
+        moveChrome(start, frozen.width, false, true);
       }
       // The task after the next frame: the canvas has been painted by then.
       requestAnimationFrame(() =>
@@ -448,27 +491,6 @@ export function CanvasView(props: Props) {
 
   // Leaving grows the canvas back over the page; a click on the way turns it around.
   const wasLeaving = useRef(false);
-  /** The panels' and the tools' fades as edit mode is left, or as a click turns it around. */
-  const chromeFades = useRef<Animation[]>([]);
-  /**
-   * Leaving, the shell's parts around the canvas (the panels, the tools, the toasts) fade out at once, the panels and
-   * the tools 8px outward, well before the growing page reaches them (designer, 2026-11-08); turned around, they come
-   * back from where they had got to.
-   */
-  const fadeChrome = (leaving: boolean) => {
-    const shell = viewport.current!.parentElement!;
-    const parts = [...shell.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== viewport.current);
-    const now = parts.map((el) => {
-      const style = getComputedStyle(el);
-      return { opacity: style.opacity, transform: style.transform };
-    });
-    for (const fade of chromeFades.current) fade.cancel();
-    chromeFades.current = parts.map((el, i) => {
-      const outward = el.matches(".is-layers, .tk-show-layers") ? -8 : el.matches(".is-design, .tk-tools") ? 8 : 0;
-      const to = leaving ? { opacity: "0", transform: `translateX(${outward}px)` } : { opacity: "1", transform: "none" };
-      return el.animate([now[i], to], { duration: PANEL_EXIT_MS, easing: EASE_OUT, fill: leaving ? "forwards" : "none" });
-    });
-  };
   useLayoutEffect(() => {
     if (leaving === wasLeaving.current) return;
     wasLeaving.current = leaving;
@@ -482,10 +504,13 @@ export function CanvasView(props: Props) {
     if (prefersReducedMotion()) {
       const shell = viewport.current!.parentElement!;
       const from = getComputedStyle(shell).opacity;
+      // With reduced motion, nothing is pushed (designer, 2026-11-08): any push left from before goes, the shell alone fades.
+      for (const move of chromeMoves.current) move.cancel();
       play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
       return;
     }
-    fadeChrome(leaving);
+    // Toward where the camera has the canvas, turned around: what the panels keep their gap to, either way.
+    moveChrome(camera, canvas.width, leaving);
     const from = transformOf(currentCamera(stage.current!));
     const to = leaving ? overPage() : transformOf(camera);
     // Over the page, a changed canvas would cut to a page without the changes.

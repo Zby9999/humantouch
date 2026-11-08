@@ -9,12 +9,27 @@ export const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
 export const MODE_SWITCH_MS = 240;
 /** How long the locked toggle is pressed and held to unlock it; a ring runs out meanwhile. */
 export const UNLOCK_HOLD_MS = 1000;
+/** A frame's left and right edges, in the window's px. */
+export interface Edges {
+  left: number;
+  right: number;
+}
+
 /**
- * Leaving edit mode, the panels and the tools fade out, 8px outward, at once and quicker than the page grows
- * (designer, 2026-11-08): gone before the page's edge reaches them (about 80ms in), so no panel shows beside a
- * page that already seems to fill the window.
+ * How far each side's chrome moves as the page grows from the canvas over the window (designer, 2026-11-08: "跟着
+ * Frame 一起走"): the Layers side (`left`, ≤ 0) as far as the frame's left edge, the Design side (`right`, ≥ 0) as
+ * far as its right edge. The stage's transform interpolates its translate and its scale apart, so the frame's edges
+ * move linearly in the eased progress: moved over `MODE_SWITCH_MS` on `EASE_IN_OUT` too, the chrome keeps its gap to
+ * them all the way. A side the edge would not push off the window (the frame under a panel, or coming its way) goes
+ * just off it instead, on the same curve: then the frame, drawn over it, covers its inner edge all the way, and they
+ * meet at the window's edge. `chrome`: where the Layers side ends and the Design side starts, at rest.
  */
-export const PANEL_EXIT_MS = 100;
+export function chromePush(frame: { atRest: Edges; overPage: Edges }, chrome: { layersRight: number; designLeft: number }, windowWidth: number): Edges {
+  return {
+    left: -Math.max(frame.atRest.left - frame.overPage.left, chrome.layersRight),
+    right: Math.max(frame.overPage.right - frame.atRest.right, windowWidth - chrome.designLeft),
+  };
+}
 /** With reduced motion, the editor fades in and out instead. */
 export const MODE_FADE_MS = 150;
 /** A toast fading in and out; with reduced motion, it only fades. */
