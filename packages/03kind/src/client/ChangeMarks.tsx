@@ -50,33 +50,43 @@ const NONE: ChangeMarks = { changed: () => false, reset: () => {} };
  * The marks of `layers`, from the round's changes: those to a property of
  * one of them, at the breakpoint of the view worked in (none in the desktop
  * view), as the change list lists them. Reset takes them back out, as the
- * change list's own undo of one does.
+ * change list's own undo of one does. `heldFrom`: while a press is held, the
+ * changes as it began.
  */
-export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], onEdit: () => void): ChangeMarks {
+export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], onEdit: () => void, heldFrom: Change[] | null = null): ChangeMarks {
   const ids = new Set(layers.map((layer) => layer.el.getAttribute(LAYER_ID_ATTR)));
   const here = editor.breakpoint();
-  const of = (property: Property) =>
-    changes.filter((change) => change.kind === "style" && change.property === property && ids.has(change.layer) && sameBreakpoint(change.breakpoint ?? null, here));
+  const of = (property: Property, list = changes) =>
+    list.filter((change) => change.kind === "style" && change.property === property && ids.has(change.layer) && sameBreakpoint(change.breakpoint ?? null, here));
   /** Each layer's changes to `property` here: the value before the first of them, and after the last. */
-  const runs = (property: Property) => {
+  const runs = (property: Property, list = changes) => {
     const byLayer = new Map<string, Change[]>();
-    for (const change of of(property)) byLayer.set(change.layer, [...(byLayer.get(change.layer) ?? []), change]);
+    for (const change of of(property, list)) byLayer.set(change.layer, [...(byLayer.get(change.layer) ?? []), change]);
     return [...byLayer].map(([layer, list]) => ({ layer, list, before: list[0].before, after: list.at(-1)!.after }));
   };
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  /** Whether `property` (that part of it) is changed, by the changes in `list`. */
+  const changedIn = (list: Change[], property: Property, part?: number | ValuePart) => {
+    // At a breakpoint, what changed there on its own: a change reaching past the view's range too.
+    if (here && part === undefined) {
+      const now = layers.some((layer) => editor.changedHere(layer, property));
+      // As of an earlier list, the editor cannot say: a change to it there then, at any breakpoint, counts.
+      return list === changes ? now : now && list.some((change) => change.kind === "style" && change.property === property && ids.has(change.layer));
+    }
+    const found = of(property, list);
+    if (part === undefined) return found.length > 0;
+    if (typeof part !== "number") return runs(property, list).some(({ before, after }) => !same(part.of(before), part.of(after)));
+    // A part changed: as it is now unlike what it was before the round's first change to it.
+    return found.some((change) => {
+      const before = change.before as unknown[] | null;
+      const after = (list.filter((c) => c.layer === change.layer && c.property === property && sameBreakpoint(c.breakpoint ?? null, here)).at(-1) ?? change).after as unknown[] | null;
+      return Array.isArray(before) && Array.isArray(after) ? before[part] !== after[part] : true;
+    });
+  };
   return {
     changed(property, part) {
-      // At a breakpoint, what changed there on its own: a change reaching past the view's range too.
-      if (here && part === undefined) return layers.some((layer) => editor.changedHere(layer, property));
-      const found = of(property);
-      if (part === undefined) return found.length > 0;
-      if (typeof part !== "number") return runs(property).some(({ before, after }) => !same(part.of(before), part.of(after)));
-      // A part changed: as it is now unlike what it was before the round's first change to it.
-      return found.some((change) => {
-        const before = change.before as unknown[] | null;
-        const after = (changes.filter((c) => c.layer === change.layer && c.property === property && sameBreakpoint(c.breakpoint ?? null, here)).at(-1) ?? change).after as unknown[] | null;
-        return Array.isArray(before) && Array.isArray(after) ? before[part] !== after[part] : true;
-      });
+      // While a press is held (`heldFrom`, the changes as it began), what it drags is not marked yet: it takes the accent once let go. One changed before stays marked (designer, 2026-11-08).
+      return changedIn(changes, property, part) && (!heldFrom || changedIn(heldFrom, property, part));
     },
     reset(properties, part) {
       if (part) {
@@ -103,7 +113,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
         onEdit();
         return;
       }
-      const going = properties.flatMap(of);
+      const going = properties.flatMap((property) => of(property));
       if (!going.length) return;
       editor.batch(() => {
         for (const change of going) editor.revert(change.id);

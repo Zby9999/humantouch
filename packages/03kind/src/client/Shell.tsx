@@ -7,7 +7,8 @@ import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
-import { pointerHeld } from "./pointer-held";
+import { FIELD_SETTLE_MS } from "./motion";
+import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
 import type { Destination, Editor } from "./edit-commands";
@@ -194,6 +195,31 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   useEffect(() => () => clearTimeout(settle.current), []);
 
   const round = useRef<{ canvas: Canvas; changeSet: ChangeSet; offCanvas: OffCanvas } | null>(null);
+  /**
+   * A value dragged is not marked while the press is held, and eases into the
+   * accent once let go (designer, 2026-11-08): the round's changes as the press
+   * began, and whether the fields are settling after it.
+   */
+  const heldFrom = useRef<Change[] | null>(null);
+  const [settling, setSettling] = useState(false);
+  useEffect(() => {
+    let done: ReturnType<typeof setTimeout> | undefined;
+    const stop = watchHolds((held) => {
+      const now = round.current?.changeSet.list() ?? [];
+      // Copies: a change adjusted again is updated in place.
+      if (held) return void (heldFrom.current = now.map((change) => ({ ...change })));
+      const was = heldFrom.current ?? [];
+      heldFrom.current = null;
+      if (now.length === was.length && now.every((change, i) => change.id === was[i].id && change.after === was[i].after)) return;
+      setSettling(true);
+      clearTimeout(done);
+      done = setTimeout(() => setSettling(false), FIELD_SETTLE_MS);
+    });
+    return () => {
+      stop();
+      clearTimeout(done);
+    };
+  }, []);
   const pendingSave = useRef<ReturnType<typeof setTimeout>>(undefined);
   const latestOnSave = useRef(onSave);
   latestOnSave.current = onSave;
@@ -770,7 +796,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
       {notice}
-      <aside class="tk-panel is-design" aria-label="Design">
+      <aside class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
         <div class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
           <h2 class="tk-panel-label">{designing ? "Design" : "Variants"}</h2>
@@ -786,7 +812,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             {/* The Design panel's short notes show in the toast. */}
             <ToastProvider value={showToast}>
               <CatalogProvider value={catalog}>
-                <ChangeMarksProvider value={changeMarks(round.current?.changeSet.list() ?? [], editorOf(selected[0])!, selected, onEdit)}>
+                <ChangeMarksProvider value={changeMarks(round.current?.changeSet.list() ?? [], editorOf(selected[0])!, selected, onEdit, heldFrom.current)}>
                 <Properties
                   editor={editorOf(selected[0])!}
                   layers={selected}
