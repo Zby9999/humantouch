@@ -857,6 +857,8 @@ interface ToolsProps {
 /**
  * At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. The chosen one is raised
  * on a backing of its own, which slides to a tool clicked and jumps to one a key picks (designer, 2026-11-08).
+ * A tool pointed at or focused tells its name and key in the editor's dark tip, at the toolbar's left, level with it,
+ * in place of the browser's gray one (designer, 2026-11-08).
  */
 function Tools({ tool, onTool }: ToolsProps) {
   // The tool last clicked, until the choice changes; whether that change slides is kept until the next one, so a
@@ -870,6 +872,8 @@ function Tools({ tool, onTool }: ToolsProps) {
     clicked.current = undefined;
   }
   const index = TOOLS.findIndex((t) => t.tool === tool);
+  /** The tool told, and the middle of its button from the toolbar's top. */
+  const [tip, setTip] = useState<{ text: string; middle: number } | null>(null);
   return (
     <div class="tk-tools" role="toolbar" aria-label="Tools">
       <div class={sliding.current ? "tk-tools-backing is-sliding" : "tk-tools-backing"} style={{ "--tk-tool-index": index }} aria-hidden="true" />
@@ -880,7 +884,11 @@ function Tools({ tool, onTool }: ToolsProps) {
           class="tk-icon-button"
           aria-label={t.label}
           aria-pressed={tool === t.tool}
-          title={`${t.label} (${t.key})`}
+          aria-keyshortcuts={t.key}
+          onPointerEnter={(event) => setTip({ text: `${t.label} (${t.key})`, middle: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 })}
+          onFocus={(event) => setTip({ text: `${t.label} (${t.key})`, middle: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 })}
+          onPointerLeave={() => setTip(null)}
+          onBlur={() => setTip(null)}
           onClick={() => {
             clicked.current = t.tool;
             onTool(t.tool);
@@ -889,6 +897,11 @@ function Tools({ tool, onTool }: ToolsProps) {
           <Icon name={t.icon} />
         </button>
       ))}
+      {tip && (
+        <div class="tk-variants-tip tk-tools-tip" role="tooltip" style={{ top: `${tip.middle}px` }}>
+          {tip.text}
+        </div>
+      )}
     </div>
   );
 }

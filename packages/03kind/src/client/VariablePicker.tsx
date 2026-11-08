@@ -4,6 +4,7 @@ import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 
 import type { Variable, VariableGroup } from "../service-protocol";
 import { ResetButton, useChangeMarks, type ValuePart } from "./ChangeMarks";
 import { writeShadows, type Shadow } from "./effects";
+import { leavingProps, useExit } from "./exit";
 import { Icon } from "./icons";
 import { cssColor, type Color } from "./paint";
 import type { Property } from "./property-table";
@@ -38,8 +39,9 @@ const GAP = 8;
 /**
  * A panel over the Design panel, beside it as in Figma, for the control
  * `anchor`: it closes on Esc, or on a press outside it, giving focus back.
+ * `leaving`: closed with the pointer, it fades and moves down (`useExit`).
  */
-function Popover({ label, anchor, onClose, children }: { label: string; anchor: HTMLElement; onClose(): void; children: ComponentChildren }) {
+function Popover({ label, anchor, leaving = false, onClose, children }: { label: string; anchor: HTMLElement; leaving?: boolean; onClose(): void; children: ComponentChildren }) {
   const box = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -61,7 +63,7 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
       const path = event.composedPath();
       // A gradient's handles on the canvas change what it shows: pressed, it stays open.
       const keeps = path.some((el) => el instanceof Element && el.hasAttribute("data-tk-keeps-popover"));
-      if (!path.includes(box.current!) && !path.includes(anchor) && !keeps) onClose();
+      if (!leaving && !path.includes(box.current!) && !path.includes(anchor) && !keeps) onClose();
     };
     // On the document: a press on the page or canvas; on the shadow root: one elsewhere in the editor layer.
     document.addEventListener("pointerdown", away, true);
@@ -70,7 +72,7 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
       document.removeEventListener("pointerdown", away, true);
       if (root !== document) root.removeEventListener("pointerdown", away, true);
     };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, leaving]);
   const close = () => {
     onClose();
     anchor.focus();
@@ -78,8 +80,9 @@ function Popover({ label, anchor, onClose, children }: { label: string; anchor: 
   return (
     <div
       ref={box}
-      class="tk-popover"
+      class={leaving ? "tk-popover is-leaving" : "tk-popover"}
       role="dialog"
+      {...leavingProps(leaving)}
       aria-label={label}
       // A click on it keeps its keys in it: Esc closes it, not the selection.
       tabIndex={-1}
@@ -263,6 +266,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   const catalog = useCatalog();
   const marks = useChangeMarks();
   const [open, setOpen] = useState<HTMLElement | null>(null);
+  const exit = useExit(open);
   const offered = slot && catalog?.of(slot.group).length ? slot : undefined;
   const pick = (entry: Resolved | null) => {
     setOpen(null);
@@ -295,8 +299,8 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
       ) : (
         <TypingProvider value={typing}>{children}</TypingProvider>
       )}
-      {offered && bound && open && (
-        <Popover label={`${label} variables`} anchor={open} onClose={() => setOpen(null)}>
+      {offered && bound && exit.shown && (
+        <Popover key={exit.key} label={`${label} variables`} anchor={exit.shown} leaving={exit.leaving} onClose={() => setOpen(null)}>
           <VariableList group={offered.group} bound={bound ?? null} onPick={pick} />
         </Popover>
       )}
@@ -308,18 +312,27 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
  * A color's picker, as in Figma: a Custom tab, with `top` (a fill's type and
  * gradient) over the editor layer's own picker, and a Variables tab listing
  * the project's color Variables when it has them (designer, 2026-11-05).
- * `label`: "Fill".
+ * `label`: "Fill". Drawn while `anchor`, the control it is open from, is
+ * there, and a moment after, as it leaves (`useExit`).
  */
-export function ColorPicker({ label, anchor, slot, top, custom, onClose }: {
+export function ColorPicker(props: Omit<ColorPickerProps, "anchor" | "leaving"> & { anchor: HTMLElement | null }) {
+  const exit = useExit(props.anchor);
+  return exit.shown && <PickerPopover key={exit.key} {...props} anchor={exit.shown} leaving={exit.leaving} />;
+}
+
+interface ColorPickerProps {
   label: string;
   anchor: HTMLElement;
+  leaving: boolean;
   /** The color as a Variable: none, no Variables tab. */
   slot?: Slot;
   top?: ComponentChildren;
   /** The picker; none, a fill of Mixed types say, only `top`. */
   custom?: ComponentChildren;
   onClose(): void;
-}) {
+}
+
+function PickerPopover({ label, anchor, leaving, slot, top, custom, onClose }: ColorPickerProps) {
   const [tab, setTab] = useState<"custom" | "variables">(slot?.bound ? "variables" : "custom");
   const tabs = [
     { id: "custom", label: "Custom" },
@@ -328,7 +341,7 @@ export function ColorPicker({ label, anchor, slot, top, custom, onClose }: {
   const tabbed = !!(custom && slot);
   const shown = tabbed ? tab : "custom";
   return (
-    <Popover label={`${label} color`} anchor={anchor} onClose={onClose}>
+    <Popover label={`${label} color`} anchor={anchor} leaving={leaving} onClose={onClose}>
       {tabbed && (
         <div class="tk-tabs" role="tablist" aria-label="Color">
           {tabs.map(({ id, label }) => (

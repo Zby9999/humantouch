@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -288,6 +288,8 @@ export const styles = /* css */ `
   .tk-tools-backing.is-sliding { transition: none; }
 }
 .tk-shell.is-playing > .tk-tools { display: none; }
+/* A tool's tip: the Variables' dark one, at the toolbar's left, 8px off it, level with the tool (designer, 2026-11-08). */
+.tk-variants-tip.tk-tools-tip { position: absolute; right: calc(100% + 8px); transform: translateY(-50%); }
 /* A toast, as in Figma: a dark pill of one line, at the bottom middle of the canvas, over it. */
 .tk-toasts {
   position: absolute;
@@ -1320,6 +1322,19 @@ export const styles = /* css */ `
   outline: none;
   /* A gradient's stops and the picker under them can be taller than the window. */
   overflow-y: auto;
+}
+/*
+ * A popover or menu closed with the pointer leaves: it fades and moves 4px down, interruptible, taking no clicks
+ * meanwhile; opened, or closed with a key, it is there or gone at once (designer, 2026-11-08). With reduced motion it only fades.
+ */
+:is(.tk-menu, .tk-popover).is-leaving {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity ${POPOVER_EXIT_MS}ms ${EASE_OUT}, transform ${POPOVER_EXIT_MS}ms ${EASE_OUT};
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.tk-menu, .tk-popover).is-leaving { transform: none; }
 }
 .tk-popover-header { display: flex; align-items: center; justify-content: space-between; }
 .tk-popover-header .tk-section-title { min-height: 0; margin: 0; padding: 0; }

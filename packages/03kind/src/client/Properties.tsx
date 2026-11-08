@@ -1226,7 +1226,7 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
               onClick={(event) => setMixedOpen(mixedOpen ? null : event.currentTarget)}
             />
             <span class="tk-mixed">Mixed</span>
-            {mixedOpen && <ColorPicker label="Fill" anchor={mixedOpen} top={types(null)} onClose={() => setMixedOpen(null)} />}
+            <ColorPicker label="Fill" anchor={mixedOpen} top={types(null)} onClose={() => setMixedOpen(null)} />
           </div>
           {!conic && remove}
         </div>
@@ -2033,9 +2033,7 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
           onClick={toggle}
         />
         {shown ? <span class="tk-read-only">{shown.text}</span> : <ColorValue name={name} color={color} onChange={onChange} offered={offered} onOpen={toggle} />}
-        {open && (
-          <ColorPicker label={name} anchor={open} slot={offered} top={top} custom={<ColorPanel color={color} onChange={onChange} />} onClose={() => setOpen(null)} />
-        )}
+        <ColorPicker label={name} anchor={open} slot={offered} top={top} custom={<ColorPanel color={color} onChange={onChange} />} onClose={() => setOpen(null)} />
       </div>
       {typed && (
         <label class={`tk-field tk-color-opacity${changed ? " is-changed" : ""}`}>

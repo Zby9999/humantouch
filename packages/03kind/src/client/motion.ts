@@ -24,3 +24,9 @@ export function prefersReducedMotion(): boolean {
 
 /** The chosen tool's backing sliding to a tool clicked (designer, 2026-11-08); a key picking one, or reduced motion, jumps it. */
 export const TOOL_SLIDE_MS = 200;
+
+/**
+ * A popover (a select's or a button's menu, the color picker, a Variable's list) closed with the pointer leaving:
+ * fading and moving 4px down (designer, 2026-11-08). It opens at once, and a key closing it closes it at once.
+ */
+export const POPOVER_EXIT_MS = 150;
