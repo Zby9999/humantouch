@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -381,7 +381,15 @@ export const styles = /* css */ `
 }
 .tk-shell.is-playing > .tk-tools { display: none; }
 /* A tool's tip: the Variables' dark one, at the toolbar's left, 8px off it, level with the tool (designer, 2026-11-08). */
-.tk-variants-tip.tk-tools-tip { position: absolute; right: calc(100% + 8px); transform: translateY(-50%); }
+.tk-variants-tip.tk-tools-tip { position: absolute; right: calc(100% + 8px); transform: translateY(-50%); transform-origin: right center; }
+/* Shown after the pointer rests on a tool, it fades in growing from 0.97 toward the toolbar; warm, or by focus, it is there at once; with reduced motion, it only fades (designer, 2026-11-08). */
+@media (hover: hover) and (pointer: fine) {
+  .tk-variants-tip.tk-tools-tip.is-easing { transition: opacity ${TIP_IN_MS}ms ${EASE_OUT}, transform ${TIP_IN_MS}ms ${EASE_OUT}; }
+  @starting-style { .tk-variants-tip.tk-tools-tip.is-easing { opacity: 0; transform: translateY(-50%) scale(0.97); } }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  @starting-style { .tk-variants-tip.tk-tools-tip.is-easing { transform: translateY(-50%); } }
+}
 /* A toast, as in Figma: a dark pill of one line, at the bottom middle of the canvas, over it. */
 .tk-toasts {
   position: absolute;

@@ -7,7 +7,7 @@ import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
-import { FIELD_SETTLE_MS } from "./motion";
+import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
@@ -925,10 +925,46 @@ function Tools({ tool, onTool }: ToolsProps) {
     clicked.current = undefined;
   }
   const index = TOOLS.findIndex((t) => t.tool === tool);
-  /** The tool told, and the middle of its button from the toolbar's top. */
-  const [tip, setTip] = useState<{ text: string; middle: number } | null>(null);
+  /**
+   * The tool told, the middle of its button from the toolbar's top, whether it eases in, and whether focus showed it.
+   * The pointer rests on a tool `TIP_DELAY_MS` before its tip shows, easing in; passing over shows nothing. Once one shows,
+   * the toolbar is warm: another tool pointed at swaps the tip at once, text and place, without motion, and so within
+   * `TIP_GRACE_MS` of the pointer leaving the toolbar. Focus from the keyboard shows it at once; a press hides it, and the next
+   * tool pointed at, still warm, shows at once (designer, 2026-11-08). A touch shows nothing.
+   */
+  const [tip, setTip] = useState<{ text: string; middle: number; easing: boolean; byFocus: boolean } | null>(null);
+  const waiting = useRef<number | undefined>(undefined);
+  const cooling = useRef<number | undefined>(undefined);
+  const warm = useRef(false);
+  useEffect(
+    () => () => {
+      clearTimeout(waiting.current);
+      clearTimeout(cooling.current);
+    },
+    [],
+  );
+  const tipOf = (t: (typeof TOOLS)[number], button: HTMLElement, easing: boolean, byFocus: boolean) => ({
+    text: `${t.label} (${t.key})`,
+    middle: button.offsetTop + button.offsetHeight / 2,
+    easing,
+    byFocus,
+  });
   return (
-    <div class="tk-tools" role="toolbar" aria-label="Tools">
+    <div
+      class="tk-tools"
+      role="toolbar"
+      aria-label="Tools"
+      // Back on the toolbar, a gap or its edge too, within the grace: still warm.
+      onPointerEnter={() => clearTimeout(cooling.current)}
+      onPointerLeave={() => {
+        clearTimeout(waiting.current);
+        // A tip the keyboard's focus shows stays with the focus.
+        setTip((shown) => (shown?.byFocus ? shown : null));
+        if (!warm.current) return;
+        clearTimeout(cooling.current);
+        cooling.current = window.setTimeout(() => (warm.current = false), TIP_GRACE_MS);
+      }}
+    >
       <div class={sliding.current ? "tk-tools-backing is-sliding" : "tk-tools-backing"} style={{ "--tk-tool-index": index }} aria-hidden="true" />
       {TOOLS.map((t) => (
         <button
@@ -938,11 +974,33 @@ function Tools({ tool, onTool }: ToolsProps) {
           aria-label={t.label}
           aria-pressed={tool === t.tool}
           aria-keyshortcuts={t.key}
-          onPointerEnter={(event) => setTip({ text: `${t.label} (${t.key})`, middle: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 })}
-          onFocus={(event) => setTip({ text: `${t.label} (${t.key})`, middle: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 })}
-          onPointerLeave={() => setTip(null)}
-          onBlur={() => setTip(null)}
+          onPointerEnter={(event) => {
+            if (event.pointerType === "touch") return;
+            clearTimeout(waiting.current);
+            const button = event.currentTarget;
+            if (warm.current || tip) {
+              clearTimeout(cooling.current);
+              warm.current = true;
+              setTip(tipOf(t, button, false, false));
+              return;
+            }
+            waiting.current = window.setTimeout(() => {
+              warm.current = true;
+              setTip(tipOf(t, button, true, false));
+            }, TIP_DELAY_MS);
+          }}
+          // Off a tool before its tip shows, the wait ends; a tip shown stays till the next tool or the toolbar left.
+          onPointerLeave={() => clearTimeout(waiting.current)}
+          onFocus={(event) => {
+            // A click focuses too, but only the keyboard's focus tells.
+            if (!event.currentTarget.matches(":focus-visible")) return;
+            clearTimeout(waiting.current);
+            setTip(tipOf(t, event.currentTarget, false, true));
+          }}
+          onBlur={() => setTip((shown) => (shown?.byFocus ? null : shown))}
           onClick={() => {
+            clearTimeout(waiting.current);
+            setTip(null);
             clicked.current = t.tool;
             onTool(t.tool);
           }}
@@ -951,7 +1009,7 @@ function Tools({ tool, onTool }: ToolsProps) {
         </button>
       ))}
       {tip && (
-        <div class="tk-variants-tip tk-tools-tip" role="tooltip" style={{ top: `${tip.middle}px` }}>
+        <div class={tip.easing ? "tk-variants-tip tk-tools-tip is-easing" : "tk-variants-tip tk-tools-tip"} role="tooltip" style={{ top: `${tip.middle}px` }}>
           {tip.text}
         </div>
       )}

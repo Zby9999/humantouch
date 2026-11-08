@@ -53,3 +53,12 @@ export const HEADER_LINE_MS = 200;
 export const GRIP_ENTER_MS = 150;
 /** The grip leaving as the pointer does, fading alone, a little faster than it came (designer, 2026-11-08). */
 export const GRIP_EXIT_MS = 120;
+
+/**
+ * A tool's tip (designer, 2026-11-08): the pointer rests on a tool `TIP_DELAY_MS` before it shows, fading in and growing from
+ * 0.97 toward the toolbar over `TIP_IN_MS`. Once one shows, the other tools' tips show at once, without motion, and so for
+ * `TIP_GRACE_MS` after the pointer leaves the toolbar. Focus from the keyboard shows it at once; with reduced motion, it only fades.
+ */
+export const TIP_DELAY_MS = 500;
+export const TIP_IN_MS = 125;
+export const TIP_GRACE_MS = 300;
