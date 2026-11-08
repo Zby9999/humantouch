@@ -18,11 +18,11 @@ async function enterEditMode(page: Page) {
   await canvasInPlace(page);
 }
 
-/** A view's label says the widths it covers, and, in their title, the project's variant they are written with, if any. */
+/** A view's label says the widths it covers, and, in their tip, the project's variant they are written with, if any. */
 async function expectRange(page: Page, name: string, widths: string, variant?: string) {
   const range = page.getByRole("group", { name: `${name} view` }).locator(".tk-view-range");
   await expect(range).toHaveText(widths);
-  if (variant) await expect(range).toHaveAttribute("title", new RegExp(`breakpoint ${variant}`));
+  if (variant) await expect(range).toHaveAttribute("data-tk-tip", new RegExp(`breakpoint ${variant}`));
 }
 
 /** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */

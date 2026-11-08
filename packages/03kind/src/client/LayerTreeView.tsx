@@ -222,7 +222,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
             <span class="tk-tree-name">{layer.name}</span>
             {/* A layer the designer wrote a brief for: what the Agent is to achieve in it, or make in a new Frame. */}
             {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
-              <span class="tk-tree-brief" title={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
+              <span class="tk-tree-brief" data-tk-tip={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
                 <Icon name="brief" />
               </span>
             )}

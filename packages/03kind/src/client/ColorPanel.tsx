@@ -63,7 +63,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
 
   const hue = rgbToHex(hsbToRgb({ h: hsb.h, s: 1, b: 1 }));
   const opacityField = (
-    <label class="tk-field tk-color-opacity" title="Opacity">
+    <label class="tk-field tk-color-opacity" data-tk-tip="Opacity">
       <TextField
         label="Opacity"
         value={`${Math.round(color.opacity * 100)}%`}
@@ -78,7 +78,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
   );
   /** A number of the color typed in, from `min` to `max`, shown to `digits` decimals. */
   const part = (label: string, value: number, min: number, max: number, set: (n: number) => void, digits = 0) => (
-    <label class="tk-field" title={label} key={label}>
+    <label class="tk-field" data-tk-tip={label} key={label}>
       <TextField
         label={label}
         value={String(Math.round(value * 10 ** digits) / 10 ** digits)}
@@ -98,7 +98,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
             type="button"
             class="tk-icon-button"
             aria-label="Pick a color from the screen"
-            title="Pick a color from the screen"
+            data-tk-tip="Pick a color from the screen"
             onClick={() => {
               new EyeDropper()
                 .open()
@@ -132,7 +132,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
           ))}
         </Select>
         {format === "hex" && (
-          <label class="tk-field" title="Hex">
+          <label class="tk-field" data-tk-tip="Hex">
             <TextField label="Hex" value={color.color.slice(1)} parse={parseHexText} onChange={(hex) => setRgb(hexToRgb(hex))} />
           </label>
         )}
@@ -300,7 +300,7 @@ function OklchRow({ label, name, value, min, max, digits, step, track, thumb, on
         {label}
       </span>
       <Slider label={name} value={value} min={min} max={max} track={track} thumb={thumb} onChange={onChange} />
-      <label class="tk-field" title={name}>
+      <label class="tk-field" data-tk-tip={name}>
         <TextField
           label={`${name} value`}
           value={String(shown)}

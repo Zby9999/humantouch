@@ -164,7 +164,7 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await expect(frame).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
-  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
   // Marked on the canvas in the other views; in the one worked in, its button stands for the mark.
   await expect(page.locator('.tk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
   await expect(page.locator('.tk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
@@ -177,7 +177,7 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await page.keyboard.press("ControlOrMeta+d");
   const copy = canvas(page).locator("#board > div").nth(1);
   await expect(copy).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
-  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("title", "Brief: A pricing table with three plans");
+  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
   for (const view of ["Desktop", "Tablet", "Phone"]) await expect(page.locator(`.tk-brief-mark[data-view="${view}"]`)).toHaveCount(2);
   await expect(design(page).getByRole("group", { name: "Brief" }).getByRole("textbox", { name: "Brief" })).toHaveValue("A pricing table with three plans");
 });

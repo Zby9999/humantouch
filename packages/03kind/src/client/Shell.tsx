@@ -900,7 +900,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         )}
       </aside>
       {playing && (
-        <button type="button" class="tk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={stopPlaying}>
+        <button type="button" class="tk-stop-playing" aria-label="Stop playing" data-tk-tip="Back to editing (Esc)" onClick={stopPlaying}>
           <Icon name="close" />
         </button>
       )}

@@ -94,7 +94,7 @@ export function ChangeList({ changes, readOnly, onRevert, onUndo, onRedo, onDisc
                 type="button"
                 class="tk-icon-button"
                 aria-label={`Undo the ${changeTitle(change).toLowerCase()} of ${layerName(change)}`}
-                title="Undo this change"
+                data-tk-tip="Undo this change"
                 onClick={() => {
                   // Its row goes: focus stays in the list, so Esc still closes it.
                   dialog.current!.focus({ preventScroll: true });

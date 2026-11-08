@@ -63,7 +63,7 @@ function BriefField({ brief, onChange }: { brief: string; onChange(brief: string
           </button>
         ) : (
           !adding && (
-            <button type="button" class="tk-icon-button" aria-label="Add brief" title="What the Design panel cannot set, for the Agent to achieve" onClick={() => setAdding(true)}>
+            <button type="button" class="tk-icon-button" aria-label="Add brief" data-tk-tip="What the Design panel cannot set, for the Agent to achieve" onClick={() => setAdding(true)}>
               <Icon name="plus" />
             </button>
           )

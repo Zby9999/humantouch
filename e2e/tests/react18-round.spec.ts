@@ -184,10 +184,10 @@ test("a change made in the tablet view is at the range of the project's own Tail
   const tablet = page.locator('iframe[title="Tablet 768"]');
   await expect(tablet.contentFrame().locator("h1")).toBeVisible();
   // 768px is between the project's sm (560px) and md (820px); the desktop view, 1280px wide, is from lg (1120px) up.
-  // The label shows the widths the view covers; the project's breakpoint for them is in the range's title.
+  // The label shows the widths the view covers; the project's breakpoint for them is in the range's tip.
   const range = page.getByRole("group", { name: "Tablet view" }).locator(".tk-view-range");
   await expect(range).toHaveText("560–1119");
-  await expect(range).toHaveAttribute("title", /breakpoint sm:max-lg:/);
+  await expect(range).toHaveAttribute("data-tk-tip", /breakpoint sm:max-lg:/);
   const box = (await tablet.contentFrame().locator("article").first().boundingBox())!;
   await page.keyboard.down("Meta");
   await page.mouse.click(box.x + 4, box.y + 4);

@@ -81,7 +81,7 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
     const label = page.getByRole("group", { name: `${name} view` });
     await expect(label).toHaveText(`${name}${widths}`);
     await expect(label.locator(".tk-view-range")).toHaveText(widths);
-    await expect(label.locator(".tk-view-range")).toHaveAttribute("title", /what the page's CSS does at this width/);
+    await expect(label.locator(".tk-view-range")).toHaveAttribute("data-tk-tip", /what the page's CSS does at this width/);
     await expect(label.getByRole("button", { name: `Full screen ${name} view`, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("button", { name: "Delete Desktop view" })).toHaveCount(0);

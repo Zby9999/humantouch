@@ -18,6 +18,7 @@ import { revertSaved, withPartsRead } from "./saved-round";
 import { connectRoundStore } from "./service";
 import { Shell, type RoundControl } from "./Shell";
 import { StalledNotice } from "./StalledNotice";
+import { Tips } from "./Tips";
 import { Toggle } from "./Toggle";
 import { readViewWidths } from "./ViewLabels";
 
@@ -478,7 +479,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
                   type="button"
                   class="tk-icon-button"
                   aria-label="03Kind: back to preview mode"
-                  title="Back to preview mode"
+                  data-tk-tip="Back to preview mode"
                   onClick={(event) => switchMode(event.detail > 0)}
                 >
                   <Icon name="close" />
@@ -523,6 +524,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           {claimed && stalled && !list && <StalledNotice onKeepWaiting={() => stall.current?.moved()} onEndRound={endRound} />}
         </Toggle>
       )}
+      {/* Last, over the toggle too. */}
+      <Tips />
     </>
   );
 }

@@ -308,7 +308,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
         <section class="tk-section" role="group" aria-label="Stack">
           <div class="tk-section-header">
             <h3 class="tk-section-title">Stack</h3>
-            <button type="button" class="tk-icon-button" aria-label="Make Stack" title="Make Stack (⇧A)" onClick={onStack}>
+            <button type="button" class="tk-icon-button" aria-label="Make Stack" data-tk-tip="Make Stack (⇧A)" onClick={onStack}>
               <Icon name="plus" />
             </button>
           </div>
@@ -614,7 +614,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
               type="button"
               class={`tk-icon-button${wrapChanged ? " is-changed" : ""}`}
               aria-label="Wrap"
-              title="Wrap"
+              data-tk-tip="Wrap"
               aria-pressed={wrap === true}
               onClick={() => set("wrap")(wrap !== true)}
             >
@@ -635,7 +635,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
  */
 function RemoveButton({ label, title, added = false, disabled, onClick }: { label: string; title?: string; added?: boolean; disabled?: boolean; onClick(): void }) {
   return (
-    <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} title={title ?? (added ? `${label}: added in this round` : undefined)} disabled={disabled} onClick={onClick}>
+    <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} data-tk-tip={title ?? (added ? `${label}: added in this round` : undefined)} disabled={disabled} onClick={onClick}>
       <Icon name="minus" />
     </button>
   );
@@ -669,7 +669,7 @@ function GapField({ gap, align, set, update, variable }: { gap: Shown<number>; a
     // Auto, as the alignment keeps it: marked when that part of it changed, the point left as it is.
     const changed = marks.changed("align", DISTRIBUTE);
     return (
-      <div class={`tk-field${changed ? " is-changed" : ""}`} title="Gap">
+      <div class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip="Gap">
         <Icon name="gap" />
         <span class="tk-input tk-auto">Auto</span>
         {mode}
@@ -747,7 +747,7 @@ function LimitField({ label, icon, value, onChange, property }: {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
       <Icon name={icon} />
       <TextField
         label={label}
@@ -774,7 +774,7 @@ function PercentField({ label, icon, value, onChange, property }: {
   const changed = !!property && marks.changed(property);
   const scrubbed = { value: value === null ? null : Math.round(value * 100), min: 0, max: 100, onChange: (percent: number, continues: boolean) => onChange(percent / 100, continues) };
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
       <Scrub icon={icon} {...scrubbed} />
       <TextField
         label={label}
@@ -876,7 +876,7 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
               type="button"
               class="tk-icon-button"
               aria-label="Independent corners"
-              title="Independent corners"
+              data-tk-tip="Independent corners"
               aria-pressed={independent}
               onClick={() => toggle(!independent)}
             >
@@ -1118,7 +1118,7 @@ function Segmented<T extends string>({ label, class: className, property, value,
           class="tk-icon-button"
           aria-checked={value === option.value}
           aria-label={option.label}
-          title={option.label}
+          data-tk-tip={option.label}
           onClick={() => onChange(option.value)}
         >
           {option.content}
@@ -1153,7 +1153,7 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
   /** What a drag starts from: from Auto, what it comes to. */
   const dragged = length?.value ?? (value === "auto" ? auto! : null);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
       <Scrub icon={icon} value={dragged} min={min} onChange={change} />
       <TextField
         label={label}
@@ -1589,7 +1589,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
             // Pressed anywhere in its row, the stop is the one the picker sets.
             onPointerDown={() => onChoose(index)}
           >
-            <label class={`tk-field tk-stop-position${movedHere ? " is-changed" : ""}`} title="Position">
+            <label class={`tk-field tk-stop-position${movedHere ? " is-changed" : ""}`} data-tk-tip="Position">
               <TextField
                 label={`Stop ${index + 1} at`}
                 value={`${s.position}${s.unit}`}
@@ -2239,10 +2239,10 @@ function ColorValue({ name, color, onChange, offered, onOpen }: {
   if (offered?.bound) {
     return (
       <>
-        <button type="button" class="tk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" title={`${offered.bound.name}: ${offered.bound.value}`} onClick={onOpen}>
+        <button type="button" class="tk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" data-tk-tip={`${offered.bound.name}: ${offered.bound.value}`} onClick={onOpen}>
           {offered.bound.name}
         </button>
-        <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} color variable`} title="Detach variable" onClick={() => offered.onPick(null)}>
+        <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} color variable`} data-tk-tip="Detach variable" onClick={() => offered.onPick(null)}>
           <Icon name="detach" />
         </button>
       </>
@@ -2317,7 +2317,7 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property, part);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} title={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
       <Scrub icon={icon} glyph={glyph} small={small} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}

@@ -1086,6 +1086,32 @@ async function holdGrip(page: Page, field: Locator, steps: number) {
   return at;
 }
 
+test("a field pointed at tells its name in the editor's dark tip, above it, after a rest; nothing has the browser's gray one (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  // No title but the views' frames', which name them and show no tip.
+  expect(await page.locator("third-kind").evaluate((host) => [...host.shadowRoot!.querySelectorAll("[title]")].filter((el) => el.localName !== "iframe").length)).toBe(0);
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const tip = page.getByRole("tooltip");
+  await field.hover();
+  await expect(tip).toHaveText("Corner radius");
+  const tipBox = await steadyBox(tip);
+  const fieldBox = await steadyBox(field);
+  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(fieldBox.y);
+  expect(Math.abs(tipBox.x + tipBox.width / 2 - (fieldBox.x + fieldBox.width / 2))).toBeLessThanOrEqual(1);
+  expect(await tip.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(23, 23, 22)");
+  await expect(field).toHaveAttribute("aria-describedby", "tk-tip");
+  // Warm, another shows at once.
+  await page.locator('.tk-field:has([aria-label="Opacity"])').first().hover();
+  await expect(tip).toHaveText("Opacity");
+  await expect(field).not.toHaveAttribute("aria-describedby");
+  // A press hides it, till the pointer leaves.
+  await page.mouse.down();
+  await expect(tip).toHaveCount(0);
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  await expect(tip).toHaveCount(0);
+});
+
 test("every number that can be dragged has a grip at its right end, after its value, left of its reset once changed (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   for (const label of ["Width", "Height", "Gap", "Corner radius", "Opacity"]) {
@@ -1732,7 +1758,7 @@ test("a gradient's angle changed in the picker is marked, with no reset inside t
   const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
   await openFill(fill);
   const angle = fill.getByRole("textbox", { name: "Angle", exact: true });
-  const angleField = fill.locator("label.tk-field[title='Angle']");
+  const angleField = fill.locator("label.tk-field[data-tk-tip='Angle']");
   await expect(angle).toHaveValue("45");
   const stopField = fill.locator(".tk-stop-position").first();
   const width = (await steadyBox(stopField)).width;

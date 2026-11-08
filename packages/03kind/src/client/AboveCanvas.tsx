@@ -44,7 +44,7 @@ export function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
       // A press here is not on the canvas.
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <button type="button" class="tk-brief-button" aria-expanded={open} title={brief || undefined} onClick={() => setOpen(!open)}>
+      <button type="button" class="tk-brief-button" aria-expanded={open} data-tk-tip={brief || undefined} onClick={() => setOpen(!open)}>
         <Icon name="brief" />
         {brief ? "Brief" : "Add brief"}
       </button>
@@ -102,7 +102,7 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote }: Se
       onPointerDown={(event) => event.stopPropagation()}
     >
       {/* States (second version, ADR 0007): first in the row, for a component. */}
-      <button type="button" class="tk-selection-tool" title={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
+      <button type="button" class="tk-selection-tool" data-tk-tip={`Make these changes to ${component} itself, for every usage of it`} onClick={() => onPromote(layer)}>
         <Icon name="promote" />
         Promote
       </button>

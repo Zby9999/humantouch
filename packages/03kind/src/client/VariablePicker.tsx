@@ -173,7 +173,7 @@ function Option({ as, id, entry, selected, onChoose, onPick }: {
       class="tk-variable-option"
       aria-selected={selected}
       aria-label={variable.name}
-      title={`${variable.name}: ${variable.value}`}
+      data-tk-tip={`${variable.name}: ${variable.value}`}
       onClick={() => onPick(entry)}
     >
       <Preview drawn={drawn} />
@@ -312,12 +312,12 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
             class="tk-variable-chip-name"
             aria-label={`${label} variable`}
             aria-haspopup="dialog"
-            title={`${bound.name}: ${bound.value}`}
+            data-tk-tip={`${bound.name}: ${bound.value}`}
             onClick={(event) => setOpen(open ? null : event.currentTarget)}
           >
             {bound.name}
           </button>
-          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} title="Detach variable" onClick={() => pick(null)}>
+          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} data-tk-tip="Detach variable" onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
           {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
@@ -526,7 +526,7 @@ export function useTypeahead({ text, value, focused, input, reset }: {
             type="button"
             class="tk-variable-hint"
             aria-label={`Use variable ${near.variable.name}`}
-            title={`Close to ${near.variable.name} (${valueText(near.drawn)}): use it`}
+            data-tk-tip={`Close to ${near.variable.name} (${valueText(near.drawn)}): use it`}
             // A press keeps the field typed into: what is typed is not applied on the way.
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => pick(near)}

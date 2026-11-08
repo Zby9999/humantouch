@@ -1803,6 +1803,19 @@ export const styles = /* css */ `
   transform: translate(-50%, -100%);
   pointer-events: none;
 }
+/*
+ * Any other tip (Tips): the same, over all of the editor layer, in the editor's type, placed by Tips; a long one wraps. Shown after the
+ * pointer rests, it fades in growing from 0.97 toward what it tells of; warm, or by focus, it is there at once; with reduced motion, it
+ * only fades (designer, 2026-11-08).
+ */
+.tk-variants-tip.tk-tip { z-index: 2147483647; display: block; max-width: 240px; font: 400 11px/16px ${EDITOR_FONT}; -webkit-font-smoothing: antialiased; white-space: normal; transform: none; }
+@media (hover: hover) and (pointer: fine) {
+  .tk-variants-tip.tk-tip.is-easing { transition: opacity ${TIP_IN_MS}ms ${EASE_OUT}, transform ${TIP_IN_MS}ms ${EASE_OUT}; }
+  @starting-style { .tk-variants-tip.tk-tip.is-easing { opacity: 0; transform: scale(0.97); } }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  @starting-style { .tk-variants-tip.tk-tip.is-easing { transform: none; } }
+}
 .tk-variants-tip-name { font-weight: 500; }
 .tk-variants-tip-value { color: #a0a19f; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tk-variants-tip-hint { color: #a0a19f; }
