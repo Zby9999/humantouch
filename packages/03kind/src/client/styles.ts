@@ -193,6 +193,8 @@ export const styles = /* css */ `
   z-index: 2147483646;
   display: grid;
   grid-template-columns: var(--tk-layers-width) minmax(0, 1fr) var(--tk-design-width);
+  /* The canvas's gray under the panels: as they fade out on leaving, the canvas shows there, not the page under the editor (designer, 2026-11-08). */
+  background: var(--tk-canvas);
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--tk-text);
   /* Grayscale smoothing for the editor's UI, its muted labels kept at 500 (designer, 2026-11-08); the page on the canvas is in iframes, so it doesn't inherit this. */
@@ -1181,8 +1183,11 @@ export const styles = /* css */ `
   color: var(--tk-text-muted);
 }
 .tk-viewport.is-panning { cursor: grabbing; }
-/* While the page shrinks into the canvas or grows back, it passes over the panels. */
-.tk-viewport.is-travelling { overflow: visible; }
+/*
+ * While the page shrinks into the canvas or grows back, it passes over the panels: drawn above all of the shell, the
+ * tools, the Layers' chevrons and any menu open (z-index up to 3) too, so nothing of the editor shows on it (designer, 2026-11-08).
+ */
+.tk-viewport.is-travelling { overflow: visible; z-index: 4; }
 .tk-stage {
   position: absolute;
   top: 0;

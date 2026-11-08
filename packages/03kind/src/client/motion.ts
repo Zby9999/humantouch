@@ -9,6 +9,12 @@ export const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
 export const MODE_SWITCH_MS = 240;
 /** How long the locked toggle is pressed and held to unlock it; a ring runs out meanwhile. */
 export const UNLOCK_HOLD_MS = 1000;
+/**
+ * Leaving edit mode, the panels and the tools fade out, 8px outward, at once and quicker than the page grows
+ * (designer, 2026-11-08): gone before the page's edge reaches them (about 80ms in), so no panel shows beside a
+ * page that already seems to fill the window.
+ */
+export const PANEL_EXIT_MS = 100;
 /** With reduced motion, the editor fades in and out instead. */
 export const MODE_FADE_MS = 150;
 /** A toast fading in and out; with reduced motion, it only fades. */

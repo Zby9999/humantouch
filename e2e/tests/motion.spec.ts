@@ -1,4 +1,4 @@
-import { expect, test, type CDPSession, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type CDPSession, type Page } from "./fixtures";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 
 test.use({ reducedMotion: "no-preference" });
@@ -138,6 +138,44 @@ test("going back to preview grows the canvas back over the page before the edito
   await expect(canvasIframe(page)).toHaveCount(0);
   await page.getByRole("button", { name: "Get started" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("going back to preview, the panels are gone before the growing canvas reaches them, and it is drawn above what is left", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expectSettled(page);
+  await canvasInPlace(page);
+  const layers = await steadyBox(page.getByRole("complementary", { name: "Layers" }));
+  const layersRight = layers.x + layers.width;
+  await playbackRate(cdp, 0);
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect.poll(() => page.evaluate(() => document.querySelector("third-kind")!.shadowRoot!.getAnimations().length)).toBeGreaterThan(0);
+
+  /** The editor's animations held `t` ms in: where the canvas's left edge is, how visible the Layers panel is, and what is drawn on top where the tools are. */
+  const at = (t: number) =>
+    page.evaluate((t) => {
+      const root = document.querySelector("third-kind")!.shadowRoot!;
+      for (const animation of root.getAnimations()) {
+        animation.pause();
+        animation.currentTime = t;
+      }
+      const layers = root.querySelector(".tk-panel.is-layers")!;
+      const tools = root.querySelector(".tk-tools")!.getBoundingClientRect();
+      return {
+        left: root.querySelector('iframe[title="Canvas"]')!.getBoundingClientRect().left,
+        opacity: Number(getComputedStyle(layers).opacity),
+        onTools: root.elementFromPoint(tools.left + tools.width / 2, tools.top + tools.height / 2)?.className,
+      };
+    }, t);
+
+  let passed = null;
+  for (let t = 0; t <= 240 && !passed; t += 10) {
+    const now = await at(t);
+    if (now.left < layersRight) passed = now;
+  }
+  expect(passed).not.toBeNull();
+  expect(passed!.opacity).toBeLessThanOrEqual(0.05);
+  // Grown, the canvas covers the tools: they are under it, not on it.
+  expect((await at(240)).onTools).toContain("tk-stage");
 });
 
 /** Gives the three cards of the loop a red fill. */
