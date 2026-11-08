@@ -212,6 +212,12 @@ export interface MenuItem {
   preview?: ComponentChildren;
   heading?: string;
   /**
+   * What it is, more than its label shows, while a mouse points at it: drawn
+   * from where it is (`at`) and the panel it is in (`beside`), as a shadow
+   * Variable's layers beside the menu, as the Variants tab has them (designer, 2026-11-08).
+   */
+  details?(at: DOMRect, beside: DOMRect): ComponentChildren;
+  /**
    * 1: in a second panel, to the left of the others: the shadow Variables
    * beside the effect types, which stay nearer the button, so the menu is not
    * one tall strip (designer, 2026-11-08). With no such item, or only such
@@ -279,16 +285,21 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
 }) {
   const box = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  /** Where it is: under its button, or over it when there is no room under; two panels then have their feet level, by the button (designer, 2026-11-08). */
+  const [place, setPlace] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  /** The item a mouse points at that has details to show, where it is, and the panel it is in. */
+  const [pointed, setPointed] = useState<{ index: number; at: DOMRect; beside: DOMRect } | null>(null);
   const [active, setActive] = useState(() => items.findIndex((item) => !item.disabled));
   const id = useId();
   useLayoutEffect(() => {
     const at = anchor.getBoundingClientRect();
     const { offsetWidth: width, offsetHeight: height } = box.current!;
     const below = at.bottom + 4;
+    const above = below + height + GAP > window.innerHeight;
     setPlace({
       left: Math.max(GAP, Math.min(at.right - width, window.innerWidth - width - GAP)),
-      top: below + height + GAP <= window.innerHeight ? below : Math.max(GAP, at.top - 4 - height),
+      top: above ? Math.max(GAP, at.top - 4 - height) : below,
+      above,
     });
   }, [anchor]);
   // Focused once placed: until then it is hidden, and a hidden list takes no focus (its keys went to the canvas).
@@ -363,7 +374,13 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
         aria-selected={false}
         aria-disabled={item.disabled || undefined}
         onPointerDown={(event) => event.preventDefault()}
-        onPointerEnter={() => !item.disabled && setActive(i)}
+        onPointerEnter={(event) => {
+          if (!item.disabled) setActive(i);
+          if (!item.details || event.pointerType !== "mouse") return;
+          const el = event.currentTarget;
+          setPointed({ index: i, at: el.getBoundingClientRect(), beside: (el.closest(".tk-menu-column") ?? el).getBoundingClientRect() });
+        }}
+        onPointerLeave={() => setPointed(null)}
         onClick={(event) => {
           event.preventDefault();
           if (!item.disabled) onChoose(item.value);
@@ -377,7 +394,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
   return (
     <div
       ref={box}
-      class={`tk-menu is-plain${columns ? " is-split" : ""}${leaving ? " is-leaving" : ""}`}
+      class={`tk-menu is-plain${columns ? " is-split" : ""}${place?.above ? " is-above" : ""}${leaving ? " is-leaving" : ""}`}
       role="dialog"
       {...leavingProps(leaving)}
       aria-label={label}
@@ -400,6 +417,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
             ))
           : items.map(option)}
       </div>
+      {pointed && !leaving && items[pointed.index]?.details?.(pointed.at, pointed.beside)}
     </div>
   );
 }

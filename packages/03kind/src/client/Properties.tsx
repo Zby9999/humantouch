@@ -38,6 +38,7 @@ import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, typ
 import { weightName } from "../design-values";
 import { ColorPanel } from "./ColorPanel";
 import { ColorPicker, namesColor, Preview, TypingProvider, useCatalog, useTypeahead, VariableSlot, type Slot } from "./VariablePicker";
+import { ShadowDetails } from "./VariantsPanel";
 import { GROUPS, sameVariable, withPart, type Resolved } from "./variables";
 
 interface Props {
@@ -2012,6 +2013,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
       value: `variable ${entry.variable.name}`,
       label: entry.variable.name,
       preview: <Preview drawn={entry.drawn} />,
+      // Pointed at, its layers, as the Variants tab shows them (designer, 2026-11-08).
+      details: (at: DOMRect, beside: DOMRect) => <ShadowDetails entry={entry} at={at} panel={beside} />,
       heading: i === 0 ? "Variables" : undefined,
       // In a column of their own, to the right of the types: the menu was one tall strip (designer, 2026-11-08).
       column: 1 as const,

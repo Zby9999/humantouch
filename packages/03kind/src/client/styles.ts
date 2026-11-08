@@ -1049,9 +1049,11 @@ export const styles = /* css */ `
 .tk-menu.is-plain .tk-menu-option { gap: 8px; padding-left: 8px; }
 .tk-menu-heading { margin-top: 4px; padding: 8px 8px 4px; border-top: 1px solid var(--tk-border); color: var(--tk-text-muted); font-weight: 500; }
 /* Two panels side by side, as Effects' + has its types, nearer the button, and to their left its shadow Variables: each a menu's
-   panel of its own, 8px apart, tops aligned, each scrolling on its own when long (designer, 2026-11-08). */
+   panel of its own, 8px apart, tops aligned under the button, each scrolling on its own when long (designer, 2026-11-08). */
 .tk-menu.is-split { padding: 0; overflow: visible; background: none; box-shadow: none; }
 .tk-menu-list.is-columns { display: flex; align-items: flex-start; gap: 8px; }
+/* Over its button, their feet level, by the button. */
+.tk-menu.is-above .tk-menu-list.is-columns { align-items: flex-end; }
 .tk-menu-column {
   box-sizing: border-box;
   max-height: calc(100vh - 16px);

@@ -137,7 +137,7 @@ test("a field focused lists its group's Variables, the closest to its value firs
   await expect(design(page).getByRole("textbox", { name: "Corner radius" })).toHaveValue("14");
 });
 
-test("the menu of Effects' + is two panels: the effect types nearer the button, the shadow Variables in another to their left, tops aligned, wholly in the window; ← / → move between them (designer, 2026-11-08)", async ({ page }) => {
+test("the menu of Effects' + is two panels: the effect types nearer the button, the shadow Variables in another to their left, aligned by the button, wholly in the window; ← / → move between them; a shadow Variable pointed at shows its layers (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
   const add = design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" });
@@ -174,8 +174,30 @@ test("the menu of Effects' + is two panels: the effect types nearer the button, 
   await expect(active).toHaveText(await variables.getByRole("option").nth(1).innerText());
   await page.keyboard.press("ArrowRight");
   await expect(active).toHaveText("Inner shadow");
+
+  // A shadow Variable pointed at shows its layers, as the Variants tab does, at its panel's left.
+  const details = page.locator(".tk-variants-details");
+  const md = variables.getByRole("option", { name: "md", exact: true });
+  await md.hover();
+  await expect(details.locator(".tk-variants-details-name")).toHaveText("md");
+  await expect(details.locator(".tk-variants-details-title")).toHaveText(["Shadow 1", "Shadow 2"]);
+  const shown = await steadyBox(details);
+  expect(Math.round(shown.x + shown.width)).toBe(Math.round(left.x) - 8);
+  // Level with it, or risen to be whole in the window.
+  const row = await steadyBox(md);
+  expect(shown.y).toBeLessThanOrEqual(row.y + 1);
+  expect(Math.abs(shown.y - row.y) < 1 || Math.round(shown.y + shown.height) === window.height - 8).toBe(true);
+  await types.getByRole("option", { name: "Drop shadow" }).hover();
+  await expect(details).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
+
+  // With no room under the button, over it: the panels' feet level, the types' 4px over the button (designer, 2026-11-08).
+  await page.setViewportSize({ width: 1440, height: Math.round(button.y + button.height + 120) });
+  await add.click();
+  const over = await steadyBox(types);
+  expect(Math.round(over.y + over.height)).toBe(Math.round((await steadyBox(add)).y) - 4);
+  expect(Math.round((await steadyBox(variables)).y + (await steadyBox(variables)).height)).toBe(Math.round(over.y + over.height));
 });
 
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {

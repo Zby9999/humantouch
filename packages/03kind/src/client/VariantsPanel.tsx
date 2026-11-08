@@ -422,9 +422,9 @@ const BESIDE = 8;
  * panel's left, over the canvas, level with its tile (designer, 2026-11-08:
  * its CSS in one line was hard to read). Its name, then each shadow as the
  * Effects section has it: numbered, its type, X, Y, Blur and Spread, and its
- * color as a swatch, hex and opacity.
+ * color as a swatch, hex and opacity. Effects' + shows it too, at its Variables' panel's left (designer, 2026-11-08).
  */
-function ShadowDetails({ entry, at, panel }: { entry: Resolved; at: DOMRect; panel: DOMRect }) {
+export function ShadowDetails({ entry, at, panel }: { entry: Resolved; at: DOMRect; panel: DOMRect }) {
   const box = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(at.top);
   // Whole in the window: one taller than the room under its tile rises.
