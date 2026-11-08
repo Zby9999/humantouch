@@ -229,3 +229,24 @@
   - 类型检查通过；单元测试 1030 条通过（1 条跳过）。
   - 面板相关 e2e（breakpoints、create、edit-mode、grid、layers、layout、move-placement、play、properties、resize、snapping、style-isolation、text-in-a-box、undo、variables-late、variables）：205 条全部通过。
   - 整套 e2e、性能、toggle 大小留到这一轮交审前再跑。
+
+# 第 1 轮合进 main（规划会话，2026-11-09）
+
+设计师 2026-11-09 说第 1 轮已过，合进 main 为 f82af48。这一轮只跑了相关的 spec，整套验证时测量台（`bench:agents --dry`、`--scripted`）和 e2e 的 project files 那组坏了几处，合并后在 main 上修好（8b7c9dc、f387cb0、7eb334c、3282b82、1f26287），都只改测试和测量台，产品代码只动了改动说明里的一处：
+
+- Layers 每次进编辑模式都先收起：测量台原来写 localStorage 打开它，已失效。测试和测量台改为在编辑层的外壳放上页面的同一刻按 Show layers（`e2e/layers-on-entry.ts`），赶在画布第一次取景之前；晚了的话（React 18、Next 两个示例没有字体要等，取景更早），画布按 Layers 收起时的宽度取景，Layers 出来后手机视图整个落在 Design 面板下面。
+- 测量台的窗口仍是 1280×720（桌面视图的宽度进改动说明，例如「768px to 1279px」，要和 ticket 88 比），面板加宽后画布只剩 640px、缩放更小：测量台按页面的 px 点选、画文字，不再按屏幕 px。
+- 改动列表标题的字重（500）、锁定时进度环（1.5px、紧贴按钮）两条测试照设计师最后的样子更新。
+- 尺寸改动的 Currently set by 只在图层是 Grid 的格子时才列出 `justify-self`（f046089 加的），其他图层的改动说明和第 1 轮之前逐字一样（24 个场景 `--claim-out` 对比全同）。
+
+验证：单元测试 1056 条、node 测试 125 条、e2e 540 条全过，`--dry` 24/24，`--scripted` 15/15。headless 性能（只作前后对比）：进编辑模式中位 120.5 → 125.2ms，p95 142.2 → 150.7ms；改圆角 13.8 → 15.8ms、改 Stack 间距 13.8 → 17.0ms；拖动 60fps；改尺寸中位 60 → 57.6fps。切换按钮 gzip 10116 B（Vite 提供时，上限 10240 B），发布的包 9958 B。
+
+## 留给设计师（第 2 轮或另定）
+
+- 进入编辑模式后再打开 Layers，画布不重新取景、整体往右推，桌面视图旁边的视图会落到 Design 面板下面（设计师照常操作时也会遇到）。要不要打开、收起 Layers 时保持画布上的内容不动，或重新取景，等设计师定。
+- 竖排工具栏在 1280px 宽的窗口里压住手机视图的右边一截（比 1440 下的 6×20px 多）。
+- 没选图层时面板标题写 Variants，列的是项目的设计变量（GLOSSARY「设计变量 (Variable)」）；Figma 里 variants 指组件的变体，ADR 0007 的组件沙盒也按那个意思用。建议改成 Variables，等设计师定。
+- 描边：只有某几条边有描边时，粗细拖到 0 再拖回来会变成四边都有（子 agent 报的遗留）；落地后 `border: 0 solid` 又读成没有描边。
+- Grid 格子的 Hug / Fill（f046089）在 Agent 那边还没跟上：写法规则只讲 Stack、核对把格子里的 `w-full` 读成 Fixed，记进了 ticket 109。
+- 进编辑模式的余量又少了约 5ms（ticket 105 发布后做）。
+- 这份记录还没有 11-09 的条目；「待定」里「打字时在文字里单击、双击」已在 11-08 做了。
