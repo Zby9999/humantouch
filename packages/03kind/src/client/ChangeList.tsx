@@ -56,8 +56,22 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
     }
     shown.current = changes;
   }
+  const latestOnClose = useRef(onClose);
+  latestOnClose.current = onClose;
   /** The list's height as last drawn: a row applied, it closes up over the rise, not at once. */
   const height = useRef(0);
+  /** Every change applied: the last row goes back as the others did, then the list leaves as a popover does (designer, 2026-11-09). */
+  const allApplied = readOnly && !changes.length;
+  const [closing, setClosing] = useState(false);
+  /** What the title counted last, kept as the last row goes. */
+  const counted = useRef(changes.length);
+  if (changes.length) counted.current = changes.length;
+  useLayoutEffect(() => {
+    if (!allApplied || leaving.current.length || closing) return;
+    // Opened with nothing left: nothing to see go.
+    if (!height.current) latestOnClose.current();
+    else setClosing(true);
+  });
   useLayoutEffect(() => {
     const rise = readOnly && !prefersReducedMotion();
     const moving: Animation[] = [];
@@ -72,6 +86,11 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
     }
     tops.current = next;
     const el = list.current!;
+    // The last row applied: the list keeps its height as it goes, till the list leaves.
+    if (allApplied) {
+      if (height.current) el.style.minHeight = `${height.current}px`;
+      return;
+    }
     const now = el.offsetHeight;
     if (rise && height.current && now < height.current) {
       moving.push(el.animate([{ height: `${height.current}px` }, { height: `${now}px` }], { duration: APPLIED_RISE_MS, easing: EASE_OUT }));
@@ -80,9 +99,6 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
     // Risen, the list scrolls as far as its rows go, no further: its edges' fades as they are then.
     if (moving.length) void Promise.all(moving.map((animation) => animation.finished)).then(measure, () => {});
   });
-  const latestOnClose = useRef(onClose);
-  latestOnClose.current = onClose;
-
   // As it goes on the page, not a frame later: a key pressed meanwhile would go to what opened it, and Esc would not close it.
   useLayoutEffect(() => {
     if (takeFocus) dialog.current!.focus({ preventScroll: true });
@@ -132,12 +148,23 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
     opener?.focus();
   };
 
-  const count = changes.length === 1 ? "1 change" : `${changes.length} changes`;
+  const shownCount = allApplied ? counted.current : changes.length;
+  const count = shownCount === 1 ? "1 change" : `${shownCount} changes`;
   return (
-    <div ref={dialog} class="tk-changes" role="dialog" aria-label="Changes" tabIndex={-1} onKeyDown={onKeyDown}>
+    <div
+      ref={dialog}
+      class={closing ? "tk-changes is-leaving" : "tk-changes"}
+      role="dialog"
+      aria-label="Changes"
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      onTransitionEnd={(event) => {
+        if (closing && event.target === event.currentTarget && event.propertyName === "opacity") latestOnClose.current();
+      }}
+    >
       <h2 class="tk-changes-title">{count} not applied yet</h2>
       {readOnly && <p class="tk-changes-note">The Agent is applying these changes.</p>}
-      {!changes.length && <p class="tk-changes-note">No changes left.</p>}
+      {!changes.length && !readOnly && <p class="tk-changes-note">No changes left.</p>}
       <ul
         ref={list}
         class={["tk-changes-list", hidden.above && "is-above", hidden.below && "is-below"].filter(Boolean).join(" ")}

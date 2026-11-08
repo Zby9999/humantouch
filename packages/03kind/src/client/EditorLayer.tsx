@@ -353,8 +353,9 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     if (mode === "preview") performance.mark(ENTER_MARK);
     setMode(mode === "edit" ? (animate ? "leaving" : "preview") : "edit");
   };
-  // With no canvas up, the list stays open once its last change is undone: ⌘Z can bring it back.
-  const list = listOpen && (listed.length > 0 || (!shellShown.current && listSteps.current.past.length > 0)) && (
+  // With no canvas up, the list stays open once its last change is undone: ⌘Z can bring it back. Claimed, it stays as its last
+  // change is applied, to see it go, and then leaves by itself.
+  const list = listOpen && (listed.length > 0 || !!claimed || (!shellShown.current && listSteps.current.past.length > 0)) && (
     <ChangeList
       changes={listed}
       readOnly={!!claimed}
