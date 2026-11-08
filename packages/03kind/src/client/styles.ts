@@ -13,15 +13,16 @@ export const styles = /* css */ `
 /* The toggle while the Agent applies the round: a ring fills as changes are done. */
 .tk-progress {
   position: absolute;
-  /* Around the toggle, at the start of the row, the count after it: on a right-to-left page too. */
-  top: -4px;
-  inset-inline-start: -4px;
-  width: 48px;
-  height: 48px;
+  /* Round the toggle, in its column's 4px padding: at its top, or at its foot in a bottom corner, the toggle there. */
+  top: 0;
+  left: calc(50% - 18px);
+  width: 36px;
+  height: 36px;
   pointer-events: none;
 }
-/* A rounded square, as far out as the circle was, its corners 2px rounder than the toggle's (designer, 2026-11-08). */
-.tk-progress rect { x: 2px; y: 2px; width: 44px; height: 44px; rx: 14px; fill: none; stroke-width: 2.5; stroke-dasharray: 1; }
+.tk-dock[data-corner^="bottom"] .tk-progress { top: auto; bottom: 0; }
+/* A rounded square 2px out from the toggle, its corners 2px rounder than the toggle's (designer, 2026-11-08). */
+.tk-progress rect { x: 2px; y: 2px; width: 32px; height: 32px; rx: 8px; fill: none; stroke-width: 2.5; stroke-dasharray: 1; }
 .tk-progress-track { stroke: rgb(30 30 30 / 0.16); }
 .tk-progress-done {
   stroke: #0d99ff;
@@ -29,46 +30,47 @@ export const styles = /* css */ `
   transition: stroke-dashoffset 240ms ${EASE_OUT};
 }
 /* Pressed and held: the ring that runs out when the toggle unlocks. */
-.tk-progress-hold { stroke: #fff; stroke-dashoffset: 1; opacity: 0; }
+.tk-progress-hold { stroke: #525351; stroke-dashoffset: 1; opacity: 0; }
 .is-holding .tk-progress-hold { opacity: 1; animation: tk-hold var(--tk-hold) linear forwards; }
 @keyframes tk-hold { to { stroke-dashoffset: 0; } }
 
 /*
- * Changes not yet applied, counted on a button of their own beside the toggle: not a badge on its corner, too easily
- * pressed for the toggle. The two sit as one, 2px apart, their outer corners as round as the toggle's alone, the inner
- * ones squarer (designer, 2026-11-08). The count on the accent, as the count beside the Design title in edit mode, so
- * it reads as a count and not as a second toggle: the designer left the color to us, dark as the toggle being the other
- * choice (designer, 2026-11-08). It opens the change list. Corners by the row's start and end, for right-to-left pages.
+ * Changes not yet applied, counted on a button of their own after the toggle in its column: not a badge on its corner, too
+ * easily pressed for the toggle. As the count beside the Design title in edit mode, so it reads as a count and not as a
+ * second toggle (designer, 2026-11-08), and 28px as the toggle (designer, 2026-11-09). It opens the change list.
  */
-.tk-toggle-wrap { display: flex; gap: 2px; }
 /* Locked, the ring around the toggle needs the room. */
 .tk-toggle-wrap:has(.tk-progress) { gap: 6px; }
-.tk-toggle-wrap:has(.tk-toggle-count) .tk-toggle { border-start-end-radius: 4px; border-end-end-radius: 4px; }
 .tk-toggle-count {
   all: unset;
+  position: relative;
+  isolation: isolate;
   box-sizing: border-box;
-  min-width: 40px;
-  height: 40px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border-start-start-radius: 4px;
-  border-end-start-radius: 4px;
-  background: #008ff0;
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 1px 2px rgb(0 0 0 / 0.2),
-    0 4px 12px rgb(0 0 0 / 0.18);
-  color: #fff;
-  font: 600 13px/40px ${EDITOR_FONT};
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: #daecff;
+  font: 500 12px/28px ${EDITOR_FONT};
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   text-align: center;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background-color 120ms ease;
 }
-.tk-toggle-count:hover { background: #007dd2; }
-.tk-toggle-count:focus-visible { outline: 2px solid #0d99ff; outline-offset: 2px; }
+/* Drawn 24px, 2px in from its 28px, which it is clicked in still: the panel's count, as it is drawn (designer, 2026-11-09). */
+.tk-toggle-count::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  border-radius: 6px;
+  background: linear-gradient(#3fa5fe, #008ff0);
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
+}
+.tk-toggle-count:hover::before { background: linear-gradient(#008ff0, #007dd2); }
+.tk-toggle-count:focus-visible { outline: 2px solid #008ff0; outline-offset: 0; }
 
 /*
  * The change list: light as the editor's menus and popovers, in their colors, opening toward the middle of the window

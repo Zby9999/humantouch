@@ -29,7 +29,7 @@ test("page styles do not reach the editor layer", async ({ page }) => {
     const s = getComputedStyle(el);
     return { background: s.backgroundColor, radius: s.borderRadius, padding: s.padding, width: s.width };
   });
-  expect(toggleStyle).toEqual({ background: "rgb(30, 30, 30)", radius: "12px", padding: "0px", width: "40px" });
+  expect(toggleStyle).toEqual({ background: "rgb(255, 255, 255)", radius: "6px", padding: "0px", width: "28px" });
 
   await toggle.click();
   const panelTitle = page.getByRole("complementary", { name: "Layers" }).getByRole("heading");

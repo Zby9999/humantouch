@@ -188,15 +188,14 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
           }}
         >
           {/*
-           * IconMCP's Pointer, in place of a cursor in a frame drawn for the toggle (designer, 2026-11-08): its path as
-           * `icons.tsx` has it, to two decimals rather than three, for the toggle's budget. 15.5px, its line 1.15 of its 16, growing
-           * with it (designer, 2026-11-08, tuned with DialKit).
+           * A pencil, for editing (designer, 2026-11-09), as the editor's icons are drawn: 13.5px, its line 1.05px on screen
+           * (1.24 of its 16), round at its ends and corners.
            */}
-          <svg width="15.5" height="15.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M2.64 2.83L6.85 13.14C6.91 13.27 7.09 13.27 7.13 13.14L8.73 8.82C8.74 8.77 8.77 8.74 8.82 8.73L13.14 7.13C13.27 7.09 13.27 6.91 13.14 6.85L2.83 2.64C2.71 2.59 2.59 2.71 2.64 2.83ZM9.25 9.25 13.25 13.25" />
+          <svg width="13.5" height="13.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13.05 5.15a.55.55 0 0 0-2.19-2.19L3.51 10.3a1.1 1.1 0 0 0-.27.46l-.73 2.39a.28.28 0 0 0 .34.34l2.39-.73a1.1 1.1 0 0 0 .46-.27zM9.65 4.15l2.2 2.2" />
           </svg>
         </button>
-        {/* Not a badge on the toggle's corner, too easily pressed for it, but a button of its own beside it, the two as one (designer, 2026-11-08). */}
+        {/* Not a badge on the toggle's corner, too easily pressed for it, but a button of its own after it, the two as one (designer, 2026-11-08). */}
         {changeCount > 0 && (
           <button
             type="button"
