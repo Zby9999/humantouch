@@ -98,7 +98,7 @@ export const TIP_GRACE_MS = 300;
 /**
  * A level closed in the Layers (designer, 2026-11-08): its rows go `LAYERS_FOLD_RISE_PX` up and fade over
  * `LAYERS_FOLD_MS`, however many they are, while the rows after rise into their places with them. With reduced
- * motion it closes at once.
+ * motion it closes at once. An effect folded in the Design panel goes the same way, what comes after it rising (designer, 2026-11-08).
  */
 export const LAYERS_FOLD_MS = 200;
 export const LAYERS_FOLD_RISE_PX = 8;

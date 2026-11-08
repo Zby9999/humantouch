@@ -6,7 +6,7 @@ import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, Pr
 import { ChangeMarksProvider, NO_MARKS, ResetButton, resetJustClicked, STACK_PROPERTIES, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
 import { matchItems } from "./list-match";
 import { Icon, type IconName } from "./icons";
-import { DIGIT_BLUR_PX, DIGIT_FADE_MS, DIGIT_ROLL_EM, DIGIT_ROLL_MS, EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_PX, prefersReducedMotion, RESET_POP_MS } from "./motion";
+import { DIGIT_BLUR_PX, DIGIT_FADE_MS, DIGIT_ROLL_EM, DIGIT_ROLL_MS, EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_PX, LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX, prefersReducedMotion, RESET_POP_MS } from "./motion";
 import { GridSection } from "./GridSection";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
@@ -1962,6 +1962,70 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
   const blurs = { layerBlur, backgroundBlur };
   /** The effects whose details are folded away, by their groups' names: each shown unless folded (designer, 2026-11-08). */
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const sectionEl = useRef<HTMLElement>(null);
+  /** An effect's details folding away: their copies and the motion, finished at once as another folds or opens. */
+  const folding = useRef<{ copies: HTMLElement; motion: Animation[] } | null>(null);
+  /** The panel's sections and the effects, and where each was as an effect folded: they move from there (`useLayoutEffect`). */
+  const rising = useRef<{ els: HTMLElement[]; tops: number[] } | null>(null);
+  const settleFold = () => {
+    folding.current?.motion.forEach((animation) => animation.finish());
+    folding.current?.copies.remove();
+    folding.current = null;
+  };
+  /**
+   * The effect `name` folded, as a level closes in the Layers (designer, 2026-11-08): its details, copied as they are, go a little way
+   * up and fade, while what comes after (the effects below it, the sections below them) rises from where it was into its place, in
+   * step; the copies show only above it, clipped at their foot as it comes, so the two never cross. With the panel scrolled to its end,
+   * the panel, shorter, scrolls back: what is above then comes down from where it was instead, the copies with it.
+   */
+  const foldAway = (name: string) => {
+    const section = sectionEl.current;
+    const group = [...(section?.children ?? [])].find((el): el is HTMLElement => el.classList.contains("tk-effect") && el.getAttribute("aria-label") === name);
+    const details = group ? ([...group.children].slice(1) as HTMLElement[]) : [];
+    if (!section || !group || !details.length) return;
+    const first = details[0];
+    const last = details[details.length - 1];
+    const copies = document.createElement("div");
+    copies.className = "tk-effect-fold";
+    copies.setAttribute("aria-hidden", "true");
+    copies.inert = true;
+    Object.assign(copies.style, { top: `${first.offsetTop}px`, height: `${last.offsetTop + last.offsetHeight - first.offsetTop}px`, width: `${group.offsetWidth}px` });
+    const inner = copies.appendChild(document.createElement("div"));
+    inner.className = "tk-effect";
+    for (const el of details) {
+      const copy = el.cloneNode(true) as HTMLElement;
+      // A field's value is its property, not its attribute: the copy shows what the field did.
+      const fields = (root: HTMLElement) => [...root.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")];
+      const copied = fields(copy);
+      fields(el).forEach((field, k) => (copied[k].value = field.value));
+      // Copies only: nothing named twice, no fields for screen readers.
+      for (const node of [copy, ...copy.querySelectorAll("*")]) for (const attr of node.getAttributeNames()) if (attr === "id" || attr === "role" || attr.startsWith("aria-")) node.removeAttribute(attr);
+      inner.append(copy);
+    }
+    group.append(copies);
+    const moving = [...(section.parentElement?.children ?? []), ...section.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== section);
+    rising.current = { els: moving, tops: moving.map((el) => el.getBoundingClientRect().top) };
+    const timing = { duration: LAYERS_FOLD_MS, easing: EASE_OUT };
+    const rise = inner.animate([{ transform: "none", opacity: 1 }, { transform: `translateY(${-LAYERS_FOLD_RISE_PX}px)`, opacity: 0 }], { ...timing, fill: "forwards" });
+    const clip = copies.animate([{ clipPath: "inset(0 0 0 0)" }, { clipPath: "inset(0 0 100% 0)" }], { ...timing, fill: "forwards" });
+    clip.onfinish = () => copies.remove();
+    folding.current = { copies, motion: [rise, clip] };
+  };
+  // Whatever an effect folded moved (what comes after it; with the panel scrolled to its end, what is above) moves from where it was, what is in view, in step with its details' copies.
+  useLayoutEffect(() => {
+    const was = rising.current;
+    rising.current = null;
+    if (!was || !folding.current) return;
+    was.els.forEach((el, k) => {
+      if (!el.isConnected) return;
+      const { top, bottom } = el.getBoundingClientRect();
+      const from = was.tops[k] - top;
+      const seen = (at: number, end: number) => end > 0 && at < innerHeight;
+      if (from && (seen(top, bottom) || seen(top + from, bottom + from))) {
+        folding.current!.motion.push(el.animate([{ transform: `translateY(${from}px)` }, { transform: "none" }], { duration: LAYERS_FOLD_MS, easing: EASE_OUT }));
+      }
+    });
+  });
   const fold = (name: string) => {
     const open = !folded.has(name);
     return {
@@ -1970,12 +2034,17 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
         <FoldButton
           label={`${name} details`}
           open={open}
-          onToggle={() => setFolded((was) => {
-            const next = new Set(was);
-            if (open) next.add(name);
-            else next.delete(name);
-            return next;
-          })}
+          onToggle={() => {
+            settleFold();
+            // Folded, its details go up; opened, they are there at once, as a level opened in the Layers.
+            if (open && !prefersReducedMotion()) foldAway(name);
+            setFolded((was) => {
+              const next = new Set(was);
+              if (open) next.add(name);
+              else next.delete(name);
+              return next;
+            });
+          }}
         />
       ),
     };
@@ -2123,7 +2192,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     );
   };
   return (
-    <section class="tk-section" role="group" aria-label="Effects">
+    <section ref={sectionEl} class="tk-section" role="group" aria-label="Effects">
       <div class="tk-section-header">
         <h3 class="tk-section-title">Effects</h3>
         <SectionReset title="Effects" properties={["shadows", "layerBlur", "backgroundBlur"]} operations={operations} />

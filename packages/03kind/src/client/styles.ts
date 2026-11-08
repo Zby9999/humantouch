@@ -602,10 +602,11 @@ export const styles = /* css */ `
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
 .tk-tree-name { flex: none; }
 .tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }
-/* An effect's fold (Properties: FoldButton) is a layer's chevron, as a button (designer, 2026-11-08): the same look from these rules. */
+/* An effect's fold (Properties: FoldButton) is a layer's chevron, as a button (designer, 2026-11-08): the same look from these rules, 28px as the panel's other buttons. */
 .tk-fold { all: unset; position: relative; }
 .tk-tree-chevron { position: relative; z-index: 1; }
 :is(.tk-tree-chevron, .tk-fold) { display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
+.tk-fold { width: 28px; height: 28px; }
 :is(.tk-tree-chevron[data-open], .tk-fold) { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
 :is(.tk-tree-chevron[data-open="false"], .tk-fold[aria-expanded="false"]) .tk-icon { rotate: -90deg; }
 .tk-fold:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
@@ -883,7 +884,11 @@ export const styles = /* css */ `
 .tk-read-only { color: var(--tk-text-muted); }
 .tk-stop-position { flex: none; width: 48px; }
 /* Several effects: a rule between them, 4px either side; an effect's own rows 4px apart (designer, 2026-11-08). */
+/* Positioned: its details' copies fold up over it (Properties: EffectsSection). */
+.tk-effect { position: relative; }
 .tk-effect > * + * { margin-top: 4px; }
+/* An effect's details folded away, copied as they were: they go up and fade, shown only above the rows rising after them (designer, 2026-11-08). */
+.tk-effect-fold { position: absolute; left: 0; margin: 0; overflow: hidden; pointer-events: none; }
 .tk-effect + .tk-effect { padding-top: 4px; border-top: 1px solid var(--tk-border); }
 .tk-select.tk-effect-type { flex: 1; width: auto; min-width: 0; }
 /* A see-through color shows over a checkerboard, as in Figma. */

@@ -1189,6 +1189,30 @@ test.describe("with motion", () => {
     await expect.poll(() => gripShift(grip)).toBe(0);
     await expect.poll(() => grip.evaluate((el) => getComputedStyle(el).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
   });
+
+  test("an effect folded goes as a level closed in the Layers: its details' copies up 8px and fading, the effect after rising; opened, at once (designer, 2026-11-08)", async ({ page }) => {
+    await selectRow(page, "Card");
+    const effects = design(page).getByRole("group", { name: "Effects" });
+    await addEffect(effects, "Layer blur");
+    const shadow = effects.getByRole("group", { name: "Shadow 1", exact: true });
+    const copies = shadow.locator(".tk-effect-fold");
+    await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
+    // Folded at once for its readers: its fields gone, copies of them hidden from them, showing what they did.
+    await expect(shadow.getByRole("textbox")).toHaveCount(0);
+    await expect(copies).toHaveAttribute("aria-hidden", "true");
+    await expect(copies.locator("input").first()).toHaveValue("0");
+    const keyframes = await copies.evaluate((el) =>
+      el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
+    );
+    expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
+    expect(await effects.getByRole("group", { name: "Layer blur", exact: true }).evaluate((el) => el.getAnimations().length)).toBe(1);
+    // Then gone.
+    await expect(copies).toHaveCount(0);
+
+    await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
+    await expect(shadow.getByRole("textbox", { name: "Shadow 1 X" })).toBeVisible();
+    await expect(copies).toHaveCount(0);
+  });
 });
 
 test("with reduced motion, a number's grip does not sway as it is dragged", async ({ page }) => {
@@ -1920,19 +1944,21 @@ test("an effect's fold at its row's left, its type filling the row from 5px afte
   }
 });
 
-test("an effect's fold, as a layer's chevron in the Layers panel, folds its details away to its type and shows them again (designer, 2026-11-08)", async ({ page }) => {
+test("an effect's fold, as a layer's chevron in the Layers panel but 28px as the panel's buttons, folds its details away to its type and shows them again (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const effects = design(page).getByRole("group", { name: "Effects" });
   await addEffect(effects, "Layer blur");
   const shadow = effects.getByRole("group", { name: "Shadow 1", exact: true });
   const fold = shadow.getByRole("button", { name: "Shadow 1 details" });
   await expect(fold).toHaveAttribute("aria-expanded", "true");
-  // Its look the Layers' chevron's, open.
+  // Its look the Layers' chevron's, open; 28px.
   const look = (el: Locator) => el.evaluate((node) => {
     const style = getComputedStyle(node);
-    return { width: style.width, height: style.height, radius: style.borderRadius, background: style.backgroundColor, shadow: style.boxShadow, color: style.color };
+    return { radius: style.borderRadius, background: style.backgroundColor, shadow: style.boxShadow, color: style.color };
   });
   expect(await look(fold)).toEqual(await look(page.locator('.tk-tree-chevron[data-open="true"]').first()));
+  const box = await steadyBox(fold);
+  expect([box.width, box.height]).toEqual([28, 28]);
 
   await fold.click();
   await expect(fold).toHaveAttribute("aria-expanded", "false");
