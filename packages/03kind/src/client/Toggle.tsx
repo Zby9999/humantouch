@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { UNLOCK_HOLD_MS } from "./motion";
+import { UNLOCK_HOLD_MS } from "./toggle-motion";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
