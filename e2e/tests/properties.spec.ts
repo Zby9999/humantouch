@@ -436,11 +436,12 @@ test("a stroke: the page's own as it is; its weight and line, one side, each sid
   await sides.selectOption("All");
   await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("5px");
 
-  // A weight of 0 is no stroke.
+  // A weight of 0 is still a stroke, as in Figma.
   await weight.fill("0");
   await weight.press("Enter");
-  await expect.poll(async () => (await cardStyles(page, "borderStyle"))[0]).toBe("none");
-  await expect(stroke.getByRole("button", { name: "Add stroke" })).toBeVisible();
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px");
+  await expect(weight).toHaveValue("0");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("5px");
 
@@ -452,6 +453,52 @@ test("a stroke: the page's own as it is; its weight and line, one side, each sid
     "solid",
     "rgb(0, 0, 0)",
   ]);
+});
+
+test("a stroke at weight 0, typed or dragged, stays a stroke with its color and weight, and goes up again; only Remove stroke takes it off (designer, 2026-11-08)", async ({ page }) => {
+  // A drag of 1px at a time, each a round trip to the browser (ticket 93).
+  test.setTimeout(90_000);
+  await selectRow(page, "Card");
+  const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
+  const color = stroke.getByRole("textbox", { name: "Stroke color", exact: true });
+  const weight = stroke.getByRole("textbox", { name: "Stroke weight" });
+  await expect(weight).toHaveValue("1");
+
+  // Typed.
+  await weight.fill("0");
+  await weight.press("Enter");
+  await expect.poll(async () => [(await cardStyles(page, "borderWidth"))[0], (await cardStyles(page, "borderStyle"))[0]]).toEqual(["0px", "solid"]);
+  await expect(weight).toHaveValue("0");
+  await expect(color).toHaveValue("E7E5E4");
+  await expect(stroke.getByRole("combobox", { name: "Stroke style" })).toHaveValue("solid");
+  await expect(stroke.getByRole("combobox", { name: "Stroke sides" })).toHaveValue("all");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toHaveCount(0);
+
+  await weight.fill("2");
+  await weight.press("Enter");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("2px");
+
+  // Dragged on its icon, down past 0 and held there, then back up in another drag.
+  const icon = page.locator('.tk-field:has([aria-label="Stroke weight"]) .tk-scrub');
+  const { x, y } = await steadyBox(icon);
+  const drag = async (dx: number) => {
+    await page.mouse.move(x + 4, y + 4);
+    await page.mouse.down();
+    for (let i = 1; i <= Math.abs(dx); i++) await page.mouse.move(x + 4 + Math.sign(dx) * i, y + 4);
+    await page.mouse.up();
+  };
+  await drag(-5);
+  await expect(weight).toHaveValue("0");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px");
+  await expect(color).toHaveValue("E7E5E4");
+  await drag(2);
+  await expect(weight).toHaveValue("2");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("2px");
+
+  await stroke.getByRole("button", { name: "Remove stroke" }).click();
+  await expect.poll(async () => (await cardStyles(page, "borderStyle"))[0]).toBe("none");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toBeVisible();
+  await expect(weight).toHaveCount(0);
 });
 
 test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says so when it is rounded; it shows as set though a 1x screen draws it narrower", async ({ page }) => {

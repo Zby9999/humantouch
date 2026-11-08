@@ -559,6 +559,45 @@ describe("stroke", () => {
     expect(editor.read(layerOf(cards[1]), "stroke")).toEqual(stroke);
   });
 
+  test("a stroke at 0 stays a stroke, with its color and line, as in Figma; taken off, it is none; undone, the page's own again", () => {
+    const { doc, editor, changes, layerOf } = openCanvas();
+    const box = doc.getElementById("unmarked")!;
+    // Tailwind's preflight under a border of the page's own: a line of 0 on its own is no stroke.
+    box.style.cssText = "height: 40px; border: 0 solid #e5e7eb";
+    const layer = layerOf(box);
+    expect(editor.read(layer, "stroke")).toBeNull();
+    box.style.cssText = "height: 40px; border: 2px solid #ff0000";
+    const page = editor.read(layer, "stroke")!;
+
+    editor.set(layer, "stroke", { ...page, weight: 0 });
+    expect([style(box).borderTopWidth, style(box).borderTopStyle]).toEqual(["0px", "solid"]);
+    expect(editor.read(layer, "stroke")).toEqual({ color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
+    expect(changes.list()[0]).toMatchObject({
+      before: page,
+      after: { ...page, weight: 0 },
+      style: { "border-width": "0px", "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" },
+    });
+
+    // Its line changes at 0, and its weight goes up again.
+    editor.set(layer, "stroke", { ...page, weight: 0, style: "dashed" });
+    expect(editor.read(layer, "stroke")).toEqual({ ...page, weight: 0, style: "dashed" });
+    editor.set(layer, "stroke", { ...page, weight: 3 });
+    expect(editor.read(layer, "stroke")).toEqual({ ...page, weight: 3 });
+
+    editor.set(layer, "stroke", { ...page, weight: 0 });
+    editor.set(layer, "stroke", null);
+    expect(editor.read(layer, "stroke")).toBeNull();
+
+    editor.undo();
+    expect(editor.read(layer, "stroke")).toEqual({ ...page, weight: 0 });
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    expect(editor.read(layer, "stroke")).toEqual(page);
+    expect(changes.list()).toEqual([]);
+  });
+
   test("a change to the color or line alone leaves the weight out of its reference style, so the code keeps its own", () => {
     const { doc, editor, changes, layerOf } = openCanvas();
     doc.head.insertAdjacentHTML("beforeend", "<style>.half { border: 1.5px solid red } .through { --w: 1.5px; border: var(--w) solid red }</style>");
@@ -3707,6 +3746,22 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1, style: "solid" } });
     write("border: 1.25px solid #ff0000");
     expect(await check(page, change)).toEqual({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 1.25, style: "solid" } });
+  });
+
+  test("a stroke at 0 is shown by a border of 0, or none, as both draw nothing; not by one drawn", async () => {
+    const { page, editor, changes, board, write } = open();
+    write("border: 2px solid #ff0000");
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 2, style: "solid" });
+    editor.set(board, "stroke", { color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
+    const [change] = changes.list();
+    expect(change.after).toEqual({ color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
+
+    write("border: 0 solid #ff0000");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("");
+    expect(await check(page, change)).toEqual({ outcome: "shown" });
+    write("border: 2px solid #ff0000");
+    expect(await check(page, change)).toMatchObject({ outcome: "not shown" });
   });
 
   test("asked by done while the dev server brings the edit in, the page answers once it shows: still wrong, then right", async () => {

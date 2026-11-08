@@ -18,7 +18,23 @@ const SIDES = ["top", "right", "bottom", "left"];
  */
 export function readWrittenStroke(el: Element, colors: ColorReader): Stroke | null {
   const sides = readSides(el, colors);
-  return sides && asWritten(sides);
+  return sides ? asWritten(sides) : editedAtZero(el, colors);
+}
+
+/**
+ * A stroke an edit draws at 0, as in Figma: still a stroke, with its color and
+ * line, so its weight can go up again. Only an edit's line counts: the page's
+ * styles give many a layer a line of 0 (Tailwind's `border: 0 solid`), and
+ * those have no stroke.
+ */
+function editedAtZero(el: Element, colors: ColorReader): Stroke | null {
+  const line = declaredByEdit(el, "border-style");
+  if (!line || /^(none|hidden)$/.test(line)) return null;
+  return {
+    ...colors.color(getComputedStyle(el).getPropertyValue("border-top-color")),
+    weight: 0,
+    style: /^(dashed|dotted)$/.test(line) ? "dashed" : "solid",
+  };
 }
 
 /**
@@ -29,6 +45,8 @@ export function readWrittenStroke(el: Element, colors: ColorReader): Stroke | nu
  */
 export function showsStroke(el: Element, colors: ColorReader, after: Stroke | null, drawnAfter: Stroke | null): boolean {
   const sides = readSides(el, colors);
+  // A stroke at 0 draws nothing, as no stroke does.
+  if (after && perSide(after.weight).every((weight) => weight === 0)) after = drawnAfter = null;
   if (!sides || !after || !drawnAfter) return !sides && !after;
   const [weights, drawnWeights] = [perSide(after.weight), perSide(drawnAfter.weight)];
   const actual = asWritten(sides);
@@ -157,7 +175,7 @@ export function drawnStroke(doc: Document, stroke: Stroke | null): Stroke | null
 /**
  * A weight typed in, in 0.5px steps, what a 2x screen draws as written,
  * whatever screen it is typed on: down to the step below, and 0.5 for a weight
- * under it. 0 stays 0, no stroke.
+ * under it. 0 stays 0, a stroke drawn on no side.
  */
 export function stepped(weight: number): number {
   return weight > 0 ? Math.max(0.5, Math.floor(weight * 2) / 2) : 0;
