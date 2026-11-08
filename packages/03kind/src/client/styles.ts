@@ -209,7 +209,29 @@ export const styles = /* css */ `
 .tk-panel :is(input, textarea, [contenteditable="true"]) { user-select: text; -webkit-user-select: text; }
 /* The Layers panel starts hidden: the canvas takes its column, and a button at its top left brings it back. */
 .tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) 320px; }
-.tk-show-layers, .tk-stop-playing {
+/*
+ * Its size, corners, color and place on the screen those of the button in the Layers panel's top that hid them, so
+ * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 24px, 6px corners, the panel's padding
+ * from the left, centred on the 28px header from the top. Its gray is the canvas's own, so a hairline keeps it a button.
+ */
+.tk-show-layers {
+  all: unset;
+  position: absolute;
+  top: 18px;
+  left: 16px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--tk-button);
+  box-shadow: inset 0 0 0 0.5px var(--tk-border);
+  color: var(--tk-text);
+}
+.tk-show-layers:hover { background: var(--tk-border); }
+.tk-show-layers:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
+.tk-stop-playing {
   all: unset;
   position: absolute;
   top: 8px;
@@ -224,8 +246,8 @@ export const styles = /* css */ `
   box-shadow: 0 0 0 1px var(--tk-border), 0 2px 6px rgb(0 0 0 / 0.08);
   color: var(--tk-text);
 }
-:is(.tk-show-layers, .tk-stop-playing):hover { background: var(--tk-field); }
-:is(.tk-show-layers, .tk-stop-playing):focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
+.tk-stop-playing:hover { background: var(--tk-field); }
+.tk-stop-playing:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
 /* Playing: the canvas alone, at full size; a button at the top right goes back to editing. */
 .tk-shell.is-playing { grid-template-columns: minmax(0, 1fr); }
 .tk-shell.is-playing > :is(.tk-panel, .tk-show-layers) { display: none; }

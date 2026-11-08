@@ -608,8 +608,13 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const designing = !!(tree && editor && selected.length);
   return (
     <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
+      {/*
+        Keyed, the panels and the button keep their own elements: unkeyed, the Layers panel shown again took the Design
+        panel's, and with them, stale, its header's rule and 6px under it: a rule across the Layers that Figma has not
+        (designer, 2026-11-08). The Design panel was built anew besides.
+      */}
       {layersShown ? (
-        <aside class="tk-panel is-layers" aria-label="Layers">
+        <aside key="layers" class="tk-panel is-layers" aria-label="Layers">
           <div class="tk-panel-header">
             <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
@@ -628,7 +633,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           )}
         </aside>
       ) : (
-        <button ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+        <button key="show-layers" ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
       )}
@@ -796,7 +801,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
       {notice}
-      <aside class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
+      <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
         <div class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
           <h2 class="tk-panel-label">{designing ? "Design" : "Variants"}</h2>
