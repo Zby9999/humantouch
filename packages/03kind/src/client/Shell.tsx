@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound, Variable, VariableGroup } from "../service-protocol";
 import type { Property, PropertyValues } from "./property-table";
 import type { Camera } from "./camera";
@@ -111,20 +111,26 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
    * as they fit the window, the canvas keeping its room between them.
    */
   const shell = useRef<HTMLDivElement>(null);
-  const [setWidths, setSetWidths] = useState<Widths>(readWidths);
+  const [chosenWidths, setChosenWidths] = useState<Widths>(readWidths);
   const [room, setRoom] = useState(() => innerWidth);
   useEffect(() => {
     const onResize = () => setRoom(innerWidth);
     addEventListener("resize", onResize);
     return () => removeEventListener("resize", onResize);
   }, []);
-  const widths = fitWidths(setWidths, room, layersShown);
+  const widths = fitWidths(chosenWidths, room, layersShown);
   /** Dragged: the width shows at once, on the shell's style alone; the shell renders anew once let go. */
   const dragWidth = (panel: Panel) => (width: number) => shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
   const keepWidth = (panel: Panel) => (width: number) => {
-    setSetWidths((was) => ({ ...was, [panel]: width }));
+    setChosenWidths((was) => ({ ...was, [panel]: width }));
     writeWidth(panel, width);
   };
+  // After every render, the widths as fitted: a drag wrote them on the style itself, which the style prop, unchanged
+  // since, would not undo (a drag let go where it began, or the window resized meanwhile).
+  useLayoutEffect(() => {
+    shell.current?.style.setProperty("--tk-layers-width", `${widths.layers}px`);
+    shell.current?.style.setProperty("--tk-design-width", `${widths.design}px`);
+  });
 
   /** The toast at the bottom of the canvas: a new one takes the old one's place. */
   const [toast, setToast] = useState<ToastMessage | null>(null);

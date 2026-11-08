@@ -11,13 +11,13 @@ export interface Widths {
 
 /** The Layers: narrower, a few levels of names no longer show; wider, the canvas pays for little. Default as before. (designer, 2026-11-08) */
 export const LAYERS = { min: 200, initial: 320, max: 400 };
-/** The Design panel: no narrower than drawn, as its rows of two fields break below it (designer, 2026-11-08). */
+/** The Design panel: no narrower than drawn (designer, 2026-11-08); at 280px its rows still hold, but get cramped. */
 export const DESIGN = { min: 320, initial: 320, max: 480 };
 /** The room the canvas keeps between the panels, whatever they are set to, while the window has it (designer, 2026-11-08). */
 export const CANVAS_MIN = 400;
 
-const LIMITS: Record<Panel, { min: number; max: number }> = { layers: LAYERS, design: DESIGN };
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+export const LIMITS: Record<Panel, { min: number; max: number }> = { layers: LAYERS, design: DESIGN };
+export const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
 /**
  * The widths the panels take in a window `room` wide: each within its limits, then, short of room for the canvas,

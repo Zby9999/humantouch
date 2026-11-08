@@ -32,9 +32,9 @@ export const TOOL_SLIDE_MS = 200;
 export const POPOVER_EXIT_MS = 150;
 
 /**
- * A panel's resize handle appearing where the pointer rests on its edge: fading in and growing from half its height
+ * A panel edge's grip appearing where the pointer rests on its edge: fading in and growing from half its height
  * about its middle, at the pointer (designer, 2026-11-08). With reduced motion it only fades.
  */
-export const HANDLE_ENTER_MS = 150;
-/** The handle leaving as the pointer does, fading alone, a little faster than it came (designer, 2026-11-08). */
-export const HANDLE_EXIT_MS = 120;
+export const GRIP_ENTER_MS = 150;
+/** The grip leaving as the pointer does, fading alone, a little faster than it came (designer, 2026-11-08). */
+export const GRIP_EXIT_MS = 120;

@@ -21,10 +21,10 @@ async function edgeAt(page: Page, panel: "Layers" | "Design", y = 400) {
   return { x: box.x + box.width / 2, y };
 }
 
-/** The handle's look: whether it is shown, and its middle's height. */
-const handle = (page: Page, panel: "Layers" | "Design") =>
+/** The grip's look: whether it is shown, and its middle's height. */
+const grip = (page: Page, panel: "Layers" | "Design") =>
   edge(page, panel)
-    .locator(".tk-resizer-handle")
+    .locator(".tk-resizer-grip")
     .evaluate((el) => {
       const box = el.getBoundingClientRect();
       return { opacity: getComputedStyle(el).opacity, middle: Math.round(box.top + box.height / 2) };
@@ -41,31 +41,31 @@ test.beforeEach(async ({ page }) => {
   await page.goto(DEV_URL);
 });
 
-test("resting on a panel's edge a moment shows the handle at the pointer; passing over it doesn't", async ({ page }) => {
+test("resting on a panel's edge a moment shows the grip at the pointer; passing over it doesn't", async ({ page }) => {
   await enterEditMode(page);
   const at = await edgeAt(page, "Layers", 300);
   await expect(edge(page, "Layers")).toHaveCSS("cursor", "col-resize");
 
   await page.mouse.move(at.x, at.y);
   // Not at once: the pointer may only be passing.
-  expect((await handle(page, "Layers")).opacity).toBe("0");
+  expect((await grip(page, "Layers")).opacity).toBe("0");
   await page.mouse.move(at.x + 200, at.y);
   await page.waitForTimeout(300);
-  expect((await handle(page, "Layers")).opacity).toBe("0");
+  expect((await grip(page, "Layers")).opacity).toBe("0");
 
   await page.mouse.move(at.x, at.y);
-  await expect.poll(() => handle(page, "Layers")).toEqual({ opacity: "1", middle: 300 });
+  await expect.poll(() => grip(page, "Layers")).toEqual({ opacity: "1", middle: 300 });
   // It follows the pointer up and down.
   await page.mouse.move(at.x, 420);
-  await expect.poll(async () => (await handle(page, "Layers")).middle).toBe(420);
-  // The pointer gone, so is the handle.
+  await expect.poll(async () => (await grip(page, "Layers")).middle).toBe(420);
+  // The pointer gone, so is the grip.
   await page.mouse.move(at.x + 200, 420);
-  await expect.poll(async () => (await handle(page, "Layers")).opacity).toBe("0");
+  await expect.poll(async () => (await grip(page, "Layers")).opacity).toBe("0");
 
   // The Design panel's edge the same.
   const right = await edgeAt(page, "Design", 250);
   await page.mouse.move(right.x, right.y);
-  await expect.poll(() => handle(page, "Design")).toEqual({ opacity: "1", middle: 250 });
+  await expect.poll(() => grip(page, "Design")).toEqual({ opacity: "1", middle: 250 });
 });
 
 test("dragging an edge widens and narrows its panel within its limits, and the canvas takes the rest", async ({ page }) => {
@@ -114,7 +114,7 @@ test("the canvas keeps 400px between the panels: in a narrower window, a panel g
   expect(viewport.width).toBe(400);
 });
 
-test("pressed, the handle and the panel's whole edge take the accent; let go, the edge lets it go", async ({ page }) => {
+test("pressed, the grip and the panel's whole edge take the accent; let go, the edge lets it go", async ({ page }) => {
   await enterEditMode(page);
   const at = await edgeAt(page, "Design");
   await page.mouse.move(at.x, at.y);
@@ -122,7 +122,7 @@ test("pressed, the handle and the panel's whole edge take the accent; let go, th
   await page.mouse.down();
   await expect(edge(page, "Design")).toHaveClass(/is-pressed/);
   expect(await line(page, "Design")).toEqual({ color: "rgb(0, 143, 240)", opacity: "1", height: "720px" });
-  await expect(edge(page, "Design").locator(".tk-resizer-handle")).toHaveCSS("background-color", "rgb(0, 143, 240)");
+  await expect(edge(page, "Design").locator(".tk-resizer-grip")).toHaveCSS("background-color", "rgb(0, 143, 240)");
   await page.mouse.up();
   await expect.poll(async () => (await line(page, "Design")).opacity).toBe("0");
 });
@@ -153,8 +153,8 @@ test("focused, an edge moves with the arrow keys: 8px, 32px with Shift", async (
   await page.keyboard.press("Shift+ArrowLeft");
   await expect.poll(() => width(page, "Layers")).toBe(296);
   await expect(left).toHaveAttribute("aria-valuenow", "296");
-  // Focused from the keyboard, the handle shows, at once.
-  expect((await handle(page, "Layers")).opacity).toBe("1");
+  // Focused from the keyboard, the grip shows, at once.
+  expect((await grip(page, "Layers")).opacity).toBe("1");
 
   // The Design panel's edge moves the same way, which widens it leftward.
   const right = edge(page, "Design");

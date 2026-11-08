@@ -91,7 +91,7 @@ export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): H
   // A panel field with nothing typed in it, a slider, or a panel's edge: ⌘Z is the editor's.
   const field =
     target instanceof HTMLElement &&
-    ((target.classList.contains("tk-input") && !target.hasAttribute("data-tk-typing")) || /^(slider|separator)$/.test(target.getAttribute("role") ?? ""));
+    ((target.classList.contains("tk-input") && !target.hasAttribute("data-tk-typing")) || movesWithArrows(target));
   if (isEditable(target) && !field) return null;
   const command = editorCommand(event);
   if (command !== "undo" && command !== "redo") return null;
@@ -169,5 +169,10 @@ function takesText(target: EventTarget | undefined): boolean {
  * stops), or a panel's edge (designer, 2026-11-08).
  */
 export function isEditable(target: EventTarget | undefined): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || /^(slider|separator)$/.test(target.getAttribute("role") ?? ""));
+  return target instanceof HTMLElement && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName) || movesWithArrows(target));
+}
+
+/** A slider (a gradient's stop) or a panel's edge (designer, 2026-11-08): it moves with the arrow keys. */
+function movesWithArrows(target: HTMLElement): boolean {
+  return /^(slider|separator)$/.test(target.getAttribute("role") ?? "");
 }
