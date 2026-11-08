@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -179,15 +179,20 @@ export const styles = /* css */ `
   --tk-button: #e5e5e4; /* neutral 200: the buttons at the panels' tops */
   --tk-raised: #fafafa; /* neutral 50: the choice of a segmented control, the Layers' disclosures */
   --tk-tool-chosen: #ffffff; /* neutral 0: the tool chosen */
-  --tk-panel-label: #525351; /* neutral 600: what the Design panel shows */
+  /* The editor's prominent button, on the tool chosen's white: the chosen tool's backing, the Show layers button (designer, 2026-11-08). */
+  --tk-prominent-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  --tk-panel-label: #525351; /* neutral 600: the tools' icons */
   --tk-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
   --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variants tabs */
+  /* The panels' widths: each set by its edge (designer, 2026-11-08), on the shell's style, as panel-widths.ts fits them. */
+  --tk-layers-width: 320px;
+  --tk-design-width: 320px;
   color-scheme: light;
   position: fixed;
   inset: 0;
   z-index: 2147483646;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-columns: var(--tk-layers-width) minmax(0, 1fr) var(--tk-design-width);
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--tk-text);
   /* Grayscale smoothing for the editor's UI, its muted labels kept at 500 (designer, 2026-11-08); the page on the canvas is in iframes, so it doesn't inherit this. */
@@ -233,16 +238,17 @@ export const styles = /* css */ `
 .tk-panel { user-select: none; -webkit-user-select: none; }
 .tk-panel :is(input, textarea, [contenteditable="true"]) { user-select: text; -webkit-user-select: text; }
 /* The Layers panel starts hidden: the canvas takes its column, and a button at its top left brings it back. */
-.tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) 320px; }
+.tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) var(--tk-design-width); }
 /*
- * Its size, corners, color and place on the screen those of the button in the Layers panel's top that hid them, so
+ * Its size, corners and place on the screen those of the button in the Layers panel's top that hid them, so
  * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 24px, 6px corners, the panel's padding
- * from the left, centred on the 28px header from the top. Its gray is the canvas's own, so a hairline keeps it a button.
+ * from the left, centred on the 30px header from the top. Alone over the canvas, it is the editor's prominent button,
+ * the chosen tool's white and shadow (designer, 2026-11-08).
  */
 .tk-show-layers {
   all: unset;
   position: absolute;
-  top: 18px;
+  top: 19px;
   left: 16px;
   z-index: 1;
   display: grid;
@@ -250,11 +256,11 @@ export const styles = /* css */ `
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: var(--tk-button);
-  box-shadow: inset 0 0 0 0.5px var(--tk-border);
+  background: var(--tk-tool-chosen);
+  box-shadow: var(--tk-prominent-shadow);
   color: var(--tk-text);
 }
-.tk-show-layers:hover { background: var(--tk-border); }
+.tk-show-layers:hover { background: var(--tk-raised); }
 .tk-show-layers:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
 .tk-stop-playing {
   all: unset;
@@ -279,12 +285,73 @@ export const styles = /* css */ `
 .tk-shell.is-playing .tk-canvas { box-shadow: none; }
 .tk-stop-playing { left: auto; right: 8px; }
 
+/*
+ * A panel's inner edge, to resize it (designer, 2026-11-08): 6px straddling the edge, over the panel and the canvas.
+ * The pointer resting on it, the grip drawn in Figma (03 Kind, node 169:1379) shows at the pointer: a 10 × 48 pill
+ * of the accent, a 0.5px white outline. It fades in and grows from half its height about its middle, where the pointer
+ * is, and leaves by fading alone; with reduced motion it only fades. Pressed, the panel's whole edge takes the accent
+ * at once (Figma: node 169:958's left border), and lets it go over a field's state change.
+ */
+.tk-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.tk-resizer.is-layers { left: calc(var(--tk-layers-width) - 3px); }
+.tk-resizer.is-design { right: calc(var(--tk-design-width) - 3px); }
+/* The edge's line, inside the panel: the Layers' last pixel, the Design panel's first. */
+.tk-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--tk-accent);
+  opacity: 0;
+  transition: opacity ${FIELD_STATE_MS}ms ${EASE_OUT};
+}
+.tk-resizer.is-layers::before { left: 2px; }
+.tk-resizer.is-pressed::before { opacity: 1; transition: none; }
+.tk-resizer-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  width: 10px;
+  height: 48px;
+  margin: -24px 0 0 -5px;
+  border: 0.5px solid #ffffff; /* neutral 0 */
+  border-radius: 99px;
+  background: var(--tk-accent);
+  pointer-events: none;
+  opacity: 0;
+  transform: scaleY(0.5);
+  /* Leaving: a fade; at half its height again only once gone, so shown again meanwhile it doesn't grow twice. */
+  transition: opacity ${GRIP_EXIT_MS}ms ${EASE_OUT}, transform 0s linear ${GRIP_EXIT_MS}ms;
+}
+.tk-resizer.is-shown .tk-resizer-grip {
+  opacity: 1;
+  transform: none;
+  transition: opacity ${GRIP_ENTER_MS}ms ${EASE_OUT}, transform ${GRIP_ENTER_MS}ms ${EASE_OUT};
+}
+/* Focused from the keyboard: the grip there at once, no motion for a key. */
+.tk-resizer:focus-visible .tk-resizer-grip { opacity: 1; transform: none; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-resizer-grip { transform: none; }
+}
+
 /* The tools, at the top right of the canvas, 8px from the Design panel: one above another, the one chosen raised in white (designer, 2026-11-08). As high as the views' tops, under their labels: higher, they would cover the last view's label and its +. */
 /* Figma (03 Kind, node 169:1359): 4px around the tools, 3px between, a 0.5px neutral 300 outline; the icons neutral 600, the chosen one's neutral 500 (designer, 2026-11-08). */
 .tk-tools {
   position: absolute;
   top: 72px;
-  right: 328px;
+  right: calc(var(--tk-design-width) + 8px);
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -305,7 +372,7 @@ export const styles = /* css */ `
   height: 32px;
   border-radius: 8px;
   background: var(--tk-tool-chosen);
-  box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  box-shadow: var(--tk-prominent-shadow);
   transform: translateY(calc(var(--tk-tool-index, 0) * 35px));
 }
 .tk-tools-backing.is-sliding { transition: transform ${TOOL_SLIDE_MS}ms ${EASE_IN_OUT}; }
@@ -314,13 +381,21 @@ export const styles = /* css */ `
 }
 .tk-shell.is-playing > .tk-tools { display: none; }
 /* A tool's tip: the Variables' dark one, at the toolbar's left, 8px off it, level with the tool (designer, 2026-11-08). */
-.tk-variants-tip.tk-tools-tip { position: absolute; right: calc(100% + 8px); transform: translateY(-50%); }
+.tk-variants-tip.tk-tools-tip { position: absolute; right: calc(100% + 8px); transform: translateY(-50%); transform-origin: right center; }
+/* Shown after the pointer rests on a tool, it fades in growing from 0.97 toward the toolbar; warm, or by focus, it is there at once; with reduced motion, it only fades (designer, 2026-11-08). */
+@media (hover: hover) and (pointer: fine) {
+  .tk-variants-tip.tk-tools-tip.is-easing { transition: opacity ${TIP_IN_MS}ms ${EASE_OUT}, transform ${TIP_IN_MS}ms ${EASE_OUT}; }
+  @starting-style { .tk-variants-tip.tk-tools-tip.is-easing { opacity: 0; transform: translateY(-50%) scale(0.97); } }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  @starting-style { .tk-variants-tip.tk-tools-tip.is-easing { transform: translateY(-50%); } }
+}
 /* A toast, as in Figma: a dark pill of one line, at the bottom middle of the canvas, over it. */
 .tk-toasts {
   position: absolute;
   bottom: 16px;
-  left: 320px;
-  right: 320px;
+  left: var(--tk-layers-width);
+  right: var(--tk-design-width);
   z-index: 1;
   display: flex;
   justify-content: center;
@@ -352,13 +427,13 @@ export const styles = /* css */ `
 .tk-page-toasts {
   position: absolute;
   bottom: 16px;
-  left: 336px;
+  left: calc(var(--tk-layers-width) + 16px);
   z-index: 1;
   display: flex;
-  max-width: calc(100% - 672px);
+  max-width: calc(100% - var(--tk-layers-width) - var(--tk-design-width) - 32px);
   pointer-events: none;
 }
-.tk-shell:is(.is-layers-hidden, .is-playing) > .tk-page-toasts { left: 16px; max-width: calc(100% - 352px); }
+.tk-shell:is(.is-layers-hidden, .is-playing) > .tk-page-toasts { left: 16px; max-width: calc(100% - var(--tk-design-width) - 32px); }
 .tk-toast.is-page { display: flex; align-items: center; gap: 8px; }
 .tk-toast.is-page > span { overflow: hidden; text-overflow: ellipsis; }
 .tk-toast.is-page:has(.tk-button) { padding-block: 4px; padding-right: 4px; }
@@ -366,18 +441,44 @@ export const styles = /* css */ `
 @keyframes tk-toast-fade-in { from { opacity: 0; } }
 
 /*
- * A panel's top. The Layers': a button that hides them, and their title with a rule to the edge, as a section's.
- * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the way back at the right, a rule under them.
+ * A panel's top, one style for both (designer, 2026-11-08). The Layers': a button that hides them, and their title.
+ * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the
+ * way back at the right. Under both, the line the Design panel's had, inset by the panel's padding.
+ * Sticky, on the panel's own color: what scrolls up goes under it. It reaches over the panel's padding (16px) to the
+ * panel's edges, so nothing shows above or beside it; sticky keeps to the panel's padding, so it sticks 16px up.
+ * Scrolled, the line runs to the panel's edges, by its clip alone (designer, 2026-11-08).
  */
-.tk-panel-header { display: flex; align-items: center; gap: 4px; min-height: 28px; }
-.tk-panel.is-design > .tk-panel-header { min-height: 30px; padding-bottom: 6px; border-bottom: 1px solid var(--tk-border); }
-/* What the Design panel shows: Design, or Variants with nothing selected (designer, 2026-11-08). Its auto margin puts the count and the way back at the right. */
-.tk-panel-label { margin: 0 auto 0 2px; font: inherit; font-size: 12px; font-weight: 500; letter-spacing: -0.02em; color: var(--tk-panel-label); }
-.tk-panel-title {
+.tk-panel-header {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
   display: flex;
-  flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  min-height: 30px;
+  margin: -16px -16px 0;
+  padding: 16px 16px 7px;
+  background: var(--tk-panel);
+}
+.tk-panel-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--tk-border);
+  clip-path: inset(0 16px);
+  transition: clip-path ${HEADER_LINE_MS}ms ${EASE_OUT};
+  pointer-events: none;
+}
+.tk-panel[data-scrolled] > .tk-panel-header::after { clip-path: inset(0); }
+@media (prefers-reduced-motion: reduce) {
+  .tk-panel-header::after { transition: none; }
+}
+/* The Layers' title's type for both (designer, 2026-11-08); it takes the room left, which puts the Design panel's count and way back at the right. */
+.tk-panel-title {
+  flex: 1;
   min-width: 0;
   margin: 0;
   padding: 0 0 0 4px;
@@ -386,7 +487,7 @@ export const styles = /* css */ `
   font-weight: 500;
   color: var(--tk-title);
 }
-.tk-panel-title::after { content: ""; flex: 1; height: 1px; background: var(--tk-border); }
+.tk-panel.is-design .tk-panel-title { padding-left: 2px; }
 .tk-panel-header > .tk-icon-button { width: 30px; height: 30px; border-radius: 8px; background: var(--tk-button); }
 .tk-panel.is-layers .tk-panel-header > .tk-icon-button { width: 24px; height: 24px; border-radius: 6px; }
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }
@@ -425,7 +526,14 @@ export const styles = /* css */ `
  * The Layers, as the designer drew them (2026-11-07): rows 28px high and 2px apart, a level 26px in, a white
  * disclosure before a layer with layers in it, and guides from each layer down to those in it.
  */
-.tk-tree { display: flex; flex-direction: column; gap: 2px; margin: 0 -16px; }
+/*
+ * Long names in full, as in Figma (designer, 2026-11-08): the list, not the panel, scrolls, both ways, under the
+ * panel's top, which stays; its rows are as wide as the widest, so a row's hover and selection span the scroll.
+ */
+.tk-panel.is-layers { overflow: hidden; }
+.tk-panel.is-layers > .tk-tree { flex: 1 1 auto; min-height: 0; }
+.tk-tree { margin: 0 -16px -16px; padding-bottom: 16px; overflow: auto; overscroll-behavior: contain; }
+.tk-tree-rows { display: flex; flex-direction: column; gap: 2px; width: max-content; min-width: 100%; }
 .tk-tree-row {
   position: relative;
   display: flex;
@@ -446,7 +554,7 @@ export const styles = /* css */ `
 /* An instance's icons purple; its disclosure as every other row's (designer, 2026-11-08). */
 .tk-tree-row.is-instance .tk-icon:not(.tk-tree-chevron > .tk-icon) { color: var(--tk-instance); }
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
-.tk-tree-name { overflow: hidden; text-overflow: ellipsis; }
+.tk-tree-name { flex: none; }
 .tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }
 .tk-tree-chevron { position: relative; z-index: 1; display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 .tk-tree-chevron[data-open] { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
@@ -579,12 +687,12 @@ export const styles = /* css */ `
  * does, from the same rules below: 30px as the fields, 8px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
  */
 :is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 2px; }
-/* A changed field inside a picker (a gradient's angle, a stop): light on the accent, its reset as any changed field's. */
+/*
+ * A changed field inside a picker (a gradient's angle, a stop): light on the accent, with no reset, keeping its right inset and its width:
+ * the color's row has the one reset, for all of it (designer, 2026-11-08).
+ */
 .tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only) { color: #fafafa; }
-.tk-popover .tk-field.is-changed .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
-.tk-popover .tk-field.is-changed .tk-reset:hover { background: var(--tk-accent-strong); }
-/* A stop's position, changed: room for its reset beside the number. */
-.tk-stop-position.is-changed { width: 78px; }
+.tk-popover .tk-field.is-changed { padding-right: 6px; }
 /* A shadow's type, changed: as wide as it was, its reset at its right end. */
 .tk-effect-type-field { flex: 1; min-width: 0; border-radius: 8px; }
 .tk-effect-type-field.is-changed > .tk-select { flex: 1; width: auto; min-width: 0; }
@@ -775,6 +883,9 @@ export const styles = /* css */ `
 /* A button that stays on in the panel (Independent corners, Wrap): the accent, as the tool chosen is (designer, 2026-11-07); a row's reset as it (designer, 2026-11-08). */
 .tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); color: #ffffff; }
 .tk-section .tk-icon-button[aria-pressed="true"]:hover, :is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
+/* An item added in this round (a shadow, a fill, a Stack): its − alone marked, as a button that stays on (designer, 2026-11-08). */
+.tk-icon-button.is-added { background: var(--tk-accent); color: #ffffff; }
+.tk-icon-button.is-added:hover { background: var(--tk-accent-strong); }
 /* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
 .tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 30px; height: 30px; border-radius: 8px; }
 .tk-grid-2 {

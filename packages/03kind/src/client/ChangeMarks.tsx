@@ -30,12 +30,28 @@ export interface ChangeMarks {
    * null when one of them has none, when they differ, or at a breakpoint.
    */
   before(property: Property): unknown;
+  /**
+   * Whether what the selected layers have of `property` was added in this round: they had none of it before (a fill, a
+   * stroke, a blur, a minimum); with `item`, whether the item of a list (a shadow) is one `item` finds no entry of before.
+   * Something added has its fields left unmarked, with no resets: its − alone takes the accent, and takes it back off
+   * (designer, 2026-11-08).
+   */
+  added(property: Property, item?: (before: unknown, after: unknown) => boolean): boolean;
+  /** Whether the selected layers were made Stacks in this round: added, as `added` says of a property. */
+  stacked(): boolean;
+  /** Takes the Stacks the selected layers were made in this round back out, with what was changed of them as Stacks since, as one edit that can be undone. */
+  unstack(): void;
 }
 
 /** A part of a value its own field shows (a stroke's color, weight, line or sides): marked and reset on its own (designer, 2026-11-07). */
 export interface ValuePart {
   /** The part, of a value (null when there is none). */
   of(value: unknown): unknown;
+  /**
+   * The part as it was in `before`, for the part as it is in `after`: of a list's item, its own entry before, found by
+   * identity, not by position (designer, 2026-11-08). None: `of(before)`.
+   */
+  was?(before: unknown, after: unknown): unknown;
   /** `value` with the part as it is in `before`. */
   back(value: unknown, before: unknown): unknown;
 }
@@ -47,10 +63,17 @@ export const ChangeMarksProvider = ChangeMarksContext.Provider;
 
 /** The marks of the selected layers inside a `ChangeMarksProvider`; none outside. */
 export function useChangeMarks(): ChangeMarks {
-  return useContext(ChangeMarksContext) ?? NONE;
+  return useContext(ChangeMarksContext) ?? NO_MARKS;
 }
 
-const NONE: ChangeMarks = { changed: () => false, reset: () => {}, before: () => null };
+/** No marks: what is inside an item added in this round, its fields unmarked, with no resets (designer, 2026-11-08). */
+export const NO_MARKS: ChangeMarks = { changed: () => false, reset: () => {}, before: () => null, added: () => false, stacked: () => false, unstack: () => {} };
+
+/** The part `part` is of `before`, matched to it as it is in `after`. */
+const wasOf = (part: ValuePart, before: unknown, after: unknown) => (part.was ? part.was(before, after) : part.of(before));
+
+/** What a Stack sets of its layout: taken back with a Stack made in this round. */
+export const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding"];
 
 /**
  * The marks of `layers`, from the round's changes: those to a property of
@@ -81,7 +104,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
     }
     const found = of(property, list);
     if (part === undefined) return found.length > 0;
-    if (typeof part !== "number") return runs(property, list).some(({ before, after }) => !same(part.of(before), part.of(after)));
+    if (typeof part !== "number") return runs(property, list).some(({ before, after }) => !same(wasOf(part, before, after), part.of(after)));
     // A part changed: as it is now unlike what it was before the round's first change to it.
     return found.some((change) => {
       const before = change.before as unknown[] | null;
@@ -98,7 +121,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
       if (part) {
         // The part put back as it was; where nothing else changed, the changes come out altogether, as a whole reset takes them.
         const [property] = properties;
-        const going = runs(property).filter(({ before, after }) => !same(part.of(before), part.of(after)));
+        const going = runs(property).filter(({ before, after }) => !same(wasOf(part, before, after), part.of(after)));
         if (!going.length) return;
         editor.batch(() => {
           for (const { layer, list, before, after } of going) {
@@ -133,7 +156,34 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
       if (found.length !== layers.length || found.some(({ before }) => !same(before, found[0].before))) return null;
       return found[0].before;
     },
+    added(property, item) {
+      // Added on every selected layer: one that had it before has it still, changed or not.
+      const found = runs(property);
+      const none = (value: unknown) => value === null || value === undefined;
+      return found.length === layers.length && found.every(({ before, after }) => (item ? item(before, after) : none(before) && !none(after)));
+    },
+    stacked() {
+      return layers.length > 0 && layers.every((layer) => !!madeStack(layer.el.getAttribute(LAYER_ID_ATTR)));
+    },
+    unstack() {
+      const made = layers.map((layer) => madeStack(layer.el.getAttribute(LAYER_ID_ATTR))).filter((change) => change !== null);
+      if (!made.length) return;
+      editor.batch(() => {
+        for (const stack of made) {
+          // What was changed of it as a Stack since it was made, first; then the Stack itself, as if it never was.
+          const since = changes.filter((change) => change.kind === "style" && change.layer === stack.layer && change.id > stack.id && STACK_PROPERTIES.includes(change.property as Property));
+          for (const change of since) editor.revert(change.id);
+          editor.revert(stack.id);
+        }
+      });
+      onEdit();
+    },
   };
+  /** The change that made the layer `id` a Stack in this round, not dissolved since; null when there is none. */
+  function madeStack(id: string | null): Change | null {
+    const made = [...changes].reverse().find((change) => change.kind === "stack" && change.layer === id);
+    return made && !changes.some((change) => change.kind === "unstack" && change.layer === id && change.id > made.id) ? made : null;
+  }
 }
 
 /** A changed field's reset, at its right end: takes the change back out. */

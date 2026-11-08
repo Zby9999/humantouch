@@ -1,13 +1,13 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound, Variable, VariableGroup } from "../service-protocol";
 import type { Property, PropertyValues } from "./property-table";
 import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
-import { FIELD_SETTLE_MS } from "./motion";
+import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
@@ -19,6 +19,8 @@ import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
+import { PanelResizer } from "./PanelResizer";
+import { fitWidths, maxWidth, readWidths, writeWidth, type Panel, type Widths } from "./panel-widths";
 import { createFolds } from "./layer-folds";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
@@ -103,6 +105,32 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   useEffect(() => {
     if (toggledLayers.current) layersToggle.current?.focus();
   }, [layersShown]);
+
+  /**
+   * The panels' widths, each set by dragging its inner edge (designer, 2026-11-08): as the viewer set them last, and
+   * as they fit the window, the canvas keeping its room between them.
+   */
+  const shell = useRef<HTMLDivElement>(null);
+  const [chosenWidths, setChosenWidths] = useState<Widths>(readWidths);
+  const [room, setRoom] = useState(() => innerWidth);
+  useEffect(() => {
+    const onResize = () => setRoom(innerWidth);
+    addEventListener("resize", onResize);
+    return () => removeEventListener("resize", onResize);
+  }, []);
+  const widths = fitWidths(chosenWidths, room, layersShown);
+  /** Dragged: the width shows at once, on the shell's style alone; the shell renders anew once let go. */
+  const dragWidth = (panel: Panel) => (width: number) => shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
+  const keepWidth = (panel: Panel) => (width: number) => {
+    setChosenWidths((was) => ({ ...was, [panel]: width }));
+    writeWidth(panel, width);
+  };
+  // After every render, the widths as fitted: a drag wrote them on the style itself, which the style prop, unchanged
+  // since, would not undo (a drag let go where it began, or the window resized meanwhile).
+  useLayoutEffect(() => {
+    shell.current?.style.setProperty("--tk-layers-width", `${widths.layers}px`);
+    shell.current?.style.setProperty("--tk-design-width", `${widths.design}px`);
+  });
 
   /** The toast at the bottom of the canvas: a new one takes the old one's place. */
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -607,7 +635,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** Layers selected: the Design panel shows their design; none, the project's Variables (designer, 2026-11-08). */
   const designing = !!(tree && editor && selected.length);
   return (
-    <div class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}>
+    <div
+      ref={shell}
+      class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}
+      style={{ "--tk-layers-width": `${widths.layers}px`, "--tk-design-width": `${widths.design}px` }}
+    >
       {/*
         Keyed, the panels and the button keep their own elements: unkeyed, the Layers panel shown again took the Design
         panel's, and with them, stale, its header's rule and 6px under it: a rule across the Layers that Figma has not
@@ -615,7 +647,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       */}
       {layersShown ? (
         <aside key="layers" class="tk-panel is-layers" aria-label="Layers">
-          <div class="tk-panel-header">
+          <div ref={watchScrolled} class="tk-panel-header">
             <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
@@ -636,6 +668,16 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         <button key="show-layers" ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
+      )}
+      {layersShown && !playing && (
+        <PanelResizer
+          key="layers-edge"
+          panel="layers"
+          width={widths.layers}
+          max={maxWidth("layers", widths, room, true)}
+          onDrag={dragWidth("layers")}
+          onCommit={keepWidth("layers")}
+        />
       )}
       <CanvasView
         restoreFrom={restoreFrom?.canvas ?? null}
@@ -801,10 +843,21 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
       {notice}
+      {!playing && (
+        <PanelResizer
+          key="design-edge"
+          panel="design"
+          width={widths.design}
+          max={maxWidth("design", widths, room, layersShown)}
+          onDrag={dragWidth("design")}
+          onCommit={keepWidth("design")}
+        />
+      )}
       <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
-        <div class="tk-panel-header">
+        <div ref={watchScrolled} class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
-          <h2 class="tk-panel-label">{designing ? "Design" : "Variants"}</h2>
+          {/* In the Layers' title's type: one header style for both panels (designer, 2026-11-08). */}
+          <h2 class="tk-panel-title">{designing ? "Design" : "Variants"}</h2>
           {controls}
         </div>
         {!designing ? (
@@ -872,10 +925,46 @@ function Tools({ tool, onTool }: ToolsProps) {
     clicked.current = undefined;
   }
   const index = TOOLS.findIndex((t) => t.tool === tool);
-  /** The tool told, and the middle of its button from the toolbar's top. */
-  const [tip, setTip] = useState<{ text: string; middle: number } | null>(null);
+  /**
+   * The tool told, the middle of its button from the toolbar's top, whether it eases in, and whether focus showed it.
+   * The pointer rests on a tool `TIP_DELAY_MS` before its tip shows, easing in; passing over shows nothing. Once one shows,
+   * the toolbar is warm: another tool pointed at swaps the tip at once, text and place, without motion, and so within
+   * `TIP_GRACE_MS` of the pointer leaving the toolbar. Focus from the keyboard shows it at once; a press hides it, and the next
+   * tool pointed at, still warm, shows at once (designer, 2026-11-08). A touch shows nothing.
+   */
+  const [tip, setTip] = useState<{ text: string; middle: number; easing: boolean; byFocus: boolean } | null>(null);
+  const waiting = useRef<number | undefined>(undefined);
+  const cooling = useRef<number | undefined>(undefined);
+  const warm = useRef(false);
+  useEffect(
+    () => () => {
+      clearTimeout(waiting.current);
+      clearTimeout(cooling.current);
+    },
+    [],
+  );
+  const tipOf = (t: (typeof TOOLS)[number], button: HTMLElement, easing: boolean, byFocus: boolean) => ({
+    text: `${t.label} (${t.key})`,
+    middle: button.offsetTop + button.offsetHeight / 2,
+    easing,
+    byFocus,
+  });
   return (
-    <div class="tk-tools" role="toolbar" aria-label="Tools">
+    <div
+      class="tk-tools"
+      role="toolbar"
+      aria-label="Tools"
+      // Back on the toolbar, a gap or its edge too, within the grace: still warm.
+      onPointerEnter={() => clearTimeout(cooling.current)}
+      onPointerLeave={() => {
+        clearTimeout(waiting.current);
+        // A tip the keyboard's focus shows stays with the focus.
+        setTip((shown) => (shown?.byFocus ? shown : null));
+        if (!warm.current) return;
+        clearTimeout(cooling.current);
+        cooling.current = window.setTimeout(() => (warm.current = false), TIP_GRACE_MS);
+      }}
+    >
       <div class={sliding.current ? "tk-tools-backing is-sliding" : "tk-tools-backing"} style={{ "--tk-tool-index": index }} aria-hidden="true" />
       {TOOLS.map((t) => (
         <button
@@ -885,11 +974,33 @@ function Tools({ tool, onTool }: ToolsProps) {
           aria-label={t.label}
           aria-pressed={tool === t.tool}
           aria-keyshortcuts={t.key}
-          onPointerEnter={(event) => setTip({ text: `${t.label} (${t.key})`, middle: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 })}
-          onFocus={(event) => setTip({ text: `${t.label} (${t.key})`, middle: event.currentTarget.offsetTop + event.currentTarget.offsetHeight / 2 })}
-          onPointerLeave={() => setTip(null)}
-          onBlur={() => setTip(null)}
+          onPointerEnter={(event) => {
+            if (event.pointerType === "touch") return;
+            clearTimeout(waiting.current);
+            const button = event.currentTarget;
+            if (warm.current || tip) {
+              clearTimeout(cooling.current);
+              warm.current = true;
+              setTip(tipOf(t, button, false, false));
+              return;
+            }
+            waiting.current = window.setTimeout(() => {
+              warm.current = true;
+              setTip(tipOf(t, button, true, false));
+            }, TIP_DELAY_MS);
+          }}
+          // Off a tool before its tip shows, the wait ends; a tip shown stays till the next tool or the toolbar left.
+          onPointerLeave={() => clearTimeout(waiting.current)}
+          onFocus={(event) => {
+            // A click focuses too, but only the keyboard's focus tells.
+            if (!event.currentTarget.matches(":focus-visible")) return;
+            clearTimeout(waiting.current);
+            setTip(tipOf(t, event.currentTarget, false, true));
+          }}
+          onBlur={() => setTip((shown) => (shown?.byFocus ? null : shown))}
           onClick={() => {
+            clearTimeout(waiting.current);
+            setTip(null);
             clicked.current = t.tool;
             onTool(t.tool);
           }}
@@ -898,12 +1009,36 @@ function Tools({ tool, onTool }: ToolsProps) {
         </button>
       ))}
       {tip && (
-        <div class="tk-variants-tip tk-tools-tip" role="tooltip" style={{ top: `${tip.middle}px` }}>
+        <div class={tip.easing ? "tk-variants-tip tk-tools-tip is-easing" : "tk-variants-tip tk-tools-tip"} role="tooltip" style={{ top: `${tip.middle}px` }}>
           {tip.text}
         </div>
       )}
     </div>
   );
+}
+
+/** The panels whose scrolling is watched: a header's ref is called again on every render. */
+const watchedPanels = new WeakSet<Element>();
+
+/**
+ * A panel's header stays at its top, over what scrolls under it; once the panel is scrolled, the line under the header
+ * runs to the panel's edges, and back to its inset at the top again (designer, 2026-11-08). The panel is marked only
+ * when that flips, from a passive listener, and the line's CSS transition does the rest. A data attribute, as Preact
+ * sets the panel's class.
+ */
+function watchScrolled(header: HTMLElement | null) {
+  const panel = header?.parentElement;
+  if (!panel || watchedPanels.has(panel)) return;
+  watchedPanels.add(panel);
+  let scrolled = false;
+  const mark = () => {
+    const now = panel.scrollTop > 0;
+    if (now === scrolled) return;
+    scrolled = now;
+    panel.toggleAttribute("data-scrolled", now);
+  };
+  panel.addEventListener("scroll", mark, { passive: true });
+  mark();
 }
 
 function readLayersShown(): boolean {

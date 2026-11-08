@@ -1,5 +1,5 @@
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
-import { POPOVER_EXIT_MS } from "../../packages/03kind/src/client/motion";
+import { POPOVER_EXIT_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "../../packages/03kind/src/client/motion";
 import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 /** Popovers opening at once and leaving, closed with the pointer, by fading and moving down; the toolbar's tips (designer, 2026-11-08). */
@@ -116,24 +116,122 @@ test("the color picker leaves when closed with the pointer, and at once with Esc
   expect(await popovers.count()).toBe(0);
 });
 
-test("a tool pointed at tells its name and key in the dark tip, at the toolbar's left, level with it", async ({ page }) => {
+test("a tool rested on tells its name and key in the dark tip, at the toolbar's left, level with it, after a wait", async ({ page }) => {
   await enterEditMode(page);
   const tools = page.getByRole("toolbar", { name: "Tools" });
   const text = tools.getByRole("button", { name: "Text" });
+  const tip = page.getByRole("tooltip");
   // The browser's own tip no more, but the name and key still told.
   await expect(text).not.toHaveAttribute("title");
   await expect(text).toHaveAttribute("aria-keyshortcuts", "T");
 
+  // Passing over a tool shows nothing.
+  await tools.getByRole("button", { name: "Select" }).hover();
+  await page.waitForTimeout(TIP_DELAY_MS / 2);
+  await page.mouse.move(10, 10);
+  await page.waitForTimeout(TIP_DELAY_MS + 100);
+  await expect(tip).toHaveCount(0);
+
+  // Rested on: nothing before the wait, the tip after it, easing in.
   await text.hover();
-  const tip = page.getByRole("tooltip");
-  await expect(tip).toHaveText("Text (T)");
+  await page.waitForTimeout(TIP_DELAY_MS - 150);
+  await expect(tip).toHaveCount(0);
+  await expect(tip).toHaveText("Text (T)", { timeout: 1000 });
+  await expect(tip).toHaveClass(/is-easing/);
   await expect(tip).toHaveCSS("background-color", "rgb(23, 23, 22)");
   const [box, bar, button] = await Promise.all([steadyBox(tip), steadyBox(tools), steadyBox(text)]);
   expect(box.x + box.width).toBeLessThanOrEqual(bar.x);
   expect(Math.abs(box.y + box.height / 2 - (button.y + button.height / 2))).toBeLessThan(1);
 
-  await tools.getByRole("button", { name: "Frame" }).hover();
-  await expect(tip).toHaveText("Frame (F)");
   await page.mouse.move(10, 10);
   await expect(tip).toHaveCount(0);
+});
+
+/** The tool's tip as it is now, read at once: what it tells, its middle, and whether it eases in; null with none. */
+async function tipNow(page: Page) {
+  const tips = await page.locator(".tk-tools-tip").evaluateAll((all) =>
+    all.map((tip) => {
+      const box = tip.getBoundingClientRect();
+      return { text: tip.textContent, middle: box.top + box.height / 2, easing: tip.classList.contains("is-easing") };
+    }),
+  );
+  return tips[0] ?? null;
+}
+
+async function middleOf(locator: Locator) {
+  const box = await steadyBox(locator);
+  return box.y + box.height / 2;
+}
+
+/** Well within the wait: the tip tells `text` already, without easing in. */
+async function toldAtOnce(page: Page, text: string, within: number) {
+  await expect.poll(() => tipNow(page), { timeout: within, intervals: [0, 16, 16, 32] }).toMatchObject({ text, easing: false });
+}
+
+test("once a tool's tip shows, another tool tells at once, beside it, without motion", async ({ page }) => {
+  await enterEditMode(page);
+  const tools = page.getByRole("toolbar", { name: "Tools" });
+  const tip = page.getByRole("tooltip");
+  await tools.getByRole("button", { name: "Select" }).hover();
+  await expect(tip).toHaveText("Select (V)", { timeout: TIP_DELAY_MS + 1000 });
+
+  for (const [name, told] of [["Frame", "Frame (F)"], ["Text", "Text (T)"], ["Select", "Select (V)"]] as const) {
+    const button = tools.getByRole("button", { name });
+    const middle = await middleOf(button);
+    await button.hover();
+    await toldAtOnce(page, told, TIP_DELAY_MS / 2);
+    expect(Math.abs((await tipNow(page))!.middle - middle)).toBeLessThan(1);
+  }
+});
+
+test("the toolbar left and come back to within its grace tells at once; later, it waits again", async ({ page }) => {
+  await enterEditMode(page);
+  const tools = page.getByRole("toolbar", { name: "Tools" });
+  const tip = page.getByRole("tooltip");
+  const text = tools.getByRole("button", { name: "Text" });
+  await text.hover();
+  await expect(tip).toHaveText("Text (T)", { timeout: TIP_DELAY_MS + 1000 });
+
+  // Out and straight back onto Frame, well within the grace; the tip hidden meanwhile, read in one go.
+  const frame = await steadyBox(tools.getByRole("button", { name: "Frame" }));
+  await page.mouse.move(10, 10);
+  await expect.poll(() => tipNow(page), { timeout: 100, intervals: [0, 16, 16] }).toBeNull();
+  await page.mouse.move(frame.x + frame.width / 2, frame.y + frame.height / 2);
+  await toldAtOnce(page, "Frame (F)", TIP_GRACE_MS);
+
+  await page.mouse.move(10, 10);
+  await expect(tip).toHaveCount(0);
+  await page.waitForTimeout(TIP_GRACE_MS * 2);
+  await text.hover();
+  await page.waitForTimeout(TIP_DELAY_MS - 150);
+  await expect(tip).toHaveCount(0);
+  await expect(tip).toHaveText("Text (T)", { timeout: 1000 });
+  await expect(tip).toHaveClass(/is-easing/);
+});
+
+test("a tool pressed hides its tip, the next still at once; a tool focused from the keyboard tells at once", async ({ page }) => {
+  await enterEditMode(page);
+  const tools = page.getByRole("toolbar", { name: "Tools" });
+  const tip = page.getByRole("tooltip");
+  const frame = tools.getByRole("button", { name: "Frame" });
+  await frame.hover();
+  await expect(tip).toHaveText("Frame (F)", { timeout: TIP_DELAY_MS + 1000 });
+  await frame.click();
+  await expect(tip).toHaveCount(0);
+  // Clicked, it has focus, but not the keyboard's: no tip while the pointer stays.
+  await page.waitForTimeout(TIP_DELAY_MS + 100);
+  await expect(tip).toHaveCount(0);
+  await tools.getByRole("button", { name: "Text" }).hover();
+  await toldAtOnce(page, "Text (T)", TIP_DELAY_MS / 2);
+  await page.mouse.move(10, 10);
+  await expect(tip).toHaveCount(0);
+
+  // From the keyboard: Tab from Select onto Frame, then onto Text.
+  await tools.getByRole("button", { name: "Select" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(frame).toBeFocused();
+  await toldAtOnce(page, "Frame (F)", TIP_DELAY_MS / 2);
+  expect(Math.abs((await tipNow(page))!.middle - (await middleOf(frame)))).toBeLessThan(1);
+  await page.keyboard.press("Tab");
+  await toldAtOnce(page, "Text (T)", TIP_DELAY_MS / 2);
 });
