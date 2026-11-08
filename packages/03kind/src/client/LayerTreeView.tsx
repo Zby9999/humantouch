@@ -54,13 +54,27 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     if (next.size !== collapsed.size || [...next].some((layer) => !collapsed.has(layer))) setCollapsed(next);
   }
 
-  // The selected layers are always in view: open everything around them.
+  // Selected, the layers come into view: everything around them opens, and the list scrolls to them. Only as they are
+  // selected, not on each fold: run on every change of what is closed, this opened again at once a layer closed around
+  // the selection, and with a layer selected to edit in the Design panel, the layers around it could not be closed
+  // (designer, 2026-11-08). Closed so, a layer stays closed until the selection changes, as in Figma.
+  const scrollToSelected = useRef(false);
   useEffect(() => {
     if (!selected.length) return;
-    const closed = [...collapsed].filter((layer) => selected.some((s) => isAncestor(layer, s)));
-    if (closed.length) setCollapsed(new Set([...collapsed].filter((layer) => !closed.includes(layer))));
-    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
-  }, [selected, collapsed]);
+    scrollToSelected.current = true;
+    setCollapsed((collapsed) => {
+      const closed = [...collapsed].filter((layer) => selected.some((s) => isAncestor(layer, s)));
+      return closed.length ? new Set([...collapsed].filter((layer) => !closed.includes(layer))) : collapsed;
+    });
+  }, [selected]);
+  // Once its row is listed: it may be listed only as the layers around it open.
+  useEffect(() => {
+    if (!scrollToSelected.current) return;
+    const row = list.current?.querySelector('[aria-selected="true"]');
+    if (!row) return;
+    scrollToSelected.current = false;
+    row.scrollIntoView({ block: "nearest" });
+  });
 
   /** `past`: the levels whose guides go on down past this row, to a later layer in them. `more`: this layer has a later one in its own. */
   const rows: { layer: Layer; level: number; outside: boolean; past: number[]; more: boolean }[] = [];
