@@ -17,7 +17,8 @@
 - [ ] 写掉的能撤回，办法和 Agent 落地的一轮一致（`last`）
 - [ ] Vite + React 19 + Tailwind v4、Vite + React 18 + Tailwind v3、Next.js 三个示例上各有测试：改颜色、间距、断点上的间距、写死的文字，按按钮，源码对、页面对、角标少了相应的条数，`last` 撤回后源码复原
 - [ ] 不按按钮时一切照旧：`--dry` 24/24、`--scripted` 全过，改动说明逐字不变；切换按钮的包逐字节不变
-- [ ] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：进入编辑模式、改数值不变差；按按钮到页面显示出来的时间记下来
+- [ ] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：进入编辑模式、改数值不变差
+- [ ] 指标（docs/goals.md「度量」）：按按钮到页面显示出来、核对完，目标 ≤ 2 秒；基线是 ticket 88 里 Agent 落地一轮 `claim`→`finish` 的中位数（Claude 16.06 秒、pi 20.09 秒；每条 5.5、7.58 秒）。另外数一下 24 个标准场景的改动里有几条算简单改动（按 115 的范围），和 116 合起来能覆盖多少，记在 Comments
 - [ ] e2e 全过；spec、docs/roadmap.md 相应更新；ADR 0015 里留给这张定的细节（撤回）写回去
 
 ## 背景
