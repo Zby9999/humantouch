@@ -425,6 +425,26 @@ function stackAround(el: Element): StackLayout | null {
   return null;
 }
 
+/** Whether `el` is a cell of a Grid, laid out in its parent's grid. Absolute layers are not. */
+function inGrid(el: Element): boolean {
+  if (absolute(el)) return false;
+  let parent = el.parentElement;
+  while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+  return !!parent && /grid$/.test(getComputedStyle(parent).display);
+}
+
+/** A Grid cell's own alignment along `axis`: across its column for the width, down its row for the height. */
+const SELF: Record<"width" | "height", "justify-self" | "align-self"> = { width: "justify-self", height: "align-self" };
+
+/** Whether a Grid cell's size along `axis`, left to the layout, stretches over its area: its column's width, its row's height. */
+function stretchesInGrid(el: Element, axis: "width" | "height"): boolean {
+  const own = getComputedStyle(el).getPropertyValue(SELF[axis]);
+  const self = own === "auto" ? getComputedStyle(el.parentElement!).getPropertyValue(axis === "width" ? "justify-items" : "align-items") : own;
+  // An image, a video and the like, aligned `normal`, keep their own size: they are placed at the start.
+  if (self === "stretch") return true;
+  return /^(normal|legacy)$/.test(self) && !/^(img|video|canvas|iframe|svg|embed|object)$/.test(el.localName);
+}
+
 /** Whether the axis runs along the Stack (its main axis), rather than across it. */
 function onMainAxis(stack: { direction: "horizontal" | "vertical" }, axis: "width" | "height"): boolean {
   return (stack.direction === "horizontal") === (axis === "width");
@@ -437,9 +457,9 @@ function size(axis: "width" | "height"): Definition<Size> {
   return {
     kinds: EVERY_KIND,
     applies: sized,
-    // Fill takes the room a Stack gives: along a flex Stack, or across any. Down a plain flow there is none.
+    // Fill takes the room a Stack gives: along a flex Stack, or across any; in a Grid, its cell's area. Down a plain flow there is none.
     accepts(el, value) {
-      if (value.type !== "fill") return true;
+      if (value.type !== "fill" || inGrid(el)) return true;
       const stack = stackAround(el);
       return !!stack && (stack.flex || !onMainAxis(stack, axis));
     },
@@ -451,7 +471,8 @@ function size(axis: "width" | "height"): Definition<Size> {
       // The computed size is always in px: whether it is set, and how, is in what the page declares.
       const declared = declaredValue(el, axis);
       if (CONTENT_SIZED.test(declared)) {
-        const stretched = declared === "auto" && !!stack && !main && (stack.flex ? stretches(el) : axis === "width");
+        // In a Grid, its row as tall as the tallest cell in it, and its column as wide as it is: what a cell left to it comes to.
+        const stretched = declared === "auto" && (inGrid(el) ? stretchesInGrid(el, axis) : !!stack && !main && (stack.flex ? stretches(el) : axis === "width"));
         return { type: stretched ? "fill" : "hug" };
       }
       if (stack && declared === "100%") return { type: "fill" };
@@ -468,10 +489,12 @@ function size(axis: "width" | "height"): Definition<Size> {
         return { [axis]: css, "flex-grow": fill ? "1" : "0", "flex-shrink": fill ? "1" : "0", "flex-basis": fill ? "0%" : "auto" };
       }
       if (stack?.flex) return { [axis]: css, "align-self": fill ? "stretch" : "auto" };
+      // In a Grid, Hug comes to its content (`fit-content` is not stretched), Fill to its cell's area.
+      if (inGrid(el)) return { [axis]: css, [SELF[axis]]: fill ? "stretch" : "auto" };
       return { [axis]: css };
     },
-    writes: [axis, "flex-grow", "flex-shrink", "flex-basis", "align-self"],
-    sets: [axis, "flex-grow", "align-self"],
+    writes: [axis, "flex-grow", "flex-shrink", "flex-basis", "align-self", "justify-self"],
+    sets: [axis, "flex-grow", "align-self", "justify-self"],
   };
 }
 

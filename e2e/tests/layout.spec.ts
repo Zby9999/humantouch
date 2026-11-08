@@ -47,7 +47,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("h1")).toBeVisible();
 });
 
-test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a Stack", async ({ page }) => {
+test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a Stack or a Grid", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Button").click();
   const sizing = design(page).getByRole("combobox", { name: "Width sizing" });
@@ -60,10 +60,26 @@ test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a 
   await expect(sizing).toHaveValue("fixed");
   await expect.poll(() => widthOf(page, `${HERO} > button`)).toBe(200);
 
-  // A card sits in a Grid: no Stack gives it room to fill.
+  // A card sits in a Grid, left to it: it fills its cell, its column's width and its row's height.
   await rows(page, "Card").first().click();
-  await expect(design(page).getByRole("combobox", { name: "Width sizing" }).getByRole("option", { name: "Fill" })).toBeDisabled();
+  const cardWidth = design(page).getByRole("combobox", { name: "Width sizing" });
+  const cardHeight = design(page).getByRole("combobox", { name: "Height sizing" });
+  await expect(cardWidth).toHaveValue("fill");
+  await expect(cardHeight).toHaveValue("fill");
+  await expect(cardWidth.getByRole("option", { name: "Fill" })).toBeEnabled();
   await expect(design(page).getByRole("textbox", { name: /margin/i })).toHaveCount(0);
+  // One card taller, as with more in it, the row is too: the card beside it, filling it, as tall; Hug takes it to its content, Fill back to the
+  // row (designer, 2026-11-09).
+  await canvas(page).locator("article").first().evaluate((el: HTMLElement) => (el.style.minHeight = "240px"));
+  await rows(page, "Card").nth(1).click();
+  await expect(cardHeight).toHaveValue("fill");
+  const heightOf = () => canvas(page).locator("article").nth(1).evaluate((el) => el.getBoundingClientRect().height);
+  await expect.poll(heightOf).toBe(240);
+  await cardHeight.selectOption("hug");
+  await expect.poll(heightOf).toBeLessThan(200);
+  await expect(cardHeight).toHaveValue("hug");
+  await cardHeight.selectOption("fill");
+  await expect.poll(heightOf).toBe(240);
 });
 
 test("Hug made Fixed marks its sizing, not its number, until the number changes too; the row's one reset puts Hug back (designer, 2026-11-08)", async ({ page }) => {
