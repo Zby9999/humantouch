@@ -223,7 +223,7 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await rows(page, "Card").first().click();
   await setField(page, "Gap", "8");
-  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByRole("button", { name: "Full screen Desktop view", exact: true }).click();
 
   const button = canvas(page).locator(`${HERO} > button`);
   await expect(async () =>

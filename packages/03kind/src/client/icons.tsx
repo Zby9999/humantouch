@@ -130,8 +130,8 @@ const ICONS: Record<string, string> = {
   undo: '<path d="M2.75 6.5 H9.75 A3.5 3.5 0 0 1 9.75 13.5 H6.25"/><path d="M6 3.25 L2.75 6.5 L6 9.75"/>',
   // Sidebar left
   sidebar: '<rect x="2.25" y="2.75" width="11.5" height="10.5" rx="0.5"/><line x1="6" y1="2.75" x2="6" y2="13.25"/>',
-  // Play
-  play: '<path d="M5.384 2.995 L12.919 7.789 C13.073 7.887 13.073 8.113 12.919 8.211 L5.384 13.005 C5.218 13.111 5 12.992 5 12.795 L5 3.205 C5 3.008 5.218 2.889 5.384 2.995 Z"/>',
+  // Drawn for a view's full screen button (designer, 2026-11-08), in IconMCP's manner: four corner brackets.
+  fullscreen: '<path d="M2.75 6 V2.75 H6"/><path d="M10 2.75 H13.25 V6"/><path d="M13.25 10 V13.25 H10"/><path d="M6 13.25 H2.75 V10"/>',
   // Pointer
   pointer: '<path d="M2.635 2.831 L6.854 13.143 C6.906 13.269 7.086 13.266 7.133 13.138 L8.726 8.815 C8.741 8.774 8.774 8.741 8.815 8.726 L13.138 7.133 C13.266 7.086 13.269 6.906 13.143 6.854 L2.831 2.635 C2.708 2.585 2.585 2.708 2.635 2.831 Z"/><line x1="9.25" y1="9.25" x2="13.25" y2="13.25"/>',
   // Align left
