@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
 import { Fragment, type ComponentChildren, type JSX, type TargetedKeyboardEvent } from "preact";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { leavingProps, useExit } from "./exit";
 import { Icon, type IconName } from "./icons";
 
 /** The height of an option in the menu, the menu's padding, and the column its check mark is in, in px. */
@@ -34,6 +35,7 @@ export function Select(props: JSX.IntrinsicElements["select"]) {
   const [active, setActive] = useState(-1);
   const [options, setOptions] = useState<Option[]>([]);
   const id = useId();
+  const exit = useExit(open);
 
   const show = () => {
     const el = select.current!;
@@ -103,16 +105,20 @@ export function Select(props: JSX.IntrinsicElements["select"]) {
         onKeyDown={onKeyDown}
         onBlur={close}
       />
-      {open && <Menu id={id} select={select.current!} options={options} active={active} onActive={setActive} onChoose={choose} onClose={close} />}
+      {exit.shown && (
+        <Menu key={exit.key} id={id} select={select.current!} options={options} active={active} leaving={exit.leaving} onActive={setActive} onChoose={choose} onClose={close} />
+      )}
     </>
   );
 }
 
-function Menu({ id, select, options, active, onActive, onChoose, onClose }: {
+function Menu({ id, select, options, active, leaving, onActive, onChoose, onClose }: {
   id: string;
   select: HTMLSelectElement;
   options: Option[];
   active: number;
+  /** Closed with the pointer, it is leaving (`useExit`). */
+  leaving: boolean;
   onActive(index: number): void;
   onChoose(option: Option): void;
   onClose(): void;
@@ -165,8 +171,9 @@ function Menu({ id, select, options, active, onActive, onChoose, onClose }: {
     <div
       ref={box}
       id={id}
-      class="tk-menu"
+      class={leaving ? "tk-menu is-leaving" : "tk-menu"}
       role="listbox"
+      {...leavingProps(leaving)}
       aria-label={select.getAttribute("aria-label") ?? undefined}
       style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, minWidth: `${place?.minWidth ?? 0}px`, visibility: place ? "visible" : "hidden" }}
     >
@@ -221,6 +228,7 @@ export interface MenuItem {
  */
 export function MenuButton({ label, icon, items, onChoose, class: className }: { label: string; icon: IconName; items: MenuItem[]; onChoose(value: string): void; class?: string }) {
   const [open, setOpen] = useState<HTMLButtonElement | null>(null);
+  const exit = useExit(open);
   return (
     <>
       {/* In a field's label, a click on the button or its menu does not go on to the field's input. */}
@@ -237,19 +245,21 @@ export function MenuButton({ label, icon, items, onChoose, class: className }: {
       >
         <Icon name={icon} />
       </button>
-      {open && (
+      {exit.shown && (
         <ButtonMenu
+          key={exit.key}
           label={label}
-          anchor={open}
+          anchor={exit.shown}
           items={items}
+          leaving={exit.leaving}
           onChoose={(value) => {
             setOpen(null);
-            open.focus();
+            exit.shown!.focus();
             onChoose(value);
           }}
           onClose={(refocus) => {
             setOpen(null);
-            if (refocus) open.focus();
+            if (refocus) exit.shown!.focus();
           }}
         />
       )}
@@ -257,10 +267,12 @@ export function MenuButton({ label, icon, items, onChoose, class: className }: {
   );
 }
 
-function ButtonMenu({ label, anchor, items, onChoose, onClose }: {
+function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
   label: string;
   anchor: HTMLElement;
   items: MenuItem[];
+  /** Closed with the pointer, it is leaving (`useExit`). */
+  leaving: boolean;
   onChoose(value: string): void;
   onClose(refocus: boolean): void;
 }) {
@@ -287,7 +299,7 @@ function ButtonMenu({ label, anchor, items, onChoose, onClose }: {
     const root = anchor.getRootNode() as Document | ShadowRoot;
     const away = (event: Event) => {
       const path = event.composedPath();
-      if (!path.includes(box.current!) && !path.includes(anchor)) onClose(false);
+      if (!leaving && !path.includes(box.current!) && !path.includes(anchor)) onClose(false);
     };
     document.addEventListener("pointerdown", away, true);
     if (root !== document) root.addEventListener("pointerdown", away, true);
@@ -295,7 +307,7 @@ function ButtonMenu({ label, anchor, items, onChoose, onClose }: {
       document.removeEventListener("pointerdown", away, true);
       if (root !== document) root.removeEventListener("pointerdown", away, true);
     };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, leaving]);
   /** Two columns when some items, and not all, are in the second (designer, 2026-11-08). */
   const columns = items.some((item) => item.column === 1) && items.some((item) => item.column !== 1);
   const columnOf = (i: number) => (columns ? (items[i]?.column ?? 0) : 0);
@@ -364,8 +376,9 @@ function ButtonMenu({ label, anchor, items, onChoose, onClose }: {
   return (
     <div
       ref={box}
-      class="tk-menu is-plain"
+      class={leaving ? "tk-menu is-plain is-leaving" : "tk-menu is-plain"}
       role="dialog"
+      {...leavingProps(leaving)}
       aria-label={label}
       style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden" }}
     >
