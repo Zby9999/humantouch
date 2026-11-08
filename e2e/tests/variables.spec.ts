@@ -441,8 +441,27 @@ test("on a Tailwind v4 project, its default theme's Variables are offered; with 
   await expect(page.getByRole("dialog", { name: /color$/ }).getByRole("tab")).toHaveCount(0);
 });
 
+/** The Variants tab shows the project's own at first (designer, 2026-11-09): Tailwind's with them. */
+async function showAll(page: Page) {
+  await design(page).getByRole("combobox", { name: "Variables shown" }).click();
+  await page.getByRole("listbox", { name: "Variables shown" }).getByRole("option", { name: "All" }).click();
+}
+
+test("with nothing selected, the Variants tab shows the project's own Variables first; a project with none, Tailwind's", async ({ page }) => {
+  await enterEditMode(page);
+  const filter = design(page).getByRole("combobox", { name: "Variables shown" });
+  await expect(filter).toHaveValue("own");
+  await expect(design(page).locator(".tk-variants-subtitle").first()).toHaveText("Project");
+  await expect(design(page).locator(".tk-variants-subtitle").filter({ hasText: "Tailwind" })).toHaveCount(0);
+
+  await enterEditMode(page, DEV_URL);
+  await expect(filter).toHaveValue("tailwind");
+  await expect(design(page).getByRole("region", { name: "Spacing" })).toBeVisible();
+});
+
 test("with nothing selected, a spacing Variable's bar is as long as it is; one too long for its row shows past its value, and whole on white when pointed at", async ({ page }) => {
   await enterEditMode(page);
+  await showAll(page);
   const panel = design(page);
   const spacing = panel.getByRole("region", { name: "Spacing" });
   const row = (name: string) => spacing.locator(".tk-variants-row").filter({ has: page.locator(".tk-variants-name").getByText(name, { exact: true }) });
@@ -512,6 +531,7 @@ test("with nothing selected, a radius tile has its name over its value, in it wh
     await route.fulfill({ response, json: [...variables, { name: LONG, group: "radius", value: "12px", from: "tailwind", own: true }] });
   });
   await enterEditMode(page);
+  await showAll(page);
   const radius = design(page).getByRole("region", { name: "Radius" });
   await radius.scrollIntoViewIfNeeded();
   const tiles = radius.locator(".tk-variants-tile");

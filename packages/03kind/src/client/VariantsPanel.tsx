@@ -39,8 +39,9 @@ const SAMPLE_MAX = 32;
 
 /**
  * The Design panel's other tab (designer, 2026-11-07): the project's
- * Variables, by group, the project's own first, then Tailwind's; colors as a
- * palette, a ramp a row, the others with what they look like. Found by name;
+ * Variables, by group, the project's own first, then Tailwind's, showing the
+ * project's own alone at first, or Tailwind's where it has none (designer,
+ * 2026-11-09); colors as a palette, a ramp a row, the others with what they look like. Found by name;
  * pointed at, one tells its name and value; clicked, it is set on the selected
  * layers that take one of its group, as the Design tab's Variables are. A
  * radius tile has its name over its value (designer, 2026-11-08): pointed at,
@@ -52,12 +53,14 @@ const SAMPLE_MAX = 32;
  */
 export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
   const [search, setSearch] = useState("");
-  const [source, setSource] = useState<Source>("all");
+  /** Chosen in its select; till then, the project's own, or Tailwind's where it has none (designer, 2026-11-09). */
+  const [chosen, setChosen] = useState<Source | null>(null);
   const [closed, setClosed] = useState<ReadonlySet<VariableGroup>>(new Set());
   const [pointed, setPointed] = useState<{ entry: Resolved; at: DOMRect } | null>(null);
   const [detailed, setDetailed] = useState<{ entry: Resolved; at: DOMRect; panel: DOMRect } | null>(null);
 
   if (!catalog) return <p class="tk-panel-empty">Loading the project's Variables…</p>;
+  const source = chosen ?? (GROUPS.some(({ group }) => catalog.of(group).some(({ variable }) => variable.own)) ? "own" : "tailwind");
   const text = search.trim().toLowerCase();
   const listed = (group: VariableGroup) =>
     catalog
@@ -116,7 +119,7 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
           <Icon name="search" />
           <input class="tk-input" type="search" placeholder="Search variables" aria-label="Search variables" value={search} onInput={(event) => setSearch(event.currentTarget.value)} />
         </label>
-        <Select class="tk-select tk-variants-source" aria-label="Variables shown" value={source} onChange={(event) => setSource(event.currentTarget.value as Source)}>
+        <Select class="tk-select tk-variants-source" aria-label="Variables shown" value={source} onChange={(event) => setChosen(event.currentTarget.value as Source)}>
           <option value="all">All</option>
           <option value="own">Project</option>
           <option value="tailwind">Tailwind</option>
