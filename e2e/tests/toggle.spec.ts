@@ -158,6 +158,7 @@ test("the round claimed, the change list opens by itself, the change the Agent i
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveText("2");
   const list = page.getByRole("dialog", { name: "Changes" });
   await expect(list).toHaveCount(0);
+  const countBox = await steadyBox(page.getByRole("button", { name: /not applied yet/ }));
 
   // The local service, as the Agent claims the round and applies its first change; the round as the page saved it.
   let applied: number[] = [];
@@ -175,6 +176,9 @@ test("the round claimed, the change list opens by itself, the change the Agent i
   claimed = true;
   await expect(list).toBeVisible();
   expect(await list.evaluate((el) => el.matches(":focus-within"))).toBe(false);
+  // Locked, the ring right round the toggle: the count stays where it was (designer, 2026-11-09).
+  await expect(page.locator(".tk-progress")).toBeVisible();
+  expect(await steadyBox(page.getByRole("button", { name: /not applied yet/ }))).toEqual(countBox);
   const rows = list.getByRole("listitem");
   await expect(rows).toHaveText([/Fill · Button/, /Fill · Card/]);
   await expect(rows.first()).toHaveAttribute("aria-current", "step");

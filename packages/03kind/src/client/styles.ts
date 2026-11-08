@@ -39,8 +39,6 @@ export const styles = /* css */ `
  * easily pressed for the toggle. As the count beside the Design title in edit mode, so it reads as a count and not as a
  * second toggle (designer, 2026-11-08), and 28px as the toggle (designer, 2026-11-09). It opens the change list.
  */
-/* Locked, the ring around the toggle needs the room. */
-.tk-toggle-wrap:has(.tk-progress) { gap: 6px; }
 .tk-toggle-count {
   all: unset;
   position: relative;
