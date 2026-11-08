@@ -506,6 +506,15 @@ export const styles = /* css */ `
 .tk-section-header .tk-reset { color: var(--tk-accent); }
 .tk-section-header .tk-reset:hover { background: var(--tk-field); }
 .tk-reset:focus-visible { outline: 2px solid var(--tk-accent-strong); outline-offset: -2px; }
+/*
+ * One reset taking several fields back (a size with its sizing, a color with its opacity): a button of the row's own, at its left, outside
+ * the fields, which make room for it; 26px, quiet as a section's reset, 4px from the fields as unjoined things in a row are (designer, 2026-11-08).
+ */
+:is(.tk-size-row, .tk-color-row) > .tk-reset { width: 26px; height: 26px; margin-right: 2px; color: var(--tk-accent); }
+:is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-field); }
+/* Its fields, marked with no reset of their own, keep their right inset; the sizing its width, its chevron where it was. */
+:is(.tk-size-row .tk-field:not(.tk-variable-chip), .tk-color-row > .tk-color-field).is-changed:not(.tk-popover *) { padding-right: 6px; }
+.tk-size-row > .tk-select-field.is-changed > .tk-select { width: 64px; padding-right: 24px; background-position: right 6px center; }
 .tk-scrub {
   display: grid;
   flex: none;

@@ -66,25 +66,28 @@ test("Fixed, Hug and Fill size a layer on the canvas; Fill is offered only in a 
   await expect(design(page).getByRole("textbox", { name: /margin/i })).toHaveCount(0);
 });
 
-test("Hug made Fixed marks its sizing, not its number, until the number changes too; the sizing's reset puts Hug back (designer, 2026-11-08)", async ({ page }) => {
+test("Hug made Fixed marks its sizing, not its number, until the number changes too; the row's one reset puts Hug back (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Button").click();
   const sizing = design(page).getByRole("combobox", { name: "Width sizing" });
-  const width = design(page).getByRole("button", { name: "Reset width", exact: true });
-  const sizingReset = design(page).getByRole("button", { name: "Reset width sizing" });
+  const sizingField = design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`);
+  const widthField = design(page).locator(`.tk-field:has([aria-label="Width"])`);
+  const reset = design(page).getByRole("button", { name: /^Reset width/ });
 
   await sizing.selectOption("fixed");
-  await expect(sizingReset).toBeVisible();
-  await expect(width).toHaveCount(0);
+  await expect(reset).toHaveCount(1);
+  await expect(sizingField).toHaveClass(/\bis-changed\b/);
+  await expect(widthField).not.toHaveClass(/\bis-changed\b/);
 
   await setField(page, "Width", "200");
-  await expect(width).toBeVisible();
-  await expect(sizingReset).toBeVisible();
+  await expect(widthField).toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(1);
 
-  await sizingReset.click();
+  await reset.click();
   await expect(sizing).toHaveValue("hug");
-  await expect(width).toHaveCount(0);
-  await expect(sizingReset).toHaveCount(0);
+  await expect(reset).toHaveCount(0);
+  await expect(widthField).not.toHaveClass(/\bis-changed\b/);
+  await expect(sizingField).not.toHaveClass(/\bis-changed\b/);
 });
 
 test("a size typed in stays as typed, though the browser lays it out to 1/64 px (139.74 is drawn 139.734)", async ({ page }) => {

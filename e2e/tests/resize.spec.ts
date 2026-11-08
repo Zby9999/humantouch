@@ -237,8 +237,7 @@ test("while a handle is held, its width field is not marked changed; let go, it 
 
   await dragHandle(page, handle(page, "e"), { x: 30, y: 0 }, { drop: false });
   await expect(width).not.toHaveValue(was);
-  await expect(reset).toHaveCount(0);
-  await expect(design(page).getByRole("button", { name: "Reset width sizing" })).toHaveCount(0);
+  await expect(design(page).getByRole("button", { name: /^Reset width/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(width).toHaveValue(was);
@@ -248,8 +247,10 @@ test("while a handle is held, its width field is not marked changed; let go, it 
   await expect(width).not.toHaveValue(was);
   await expect(reset).toHaveCount(0);
   await page.mouse.up();
+  // Let go: the number and its sizing marked, with the row's one reset (designer, 2026-11-08).
   await expect(reset).toBeVisible();
-  await expect(design(page).getByRole("button", { name: "Reset width sizing" })).toBeVisible();
+  await expect(design(page).getByRole("button", { name: /^Reset width/ })).toHaveCount(1);
+  await expect(design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`)).toHaveClass(/\bis-changed\b/);
 });
 
 test("dragged in the tablet view, it is resized at the tablet's breakpoint only, its width field marked changed; in the desktop view, at every width", async ({ page }) => {
@@ -262,9 +263,10 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await expect.poll(() => boxIn(tablet(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 30));
   await expect.poll(async () => (await boxIn(desktop(page), `${HERO} > button`)).width).toBe(before.width);
   await expect.poll(async () => (await boxIn(phone(page), `${HERO} > button`)).width).toBe(before.width);
-  // Marked on its field, with its reset; not listed at the breakpoint too (designer, 2026-11-07). Hug before, it is Fixed now: its sizing is marked too (designer, 2026-11-08).
+  // Marked on its field, with its row's reset; not listed at the breakpoint too (designer, 2026-11-07). Hug before, it is Fixed now: its sizing is marked too, the one reset taking both back (designer, 2026-11-08).
   await expect(design(page).getByRole("button", { name: "Reset width", exact: true })).toBeVisible();
-  await expect(design(page).getByRole("button", { name: "Reset width sizing" })).toBeVisible();
+  await expect(design(page).getByRole("button", { name: /^Reset width/ })).toHaveCount(1);
+  await expect(design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`)).toHaveClass(/\bis-changed\b/);
   await expect(design(page).getByRole("region", { name: "Tablet breakpoint" }).getByRole("list")).toHaveCount(0);
 
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
