@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SCRUB_RULER_IN_MS, SCRUB_RULER_OUT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -179,7 +179,9 @@ export const styles = /* css */ `
   --tk-button: #e5e5e4; /* neutral 200: the buttons at the panels' tops */
   --tk-raised: #fafafa; /* neutral 50: the choice of a segmented control, the Layers' disclosures */
   --tk-tool-chosen: #ffffff; /* neutral 0: the tool chosen */
-  --tk-panel-label: #525351; /* neutral 600: what the Design panel shows */
+  /* The editor's prominent button, on the tool chosen's white: the chosen tool's backing, the Show layers button (designer, 2026-11-08). */
+  --tk-prominent-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  --tk-panel-label: #525351; /* neutral 600: the tools' icons */
   --tk-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
   --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variants tabs */
   color-scheme: light;
@@ -235,14 +237,15 @@ export const styles = /* css */ `
 /* The Layers panel starts hidden: the canvas takes its column, and a button at its top left brings it back. */
 .tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) 320px; }
 /*
- * Its size, corners, color and place on the screen those of the button in the Layers panel's top that hid them, so
+ * Its size, corners and place on the screen those of the button in the Layers panel's top that hid them, so
  * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 24px, 6px corners, the panel's padding
- * from the left, centred on the 28px header from the top. Its gray is the canvas's own, so a hairline keeps it a button.
+ * from the left, centred on the 30px header from the top. Alone over the canvas, it is the editor's prominent button,
+ * the chosen tool's white and shadow (designer, 2026-11-08).
  */
 .tk-show-layers {
   all: unset;
   position: absolute;
-  top: 18px;
+  top: 19px;
   left: 16px;
   z-index: 1;
   display: grid;
@@ -250,11 +253,11 @@ export const styles = /* css */ `
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: var(--tk-button);
-  box-shadow: inset 0 0 0 0.5px var(--tk-border);
+  background: var(--tk-tool-chosen);
+  box-shadow: var(--tk-prominent-shadow);
   color: var(--tk-text);
 }
-.tk-show-layers:hover { background: var(--tk-border); }
+.tk-show-layers:hover { background: var(--tk-raised); }
 .tk-show-layers:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
 .tk-stop-playing {
   all: unset;
@@ -305,7 +308,7 @@ export const styles = /* css */ `
   height: 32px;
   border-radius: 8px;
   background: var(--tk-tool-chosen);
-  box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
+  box-shadow: var(--tk-prominent-shadow);
   transform: translateY(calc(var(--tk-tool-index, 0) * 35px));
 }
 .tk-tools-backing.is-sliding { transition: transform ${TOOL_SLIDE_MS}ms ${EASE_IN_OUT}; }
@@ -366,18 +369,44 @@ export const styles = /* css */ `
 @keyframes tk-toast-fade-in { from { opacity: 0; } }
 
 /*
- * A panel's top. The Layers': a button that hides them, and their title with a rule to the edge, as a section's.
- * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the way back at the right, a rule under them.
+ * A panel's top, one style for both (designer, 2026-11-08). The Layers': a button that hides them, and their title.
+ * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the
+ * way back at the right. Under both, the line the Design panel's had, inset by the panel's padding.
+ * Sticky, on the panel's own color: what scrolls up goes under it. It reaches over the panel's padding (16px) to the
+ * panel's edges, so nothing shows above or beside it; sticky keeps to the panel's padding, so it sticks 16px up.
+ * Scrolled, the line runs to the panel's edges, by its clip alone (designer, 2026-11-08).
  */
-.tk-panel-header { display: flex; align-items: center; gap: 4px; min-height: 28px; }
-.tk-panel.is-design > .tk-panel-header { min-height: 30px; padding-bottom: 6px; border-bottom: 1px solid var(--tk-border); }
-/* What the Design panel shows: Design, or Variants with nothing selected (designer, 2026-11-08). Its auto margin puts the count and the way back at the right. */
-.tk-panel-label { margin: 0 auto 0 2px; font: inherit; font-size: 12px; font-weight: 500; letter-spacing: -0.02em; color: var(--tk-panel-label); }
-.tk-panel-title {
+.tk-panel-header {
+  position: sticky;
+  top: -16px;
+  z-index: 2;
   display: flex;
-  flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  min-height: 30px;
+  margin: -16px -16px 0;
+  padding: 16px 16px 7px;
+  background: var(--tk-panel);
+}
+.tk-panel-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--tk-border);
+  clip-path: inset(0 16px);
+  transition: clip-path ${HEADER_LINE_MS}ms ${EASE_OUT};
+  pointer-events: none;
+}
+.tk-panel[data-scrolled] > .tk-panel-header::after { clip-path: inset(0); }
+@media (prefers-reduced-motion: reduce) {
+  .tk-panel-header::after { transition: none; }
+}
+/* The Layers' title's type for both (designer, 2026-11-08); it takes the room left, which puts the Design panel's count and way back at the right. */
+.tk-panel-title {
+  flex: 1;
   min-width: 0;
   margin: 0;
   padding: 0 0 0 4px;
@@ -386,7 +415,7 @@ export const styles = /* css */ `
   font-weight: 500;
   color: var(--tk-title);
 }
-.tk-panel-title::after { content: ""; flex: 1; height: 1px; background: var(--tk-border); }
+.tk-panel.is-design .tk-panel-title { padding-left: 2px; }
 .tk-panel-header > .tk-icon-button { width: 30px; height: 30px; border-radius: 8px; background: var(--tk-button); }
 .tk-panel.is-layers .tk-panel-header > .tk-icon-button { width: 24px; height: 24px; border-radius: 6px; }
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }

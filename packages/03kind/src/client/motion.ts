@@ -42,3 +42,6 @@ export const RESET_POP_MS = 150;
 export const SCRUB_RULER_IN_MS = 150;
 export const SCRUB_RULER_OUT_MS = 120;
 export const GRIP_TILT_MAX_DEG = 12;
+
+/** The line under a panel's header running to the panel's edges once the panel is scrolled, and back at its top (designer, 2026-11-08); with reduced motion, at once. */
+export const HEADER_LINE_MS = 200;
