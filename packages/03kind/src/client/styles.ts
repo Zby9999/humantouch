@@ -249,7 +249,7 @@ export const styles = /* css */ `
 }
 .tk-tools .tk-icon-button { position: relative; width: 32px; height: 32px; border-radius: 8px; color: var(--tk-panel-label); }
 .tk-tools .tk-icon-button[aria-pressed="true"] { background: none; color: var(--tk-text-muted); }
-/* The white under the chosen tool, one for all three: it moves by transform alone, a tool (32px) and a gap (3px) a step. */
+/* The white under the chosen tool, one for all three: it moves by transform alone, a tool (32px) and a gap (3px) a step (designer, 2026-11-08). */
 .tk-tools-backing {
   position: absolute;
   top: 4px;

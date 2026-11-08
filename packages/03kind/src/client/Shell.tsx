@@ -857,11 +857,11 @@ function Tools({ tool, onTool }: ToolsProps) {
   // The tool last clicked, until the choice changes; whether that change slides is kept until the next one, so a
   // render meanwhile doesn't take the transition off halfway. On the first render nothing has changed: no slide.
   const clicked = useRef<Tool | undefined>(undefined);
-  const shown = useRef(tool);
+  const placedAt = useRef(tool);
   const sliding = useRef(false);
-  if (tool !== shown.current) {
+  if (tool !== placedAt.current) {
     sliding.current = clicked.current === tool;
-    shown.current = tool;
+    placedAt.current = tool;
     clicked.current = undefined;
   }
   const index = TOOLS.findIndex((t) => t.tool === tool);
