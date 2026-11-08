@@ -495,6 +495,8 @@ function size(axis: "width" | "height"): Definition<Size> {
     },
     writes: [axis, "flex-grow", "flex-shrink", "flex-basis", "align-self", "justify-self"],
     sets: [axis, "flex-grow", "align-self", "justify-self"],
+    // `justify-self` is read only in a Grid: elsewhere it sets nothing, and the notes do not name it.
+    setsOn: (el) => (inGrid(el) ? [axis, "flex-grow", "align-self", "justify-self"] : [axis, "flex-grow", "align-self"]),
   };
 }
 
