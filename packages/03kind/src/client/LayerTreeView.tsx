@@ -171,45 +171,39 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
 
 /** A swipe goes on while its wheel events come this close together, its momentum's too. */
 const SWIPE_GAP_MS = 200;
-/** How far a swipe goes, either way, before its way is taken: sideways when it went this many times as far sideways as up or down (designer, 2026-11-08). */
+/** How far a swipe goes, either way, before it is taken for up and down: when it went this many times as far up or down as sideways (designer, 2026-11-08). */
 const SWIPE_DECIDES_PX = 8;
-const SIDEWAYS_RATIO = 1.5;
+const UPRIGHT_RATIO = 1.5;
 
 /**
- * Each swipe over the list scrolls it one way only (designer, 2026-11-08): up and down unless it goes mostly
- * sideways from its start, so a swipe meant to go down does not drift sideways. A wheel's turn, straight up or
- * down, is left to the browser; a swipe's other way, dropped.
+ * A swipe up and down over the list does not drift sideways (designer, 2026-11-08): one that went mostly up or
+ * down from its start goes only so, its sideways dropped; any other goes as it goes, sideways too. A wheel's
+ * turn, straight up or down, is left to the browser.
  */
 function lockAxis(box: HTMLElement): () => void {
-  let axis: "x" | "y" | null = null;
+  let upright: boolean | null = null;
   let along = 0;
   let across = 0;
   let last = -Infinity;
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey) return;
     if (event.timeStamp - last > SWIPE_GAP_MS) {
-      axis = null;
+      upright = null;
       along = across = 0;
     }
     last = event.timeStamp;
     const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? box.clientHeight : 1;
     const dx = event.deltaX * unit;
     const dy = event.deltaY * unit;
-    if (axis === null) {
+    if (upright === null) {
       across += Math.abs(dx);
       along += Math.abs(dy);
-      if (across + along >= SWIPE_DECIDES_PX) axis = across > along * SIDEWAYS_RATIO ? "x" : "y";
+      if (across + along >= SWIPE_DECIDES_PX) upright = along >= across * UPRIGHT_RATIO;
     }
-    // Till the swipe has a way, up and down.
-    if ((axis ?? "y") === "y") {
-      if (!dx) return;
-      event.preventDefault();
-      box.scrollTop += dy;
-    } else {
-      if (!dy) return;
-      event.preventDefault();
-      box.scrollLeft += dx;
-    }
+    // Till the swipe is taken for one or the other, up and down only: a few px at most.
+    if (upright === false || !dx) return;
+    event.preventDefault();
+    box.scrollTop += dy;
   };
   box.addEventListener("wheel", onWheel, { passive: false });
   return () => box.removeEventListener("wheel", onWheel);

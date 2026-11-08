@@ -270,7 +270,7 @@ test("a long name shows in full: the Layers scroll sideways, the tree with the n
   await expect.poll(() => parts(row)).toEqual(before);
 });
 
-test("a swipe over the Layers goes one way: up and down unless mostly sideways from its start (designer, 2026-11-08)", async ({ page }) => {
+test("a swipe up and down over the Layers does not drift sideways; any other goes sideways freely (designer, 2026-11-08)", async ({ page }) => {
   await page.evaluate(() => {
     const many = document.createElement("div");
     many.innerHTML = `<p>A very long paragraph whose layer name runs well past the Layers panel's edge</p>` + Array.from({ length: 40 }, (_, i) => `<p>Row ${i}</p>`).join("");
@@ -288,17 +288,18 @@ test("a swipe over the Layers goes one way: up and down unless mostly sideways f
   await expect.poll(async () => (await scrolled()).top).toBeGreaterThan(100);
   expect((await scrolled()).left).toBe(0);
 
-  // A new swipe, as far sideways as down: down only.
+  // A new swipe, as far sideways as down: both ways, as it goes.
   await page.waitForTimeout(400);
-  for (let i = 0; i < 4; i++) await page.mouse.wheel(12, 10);
-  await expect.poll(async () => (await scrolled()).left).toBe(0);
   const before = await scrolled();
+  for (let i = 0; i < 4; i++) await page.mouse.wheel(12, 12);
+  await expect.poll(async () => (await scrolled()).left).toBeGreaterThan(0);
+  expect((await scrolled()).top).toBeGreaterThan(before.top);
 
-  // A new swipe, mostly sideways, drifting down a little: sideways only.
+  // A new swipe, sideways a little only: sideways.
   await page.waitForTimeout(400);
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(20, 8);
-  await expect.poll(async () => (await scrolled()).left).toBeGreaterThan(100);
-  expect((await scrolled()).top).toBe(before.top);
+  const left = (await scrolled()).left;
+  await page.mouse.wheel(10, 0);
+  await expect.poll(async () => (await scrolled()).left).toBeGreaterThan(left);
 });
 
 test("the Layers still scroll up and down, and a layer selected on the canvas comes into view there", async ({ page }) => {
