@@ -222,7 +222,8 @@ test("the button that hides the Layers panel and the one that shows it again are
   };
 
   const shown = await looks(hide);
-  expect(shown.box.width).toBe(24);
+  // 28px, as the Design panel's × (designer, 2026-11-08).
+  expect(shown.box.width).toBe(28);
   await hide.click();
   const hidden = await looks(show);
   near(hidden.box, shown.box);
@@ -264,7 +265,7 @@ test("one line under the Layers panel's top, the header's own, also once hidden 
         const { found, header } = await lines();
         return { found: found.map((line) => line.replace(/: .*$/, "")), header };
       })
-      .toEqual({ found: ["tk-panel-header::after"], header: 51 });
+      .toEqual({ found: ["tk-panel-header::after"], header: 47 });
   };
   await noRuleAcross();
   // Shown again, the panel once took the Design panel's elements, and its header the rule under that panel's.

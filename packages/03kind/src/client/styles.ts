@@ -279,20 +279,20 @@ export const styles = /* css */ `
 .tk-shell.is-layers-hidden { grid-template-columns: minmax(0, 1fr) var(--tk-design-width); }
 /*
  * Its size, corners and place on the screen those of the button in the Layers panel's top that hid them, so
- * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 24px, 6px corners, the panel's padding
+ * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 28px as the Design panel's ×, 6px corners, the panel's padding
  * from the left, centred on the 28px header from the top. Alone over the canvas, it is the editor's prominent button,
  * the chosen tool's white and shadow (designer, 2026-11-08).
  */
 .tk-show-layers {
   all: unset;
   position: absolute;
-  top: 18px;
+  top: 12px;
   left: 16px;
   z-index: 1;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   background: var(--tk-tool-chosen);
   box-shadow: var(--tk-prominent-shadow);
@@ -498,7 +498,8 @@ export const styles = /* css */ `
   gap: 4px;
   min-height: 28px;
   margin: -16px -16px 0;
-  padding: 16px 16px 7px;
+  /* 12px from the panel's top to its buttons (designer, 2026-11-08). */
+  padding: 12px 16px 7px;
   background: var(--tk-panel);
 }
 .tk-panel-header::after {
@@ -530,7 +531,6 @@ export const styles = /* css */ `
 }
 .tk-panel.is-design .tk-panel-title { padding-left: 2px; }
 .tk-panel-header > .tk-icon-button { width: 28px; height: 28px; border-radius: 6px; background: var(--tk-button); }
-.tk-panel.is-layers .tk-panel-header > .tk-icon-button { width: 24px; height: 24px; border-radius: 6px; }
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }
 .tk-count {
   all: unset;
@@ -552,7 +552,7 @@ export const styles = /* css */ `
 .tk-count:hover { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
 .tk-count:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
 /* Opened from the count: below the panel's top, over the panel, which would clip it. */
-.tk-panel-header .tk-changes { position: fixed; top: 52px; right: 16px; z-index: 1; }
+.tk-panel-header .tk-changes { position: fixed; top: 48px; right: 16px; z-index: 1; }
 
 .tk-panel-empty { margin: 0; color: var(--tk-text-muted); }
 
