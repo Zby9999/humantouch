@@ -42,6 +42,13 @@ function cardStyles(page: Page, property: "backgroundColor" | "borderRadius", wh
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
 const changeList = (page: Page) => page.getByRole("dialog", { name: "Changes" });
 
+/** The change list's surface and title, computed: light as the editor's menus and popovers (designer, 2026-11-08). */
+async function expectLightList(page: Page) {
+  await expect(changeList(page)).toHaveCSS("background-color", "rgb(245, 245, 245)");
+  await expect(changeList(page).getByRole("heading")).toHaveCSS("color", "rgb(10, 10, 9)");
+  await expect(changeList(page).getByRole("heading")).toHaveCSS("font-weight", "600");
+}
+
 /** The cards of the loop: red, then corner radius 2px. The Get started button: blue. Three changes. */
 async function makeThreeChanges(page: Page) {
   await enterEditMode(page);
@@ -187,6 +194,7 @@ test("in edit mode, an X beside the Design title goes back to preview mode, and 
   await expect(count).toHaveText("3");
   await count.click();
   await expect(changeList(page).getByRole("listitem")).toHaveCount(3);
+  await expectLightList(page);
   await page.keyboard.press("Escape");
   await expect(changeList(page)).toHaveCount(0);
   await expect(count).toBeFocused();
@@ -195,6 +203,9 @@ test("in edit mode, an X beside the Design title goes back to preview mode, and 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
   await expect(badge(page)).toHaveText("3");
+  // On the toggle too, outside the shell.
+  await badge(page).click();
+  await expectLightList(page);
 });
 
 test("the change list has the keys as soon as it is on the page: Esc pressed before the next frame closes it", async ({ page }) => {
