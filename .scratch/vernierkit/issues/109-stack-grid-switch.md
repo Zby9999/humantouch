@@ -13,6 +13,7 @@
 - [ ] Stack 一节的方向里有 Grid，选了就转成 Grid，面板换成 Grid 一节；Grid 一节里能改回横排、竖排的 Stack；样子照 Figma，细节可作为代定
 - [ ] 转换画面不跳：子图层的位置、尺寸和转之前一样（1px 以内，和 ⇧A 合成一样的标准）；做不到的情况（例如子图层宽度各不相同、转成等宽列会变）怎么取舍作为代定
 - [ ] 子图层的 Hug / Fill / Fixed、对齐、均匀分布、`auto` 外边距在两种排列之间怎么对应作为代定；页面原有的、按 `grid-template-areas` 或按行列号放子图层的 Grid 改回 Stack 时怎么办，也作为代定
+- [ ] Grid 格子上的 Hug / Fill 改动（调前端第 1 轮已能改）Agent 那边跟上：写法规则只在 Grid 里出现，核对认 `w-full`，`apply` 走一遍是 ✓（见「背景」最后一条）
 - [ ] 平板、手机视图里转只在那个断点生效，有断点标记、可重置；桌面视图里转作用于所有断点；旁边的视图照 ADR 0011 跟上
 - [ ] 一次转换是改动列表里的一条，⌘Z 一步撤回；改动说明写成这个图层排列方式的样式改动，照项目的写法（Tailwind 的 `grid grid-cols-3 gap-6`、CSS 的 `display: grid`）；`done` 核对 `display`、列数、行列间距，断点改动照 ticket 104 也看范围外的宽度
 - [ ] 脚本扮演 Agent（`apply`）走一遍「Stack 转 Grid、落地、`done`」和「手机视图里 Grid 改回竖排、落地、`done`」，核对是 ✓
@@ -23,6 +24,7 @@
 ## 背景
 
 - 设计师 2026-11-09：「新建 Grid 以及 Stack 和 Grid 互相转换……我试用了一下感觉很必要」。spec 的 Out of Scope 里原有「新建 Grid、Stack 与 Grid 互相转换」，出自 ticket 18 的范围。
+- 调前端第 1 轮（f046089，2026-11-09 合进 main）起，Grid 里没写尺寸的格子读作 Fill（撑满它的列宽、行高；图片、视频这类保持自己的尺寸），面板在 Grid 的格子上也让选 Fill：Hug 写 `fit-content` 加 `justify-self` / `align-self: auto`，Fill 写 `auto` 加 `stretch`。Agent 那边还没跟上（规划会话审第 1 轮时发现）：写法规则「Sizes」只讲 Stack 里的 Fill；页面核对把格子里的 `width: 100%`（`w-full`）读成 Fixed，Agent 照常用 `w-full` 写 Fill 会被判没显示。本张定 Hug / Fill 在两种排列之间的对应时以此为准，并补上：Grid 里 Fill、Hug 的写法规则（只在改动的图层在 Grid 里时出现，原来的改动说明逐字不变）；核对把格子里的 `100%` 读作 Fill；`apply` 走一遍「Grid 里一个格子 Hug 改 Fill、落地、`done`」，核对是 ✓。
 
 ## 设计师决定（2026-11-09，分诊）
 
