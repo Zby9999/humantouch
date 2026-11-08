@@ -171,14 +171,12 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
 
 /** A swipe goes on while its wheel events come this close together, its momentum's too. */
 const SWIPE_GAP_MS = 200;
-/** How far a swipe goes sideways, and how many times as far as up or down, before the list scrolls sideways. */
-const SIDEWAYS_PX = 24;
-const SIDEWAYS_RATIO = 2;
-/** How far a swipe goes up or down before it is that, for its whole length. */
-const UPRIGHT_PX = 6;
+/** How far a swipe goes, either way, before its way is taken: sideways when it went this many times as far sideways as up or down (designer, 2026-11-08). */
+const SWIPE_DECIDES_PX = 8;
+const SIDEWAYS_RATIO = 1.5;
 
 /**
- * Each swipe over the list scrolls it one way only (designer, 2026-11-08): up and down unless it goes clearly
+ * Each swipe over the list scrolls it one way only (designer, 2026-11-08): up and down unless it goes mostly
  * sideways from its start, so a swipe meant to go down does not drift sideways. A wheel's turn, straight up or
  * down, is left to the browser; a swipe's other way, dropped.
  */
@@ -200,8 +198,7 @@ function lockAxis(box: HTMLElement): () => void {
     if (axis === null) {
       across += Math.abs(dx);
       along += Math.abs(dy);
-      if (across >= SIDEWAYS_PX && across > along * SIDEWAYS_RATIO) axis = "x";
-      else if (along >= UPRIGHT_PX) axis = "y";
+      if (across + along >= SWIPE_DECIDES_PX) axis = across > along * SIDEWAYS_RATIO ? "x" : "y";
     }
     // Till the swipe has a way, up and down.
     if ((axis ?? "y") === "y") {
