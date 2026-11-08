@@ -1288,3 +1288,102 @@ test("a reset taking several fields back stands at its row's left, outside them,
     })
     .toBe(2);
 });
+
+test("the row's reset looks as a changed field's own: its size, its corners and its ground, not bare on the panel (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const panel = design(page);
+  const radius = panel.getByRole("textbox", { name: "Corner radius" });
+  await radius.fill("20");
+  await radius.press("Enter");
+  const width = panel.getByRole("textbox", { name: "Width", exact: true });
+  await width.fill("300");
+  await width.press("Enter");
+  const rowReset = panel.locator(".tk-size-row > .tk-reset");
+  const fieldReset = panel.locator(".tk-field").getByRole("button", { name: "Reset corner radius" });
+  await expect(rowReset).toHaveCount(1);
+  await expect(fieldReset).toBeVisible();
+  const look = (reset: Locator) =>
+    reset.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { background: style.backgroundColor, color: style.color, radius: style.borderRadius };
+    });
+  await expect
+    .poll(async () => {
+      const [row, field] = await Promise.all([steadyBox(rowReset), steadyBox(fieldReset)]);
+      return { width: Math.round(row.width - field.width), height: Math.round(row.height - field.height) };
+    })
+    .toEqual({ width: 0, height: 0 });
+  const [row, field] = await Promise.all([look(rowReset), look(fieldReset)]);
+  expect(row.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(row).toEqual(field);
+});
+
+test("a section's reset shows for two of its changes, not for one, in every section: Appearance's opacity and radius (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const panel = design(page);
+  const appearance = panel.locator("section", { has: page.locator("#tk-appearance") });
+  const reset = appearance.getByRole("button", { name: "Reset Appearance" });
+  const opacity = panel.getByRole("textbox", { name: "Opacity", exact: true });
+  const radius = panel.getByRole("textbox", { name: "Corner radius" });
+  const wasRadius = await radius.inputValue();
+
+  await opacity.fill("50");
+  await opacity.press("Enter");
+  await expect(panel.locator(".tk-field:has([aria-label='Opacity'])")).toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+  await radius.fill("20");
+  await radius.press("Enter");
+  await expect(reset).toBeVisible();
+
+  await reset.click();
+  await expect(opacity).toHaveValue("100%");
+  await expect(radius).toHaveValue(wasRadius);
+  await expect(reset).toHaveCount(0);
+
+  // A check is clicked again to go back: marked, no reset of its own; it counts toward the section's.
+  const visible = panel.locator(".tk-check", { hasText: "Visible" });
+  await panel.getByRole("checkbox", { name: "Visible" }).uncheck();
+  await expect(visible).toHaveClass(/\bis-changed\b/);
+  await expect(visible.getByRole("button")).toHaveCount(0);
+  await expect(reset).toHaveCount(0);
+  await opacity.fill("50");
+  await opacity.press("Enter");
+  await expect(reset).toBeVisible();
+});
+
+test("a shadow's color changed is marked, with its row's reset, which takes it back (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const hex = effects.getByRole("textbox", { name: "Shadow 1 color", exact: true });
+  const hexField = effects.locator(".tk-color-field", { has: page.getByRole("textbox", { name: "Shadow 1 color", exact: true }) });
+  const opacityField = effects.locator(".tk-color-opacity", { has: page.getByRole("textbox", { name: "Shadow 1 opacity" }) });
+  const reset = effects.getByRole("button", { name: "Reset shadow 1", exact: true });
+  const yField = effects.locator(".tk-field:has([aria-label='Shadow 1 Y'])");
+  const sectionReset = effects.getByRole("button", { name: "Reset Effects" });
+  const was = await hex.inputValue();
+  await expect(hexField).not.toHaveClass(/\bis-changed\b/);
+
+  await hex.fill("FF0000");
+  await hex.press("Enter");
+  await expect(hexField).toHaveClass(/\bis-changed\b/);
+  await expect(opacityField).toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(1);
+  // The other shadow's color, and this one's numbers, unchanged: not marked; one operation, no section reset yet.
+  await expect(effects.locator(".tk-color-field", { has: page.getByRole("textbox", { name: "Shadow 2 color", exact: true }) })).not.toHaveClass(/\bis-changed\b/);
+  await expect(yField).not.toHaveClass(/\bis-changed\b/);
+  await expect(sectionReset).toHaveCount(0);
+
+  // The Y too: marked with its own reset; two operations bring the section's.
+  const y = effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true });
+  await y.fill("9");
+  await y.press("Enter");
+  await expect(yField).toHaveClass(/\bis-changed\b/);
+  await expect(yField.getByRole("button", { name: "Reset shadow 1 y" })).toBeVisible();
+  await expect(sectionReset).toBeVisible();
+
+  await reset.click();
+  await expect(hex).toHaveValue(was);
+  await expect(hexField).not.toHaveClass(/\bis-changed\b/);
+  await expect(y).toHaveValue("9");
+  await expect(sectionReset).toHaveCount(0);
+});

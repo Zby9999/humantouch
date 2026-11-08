@@ -102,6 +102,31 @@ test("a size typed in stays as typed, though the browser lays it out to 1/64 px 
   await expect.poll(() => widthOf(page, `${HERO} > button`)).toBeCloseTo(139.734, 2);
 });
 
+test("Wrap alone brings no Stack reset, nor one of its own; Wrap and the gap bring the Stack's, which takes both back (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const reset = panel.getByRole("button", { name: "Reset Stack" });
+  const wrap = panel.getByRole("button", { name: "Wrap", exact: true });
+  const gap = panel.getByRole("textbox", { name: "Gap" });
+  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "true");
+  await expect(wrap).toHaveClass(/\bis-changed\b/);
+  await expect(panel.getByRole("button", { name: /^Reset wrap/i })).toHaveCount(0);
+  await expect(reset).toHaveCount(0);
+
+  await setField(page, "Gap", "30");
+  await expect(reset).toBeVisible();
+  await reset.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+  await expect(wrap).not.toHaveClass(/\bis-changed\b/);
+  await expect(gap).toHaveValue("12");
+  await expect(reset).toHaveCount(0);
+  await expect.poll(() => canvasStyle(page, "header", "flex-wrap")).toBe("nowrap");
+});
+
 test("a Stack's direction, gap, padding and alignment, in design language", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Header").click();

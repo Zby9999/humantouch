@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { Editor } from "./edit-commands";
 import type { Layer } from "./layers";
-import { NumberField, stepOptions, type SlotOf } from "./Properties";
+import { NumberField, SectionReset, stepOptions, type SlotOf } from "./Properties";
 import { VariableSlot } from "./VariablePicker";
 
 interface Props {
@@ -41,9 +41,13 @@ export function GridSection({ editor, layers, onEdit, variable }: Props) {
   };
   return (
     <section class="tk-section" aria-labelledby="tk-grid">
-      <h3 id="tk-grid" class="tk-section-title">
-        Grid
-      </h3>
+      <div class="tk-section-header">
+        <h3 id="tk-grid" class="tk-section-title">
+          Grid
+        </h3>
+        {/* As every section's: shown for two changes or more (designer, 2026-11-08). */}
+        <SectionReset title="Grid" properties={["columns", "rowGap", "columnGap"]} />
+      </div>
       <div class="tk-grid-2">
         <NumberField label="Columns" icon="grid" property="columns" value={shown("columns")} min={1} onChange={set("columns")} />
       </div>

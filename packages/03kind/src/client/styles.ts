@@ -547,10 +547,25 @@ export const styles = /* css */ `
 .tk-reset:focus-visible { outline: 2px solid var(--tk-accent-strong); outline-offset: -2px; }
 /*
  * One reset taking several fields back (a size with its sizing, a color with its opacity): a button of the row's own, at its left, outside
- * the fields, which make room for it; 26px, quiet as a section's reset, 4px from the fields as unjoined things in a row are (designer, 2026-11-08).
+ * the fields, which make room for it, 4px from the fields as unjoined things in a row are. It looks as a changed field's own reset does,
+ * 26px, its white icon on blue 400, which with no accent under it is its own ground; blue 600 hovered, as that one (designer, 2026-11-08).
  */
-:is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; width: 26px; height: 26px; margin-right: 2px; color: var(--tk-accent); }
-:is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-field); }
+:is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; width: 26px; height: 26px; margin-right: 2px; background: var(--tk-accent-on); color: #fafafa; }
+:is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
+/* A changed field inside a picker (a gradient's angle, a stop): light on the accent, its reset as any changed field's. */
+.tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only) { color: #fafafa; }
+.tk-popover .tk-field.is-changed .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
+.tk-popover .tk-field.is-changed .tk-reset:hover { background: var(--tk-accent-strong); }
+/* A stop's position, changed: room for its reset beside the number. */
+.tk-stop-position.is-changed { width: 78px; }
+/* A shadow's type, changed: as wide as it was, its reset at its right end. */
+.tk-effect-type-field { flex: 1; min-width: 0; border-radius: 8px; }
+.tk-effect-type-field.is-changed > .tk-select { flex: 1; width: auto; min-width: 0; }
+/*
+ * Clicked again to go back (Wrap, the direction), a toggle has no reset of its own: changed, it is marked in the accent (designer, 2026-11-08).
+ * Wrap on is in the accent already; changed to off, its icon in the accent on the accent's tint.
+ */
+.tk-section .tk-icon-button.is-changed[aria-pressed="false"] { background: var(--tk-accent-soft); color: var(--tk-accent); }
 /* Its fields, marked with no reset of their own, keep their right inset; the sizing its width, its chevron where it was. */
 :is(.tk-size-row .tk-field:not(.tk-variable-chip), .tk-color-row > .tk-color-field).is-changed:not(.tk-popover *) { padding-right: 6px; }
 .tk-size-row > .tk-select-field.is-changed > .tk-select { width: 64px; padding-right: 24px; background-position: right 6px center; }
@@ -930,9 +945,8 @@ export const styles = /* css */ `
   background-color: #262625;
 }
 .tk-check input:indeterminate { background: #e5e5e4; }
-.tk-check.is-changed { background: var(--tk-accent); color: #fafafa; padding-right: 2px; }
-.tk-check.is-changed .tk-reset { margin-left: auto; }
-.tk-check.is-changed .tk-reset:hover { background: var(--tk-accent-on); }
+/* Changed, in the accent; checked again to go back, it has no reset of its own (designer, 2026-11-08). */
+.tk-check.is-changed { background: var(--tk-accent); color: #fafafa; }
 .tk-check input:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
 
 .tk-viewport {
