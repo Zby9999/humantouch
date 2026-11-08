@@ -1415,3 +1415,143 @@ test("a shadow's color changed is marked, with its row's reset, which takes it b
   await expect(y).toHaveValue("9");
   await expect(sectionReset).toHaveCount(0);
 });
+
+test("a gradient's angle changed in the picker is marked, with no reset inside the picker: the Fill row's one reset takes the whole fill back (designer, 2026-11-08)", async ({ page }) => {
+  await canvas(page)
+    .locator("article")
+    .evaluateAll((cards) => cards.slice(0, 3).forEach((card) => ((card as HTMLElement).style.backgroundImage = "linear-gradient(45deg, red, blue)")));
+  await selectRow(page, "Card");
+  const fill = design(page).getByRole("group", { name: "Fill" });
+  const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
+  await openFill(fill);
+  const angle = fill.getByRole("textbox", { name: "Angle", exact: true });
+  const angleField = fill.locator("label.tk-field[title='Angle']");
+  await expect(angle).toHaveValue("45");
+  const stopField = fill.locator(".tk-stop-position").first();
+  const width = (await steadyBox(stopField)).width;
+
+  await angle.fill("90");
+  await angle.press("Enter");
+  await expect.poll(() => gradient()).toBe("linear-gradient(90deg, rgb(255, 0, 0) 0%, rgb(0, 0, 255) 100%)");
+  await expect(angleField).toHaveClass(/\bis-changed\b/);
+  // No reset in the picker; the Fill's row has its one.
+  const picker = page.getByRole("dialog", { name: "Fill color" });
+  await expect(picker.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect(fill.getByRole("button", { name: "Reset fill", exact: true })).toHaveCount(1);
+
+  // A stop moved: marked, as wide as it was, no reset of its own.
+  const at = fill.getByRole("textbox", { name: "Stop 1 at", exact: true });
+  await at.fill("10%");
+  await at.press("Enter");
+  await expect(stopField).toHaveClass(/\bis-changed\b/);
+  await expect.poll(async () => (await steadyBox(stopField)).width).toBe(width);
+  await expect(picker.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+
+  await fill.getByRole("button", { name: "Reset fill", exact: true }).click();
+  await expect.poll(() => gradient()).toBe("linear-gradient(45deg, rgb(255, 0, 0), rgb(0, 0, 255))");
+  await expect(fill.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+});
+
+test("a shadow added in this round: its fields unmarked, with no resets, its − in the accent, which takes it back off (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const shadow3 = effects.getByRole("group", { name: "Shadow 3" });
+  const remove3 = effects.getByRole("button", { name: "Remove shadow 3" });
+  const was = (await cardStyles(page, "boxShadow"))[0];
+  await addEffect(effects, "Drop shadow");
+  await expect(shadow3).toBeVisible();
+
+  // Changed after it was added, still unmarked: it is new, all of it.
+  const y = effects.getByRole("textbox", { name: "Shadow 3 Y", exact: true });
+  await y.fill("12");
+  await y.press("Enter");
+  await expect(shadow3.locator(".is-changed")).toHaveCount(0);
+  await expect(shadow3.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect(remove3).toHaveClass(/\bis-added\b/);
+  // On a ground of its own, the accent, as Wrap on is; the − of a shadow the page had has none.
+  const ground = (button: Locator) => button.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await expect.poll(() => ground(remove3)).not.toBe("rgba(0, 0, 0, 0)");
+  expect(await ground(effects.getByRole("button", { name: "Remove shadow 1" }))).toBe("rgba(0, 0, 0, 0)");
+  // The shadows before it, unchanged: not marked, their − as ever.
+  await expect(effects.getByRole("group", { name: "Shadow 1" }).locator(".is-changed")).toHaveCount(0);
+  await expect(effects.getByRole("button", { name: "Remove shadow 1" })).not.toHaveClass(/\bis-added\b/);
+
+  await remove3.click();
+  await expect(shadow3).toHaveCount(0);
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe(was);
+  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
+});
+
+test("an existing shadow's Y changed is marked with its reset; one taken off above it leaves it unmarked (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const yField = effects.locator(".tk-field:has([aria-label='Shadow 1 Y'])");
+
+  // Shadow 1 taken off: shadow 2, now the first, is as it was, and unmarked.
+  await effects.getByRole("button", { name: "Remove shadow 1" }).click();
+  await expect(effects.getByRole("group", { name: "Shadow 2" })).toHaveCount(0);
+  const shadow1 = effects.getByRole("group", { name: "Shadow 1" });
+  await expect(shadow1.locator(".is-changed")).toHaveCount(0);
+  await expect(shadow1.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect(effects.getByRole("button", { name: "Remove shadow 1" })).not.toHaveClass(/\bis-added\b/);
+
+  // Its Y changed: marked, with its own reset, which takes it back.
+  const y = effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true });
+  const wasY = await y.inputValue();
+  await y.fill("9");
+  await y.press("Enter");
+  await expect(yField).toHaveClass(/\bis-changed\b/);
+  await expect(effects.locator(".tk-field:has([aria-label='Shadow 1 blur'])")).not.toHaveClass(/\bis-changed\b/);
+  await yField.getByRole("button", { name: "Reset shadow 1 y" }).click();
+  await expect(y).toHaveValue(wasY);
+  await expect(shadow1.locator(".is-changed")).toHaveCount(0);
+});
+
+test("a new shadow counts as one operation toward the section's reset, which takes it back off with the rest (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const sectionReset = effects.getByRole("button", { name: "Reset Effects" });
+  const was = (await cardStyles(page, "boxShadow"))[0];
+
+  await addEffect(effects, "Drop shadow");
+  // Its fields changed after: still the one operation.
+  const blur = effects.getByRole("textbox", { name: "Shadow 3 blur", exact: true });
+  await blur.fill("20");
+  await blur.press("Enter");
+  await expect(sectionReset).toHaveCount(0);
+
+  const y = effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true });
+  await y.fill("9");
+  await y.press("Enter");
+  await expect(sectionReset).toBeVisible();
+
+  await sectionReset.click();
+  await expect(effects.getByRole("group", { name: "Shadow 3" })).toHaveCount(0);
+  await expect.poll(async () => (await cardStyles(page, "boxShadow"))[0]).toBe(was);
+  await expect(effects.locator(".is-changed")).toHaveCount(0);
+});
+
+test("a Stack made in this round: its fields unmarked, only its − in the accent, which takes the Stack back out (designer, 2026-11-08)", async ({ page }) => {
+  const hero = canvas(page).locator('[data-testid="hero"] > *');
+  const was = await hero.evaluateAll((els) => els.map((el) => el.localName));
+  const layers = page.getByRole("tree", { name: "Layers" });
+  await layers.getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
+  await layers.getByRole("treeitem", { name: "Button", exact: true }).click({ modifiers: ["Shift"] });
+  await design(page).getByRole("button", { name: "Make Stack" }).click();
+  const stack = design(page).locator("section[aria-labelledby='tk-stack']");
+  const dissolve = stack.getByRole("button", { name: "Dissolve Stack" });
+  await expect(dissolve).toBeVisible();
+  await expect(dissolve).toHaveClass(/\bis-added\b/);
+
+  // Its gap and direction changed after: unmarked, no resets, no section reset.
+  const gap = stack.getByRole("textbox", { name: "Gap", exact: true });
+  await gap.fill("40");
+  await gap.press("Enter");
+  await stack.getByRole("radio", { name: "Horizontal" }).click();
+  await expect(stack.locator(".is-changed")).toHaveCount(0);
+  await expect(stack.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+
+  await dissolve.click();
+  await expect.poll(() => hero.evaluateAll((els) => els.map((el) => el.localName))).toEqual(was);
+  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
+});

@@ -3,7 +3,8 @@ import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, Targ
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
-import { ChangeMarksProvider, ResetButton, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
+import { ChangeMarksProvider, NO_MARKS, ResetButton, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
+import { matchItems } from "./list-match";
 import { Icon, type IconName } from "./icons";
 import { RESET_POP_MS } from "./motion";
 import { GridSection } from "./GridSection";
@@ -287,14 +288,16 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
           {limits.map((property) => {
             // Each its own row, with its button to take it off.
             const label = LIMIT_LABELS[property];
+            // Set in this round where there was none: its field unmarked, its − in the accent (designer, 2026-11-08).
+            const isNew = marks.added(property);
             return (
               <div key={property} class="tk-row tk-paint-row">
-                <VariableSlot label={label} slot={variable(property)} property={property}>
-                  <LimitField label={label} icon={LIMIT_ICONS[property]} property={property} value={shown(property)!} onChange={set(property)} />
-                </VariableSlot>
-                <button type="button" class="tk-icon-button" aria-label={`Remove ${label.toLowerCase()}`} onClick={() => removeLimit(property)}>
-                  <Icon name="minus" />
-                </button>
+                <ChangeMarksProvider value={isNew ? NO_MARKS : marks}>
+                  <VariableSlot label={label} slot={variable(property)} property={property}>
+                    <LimitField label={label} icon={LIMIT_ICONS[property]} property={property} value={shown(property)!} onChange={set(property)} />
+                  </VariableSlot>
+                </ChangeMarksProvider>
+                <RemoveButton label={`Remove ${label.toLowerCase()}`} added={isNew} onClick={() => removeLimit(property)} />
               </div>
             );
           })}
@@ -540,14 +543,18 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
   update: Update;
   variable: SlotOf;
 }) {
+  const outer = useChangeMarks();
+  // Made a Stack in this round: an item added, its fields unmarked, with no resets; its − alone in the accent, which takes the Stack back out (designer, 2026-11-08).
+  const added = outer.stacked();
   // The chosen point dark till the alignment changes in this round, then the accent; the point it was at before, drawn larger (designer, 2026-11-08).
-  const marks = useChangeMarks();
+  const marks = added ? NO_MARKS : outer;
   // The point alone: the gap's Auto, kept in the alignment too, marks the gap's field, not the grid.
   const changed = marks.changed("align", ALIGN_POINT);
   const was = changed ? (marks.before("align") as Align | null) : null;
   // Wrap is clicked again to go back: marked, with no reset of its own (designer, 2026-11-08). The direction, a segmented group, has its own, and counts for the section's reset too.
   const wrapChanged = marks.changed("wrap");
   return (
+    <ChangeMarksProvider value={marks}>
     <section class="tk-section" aria-labelledby="tk-stack">
       <div class="tk-section-header">
         <h3 id="tk-stack" class="tk-section-title">Stack</h3>
@@ -556,10 +563,10 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           properties={["direction", "gap", "align", "wrap", "padding"]}
           operations={[{ property: "direction" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
         />
-        {dissolve && (
-          <button type="button" class="tk-icon-button" aria-label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve}>
-            <Icon name="minus" />
-          </button>
+        {added ? (
+          <RemoveButton label="Dissolve Stack" title="Dissolve Stack (⌥⇧A): take it back out" added onClick={() => outer.unstack()} />
+        ) : (
+          dissolve && <RemoveButton label="Dissolve Stack" title="Dissolve Stack (⌥⇧A)" onClick={dissolve} />
         )}
       </div>
       {/* As the designer drew it (2026-11-07): the alignment at the left; the gap, then the direction and wrap, beside it. */}
@@ -615,6 +622,19 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
       </div>
       <PaddingFields padding={padding} update={update} variable={variable} />
     </section>
+    </ChangeMarksProvider>
+  );
+}
+
+/**
+ * An item's −, taking it off. Added in this round, it alone is marked: in the accent, as a button that stays on (Wrap, on),
+ * and taking it off takes the addition back (designer, 2026-11-08).
+ */
+function RemoveButton({ label, title, added = false, disabled, onClick }: { label: string; title?: string; added?: boolean; disabled?: boolean; onClick(): void }) {
+  return (
+    <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} title={title ?? (added ? `${label}: added in this round` : undefined)} disabled={disabled} onClick={onClick}>
+      <Icon name="minus" />
+    </button>
   );
 }
 
@@ -1202,12 +1222,11 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
     onGradientPicker?.(onGradient);
     return () => onGradientPicker?.(false);
   }, [onGradient]);
+  const marks = useChangeMarks();
+  /** Added in this round: its row unmarked, and all in its picker, with no resets; its − alone in the accent (designer, 2026-11-08). */
+  const added = marks.added("fill");
   /** At the end of the fill's row, as Figma has it (designer, 2026-11-07). */
-  const remove = (
-    <button type="button" class="tk-icon-button" aria-label="Remove fill" onClick={() => onChange(null)}>
-      <Icon name="minus" />
-    </button>
-  );
+  const remove = <RemoveButton label="Remove fill" added={added} onClick={() => onChange(null)} />;
   return (
     <section class="tk-section" role="group" aria-label="Fill">
       <div class="tk-section-header">
@@ -1220,6 +1239,7 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
           </button>
         )}
       </div>
+      <ChangeMarksProvider value={added ? NO_MARKS : marks}>
       {fill === MIXED && conic ? (
         <span class="tk-field tk-mixed">Mixed</span>
       ) : fill === MIXED ? (
@@ -1259,12 +1279,14 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
             top={
               <>
                 {types(gradient.type)}
+                {/* In the picker, what changed is marked, with no reset: the Fill's row has the one, for the whole fill (designer, 2026-11-08). */}
                 {gradient.type === "linear" && (
                   <NumberField
                     label="Angle"
                     icon="angle"
                     property="fill"
                     part={GRADIENT_ANGLE}
+                    rowReset
                     value={gradient.angle}
                     onChange={(angle, continues) => onChange({ ...gradient, angle: turned(angle) }, continues)}
                   />
@@ -1300,6 +1322,7 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
           </div>
         )
       )}
+      </ChangeMarksProvider>
     </section>
   );
 }
@@ -1344,20 +1367,38 @@ const radialPart = (key: "center" | "size", axis: "x" | "y") =>
   );
 const RADIAL_PARTS = { center: { x: radialPart("center", "x"), y: radialPart("center", "y") }, size: { x: radialPart("size", "x"), y: radialPart("size", "y") } };
 
-/** Stop `i` of a gradient: its position, or its color with its opacity. A stop added in this round goes back with the whole fill. */
-const stopPart = (i: number, which: "position" | "color") =>
-  gradientPart(
-    (g) => {
-      const s = g.stops[i];
-      return s ? (which === "position" ? [s.position, s.unit] : [s.color, s.opacity]) : null;
+/** A gradient's stops now matched to their own before, by identity: a stop added or taken off leaves the others matched to theirs (designer, 2026-11-08). */
+const matchStops = (before: ColorStop[], after: ColorStop[]) =>
+  matchItems(before, after, (was, now) => ((was.position === now.position && was.unit === now.unit ? 1 : 0) + (was.color === now.color && was.opacity === now.opacity ? 1 : 0)) / 2);
+
+/** Whether stop `i` of the gradient now was added to the gradient it was: none of its own before. A gradient from another fill has none added. */
+const stopAdded = (i: number) => (before: unknown, after: unknown) => {
+  const [was, now] = [gradientOf(before), gradientOf(after)];
+  return !!was && !!now && matchStops(was.stops, now.stops)[i] === null;
+};
+
+/** Stop `i` of a gradient: its position, or its color with its opacity, as it compares with its own stop before. */
+const stopPart = (i: number, which: "position" | "color"): ValuePart => {
+  const read = (s: ColorStop | undefined) => (s ? (which === "position" ? [s.position, s.unit] : [s.color, s.opacity]) : null);
+  return {
+    ...gradientPart(
+      (g) => read(g.stops[i]),
+      (g, before) => {
+        const j = matchStops(before.stops, g.stops)[i];
+        const [s, was] = [g.stops[i], j === null || j === undefined ? undefined : before.stops[j]];
+        if (!s || !was) return null;
+        const back = which === "position" ? stop(s, was.position, was.unit) : stop(was, s.position, s.unit);
+        return { ...g, stops: g.stops.map((other, k) => (i === k ? back : other)) } as Gradient;
+      },
+    ),
+    was: (before, after) => {
+      const [was, now] = [gradientOf(before), gradientOf(after)];
+      if (!was || !now) return null;
+      const j = matchStops(was.stops, now.stops)[i];
+      return j === null || j === undefined ? null : read(was.stops[j]);
     },
-    (g, before) => {
-      const [s, was] = [g.stops[i], before.stops[i]];
-      if (!s || !was) return null;
-      const back = which === "position" ? stop(s, was.position, was.unit) : stop(was, s.position, s.unit);
-      return { ...g, stops: g.stops.map((other, j) => (i === j ? back : other)) } as Gradient;
-    },
-  );
+  };
+};
 
 /** A gradient as its swatch in the panel shows it. */
 function gradientSwatch(gradient: Gradient, box: PaintArea): string {
@@ -1385,6 +1426,7 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
           unit="%"
           property="fill"
           part={RADIAL_PARTS.center[axis]}
+          rowReset
           value={centerPercent(gradient, axis, box)}
           onChange={change((current, value, box) => withCenter(current, axis, value, box))}
         />
@@ -1396,6 +1438,7 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
           icon={axis === "x" ? "width" : "height"}
           property="fill"
           part={RADIAL_PARTS.size[axis]}
+          rowReset
           // To a tenth of a px: a radius typed in px and kept in % reads back as typed.
           value={Math.round(radii[axis] * 10) / 10}
           min={0}
@@ -1529,9 +1572,10 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
       </div>
       {stops.map((s, index) => {
         const slot = variable(index);
-        // Its position and its color, each marked when changed in this round, with its reset (designer, 2026-11-08).
-        const [atPart, colorPart] = [stopPart(index, "position"), stopPart(index, "color")];
-        const [movedHere, coloredHere] = [marks.changed("fill", atPart), marks.changed("fill", colorPart)];
+        // Its position and its color, each marked when changed in this round, with no reset of its own: the Fill's row has the one, for the
+        // whole fill. A stop added in this round, unmarked: its − alone in the accent (designer, 2026-11-08).
+        const added = marks.added("fill", stopAdded(index));
+        const [movedHere, coloredHere] = added ? [false, false] : [marks.changed("fill", stopPart(index, "position")), marks.changed("fill", stopPart(index, "color"))];
         return (
           <div
             class={`tk-row tk-stop-row${index === chosen ? " is-chosen" : ""}`}
@@ -1549,7 +1593,6 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 step={(by) => place(index, s.position + by, s.unit)}
                 onChange={({ position, unit }) => place(index, position, unit)}
               />
-              {movedHere && <ResetButton label={`stop ${index + 1} position`} onReset={() => marks.reset(["fill"], atPart)} />}
             </label>
             <div class={`tk-field tk-color-field${coloredHere ? " is-changed" : ""}`}>
               <button type="button" class="tk-swatch tk-swatch-button" aria-label={`Choose stop ${index + 1}`} style={{ "--tk-swatch": cssColor(s) }} onClick={() => onChoose(index)} />
@@ -1560,11 +1603,9 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 offered={slot && catalog?.of("color").length ? slot : undefined}
                 onOpen={() => onChoose(index)}
               />
-              {coloredHere && <ResetButton label={`stop ${index + 1} color`} onReset={() => marks.reset(["fill"], colorPart)} />}
             </div>
-            <button type="button" class="tk-icon-button" aria-label={`Remove stop ${index + 1}`} disabled={stops.length <= 2} onClick={() => remove(index)}>
-              <Icon name="minus" />
-            </button>
+            <RemoveButton label={`Remove stop ${index + 1}`} added={added} disabled={stops.length <= 2} onClick={() => remove(index)} />
+
           </div>
         );
       })}
@@ -1665,11 +1706,16 @@ function StrokeSection({ stroke, onChange, update, variable }: {
     onChange(next, continues);
   };
   const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
+  const marks = useChangeMarks();
+  /** Added in this round: its fields unmarked, with no resets; its − alone in the accent, one operation for the section's reset (designer, 2026-11-08). */
+  const added = marks.added("stroke");
   /** Each field its own operation: the color row, the weight (or, Custom, each side's), the line, the sides. */
-  const operations: Operation[] = [STROKE_PARTS.color, ...(sides === "custom" ? STROKE_PARTS.side : [STROKE_PARTS.weight]), STROKE_PARTS.style, STROKE_PARTS.sides].map((part) => ({
-    property: "stroke",
-    part,
-  }));
+  const operations: Operation[] = added
+    ? [{ property: "stroke" }]
+    : [STROKE_PARTS.color, ...(sides === "custom" ? STROKE_PARTS.side : [STROKE_PARTS.weight]), STROKE_PARTS.style, STROKE_PARTS.sides].map((part) => ({
+        property: "stroke",
+        part,
+      }));
   return (
     <section class="tk-section" role="group" aria-label="Stroke">
       <div class="tk-section-header">
@@ -1681,6 +1727,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
           </button>
         )}
       </div>
+      <ChangeMarksProvider value={added ? NO_MARKS : marks}>
       {stroke && (
         <div class="tk-row tk-paint-row">
           {stroke === MIXED ? (
@@ -1695,9 +1742,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
               variable={variable}
             />
           )}
-          <button type="button" class="tk-icon-button" aria-label="Remove stroke" onClick={() => onChange(null)}>
-            <Icon name="minus" />
-          </button>
+          <RemoveButton label="Remove stroke" added={added} onClick={() => onChange(null)} />
         </div>
       )}
       {stroke && stroke !== MIXED && (
@@ -1773,6 +1818,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
           })}
         </div>
       )}
+      </ChangeMarksProvider>
     </section>
   );
 }
@@ -1789,25 +1835,62 @@ const isShadow = (type: EffectType): type is Shadow["type"] => type === "drop" |
 type ShadowKey = "type" | "x" | "y" | "blur" | "spread" | "color";
 const SHADOW_KEYS: ShadowKey[] = ["type", "x", "y", "blur", "spread", "color"];
 
+const readShadow = (s: Shadow, key: ShadowKey) => (key === "color" ? [s.color, s.opacity] : s[key]);
+
 /**
- * Shadow `i`'s field `key`, a part of the shadows, marked and reset on its own (designer, 2026-11-08).
- * A shadow added in this round had none before: its reset takes the shadow off.
+ * The shadows now, each matched to its own before, by identity, not by position: one taken off, or added before
+ * another, leaves the others matched to theirs, unmarked (designer, 2026-11-08). Null: a shadow added in this round.
+ */
+function matchShadows(before: unknown, after: unknown): (number | null)[] {
+  const [was, now] = [(before as Shadow[] | null) ?? [], (after as Shadow[] | null) ?? []];
+  return matchItems(was, now, (a, b) => SHADOW_KEYS.filter((key) => JSON.stringify(readShadow(a, key)) === JSON.stringify(readShadow(b, key))).length / SHADOW_KEYS.length);
+}
+
+/** Shadow `i`'s own shadow before this round; undefined for one added in it. */
+function shadowBefore(i: number, before: unknown, after: unknown): Shadow | undefined {
+  const j = matchShadows(before, after)[i];
+  return j === null || j === undefined ? undefined : (before as Shadow[])[j];
+}
+
+/** Whether shadow `i` was added in this round: an item added, its fields unmarked, its − alone in the accent (designer, 2026-11-08). */
+const shadowAdded = (i: number) => (before: unknown, after: unknown) => i < ((after as Shadow[] | null)?.length ?? 0) && !shadowBefore(i, before, after);
+
+/**
+ * Shadow `i`'s field `key`, a part of the shadows, marked and reset on its own, as it compares with its own shadow
+ * before (designer, 2026-11-08). A shadow added in this round has no field marked: its − takes it back off.
  */
 function shadowPart(i: number, key: ShadowKey): ValuePart {
-  const read = (s: Shadow) => (key === "color" ? [s.color, s.opacity] : s[key]);
   return {
     of: (value) => {
       const s = (value as Shadow[] | null)?.[i];
-      return s ? read(s) : null;
+      return s ? readShadow(s, key) : null;
+    },
+    was: (before, after) => {
+      const was = shadowBefore(i, before, after);
+      return was ? readShadow(was, key) : null;
     },
     back: (value, before) => {
       const now = (value as Shadow[] | null) ?? [];
-      const was = (before as Shadow[] | null)?.[i];
-      if (!was) return now.filter((_, j) => j !== i);
+      const was = shadowBefore(i, before, value);
+      if (!was) return now;
       return now.map((s, j) => (i !== j ? s : key === "color" ? { ...s, color: was.color, opacity: was.opacity } : { ...s, [key]: was[key] }));
     },
   };
 }
+
+/** Shadow `i`, added in this round, as one operation for the section's reset: taken back as the section's reset takes the shadows. */
+const shadowWhole = (i: number): ValuePart => ({
+  of: (value) => (value as Shadow[] | null)?.[i] ?? null,
+  was: (before, after) => shadowBefore(i, before, after) ?? null,
+  back: (_, before) => before,
+});
+
+/** The shadows taken off in this round, one operation for the section's reset: those before no shadow now is matched to. */
+const SHADOWS_TAKEN_OFF: ValuePart = {
+  of: () => 0,
+  was: (before, after) => ((before as Shadow[] | null) ?? []).length - matchShadows(before, after).filter((j) => j !== null).length,
+  back: (_, before) => before,
+};
 
 /** The marks, with a text layer's text shadows marked and reset as its shadows are: the Effects section shows both as shadows. */
 function withTextShadows(marks: ChangeMarks): ChangeMarks {
@@ -1820,6 +1903,9 @@ function withTextShadows(marks: ChangeMarks): ChangeMarks {
       for (const each of all) if (marks.changed(each, part)) marks.reset([each], part);
     },
     before: (property) => kept(property).map((each) => marks.before(each)).find((value) => value !== null) ?? null,
+    added: (property, item) => kept(property).some((each) => marks.added(each, item)),
+    stacked: () => marks.stacked(),
+    unstack: () => marks.unstack(),
   };
 }
 
@@ -1911,11 +1997,24 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
       ))}
     </Select>
   );
-  /** Each field its own operation: each shadow's type, numbers and color row, each blur; a shadow Variable, one. */
+  const marks = useChangeMarks();
+  /** Which shadows were added in this round: each unmarked, its − alone in the accent (designer, 2026-11-08). */
+  const added = shadows === MIXED || variable?.bound ? [] : shadows.map((_, i) => marks.added("shadows", shadowAdded(i)));
+  /**
+   * Each field its own operation: each shadow's type, numbers and color row, each blur; a shadow Variable, one.
+   * A shadow added, one; those taken off, one (designer, 2026-11-08).
+   */
   const operations: Operation[] = [
     ...(variable?.bound || shadows === MIXED
       ? [{ property: "shadows" as const }]
-      : shadows.flatMap((_, i) => SHADOW_KEYS.filter((key) => !withText || key !== "spread").map((key) => ({ property: "shadows" as const, part: shadowPart(i, key) })))),
+      : [
+          ...shadows.flatMap((_, i) =>
+            added[i]
+              ? [{ property: "shadows" as const, part: shadowWhole(i) }]
+              : SHADOW_KEYS.filter((key) => !withText || key !== "spread").map((key) => ({ property: "shadows" as const, part: shadowPart(i, key) })),
+          ),
+          { property: "shadows" as const, part: SHADOWS_TAKEN_OFF },
+        ]),
     { property: "layerBlur" },
     { property: "backgroundBlur" },
   ];
@@ -1954,13 +2053,12 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
           return (
             // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
             <div class="tk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
+              <ChangeMarksProvider value={added[i] ? NO_MARKS : marks}>
               <div class="tk-row tk-paint-row">
                 <MarkedSelect label={`${name} type`} property="shadows" part={shadowPart(i, "type")} class="tk-effect-type-field">
                   {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
                 </MarkedSelect>
-                <button type="button" class="tk-icon-button" aria-label={`Remove shadow ${i + 1}`} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))}>
-                  <Icon name="minus" />
-                </button>
+                <RemoveButton label={`Remove shadow ${i + 1}`} added={added[i]} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))} />
               </div>
               <div class="tk-grid-2">
                 {/* Words, not icons: X, Y, Blur and Spread read more plainly so, as a place's X and Y do (designer, 2026-11-07). */}
@@ -1970,6 +2068,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
                 {!withText && lengthField("spread", "spread", "Spread")}
               </div>
               <ColorField name={name} property="shadows" part={shadowPart(i, "color")} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
+              </ChangeMarksProvider>
             </div>
           );
         })
@@ -1978,15 +2077,15 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
         const value = blurs[property];
         if (value === undefined || value === null) return null;
         const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
+        // Added in this round: its field unmarked, its − alone in the accent (designer, 2026-11-08).
+        const isNew = marks.added(property);
         return (
           <div class="tk-effect" key={property} role="group" aria-label={label}>
             <div class="tk-row tk-paint-row">
               {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
-              <button type="button" class="tk-icon-button" aria-label={`Remove ${label.toLowerCase()}`} onClick={() => set(property)(null)}>
-                <Icon name="minus" />
-              </button>
+              <RemoveButton label={`Remove ${label.toLowerCase()}`} added={isNew} onClick={() => set(property)(null)} />
             </div>
-            <NumberField label={label} icon="blur" property={property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
+            <NumberField label={label} icon="blur" property={isNew ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
           </div>
         );
       })}
@@ -2143,7 +2242,10 @@ interface NumberFieldProps {
   part?: number | ValuePart;
   /** After the number, inside the field: a button of its own. */
   after?: ComponentChildren;
-  /** Its reset is its row's, at the row's left, taking more than this field back: marked, it has none of its own (designer, 2026-11-08). */
+  /**
+   * Its reset is its row's, at the row's left, taking more than this field back, or, in a color's picker (a gradient's angle),
+   * the color's row's, for all of it: marked, it has none of its own (designer, 2026-11-08).
+   */
   rowReset?: boolean;
 }
 
