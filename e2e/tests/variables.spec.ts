@@ -363,3 +363,45 @@ test("with nothing selected, a spacing Variable's bar is as long as it is; one t
   await expect(whole).toHaveCount(0);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
 });
+
+test("with nothing selected, a radius tile has its name over its value, in it whatever the name; pointed at, it tells them only when the name is cut short", async ({ page }) => {
+  // A 30-character radius of the project's own, added to what the example has.
+  const LONG = "corner-of-the-hero-banner-card";
+  await page.route("**/variables", async (route) => {
+    const response = await route.fetch();
+    const variables = await response.json();
+    await route.fulfill({ response, json: [...variables, { name: LONG, group: "radius", value: "12px", from: "tailwind", own: true }] });
+  });
+  await enterEditMode(page);
+  const radius = design(page).getByRole("region", { name: "Radius" });
+  await radius.scrollIntoViewIfNeeded();
+  const tiles = radius.locator(".tk-variants-tile");
+  const tile = (name: string) => tiles.filter({ has: page.locator(".tk-variants-tile-name").getByText(name, { exact: true }) });
+  await expect(tile(LONG)).toHaveCount(1);
+  await expect(tile("full")).toHaveCount(1);
+
+  // The name over the value, both at the tile's left; nothing past the tile's right, the longest name and value (9999px) included.
+  for (const t of await tiles.all()) {
+    const [edge, label, name, value] = await Promise.all([t, t.locator(".tk-variants-label"), t.locator(".tk-variants-tile-name"), t.locator(".tk-variants-value")].map(steadyBox));
+    expect(label.x + label.width).toBeLessThanOrEqual(edge.x + edge.width);
+    expect(name.x + name.width).toBeLessThanOrEqual(edge.x + edge.width);
+    expect(value.x + value.width).toBeLessThanOrEqual(edge.x + edge.width);
+    expect(value.y).toBeGreaterThanOrEqual(name.y + name.height - 0.5);
+    expect(value.x).toBe(name.x);
+  }
+  expect(await design(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+
+  // The long name is cut with an ellipsis; pointed at, its tile tells the name and value whole.
+  const longName = tile(LONG).locator(".tk-variants-tile-name");
+  expect(await longName.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis")).toBe(true);
+  await tile(LONG).hover();
+  const tip = page.getByRole("tooltip");
+  await expect(tip).toBeVisible();
+  await expect(tip).toContainText(`${LONG} 12px`);
+
+  // A tile whose name shows whole tells nothing more.
+  await tile("card").hover();
+  await expect(tip).toHaveCount(0);
+  await tile("full").hover();
+  await expect.poll(() => tip.count()).toBe(0);
+});

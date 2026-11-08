@@ -41,7 +41,9 @@ const SAMPLE_MAX = 32;
  * Variables, by group, the project's own first, then Tailwind's; colors as a
  * palette, a ramp a row, the others with what they look like. Found by name;
  * pointed at, one tells its name and value; clicked, it is set on the selected
- * layers that take one of its group, as the Design tab's Variables are.
+ * layers that take one of its group, as the Design tab's Variables are. A
+ * radius tile has its name over its value (designer, 2026-11-08): pointed at,
+ * it tells them only when its name is cut short, as nothing on screen repeats.
  */
 export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
   const [search, setSearch] = useState("");
@@ -61,7 +63,13 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
   /** A Variable's own button: pointed at or focused, it tells its name; clicked, it is set. */
   const item = (entry: Resolved, cls: string, children?: preact.ComponentChildren, style?: Record<string, string>) => {
     const can = !!takes[entry.variable.group];
-    const show = (event: Event) => setPointed({ entry, at: (event.currentTarget as Element).getBoundingClientRect() });
+    const show = (event: Event) => {
+      const button = event.currentTarget as Element;
+      // A tile that shows its name whole tells nothing more pointed at (designer, 2026-11-08).
+      const name = button.querySelector(".tk-variants-tile-name");
+      if (name && name.scrollWidth <= name.clientWidth) return;
+      setPointed({ entry, at: button.getBoundingClientRect() });
+    };
     return (
       <button
         key={entry.variable.name}
@@ -153,8 +161,8 @@ function view(group: VariableGroup, entries: Resolved[], item: Item) {
               "tk-variants-tile",
               <>
                 <span class="tk-variants-radius" style={{ borderTopLeftRadius: `${Math.min(entry.drawn as number, 40)}px` }} />
-                <span class="tk-variants-label">
-                  <span>{entry.variable.name}</span>
+                <span class="tk-variants-label is-stacked">
+                  <span class="tk-variants-tile-name">{entry.variable.name}</span>
                   <span class="tk-variants-value">{px(entry.drawn as number)}</span>
                 </span>
               </>,

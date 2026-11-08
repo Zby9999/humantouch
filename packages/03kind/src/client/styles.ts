@@ -1390,6 +1390,15 @@ export const styles = /* css */ `
 .tk-variants-shadow { width: 48px; height: 28px; margin-top: 4px; border-radius: 6px; background: #ffffff; }
 .tk-variants-label { display: flex; align-self: stretch; justify-content: space-between; gap: 4px; font-weight: 500; }
 .tk-variants-label.is-center { justify-content: center; }
+/*
+ * A radius tile's name over its value, both at its left, the name cut short
+ * when the tile is too narrow for it (designer, 2026-11-08). The tile never
+ * grows past its column.
+ */
+.tk-variants-tile { min-width: 0; }
+.tk-variants-label.is-stacked { flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; font-weight: 400; }
+.tk-variants-label.is-stacked > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-variants-label.is-stacked .tk-variants-value { margin-left: 0; }
 .tk-variants-tile[aria-disabled="true"], .tk-variants-row.is-button[aria-disabled="true"] { cursor: default; }
 .tk-variants-tip {
   position: fixed;
