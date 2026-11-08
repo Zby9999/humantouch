@@ -89,6 +89,29 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
   await expect(page.getByRole("button", { name: "Delete Phone view" })).toBeVisible();
 });
 
+test("a view's name and widths, pointed at, outline its page; clicked, they select it, worked in in that view; Esc lets it go (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  const title = page.getByRole("button", { name: "Select Tablet view" });
+  await expect(title).toContainText("Tablet");
+  await title.hover();
+  const hover = page.locator('.tk-hover[data-view="Tablet"]');
+  await expect(hover).toBeVisible();
+  // As wide as the view's page, on screen.
+  const frame = (await tablet(page).boundingBox())!;
+  expect(Math.abs((await steadyBox(hover)).width - frame.width)).toBeLessThanOrEqual(2);
+  await expect(page.locator('.tk-hover[data-view="Desktop"]')).toHaveCount(0);
+
+  await title.click();
+  await expect(design(page).getByRole("region", { name: "Tablet breakpoint" })).toBeVisible();
+  await expect(page.locator('.tk-selection[data-view="Tablet"]')).toBeVisible();
+  // The page is not moved, copied or deleted by the keys.
+  for (const key of ["ArrowRight", "Delete", "ControlOrMeta+d"]) await page.keyboard.press(key);
+  await expect(tablet(page).contentFrame().locator("h1")).toBeVisible();
+  await expect(page.getByRole("button", { name: /changes? not applied yet/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".tk-selection")).toHaveCount(0);
+});
+
 test("selecting in one view selects the same layer in every view; an edit shows in every view", async ({ page }) => {
   await enterEditMode(page);
 

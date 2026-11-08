@@ -1248,6 +1248,9 @@ export const styles = /* css */ `
   color: var(--tk-text-muted);
   white-space: nowrap;
 }
+/* Its name and widths: a button selecting the page in the view (designer, 2026-11-08). */
+.tk-view-title { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; font: inherit; color: inherit; cursor: default; }
+.tk-view-title:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
 .tk-view-name { flex: none; color: var(--tk-text); font-weight: 500; }
 .tk-view-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .tk-view-play, .tk-view-delete { flex: none; width: 20px; height: 20px; }

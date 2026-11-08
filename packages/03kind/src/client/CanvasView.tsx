@@ -129,6 +129,8 @@ export function CanvasView(props: Props) {
   const attached = useRef(new Map<number, { view: View | null; gone: boolean }>());
   /** The view the designer last pressed in: a new Frame's brief shows there. */
   const [active, setActive] = useState<View | null>(null);
+  /** The view whose name and widths above it are pointed at (`keyOf`): its page is outlined, as a Frame's is in Figma. */
+  const [titled, setTitled] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -1207,6 +1209,7 @@ export function CanvasView(props: Props) {
           return (
             <Fragment key={keyOf(shown)}>
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
+              {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
               {withHandles && !shown.offCanvasLayer && (!spaceHeld || resize) && (
@@ -1265,8 +1268,22 @@ export function CanvasView(props: Props) {
             left={camera.x + p.x * camera.zoom}
             top={camera.y - LABEL_OFFSET}
             size={p.width * camera.zoom}
-            onPlay={(button) => onPlay(p.desktop ? null : p.width, button)}
+            onPlay={(button) => {
+              setTitled(null);
+              onPlay(p.desktop ? null : p.width, button);
+            }}
             onDelete={p.desktop ? undefined : () => setViewWidths(widths.filter((width) => width !== p.width))}
+            // The page in the view, selected as a Frame is by its name: the view is the one worked in from then on (ADR 0011).
+            onSelect={
+              p.view && tree
+                ? () => {
+                    views?.sync(p.view!);
+                    setActive(p.view);
+                    onSelect([tree.root]);
+                  }
+                : undefined
+            }
+            onPoint={(pointed) => setTitled(pointed ? keyOf(p) : null)}
           />
         ))}
       {bounds && !travelling && !playing && (

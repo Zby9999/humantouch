@@ -78,8 +78,9 @@ export function rangeText(breakpoint: Breakpoint | null, width: number): string 
  * Above a view, as a Frame's name in Figma: its name and the widths it covers
  * (designer, 2026-11-08), with no tip: one telling the project's breakpoint
  * and what the view shows was too long to be worth it (designer, 2026-11-08).
- * At its right end, the way to play it full screen and, but for the desktop
- * view, to delete it.
+ * Clicked, they select the view's frame, the page in it, as a Frame's name
+ * does; pointed at, it is outlined (designer, 2026-11-08). At its right end,
+ * the way to play it full screen and, but for the desktop view, to delete it.
  */
 export function ViewLabel(props: {
   name: string;
@@ -92,8 +93,12 @@ export function ViewLabel(props: {
   /** Full screen, from this button: focus comes back to it after. */
   onPlay(button: HTMLButtonElement): void;
   onDelete?: () => void;
+  /** Its name and widths clicked: the page in the view is selected. */
+  onSelect?: () => void;
+  /** Its name and widths pointed at, and left. */
+  onPoint?: (pointed: boolean) => void;
 }) {
-  const { name, width, breakpoint, left, top, size, onPlay, onDelete } = props;
+  const { name, width, breakpoint, left, top, size, onPlay, onDelete, onSelect, onPoint } = props;
   return (
     <div
       class="tk-view-label"
@@ -102,10 +107,10 @@ export function ViewLabel(props: {
       style={{ left: `${left}px`, top: `${top}px`, width: `${size}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <span class="tk-view-name">{name}</span>
-      <span class="tk-view-range">
-        {rangeText(breakpoint, width)}
-      </span>
+      <button type="button" class="tk-view-title" aria-label={`Select ${name} view`} onClick={onSelect} onPointerEnter={() => onPoint?.(true)} onPointerLeave={() => onPoint?.(false)}>
+        <span class="tk-view-name">{name}</span>
+        <span class="tk-view-range">{rangeText(breakpoint, width)}</span>
+      </button>
       {/* Full screen before ×, which stays at the very end: the button pressed to play keeps its place on every view. */}
       <button
         type="button"
