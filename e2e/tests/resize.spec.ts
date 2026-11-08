@@ -228,6 +228,30 @@ test("a locked layer is resized as a whole, its outer size", async ({ page }) =>
   await expect(field(page, "Width")).toHaveValue(String(Math.round(before.width + 20)));
 });
 
+test("while a handle is held, its width field is not marked changed; let go, it is; Esc while held marks nothing (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
+  const width = field(page, "Width");
+  const was = await width.inputValue();
+  const reset = design(page).getByRole("button", { name: "Reset width", exact: true });
+
+  await dragHandle(page, handle(page, "e"), { x: 30, y: 0 }, { drop: false });
+  await expect(width).not.toHaveValue(was);
+  await expect(reset).toHaveCount(0);
+  await expect(design(page).getByRole("button", { name: "Reset width sizing" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(width).toHaveValue(was);
+  await expect(reset).toHaveCount(0);
+
+  await dragHandle(page, handle(page, "e"), { x: 30, y: 0 }, { drop: false });
+  await expect(width).not.toHaveValue(was);
+  await expect(reset).toHaveCount(0);
+  await page.mouse.up();
+  await expect(reset).toBeVisible();
+  await expect(design(page).getByRole("button", { name: "Reset width sizing" })).toBeVisible();
+});
+
 test("dragged in the tablet view, it is resized at the tablet's breakpoint only, its width field marked changed; in the desktop view, at every width", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();

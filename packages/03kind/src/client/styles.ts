@@ -1,4 +1,4 @@
-import { EASE_OUT, FIELD_STATE_MS, TOAST_FADE_MS } from "./motion";
+import { EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, TOAST_FADE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -470,6 +470,9 @@ export const styles = /* css */ `
 .tk-field, .tk-select, .tk-check { transition: background-color ${FIELD_STATE_MS}ms ease, box-shadow ${FIELD_STATE_MS}ms ease, color ${FIELD_STATE_MS}ms ease; }
 /* Adjusted, it takes the accent at once, the click answered; reset, it eases back (designer, 2026-11-08). */
 .tk-field.is-changed, .tk-check.is-changed, .tk-select-field.is-changed > .tk-select { transition: none; }
+/* Dragged, it stays as it was until let go, then eases into the accent, its words with it (designer, 2026-11-08). */
+.is-settling :is(.tk-field.is-changed, .tk-check.is-changed, .tk-select-field.is-changed > .tk-select),
+.is-settling .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only):not(.tk-popover *) { transition: background-color ${FIELD_SETTLE_MS}ms ease, color ${FIELD_SETTLE_MS}ms ease; }
 @media (hover: hover) and (pointer: fine) {
   .tk-field:not(.is-changed, :focus-within):hover,
   .tk-select:not(:disabled, :focus-visible, [aria-expanded="true"], .tk-gap-mode, .is-changed > *):hover { background-color: var(--tk-button); }

@@ -894,6 +894,33 @@ test("dragging left and right on a number's icon changes it, 1 per px and 10 wit
   await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["0px", "0px", "0px", "12px"]);
 });
 
+test("a number dragged is marked changed once let go, not while held; typed, at once (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const radius = design(page).getByRole("textbox", { name: "Corner radius" });
+  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const reset = design(page).getByRole("button", { name: "Reset corner radius" });
+  const { x, y } = await steadyBox(field.locator(".tk-scrub"));
+  await page.mouse.move(x + 4, y + 4);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i, y + 4);
+  // Held: the value shows as it goes, the field gray, with no reset.
+  await expect(radius).toHaveValue("17");
+  await expect(field).not.toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+  await page.mouse.up();
+  await expect(field).toHaveClass(/\bis-changed\b/);
+  await expect(reset).toBeVisible();
+
+  // Taken back, then typed: the accent at once, with no easing.
+  await reset.click();
+  await expect(field).not.toHaveClass(/\bis-changed\b/);
+  await expect(design(page)).not.toHaveClass(/\bis-settling\b/);
+  await radius.fill("20");
+  await radius.press("Enter");
+  await expect(field).toHaveClass(/\bis-changed\b/);
+  expect(await field.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+});
+
 test("dragging left and right on the bar at the end of a color's opacity changes it, 1% per px (designer, 2026-11-08)", async ({ page }) => {
   test.setTimeout(90_000);
   await selectRow(page, "Card");

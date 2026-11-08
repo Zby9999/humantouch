@@ -15,6 +15,8 @@ export const MODE_FADE_MS = 150;
 export const TOAST_FADE_MS = 180;
 /** A field darkening while hovered, and taking the accent once changed: a color alone, kept with reduced motion. */
 export const FIELD_STATE_MS = 120;
+/** A field dragged taking the accent once let go (designer, 2026-11-08): a color alone, kept with reduced motion. */
+export const FIELD_SETTLE_MS = 200;
 
 export function prefersReducedMotion(): boolean {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;
