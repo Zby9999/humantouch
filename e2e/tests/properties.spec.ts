@@ -1592,10 +1592,10 @@ test("a reset taking several fields back stands at its row's left, outside them,
   await expect
     .poll(async () => {
       const [reset, field] = await Promise.all([steadyBox(resetWidth), steadyBox(widthField)]);
-      // Left of it, 4px apart, centered on it.
+      // Left of it, 5px apart as things in a row are, centered on it.
       return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
     })
-    .toEqual({ gap: 4, size: 28, center: 0 });
+    .toEqual({ gap: 5, size: 28, center: 0 });
 
   // It takes both back.
   await resetWidth.click();
@@ -1625,7 +1625,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
       const [reset, field] = await Promise.all([steadyBox(resetFill), steadyBox(hexField)]);
       return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
     })
-    .toEqual({ gap: 4, size: 28, center: 0 });
+    .toEqual({ gap: 5, size: 28, center: 0 });
   await resetFill.click();
   await expect(hex).toHaveValue(wasHex);
   await expect(resetFill).toHaveCount(0);

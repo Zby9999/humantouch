@@ -682,11 +682,12 @@ export const styles = /* css */ `
 .tk-section-title::after { content: ""; flex: 1; min-width: 8px; height: 1px; background: var(--tk-border); }
 .tk-section-header { display: flex; align-items: center; gap: 4px; box-sizing: border-box; height: 24px; margin: 0 0 4px; }
 .tk-section-header .tk-section-title { flex: 1; min-height: 0; margin: 0 4px 0 0; padding: 0; }
-.tk-section > * + * { margin-top: 4px; }
+/* A section's rows 6px apart, one under the next; things side by side in a row, 5px (designer, 2026-11-08). */
+.tk-section > * + * { margin-top: 6px; }
 .tk-section > :is(.tk-section-title, .tk-section-header) + * { margin-top: 0; }
 /* A section with nothing under its title yet (Fill, Stroke): its title alone, 24px. */
 .tk-section > :is(.tk-section-title, .tk-section-header):last-child { margin-bottom: 0; }
-.tk-row { display: flex; align-items: center; gap: 4px; }
+.tk-row { display: flex; align-items: center; gap: 5px; }
 /* A field: 28px high (Figma: 03 Kind, 86:557; designer, 2026-11-08), raised on neutral 50 (--tk-input), its label (an icon or a word) before what it holds. */
 /* Its corners 6px, as every field, choice and button in the panel (designer, 2026-11-08). */
 .tk-field {
@@ -745,10 +746,10 @@ export const styles = /* css */ `
 .tk-reset:focus-visible { outline: 2px solid var(--tk-accent-strong); outline-offset: -2px; }
 /*
  * One reset taking several fields back (a size with its sizing, a color with its opacity): a button of the row's own, at its left, outside
- * the fields, which make room for it, 4px from the fields as unjoined things in a row are. It looks as a button that stays on (Wrap, on)
+ * the fields, which make room for it, 5px from the fields as unjoined things in a row are. It looks as a button that stays on (Wrap, on)
  * does, from the same rules below: 28px as the fields, 6px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
  */
-:is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 2px; }
+:is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 3px; }
 /*
  * A changed field inside a picker (a gradient's angle, a stop): light on the accent, with no reset, keeping its right inset and its width:
  * the color's row has the one reset, for all of it (designer, 2026-11-08).
@@ -826,9 +827,9 @@ export const styles = /* css */ `
 }
 .tk-textarea:focus { background-color: var(--tk-input-hover); box-shadow: var(--tk-input-focus-shadow); cursor: text; }
 .tk-textarea::placeholder { color: var(--tk-text-muted); }
-/* A color, as the designer drew it (2026-11-07): its swatch 3px in from the field's edge, its hex, then its opacity in a field of its own joined to it. */
+/* A color, as the designer drew it (2026-11-07): its swatch 5.5px in from the field's edge (designer, 2026-11-08), its hex, then its opacity in a field of its own joined to it. */
 .tk-color-row { display: flex; flex: 1; gap: 2px; min-width: 0; }
-.tk-color-field { padding-left: 6px; }
+.tk-color-field { padding-left: 5.5px; }
 .tk-color-field.is-joined { border-radius: 6px 2px 2px 6px; }
 .tk-color-opacity { flex: none; width: 64px; border-radius: 2px 6px 6px 2px; }
 /*
@@ -852,11 +853,11 @@ export const styles = /* css */ `
 .tk-field.is-changed[data-scrubbing] { box-shadow: var(--tk-changed-focus-shadow); }
 /* A paint's row: its field, then its remove button, 2px apart. */
 .tk-row.tk-paint-row { gap: 2px; }
-/* 20px with its 0.5px line, 5px in from the field's top and bottom, 6px from its left (designer, 2026-11-08). */
+/* 17px with its 0.5px line, 5.5px in from the field's top, bottom and left (designer, 2026-11-08). */
 .tk-swatch {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -938,7 +939,7 @@ export const styles = /* css */ `
 .tk-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px 5px;
 }
 /* A field's word label (Width, X, Blur): 32px wide at least, at its start (designer, 2026-11-08); a long one (Blur, Spread) at 9px. */
 /* By a Variable's name too, as the field had it (designer, 2026-11-08). */
@@ -1128,7 +1129,7 @@ export const styles = /* css */ `
 .tk-text-glyph.tk-strikethrough { text-decoration: line-through; }
 /* A Stack's alignment, at the left of its rows, as large as the two rows beside it. */
 /* Half the row each, the grid and the column beside it, in line with the padding fields' two columns below (designer, 2026-11-08). */
-.tk-align-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 4px; }
+.tk-align-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 5px; }
 .tk-align {
   position: relative;
   display: grid;
@@ -1137,7 +1138,7 @@ export const styles = /* css */ `
   grid-template-rows: repeat(3, minmax(0, 1fr));
   box-sizing: border-box;
   min-width: 0;
-  min-height: 60px;
+  min-height: 62px;
   border-radius: 6px;
   background: var(--tk-input);
   box-shadow: var(--tk-input-shadow);
@@ -1184,7 +1185,7 @@ export const styles = /* css */ `
 /* Its blue edge 1px, as every selected edge: 0.5px was hard to see (designer, 2026-11-08). */
 .tk-align.is-changed .tk-align-point[aria-checked="true"]::before { background: var(--tk-accent); box-shadow: inset 0 0 0 1px var(--tk-accent-on), 0 1px 1.5px rgb(13 153 255 / 0.4); }
 .tk-align-point:focus-visible { outline: 1px solid var(--tk-accent); }
-.tk-align-options { display: grid; min-width: 0; gap: 4px; align-content: start; }
+.tk-align-options { display: grid; min-width: 0; gap: 6px; align-content: start; }
 /* A check: its box, then its words, on the panel (designer, 2026-11-08). Half a row, beside a field or another check; alone in its row, the whole of it. */
 .tk-grid-2 > .tk-check:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .tk-check {
@@ -1193,24 +1194,25 @@ export const styles = /* css */ `
   gap: 8px;
   box-sizing: border-box;
   height: 28px;
-  padding: 0 6px 0 5px;
+  /* Its 16px box 6px in from the left, as from the top and bottom of its 28px row (designer, 2026-11-08). */
+  padding: 0 6px;
   border-radius: 6px;
   color: var(--tk-text-muted);
   font-weight: 500;
   letter-spacing: -0.02em;
 }
-/* Its box, as the designer drew its states (2026-11-07): 20px, no line round it; a faint check on neutral 200 when off, a light one on neutral 800 when on. */
+/* Its box, as the designer drew its states (2026-11-07): 16px (designer, 2026-11-08), its check 13px, no line round it; a faint check on neutral 200 when off, a light one on neutral 800 when on. */
 .tk-check input {
   --tk-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23a0a19f' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.40625 7.4375L5.46875 10.5L11.5938 3.9375'/%3E%3C/svg%3E");
   appearance: none;
   flex: none;
   box-sizing: border-box;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   margin: 0;
   border: 0;
   border-radius: 4px;
-  background: var(--tk-check) no-repeat center / 14px 14px, #e5e5e4;
+  background: var(--tk-check) no-repeat center / 13px 13px, #e5e5e4;
 }
 .tk-check input:checked {
   --tk-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23e5e5e4' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.40625 7.4375L5.46875 10.5L11.5938 3.9375'/%3E%3C/svg%3E");
