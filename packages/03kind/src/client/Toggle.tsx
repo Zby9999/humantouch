@@ -221,7 +221,7 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
   return (
     <svg
       class="tk-progress"
-      viewBox="0 0 48 48"
+      viewBox="0 0 36 36"
       role="progressbar"
       aria-label="Applying design changes"
       aria-valuemin={0}
