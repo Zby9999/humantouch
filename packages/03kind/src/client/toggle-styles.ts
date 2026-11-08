@@ -4,7 +4,7 @@ export const FONT_STACK = 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, 
 
 /**
  * The toggle's styles: all the page loads with it. The rest of the editor
- * layer brings its own (`styles`) as it loads, the toggle's badge and ring
+ * layer brings its own (`styles`) as it loads, the toggle's change count and ring
  * among them: until then, there is no round for them to show. Inside the
  * Shadow DOM, they never touch the page.
  */
@@ -43,7 +43,8 @@ export const toggleStyles = /* css */ `
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  /* A rounded square, not a circle; beside the change count, its inner corners squarer (designer, 2026-11-08). */
+  border-radius: 12px;
   background: #1e1e1e;
   color: #fff;
   box-shadow:

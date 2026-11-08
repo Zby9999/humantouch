@@ -36,7 +36,7 @@ function loadEditor(): Promise<Editor> {
  * The editor layer as the page loads it: the toggle alone, so the page loads
  * little of it (docs/goals.md). The rest loads once it is needed: as edit
  * mode is first asked for, the toggle busy until the canvas is up; or at once
- * when there is a saved round, whose changes the toggle's badge counts and
+ * when there is a saved round, whose changes the count beside the toggle shows and
  * lists, or once a round is claimed, which locks the toggle while each change
  * is checked on the page.
  */
