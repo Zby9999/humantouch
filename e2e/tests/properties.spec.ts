@@ -580,6 +580,33 @@ test("a toast rises at the bottom middle of the canvas and fades after about 3 s
   await expect(message).toHaveCount(0);
 });
 
+test("a shadow made a blur stays in its place among the effects, and made a shadow again, comes back there (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  const listed = () => effects.locator(".tk-effect").evaluateAll((all) => all.map((el) => el.getAttribute("aria-label")));
+  const shadow = async () => (await cardStyles(page, "boxShadow"))[0];
+  // shadow-sm: two drop shadows, the first 1px down and 3px blurred.
+  await expect.poll(listed).toEqual(["Shadow 1", "Shadow 2"]);
+
+  await effects.getByRole("combobox", { name: "Shadow 1 type" }).selectOption("Layer blur");
+  await expect.poll(async () => (await cardStyles(page, "filter"))[0]).toBe("blur(3px)");
+  // First still: where the shadow was, not after the one left.
+  await expect.poll(listed).toEqual(["Layer blur", "Shadow 1"]);
+  await expect(effects.getByRole("textbox", { name: "Shadow 1 spread", exact: true })).toHaveValue("-1");
+
+  // A drop shadow again: first again, on the page too.
+  await effects.getByRole("combobox", { name: "Layer blur type" }).selectOption("Drop shadow");
+  await expect.poll(listed).toEqual(["Shadow 1", "Shadow 2"]);
+  await expect(effects.getByRole("textbox", { name: "Shadow 1 blur", exact: true })).toHaveValue("3");
+  await expect.poll(shadow).toMatch(/^rgba\(0, 0, 0, 0\.25\) 0px 4px 3px 0px, /);
+
+  // Made a blur again and the shadow after it taken off: the blur is the one effect.
+  await effects.getByRole("combobox", { name: "Shadow 1 type" }).selectOption("Layer blur");
+  await expect.poll(listed).toEqual(["Layer blur", "Shadow 1"]);
+  await effects.getByRole("button", { name: "Remove shadow 1" }).click();
+  await expect.poll(listed).toEqual(["Layer blur"]);
+});
+
 test("effects: the page's shadows as they are; shadows added, changed and taken off, and a layer blur and a background blur, on the canvas at once", async ({ page }) => {
   await selectRow(page, "Card");
   const effects = design(page).getByRole("group", { name: "Effects" });

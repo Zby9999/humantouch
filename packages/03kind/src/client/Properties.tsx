@@ -390,6 +390,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
         // A text layer keeps its shadows as text shadows: its fields marked and reset by them as by a box's shadows.
         <ChangeMarksProvider value={texts.length ? withTextShadows(marks) : marks}>
           <EffectsSection
+            // Its blurs' places among the shadows are for these layers: others selected, it starts afresh.
+            key={keyOf(layers)}
             shadows={shadows}
             layerBlur={shownEffect("layerBlur")}
             backgroundBlur={shownEffect("backgroundBlur")}
@@ -1824,6 +1826,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
 }
 
 type BlurProperty = "layerBlur" | "backgroundBlur";
+const BLURS: BlurProperty[] = ["layerBlur", "backgroundBlur"];
 type EffectProperty = "shadows" | BlurProperty;
 type EffectValues = Pick<PropertyValues, EffectProperty>;
 type EffectUpdate = <P extends EffectProperty>(property: P, next: (current: PropertyValues[P], layer: Layer) => PropertyValues[P], continues?: boolean) => void;
@@ -1949,22 +1952,55 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
   /** A shadow changed so that it draws nothing (no offset, blur or spread) is none, as a stroke of weight 0 is. */
   const changeShadow = (i: number, next: (s: Shadow) => Shadow, continues?: boolean) =>
     update("shadows", (current) => current.map((s, j) => (i === j ? shadow(next(s)) : s)).filter(draws), continues);
-  /** Shadow `i` made another type: a blur takes its blur. */
+  /**
+   * Where a blur made from a shadow is listed: before the shadow at this index, where the shadow was, not after
+   * them all (designer, 2026-11-08). CSS keeps no order between a layer's shadows and its blurs: the panel keeps it
+   * while the layers are selected. A blur with none is after the shadows; two at one index, the layer blur first.
+   */
+  const [blurAt, setBlurAt] = useState<Partial<Record<BlurProperty, number>>>({});
+  /** The blurs' places with shadow `i` taken out, or (`by` 1) one put in before them, as `from` was. */
+  const shiftBlurs = (i: number, by: 1 | -1, from?: BlurProperty) =>
+    setBlurAt((at) => {
+      const next: Partial<Record<BlurProperty, number>> = {};
+      for (const property of BLURS) {
+        const place = at[property];
+        if (place === undefined || property === from) continue;
+        const after = place > i || (by === 1 && place === i && from !== undefined && BLURS.indexOf(property) > BLURS.indexOf(from));
+        next[property] = after ? place + by : place;
+      }
+      return next;
+    });
+  /** A blur's place forgotten: taken off, or added anew, it is after the shadows. */
+  const unplace = (property: BlurProperty) => setBlurAt(({ [property]: _, ...rest }) => rest);
+  /** Shadow `i` made another type: a blur takes its blur, in its place. */
   const retypeShadow = (i: number, type: EffectType) => {
     if (isShadow(type)) return changeShadow(i, (s) => ({ ...s, type }));
     updateEach((layer) => {
       const current = read(layer, "shadows");
       return { shadows: current.filter((_, j) => j !== i), [type]: current[i].blur };
     });
+    shiftBlurs(i, -1);
+    setBlurAt((at) => ({ ...at, [type]: i }));
   };
-  /** A blur made another type, on each layer that has it. */
-  const retypeBlur = (from: BlurProperty, type: EffectType) =>
+  /** A blur made another type, on each layer that has it: a shadow in the blur's place, a blur in it too. */
+  const retypeBlur = (from: BlurProperty, type: EffectType) => {
+    const place = shadows === MIXED ? undefined : Math.min(blurAt[from] ?? shadows.length, shadows.length);
     updateEach((layer) => {
       const value = read(layer, from);
       if (value === null) return {};
-      if (isShadow(type)) return { [from]: null, shadows: [...read(layer, "shadows"), shadow({ ...NEW_SHADOW, type, blur: value })] };
+      if (isShadow(type)) {
+        const current = read(layer, "shadows");
+        const at = place ?? current.length;
+        return { [from]: null, shadows: [...current.slice(0, at), shadow({ ...NEW_SHADOW, type, blur: value }), ...current.slice(at)] };
+      }
       return { [from]: null, [type]: value };
     });
+    if (isShadow(type)) {
+      if (place !== undefined) shiftBlurs(place, 1, from);
+      unplace(from);
+    } else
+      setBlurAt(({ [from]: was, ...rest }) => (was === undefined ? rest : { ...rest, [type]: was }));
+  };
   const catalog = useCatalog();
   /** The shadow Variables: under the effects in the menu of +, as Figma has effect styles (designer, 2026-11-05). */
   const shadowVariables = variable && catalog ? catalog.of(variable.group) : [];
@@ -1986,7 +2022,10 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     if (entry) return variable!.onPick(entry);
     const type = value as EffectType;
     if (isShadow(type)) update("shadows", (current) => [...(shadows === MIXED ? [] : current), { ...NEW_SHADOW, type }]);
-    else set(type)(NEW_BLUR);
+    else {
+      unplace(type);
+      set(type)(NEW_BLUR);
+    }
   };
   const typeSelect = (label: string, from: EffectType, onChange: (type: EffectType) => void) => (
     <Select class="tk-select tk-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
@@ -2019,6 +2058,33 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     { property: "layerBlur" },
     { property: "backgroundBlur" },
   ];
+  /** The shadows listed one by one: none for a shadow Variable or shadows the layers do not share. */
+  const listed = variable?.bound || shadows === MIXED ? [] : shadows;
+  /** The blurs listed before shadow `i`, as `blurAt` places them; at the shadows' count, those after them all. */
+  const placedAt = (i: number) => BLURS.filter((property) => Math.min(blurAt[property] ?? listed.length, listed.length) === i);
+  const blurEffect = (property: BlurProperty) => {
+    const value = blurs[property];
+    if (value === undefined || value === null) return null;
+    const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
+    // Added in this round: its field unmarked, its − alone in the accent (designer, 2026-11-08).
+    const addedHere = marks.added(property);
+    return (
+      <div class="tk-effect" key={property} role="group" aria-label={label}>
+        <div class="tk-row tk-paint-row">
+          {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
+          <RemoveButton
+            label={`Remove ${label.toLowerCase()}`}
+            added={addedHere}
+            onClick={() => {
+              set(property)(null);
+              unplace(property);
+            }}
+          />
+        </div>
+        <NumberField label={label} icon="blur" property={addedHere ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
+      </div>
+    );
+  };
   return (
     <section class="tk-section" role="group" aria-label="Effects">
       <div class="tk-section-header">
@@ -2037,7 +2103,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
           </button>
         </div>
       ) : (
-        shadows.map((s, i) => {
+        shadows.flatMap((s, i) => {
           const name = `Shadow ${i + 1}`;
           const lengthField = (key: "x" | "y" | "blur" | "spread", label: string, glyph: string, min?: number) => (
             <NumberField
@@ -2051,7 +2117,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
               onChange={(value, continues) => changeShadow(i, (current) => ({ ...current, [key]: value }), continues)}
             />
           );
-          return (
+          return [
+            ...placedAt(i).map(blurEffect),
             // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
             <div class="tk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
               <ChangeMarksProvider value={added[i] ? NO_MARKS : marks}>
@@ -2059,7 +2126,14 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
                 <MarkedSelect label={`${name} type`} property="shadows" part={shadowPart(i, "type")} class="tk-effect-type-field">
                   {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
                 </MarkedSelect>
-                <RemoveButton label={`Remove shadow ${i + 1}`} added={added[i]} onClick={() => update("shadows", (current) => current.filter((_, j) => j !== i))} />
+                <RemoveButton
+                  label={`Remove shadow ${i + 1}`}
+                  added={added[i]}
+                  onClick={() => {
+                    update("shadows", (current) => current.filter((_, j) => j !== i));
+                    shiftBlurs(i, -1);
+                  }}
+                />
               </div>
               <div class="tk-grid-2">
                 {/* Words, not icons: X, Y, Blur and Spread read more plainly so, as a place's X and Y do (designer, 2026-11-07). */}
@@ -2070,26 +2144,11 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
               </div>
               <ColorField name={name} property="shadows" part={shadowPart(i, "color")} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
               </ChangeMarksProvider>
-            </div>
-          );
+            </div>,
+          ];
         })
       )}
-      {(["layerBlur", "backgroundBlur"] as const).map((property) => {
-        const value = blurs[property];
-        if (value === undefined || value === null) return null;
-        const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
-        // Added in this round: its field unmarked, its − alone in the accent (designer, 2026-11-08).
-        const addedHere = marks.added(property);
-        return (
-          <div class="tk-effect" key={property} role="group" aria-label={label}>
-            <div class="tk-row tk-paint-row">
-              {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
-              <RemoveButton label={`Remove ${label.toLowerCase()}`} added={addedHere} onClick={() => set(property)(null)} />
-            </div>
-            <NumberField label={label} icon="blur" property={addedHere ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
-          </div>
-        );
-      })}
+      {placedAt(listed.length).map(blurEffect)}
     </section>
   );
 }
