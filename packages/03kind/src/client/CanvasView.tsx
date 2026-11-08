@@ -25,7 +25,8 @@ import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import type { Handle } from "./resize";
 import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
-import { AddView, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
+import { AddView, desktopRange, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
+import type { Breakpoint } from "./breakpoints";
 
 export type { Tool } from "./canvas-keys";
 
@@ -89,6 +90,10 @@ interface Props {
   onWorkIn(view: View | null, name: string): void;
   /** Playing: the canvas alone at 100%, scrolled like a page; nothing on it can be selected or edited. */
   playing: boolean;
+  /** While playing, how wide: as the view played (designer, 2026-11-08); null, as wide as the viewport. */
+  playedWidth: number | null;
+  /** A view's full screen button pressed: plays it `width` px wide, null as wide as the viewport (the desktop view). */
+  onPlay(width: number | null, from: HTMLButtonElement): void;
   /** Esc, while playing. */
   onStopPlaying(): void;
   /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
@@ -102,7 +107,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -197,6 +202,15 @@ export function CanvasView(props: Props) {
   const [playWidth, setPlayWidth] = useState<number | null>(null);
   /** What playing shows: the desktop view, as wide as it is played, as tall as it is now. */
   const played: Bounds | null = placed[0] ? { width: playWidth ?? placed[0].width, height: placed[0].height } : null;
+  /**
+   * The widths each view covers, as its label says (designer, 2026-11-08): its own range, or for the
+   * desktop view, and one in its range, the widths around it no other view's range takes.
+   */
+  const coveredBy = (shown: Placed): Breakpoint | null => {
+    const own = shown.desktop || !editor ? null : editor.breakpointAt(shown.width);
+    if (own || !editor || !canvas) return own;
+    return desktopRange(canvas.width, placed.filter((p) => !p.desktop).map((p) => editor.breakpointAt(p.width)));
+  };
 
   /** Where on the stage its views and the layers off the canvas reach, in canvas px. */
   const extent = canvas ? boundsOf([...placed, ...outside]) : null;
@@ -403,7 +417,13 @@ export function CanvasView(props: Props) {
     setPlayWidth(width);
     return { ...played, width: width ?? canvas.width };
   };
-  // Playing shows the canvas at 100%, as wide as the viewport, from the part at the top of it; stopping puts the canvas and the camera back as they were.
+  /**
+   * How wide playing shows the canvas in a viewport `area` px wide: as wide as the view played
+   * (designer, 2026-11-08), or as the viewport for the desktop view. A view wider than the
+   * viewport is played as wide as the viewport, as the window would show the page.
+   */
+  const widthToPlay = (area: number, width: number | null) => Math.round(Math.min(width ?? area, area));
+  // Playing shows the canvas at 100%, as wide as the view played, from the part at the top of it, in the middle; stopping puts the canvas and the camera back as they were.
   const playingRef = useRef(playing);
   playingRef.current = playing;
   const beforePlaying = useRef<Camera | null>(null);
@@ -417,7 +437,7 @@ export function CanvasView(props: Props) {
       setHover(null);
       const area = viewport.current!.getBoundingClientRect();
       const top = Math.max(0, -camera.y / camera.zoom);
-      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, playAt(Math.round(area.width))!, area));
+      setCamera(scrolled({ zoom: 1, x: 0, y: -top }, playAt(widthToPlay(area.width, playedWidth))!, area));
       viewport.current!.focus({ preventScroll: true });
     } else if (beforePlaying.current) {
       playAt(null);
@@ -471,9 +491,10 @@ export function CanvasView(props: Props) {
     tool,
     onTool,
     playing,
+    playedWidth,
     onStopPlaying,
   });
-  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, modifiersChanged, resizeNow, tool, onTool, playing, onStopPlaying };
+  latest.current = { played, playAt, bounds, placed, outside, selected, onSelect, endDrag, endResize, modifiersChanged, resizeNow, tool, onTool, playing, playedWidth, onStopPlaying };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -539,9 +560,9 @@ export function CanvasView(props: Props) {
     const observer = new ResizeObserver(([entry]) => {
       viewportSize.current = { width: entry.contentRect.width, height: entry.contentRect.height };
       if (playingRef.current) {
-        // The window resized while playing: the canvas is as wide as it now.
+        // The window resized while playing: the canvas is as wide as it now, or as the view played, in the middle.
         const area = el.getBoundingClientRect();
-        const played = latest.current.playAt(Math.round(area.width));
+        const played = latest.current.playAt(widthToPlay(area.width, latest.current.playedWidth));
         if (played) setCamera((v) => scrolled(v, played, area));
         return;
       }
@@ -1177,10 +1198,11 @@ export function CanvasView(props: Props) {
             key={keyOf(p)}
             name={p.name}
             width={p.width}
-            breakpoint={p.desktop ? null : (editor?.breakpointAt(p.width) ?? null)}
+            breakpoint={coveredBy(p)}
             left={camera.x + p.x * camera.zoom}
             top={camera.y - LABEL_OFFSET}
             size={p.width * camera.zoom}
+            onPlay={(button) => onPlay(p.desktop ? null : p.width, button)}
             onDelete={p.desktop ? undefined : () => setViewWidths(widths.filter((width) => width !== p.width))}
           />
         ))}

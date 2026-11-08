@@ -112,18 +112,33 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const [tool, setTool] = useState<Tool>(null);
   /** The fill's picker is open on a gradient: its handles show on the canvas. */
   const [gradientPicker, setGradientPicker] = useState(false);
-  /** Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010). */
-  const [playing, setPlaying] = useState(false);
-  /** The Design panel's tab: the selected layers' properties, or the project's Variables. */
-  const playButton = useRef<HTMLButtonElement>(null);
+  /**
+   * Playing: the canvas alone at full size, to see the changes as they will look (ADR 0010), from a
+   * view's full screen button (designer, 2026-11-08). `width`: as wide as that view, null as wide as the window.
+   */
+  const [played, setPlayed] = useState<{ width: number | null } | null>(null);
+  const playing = !!played;
+  /**
+   * The button that started playing, by its name: the view labels are not drawn while playing, so focus
+   * goes back to the one drawn in its place once it stops.
+   */
+  const playedFrom = useRef<{ root: ParentNode; label: string } | null>(null);
   /** Playing has just stopped: focus goes back to the button that started it. */
   const refocusPlay = useRef(false);
-  const play = (on: boolean) => {
-    refocusPlay.current = !on;
-    setPlaying(on);
+  const play = (width: number | null, from: HTMLButtonElement) => {
+    playedFrom.current = { root: from.getRootNode() as ParentNode, label: from.getAttribute("aria-label") ?? "" };
+    refocusPlay.current = false;
+    setPlayed({ width });
+  };
+  const stopPlaying = () => {
+    refocusPlay.current = true;
+    setPlayed(null);
   };
   useEffect(() => {
-    if (!playing && refocusPlay.current) playButton.current?.focus();
+    if (playing || !refocusPlay.current) return;
+    refocusPlay.current = false;
+    const from = playedFrom.current;
+    from?.root.querySelector<HTMLElement>(`button[aria-label="${CSS.escape(from.label)}"]`)?.focus();
   }, [playing]);
 
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
@@ -744,7 +759,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           setWorked(view && { view, name });
         }}
         playing={playing}
-        onStopPlaying={() => play(false)}
+        playedWidth={played?.width ?? null}
+        onPlay={play}
+        onStopPlaying={stopPlaying}
         leaving={leaving}
         animate={animate}
         changed={!!round.current?.changeSet.list().length}
@@ -757,11 +774,6 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         <div class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
           <h2 class="tk-panel-label">{designing ? "Design" : "Variants"}</h2>
-          {tree && (
-            <button ref={playButton} type="button" class="tk-icon-button tk-play" aria-label="Play" title="Play at full size" onClick={() => play(true)}>
-              <Icon name="play" />
-            </button>
-          )}
           {controls}
         </div>
         {!designing ? (
@@ -792,7 +804,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         )}
       </aside>
       {playing && (
-        <button type="button" class="tk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={() => play(false)}>
+        <button type="button" class="tk-stop-playing" aria-label="Stop playing" title="Back to editing (Esc)" onClick={stopPlaying}>
           <Icon name="close" />
         </button>
       )}

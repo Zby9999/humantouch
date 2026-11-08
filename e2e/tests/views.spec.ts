@@ -74,10 +74,18 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
     await expect(view.contentFrame().getByTestId("hero")).toHaveCSS("height", `${height}px`);
   }
 
-  // Each view is named, and says it shows only what CSS does at its width.
-  for (const name of ["Desktop", "Tablet", "Phone"]) {
-    await expect(page.getByRole("group", { name: `${name} view` })).toContainText("CSS responsive only");
+  // Each view is named, with the widths it covers (designer, 2026-11-08): the example's `md` is 768px and `xl` 1280px.
+  // That it shows only what CSS does at its width is in their title; the label's text is the name and the widths alone.
+  const covers = { Desktop: "≥ 1280", Tablet: "768–1279", Phone: "≤ 767" };
+  for (const [name, widths] of Object.entries(covers)) {
+    const label = page.getByRole("group", { name: `${name} view` });
+    await expect(label).toHaveText(`${name}${widths}`);
+    await expect(label.locator(".tk-view-range")).toHaveText(widths);
+    await expect(label.locator(".tk-view-range")).toHaveAttribute("title", /what the page's CSS does at this width/);
+    await expect(label.getByRole("button", { name: `Full screen ${name} view`, exact: true })).toBeVisible();
   }
+  await expect(page.getByRole("button", { name: "Delete Desktop view" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete Phone view" })).toBeVisible();
 });
 
 test("selecting in one view selects the same layer in every view; an edit shows in every view", async ({ page }) => {

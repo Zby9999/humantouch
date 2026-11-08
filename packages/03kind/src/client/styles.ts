@@ -298,7 +298,7 @@ export const styles = /* css */ `
 
 /*
  * A panel's top. The Layers': a button that hides them, and their title with a rule to the edge, as a section's.
- * The Design panel's: what it shows (Design, or Variants with nothing selected) and Play at the left, the changes so far and the way back at the right, a rule under them.
+ * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the way back at the right, a rule under them.
  */
 .tk-panel-header { display: flex; align-items: center; gap: 4px; min-height: 28px; }
 .tk-panel.is-design > .tk-panel-header { min-height: 30px; padding-bottom: 6px; border-bottom: 1px solid var(--tk-border); }
@@ -321,7 +321,6 @@ export const styles = /* css */ `
 .tk-panel-header > .tk-icon-button { width: 30px; height: 30px; border-radius: 8px; background: var(--tk-button); }
 .tk-panel.is-layers .tk-panel-header > .tk-icon-button { width: 24px; height: 24px; border-radius: 6px; }
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }
-.tk-panel-header .tk-play { margin-right: auto; }
 .tk-count {
   all: unset;
   box-sizing: border-box;
@@ -893,7 +892,7 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 .tk-off-canvas[hidden] { display: none; }
-/* Above each view, as a Frame's name in Figma: what it is, and that it shows only what CSS does at its width. */
+/* Above each view, as a Frame's name in Figma: its name and the widths it covers; full screen and × at its right end. */
 .tk-view-label {
   position: absolute;
   display: flex;
@@ -905,10 +904,10 @@ export const styles = /* css */ `
   color: var(--tk-text-muted);
   white-space: nowrap;
 }
-.tk-view-name { color: var(--tk-text); font-weight: 500; }
-.tk-view-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tk-view-breakpoint { flex: none; color: var(--tk-breakpoint, #8a38f5); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
-.tk-view-delete { width: 20px; height: 20px; margin-left: auto; }
+.tk-view-name { flex: none; color: var(--tk-text); font-weight: 500; }
+.tk-view-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.tk-view-play, .tk-view-delete { flex: none; width: 20px; height: 20px; }
+.tk-view-play { margin-left: auto; }
 .tk-add-view { position: absolute; display: flex; height: 20px; align-items: center; }
 .tk-add-view .tk-icon-button { width: 20px; height: 20px; }
 .tk-add-view-width {

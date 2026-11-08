@@ -46,13 +46,61 @@ export function viewName(width: number, desktop: boolean): string {
 }
 
 /**
- * Above a view: what it is, the project's Tailwind breakpoint it stands for,
- * that it shows only what CSS does at its width, and, but for the desktop
- * view, the way to delete it.
+ * The widths the desktop view, `width` px wide, covers: those around it that
+ * none of `others`, the ranges of the views beside it, takes. Its changes hold
+ * at every width, but these are the widths it shows them alone at. Null when
+ * no other view takes any.
  */
-export function ViewLabel(props: { name: string; width: number; breakpoint: Breakpoint | null; left: number; top: number; size: number; onDelete?: () => void }) {
-  const { name, width, breakpoint, left, top, size, onDelete } = props;
+export function desktopRange(width: number, others: (Breakpoint | null)[]): Breakpoint | null {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const other of others) {
+    if (other?.max != null && other.max <= width && (min === null || other.max > min)) min = other.max;
+    if (other?.min != null && other.min > width && (max === null || other.min < max)) max = other.min;
+  }
+  return min === null && max === null ? null : { min, max };
+}
+
+/**
+ * The widths a view covers, as plainly as they read: `768–1279`, `≥ 1280`,
+ * `≤ 767`. A range's upper edge is the first width past it. With no range,
+ * the view's own width.
+ */
+export function rangeText(breakpoint: Breakpoint | null, width: number): string {
+  const { min, max } = breakpoint ?? { min: null, max: null };
+  if (min !== null && max !== null) return `${min}–${max - 1}`;
+  if (min !== null) return `≥ ${min}`;
+  if (max !== null) return `≤ ${max - 1}`;
+  return `${width}`;
+}
+
+/**
+ * Above a view, as a Frame's name in Figma: its name and the widths it covers
+ * (designer, 2026-11-08). The project's breakpoint its changes are written
+ * with, and that it shows only what CSS does at its width, are in the range's
+ * title. At its right end, the way to play it full screen and, but for the
+ * desktop view, to delete it.
+ */
+export function ViewLabel(props: {
+  name: string;
+  width: number;
+  /** The widths the view covers; null: its own width alone is known. */
+  breakpoint: Breakpoint | null;
+  left: number;
+  top: number;
+  size: number;
+  /** Full screen, from this button: focus comes back to it after. */
+  onPlay(button: HTMLButtonElement): void;
+  onDelete?: () => void;
+}) {
+  const { name, width, breakpoint, left, top, size, onPlay, onDelete } = props;
   const tailwind = tailwindOf(breakpoint);
+  const title = [
+    tailwind ? `Changes here are written with the project's breakpoint ${tailwind}` : onDelete ? null : "Changes here apply at every width the other views don't cover",
+    "Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
     <div
       class="tk-view-label"
@@ -62,15 +110,19 @@ export function ViewLabel(props: { name: string; width: number; breakpoint: Brea
       onPointerDown={(event) => event.stopPropagation()}
     >
       <span class="tk-view-name">{name}</span>
-      <span class="tk-view-width">{width}</span>
-      {tailwind && (
-        <span class="tk-view-breakpoint" title="The project's breakpoint this view stands for: its changes are written with it">
-          {tailwind}
-        </span>
-      )}
-      <span class="tk-view-note" title="Shows what the page's CSS does at this width (media queries, Tailwind breakpoints). Layout that scripts change by the window's width does not show here.">
-        CSS responsive only
+      <span class="tk-view-range" title={title}>
+        {rangeText(breakpoint, width)}
       </span>
+      {/* Full screen before ×, which stays at the very end: the button pressed to play keeps its place on every view. */}
+      <button
+        type="button"
+        class="tk-icon-button tk-view-play"
+        aria-label={`Full screen ${name} view`}
+        title={onDelete ? `Full screen, ${width}px wide (Esc to come back)` : "Full screen, as wide as the window (Esc to come back)"}
+        onClick={(event) => onPlay(event.currentTarget)}
+      >
+        <Icon name="fullscreen" />
+      </button>
       {onDelete && (
         <button type="button" class="tk-icon-button tk-view-delete" aria-label={`Delete ${name} view`} title="Delete view" onClick={onDelete}>
           <Icon name="close" />
