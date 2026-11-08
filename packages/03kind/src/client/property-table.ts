@@ -455,7 +455,10 @@ function size(axis: "width" | "height"): Definition<Size> {
         return { type: stretched ? "fill" : "hug" };
       }
       if (stack && declared === "100%") return { type: "fill" };
-      return { type: "fixed", value: round(parseFloat(style.getPropertyValue(axis)) + extra(el, axis)) };
+      // Laid out, a size is cut to the browser's 1/64 px: 139.74px comes to 139.734. Set in px within that of how it is drawn, it reads as set, so a size typed in stays as typed.
+      const used = parseFloat(style.getPropertyValue(axis));
+      const set = /^-?[\d.]+px$/.test(declared) ? parseFloat(declared) : NaN;
+      return { type: "fixed", value: round((Math.abs(set - used) < 1 / 32 ? set : used) + extra(el, axis)) };
     },
     write(value, el) {
       const stack = stackAround(el);

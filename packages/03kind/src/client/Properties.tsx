@@ -439,7 +439,8 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable, after 
 }) {
   const label = axis === "width" ? "Width" : "Height";
   const sizes = layers.map((layer) => Math.round(measure(layer)[axis] * 100) / 100);
-  const shownSize = sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
+  // Fixed, the size as set (a size typed in stays as typed); otherwise as it comes to.
+  const shownSize = size !== MIXED && size.type === "fixed" ? size.value : sizes.every((s) => s === sizes[0]) ? sizes[0] : null;
   const marks = useChangeMarks();
   // Its sizing changed (Hug to Fixed, say): the choice is marked; the number too when it came to another size, dragged or typed (designer, 2026-11-08).
   const sizingChanged = marks.changed(axis, SIZING);

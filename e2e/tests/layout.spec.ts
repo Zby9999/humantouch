@@ -87,6 +87,18 @@ test("Hug made Fixed marks its sizing, not its number, until the number changes 
   await expect(sizingReset).toHaveCount(0);
 });
 
+test("a size typed in stays as typed, though the browser lays it out to 1/64 px (139.74 is drawn 139.734)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Button").click();
+  const width = design(page).getByRole("textbox", { name: "Width", exact: true });
+
+  await setField(page, "Width", "150");
+  await expect(width).toHaveValue("150");
+  await setField(page, "Width", "139.74");
+  await expect(width).toHaveValue("139.74");
+  await expect.poll(() => widthOf(page, `${HERO} > button`)).toBeCloseTo(139.734, 2);
+});
+
 test("a Stack's direction, gap, padding and alignment, in design language", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Header").click();
