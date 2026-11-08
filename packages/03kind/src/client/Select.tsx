@@ -7,6 +7,8 @@ import { Icon, type IconName } from "./icons";
 const OPTION = 28;
 const PADDING = 4;
 const CHECK_COLUMN = 24;
+/** A font's "Aa" before its name, and the space after it, in px: in the menu where the select has it, before its words (designer, 2026-11-08). */
+const SAMPLE_COLUMN = 24;
 /** Kept from the window's edges. */
 const GAP = 8;
 
@@ -14,6 +16,8 @@ interface Option {
   value: string;
   label: string;
   disabled: boolean;
+  /** A font's option (its `data-font`, a `font-family`): "Aa" in it before its name. */
+  font?: string;
 }
 
 /**
@@ -34,7 +38,7 @@ export function Select(props: JSX.IntrinsicElements["select"]) {
   const show = () => {
     const el = select.current!;
     // Mixed, the option standing for it, which cannot be chosen, is not in the menu.
-    const listed = [...el.options].filter((o) => !(o.value === "" && o.disabled)).map((o) => ({ value: o.value, label: o.text, disabled: o.disabled }));
+    const listed = [...el.options].filter((o) => !(o.value === "" && o.disabled)).map((o) => ({ value: o.value, label: o.text, disabled: o.disabled, font: o.dataset.font }));
     setOptions(listed);
     setActive(listed.findIndex((o) => o.value === el.value));
     setOpen(true);
@@ -122,7 +126,7 @@ function Menu({ id, select, options, active, onActive, onChoose, onClose }: {
     const height = box.current!.offsetHeight;
     // The option chosen over the select, its words where the select's are; Mixed, the first.
     const padding = parseFloat(getComputedStyle(select).paddingLeft);
-    const left = at.left + padding - PADDING - CHECK_COLUMN;
+    const left = at.left + padding - PADDING - CHECK_COLUMN - (options.some((o) => o.font) ? SAMPLE_COLUMN : 0);
     const top = at.top + at.height / 2 - PADDING - Math.max(chosen, 0) * OPTION - OPTION / 2;
     setPlace({
       left: Math.max(GAP, Math.min(left, window.innerWidth - box.current!.offsetWidth - GAP)),
@@ -180,6 +184,11 @@ function Menu({ id, select, options, active, onActive, onChoose, onClose }: {
           onClick={() => !option.disabled && onChoose(option)}
         >
           {i === chosen && <Icon name="check" />}
+          {option.font && (
+            <span class="tk-font-sample" aria-hidden="true" style={{ fontFamily: option.font }}>
+              Aa
+            </span>
+          )}
           {option.label}
         </div>
       ))}
