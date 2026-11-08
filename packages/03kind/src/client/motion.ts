@@ -30,3 +30,6 @@ export const TOOL_SLIDE_MS = 200;
  * fading and moving 4px down (designer, 2026-11-08). It opens at once, and a key closing it closes it at once.
  */
 export const POPOVER_EXIT_MS = 150;
+
+/** A segmented group's reset popping out at its right end once a click changes the group, and fading as it goes (designer, 2026-11-08); a key, or reduced motion, drops the pop. */
+export const RESET_POP_MS = 150;

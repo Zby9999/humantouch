@@ -1,5 +1,5 @@
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, steadyBox, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, expectSegmentedChanged, steadyBox, test, type Page } from "./fixtures";
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -125,6 +125,49 @@ test("Wrap alone brings no Stack reset, nor one of its own; Wrap and the gap bri
   await expect(gap).toHaveValue("12");
   await expect(reset).toHaveCount(0);
   await expect.poll(() => canvasStyle(page, "header", "flex-wrap")).toBe("nowrap");
+});
+
+test("a Stack's direction changed: its track in the accent, the one chosen white, its reset at the track's end taking it back; undone, grey again; it counts for the Stack's reset (designer, 2026-11-08)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const direction = panel.getByRole("radiogroup", { name: "Direction" });
+  const vertical = direction.getByRole("radio", { name: "Vertical" });
+  const reset = direction.getByRole("button", { name: "Reset direction" });
+  const stackReset = panel.getByRole("button", { name: "Reset Stack" });
+  const track = () => direction.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const grey = await track();
+  await expect(direction).not.toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+
+  await vertical.click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
+  await expectSegmentedChanged(direction, vertical, reset);
+  await expect(stackReset).toHaveCount(0);
+
+  // Its own reset takes it back; the track eases back to grey.
+  await reset.click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("row");
+  await expect(reset).toHaveCount(0);
+  await expect.poll(track).toBe(grey);
+
+  // Undone, the same.
+  await vertical.click();
+  await expectSegmentedChanged(direction, vertical, reset);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("row");
+  await expect(direction).not.toHaveClass(/\bis-changed\b/);
+  await expect(reset).toHaveCount(0);
+  await expect.poll(track).toBe(grey);
+
+  // With the gap, the Stack's reset, which takes both back.
+  await vertical.click();
+  await setField(page, "Gap", "30");
+  await expect(stackReset).toBeVisible();
+  await stackReset.click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("row");
+  await expect(reset).toHaveCount(0);
+  await expect.poll(track).toBe(grey);
 });
 
 test("a Stack's direction, gap, padding and alignment, in design language", async ({ page }) => {

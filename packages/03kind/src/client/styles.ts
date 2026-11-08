@@ -1,4 +1,4 @@
-import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -550,11 +550,10 @@ export const styles = /* css */ `
 .tk-reset:focus-visible { outline: 2px solid var(--tk-accent-strong); outline-offset: -2px; }
 /*
  * One reset taking several fields back (a size with its sizing, a color with its opacity): a button of the row's own, at its left, outside
- * the fields, which make room for it, 4px from the fields as unjoined things in a row are. It looks as a changed field's own reset does,
- * 26px, its white icon on blue 400, which with no accent under it is its own ground; blue 600 hovered, as that one (designer, 2026-11-08).
+ * the fields, which make room for it, 4px from the fields as unjoined things in a row are. It looks as a button that stays on (Wrap, on)
+ * does, from the same rules below: 30px as the fields, 8px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
  */
-:is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; width: 26px; height: 26px; margin-right: 2px; background: var(--tk-accent-on); color: #fafafa; }
-:is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
+:is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 2px; }
 /* A changed field inside a picker (a gradient's angle, a stop): light on the accent, its reset as any changed field's. */
 .tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only) { color: #fafafa; }
 .tk-popover .tk-field.is-changed .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
@@ -565,7 +564,7 @@ export const styles = /* css */ `
 .tk-effect-type-field { flex: 1; min-width: 0; border-radius: 8px; }
 .tk-effect-type-field.is-changed > .tk-select { flex: 1; width: auto; min-width: 0; }
 /*
- * Clicked again to go back (Wrap, the direction), a toggle has no reset of its own: changed, it is marked in the accent (designer, 2026-11-08).
+ * Clicked again to go back (Wrap), a toggle has no reset of its own: changed, it is marked in the accent (designer, 2026-11-08).
  * Wrap on is in the accent already; changed to off, its icon in the accent on the accent's tint.
  */
 .tk-section .tk-icon-button.is-changed[aria-pressed="false"] { background: var(--tk-accent-soft); color: var(--tk-accent); }
@@ -699,11 +698,11 @@ export const styles = /* css */ `
 }
 .tk-icon-button:hover { background: var(--tk-field); }
 .tk-icon-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
-/* A button that stays on in the panel (Independent corners, Wrap): the accent, as the tool chosen is (designer, 2026-11-07). */
-.tk-section .tk-icon-button[aria-pressed="true"] { background: var(--tk-accent); color: #ffffff; }
-.tk-section .tk-icon-button[aria-pressed="true"]:hover { background: var(--tk-accent-strong); }
-/* A row's own button beside its fields (Independent corners, Wrap): as tall as they. */
-.tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button { width: 30px; height: 30px; border-radius: 8px; }
+/* A button that stays on in the panel (Independent corners, Wrap): the accent, as the tool chosen is (designer, 2026-11-07); a row's reset as it (designer, 2026-11-08). */
+.tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); color: #ffffff; }
+.tk-section .tk-icon-button[aria-pressed="true"]:hover, :is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
+/* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
+.tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 30px; height: 30px; border-radius: 8px; }
 .tk-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -732,7 +731,11 @@ export const styles = /* css */ `
 .tk-joined > :first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
 .tk-joined > :is(.tk-select:last-of-type, .tk-select-field:last-child) { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
 /* A choice of part of a value (a stroke's line, its sides): changed in this round, in the accent with its reset at the right end, after the chevron, as a changed field (designer, 2026-11-07). */
-.tk-select-field { position: relative; display: flex; flex: none; }
+/*
+ * Its select takes the wrapper's corners, so the wrapper has a select's own 8px: without them, a choice on its own (the font, its weight)
+ * came out square (designer, 2026-11-08). Where it is joined (the size's sizing, a stroke's parts), the joined corners above win.
+ */
+.tk-select-field { position: relative; display: flex; flex: none; border-radius: 8px; }
 .tk-select-field > .tk-select { border-radius: inherit; }
 .tk-select-field.is-changed > .tk-select {
   --tk-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fafafa' stroke-width='1.67' stroke-linecap='round' stroke-linejoin='round' d='M12.25 5.875L8 10.125L3.75 5.875'/%3E%3C/svg%3E");
@@ -828,10 +831,30 @@ export const styles = /* css */ `
 .tk-segmented-field .tk-icon-button { width: 26px; height: 26px; color: var(--tk-text-muted); }
 .tk-segmented-field .tk-icon-button:hover { background: none; color: var(--tk-text); }
 .tk-segmented-field .tk-icon-button[aria-checked="true"] { color: var(--tk-text); background: var(--tk-raised); box-shadow: var(--tk-raised-shadow); }
-/* Changed in this round, the one chosen takes the accent; the group's reset inside it at its right end, 26px on blue 400 as a changed field's (designer, 2026-11-08). */
-.tk-segmented-field.is-changed .tk-icon-button[aria-checked="true"] { background: var(--tk-accent); color: #fafafa; }
+/*
+ * Changed in this round, the one chosen stays raised and white; the track behind the buttons takes the accent, the others' glyphs light on
+ * it (white on blue 500 is 3.4:1), a light tint under one hovered; the group's reset pops out inside it at its right end, 26px on blue 400
+ * as a changed field's, the group as wide as its buttons and the reset (designer, 2026-11-08).
+ */
+.tk-segmented-field.is-changed { background: var(--tk-accent); }
+.tk-segmented-field.is-changed .tk-icon-button:not([aria-checked="true"]) { color: #fafafa; }
+.tk-segmented-field.is-changed .tk-icon-button:not([aria-checked="true"]):hover { background: rgb(255 255 255 / 0.16); }
+/* Clicked, the accent at once, the click answered; taken back (its reset, undo), it eases back to the track's grey, as a check does. */
+.tk-segmented-field, .tk-segmented-field .tk-icon-button { transition: background-color ${FIELD_STATE_MS}ms ${EASE_OUT}, color ${FIELD_STATE_MS}ms ${EASE_OUT}; }
+.tk-segmented-field.is-changed, .tk-segmented-field.is-changed .tk-icon-button { transition: none; }
 .tk-segmented-field > .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
 .tk-segmented-field > .tk-reset:hover { background: var(--tk-accent-strong); }
+/*
+ * The reset coming: from 90% at its left, where it grows out of the buttons, and transparent; going: it fades where it is. Changed by a key,
+ * it is there at once; with reduced motion, it only fades (designer, 2026-11-08).
+ */
+.tk-segmented-field > .tk-reset { transform-origin: left center; transition: opacity ${RESET_POP_MS}ms ${EASE_OUT}, transform ${RESET_POP_MS}ms ${EASE_OUT}; }
+@starting-style { .tk-segmented-field > .tk-reset { opacity: 0; transform: scale(0.9); } }
+.tk-segmented-field.is-leaving > .tk-reset { opacity: 0; pointer-events: none; }
+.tk-segmented-field[data-keyed] > .tk-reset { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  @starting-style { .tk-segmented-field > .tk-reset { transform: none; } }
+}
 /* On a row of its own (a text's alignment): as wide as its buttons, at the left, not the row's width (designer, 2026-11-08). */
 .tk-segmented-field.tk-hug { width: fit-content; }
 .tk-select.tk-font, .tk-grid-2 > .tk-select { width: 100%; }
