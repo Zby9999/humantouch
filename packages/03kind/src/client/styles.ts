@@ -608,12 +608,12 @@ export const styles = /* css */ `
  * does, from the same rules below: 30px as the fields, 8px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
  */
 :is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 2px; }
-/* A changed field inside a picker (a gradient's angle, a stop): light on the accent, its reset as any changed field's. */
+/*
+ * A changed field inside a picker (a gradient's angle, a stop): light on the accent, with no reset, keeping its right inset and its width:
+ * the color's row has the one reset, for all of it (designer, 2026-11-08).
+ */
 .tk-popover .tk-field.is-changed :is(.tk-icon, .tk-glyph, .tk-input, .tk-read-only) { color: #fafafa; }
-.tk-popover .tk-field.is-changed .tk-reset { width: 26px; height: 26px; background: var(--tk-accent-on); color: #fafafa; }
-.tk-popover .tk-field.is-changed .tk-reset:hover { background: var(--tk-accent-strong); }
-/* A stop's position, changed: room for its reset beside the number. */
-.tk-stop-position.is-changed { width: 78px; }
+.tk-popover .tk-field.is-changed { padding-right: 6px; }
 /* A shadow's type, changed: as wide as it was, its reset at its right end. */
 .tk-effect-type-field { flex: 1; min-width: 0; border-radius: 8px; }
 .tk-effect-type-field.is-changed > .tk-select { flex: 1; width: auto; min-width: 0; }
@@ -804,6 +804,9 @@ export const styles = /* css */ `
 /* A button that stays on in the panel (Independent corners, Wrap): the accent, as the tool chosen is (designer, 2026-11-07); a row's reset as it (designer, 2026-11-08). */
 .tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); color: #ffffff; }
 .tk-section .tk-icon-button[aria-pressed="true"]:hover, :is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
+/* An item added in this round (a shadow, a fill, a Stack): its − alone marked, as a button that stays on (designer, 2026-11-08). */
+.tk-icon-button.is-added { background: var(--tk-accent); color: #ffffff; }
+.tk-icon-button.is-added:hover { background: var(--tk-accent-strong); }
 /* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
 .tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 30px; height: 30px; border-radius: 8px; }
 .tk-grid-2 {
