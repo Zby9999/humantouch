@@ -1892,7 +1892,7 @@ test("a Stack made in this round: its fields unmarked, only its − in the accen
   await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
 });
 
-test("an effect's type fills its row, its − at the right end: a shadow's, changed or not, and a blur's (designer, 2026-11-08)", async ({ page }) => {
+test("an effect's fold at its row's left, its type filling the row from 5px after it, its − at the right end: a shadow's, changed or not, and a blur's (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const effects = design(page).getByRole("group", { name: "Effects" });
   await addEffect(effects, "Layer blur");
@@ -1905,17 +1905,51 @@ test("an effect's type fills its row, its − at the right end: a shadow's, chan
     ["Layer blur", "Remove layer blur"],
   ]) {
     const row = effects.getByRole("group", { name, exact: true }).locator(".tk-paint-row");
-    const [rowBox, type, minus] = await Promise.all([
+    const [rowBox, fold, type, minus] = await Promise.all([
       steadyBox(row),
+      steadyBox(row.getByRole("button", { name: `${name} details` })),
       // A shadow's select inside its wrapper, with its reset; a blur's on its own.
-      steadyBox(row.locator(":scope > :first-child")),
+      steadyBox(row.locator(":scope > :nth-child(2)")),
       steadyBox(row.getByRole("button", { name: remove })),
     ]);
-    expect(Math.abs(type.x - rowBox.x), `${name}: its type at the row's left`).toBeLessThanOrEqual(1);
+    expect(Math.abs(fold.x - rowBox.x), `${name}: its fold at the row's left`).toBeLessThanOrEqual(1);
+    expect(Math.abs(fold.x + fold.width + 5 - type.x), `${name}: its type 5px after its fold`).toBeLessThanOrEqual(1);
     // The 2px gap of a paint's row between them.
     expect(Math.abs(type.x + type.width + 2 - minus.x), `${name}: its type up to its −`).toBeLessThanOrEqual(1);
     expect(Math.abs(minus.x + minus.width - (rowBox.x + rowBox.width)), `${name}: its − at the row's right end`).toBeLessThanOrEqual(1);
   }
+});
+
+test("an effect's fold, as a layer's chevron in the Layers panel, folds its details away to its type and shows them again (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  await addEffect(effects, "Layer blur");
+  const shadow = effects.getByRole("group", { name: "Shadow 1", exact: true });
+  const fold = shadow.getByRole("button", { name: "Shadow 1 details" });
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  // Its look the Layers' chevron's, open.
+  const look = (el: Locator) => el.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { width: style.width, height: style.height, radius: style.borderRadius, background: style.backgroundColor, shadow: style.boxShadow, color: style.color };
+  });
+  expect(await look(fold)).toEqual(await look(page.locator('.tk-tree-chevron[data-open="true"]').first()));
+
+  await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(shadow.getByRole("textbox")).toHaveCount(0);
+  await expect(shadow.getByRole("button", { name: "Shadow 1 color picker" })).toHaveCount(0);
+  await expect(shadow.getByRole("combobox", { name: "Shadow 1 type" })).toBeVisible();
+  // The others as they were.
+  await expect(effects.getByRole("textbox", { name: "Layer blur", exact: true })).toBeVisible();
+
+  await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  await expect(shadow.getByRole("textbox", { name: "Shadow 1 X" })).toBeVisible();
+  await expect(shadow.getByRole("button", { name: "Shadow 1 color picker" })).toBeVisible();
+
+  const blur = effects.getByRole("group", { name: "Layer blur", exact: true });
+  await blur.getByRole("button", { name: "Layer blur details" }).click();
+  await expect(blur.getByRole("textbox")).toHaveCount(0);
 });
 
 test("a color pointed at, wherever one is chosen, has the Variants tab's white line inside it and a darker one round it", async ({ page }) => {

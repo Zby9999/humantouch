@@ -602,9 +602,15 @@ export const styles = /* css */ `
 .tk-tree-row .tk-icon { flex: none; color: var(--tk-text-muted); }
 .tk-tree-name { flex: none; }
 .tk-tree-brief { display: flex; margin-left: auto; color: var(--tk-text-muted); }
-.tk-tree-chevron { position: relative; z-index: 1; display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
-.tk-tree-chevron[data-open] { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
-.tk-tree-chevron[data-open="false"] .tk-icon { rotate: -90deg; }
+/* An effect's fold (Properties: FoldButton) is a layer's chevron, as a button (designer, 2026-11-08): the same look from these rules. */
+.tk-fold { all: unset; position: relative; }
+.tk-tree-chevron { position: relative; z-index: 1; }
+:is(.tk-tree-chevron, .tk-fold) { display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
+:is(.tk-tree-chevron[data-open], .tk-fold) { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
+:is(.tk-tree-chevron[data-open="false"], .tk-fold[aria-expanded="false"]) .tk-icon { rotate: -90deg; }
+.tk-fold:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
+/* Before an effect's type, 5px from it, as things side by side in a row are: its row's own gap is 2px, the type and its − joined. */
+.tk-paint-row > .tk-fold { margin-right: 3px; }
 /* A guide: down from the layer this one is in, and in to this one; or down past it, to a later one there. */
 .tk-tree-guide { position: absolute; top: -16px; width: 15px; height: 30px; box-sizing: border-box; border-left: 1px solid var(--tk-guide); pointer-events: none; }
 .tk-tree-guide.is-in { border-bottom: 1px solid var(--tk-guide); border-bottom-left-radius: 4px; }

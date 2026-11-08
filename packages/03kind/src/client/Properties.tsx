@@ -1929,6 +1929,18 @@ const EFFECT_TYPES: { type: EffectType; label: string }[] = [
  * spread, and no blur: with text selected, the shadows are drop shadows
  * without spread, and a blur only the other layers have shows as Mixed.
  */
+/**
+ * An effect's fold, before its type, as a layer's chevron in the Layers panel (designer, 2026-11-08): its details (a shadow's numbers and
+ * color, a blur's amount) shown, or folded away to its type alone.
+ */
+function FoldButton({ label, open, onToggle }: { label: string; open: boolean; onToggle(): void }) {
+  return (
+    <button type="button" class="tk-fold" aria-label={label} aria-expanded={open} onClick={onToggle}>
+      <Icon name="chevron-down" />
+    </button>
+  );
+}
+
 function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable, colorVariable, read, update, updateEach }: {
   shadows: Shown<Shadow[]>;
   /** Undefined when not all selected layers offer it. */
@@ -1948,6 +1960,26 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
 }) {
   const set = <P extends EffectProperty>(property: P) => (value: PropertyValues[P], continues = false) => update(property, () => value, continues);
   const blurs = { layerBlur, backgroundBlur };
+  /** The effects whose details are folded away, by their groups' names: each shown unless folded (designer, 2026-11-08). */
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const fold = (name: string) => {
+    const open = !folded.has(name);
+    return {
+      open,
+      button: (
+        <FoldButton
+          label={`${name} details`}
+          open={open}
+          onToggle={() => setFolded((was) => {
+            const next = new Set(was);
+            if (open) next.add(name);
+            else next.delete(name);
+            return next;
+          })}
+        />
+      ),
+    };
+  };
   /** Whether an effect of type `from` can become `type`: not a blur the layers have already, or cannot have. */
   const canBecome = (type: EffectType, from: EffectType) => type === from || isShadow(type) || blurs[type] === null;
   /** A shadow changed so that it draws nothing (no offset, blur or spread) is none, as a stroke of weight 0 is. */
@@ -2071,9 +2103,11 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     const label = EFFECT_TYPES.find(({ type }) => type === property)!.label;
     // Added in this round: its field unmarked, its − alone in the accent (designer, 2026-11-08).
     const addedHere = marks.added(property);
+    const details = fold(label);
     return (
       <div class="tk-effect" key={property} role="group" aria-label={label}>
         <div class="tk-row tk-paint-row">
+          {details.button}
           {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
           <RemoveButton
             label={`Remove ${label.toLowerCase()}`}
@@ -2084,7 +2118,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
             }}
           />
         </div>
-        <NumberField label={label} icon="blur" property={addedHere ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />
+        {details.open && <NumberField label={label} icon="blur" property={addedHere ? undefined : property} value={typeof value === "number" ? value : null} min={0} onChange={set(property)} />}
       </div>
     );
   };
@@ -2120,12 +2154,14 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
               onChange={(value, continues) => changeShadow(i, (current) => ({ ...current, [key]: value }), continues)}
             />
           );
+          const details = fold(name);
           return [
             ...placedAt(i).map(blurEffect),
             // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
             <div class="tk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
               <ChangeMarksProvider value={added[i] ? NO_MARKS : marks}>
               <div class="tk-row tk-paint-row">
+                {details.button}
                 <MarkedSelect label={`${name} type`} property="shadows" part={shadowPart(i, "type")} class="tk-effect-type-field">
                   {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
                 </MarkedSelect>
@@ -2138,14 +2174,18 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
                   }}
                 />
               </div>
-              <div class="tk-grid-2">
-                {/* Words, not icons: X, Y, Blur and Spread read more plainly so, as a place's X and Y do (designer, 2026-11-07). */}
-                {lengthField("x", "X", "X")}
-                {lengthField("y", "Y", "Y")}
-                {lengthField("blur", "blur", "Blur", 0)}
-                {!withText && lengthField("spread", "spread", "Spread")}
-              </div>
-              <ColorField name={name} property="shadows" part={shadowPart(i, "color")} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
+              {details.open && (
+                <>
+                  <div class="tk-grid-2">
+                    {/* Words, not icons: X, Y, Blur and Spread read more plainly so, as a place's X and Y do (designer, 2026-11-07). */}
+                    {lengthField("x", "X", "X")}
+                    {lengthField("y", "Y", "Y")}
+                    {lengthField("blur", "blur", "Blur", 0)}
+                    {!withText && lengthField("spread", "spread", "Spread")}
+                  </div>
+                  <ColorField name={name} property="shadows" part={shadowPart(i, "color")} color={s} onChange={(color, continues) => changeShadow(i, (current) => ({ ...current, ...color }), continues)} variable={colorVariable(i)} />
+                </>
+              )}
               </ChangeMarksProvider>
             </div>,
           ];
