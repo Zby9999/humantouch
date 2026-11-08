@@ -165,6 +165,9 @@ export const styles = /* css */ `
   grid-template-columns: 320px minmax(0, 1fr) 320px;
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--tk-text);
+  /* Grayscale smoothing for the editor's UI, its muted labels kept at 500 (designer, 2026-11-08); the page on the canvas is in iframes, so it doesn't inherit this. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 @media (prefers-color-scheme: dark) {
   .tk-shell {
@@ -1314,7 +1317,8 @@ export const styles = /* css */ `
 /* The Variants tab: the project's Variables, by group (designer, 2026-11-07). */
 .tk-variants { display: flex; flex-direction: column; gap: 16px; }
 .tk-variants .tk-row > .tk-field { flex: 1; }
-.tk-select.tk-variants-source { width: 76px; color: var(--tk-text-muted); font-weight: 500; }
+/* The Variables source (All): tracked as the other muted labels (designer, 2026-11-08). */
+.tk-select.tk-variants-source { width: 76px; color: var(--tk-text-muted); font-weight: 500; letter-spacing: -0.02em; }
 .tk-variants .tk-input[type="search"]::-webkit-search-cancel-button { display: none; }
 .tk-variants .tk-input::placeholder { color: var(--tk-text-muted); font-weight: 500; letter-spacing: -0.02em; }
 .tk-variants-count { flex: none; order: 1; font-size: 11px; font-weight: 400; color: #a0a19f; }
