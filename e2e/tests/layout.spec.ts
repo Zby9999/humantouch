@@ -148,6 +148,23 @@ test("the alignment grid: half the row, its point dark till it changes, then the
     ["Center left", "Center", "Center right"],
     ["Bottom left", "Bottom center", "Bottom right"],
   ];
+  // The lines: 0.5px wide, 6px in from the edges; each `calc(p% ± c px)` placed in that box, its middle at AT (across, then down).
+  const lines = await grid.evaluate((el) => {
+    const style = getComputedStyle(el, "::before");
+    return { x: style.backgroundPositionX, y: style.backgroundPositionY };
+  });
+  const middles = (positions: string, size: number) =>
+    positions.split(",").map((position) => {
+      const percent = parseFloat(/(-?[\d.]+)%/.exec(position)?.[1] ?? "0");
+      const px = parseFloat(/([-+]\s*[\d.]+)px/.exec(position)?.[1]?.replace(/\s/g, "") ?? "0");
+      return 6 + ((size - 12 - 0.5) * percent) / 100 + px + 0.25;
+    });
+  const across = middles(lines.x, box.width).slice(0, 3);
+  const down = middles(lines.y, box.height).slice(3);
+  for (const [i, at] of AT.entries()) {
+    expect(Math.abs(across[i]! - box.width * at)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(down[i]! - box.height * at)).toBeLessThanOrEqual(0.5);
+  }
   for (const [row, names] of NAMES.entries()) {
     for (const [column, name] of names.entries()) {
       const third = await steadyBox(point(name));

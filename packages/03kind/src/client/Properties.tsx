@@ -1920,6 +1920,9 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
   /** The drag under way: the value so far, movement of less than 1px not yet counted, whether it has changed the value yet, and the field it marks as chosen. */
   const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean; field: Element | null } | null>(null);
 
+  // Gone mid-drag while its field stays, it takes the field's mark with it.
+  useEffect(() => () => drag.current?.field?.removeAttribute("data-scrubbing"), []);
+
   const onPointerDown = (event: TargetedPointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
