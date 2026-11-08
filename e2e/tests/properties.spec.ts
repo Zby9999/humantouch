@@ -1136,7 +1136,12 @@ test("a reset taking several fields back stands at its row's left, outside them,
   await expect(resetFill).toHaveCount(1);
   await expect(hexField.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
   await expect(opacityField.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
-  await expect.poll(async () => (await steadyBox(resetFill)).x + (await steadyBox(resetFill)).width < (await steadyBox(hexField)).x).toBe(true);
+  await expect
+    .poll(async () => {
+      const [reset, field] = await Promise.all([steadyBox(resetFill), steadyBox(hexField)]);
+      return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
+    })
+    .toEqual({ gap: 4, size: 26, center: 0 });
   await resetFill.click();
   await expect(hex).toHaveValue(wasHex);
   await expect(resetFill).toHaveCount(0);
