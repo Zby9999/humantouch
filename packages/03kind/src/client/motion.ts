@@ -41,13 +41,15 @@ export const POPOVER_EXIT_MS = 150;
 export const RESET_POP_MS = 150;
 
 /**
- * A number scrubbed (designer, 2026-11-08): the ruler under its field fading and sliding 4px down into place as the drag starts,
- * and fading out once let go; with reduced motion, it only fades. Its grip tilts with the drag's speed, up to `GRIP_TILT_MAX_DEG`,
- * and settles upright over `FIELD_SETTLE_MS`; with reduced motion, it stays upright.
+ * A number scrubbed (designer, 2026-11-08): a short scale inside its field, under its grip, fading and rising 2px into place as the
+ * drag starts, the grip lifting to make room; fading out once let go. With reduced motion, the scale only fades and the grip lifts at once.
+ * The whole grip sways left and right with the drag's speed, up to `GRIP_SWAY_MAX_PX`, leaning up to `GRIP_SWAY_MAX_DEG` about its
+ * centre, and settles back over `FIELD_SETTLE_MS`; with reduced motion, it stays still.
  */
 export const SCRUB_RULER_IN_MS = 150;
 export const SCRUB_RULER_OUT_MS = 120;
-export const GRIP_TILT_MAX_DEG = 12;
+export const GRIP_SWAY_MAX_PX = 3;
+export const GRIP_SWAY_MAX_DEG = 4;
 
 /** The line under a panel's header running to the panel's edges once the panel is scrolled, and back at its top (designer, 2026-11-08); with reduced motion, at once. */
 export const HEADER_LINE_MS = 200;
