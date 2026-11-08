@@ -1206,14 +1206,16 @@ export function CanvasView(props: Props) {
         [...shownViews, ...outside].map((shown) => {
           const { view, name } = shown;
           const at = cameraIn(camera, shown);
+          // The selection lighter in the views other than the one worked in, pressed in last (designer, 2026-11-09).
+          const away = !shown.offCanvasLayer && view !== (active ?? views?.list()[0]);
           return (
             <Fragment key={keyOf(shown)}>
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
               {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
-              {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} />)}
+              {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
               {withHandles && !shown.offCanvasLayer && (!spaceHeld || resize) && (
-                <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+                <Handles layer={withHandles} view={view} name={name} camera={at} away={away} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
               )}
               {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
                 <GradientHandles

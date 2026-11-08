@@ -797,3 +797,27 @@ test("a layer dragged below the bottom of a view leaves every view as tall as it
   await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
   for (const view of views) await expect(view.contentFrame().locator("article:last-child")).toBeHidden();
 });
+
+test("a layer selected, its selection in the views other than the one worked in is lighter, its handles' squares white still", async ({ page }) => {
+  await page.goto(DEV_URL);
+  await enterEditMode(page);
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
+  const outline = (view: string) => page.locator(`.tk-selection[data-view="${view}"]`);
+  const corner = (view: string) => page.locator(`.tk-handles[data-view="${view}"] .tk-handle[data-corner]`).first();
+  const look = (el: Locator) => el.evaluate((node) => [getComputedStyle(node).borderTopColor, getComputedStyle(node).backgroundColor]);
+
+  // Worked in the desktop view at first.
+  await expect(outline("Desktop")).not.toHaveAttribute("data-away");
+  for (const view of ["Tablet", "Phone"]) await expect(outline(view)).toHaveAttribute("data-away", "true");
+  const [near, far] = [await look(outline("Desktop")), await look(outline("Phone"))];
+  expect(far[0]).not.toBe(near[0]);
+  const [nearCorner, farCorner] = [await look(corner("Desktop")), await look(corner("Phone"))];
+  expect(farCorner[0]).not.toBe(nearCorner[0]);
+  expect(farCorner[1]).toBe("rgb(255, 255, 255)");
+
+  // Pressed in the phone view: it is the one worked in.
+  const card = (await phone(page).contentFrame().locator("article").first().boundingBox())!;
+  await page.mouse.click(card.x + 20, card.y + 10);
+  await expect(outline("Phone")).not.toHaveAttribute("data-away");
+  for (const view of ["Desktop", "Tablet"]) await expect(outline(view)).toHaveAttribute("data-away", "true");
+});
