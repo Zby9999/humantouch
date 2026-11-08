@@ -2358,10 +2358,21 @@ export function SectionReset({ title, properties, operations }: { title: string;
 
 /** Pointer travel per unit scrubbed, in px: half as fast as Figma's 1 per px, which was hard to land on (designer, 2026-11-08). */
 const SCRUB_PX_PER_STEP = 2;
-/** How much of the last frame's movement the grip's speed takes in, frame by frame: smoothed, so it does not jitter. */
-const SWAY_SMOOTHING = 0.3;
-/** The grip's sway per px moved in a frame: at 8px a frame, at its most. */
-const SWAY_PX_PER_PX = GRIP_SWAY_MAX_PX / 8;
+/*
+ * The grip's sway follows the drag's speed in px per ms, not per frame, so it is the same on a 60Hz screen and a 120Hz one, where every
+ * other frame has no pointer event. Faster, or turned the other way, it follows within about `SWAY_RISE_MS`; a pause in the drag shorter
+ * than `SWAY_HOLD_MS` leaves it where it is; stopped, it comes back over about `SWAY_FALL_MS`. It had come back within a few frames of
+ * any pause, springing back mid-drag (designer, 2026-11-08).
+ */
+const SWAY_RISE_MS = 40;
+const SWAY_HOLD_MS = 150;
+const SWAY_FALL_MS = 160;
+/** The longest a pointer's movement is taken to have been spread over, after a pause: the speed of the first move after it. */
+const SWAY_MOVE_SPAN_MS = 50;
+/** The grip's sway per px/ms of the drag's speed: at 8px a 60th of a second, at its most. */
+const SWAY_PX_PER_SPEED = GRIP_SWAY_MAX_PX / (8 / (1000 / 60));
+/** A grip not swaying. */
+const STILL = { frameDx: 0, speed: 0, frame: 0, last: 0, movedAt: 0 };
 
 /**
  * What drags a number field's value left and right: its icon or label, at its
@@ -2384,16 +2395,24 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
 }) {
   /** The drag under way: the value so far, movement of less than a step not yet counted, whether it has changed the value yet, the field it marks as chosen and the grip it sways. */
   const drag = useRef<{ pointerId: number; value: number; rest: number; moved: boolean; field: Element | null; grip: HTMLElement | null } | null>(null);
-  /** The grip's sway: movement in this frame, its speed smoothed, the frame asked for. */
-  const sway = useRef({ frameDx: 0, speed: 0, frame: 0 });
+  /** The grip's sway: movement since the last frame, its speed in px per ms smoothed, the frame asked for, when the last frame was and when the pointer last moved. */
+  const sway = useRef({ ...STILL });
 
   /** Each frame while held: the grip's sway. */
-  const heldFrame = () => {
+  const heldFrame = (now: number) => {
     const d = drag.current;
     const t = sway.current;
-    t.speed += (t.frameDx - t.speed) * SWAY_SMOOTHING;
+    const dt = t.last ? Math.min(now - t.last, SWAY_MOVE_SPAN_MS) : 1000 / 60;
+    t.last = now;
+    if (t.frameDx !== 0) {
+      // Over the time since it last moved: on a 120Hz screen, two frames for each pointer event.
+      const v = t.frameDx / Math.max(dt, Math.min(now - t.movedAt, SWAY_MOVE_SPAN_MS));
+      const follows = Math.abs(v) >= Math.abs(t.speed) || Math.sign(v) !== Math.sign(t.speed);
+      t.speed += (v - t.speed) * (1 - Math.exp(-dt / (follows ? SWAY_RISE_MS : SWAY_FALL_MS)));
+      t.movedAt = now;
+    } else if (now - t.movedAt > SWAY_HOLD_MS) t.speed *= Math.exp(-dt / SWAY_FALL_MS);
     t.frameDx = 0;
-    const x = Math.max(-GRIP_SWAY_MAX_PX, Math.min(GRIP_SWAY_MAX_PX, t.speed * SWAY_PX_PER_PX));
+    const x = Math.max(-GRIP_SWAY_MAX_PX, Math.min(GRIP_SWAY_MAX_PX, t.speed * SWAY_PX_PER_SPEED));
     // The whole bar moves across, upright: it does not lean (designer, 2026-11-08).
     if (d?.grip) d.grip.style.transform = `translateX(${Math.abs(x) < 0.02 ? 0 : x.toFixed(2)}px)`;
     t.frame = d ? requestAnimationFrame(heldFrame) : 0;
@@ -2401,7 +2420,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
 
   const settle = (g: HTMLElement | null) => {
     cancelAnimationFrame(sway.current.frame);
-    sway.current = { frameDx: 0, speed: 0, frame: 0 };
+    sway.current = { ...STILL };
     if (!g?.style.transform) return;
     // Let go, it settles back to the middle, eased (designer, 2026-11-08).
     g.style.transition = `transform ${FIELD_SETTLE_MS}ms ${EASE_OUT}`;
@@ -2434,7 +2453,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     if (g) g.style.transition = "";
     drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field, grip: g };
     cancelAnimationFrame(sway.current.frame);
-    sway.current = { frameDx: 0, speed: 0, frame: requestAnimationFrame(heldFrame) };
+    sway.current = { ...STILL, frame: requestAnimationFrame(heldFrame) };
   };
 
   const onPointerMove = (event: TargetedPointerEvent<HTMLSpanElement>) => {
