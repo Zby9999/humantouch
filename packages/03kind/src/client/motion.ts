@@ -53,6 +53,18 @@ export const SCRUB_RULER_OUT_MS = 120;
 export const GRIP_SWAY_MAX_PX = 3;
 export const GRIP_SWAY_MAX_DEG = 4;
 
+/**
+ * A number's digits rolling as it is scrubbed, or taken back by its reset, as a counter's drum turns (designer, 2026-11-08): each digit
+ * that changes slides out up and fades and blurs away, its new one coming up from below, out of a blur, as the value grows; the other way
+ * as it falls. Quick, as a scrub changes it many times a second; a change mid-roll takes each digit on from where it is. With reduced
+ * motion, the digits only fade, quicker (80ms: the agent's, to confirm). Typed, stepped with the keys or undone, a number changes at once.
+ */
+export const DIGIT_ROLL_MS = 120;
+export const DIGIT_FADE_MS = 80;
+/** How far a digit rolls, in em of its own size (the agent's, to confirm), and how blurred it starts and ends (designer, 2026-11-08). */
+export const DIGIT_ROLL_EM = 0.5;
+export const DIGIT_BLUR_PX = 2;
+
 /** The line under a panel's header running to the panel's edges once the panel is scrolled, and back at its top (designer, 2026-11-08); with reduced motion, at once. */
 export const HEADER_LINE_MS = 200;
 

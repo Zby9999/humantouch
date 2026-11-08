@@ -114,8 +114,11 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
   };
   return {
     changed(property, part) {
-      // While a press is held (`heldFrom`, the changes as it began), what it drags is not marked yet: it takes the accent once let go. One changed before stays marked (designer, 2026-11-08).
-      return changedIn(changes, property, part) && (!heldFrom || changedIn(heldFrom, property, part));
+      // While a press is held (`heldFrom`, the changes as it began), the marks stay as they were then: what it drags is not marked yet,
+      // and takes the accent once let go; one changed before stays marked (designer, 2026-11-08), even as the drag passes back over
+      // where it started, which takes its change out of the round for that while: it would else fade to gray mid-drag, its reset gone,
+      // and come back a moment later (designer, 2026-11-08: gray while held, blue once let go).
+      return heldFrom ? changedIn(heldFrom, property, part) : changedIn(changes, property, part);
     },
     reset(properties, part) {
       if (part) {
@@ -186,6 +189,18 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
   }
 }
 
+/** When a reset was last clicked (not pressed from the keyboard). */
+let resetClickedAt = -Infinity;
+/** How long after a reset is clicked a number it changes still counts as changed by it: the panel shows it a render or two later (agent's, to confirm). */
+const RESET_ROLL_WINDOW_MS = 150;
+/** A key pressed meanwhile (⌘Z, say) changes numbers itself: from then on they change at once, unrolled. */
+if (typeof window !== "undefined") window.addEventListener("keydown", () => void (resetClickedAt = -Infinity), true);
+
+/** Whether a reset was clicked just now: a number changing now was taken back by it, and rolls to its value (designer, 2026-11-08). */
+export function resetJustClicked(): boolean {
+  return performance.now() - resetClickedAt < RESET_ROLL_WINDOW_MS;
+}
+
 /** A changed field's reset, at its right end: takes the change back out. */
 export function ResetButton({ label, onReset }: { label: string; onReset(): void }) {
   return (
@@ -197,6 +212,8 @@ export function ResetButton({ label, onReset }: { label: string; onReset(): void
       onPointerDown={(event) => event.preventDefault()}
       onClick={(event) => {
         event.preventDefault();
+        // Clicked, not pressed from the keyboard: the numbers it takes back roll to their values (designer, 2026-11-08).
+        if (event.detail > 0) resetClickedAt = performance.now();
         onReset();
       }}
     >
