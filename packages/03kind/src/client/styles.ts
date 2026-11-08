@@ -280,13 +280,13 @@ export const styles = /* css */ `
 /*
  * Its size, corners and place on the screen those of the button in the Layers panel's top that hid them, so
  * showing and hiding the panel leaves it where it is (designer, 2026-11-08): 24px, 6px corners, the panel's padding
- * from the left, centred on the 30px header from the top. Alone over the canvas, it is the editor's prominent button,
+ * from the left, centred on the 28px header from the top. Alone over the canvas, it is the editor's prominent button,
  * the chosen tool's white and shadow (designer, 2026-11-08).
  */
 .tk-show-layers {
   all: unset;
   position: absolute;
-  top: 19px;
+  top: 18px;
   left: 16px;
   z-index: 1;
   display: grid;
@@ -494,7 +494,7 @@ export const styles = /* css */ `
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 30px;
+  min-height: 28px;
   margin: -16px -16px 0;
   padding: 16px 16px 7px;
   background: var(--tk-panel);
@@ -527,21 +527,21 @@ export const styles = /* css */ `
   color: var(--tk-title);
 }
 .tk-panel.is-design .tk-panel-title { padding-left: 2px; }
-.tk-panel-header > .tk-icon-button { width: 30px; height: 30px; border-radius: 6px; background: var(--tk-button); }
+.tk-panel-header > .tk-icon-button { width: 28px; height: 28px; border-radius: 6px; background: var(--tk-button); }
 .tk-panel.is-layers .tk-panel-header > .tk-icon-button { width: 24px; height: 24px; border-radius: 6px; }
 .tk-panel-header > .tk-icon-button:hover { background: var(--tk-border); }
 .tk-count {
   all: unset;
   box-sizing: border-box;
-  min-width: 30px;
-  height: 30px;
+  min-width: 28px;
+  height: 28px;
   padding: 0 8px;
   border-radius: 6px;
-  /* Blue 400 into blue 500, a hairline and a soft shadow (Figma: 03 Kind, 86:567; designer, 2026-11-08); 30px, as the buttons beside it. */
+  /* Blue 400 into blue 500, a hairline and a soft shadow (Figma: 03 Kind, 86:567; designer, 2026-11-08); 28px, as the buttons beside it. */
   background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
   box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
   color: #daecff;
-  font: 500 12px/30px ${EDITOR_FONT};
+  font: 500 12px/28px ${EDITOR_FONT};
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -687,7 +687,7 @@ export const styles = /* css */ `
 /* A section with nothing under its title yet (Fill, Stroke): its title alone, 24px. */
 .tk-section > :is(.tk-section-title, .tk-section-header):last-child { margin-bottom: 0; }
 .tk-row { display: flex; align-items: center; gap: 4px; }
-/* A field: 30px high (designer, 2026-11-08), raised on neutral 50 (--tk-input), its label (an icon or a word) before what it holds. */
+/* A field: 28px high (Figma: 03 Kind, 86:557; designer, 2026-11-08), raised on neutral 50 (--tk-input), its label (an icon or a word) before what it holds. */
 /* Its corners 6px, as every field, choice and button in the panel (designer, 2026-11-08). */
 .tk-field {
   display: flex;
@@ -696,7 +696,7 @@ export const styles = /* css */ `
   gap: 8px;
   box-sizing: border-box;
   min-width: 0;
-  height: 30px;
+  height: 28px;
   padding: 0 6px 0 8px;
   border-radius: 6px;
   background: var(--tk-input);
@@ -732,8 +732,8 @@ export const styles = /* css */ `
   border-radius: 6px;
   color: inherit;
 }
-/* In a changed field, 26px, 2px in from its end, on the field's own blue; pointed at, on blue 400 (designer, 2026-11-08). */
-.tk-field.is-changed .tk-reset:not(.tk-popover *), .tk-select-field > .tk-reset { width: 26px; height: 26px; border-radius: 4px; background: var(--tk-accent); }
+/* In a changed field, 24px, 2px in from its end, on the field's own blue; pointed at, on blue 400 (designer, 2026-11-08). */
+.tk-field.is-changed .tk-reset:not(.tk-popover *), .tk-select-field > .tk-reset { width: 24px; height: 24px; border-radius: 4px; background: var(--tk-accent); }
 .tk-field.is-changed .tk-reset:not(.tk-popover *):hover, .tk-select-field > .tk-reset:hover { background: var(--tk-accent-on); }
 /* At the field's right end, after a gradient's name too. */
 .tk-color-field > .tk-reset { margin-left: auto; }
@@ -746,7 +746,7 @@ export const styles = /* css */ `
 /*
  * One reset taking several fields back (a size with its sizing, a color with its opacity): a button of the row's own, at its left, outside
  * the fields, which make room for it, 4px from the fields as unjoined things in a row are. It looks as a button that stays on (Wrap, on)
- * does, from the same rules below: 30px as the fields, 6px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
+ * does, from the same rules below: 28px as the fields, 6px corners, white on the accent, blue 600 hovered (designer, 2026-11-08).
  */
 :is(.tk-size-row, .tk-color-row) > .tk-reset { align-self: center; margin-right: 2px; }
 /*
@@ -934,7 +934,7 @@ export const styles = /* css */ `
 .tk-icon-button.is-added { background: var(--tk-accent); color: #ffffff; }
 .tk-icon-button.is-added:hover { background: var(--tk-accent-strong); }
 /* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
-.tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 30px; height: 30px; border-radius: 6px; }
+.tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 28px; height: 28px; border-radius: 6px; }
 .tk-grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -987,7 +987,7 @@ export const styles = /* css */ `
   flex: none;
   box-sizing: border-box;
   width: 72px;
-  height: 30px;
+  height: 28px;
   padding: 0 24px 0 8px;
   border: 0;
   border-radius: 6px;
@@ -1073,12 +1073,12 @@ export const styles = /* css */ `
   border-radius: 6px;
   background: var(--tk-field);
 }
-.tk-segmented-field .tk-icon-button { width: 26px; height: 26px; border-radius: 4px; color: var(--tk-text-muted); }
+.tk-segmented-field .tk-icon-button { width: 24px; height: 24px; border-radius: 4px; color: var(--tk-text-muted); }
 .tk-segmented-field .tk-icon-button:hover { background: none; color: var(--tk-text); }
 .tk-segmented-field .tk-icon-button[aria-checked="true"] { color: var(--tk-text); background: var(--tk-raised); box-shadow: var(--tk-chosen-shadow); }
 /*
  * Changed in this round, the one chosen stays raised and white; the track behind the buttons takes the accent, the others' glyphs light on
- * it (white on blue 500 is 3.4:1), a light tint under one hovered; the group's reset pops out inside it at its right end, 26px on blue 400
+ * it (white on blue 500 is 3.4:1), a light tint under one hovered; the group's reset pops out inside it at its right end, 24px on blue 400
  * as a changed field's, the group as wide as its buttons and the reset (designer, 2026-11-08).
  */
 .tk-segmented-field.is-changed { background: var(--tk-accent); }
@@ -1087,7 +1087,7 @@ export const styles = /* css */ `
 /* Clicked, the accent at once, the click answered; taken back (its reset, undo), it eases back to the track's grey, as a check does. */
 .tk-segmented-field, .tk-segmented-field .tk-icon-button { transition: background-color ${FIELD_STATE_MS}ms ${EASE_OUT}, color ${FIELD_STATE_MS}ms ${EASE_OUT}; }
 .tk-segmented-field.is-changed, .tk-segmented-field.is-changed .tk-icon-button { transition: none; }
-.tk-segmented-field > .tk-reset { width: 26px; height: 26px; border-radius: 4px; background: var(--tk-accent); color: #fafafa; }
+.tk-segmented-field > .tk-reset { width: 24px; height: 24px; border-radius: 4px; background: var(--tk-accent); color: #fafafa; }
 .tk-segmented-field > .tk-reset:hover { background: var(--tk-accent-on); }
 /*
  * The reset coming: from 90% at its left, where it grows out of the buttons, and transparent; going: it fades where it is. Changed by a key,
@@ -1137,7 +1137,7 @@ export const styles = /* css */ `
   grid-template-rows: repeat(3, minmax(0, 1fr));
   box-sizing: border-box;
   min-width: 0;
-  min-height: 64px;
+  min-height: 60px;
   border-radius: 6px;
   background: var(--tk-input);
   box-shadow: var(--tk-input-shadow);
@@ -1192,7 +1192,7 @@ export const styles = /* css */ `
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  height: 30px;
+  height: 28px;
   padding: 0 6px 0 5px;
   border-radius: 6px;
   color: var(--tk-text-muted);

@@ -1595,7 +1595,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
       // Left of it, 4px apart, centered on it.
       return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
     })
-    .toEqual({ gap: 4, size: 30, center: 0 });
+    .toEqual({ gap: 4, size: 28, center: 0 });
 
   // It takes both back.
   await resetWidth.click();
@@ -1625,7 +1625,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
       const [reset, field] = await Promise.all([steadyBox(resetFill), steadyBox(hexField)]);
       return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
     })
-    .toEqual({ gap: 4, size: 30, center: 0 });
+    .toEqual({ gap: 4, size: 28, center: 0 });
   await resetFill.click();
   await expect(hex).toHaveValue(wasHex);
   await expect(resetFill).toHaveCount(0);
@@ -1645,7 +1645,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
     .toBe(2);
 });
 
-test("the row's reset looks as a button that stays on (Wrap, on): its size, its corners, its ground and icon, and hovered; a field's own reset stays 26px (designer, 2026-11-08)", async ({ page }) => {
+test("the row's reset looks as a button that stays on (Wrap, on): its size, its corners, its ground and icon, and hovered; a field's own reset stays 24px (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Header");
   const panel = design(page);
   const wrap = panel.getByRole("button", { name: "Wrap", exact: true });
@@ -1658,6 +1658,9 @@ test("the row's reset looks as a button that stays on (Wrap, on): its size, its 
   const width = panel.getByRole("textbox", { name: "Width", exact: true });
   await width.fill("300");
   await width.press("Enter");
+  // Its Variables listed close as it leaves it: with 28px rows, they reach over Wrap.
+  await width.blur();
+  await expect(panel.getByRole("listbox", { name: "Matching variables" })).toHaveCount(0);
   const rowReset = panel.locator(".tk-size-row > .tk-reset");
   const fieldReset = panel.locator(".tk-field").getByRole("button", { name: "Reset corner radius" });
   await expect(rowReset).toHaveCount(1);
@@ -1670,13 +1673,13 @@ test("the row's reset looks as a button that stays on (Wrap, on): its size, its 
   // Neither hovered (the pointer left on Wrap since its click): once the colors have settled, as alike as the same rules make them.
   await page.mouse.move(0, 0);
   await expect.poll(() => look(rowReset)).toEqual(await look(wrap));
-  expect((await look(rowReset)).width).toBe("30px");
-  expect((await look(fieldReset)).width).toBe("26px");
+  expect((await look(rowReset)).width).toBe("28px");
+  expect((await look(fieldReset)).width).toBe("24px");
   // Hovered, the same blue 600.
   await rowReset.hover();
-  await expect.poll(() => look(rowReset)).toEqual({ width: "30px", height: "30px", radius: "6px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
+  await expect.poll(() => look(rowReset)).toEqual({ width: "28px", height: "28px", radius: "6px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
   await wrap.hover();
-  await expect.poll(() => look(wrap)).toEqual({ width: "30px", height: "30px", radius: "6px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
+  await expect.poll(() => look(wrap)).toEqual({ width: "28px", height: "28px", radius: "6px", background: "rgb(0, 125, 210)", color: "rgb(255, 255, 255)" });
 });
 
 test("a section's reset shows for two of its changes, not for one, in every section: Appearance's opacity and radius (designer, 2026-11-08)", async ({ page }) => {

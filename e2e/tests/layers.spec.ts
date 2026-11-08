@@ -264,7 +264,7 @@ test("one line under the Layers panel's top, the header's own, also once hidden 
         const { found, header } = await lines();
         return { found: found.map((line) => line.replace(/: .*$/, "")), header };
       })
-      .toEqual({ found: ["tk-panel-header::after"], header: 53 });
+      .toEqual({ found: ["tk-panel-header::after"], header: 51 });
   };
   await noRuleAcross();
   // Shown again, the panel once took the Design panel's elements, and its header the rule under that panel's.

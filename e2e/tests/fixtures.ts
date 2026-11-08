@@ -203,7 +203,7 @@ export async function steadyBox(locator: Locator): Promise<Box> {
 
 /**
  * A segmented group changed in this round (designer, 2026-11-08): the one chosen stays white, the track behind it takes the accent,
- * and its reset, 26px, stands inside the track at its right end, there in full once it has popped out.
+ * and its reset, 24px, stands inside the track at its right end, there in full once it has popped out.
  */
 export async function expectSegmentedChanged(group: Locator, chosen: Locator, reset: Locator) {
   await expect(group).toHaveClass(/\bis-changed\b/);
@@ -212,7 +212,7 @@ export async function expectSegmentedChanged(group: Locator, chosen: Locator, re
   await expect(chosen).toHaveCSS("background-color", "rgb(250, 250, 250)");
   await expect(reset).toHaveCSS("opacity", "1");
   const [box, button] = await Promise.all([steadyBox(group), steadyBox(reset)]);
-  expect(button.width).toBe(26);
+  expect(button.width).toBe(24);
   expect(button.x).toBeGreaterThanOrEqual(box.x);
   expect(Math.round(box.x + box.width - (button.x + button.width))).toBe(2);
 }
