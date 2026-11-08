@@ -1084,3 +1084,79 @@ test("a layer that is not text has no Text section", async ({ page }) => {
 
   await expect(design(page).getByRole("group", { name: "Text" })).toHaveCount(0);
 });
+
+test("a reset taking several fields back stands at its row's left, outside them, the fields marked with none of their own; a field's own reset stays inside it (designer, 2026-11-08)", async ({ page }) => {
+  await selectRow(page, "Button");
+  const panel = design(page);
+  const width = panel.getByRole("textbox", { name: "Width", exact: true });
+  const widthField = panel.locator(`.tk-field:has([aria-label="Width"])`);
+  const sizing = panel.getByRole("combobox", { name: "Width sizing" });
+  const sizingField = panel.locator(`.tk-select-field:has([aria-label="Width sizing"])`);
+  const resetWidth = panel.getByRole("button", { name: /^Reset width/ });
+  const wasWidth = await width.inputValue();
+  await expect(sizing).toHaveValue("hug");
+
+  // Typed: Fixed, at another number; both marked, one reset, at the row's left, outside the Width field.
+  await width.fill("200");
+  await width.press("Enter");
+  await expect(widthField).toHaveClass(/\bis-changed\b/);
+  await expect(sizingField).toHaveClass(/\bis-changed\b/);
+  await expect(resetWidth).toHaveCount(1);
+  await expect(resetWidth).toHaveAccessibleName("Reset width");
+  await expect(widthField.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect(sizingField.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const [reset, field] = await Promise.all([steadyBox(resetWidth), steadyBox(widthField)]);
+      // Left of it, 4px apart, centered on it.
+      return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
+    })
+    .toEqual({ gap: 4, size: 26, center: 0 });
+
+  // It takes both back.
+  await resetWidth.click();
+  await expect(sizing).toHaveValue("hug");
+  await expect(width).toHaveValue(wasWidth);
+  await expect(resetWidth).toHaveCount(0);
+  await expect(widthField).not.toHaveClass(/\bis-changed\b/);
+  await expect(sizingField).not.toHaveClass(/\bis-changed\b/);
+
+  // A color: the hex and its opacity marked, one reset at the row's left.
+  await selectRow(page, "Card");
+  const fill = panel.getByRole("group", { name: "Fill" });
+  const hex = fill.getByRole("textbox", { name: "Fill color", exact: true });
+  const hexField = fill.locator(".tk-color-field");
+  const opacityField = fill.locator(".tk-color-opacity");
+  const resetFill = fill.getByRole("button", { name: "Reset fill" });
+  const wasHex = await hex.inputValue();
+  await hex.fill("FF0000");
+  await hex.press("Enter");
+  await expect(hexField).toHaveClass(/\bis-changed\b/);
+  await expect(opacityField).toHaveClass(/\bis-changed\b/);
+  await expect(resetFill).toHaveCount(1);
+  await expect(hexField.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect(opacityField.getByRole("button", { name: /^Reset/ })).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const [reset, field] = await Promise.all([steadyBox(resetFill), steadyBox(hexField)]);
+      return { gap: Math.round(field.x - (reset.x + reset.width)), size: Math.round(reset.width), center: Math.round(reset.y + reset.height / 2 - (field.y + field.height / 2)) };
+    })
+    .toEqual({ gap: 4, size: 26, center: 0 });
+  await resetFill.click();
+  await expect(hex).toHaveValue(wasHex);
+  await expect(resetFill).toHaveCount(0);
+
+  // A number alone: its reset inside it, at its right end.
+  const radius = panel.getByRole("textbox", { name: "Corner radius" });
+  const radiusField = panel.locator(`.tk-field:has([aria-label="Corner radius"])`);
+  await radius.fill("20");
+  await radius.press("Enter");
+  const resetRadius = radiusField.getByRole("button", { name: "Reset corner radius" });
+  await expect(resetRadius).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [reset, field] = await Promise.all([steadyBox(resetRadius), steadyBox(radiusField)]);
+      return Math.round(field.x + field.width - (reset.x + reset.width));
+    })
+    .toBe(2);
+});

@@ -444,14 +444,17 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable, after 
   const marks = useChangeMarks();
   // Its sizing changed (Hug to Fixed, say): the choice is marked; the number too when it came to another size, dragged or typed (designer, 2026-11-08).
   const sizingChanged = marks.changed(axis, SIZING);
-  const sizeChanged = sizingChanged && size !== MIXED && size.type === "fixed" && marks.changed(axis, sizeOf(layers, axis));
+  const sizeChanged = sizingChanged ? size !== MIXED && size.type === "fixed" && marks.changed(axis, sizeOf(layers, axis)) : marks.changed(axis);
   return (
     <div class="tk-row tk-size-row">
-      <VariableSlot label={label} slot={variable} property={axis}>
+      {/* One reset takes the number and its sizing back together: it stands at the row's left, outside them, the two marked with none of their own (designer, 2026-11-08). */}
+      {(sizeChanged || sizingChanged) && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([axis])} />}
+      <VariableSlot label={label} slot={variable} property={axis} rowReset>
         <NumberField
           label={label}
           glyph={label}
-          property={sizingChanged && !sizeChanged ? undefined : axis}
+          property={sizeChanged ? axis : undefined}
+          rowReset
           after={after}
           value={shownSize}
           min={0}
@@ -485,7 +488,6 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable, after 
             </option>
           ))}
         </Select>
-      {sizingChanged && <ResetButton label={`${label.toLowerCase()} sizing`} onReset={() => marks.reset([axis])} />}
       </span>
     </div>
   );
@@ -1756,6 +1758,8 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
   const typed = !shown && !offered?.bound;
   return (
     <div class={`tk-color-row${changed ? " is-changed" : ""}`}>
+      {/* One reset takes the color and its opacity back together (a gradient, all of it): at the row's left, outside the fields, both marked with none of their own (designer, 2026-11-08). */}
+      {changed && <ResetButton label={name.toLowerCase()} onReset={() => marks.reset([property!], part)} />}
       <div class={`tk-field tk-color-field${typed ? " is-joined" : ""}${changed ? " is-changed" : ""}`}>
         <button
           type="button"
@@ -1766,7 +1770,6 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
           onClick={toggle}
         />
         {shown ? <span class="tk-read-only">{shown.text}</span> : <ColorValue name={name} color={color} onChange={onChange} offered={offered} onOpen={toggle} />}
-        {changed && <ResetButton label={name.toLowerCase()} onReset={() => marks.reset([property!], part)} />}
         {open && (
           <ColorPicker label={name} anchor={open} slot={offered} top={top} custom={<ColorPanel color={color} onChange={onChange} />} onClose={() => setOpen(null)} />
         )}
@@ -1872,10 +1875,12 @@ interface NumberFieldProps {
   part?: number | ValuePart;
   /** After the number, inside the field: a button of its own. */
   after?: ComponentChildren;
+  /** Its reset is its row's, at the row's left, taking more than this field back: marked, it has none of its own (designer, 2026-11-08). */
+  rowReset?: boolean;
 }
 
 /** A number typed in, stepped with ↑ / ↓, or dragged on its icon (10 at a time with ⇧). */
-export function NumberField({ label, icon, glyph, small, value, unit = "", min = -Infinity, onChange, property, part, after }: NumberFieldProps) {
+export function NumberField({ label, icon, glyph, small, value, unit = "", min = -Infinity, onChange, property, part, after, rowReset }: NumberFieldProps) {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property, part);
   return (
@@ -1889,7 +1894,7 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
         onChange={onChange}
       />
       {after}
-      {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
+      {changed && !rowReset && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
     </label>
   );
 }

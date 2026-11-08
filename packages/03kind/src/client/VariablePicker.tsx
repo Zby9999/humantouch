@@ -250,8 +250,10 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
  * its focus, what is typed and what is selected in it (ticket 98). With no
  * button beside it, that element lays out as if the field were in its place.
  */
-export function VariableSlot({ label, slot, property, part, children }: {
+export function VariableSlot({ label, slot, property, part, rowReset, children }: {
   label: string;
+  /** Its reset is its row's, at the row's left (a size's, with its sizing): marked, the name has none of its own (designer, 2026-11-08). */
+  rowReset?: boolean;
   slot: Slot | undefined;
   /** The property the field sets, and its part: with a Variable picked, the name is marked as the field would be (`ChangeMarks`). */
   property?: Property;
@@ -288,7 +290,7 @@ export function VariableSlot({ label, slot, property, part, children }: {
           <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} title="Detach variable" onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
-          {changed && <ResetButton label={lower} onReset={() => marks.reset([property!])} />}
+          {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!])} />}
         </div>
       ) : (
         <TypingProvider value={typing}>{children}</TypingProvider>
