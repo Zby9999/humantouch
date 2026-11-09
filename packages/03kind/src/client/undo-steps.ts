@@ -32,6 +32,58 @@ export function createHistory(): History {
 }
 
 /**
+ * Makes `edits`, of several editors sharing `history` (the canvas's and those
+ * of the layers off it), one step: a layer dragged from one to another, taken
+ * out of one and put into the other (ticket 108). Undone, the layers the
+ * first of them was made to are found again; redone, those of the last.
+ */
+export function together(history: History, edits: () => void): void {
+  const from = history.past.length;
+  edits();
+  const entries = history.past.splice(from);
+  if (entries.length < 2) {
+    history.past.push(...entries);
+    return;
+  }
+  const [first, last] = [entries[0], entries.at(-1)!];
+  let undone = false;
+  history.past.push({
+    step: {
+      layers: [],
+      key: "together",
+      undo() {
+        undone = true;
+        for (const entry of [...entries].reverse()) {
+          entry.step.undo();
+          entry.showNow();
+        }
+      },
+      redo() {
+        undone = false;
+        for (const entry of entries) {
+          entry.step.redo();
+          entry.showNow();
+        }
+      },
+    },
+    found: () => (undone ? first.found(first.step.back ?? first.step.layers) : last.found(last.step.layers)),
+    showNow: () => {},
+  });
+}
+
+/**
+ * Takes back what editors sharing `history` have put into it since it held
+ * `from` steps, as if none of it was made: undone, the latest first, with
+ * nothing to redo (a drag between them that could not be made, ticket 108).
+ */
+export function takeBackSince(history: History, from: number): void {
+  for (const entry of history.past.splice(from).reverse()) {
+    entry.step.undo();
+    entry.showNow();
+  }
+}
+
+/**
  * One edit, as undo and redo replay it: the layers it was made to, by id, so
  * they are found again however the layer tree changes meanwhile.
  */

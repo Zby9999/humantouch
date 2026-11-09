@@ -1290,6 +1290,102 @@ export const SCENARIOS: Scenario[] = [
       await desk.shell!(command);
     },
   },
+  // Ticket 108: a layer of the canvas dragged into a Frame off it, the Frame put back.
+  {
+    id: "off-canvas-frame",
+    title:
+      "A Frame drawn in the blank space beside the views (320 × 160px, white), the intro paragraph dragged from the hero into it, and the Frame dragged back into the hero, below the Get started button: a new white Frame there, the paragraph moved into it.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await roomOnTheLeft(page);
+      const canvas = desktop(page).contentFrame();
+      const view = await boxOf(desktop(page));
+      const zoom = await desktop(page).evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+      // Drawn left of the desktop view, in the canvas's px whatever the zoom.
+      await page.keyboard.press("f");
+      const from = { x: view.x - 360 * zoom, y: view.y + 40 * zoom };
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(from.x + 320 * zoom, from.y + 160 * zoom, { steps: 6 });
+      await page.mouse.up();
+      const frame = page.locator('iframe[title="Off canvas"]:visible');
+      await frame.waitFor();
+      await layer(page, INTRO).click();
+      // Pressed 100px in from its left, clear of its handles; let go in the Frame with its left 24px in.
+      const intro = await boxOf(canvas.locator(`${HERO} > p`));
+      await page.mouse.move(intro.x + 100 * zoom, intro.y + intro.height / 2);
+      await page.mouse.down();
+      const into = await boxOf(frame);
+      await page.mouse.move(into.x + 124 * zoom, into.y + 60 * zoom, { steps: 12 });
+      await page.mouse.up();
+      await frame.contentFrame().locator("p").waitFor();
+      await saved(desk, 1);
+      // The Frame itself, by its blank part below the paragraph, clear of its handles, into the hero below the button.
+      await layer(page, "Frame").click();
+      const box = await boxOf(frame);
+      await page.mouse.move(box.x + 40 * zoom, box.y + 130 * zoom);
+      await page.mouse.down();
+      const button = await boxOf(canvas.locator(`${HERO} > button`));
+      await page.mouse.move(button.x + button.width / 2, button.y + button.height + 8 * zoom, { steps: 12 });
+      await page.mouse.up();
+      await saved(desk, 3);
+    },
+    changes: [
+      {
+        kind: "create",
+        expect: "The hero has a new Frame after the Get started button, 320 × 160px (within 4px).",
+        checkable: true,
+        shows: ({ change }) => {
+          const hero = document.querySelector('[data-testid="hero"]')!;
+          const children = [...hero.children];
+          const button = children.findIndex((child) => child.localName === "button");
+          const frame = children[button + 1];
+          const r = frame?.getBoundingClientRect();
+          return !!r && Math.abs(r.width - change.after.width) <= 4 && Math.abs(r.height - change.after.height) <= 4;
+        },
+      },
+      {
+        kind: "style",
+        expect: "The new Frame is white (the Variable white, Tailwind’s `bg-white`).",
+        variable: ["bg-white", "--color-white"],
+        checkable: true,
+        shows: () => {
+          const hero = document.querySelector('[data-testid="hero"]')!;
+          const frame = [...hero.children].find((child) => child.previousElementSibling?.localName === "button");
+          return !!frame && getComputedStyle(frame).backgroundColor === "rgb(255, 255, 255)";
+        },
+      },
+      {
+        kind: "move",
+        expect: "The intro paragraph (“A Framer-style editor layer for any page.”) is in the new Frame, absolute where it was let go there (its X and Y its `left` and `top`, drawn past them by the 16px top margin it keeps); the hero has no paragraph of its own.",
+        checkable: false,
+        shows: ({ change }) => {
+          const hero = document.querySelector('[data-testid="hero"]')!;
+          const frame = [...hero.children].find((child) => child.previousElementSibling?.localName === "button");
+          const paragraph = [...(frame?.children ?? [])].find((child) => child.textContent?.includes("A Framer-style editor layer for"));
+          if (!frame || !paragraph || hero.querySelector(":scope > p")) return false;
+          const [box, r] = [frame.getBoundingClientRect(), paragraph.getBoundingClientRect()];
+          const margins = change.margins ?? { x: 0, y: 0 };
+          const { x, y } = change.after.absolute;
+          return getComputedStyle(paragraph).position === "absolute" && Math.abs(r.left - box.left - x - margins.x) <= 2 && Math.abs(r.top - box.top - y - margins.y) <= 2;
+        },
+      },
+    ],
+    async apply(desk) {
+      // As the notes say: a new white Frame after the button, the paragraph's code moved into it, absolute at its X and Y.
+      const changes = desk.changeSet()!.changes;
+      const { width, height } = changes.find((change) => change.kind === "create")!.after;
+      const { x, y } = changes.find((change) => change.kind === "move")!.after.absolute;
+      const paragraph = '        <p className="mt-4 text-stone-600">\n          A Framer-style editor layer for <strong>any</strong> page.\n        </p>\n';
+      await desk.edit("src/App.tsx", paragraph, "");
+      await desk.edit(
+        "src/App.tsx",
+        "        </button>\n",
+        `        </button>\n        <div className="relative bg-white" style={{ width: ${width}, height: ${height} }}>\n          <p className="absolute mt-4 text-stone-600" style={{ left: ${x}, top: ${y} }}>\n            A Framer-style editor layer for <strong>any</strong> page.\n          </p>\n        </div>\n`,
+      );
+    },
+  },
 ];
 
 /**

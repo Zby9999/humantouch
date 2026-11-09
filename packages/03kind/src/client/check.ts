@@ -12,7 +12,7 @@
  */
 import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
-import { changeKey, isGridSettings, isReorder, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place } from "./changeset";
+import { changeKey, isGridSettings, isReorder, keptIn, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place, type PutBack } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
@@ -629,7 +629,11 @@ function lookStyle(els: Element[], property: Property, after: unknown, at: PageW
 function lookDeleted(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): CheckResult {
   const { target } = change;
   const canvas = savedCanvas(round);
-  if (!elementsOf(doc, (change.before as Place).container.target, canvas).length) return { outcome: "unchecked", reason: "its container is not on the page now" };
+  const containers = elementsOf(doc, (change.before as Place).container.target, canvas);
+  if (!containers.length) return { outcome: "unchecked", reason: "its container is not on the page now" };
+  // Moved off the canvas into a layer off it that the round puts back (ticket 108): its code moves into that layer's, so it is gone from where it was, and only from there.
+  const movedIn = change.offCanvas !== undefined && round.some((other) => other.kind === "putBack" && keptIn((other.after as PutBack).layer).some((kept) => kept.id === change.offCanvas));
+  const where = (els: Element[]) => (movedIn ? els.filter((el) => containers.includes(el.parentElement!)) : els);
   const own = usageKey(target.loc!, target.chain);
   const tag = /^<([\w-]+)/.exec(target.context.element)?.[1];
   const same = (el: Element) =>
@@ -639,8 +643,8 @@ function lookDeleted(doc: Document, change: Change, round: RoundOnCanvas, at: Pa
       .filter(same)
       .map((el) => at.of(el))
       .filter((el) => el && getComputedStyle(el).display !== "none");
-  if (shown(elementsOf(doc, target, canvas)).length) return { outcome: "not shown", actual: "there" };
-  if (shown(mayBeOf(doc, target, canvas)).length) return { outcome: "unchecked", reason: "its markers have moved, and an element that looks like it is on the page: the page cannot tell whether that is the layer" };
+  if (shown(where(elementsOf(doc, target, canvas))).length) return { outcome: "not shown", actual: "there" };
+  if (shown(where(mayBeOf(doc, target, canvas))).length) return { outcome: "unchecked", reason: "its markers have moved, and an element that looks like it is on the page: the page cannot tell whether that is the layer" };
   return { outcome: "shown" };
 }
 
