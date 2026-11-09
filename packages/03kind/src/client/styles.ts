@@ -1358,6 +1358,8 @@ export const styles = /* css */ `
   pointer-events: none;
 }
 .tk-off-canvas[hidden] { display: none; }
+/* A Frame made in the blank space shows on white, as one drawn on an empty Figma canvas does: none of its own style, so put back it has no fill, as one drawn on the canvas (ticket 106). */
+.tk-off-canvas[data-tk-made-off-canvas="frame"] { background: #fff; }
 /* Above each view, as a Frame's name in Figma: its name and the widths it covers; full screen and × at its right end. */
 .tk-view-label {
   position: absolute;

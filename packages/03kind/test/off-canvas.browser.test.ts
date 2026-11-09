@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { dropUnusedRules } from "../src/client/canvas-style";
-import { createChangeSet, type PutBack } from "../src/client/changeset";
+import { createChangeSet, putBackBy, withDependents, type Change, type Created, type PutBack } from "../src/client/changeset";
 import { createEditor } from "../src/client/edits";
 import { createHistory } from "../src/client/undo-steps";
 import type { Destination } from "../src/client/edit-commands";
 import type { Layer } from "../src/client/layers";
 import { freezeLook, serializeLook } from "../src/client/look";
-import { createOffCanvas, type OffCanvasLayer } from "../src/client/off-canvas";
+import { createOffCanvas, remake, type OffCanvasLayer } from "../src/client/off-canvas";
 import { revertSaved } from "../src/client/saved-round";
 import { createViews } from "../src/client/views";
 
@@ -466,5 +466,243 @@ describe("putting a layer off the canvas back", () => {
     expect(editor.originOf(back)).toMatchObject({ target: ORIGIN.target, written: "src/Card.tsx:5:7", snippet, place: { nth: 1 } });
     editor.remove(back, { offCanvas: "again" });
     expect(changes.list()).toEqual([]);
+  });
+});
+
+describe("a layer made in the blank space off the canvas (ticket 106)", () => {
+  /** A page with room to draw in, its body text of its own. */
+  const ROOM = `<!DOCTYPE html>
+<style>
+  body { margin: 0; color: rgb(68, 64, 60); font-family: Georgia, serif; font-size: 18px; line-height: 1.8 }
+  main { position: relative; width: 600px; height: 400px }
+</style>
+<body><main data-tk-loc="src/App.tsx:3:5"><p data-tk-loc="src/App.tsx:4:7">Words</p></main></body>`;
+  const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  const hosts: HTMLElement[] = [];
+  afterEach(() => {
+    for (const host of hosts.splice(0)) host.remove();
+  });
+
+  /** The page as a canvas to edit, and the layers off it, sharing one history. */
+  function canvas(saved: Parameters<typeof createOffCanvas>[1] = []) {
+    const doc = page(ROOM);
+    const history = createHistory();
+    const changes = createChangeSet();
+    const editor = createEditor(createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changes, null, { history });
+    const host = document.createElement("div");
+    document.body.append(host);
+    hosts.push(host);
+    const offCanvas = createOffCanvas(host, saved, history);
+    const main = () => find(editor.tree().root, (layer) => layer.el === doc.querySelector("main"))!;
+    return { doc, changes, editor, offCanvas, main };
+  }
+  /** Puts `outside` back at `to`, as the designer lets it go over a view: every one of its edits made there again. */
+  function putBack(off: ReturnType<typeof canvas>, outside: OffCanvasLayer, to: Destination): Layer {
+    let made: ReturnType<typeof remake> | null = null;
+    off.editor.batch(() => {
+      made = remake(off.editor, outside, to);
+      off.editor.along(
+        () => off.offCanvas.take(outside),
+        () => off.offCanvas.put(outside),
+      );
+    });
+    expect(made!.missed).toEqual([]);
+    return made!.layer!;
+  }
+  /**
+   * Builds the same in a Frame made in the blank space and put back, and in
+   * one drawn on the canvas at once: the round, and the canvas, are the same
+   * either way. Not `inOrder`: in another order, so numbered otherwise, and
+   * with what a layer's place among its container's layers was as it was made.
+   */
+  function sameAsDrawn(build: (editor: ReturnType<typeof createEditor>, frame: Layer) => void, inOrder = true) {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 160 }, off.doc);
+    build(outside.editor, outside.layer()!);
+    putBack(off, outside, { parent: off.main(), x: 40, y: 30 });
+    const drawn = canvas();
+    build(drawn.editor, drawn.editor.create("frame", { parent: drawn.main(), x: 40, y: 30 }, { width: 200, height: 160 }));
+    const unplaced = ({ id: _, ...change }: Change) =>
+      change.kind === "create" ? { ...change, after: { ...(change.after as Created), place: { ...(change.after as Created).place, nth: 0, slot: 0 } } } : change;
+    const read = (list: Change[]) => (inOrder ? asRead(list) : asRead(list).map(unplaced).sort((a, b) => `${a.layer} ${a.property}`.localeCompare(`${b.layer} ${b.property}`)));
+    expect(read(off.changes.list())).toEqual(read(drawn.changes.list()));
+    expect(off.doc.querySelector("main > [data-tk-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
+    return { off, drawn, outside };
+  }
+  /** Changes as the Agent reads them: but where one made off the canvas came from, which the notes leave out. */
+  const asRead = (list: Change[]) => list.map(({ madeOffCanvas: _, ...change }) => change);
+  /** Draws a Frame in `frame`, as the designer would, on the canvas or off it: a fill, a brief, text and a Frame in it. */
+  function sketch(editor: ReturnType<typeof createEditor>, frame: Layer) {
+    editor.set(frame, "fill", RED);
+    editor.setBrief(frame, "A hero for the launch");
+    const text = editor.create("text", { parent: frame, x: 12, y: 16 });
+    editor.setText(text, "Hello");
+    const inner = editor.create("frame", { parent: editor.tree().layerOf(frame.el)!, x: 100, y: 20 }, { width: 40, height: 30 });
+    editor.set(inner, "opacity", 0.5);
+  }
+
+  test("pressed with F, a Frame is made there: a layer off the canvas, made by its own editor as on the canvas, no change of the round's; one undo takes it away", () => {
+    const { doc, changes, editor, offCanvas } = canvas();
+
+    const outside = offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, doc);
+
+    expect(offCanvas.list()).toEqual([outside]);
+    const frame = outside.layer()!;
+    expect(frame.kind).toBe("frame");
+    expect(outside.editor.isNewFrame(frame)).toBe(true);
+    expect([outside.x, outside.y, outside.width, outside.height]).toEqual([-300, 40, 200, 120]);
+    expect(outside.view.layerAt(outside.editor.tree(), 100, 60)).toBe(frame);
+    expect(outside.changes.list()).toMatchObject([{ kind: "create", after: { type: "frame", width: 200, height: 120 } }]);
+    expect(changes.list()).toEqual([]);
+    expect(outside.origin).toMatchObject({ made: "frame", place: null, written: null, snippet: null, target: { loc: null, context: { path: ["Frame"], element: "<div>" } } });
+    expect((outside.document.defaultView!.frameElement as HTMLElement).getAttribute("data-tk-made-off-canvas")).toBe("frame");
+
+    editor.undo();
+    expect(offCanvas.list()).toEqual([]);
+    expect(outside.layer()).toBeNull();
+    expect(outside.changes.list()).toEqual([]);
+    editor.redo();
+    expect(offCanvas.list()).toEqual([outside]);
+    expect(outside.layer()?.kind).toBe("frame");
+    expect([outside.width, outside.height]).toEqual([200, 120]);
+  });
+
+  test("pressed with T, text is made there in the page's body text style; kept, and shown again, it is as it was, its edits and all", () => {
+    const { doc, offCanvas } = canvas();
+    const outside = offCanvas.make("text", { x: -200, y: -80 }, undefined, doc);
+    const text = outside.layer()!;
+    outside.editor.setText(text, "Hello there");
+
+    expect(text.kind).toBe("text");
+    const shown = css(text.el, "font-family", "font-size", "line-height", "color");
+    expect(shown).toEqual({ "font-family": "Georgia, serif", "font-size": "18px", "line-height": "32.4px", color: "rgb(68, 64, 60)" });
+    expect(outside.changes.list()).toMatchObject([{ kind: "create", after: { type: "text", text: "Hello there", width: null } }]);
+
+    const saved = offCanvas.save();
+    expect(saved).toMatchObject([{ id: outside.id, x: -200, y: -80, origin: { made: "text" } }]);
+    const again = canvas(saved);
+    const [back] = again.offCanvas.list();
+    expect(back.layer()!.el.textContent).toBe("Hello there");
+    expect(css(back.layer()!.el, "font-family", "font-size", "line-height", "color")).toEqual(shown);
+    expect(back.changes.list()).toEqual(outside.changes.list());
+    expect((back.document.defaultView!.frameElement as HTMLElement).getAttribute("data-tk-made-off-canvas")).toBe("text");
+  });
+
+  test("put back, it is made anew where it goes, all drawn in it too: the round has what drawing it there gives it; one undo, and it is off the canvas again, as it was", () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+    sketch(outside.editor, outside.layer()!);
+    const edits = structuredClone(outside.changes.list());
+
+    const back = putBack(off, outside, { parent: off.main(), x: 40, y: 30 });
+
+    const drawn = canvas();
+    sketch(drawn.editor, drawn.editor.create("frame", { parent: drawn.main(), x: 40, y: 30 }, { width: 200, height: 120 }));
+    expect(asRead(off.changes.list())).toEqual(asRead(drawn.changes.list()));
+    expect(off.changes.list().map((change) => change.kind)).toEqual(["create", "style", "create", "create", "style"]);
+    expect(off.changes.list()[0].madeOffCanvas).toMatchObject({ id: outside.id, edits: { changes: edits } });
+    expect(off.changes.list().slice(1).every((change) => !change.madeOffCanvas)).toBe(true);
+    expect(back.el.parentElement).toBe(off.doc.querySelector("main"));
+    expect(back.el.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
+    expect(off.offCanvas.list()).toEqual([]);
+
+    off.editor.undo();
+    expect(off.changes.list()).toEqual([]);
+    expect(off.doc.querySelector("[data-tk-new]")).toBeNull();
+    expect(off.offCanvas.list()).toEqual([outside]);
+    expect(outside.changes.list()).toEqual(edits);
+    // Redone, made again, numbered afresh as any change made again is.
+    off.editor.redo();
+    const unnumbered = (list: Change[]) => asRead(list).map(({ id: _, ...change }) => change);
+    expect(unnumbered(off.changes.list())).toEqual(unnumbered(drawn.changes.list()));
+    expect(off.doc.querySelector("main > [data-tk-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
+    expect(off.offCanvas.list()).toEqual([]);
+
+    // Taken back from the change list, or the round discarded, it is off the canvas again too, as moved-out layers put back are.
+    const [made] = off.changes.list();
+    expect(putBackBy(withDependents(off.changes.list(), made.id))).toEqual([made.madeOffCanvas]);
+  });
+
+  test("what was made a Stack, copied and moved in it off the canvas is so on the canvas too, as if done there", () => {
+    /** Two words and a box in the Frame, made a Stack, its gap set; the box copied, the copy put first, the words moved into the box. */
+    const build = (editor: ReturnType<typeof createEditor>, frame: Layer) => {
+      const first = editor.create("text", { parent: frame, x: 10, y: 10 });
+      editor.setText(first, "One");
+      const box = editor.create("frame", { parent: editor.tree().layerOf(frame.el)!, x: 10, y: 60 }, { width: 50, height: 40 });
+      editor.set(box, "fill", RED);
+      const stack = editor.stack([editor.tree().layerOf(frame.el)!]);
+      editor.set(stack, "gap", 8);
+      const copy = editor.duplicate(editor.tree().layerOf(box.el)!, { parent: editor.tree().layerOf(frame.el)!, index: 0 });
+      editor.set(copy, "opacity", 0.4);
+      editor.move(editor.tree().layerOf(first.el)!, { parent: editor.tree().layerOf(box.el)!, index: 0 });
+    };
+    const { off } = sameAsDrawn(build);
+    expect(off.changes.list().map((change) => change.kind)).toEqual(expect.arrayContaining(["stack", "duplicate", "move"]));
+  });
+
+  test("a layer in a copy deleted off the canvas is deleted on the canvas too", () => {
+    const { off } = sameAsDrawn((editor, frame) => {
+      const inner = editor.create("frame", { parent: frame, x: 10, y: 10 }, { width: 80, height: 60 });
+      editor.setText(editor.create("text", { parent: editor.tree().layerOf(inner.el)!, x: 4, y: 4 }), "Hi");
+      const copy = editor.duplicate(editor.tree().layerOf(inner.el)!, { parent: editor.tree().layerOf(frame.el)!, x: 100, y: 10 });
+      editor.remove(editor.tree().layerOf(copy.el)!.children[0]);
+    });
+    expect(off.changes.list().map((change) => change.kind)).toContain("delete");
+  });
+
+  test("a copy of a layer placed freely is made on the canvas too", () => {
+    const { off } = sameAsDrawn((editor, frame) => {
+      const inner = editor.create("frame", { parent: frame, x: 10, y: 10 }, { width: 80, height: 60 });
+      editor.duplicate(editor.tree().layerOf(inner.el)!);
+    });
+    expect(off.doc.querySelectorAll("main > [data-tk-new] > div")).toHaveLength(2);
+  });
+
+  test("a layer moved into a Frame drawn after it first moved is moved there on the canvas too, numbered as made there", () => {
+    const { off } = sameAsDrawn((editor, frame) => {
+      const a = editor.create("frame", { parent: frame, x: 10, y: 10 }, { width: 60, height: 60 });
+      const text = editor.create("text", { parent: editor.tree().layerOf(frame.el)!, x: 100, y: 100 });
+      editor.setText(text, "Moved");
+      editor.move(editor.tree().layerOf(text.el)!, { parent: editor.tree().layerOf(a.el)!, x: 4, y: 4 });
+      const b = editor.create("frame", { parent: editor.tree().layerOf(frame.el)!, x: 100, y: 10 }, { width: 60, height: 60 });
+      editor.move(editor.tree().layerOf(text.el)!, { parent: editor.tree().layerOf(b.el)!, x: 6, y: 6 });
+    }, false);
+    expect(off.changes.list().map((change) => change.kind)).toContain("move");
+    expect(off.doc.querySelector("main > [data-tk-new] > div:nth-of-type(2)")!.textContent).toBe("Moved");
+  });
+
+  test("the round discarded, or the putting back taken back after a reload, it is off the canvas again as it was kept, edits and all", () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+    sketch(outside.editor, outside.layer()!);
+    const edits = structuredClone(outside.changes.list());
+    putBack(off, outside, { parent: off.main(), x: 40, y: 30 });
+    const saved = off.changes.save();
+
+    // As the page has it after a reload: the layers off the canvas as saved, without it; the round's changes give it back.
+    const again = canvas();
+    const [kept] = putBackBy(saved.changes);
+    const back = again.offCanvas.find(kept.id) ?? again.offCanvas.bring(kept);
+    again.offCanvas.put(back);
+
+    expect(again.offCanvas.list()).toEqual([back]);
+    expect([back.id, back.x, back.y]).toEqual([outside.id, -300, 40]);
+    expect(back.origin.made).toBe("frame");
+    expect(back.changes.list()).toEqual(edits);
+    expect(back.layer()!.el.outerHTML).toBe(outside.layer()!.el.outerHTML);
+  });
+
+  test("text put back into a container's layout takes a place there, as text drawn there does, its words and all", () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("text", { x: -200, y: 0 }, { width: 160, height: 20 }, off.doc);
+    outside.editor.setText(outside.layer()!, "Launch");
+
+    putBack(off, outside, { parent: off.main(), index: 0 });
+
+    const drawn = canvas();
+    const text = drawn.editor.create("text", { parent: drawn.main(), index: 0 }, { width: 160, height: 20 });
+    drawn.editor.setText(text, "Launch");
+    expect(asRead(off.changes.list())).toEqual(asRead(drawn.changes.list()));
+    expect(off.doc.querySelector("main")!.firstElementChild!.textContent).toBe("Launch");
   });
 });

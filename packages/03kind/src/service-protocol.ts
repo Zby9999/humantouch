@@ -244,6 +244,13 @@ export interface OffCanvasOrigin {
   snippet?: Snippet | null;
   /** Moved out as a copy: the layer it copies stayed on the canvas, and its code in the source. */
   copy?: true;
+  /**
+   * Made in the blank space beside the views, with the Frame or text tool
+   * (ticket 106), rather than moved out: it came from nowhere, its `place`
+   * and `written` null. Its own edits begin with the change that made it:
+   * put back, it is made anew there, as one drawn there is.
+   */
+  made?: "frame" | "text";
   /** When it was moved out, as an ISO date. */
   at: string;
 }

@@ -240,6 +240,13 @@ export interface Change {
    * layer it is there now, which keeps how it looked and its source, to be put back by.
    */
   offCanvas?: string;
+  /**
+   * A new layer's (a `create` change's), made in the blank space off the
+   * canvas and put back here (ticket 106): it as it was kept there, there
+   * again once this change is taken back. The notes leave it out: to the
+   * Agent the layer is new, as one drawn here is.
+   */
+  madeOffCanvas?: SavedOffCanvasLayer;
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
   /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1, as the page renders them, those deleted on the canvas too, and its words (ticket 65). */
@@ -363,7 +370,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "madeOffCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
     > & {
       kind?: Change["kind"];
     },
@@ -507,9 +514,9 @@ export function putBackOf(changes: Change[], id: string): Change | null {
   return changes.find((change) => change.kind === "putBack" && (change.after as PutBack).layer.id === id) ?? null;
 }
 
-/** The layers off the canvas that `changes` put back onto it, as they were kept there. */
+/** The layers off the canvas that `changes` put back onto it, as they were kept there: those made in the blank space too (ticket 106). */
 export function putBackBy(changes: Change[]): SavedOffCanvasLayer[] {
-  return changes.filter((change) => change.kind === "putBack").map((change) => (change.after as PutBack).layer);
+  return changes.flatMap((change) => (change.kind === "putBack" ? [(change.after as PutBack).layer] : change.madeOffCanvas ? [change.madeOffCanvas] : []));
 }
 
 /** The property a brief on a layer is recorded under: one per layer. */

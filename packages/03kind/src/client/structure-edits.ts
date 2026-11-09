@@ -43,6 +43,7 @@ import {
 } from "./changeset";
 import type { Destination, Editor } from "./edit-commands";
 import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
+import { BODY_TEXT } from "./look";
 import { instanceOf, targetOf } from "./layer-target";
 import { framedText, holdsLayers, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { relocate, slotsOf, syncOrders } from "./moves";
@@ -818,7 +819,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       return found();
     },
     canHold: (layer) => holdsLayers(layer),
-    create(type, to, size) {
+    create(type, to, size, madeOffCanvas) {
       const { container, containerId, place, target } = newAt(to);
       // Text drawn wider than a click keeps the width it was drawn at; its height follows its words.
       const frame = type === "frame";
@@ -832,7 +833,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         ...(place.absolute && absoluteAt(place.absolute)),
       };
       const id = newId();
-      const record: StructureRecord = { kind: "create", target, scope: "usage", property: "new", before: null, after: created, style, sources: [] };
+      const record: StructureRecord = { kind: "create", target, scope: "usage", property: "new", before: null, after: created, style, sources: [], ...(madeOffCanvas && { madeOffCanvas: structuredClone(madeOffCanvas) }) };
       const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);
         insertNew(doc, id, created, style);
@@ -1110,15 +1111,7 @@ const NEW_FRAME_SIZE = 100;
 /** The page's body text style: what new text takes, wherever it goes. */
 function bodyText(doc: Document): Record<string, string> {
   const body = getComputedStyle(doc.body);
-  return {
-    "font-family": body.fontFamily,
-    "font-size": body.fontSize,
-    "font-weight": body.fontWeight,
-    "line-height": body.lineHeight,
-    "letter-spacing": body.letterSpacing,
-    color: body.color,
-    margin: "0px",
-  };
+  return { ...Object.fromEntries(BODY_TEXT.map((name) => [name, body.getPropertyValue(name)])), margin: "0px" };
 }
 
 /** Instances a loop renders: several, side by side in one container. */
