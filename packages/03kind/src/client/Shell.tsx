@@ -9,12 +9,12 @@ import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
-import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type RangePart } from "./changeset";
+import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type Created, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
 import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
 import { createHistory } from "./undo-steps";
-import { createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
+import { createOffCanvas, remake, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -212,6 +212,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const treeOf = (layer: Layer | undefined): LayerTree | null => (layer && outsideOf(layer)?.editor.tree()) || tree;
   /** A layer off the canvas itself, rather than one in it. */
   const isOutside = (layer: Layer) => !layer.text && outsideOf(layer)?.layer()?.el === layer.el;
+  /** In a layer made in the blank space off the canvas (ticket 106), which takes briefs as the canvas does: put back, it is made anew, briefs and all. */
+  const inMadeOff = (layer: Layer) => !!outsideOf(layer)?.origin.made;
   /** The layer off the canvas itself, while it is there: what undoing or redoing a step to it leaves selected. */
   const itself = (outside: OffCanvasLayer) => () => [outside.layer()].filter((layer) => layer !== null);
   /** The layer as the layers are now: a move builds them anew. Null once it is gone. */
@@ -396,6 +398,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
    * it, which is then selected; any other layer stays as selected.
    */
   const writeBrief = (layer: Layer, brief: string) => {
+    const editor = editorOf(layer);
     if (!editor) return;
     const own = editor.setBrief(layer, brief);
     onEdit();
@@ -448,6 +451,21 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const moved = outside.layer();
     select(moved ? [moved] : []);
   };
+  /**
+   * A Frame or text drawn with the tool in the blank space beside the views,
+   * its top left at `at` in the workspace, `size` as drawn (none: clicked;
+   * ticket 106): a layer off the canvas, no change of the round's, selected.
+   * Returns it, and the view it is in, to type in.
+   */
+  const makeOff = (type: Created["type"], at: { x: number; y: number }, size: { width: number; height: number } | undefined) => {
+    if (!offCanvas || !round.current) return null;
+    const outside = offCanvas.make(type, at, size, round.current.canvas.document);
+    onEdit();
+    saveOffCanvas(offCanvas);
+    const made = outside.layer()!;
+    select([made]);
+    return { layer: made, view: outside.view };
+  };
   /** A layer off the canvas dragged elsewhere off it, its top left to `x` and `y`. */
   const placeOff = (outside: OffCanvasLayer, x: number, y: number) => {
     if (!editor || !offCanvas) return;
@@ -464,9 +482,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     if (!editor || !offCanvas || !layer) return;
     let back: Layer | null = null;
     // Moved off this round and not edited off it, it is the layer that was deleted, back as it was; any other is new.
+    // Made in the blank space, it is made anew there, as one drawn there is (ticket 106).
     bringBack(undefined);
     editor.batch(() => {
-      back = editor.putBack({ el: layer.el, kept: outside.keep() }, to);
+      back = outside.origin.made ? remake(editor, outside, to) : editor.putBack({ el: layer.el, kept: outside.keep() }, to);
       editor.along(
         () => offCanvas.take(outside),
         () => offCanvas.put(outside),
@@ -777,6 +796,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         onMoveOff={moveOff}
         onPlaceOff={placeOff}
         onPutBack={putBack}
+        onMakeOff={makeOff}
         tree={tree}
         selected={selected}
         hideSelection={adjusting}
@@ -897,8 +917,10 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
                 </ChangeMarksProvider>
               </CatalogProvider>
             </ToastProvider>
-            {/* A brief is on one layer of the canvas at a time; off the canvas, a layer is kept as it looks. */}
-            {selected.length === 1 && !outsideOf(selected[0]) && <BriefSection editor={editor} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />}
+            {/* A brief is on one layer of the canvas at a time; off the canvas, a layer moved out is kept as it looks, one made in the blank space takes briefs. */}
+            {selected.length === 1 && (!outsideOf(selected[0]) || inMadeOff(selected[0])) && (
+              <BriefSection editor={editorOf(selected[0])!} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />
+            )}
           </>
         )}
       </aside>

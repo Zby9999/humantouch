@@ -818,7 +818,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       return found();
     },
     canHold: (layer) => holdsLayers(layer),
-    create(type, to, size) {
+    create(type, to, size, madeOffCanvas) {
       const { container, containerId, place, target } = newAt(to);
       // Text drawn wider than a click keeps the width it was drawn at; its height follows its words.
       const frame = type === "frame";
@@ -832,7 +832,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         ...(place.absolute && absoluteAt(place.absolute)),
       };
       const id = newId();
-      const record: StructureRecord = { kind: "create", target, scope: "usage", property: "new", before: null, after: created, style, sources: [] };
+      const record: StructureRecord = { kind: "create", target, scope: "usage", property: "new", before: null, after: created, style, sources: [], ...(madeOffCanvas && { madeOffCanvas: structuredClone(madeOffCanvas) }) };
       const { make, takeOff } = madeLayer(id, record, () => {
         changes.record(id, record);
         insertNew(doc, id, created, style);

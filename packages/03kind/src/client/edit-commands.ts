@@ -190,9 +190,12 @@ export interface Editor {
   /**
    * Makes new text (in the page's body text style) or a new Frame (with no
    * fill) at `to`, in each instance of its container. `size`: as drawn, in px;
-   * without it, text fits its words and a Frame is 100 × 100. Returns the new layer, in the container `to` names.
+   * without it, text fits its words and a Frame is 100 × 100. `madeOffCanvas`:
+   * it is one made in the blank space off the canvas, put back here as it was
+   * kept there (ticket 106), which taking the change back brings back off it.
+   * Returns the new layer, in the container `to` names.
    */
-  create(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
+  create(type: Created["type"], to: Destination, size?: { width: number; height: number }, madeOffCanvas?: SavedOffCanvasLayer): Layer;
   /**
    * The layer's brief: what the designer wants achieved in it, which the
    * Design panel cannot set; for a new Frame, what the Agent is to make in it. "" when it has none.
@@ -238,6 +241,11 @@ export interface Editor {
    * in their order. `layers`: what undoing or redoing it leaves to select.
    */
   along(make: () => void, unmake: () => void, layers?: () => Layer[]): void;
+  /**
+   * Makes the edits `edits` makes as in the desktop view, whichever view is
+   * worked in: style and layout edits at every width (ADR 0008). Returns what `edits` returns.
+   */
+  inDesktop<T>(edits: () => T): T;
   /** Whether the layer can be copied: not the page, not text with no element of its own. */
   canDuplicate(layer: Layer): boolean;
   /**
