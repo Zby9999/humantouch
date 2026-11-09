@@ -88,4 +88,4 @@
 2. 粘贴用的是 Figma 的 ⌥⌘V；有些浏览器、输入法、系统快捷键可能占用 Ctrl+Alt+C / V（Windows 上 Ctrl+Alt 等于 AltGr，某些键盘布局下打字符）。只在 Mac 的 headless Chromium 里测过。
 3. Figma 的行为是从帮助页和论坛推的，没有在 Figma 里实际点过：多选复制、文字和 Frame 之间的对应、复制哪几项都可能和真 Figma 不一样（代定 1、4、5）。
 4. 粘贴出来的是普通样式改动，Agent 那边和改动说明没变，没有专门的 Agent 场景；真 Agent 没跑。
-5. 起点是 9d11e02；main 之后合了 ticket 108（改了 `Shell.tsx`、spec），合并时可能有小冲突（Shell 的 import 那几行、spec 的「合成与解散 Stack」附近）。
+5. 起点是 9d11e02；main 之后合了 ticket 108（改了 `Shell.tsx`、spec）。`git merge-tree` 和 cc3a549 合并没有冲突，但合并后没跑过测试。
