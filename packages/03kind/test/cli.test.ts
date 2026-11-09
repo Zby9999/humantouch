@@ -1686,6 +1686,16 @@ describe("claim, layers off the canvas put back", () => {
     expect(output).toContain("- **Edited off the canvas:** give it these too, as the designer made them there:\n  - Opacity of Title (`<h1 class=\"text-4xl font-bold\">`): Change the opacity from 100% to 50%.\n");
   });
 
+  test("resized by its handles off the canvas (ticket 107), it is put back with its new size among what was edited there", async () => {
+    const width = { ...opacity, property: "width", before: { type: "hug" }, after: { type: "fixed", value: 320 }, style: { width: "320px" } };
+    // Hug as it was off the canvas, where it is as wide as it is (ticket 107: a Fill on the canvas reads Hug there).
+    saveRound(putBack(1, { place: place(3), layer: kept({ edits: { lastId: 1, changes: [width] } }) }));
+
+    const output = section((await cli("claim")).output, 1);
+
+    expect(output).toContain("- **Edited off the canvas:** give it these too, as the designer made them there:\n  - Width of Title (`<h1 class=\"text-4xl font-bold\">`): Change the width from Hug to Fixed 320px.\n");
+  });
+
   test("moved off and put back in the same round, its code is there still: it is moved, not deleted and written again; a layer whose source was not kept is written from its look", async () => {
     saveRound(
       { ...redFill, id: 1, kind: "delete", layer: "9", target: title, property: "delete", before: place(1), after: null, style: { display: "none" }, offCanvas: "a1" },
