@@ -4,7 +4,7 @@ import { layerName } from "../src/design-values";
 import { partsOf, readMediaBreakpoints, type ProjectBreakpoints } from "../src/client/breakpoints";
 import { createChangeSet, type Change, type Created, type Place } from "../src/client/changeset";
 import { placedOnCanvas } from "../src/client/moves";
-import { checkAcross, checkChange, uncheckable, widthsOf, type PageWidth } from "../src/client/check";
+import { checkAcross, checkChange, itself, uncheckable, valuesAt, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
 import { watchPage } from "../src/client/page-checks";
@@ -6650,6 +6650,78 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
     editor.inherit(grid(), "arrangement");
     expect(drawnOrder(phone.document)).toEqual(["g4", "g3", "g2", "g1"]);
     expect(changes.list()).toEqual([]);
+  });
+
+  /** The Agent's page for the Grid made a Stack: a flex column; `g1`'s `order` changed to `order`. */
+  const stackPage = (html: string, order?: string) => {
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(html.replace("display: grid; grid-template-columns: repeat(2", "display: flex; flex-direction: column; grid-template-columns: repeat(2"));
+    page.close();
+    if (order !== undefined) (page.getElementById("g1") as HTMLElement).style.order = order;
+    return page;
+  };
+
+  test("a Grid placing its layers by `order` too, made a Stack in the phone view: laid out by their `order` there, the page shows it only with each layer's `order` kept (ticket 109's follow-up)", async () => {
+    const ordered = AREAS.replace(/(id="g1" [^>]*style="height: 30px; grid-area: a)"/, '$1; order: 2"');
+    const { editor, changes, doc, views } = openCanvas(ordered);
+    const grid = () => find(editor.tree().root, (l) => l.el === doc.getElementById("grid"))!;
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+
+    editor.at(phone);
+    editor.set(grid(), "arrangement", editor.arrangedAs(grid(), "vertical"));
+    expect(drawnOrder(phone.document)).toEqual(["g2", "g3", "g4", "g1"]);
+    const [stack] = changes.list();
+    expect(stack.layerOrders).toEqual([{ width: 390, orders: [2, 0, 0, 0] }]);
+    const round = onCanvas(changes.list());
+
+    expect(checkChange(stackPage(ordered), stack, round)).toEqual({ outcome: "shown" });
+    // Its `order` taken off as the Grid's alone: laid out otherwise than on the canvas.
+    expect(checkChange(stackPage(ordered, "0"), stack, round)).toMatchObject({ outcome: "not shown", actual: { type: "stack", orders: [0, 0, 0, 0] } });
+  });
+
+  test("outside its range, a Grid made a Stack at a breakpoint is read with how it places its layers: its areas taken off there read otherwise (ticket 109's follow-up)", async () => {
+    const { editor, changes, doc, views } = openCanvas(AREAS);
+    const grid = () => find(editor.tree().root, (l) => l.el === doc.getElementById("grid"))!;
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    editor.at(phone);
+    editor.set(grid(), "arrangement", editor.arrangedAs(grid(), "vertical"));
+    const [stack] = changes.list();
+    const round = onCanvas(changes.list());
+
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(AREAS);
+    page.close();
+    const [kept] = valuesAt(page, stack, round, itself(page))!;
+    expect(kept).toMatchObject({ type: "grid", columns: 2, placement: expect.stringContaining('"d c" "b a"') });
+    page.getElementById("grid")!.style.gridTemplateAreas = "none";
+    [...page.getElementById("grid")!.children].forEach((el) => ((el as HTMLElement).style.gridArea = "auto"));
+    const [taken] = valuesAt(page, stack, round, itself(page))!;
+    expect(taken).toMatchObject({ type: "grid", columns: 2 });
+    expect(taken).not.toEqual(kept);
+  });
+
+  test("a Grid placing its layers in order, made a Stack, whose layers a Stack in another view orders: no change placed in the Grid (ticket 109's follow-up)", async () => {
+    const page = ARRANGEMENTS.replace("<body", `<style>@media (max-width: 799px) { #grid { display: flex !important; flex-direction: column } #g4 { order: -1 } }</style><body`);
+    const { editor, changes, doc, views } = openCanvas(page);
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    expect(getComputedStyle(phone.document.getElementById("grid")!).display).toBe("flex");
+    const grid = find(editor.tree().root, (l) => l.el === doc.getElementById("grid"))!;
+
+    editor.set(grid, "arrangement", editor.arrangedAs(grid, "vertical"));
+    expect(changes.list()).toMatchObject([{ property: "arrangement" }]);
+    expect(changes.list()[0].placedInGrid).toBeUndefined();
   });
 
   test("a horizontal Stack becomes a Grid of a column for each of its layers, one row, its gap both gaps: nothing moves; one change, undone in one step", () => {

@@ -117,7 +117,16 @@
 
 - 面板：`arrangement` 去掉了 `placesItself` 的限制（`property-table.ts`），按区域、行列号、`dense`、`order` 摆子图层的 Grid，Grid 一节顶上也有横排、竖排、Grid 三个选项。改成 Stack 就是 flex：子图层按代码里写的顺序（Layers 面板的顺序）排，`order` 照样起作用；推算和别的 Grid 一样（竖排用行间距；横排按画布上的行数决定换不换行）。⌘Z、重置、断点、之后改间距并进这一条，都走原来的路，没有另写。
 - 改动上的新标记 `placedInGrid`（`changeset.ts`，`edits.ts` 第一次记下时定）：转之前是 Grid、转成 Stack，并且在任何一个视图里 `placesItself`（例如手机上一列按顺序，640px 起按区域摆，在手机视图里转也算）。只有这一种改动的说明多一行：「**Placed in the Grid:** its layers are placed in it by more than the order they are written (`grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`). Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too.」写法规则「Stacks and Grids」一字没改。
-- 核对：没改代码。Stack 的 `arrangement` 只读 display、方向、换行、间距，页面上留着的 `grid-template-areas` / `grid-area` 不影响；范围外的宽度照 104 记下认领时的值（仍是 Grid）再比。
+- 核对：Stack 的 `arrangement` 只读 display、方向、换行、间距，页面上留着的 `grid-template-areas` / `grid-area` 不影响；范围外的宽度照 104 记下认领时的值（仍是 Grid）再比。
+
+**Review 后的修正（2026-11-10）**
+
+- 范围外：`placedInGrid` 的改动，`valuesAt` 读的值多一个 `placement`（`placementOf`：容器算出的 `grid-template-areas`、`grid-auto-flow`，每个子图层的行列起止线和 `order`，和 `placesItself` 读的同一组）。Agent 连 areas 一起删了、列数间距没变时，`done` 答「it shows the change, but outside its range too: at 1440px wide, its layers placed otherwise than they were (their `grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`); …」，finish 不打 ✓。
+- 范围内的 `order`：转之前某个子图层有自己的 `order` 时，改动记 `layerOrders`：改动作用到的每个打开的视图里，各子图层按写的顺序的 `order`。核对在范围内（同一宽度，或断点范围里同一段的视图）比页面上子图层的 `order`，不一样答没显示「… Stack's layers are in another order than on the canvas: their `order`, in the order they are written, is 0, 0, 0, 0 on the page. Keep each layer's `order` (Tailwind's `order-*`) as it was …」。没有打开的视图对应那个宽度时不比。
+- `placedInGrid` 只看在那个视图里是 Grid、且 `placesItself` 的（手机上 `flex flex-col` 加 `order-first` 的不算）；判断挪到写进画布之前，所以桌面视图里转也按转之前的样子判断。
+- 「Placed in the Grid」那行末尾加半句：「Where its columns are written with its areas in one declaration (`grid-template`), take off only its grid display, and leave that declaration as it is.」（和 Grid to Stack 那行的「take off … columns」不冲突）。
+- 新测试：单测 3 条（`order` 保留 ✓、删掉没显示；范围外的值带 `placement`、删 areas 后不同；另一个视图里是 flex 加 `order` 不记 `placedInGrid`）；剧本加一个「the Agent takes the areas off as well」，`done` 答范围外变了、finish 没有 ✓。
+- 重跑：`pnpm typecheck` 过；`pnpm test` 1108 过 1 跳过，node 125 过；`grid.spec.ts` 单独 10 过；109 的 5 个剧本过；`--dry` 24/24；`--scripted` 15/15；认领说明和 a0cd852 逐字相同。整套 e2e、性能没重跑（合并后指挥跑）。包：切换按钮仍逐字节相同；`editor.dev.js` 504304 B（比 a0cd852 +1170 B），gzip -9 178180 B（+365 B）。
 - 文档：spec「Stack 与 Grid 互相转换」去掉「不提供变回 Stack」，写上按图层顺序排；GLOSSARY 的 Grid 补一句。
 
 **测试**
@@ -148,13 +157,13 @@
 
 #### 代定的事（待设计师确认）
 
-1. 新的一行只在「Grid 改成 Stack、而且转之前在某个视图里按位置摆」时出现，看所有视图（不只是正在工作的那个）：手机上本来按顺序、宽一点才按区域摆的 Grid 在手机视图里转，也提醒 Agent 别动那些写法。Stack 转 Grid、按顺序摆的 Grid 转 Stack 的说明逐字不变。
+1. 新的一行只在「Grid 改成 Stack、而且转之前在某个视图里是按位置摆的 Grid」时出现，看所有打开的视图（不只是正在工作的那个；只在没打开视图的宽度上按位置摆的不算，review 后）：手机上本来按顺序、宽一点才按区域摆的 Grid 在手机视图里转，也提醒 Agent 别动那些写法。Stack 转 Grid、按顺序摆的 Grid 转 Stack 的说明逐字不变。
 2. 转换的推算不因按位置摆而改：竖排用行间距；横排按画布上数出的行数决定换不换行（区域摆成几行就算几行）。转过去画面按图层顺序变，不做「照现在的视觉顺序重排图层」。
 3. 转成 Stack 后同一改动里再转回 Grid：写的是等宽列，页面原有的 `grid-template-areas` 和子图层的 `grid-area` 还在，会又按区域摆；和原样一样时整条消失（109 的「改回原样就不算改动」）。没有专门处理。
 
 #### 遗留风险
 
-1. 核对不看子图层的摆放：Agent 如果在转换时删了 `grid-area` 之类的写法，范围外的宽度上画面会变，但那里 Grid 的列数、间距没变，`done` 仍是 ✓（104 只比这条改动的属性）。说明里那一行是唯一的防线。
+1. （review 后改）范围外的摆放、范围内的 `order` 都核对了；但在桌面视图里转（作用于所有宽度）时没有范围外，Agent 删了 areas 也看不出来（那里本来就不起作用，只有 `order` 有影响，由 `layerOrders` 核对）。`layerOrders` 只记打开的视图，页面窗口的宽度不在任何一个视图那一段时不比 `order`。
 2. 桌面视图里转、`order` 不是 0 的子图层：Stack 里仍按 `order` 排，所以画布上和 Layers 面板的顺序不一样（设计师确认过 `order` 照样起作用）；之后在这个 Stack 里拖动换序仍照 Stack 的规则改写的顺序，`order` 会让结果和拖到的位置不一致。
 3. 代定 3 的情况（转 Stack 再转回 Grid）画布上的 Grid 是等宽列加原来的区域，推算不一定和画面一致。
 4. 「Placed in the Grid」是英文说明，没有真 Agent 跑过（ticket 118 的标准场景里可以带上这一种）。

@@ -1192,7 +1192,7 @@ describe("claim, Grids", () => {
     expect(section(output, 1)).toContain(
       "Keep its padding, its layers in the order they are written, and their own classes as they are.\n" +
         "- **Placed in the Grid:** its layers are placed in it by more than the order they are written (`grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`). " +
-        "Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too.\n",
+        "Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too. Where its columns are written with its areas in one declaration (`grid-template`), take off only its grid display, and leave that declaration as it is.\n",
     );
     expect(section(output, 2)).not.toContain("**Placed in the Grid:**");
   });

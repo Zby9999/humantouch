@@ -2159,11 +2159,13 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
     expect(result.ticked).toEqual([1]);
   });
 
-  test("playbook: the cards' Grid, laid out by areas from 640px, made a vertical Stack in the phone view; the Agent adds `max-md:flex max-md:flex-col`, the areas left: done says it shows (ticket 109's follow-up)", async ({ page }) => {
-    // A round before: from 640px the cards are placed by areas, the last first.
-    const areas = "sm:[grid-template-areas:'d_c_b'_'a_._.'] " + [..."abcd"].map((area, n) => `sm:[&>*:nth-child(${n + 1})]:[grid-area:${area}]`).join(" ");
-    const placed = `<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 ${areas}">`;
-    writeFileSync(APP, originalApp.replace(SURFACE, placed));
+  /** Of the playbooks of a Grid laid out by areas from 640px: its classes that place the cards, the last first. */
+  const AREAS = "sm:[grid-template-areas:'d_c_b'_'a_._.'] " + [..."abcd"].map((area, n) => `sm:[&>*:nth-child(${n + 1})]:[grid-area:${area}]`).join(" ");
+  const PLACED = `<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 ${AREAS}">`;
+
+  /** A round before laid the cards out by areas from 640px; the designer makes the Grid a vertical Stack in the phone view; the Agent writes the Surface's classes `as`, then `done` and `finish`. */
+  async function placedGridMadeStack(page: Page, as: string) {
+    writeFileSync(APP, originalApp.replace(SURFACE, PLACED));
     await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("grid-area:d")).toBe(true);
     const grid = page.locator("main > div:has(> article)");
     await page.goto(DEV_URL);
@@ -2183,20 +2185,35 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
     );
     const notes = await npx03kind("claim");
     await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
-    // Before the Agent wrote it, the page did not show it: no false ✓.
     const first = checksOf([1]).outcomes[1];
-    writeFileSync(APP, readFileSync(APP, "utf8").replace(placed, placed.replace(`${areas}"`, `${areas} max-md:flex max-md:flex-col"`)));
+    writeFileSync(APP, readFileSync(APP, "utf8").replace(PLACED, `<Surface className="${as}">`));
     await expect.poll(() => grid.evaluate((el) => el.className.includes("max-md:flex-col"))).toBe(true);
     const done = await npx03kind("done", "1");
     const finished = await npx03kind("finish");
-    record("placed-grid-to-stack-at-a-breakpoint", { first, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) });
+    return { notes, first, done, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) };
+  }
 
-    expect(notes).toContain("- **Grid to Stack:** lay its layers out as a vertical Stack with a gap of 16px");
-    expect(notes).toContain("- **Placed in the Grid:** its layers are placed in it by more than the order they are written");
-    expect(first).toBe("not shown");
+  test("playbook: the cards' Grid, laid out by areas from 640px, made a vertical Stack in the phone view; the Agent adds `max-md:flex max-md:flex-col`, the areas left: done says it shows (ticket 109's follow-up)", async ({ page }) => {
+    const result = await placedGridMadeStack(page, `grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 ${AREAS} max-md:flex max-md:flex-col`);
+    record("placed-grid-to-stack-at-a-breakpoint", { first: result.first, outcome: result.outcome, ticked: result.ticked });
+
+    expect(result.notes).toContain("- **Grid to Stack:** lay its layers out as a vertical Stack with a gap of 16px");
+    expect(result.notes).toContain("- **Placed in the Grid:** its layers are placed in it by more than the order they are written");
+    // Before the Agent wrote it, the page did not show it: no false ✓.
+    expect(result.first).toBe("not shown");
     // The areas still place the cards at 768px and wider, as they did: the check outside the phone's range finds nothing changed.
-    expect(done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
-    expect(tickedIn(finished)).toEqual([1]);
+    expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the same Grid made a Stack in the phone view; the Agent takes the areas off as well: done says the cards are placed otherwise outside the phone's range (ticket 109's follow-up)", async ({ page }) => {
+    const result = await placedGridMadeStack(page, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 max-md:flex max-md:flex-col");
+    record("placed-grid-to-stack-areas-taken-off", { first: result.first, outcome: result.outcome, ticked: result.ticked });
+
+    // The Grid's columns and gaps are as they were at 768px and wider: by them alone it would be ✓.
+    expect(result.done).toContain("Checked on the page: it shows the change, but outside its range too: at 1440px wide, its layers placed otherwise than they were");
+    expect(result.done).toContain("; at 768px wide, its layers placed otherwise than they were");
+    expect(result.ticked).toEqual([]);
   });
 
   test("playbook: the loop's cards, Hug in their cells, made Fill; the Agent writes `w-full` for the loop: done says it shows (a cell's `100%` is Fill)", async ({ page }) => {

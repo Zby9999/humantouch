@@ -416,7 +416,7 @@ function arrangementLine(before: Arrangement, after: Arrangement, style: Record<
  */
 const PLACED_IN_GRID =
   "**Placed in the Grid:** its layers are placed in it by more than the order they are written (`grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`). " +
-  "Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too.";
+  "Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too. Where its columns are written with its areas in one declaration (`grid-template`), take off only its grid display, and leave that declaration as it is.";
 
 /** An arrangement as Tailwind's classes write it, its gaps on the default spacing scale (4px a step), else as arbitrary values: `grid grid-cols-3 gap-6`, `flex flex-col gap-4`. */
 function tailwindArrangement(arrangement: Arrangement): string {
