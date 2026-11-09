@@ -14,10 +14,11 @@ import { AS_STACK_ATTR, asShown, changesOn, declare, elementsOf, keepOriginal, L
 import { changeKey, type Change, type ChangeSet, type Picked } from "./changeset";
 import type { Binder, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
-import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer } from "./layers";
+import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer, type LayerKind } from "./layers";
 import { colorReader } from "./paint";
 import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
-import { cssOf, definitionOf, isTextProperty, ofText, readAsShown, round, same, stackOf, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
+import { arrangedAs } from "./arrangement";
+import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, ofText, readAsShown, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -292,6 +293,8 @@ export function createEditor(
       style: definition.reference?.(declarations, started ? (started.before as PropertyValues[P]) : before, value) ?? declarations,
       sources,
       ...(asStack && { asStack: true }),
+      // A size of a Grid's cell: its Fill and Hug are of its cell (ticket 109), as when first changed.
+      ...(!earlier && (property === "width" || property === "height") && asShown(el, () => inGrid(el)) && { cell: true }),
       ...(keeps?.length ? { keeps } : {}),
       ...(variables && { variables }),
       ...(within && { within }),
@@ -317,8 +320,8 @@ export function createEditor(
       restoreStyle(els, cssOf(property), others, breakpoint);
     }
     referenceAt(within, breakpoint);
-    // A Stack now laid out the other way: the layers are built anew, so a drag into it reads the way it runs now.
-    if (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction) tree = buildLayerTree(doc);
+    // A Stack now laid out the other way, or made a Grid, a Grid a Stack: the layers are built anew, so a drag into it reads the way it runs now.
+    if (property === "arrangement" || (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction)) tree = buildLayerTree(doc);
     return id;
   };
 
@@ -540,6 +543,9 @@ export function createEditor(
     if (held) return setValue(layer, held, (value as Size & { type: "fixed" }).value, { continues, step, variables });
     // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
     views.lagBeside(working.beside, step || stepping, () => {
+      // Made a Grid or a Stack here this round (ticket 109): its columns, gaps, direction or wrap are of that change, the one change.
+      const arranged = arrangedAnew(layer, property, value);
+      if (arranged) return editHere(layer, "arrangement", arranged, continues);
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
       if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
         const place = { ...editor.read(layer, "absolute")!, [property]: value };
@@ -575,6 +581,39 @@ export function createEditor(
     if (!axis || layer.text || (value as Size | null)?.type !== "fixed") return null;
     const el = working.shown(layer.el);
     return asShown(el, () => heldCentered(el, axis)) ? (axis === "x" ? "maxWidth" : "maxHeight") : null;
+  };
+
+  /**
+   * Of a change to a Grid's columns or gaps, or a Stack's direction, gap or
+   * wrap, when the layer was made a Grid or a Stack in the view worked in this
+   * round (its `arrangement` changed here: at every width in the desktop
+   * view, at a breakpoint that holds there in another): its arrangement with
+   * the value in it, which that change takes, so the round has one change for
+   * how it is laid out (ticket 109). Null for any other.
+   */
+  const arrangedAnew = (layer: Layer, property: Property, value: unknown): Arrangement | null => {
+    if (!ARRANGED.has(property)) return null;
+    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    if (!id || !(working.beside() ? editor.changedHere(layer, "arrangement") : changes.has(id, "arrangement", null))) return null;
+    const now = editor.read(layer, "arrangement");
+    if (now.type === "grid") return property === "columns" || property === "rowGap" || property === "columnGap" ? { ...now, [property]: value as number } : null;
+    if (property === "direction") return { ...now, direction: value as PropertyValues["direction"] };
+    if (property === "gap") return { ...now, gap: value as number };
+    if (property !== "wrap") return null;
+    const { direction, gap } = now;
+    return value ? { type: "stack", direction, wrap: true, gap, crossGap: gap } : { type: "stack", direction, wrap: false, gap };
+  };
+
+  /**
+   * A Stack's or a Grid's kind as `el`, its element in the view worked in,
+   * lays it out: one a narrower view makes a Grid, or a Stack, at its
+   * breakpoint alone is that there (ticket 109), as its direction is the one
+   * there. The layers are of the desktop view; any other layer is of its own kind.
+   */
+  const arrangedKind = (layer: Layer, el: Element): LayerKind => {
+    if ((layer.kind !== "stack" && layer.kind !== "grid") || el === layer.el) return layer.kind;
+    const display = asShown(el, () => getComputedStyle(el).display);
+    return /grid$/.test(display) ? "grid" : /flex$/.test(display) ? "stack" : layer.kind;
   };
 
   /** Set while edits that are steps of a run (`SetOptions.step`) are under way: each value set then is one. */
@@ -614,12 +653,16 @@ export function createEditor(
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = definitionOf(property);
       // Text with no element of its own has no styles, but a Frame's only text: the text styles of the Frame's element.
-      if ((layer.text && !(isOnlyText(layer) && isTextProperty(property))) || !kinds.includes(layer.kind)) return false;
       // A hidden layer offers what it does when shown, so the panel stays as it was.
       const el = working.shown(layer.el);
+      if ((layer.text && !(isOnlyText(layer) && isTextProperty(property))) || !kinds.includes(arrangedKind(layer, el))) return false;
       return asShown(el, () => (!applies || applies(el, layer)) && (value === undefined || !accepts || accepts(el, value)));
     },
     read: (layer, property) => readAsShown(working.shown(layer.el), property, colors),
+    arrangedAs(layer, as) {
+      const el = working.shown(layer.el);
+      return asShown(el, () => arrangedAs(el, as));
+    },
     measure(layer) {
       const el = layer.text ? layer.el : working.shown(layer.el);
       if (el === layer.el) return asShown(layer.el, () => boxOf(layer));

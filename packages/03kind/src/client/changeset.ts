@@ -244,6 +244,12 @@ export interface Change {
   data?: true;
   /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1, as the page renders them, those deleted on the canvas too, and its words (ticket 65). */
   instance?: { nth: number; words?: string };
+  /**
+   * A change to the width or height of a layer in a Grid's cell, as it was
+   * when first made (ticket 109): its Fill takes its cell's area, its column's
+   * width or its row's height, and its Hug fits its content in it, as the notes say.
+   */
+  cell?: true;
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
@@ -357,7 +363,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
     > & {
       kind?: Change["kind"];
     },

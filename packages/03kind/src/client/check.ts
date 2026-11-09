@@ -10,14 +10,14 @@
  * is drawn on the page to compare where the code that writes it cannot be
  * read: on an element put in and taken out at once, before anything is painted.
  */
-import { breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
+import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isReorder, type Change, type Created, type Margins, type Place } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
-import { absolute, readValue, round as rounded, sourcesFor, type Property, type Stroke } from "./property-table";
+import { absolute, ARRANGED, readValue, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, usageKeyOf } from "./page-elements";
 import type { Axis } from "./snap";
@@ -145,7 +145,9 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
   if (change.kind === "create" && !placeOfMade(change, round).absolute) return { own: true, others: [] };
   const { loc, chain, made: madeAs } = change.target;
   const sameLayer = (other: Change) => (madeAs ? other.layer === change.layer : other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain));
-  const ownRanges = loc || madeAs ? round.filter((other) => other.breakpoint && other.property === change.property && sameLayer(other)).map((other) => other.breakpoint!) : [];
+  // A Stack made a Grid at a breakpoint, or its columns changed there once made one at every width (ticket 109), lays out its own too.
+  const ownRanges =
+    loc || madeAs ? round.filter((other) => other.breakpoint && (other.property === change.property || arrangedTogether(change.property, other.property)) && sameLayer(other)).map((other) => other.breakpoint!) : [];
   const placesNothing = change.placedOtherwiseAt ?? [];
   const covered = (width: number) => [...ownRanges, ...placesNothing].some((range) => within(range, width));
   return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
@@ -172,9 +174,34 @@ export function outsideOf(change: Change, round: Change[], pageWidth: number, vi
   return [...new Set([pageWidth, ...viewWidths])].filter((width) => !within(breakpoint, width) && !otherwise.some((other) => !other.breakpoint || within(other.breakpoint, width)));
 }
 
-/** Whether `other`, a style change, changes what the style change `change` does: its property, or a CSS property its reference style names. */
+/** Whether `other`, a style change, changes what the style change `change` does: its property, one its arrangement lays out anew (ticket 109), or a CSS property its reference style names. */
 export function changesTheSame(change: Change, other: Change): boolean {
-  return other.property === change.property || Object.keys(other.style).some((css) => css in change.style);
+  return other.property === change.property || arrangedTogether(change.property, other.property) || Object.keys(other.style).some((css) => css in change.style);
+}
+
+/** Whether a change to one of the two properties lays out what the other does: a Stack's or a Grid's arrangement, and its direction, gap, alignment, wrap, columns or gaps (ticket 109). */
+function arrangedTogether(one: string, other: string): boolean {
+  return (one === "arrangement" && ARRANGED.has(other)) || (other === "arrangement" && ARRANGED.has(one));
+}
+
+/**
+ * Of a change to a Stack's direction, gap, alignment or wrap, or a Grid's
+ * columns or gaps, a later change of the round that makes the layer a Grid or
+ * a Stack (its arrangement, ticket 109) at all its widths: it lays it out
+ * anew, so what it showed of the property is that change's to check. Null for any other.
+ */
+function arrangedAnewBy(change: Change, round: Change[]): Change | null {
+  if (change.kind !== "style" || !ARRANGED.has(change.property)) return null;
+  const covers = (other: Change) => !other.breakpoint || (!!change.breakpoint && breakpointKey(other.breakpoint) === breakpointKey(change.breakpoint));
+  return round.find((other) => other.kind === "style" && other.property === "arrangement" && other.layer === change.layer && other.id > change.id && covers(other)) ?? null;
+}
+
+/** Why the page does not check a change (`uncheckable`), or, laid out anew by a later one (`arrangedAnewBy`), checks that one instead. */
+function notChecked(change: Change, round: Change[]): string | null {
+  const reason = uncheckable(change, round);
+  if (reason) return reason;
+  const anew = arrangedAnewBy(change, round);
+  return anew && `change ${anew.id} lays the layer out anew, as ${(anew.after as Arrangement).type === "grid" ? "a Grid" : "a Stack"}: the page checks how it is laid out by that change`;
 }
 
 /**
@@ -329,7 +356,7 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * not shown says what sets the value shown instead too.
  */
 export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
-  const reason = uncheckable(change, round);
+  const reason = notChecked(change, round);
   if (reason) return { outcome: "unchecked", reason };
   const page = itself(doc);
   const { own, others } = widthsOf(change, round, page.width, viewWidths);
@@ -370,14 +397,14 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
  * width, and is looked at on copies of the page only.
  */
 export function checkHere(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[]): CheckResult | null {
-  if (uncheckable(change, round)) return null;
+  if (notChecked(change, round)) return null;
   const page = itself(doc);
   return widthsOf(change, round, page.width, viewWidths).own ? lookAt(doc, change, round, ownValues(change, round), page) : null;
 }
 
 /** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. `round`: the changes of its round, placed on its canvas. */
 export function checkChange(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
-  const reason = uncheckable(change, round);
+  const reason = notChecked(change, round);
   return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, round, ownValues(change, round), itself(doc));
 }
 

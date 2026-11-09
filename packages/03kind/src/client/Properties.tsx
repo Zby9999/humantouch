@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import type { ArrangeAs } from "./arrangement";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
 import { ChangeMarksProvider, NO_MARKS, ResetButton, resetJustClicked, STACK_PROPERTIES, useChangeMarks, type ChangeMarks, type ValuePart } from "./ChangeMarks";
@@ -238,6 +239,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
   const width = shown("width");
   const height = shown("height");
   const direction = shown("direction");
+  /** Makes each selected Stack a Grid, or each Grid a Stack, as it lays its layers out now (ticket 109); null when not every one can be. */
+  const arrange = offers("arrangement") ? (as: ArrangeAs) => update("arrangement", (_, layer) => editor.arrangedAs(layer, as)) : null;
   const padding = shown("padding");
   const opacity = shown("opacity");
   const visible = shown("visible");
@@ -317,6 +320,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       {direction !== undefined && (
         <StackSection
           direction={direction}
+          arrange={arrange}
           dissolve={layers.every((layer) => editor.canUnstack(layer)) ? onDissolve : null}
           gap={shown("gap")!}
           padding={padding!}
@@ -337,7 +341,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
           <PaddingFields padding={padding} update={update} variable={variable} />
         </section>
       )}
-      <GridSection editor={editor} layers={layers} onEdit={onEdit} variable={variable} />
+      <GridSection editor={editor} layers={layers} onEdit={onEdit} variable={variable} arrange={arrange} />
       {(opacity !== undefined || visible !== undefined) && (
         <AppearanceSection
           selection={keyOf(layers)}
@@ -534,8 +538,10 @@ const ALIGNMENTS: Alignment[] = ["start", "center", "end"];
 const ROWS = { start: "Top", center: "Center", end: "Bottom" };
 const COLUMNS = { start: "left", center: "center", end: "right" };
 
-function StackSection({ direction, dissolve, gap, padding, align, wrap, set, update, variable }: {
+function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap, set, update, variable }: {
   direction: Shown<PropertyValues["direction"]>;
+  /** Makes the Stacks Grids (ticket 109); null when they cannot be. */
+  arrange: ((as: ArrangeAs) => void) | null;
   /** Dissolves the Stacks; null when they cannot be. */
   dissolve: (() => void) | null;
   gap: Shown<number>;
@@ -564,7 +570,7 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
         <SectionReset
           title="Stack"
           properties={STACK_PROPERTIES}
-          operations={[{ property: "direction" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
+          operations={[{ property: "direction" }, { property: "arrangement" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
         />
         {added ? (
           <RemoveButton label="Dissolve Stack" added onClick={() => outer.unstack()} />
@@ -598,16 +604,13 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
           <GapField gap={gap} align={align} set={set} update={update} variable={variable} />
           <div class="tk-row">
             {/* Marked as the Text's groups: its track in the accent, its reset at its right end (designer, 2026-11-08). */}
-            <Segmented
+            {/* A Grid beside the two directions, as Figma's auto layout has it (ticket 109); made one here this round, marked by that. */}
+            <Segmented<ArrangeAs>
               label="Direction"
-              property="direction"
+              property={marks.changed("arrangement") ? "arrangement" : "direction"}
               value={direction}
-              options={(["horizontal", "vertical"] as const).map((d) => ({
-                value: d,
-                label: d === "horizontal" ? "Horizontal" : "Vertical",
-                content: <Icon name={d === "horizontal" ? "stack-horizontal" : "stack-vertical"} />,
-              }))}
-              onChange={set("direction")}
+              options={arrangements(!!arrange)}
+              onChange={(as) => (as === "grid" ? arrange!(as) : set("direction")(as))}
             />
             {/* Wrap: a button that stays on, as Figma's; Mixed shows it off. */}
             <button
@@ -627,6 +630,15 @@ function StackSection({ direction, dissolve, gap, padding, align, wrap, set, upd
     </section>
     </ChangeMarksProvider>
   );
+}
+
+/** The Stack section's choices, and the Grid section's: horizontal, vertical, and, `grid`, a Grid (ticket 109). */
+export function arrangements(grid: boolean): { value: ArrangeAs; label: string; content: ComponentChildren }[] {
+  return [
+    { value: "horizontal", label: "Horizontal", content: <Icon name="stack-horizontal" /> },
+    { value: "vertical", label: "Vertical", content: <Icon name="stack-vertical" /> },
+    ...(grid ? [{ value: "grid" as const, label: "Grid", content: <Icon name="grid" /> }] : []),
+  ];
 }
 
 /**
@@ -1076,7 +1088,7 @@ function Choice({ label, class: className, value, options, onChange }: {
  * its buttons (designer, 2026-11-08). Taken back by a click or undo, the reset
  * fades before it goes; changed or taken back by a key, it comes and goes at once.
  */
-function Segmented<T extends string>({ label, class: className, property, value, options, onChange }: {
+export function Segmented<T extends string>({ label, class: className, property, value, options, onChange }: {
   label: string;
   class?: string;
   property?: Property;

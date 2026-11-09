@@ -256,6 +256,12 @@ describe("claim, how to write the changes (ticket 65)", () => {
     ["a move to another cell of a Grid", "Cells of a Grid", [change("move", { before: place(1, { grid: true }), after: place(3, { grid: true }) })]],
     ["a Grid's columns", "Grids", [style("columns", { before: 3, after: 2 })]],
     ["a Grid's row gap", "Grids", [style("rowGap", { before: 16, after: 24 })]],
+    [
+      "a Stack made a Grid",
+      "Stacks and Grids",
+      [style("arrangement", { before: { type: "stack", direction: "horizontal", wrap: false, gap: 24 }, after: { type: "grid", columns: 3, rowGap: 24, columnGap: 24 } })],
+    ],
+    ["a size in a Grid's cell", "Sizes in a Grid", [style("width", { before: { type: "hug" }, after: { type: "fill" }, cell: true })]],
     ["a Stack made", "Making a Stack", [change("stack", { before: null, after: { ...settings, place: place(1), layers: [{ layer: "5", target: inApp, from: place(1) }] } })]],
     ["a plain flow made a real Stack", "Make it a Stack", [style("gap", { before: 0, after: 16, asStack: true })]],
     [
@@ -306,6 +312,18 @@ describe("claim, how to write the changes (ticket 65)", () => {
     const output = (await cli("claim")).output;
 
     expect(names(output)).toContain(name);
+  });
+
+  test("a size of a layer in a Grid's cell says how Fill and Hug are written there; one anywhere else, as before (ticket 109)", async () => {
+    saveRound({ ...style("width", { before: { type: "hug" }, after: { type: "fill" } }), id: 1 });
+    const elsewhere = await cli("claim");
+    expect(names(elsewhere.output)).toContain("Sizes");
+    expect(names(elsewhere.output)).not.toContain("Sizes in a Grid");
+
+    saveRound({ ...style("width", { before: { type: "hug" }, after: { type: "fill" }, cell: true }), id: 1 });
+    const output = (await cli("claim")).output;
+    expect(rule(output, "Sizes in a Grid")).toContain("Tailwind's `w-full` (`h-full`)");
+    expect(rule(output, "Sizes in a Grid")).toContain("Hug fits its content in the cell: `fit-content`, Tailwind's `w-fit` (`h-fit`)");
   });
 
   test("a rule is said once, however many changes call for it; none a change of the round does not call for", async () => {
@@ -1140,6 +1158,27 @@ describe("claim, Grids", () => {
       "- **Design intent:** Change the row gap from 16px to 24px.\n- **Gap apart:** only the space between the Grid's rows changes, not the space between its columns. Where one value sets both now (Tailwind's `gap-*`, CSS `gap`), set them apart: `gap-y-*` and `gap-x-*` in Tailwind, `row-gap` and `column-gap` in CSS.\n",
     );
     expect(section(output, 3)).toContain("- **Design intent:** Change the column gap from 16px to 8px.\n- **Gap apart:** only the space between the Grid's columns changes, not the space between its rows.");
+  });
+
+  test("a Stack made a Grid, and a Grid made a Stack, is a style change of how the layer is laid out, written as CSS and Tailwind write it (ticket 109)", async () => {
+    const row = { type: "stack", direction: "horizontal", wrap: false, gap: 24 };
+    const grid3 = { type: "grid", columns: 3, rowGap: 24, columnGap: 24 };
+    const css = { display: "grid", "grid-template-columns": "repeat(3, minmax(0, 1fr))", "row-gap": "24px", "column-gap": "24px" };
+    const wrapped = { type: "stack", direction: "horizontal", wrap: true, gap: 24, crossGap: 16 };
+    const flex = { display: "flex", "flex-direction": "row", "flex-wrap": "wrap", "row-gap": "16px", "column-gap": "24px" };
+    saveRound(style(1, "arrangement", row, grid3, css), { ...style(2, "arrangement", { ...grid3, rowGap: 16 }, wrapped, flex), target: list });
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toMatch(/^1\. Arrangement\n/);
+    expect(section(output, 1)).toContain(
+      "- **Design intent:** Change the arrangement from a horizontal Stack with a gap of 24px to a Grid of 3 equal columns, with a row gap of 24px and a column gap of 24px.\n" +
+        "- **Stack to Grid:** lay its layers out as a Grid of 3 equal columns, with a row gap of 24px and a column gap of 24px, as `display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 24px; column-gap: 24px` does (Tailwind's `grid grid-cols-3 gap-6`). " +
+        "Take off what lays it out as a Stack now (its flex display, direction and wrap: Tailwind's `flex`, `flex-col`, `flex-wrap`), and give it this in its place. Keep its padding, its layers in the order they are written, and their own classes as they are.\n",
+    );
+    expect(section(output, 1)).toContain("- **Reference style:** `display: grid`, `grid-template-columns: repeat(3, minmax(0, 1fr))`, `row-gap: 24px`, `column-gap: 24px`\n");
+    expect(section(output, 2)).toContain("- **Grid to Stack:** lay its layers out as a horizontal Stack that wraps, with a gap of 24px and 16px between its lines, as `display: flex; flex-direction: row; flex-wrap: wrap; row-gap: 16px; column-gap: 24px` does (Tailwind's `flex flex-wrap gap-x-6 gap-y-4`). Take off what lays it out as a Grid now");
+    expect(output).toContain("- **Stacks and Grids:** a Stack made a Grid, or a Grid made a Stack, is the same element laid out another way");
   });
 
   test("a layer reordered in a Grid takes another cell; one moved into a Grid, a cell of it", async () => {

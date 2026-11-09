@@ -2083,3 +2083,96 @@ test.describe("a change at a breakpoint, the widths outside its range kept (tick
     expect(result.ticked).toEqual([1, 2]);
   });
 });
+
+test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill (ticket 109)", () => {
+  const HEADER = '<header className="flex items-center gap-3">';
+  const SURFACE = '<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3">';
+  const ARTICLE = "rounded-xl border border-stone-200 bg-white p-5 shadow-sm";
+
+  /** In edit mode, `pick` selects a layer and `change` changes it; back in preview mode once the round is saved, its change's property as `saved` has it. */
+  async function design(page: Page, pick: () => Promise<void>, change: () => Promise<void>, saved: string) {
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(page.locator('iframe[title="Phone 390"]').contentFrame().locator("h1")).toBeVisible();
+    await canvasInPlace(page);
+    await pick();
+    await change();
+    await expect
+      .poll(() => readThirdKindFile("changeset.json")?.changes.map((c: { property: string; breakpoint?: object; parts?: unknown[] }) => `${c.property}${c.breakpoint ? `, ${c.parts?.length ?? 0} parts` : ""}`))
+      .toEqual([saved]);
+    await leaveEditMode(page);
+  }
+
+  /** The round claimed, `file` edited from `from` to `to` once its first look is in, then `done 1` once `shows`, and `finish`. */
+  async function applyIt(page: Page, file: string, edit: (text: string) => string, shows: () => Promise<boolean>) {
+    const notes = await npx03kind("claim");
+    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    writeFileSync(file, edit(readFileSync(file, "utf8")));
+    await expect.poll(shows).toBe(true);
+    const done = await npx03kind("done", "1");
+    const finished = await npx03kind("finish");
+    return { notes, done, finished, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) };
+  }
+
+  const direction = (page: Page, section: "Stack" | "Grid", option: string) =>
+    page.getByRole("complementary", { name: "Design" }).getByRole("region", { name: section }).getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: option });
+
+  test("playbook: the header, a horizontal Stack, made a Grid in the desktop view; the Agent writes `grid grid-cols-2`: done says it shows", async ({ page }) => {
+    await design(
+      page,
+      () => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Header", exact: true }).click(),
+      () => direction(page, "Stack", "Grid").click(),
+      "arrangement",
+    );
+    const result = await applyIt(page, APP, (text) => text.replace(HEADER, '<header className="grid grid-cols-2 items-center gap-3">'), () =>
+      page.locator("header").evaluate((el) => getComputedStyle(el).display === "grid"),
+    );
+    record("stack-to-grid", { outcome: result.outcome, ticked: result.ticked });
+    expect(result.notes).toContain("- **Stack to Grid:** lay its layers out as a Grid of 2 equal columns, with a row gap of 12px and a column gap of 12px");
+    expect(result.notes).toContain("(Tailwind's `grid grid-cols-2 gap-3`)");
+    expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the cards' Grid made a vertical Stack in the phone view; the Agent writes `max-md:flex max-md:flex-col`: done says it shows, the Grid kept at 768px and wider", async ({ page }) => {
+    await design(
+      page,
+      async () => {
+        const box = await steadyBox(page.locator('iframe[title="Phone 390"]').contentFrame().locator("article").first());
+        await page.keyboard.down("Meta");
+        await page.mouse.click(box.x + 4, box.y + 4);
+        await page.keyboard.up("Meta");
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true })).toHaveAttribute("aria-selected", "true");
+      },
+      () => direction(page, "Grid", "Vertical").click(),
+      // Below 640px one column, from 640px three (`sm:grid-cols-3`): read part by part.
+      "arrangement, 2 parts",
+    );
+    const result = await applyIt(page, APP, (text) => text.replace(SURFACE, '<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 max-md:flex max-md:flex-col">'), () =>
+      page.locator("main > div:has(> article)").evaluate((el) => el.className.includes("max-md:flex-col")),
+    );
+    record("grid-to-stack-at-a-breakpoint", { outcome: result.outcome, ticked: result.ticked });
+    expect(result.notes).toContain("- **Grid to Stack:** lay its layers out as a vertical Stack with a gap of 16px");
+    expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the loop's cards, Hug in their cells, made Fill; the Agent writes `w-full` for the loop: done says it shows (a cell's `100%` is Fill)", async ({ page }) => {
+    // A round before: the cards fit their content in their cells.
+    writeFileSync(CARD, original.replace(ARTICLE, `${ARTICLE} w-fit`));
+    await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("w-fit")).toBe(true);
+    await design(
+      page,
+      () => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click(),
+      () => page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill"),
+      "width",
+    );
+    const result = await applyIt(page, CARD, (text) => forTheLoopAlone(text, "w-fit", "w-full"), () => page.locator("article").first().evaluate((el) => el.className.includes("w-full")));
+    record("grid-cell-fill", { outcome: result.outcome, ticked: result.ticked });
+    expect(result.notes).toContain("- **Sizes in a Grid:** in a Grid's cell, Fill takes the cell's area");
+    expect(result.done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(result.ticked).toEqual([1]);
+  });
+});
