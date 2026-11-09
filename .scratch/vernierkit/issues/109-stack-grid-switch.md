@@ -32,3 +32,64 @@
 - 109、110 一条线，发布前做，等调前端第 1 轮合进 main 再开线；和 106–108 那条线改的地方不同，可以并行。117（复制、粘贴样式，2026-11-09）接在这条线后面：109 → 110 → 117。
 - 额度紧：不设指挥，开线的会话自己按 109 → 110 的顺序做，每张派一个审查子 agent；都用 effort medium。
 - 设计师 2026-11-09（开线时）改为设指挥：开线的会话只指挥，不自己写；每张票派一个新的实现子 agent（worktree），再派一个审查子 agent；一个 agent 不做多张票；都用 effort medium。
+
+## Comments
+
+**做了什么（起点 52d7ff0；提交 3eff4ae 实现、测试、文档，9ee44f3 面板少读样式，之后一条写这里和测试类型修正）**
+
+- 新属性 `arrangement`（`property-table.ts`）：Stack 读成 `{ type: "stack", direction, wrap, gap, crossGap? }`（`gap` 沿方向，换行时 `crossGap` 是换行间距），Grid 读成 `{ type: "grid", columns, rowGap, columnGap }`。写：Grid 是 `display: grid`（行内的保持 `inline-grid`）+ `grid-template-columns: repeat(N, minmax(0, 1fr))` + `row-gap` / `column-gap`；Stack 是 `display: flex` + `flex-direction` + `flex-wrap` + 两个间距（不换行时两个都是 gap，所以 `gap-6` 也对）。按行列号、区域、`order`、`dense` 放子图层的 Grid（`placesItself`）不提供转换。
+- 推算（新文件 `client/arrangement.ts`，`Editor.arrangedAs`）：横排不换行 N 个 → N 列一行；横排换行 → 列数取最宽一行的图层数，行间距取换行间距；竖排 → 一列；间距 → 行列间距。变回 Stack：竖排用行间距；横排在几行几列时换行（列间距作间距、行间距作换行间距），一行或一列的不换行。数图层时跳过自由定位、不显示的，`display: contents` 的往里数。
+- 面板：Stack 一节的方向 Segmented 多一个 Grid（图标 `grid`）；Grid 一节顶上加同一组三个选项，Grid 选中，点横排、竖排变回 Stack。两节的重置都把 `arrangement` 算进去（`STACK_PROPERTIES` 加了它，⇧A 刚合成的 Stack 撤掉时也一起撤）。转过的 Stack 方向一组的标记看 `arrangement`。
+- 一条改动、⌘Z 一步：同一视图里转过之后，再改列数、行列间距、方向、间距、换行都并进这条 `arrangement`（`edits.ts` 的 `arrangedAnew`），改回原样就不算改动。断点：照 ADR 0008，走现有的 `editHere`，在手机、平板视图只在那个断点生效、可重置；图层树按桌面建，所以 `Editor.can` 按正在工作的视图里元素实际的 `display` 判断 Stack / Grid（`arrangedKind`），面板跟着换节；桌面转了会重建图层树。
+- 改动说明（`change-notes.ts`）：设计意图「Change the arrangement from a horizontal Stack with a gap of 24px to a Grid of 3 equal columns, with a row gap of 24px and a column gap of 24px.」，另一行「**Stack to Grid:** …, as `display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 24px; column-gap: 24px` does (Tailwind's `grid grid-cols-3 gap-6`). Take off what lays it out as a Stack now (…), and give it this in its place. Keep its padding, its layers in the order they are written, and their own classes as they are.」；反过来是「Grid to Stack」，同种之间只是「Arrangement」。写法规则新加「Stacks and Grids」。改动列表标题「Arrangement」。
+- 核对（`check.ts`）：照常读 `arrangement` 比 JSON（display、列数、行列间距）。另外：这一轮更早的、被之后同一范围的转换重新排过的方向 / 间距 / 对齐 / 换行 / 列数 / 行列间距改动，答没能核对「change N lays the layer out anew, as a Grid: the page checks how it is laid out by that change」（不然会误报没显示）；桌面转换 + 某个断点单独改列数（或反过来）时，那个断点范围的宽度不拿另一条看（`widthsOf`、`changesTheSame` 把 `arrangement` 和这些属性算作同一件事）。
+- 背景最后一条（Grid 格子的 Hug / Fill）：宽、高改动在第一次记下时图层在 Grid 格子里，记 `Change.cell`；有这样的改动才打印新规则「Sizes in a Grid」（Fill：`w-full` / `h-full`，或 `auto` 加 `justify-self` / `align-self: stretch`；Hug：`fit-content`，`w-fit`）。原来「Sizes」一字不改。核对把格子里的 `100%` 读作 Fill（`size().read`：`(stack || inGrid(el)) && declared === "100%"`）。
+
+**脚本扮演 Agent**（`e2e/tests/applying-bench.spec.ts` 末尾「a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill (ticket 109)」3 个剧本，没有加标准场景，见代定 9）
+
+| 剧本 | Agent 写 | `done` | finish |
+|---|---|---|---|
+| 桌面视图里 Header（横排 Stack）转 Grid | `grid grid-cols-2 items-center gap-3` | 「Checked on the page: it shows the change.」 | ✓ [1] |
+| 手机视图里卡片的 Grid 改竖排（范围 2 段：<640 一列、640–767 三列） | Surface 加 `max-md:flex max-md:flex-col` | 「Checked on the page: it shows the change.」（范围外 768、1440 仍是三列，104 的检查不误报） | ✓ [1] |
+| 循环的卡片先写成 `w-fit`（上一轮），设计师在格子里改 Fill | 循环那份换成 `w-full` | 「Checked on the page: it shows the change.」（改前会读成 Fixed 判没显示） | ✓ [1] |
+
+- e2e UI（`grid.spec.ts` 2 个）：Stack 一节方向旁的 Grid、Grid 一节显示、接着改列数仍是一条、Grid 一节改竖排、⌘Z 一步一步回去；手机视图里 Grid 改竖排只在手机视图、标记、重置回 Grid。
+- 单测：`edits.browser.test.ts` 新 describe 9 个（读、推算、1px 内不跳、一条改动、断点、核对、`widthsOf`、格子 `100%`）；`cli.test.ts` 4 个（规则出现与否、说明逐字）。
+
+**验证**：`pnpm typecheck` 过；`pnpm test` 1069 过 1 跳过，node 125 过；`TK_E2E_PORT=5500 pnpm test:e2e` 545 过 1 跳过（一次跑完，无重跑）；`--dry` 24/24；`--scripted` 15/15；`--dry --claim-out` 在 52d7ff0 和分支上各 24 份，`diff -r` 逐字相同。
+
+**性能**（`TK_PERF_HEADLESS=1 TK_PERF_PORT=5510`，headless 只作前后比较；改前 52d7ff0，改后 3eff4ae 全套）
+
+| | 改前 | 改后 |
+|---|---|---|
+| 进入编辑模式 全部 中位数 / p95 | 125.4 / 152.2ms | 126.3 / 143.7ms |
+| 同一画布再进入（存下的一轮 / 带过来的一轮）中位数 | 113.0 / 115.2ms | 106.9 / 110.7ms |
+| 改数值 圆角 work 中位数 / p95 | 13.9 / 16.6ms | 13.9 / 16.4ms |
+| 改数值 Stack 间距 work 中位数 / p95 | 12.7 / 16.7ms | 16.6 / 17.5ms |
+| 拖动卡片 / 拖控制点 fps | 60 / 60 | 60 / 60 |
+| 认领后热更新核对 最长一段 中位数（3 条改动） | 20.4ms | 18.1ms |
+
+- Stack 间距 work 的中位数差 4ms，查了：9ee44f3 让面板对 Stack 不再为 `arrangement`、内边距读样式，仍 16.2ms；随后把源码换回 52d7ff0 同一台机器同一时段只跑这两条，改前也是 15.4 / 15.9ms，所以是机器状态，不是这张票（p95 前后都在 16–18ms）。进入编辑模式的路径没加东西。
+
+**包**：切换按钮 `react.dev.js` 1423 B（sha256 前 16 位 `bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 52d7ff0 逐字节相同。编辑层 `editor.dev.js` 485949 → 490761 B（+4812 B），gzip -9 172015 → 173608 B（+1593 B）。
+
+### 代定的事（待设计师确认）
+
+1. 样子：Grid 是方向 Segmented 的第三个选项（图标用 Columns 字段已有的 `grid`）；Grid 一节顶上放同一组三个选项，单独一行在列数上面。外观交给调前端。
+2. 变回 Stack 时方向由设计师点的那个决定（照 Figma），推算只定换不换行和间距：横排在几行几列时换行，一行或一列不换行；竖排不换行。票里「一列的变竖排、一行的变横排」就是点对应那个时画面不跳。
+3. 等宽列：转成 Grid 一律写等宽列（`repeat(N, minmax(0, 1fr))`，同 `grid-cols-N`，和 ticket 18 的列数一致）。子图层宽度各不相同（例如 Hug 的按钮一排）时会变成一样宽，画面会动；不写成按现在宽度的固定轨道。
+4. 子图层的样式不动（不加改动）：Stack 里 Hug 的子图层在 Grid 里变成撑满格子（Grid 默认 stretch），Fill（flex-grow）在 Grid 里没有意义、照样撑满；`auto` 外边距照原样留着。对齐（`justify-content`、`align-items`）不转换：横排 Stack 的 `items-center` 在 Grid 里意思一样，竖排的交叉轴对齐在 Grid 里变成了竖直方向（会跳），见风险 2。
+5. 竖排换行的 Stack 转 Grid 当一列（顺序按列流，Grid 按行流，没法不跳）。
+6. 按行列号、区域、`order`、`dense` 放子图层的 Grid 不提供变回 Stack（Grid 一节不出现那三个选项）。
+7. 转换后同一视图里改列数、间距、方向、换行并进转换那一条（一条改动、Agent 只看到最终的排法）；但 Grid 一节的列数、间距字段不再单独标记（标记在方向那组上），重置也是整条。桌面转换后在手机视图改列数是手机上单独一条 `columns` 改动。
+8. 更早的方向 / 间距 / 列数等改动被之后的转换重新排过时，核对答没能核对、说由转换那条核对；改动说明里那几条照旧列出。
+9. `apply` 走一遍用的是 `applying-bench.spec.ts` 里的剧本（脚本扮演 Agent），没有加到 `STANDARD_SCENARIOS`：加了会让 `--dry` 不再是 24 个、改动 88 的验收基数。要进标准场景另开票。
+10. 说明里的 Tailwind 写法按默认 4px 一级算（24px → `gap-6`，对不上写 `gap-[13px]`），规则里另说用项目的间距刻度。
+
+### 遗留风险
+
+1. 同一个改动里先转 Grid 再转回不同方向时，画布上会留着前一次写的 `grid-template-columns`（或 `flex-wrap`）声明，对 flex / grid 不起作用，参考样式里没有，撤销整条时一起清掉；只是画布样式表里多一行。
+2. 竖排 Stack 有交叉轴对齐（`items-center`）时转 Grid，子图层会从居中变成撑满（Grid 的 `align-items` 管竖直方向），画面跳；没有把对齐转换成 `justify-items`。
+3. 推算按画布上子图层的上边分行（1px 内同一行）；子图层高低不齐的换行 Stack 可能多数出一行，列数取最宽一行仍然对。
+4. 页面原有的 `display: contents` 包裹层里的子图层按它里面的数。
+5. 断点视图里 `arrangedKind` 只按元素的 `display` 判断 Stack / Grid；桌面是 Grid、手机由页面自己的 CSS 变成 block 的情况照旧当 Grid。

@@ -2166,7 +2166,7 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
     await design(
       page,
       () => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click(),
-      () => page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill"),
+      async () => void (await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill")),
       "width",
     );
     const result = await applyIt(page, CARD, (text) => forTheLoopAlone(text, "w-fit", "w-full"), () => page.locator("article").first().evaluate((el) => el.className.includes("w-full")));
