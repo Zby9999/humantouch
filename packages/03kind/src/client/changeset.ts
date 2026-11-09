@@ -499,6 +499,8 @@ function buildsOn(later: Change, earlier: Change): boolean {
   if (later.id < earlier.id) return false;
   // Put back once it was moved off this round: had it not been moved off, it could not come back.
   if (later.kind === "putBack" && movedOffBy([earlier], (later.after as PutBack).layer.id)) return true;
+  // Put back with a layer in it moved off this round, or one out of a layer moved off this round (ticket 108): that layer back, it would be there twice.
+  if (later.kind === "putBack" && earlier.offCanvas && carriedIn((later.after as PutBack).layer).some((kept) => kept.id === earlier.offCanvas || kept.origin.inside === earlier.offCanvas)) return true;
   // A layer deleted once its layers were moved out of it (ungrouped): bringing one back into it brings it back too.
   if (later.kind === "delete" && earlier.kind === "move" && (earlier.before as Place).container.layer === later.layer) return true;
   return placed(later).some((layer) => placed(earlier).includes(layer));
@@ -512,6 +514,26 @@ export function movedOffBy(changes: Change[], id: string): Change | null {
 /** The change among `changes` that put back onto the canvas the layer off it with id `id` (ADR 0009), if one does. */
 export function putBackOf(changes: Change[], id: string): Change | null {
   return changes.find((change) => change.kind === "putBack" && (change.after as PutBack).layer.id === id) ?? null;
+}
+
+/**
+ * The layers that came into `kept`, a layer off the canvas, from elsewhere
+ * (the canvas, another layer off it; ticket 108), as each was kept as it
+ * came, and those that came into them, all the way down: those its own edits
+ * and those of before it came where it is put in.
+ */
+export function keptIn(kept: SavedOffCanvasLayer): SavedOffCanvasLayer[] {
+  return editsOf(kept).flatMap((change) => (change.kind === "putBack" ? carriedIn((change.after as PutBack).layer) : []));
+}
+
+/** `kept`, and those that came into it (`keptIn`). */
+export function carriedIn(kept: SavedOffCanvasLayer): SavedOffCanvasLayer[] {
+  return [kept, ...keptIn(kept)];
+}
+
+/** Every edit made to `kept` off the canvas: those made before it came where it is now (ticket 108), then its own. */
+export function editsOf(kept: SavedOffCanvasLayer): Change[] {
+  return [...(kept.origin.edits ?? []), ...kept.edits.changes];
 }
 
 /** The layers off the canvas that `changes` put back onto it, as they were kept there: those made in the blank space too (ticket 106). */

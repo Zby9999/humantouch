@@ -28,6 +28,7 @@ import {
 import {
   BRIEF,
   createChangeSet,
+  editsOf,
   madeBy,
   MOVE,
   movedOffBy,
@@ -925,8 +926,11 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       const made = layer.made !== null && layer.el.getAttribute(LAYER_ID_ATTR) === layer.made;
       const maker = made ? makerOf(layer.made!) : null;
       if (maker?.kind === "putBack") {
-        const { target, written, snippet, copy } = (maker.after as PutBack).layer.origin;
-        return { target, place: placeOf(layer), written, ...(snippet !== undefined && { snippet }), ...(copy && { copy }) };
+        const kept = (maker.after as PutBack).layer;
+        const { target, written, snippet, copy, inside } = kept.origin;
+        // What was edited off the canvas goes along, moved off again: its look has it, its source not (ticket 108).
+        const edits = editsOf(kept);
+        return { target, place: placeOf(layer), written, ...(snippet !== undefined && { snippet }), ...(copy && { copy }), ...(inside && { inside }), ...(edits.length && { edits }) };
       }
       return {
         target: targetOf(layer, onPage(layer).length),
@@ -1026,7 +1030,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       const deletion = movedOffBy(changes.list(), from.kept.id);
       const deleted = deletion ? elementsOf(doc, deletion.layer).filter((el) => el.getAttribute(DELETED_ATTR) === deletion.property) : [];
       // Moved off this round, as it was: the deletion is taken back, and it moves to where it is let go, if anywhere.
-      if (deletion && deleted.length && !from.kept.edits.changes.length && canReturn(deletion, deleted[0], to.parent)) {
+      if (deletion && deleted.length && !editsOf(from.kept).length && canReturn(deletion, deleted[0], to.parent)) {
         let back: Layer | null = null;
         // A change to the structure: at every width, whatever view it is let go in (ADR 0008).
         working.inDesktop(() =>
