@@ -251,13 +251,16 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       for (let el: Element | null = part.el; el && el !== root?.el && !came; el = el.parentElement) if (makerOf(el)?.kind === "putBack") came = makerOf(el);
       const edits = editedWithin(from, part);
       const look = lookOf(part.el);
+      // Where it is in the workspace now: there, off the canvas again, once its putting back is taken back.
+      const box = part.el.getBoundingClientRect();
+      const [x, y] = [Math.round(from.x + box.left), Math.round(from.y + box.top)];
       const none = { lastId: 0, changes: [] };
       if (came && came.layer === part.el.getAttribute(LAYER_ID_ATTR)) {
         // Where it came from first, all it was edited since going with it.
         const kept = (came.after as PutBack).layer;
         const { edits: _, ...origin } = kept.origin;
         const all = [...editsOf(kept), ...edits];
-        return { id: copy ? crypto.randomUUID() : kept.id, x: 0, y: 0, look, origin: { ...origin, ...(copy && { copy: true as const, at }), ...(all.length && { edits: all }) }, edits: none };
+        return { id: copy ? crypto.randomUUID() : kept.id, x, y, look, origin: { ...origin, ...(copy && { copy: true as const, at }), ...(all.length && { edits: all }) }, edits: none };
       }
       // Written in the code of the layer it came in with, or of this one: found by the way down from there.
       const within = came ? (came.after as PutBack).layer : { id: from.id, origin: from.origin };
@@ -275,8 +278,8 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       const inCode = !within.origin.made && !copied;
       return {
         id: crypto.randomUUID(),
-        x: 0,
-        y: 0,
+        x,
+        y,
         look,
         origin: {
           target: { ...target, instances: 1, unlocated: !target.loc, context: { ...target.context, path: [...within.origin.target.context.path, ...way] } },

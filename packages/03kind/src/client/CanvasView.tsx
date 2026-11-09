@@ -884,13 +884,14 @@ export function CanvasView(props: Props) {
    */
   const startDrag = (layer: Layer, shown: Shown): DragSession => startDragSession(layer, shown, views!);
 
+  /** `drop`, unless in a layer off the canvas but beside the layer itself, in its document: there is one layer to each (ticket 108). */
+  const inLayer = (drop: Drop | null, into: Shown): Drop | null => (drop && into.offCanvasLayer && drop.to.parent === treeIn(into)?.root ? null : drop);
+
   /**
    * The layer dragged to where the pointer is, from where it was pressed.
    * Placed freely, it snaps, unless ⌘ (Ctrl) is held: as near on screen
    * as `SNAP_PX`, at any zoom.
    */
-  /** `drop`, unless in a layer off the canvas but beside the layer itself, in its document: there is one layer to each (ticket 108). */
-  const inLayer = (drop: Drop | null, into: Shown): Drop | null => (drop && into.offCanvasLayer && drop.to.parent === treeIn(into)?.root ? null : drop);
   const moveDrag = (session: DragSession, event: Pointer, from: { x: number; y: number }) => {
     session.pointer = { clientX: event.clientX, clientY: event.clientY, metaKey: event.metaKey, ctrlKey: event.ctrlKey };
     const snapWithin = event.metaKey || event.ctrlKey ? null : SNAP_PX / camera.zoom;
