@@ -1181,6 +1181,22 @@ describe("claim, Grids", () => {
     expect(output).toContain("- **Stacks and Grids:** a Stack made a Grid, or a Grid made a Stack, is the same element laid out another way");
   });
 
+  test("a Grid that placed its layers itself made a Stack: its layers' placement is left as it is; any other arrangement says nothing of it (ticket 109's follow-up)", async () => {
+    const grid = { type: "grid", columns: 2, rowGap: 16, columnGap: 16 };
+    const column = { type: "stack", direction: "vertical", wrap: false, gap: 16 };
+    const flex = { display: "flex", "flex-direction": "column", "flex-wrap": "nowrap", "row-gap": "16px", "column-gap": "16px" };
+    saveRound({ ...style(1, "arrangement", grid, column, flex), placedInGrid: true, breakpoint: { min: null, max: 767 } }, { ...style(2, "arrangement", grid, column, flex), target: list });
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain(
+      "Keep its padding, its layers in the order they are written, and their own classes as they are.\n" +
+        "- **Placed in the Grid:** its layers are placed in it by more than the order they are written (`grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`). " +
+        "Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too.\n",
+    );
+    expect(section(output, 2)).not.toContain("**Placed in the Grid:**");
+  });
+
   test("an arrangement's gaps are its Variables' parts; a plain flow made a real Stack, then a Grid, is not told to be a flex column (ticket 109)", async () => {
     const flow = { type: "stack", direction: "vertical", wrap: false, gap: 0 };
     const grid1 = { type: "grid", columns: 1, rowGap: 22, columnGap: 16 };

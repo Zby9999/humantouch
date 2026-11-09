@@ -287,6 +287,13 @@ export interface Change {
    * width or its row's height, and its Hug fits its content in it, as the notes say.
    */
   cell?: true;
+  /**
+   * Of a Grid made a Stack, one that placed its layers otherwise than in the
+   * order they are written (`placesItself`: areas, lines of their own, `dense`,
+   * `order`), as it was when first made one (ticket 109's follow-up): the notes
+   * say to leave how its layers are placed as it is.
+   */
+  placedInGrid?: true;
   /** A move of text with no element of its own: the canvas wrapped it in a `<span>`, and so must the code. */
   wrap?: true;
   /** An absolute placement in a container the page does not position: the container becomes its positioning reference. */
@@ -400,7 +407,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "madeOffCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "placedInGrid" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "madeOffCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
     > & {
       kind?: Change["kind"];
     },

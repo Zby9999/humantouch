@@ -6568,7 +6568,7 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
     return { ...canvas, layer, boxes };
   };
 
-  test("a Stack offers to become a Grid, and a Grid a Stack; a Grid that places its layers in cells of their own does not", () => {
+  test("a Stack offers to become a Grid, and a Grid a Stack, one that places its layers in cells of their own too", () => {
     const { editor, layer } = open();
     expect(["row", "column", "grid"].map((id) => editor.can(layer(id), "arrangement"))).toEqual([true, true, true]);
     expect(editor.read(layer("row"), "arrangement")).toEqual({ type: "stack", direction: "horizontal", wrap: false, gap: 24 });
@@ -6577,7 +6577,79 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
     expect(editor.can(layer("r1"), "arrangement")).toBe(false);
     const placed = openCanvas(ARRANGEMENTS.replace('id="g2" data-tk-loc', 'style="grid-column: 2; grid-row: 2" id="g2" data-tk-loc'));
     const grid = find(placed.editor.tree().root, (l) => l.el === placed.doc.getElementById("grid"))!;
-    expect(placed.editor.can(grid, "arrangement")).toBe(false);
+    expect(placed.editor.can(grid, "arrangement")).toBe(true);
+  });
+
+  /** The Grid with its layers placed in areas of their own, the other way round from the order they are written: G4, G3 in its first row, G2, G1 in its second. */
+  const AREAS = ARRANGEMENTS.replace("grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap", `grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'd c' 'b a'; row-gap`).replace(
+    /id="g(\d)" (data-tk-loc="[^"]*") style="height: 30px"/g,
+    (_, n: string, at: string) => `id="g${n}" ${at} style="height: 30px; grid-area: ${"abcd"[Number(n) - 1]}"`,
+  );
+  /** The Grid's layers, top to bottom, then left to right, as drawn. */
+  const drawnOrder = (doc: Document) =>
+    [...doc.getElementById("grid")!.children]
+      .map((el) => ({ id: el.id, box: el.getBoundingClientRect() }))
+      .sort((a, b) => a.box.top - b.box.top || a.box.left - b.box.left)
+      .map(({ id }) => id);
+
+  test("a Grid that places its layers in areas made a Stack lays them out in the order they are written, as in Figma; the change says how they were placed, and ⌘Z takes them back (ticket 109's follow-up)", () => {
+    const { editor, changes, doc } = openCanvas(AREAS);
+    const grid = () => find(editor.tree().root, (l) => l.el === doc.getElementById("grid"))!;
+    expect(drawnOrder(doc)).toEqual(["g4", "g3", "g2", "g1"]);
+
+    expect(editor.arrangedAs(grid(), "vertical")).toEqual({ type: "stack", direction: "vertical", wrap: false, gap: 16 });
+    editor.set(grid(), "arrangement", editor.arrangedAs(grid(), "vertical"));
+
+    expect(drawnOrder(doc)).toEqual(["g1", "g2", "g3", "g4"]);
+    expect(grid().kind).toBe("stack");
+    expect(changes.list()).toMatchObject([{ property: "arrangement", before: { type: "grid", columns: 2 }, after: { type: "stack", direction: "vertical" }, placedInGrid: true }]);
+    // Its gap changed after is of the same change, which stays one placed in the Grid.
+    editor.set(grid(), "gap", 8);
+    expect(changes.list()).toMatchObject([{ property: "arrangement", after: { type: "stack", gap: 8 }, placedInGrid: true }]);
+
+    editor.undo();
+    editor.undo();
+    expect(drawnOrder(doc)).toEqual(["g4", "g3", "g2", "g1"]);
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a Grid placing its layers in order made a Stack is no change placed in the Grid; nor is a Stack made a Grid (ticket 109's follow-up)", () => {
+    const { editor, changes, layer } = open();
+    editor.set(layer("grid"), "arrangement", editor.arrangedAs(layer("grid"), "vertical"));
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    expect(changes.list().map((change) => change.placedInGrid)).toEqual([undefined, undefined]);
+  });
+
+  test("in the phone view, a desktop Grid placing its layers in areas made a vertical Stack there: the page shows it with the areas still written, and not while a Grid there (ticket 109's follow-up)", async () => {
+    const { editor, changes, doc, views } = openCanvas(AREAS);
+    const grid = () => find(editor.tree().root, (l) => l.el === doc.getElementById("grid"))!;
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+
+    editor.at(phone);
+    editor.set(grid(), "arrangement", editor.arrangedAs(grid(), "vertical"));
+    expect(drawnOrder(phone.document)).toEqual(["g1", "g2", "g3", "g4"]);
+    expect(drawnOrder(doc)).toEqual(["g4", "g3", "g2", "g1"]);
+    const [stack] = changes.list();
+    expect(stack).toMatchObject({ breakpoint: { min: null, max: 800 }, placedInGrid: true });
+
+    // The Agent's page: a flex column, the Grid's areas and its layers' left as they are.
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(AREAS.replace("display: grid; grid-template-columns: repeat(2", "display: flex; flex-direction: column; grid-template-columns: repeat(2"));
+    page.close();
+    const round = onCanvas(changes.list());
+    expect(checkChange(page, stack, round)).toEqual({ outcome: "shown" });
+    // Still the Grid there: not shown.
+    page.getElementById("grid")!.style.display = "grid";
+    expect(checkChange(page, stack, round)).toMatchObject({ outcome: "not shown", actual: { type: "grid", columns: 2 } });
+
+    editor.inherit(grid(), "arrangement");
+    expect(drawnOrder(phone.document)).toEqual(["g4", "g3", "g2", "g1"]);
+    expect(changes.list()).toEqual([]);
   });
 
   test("a horizontal Stack becomes a Grid of a column for each of its layers, one row, its gap both gaps: nothing moves; one change, undone in one step", () => {

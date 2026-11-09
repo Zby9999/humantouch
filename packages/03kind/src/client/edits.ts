@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer, type LayerK
 import { colorReader } from "./paint";
 import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { arrangedAs } from "./arrangement";
-import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, ofText, readAsShown, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
+import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, ofText, placesItself, readAsShown, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -224,6 +224,18 @@ export function createEditor(
     return ranges;
   };
 
+  /**
+   * Whether the Grid `layer` places its layers otherwise than in the order
+   * they are written (`placesItself`) in any view: by areas, say, at the widths
+   * of one view and not another's. Read off its layers' own placement, which
+   * holds whatever it is laid out as now.
+   */
+  const placedInAView = (layer: Layer) =>
+    views.list().some((view) => {
+      const el = view.elementOf(layer.el);
+      return !!el && placesItself(el);
+    });
+
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
   const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
     const definition = definitionOf(property);
@@ -295,6 +307,8 @@ export function createEditor(
       ...(asStack && { asStack: true }),
       // A size of a Grid's cell: its Fill and Hug are of its cell (ticket 109), as when first changed.
       ...(!earlier && (property === "width" || property === "height") && asShown(el, () => inGrid(el)) && { cell: true }),
+      // A Grid that placed its layers itself, in a view, made a Stack: how they are placed stays in the code, as when first changed (ticket 109's follow-up).
+      ...(!earlier && property === "arrangement" && (before as Arrangement).type === "grid" && (value as Arrangement).type === "stack" && placedInAView(layer) && { placedInGrid: true }),
       ...(keeps?.length ? { keeps } : {}),
       ...(variables && { variables }),
       ...(within && { within }),

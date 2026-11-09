@@ -291,10 +291,9 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   rowGap: gridGap("row-gap"),
   columnGap: gridGap("column-gap"),
   arrangement: {
+    // Any Stack or Grid, one that places its layers in cells or areas of their own too: made a Stack, its
+    // layers go in the order they are written, as in Figma (designer, 2026-11-09, ticket 109's follow-up).
     kinds: ["stack", "grid"],
-    // A Grid that places its layers in cells or areas of their own lays them out by more than its columns: it is not made a Stack.
-    // Told by the layer's kind, so a Stack's panel reads no style for it as a value changes.
-    applies: (el, layer) => layer.kind !== "grid" || !placesItself(el),
     accepts: (_, value) => (value.type === "grid" ? Number.isInteger(value.columns) && value.columns >= 1 && value.rowGap >= 0 && value.columnGap >= 0 : value.gap >= 0),
     read: readArrangement,
     write: writeArrangement,

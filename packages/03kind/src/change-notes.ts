@@ -369,8 +369,8 @@ function placedFreely({ after, style }: Change): string {
  * What a change to a Grid's columns or gaps asks besides its value: columns
  * of equal shares, and the gap between rows and the one between columns set apart.
  */
-function gridNotes({ property, before, after, style }: Change): string[] {
-  if (property === "arrangement") return [arrangementLine(before as Arrangement, after as Arrangement, style)];
+function gridNotes({ property, before, after, style, placedInGrid }: Change): string[] {
+  if (property === "arrangement") return [arrangementLine(before as Arrangement, after as Arrangement, style), ...(placedInGrid && (after as Arrangement).type === "stack" ? [PLACED_IN_GRID] : [])];
   if (property === "columns") {
     return [
       `**Equal columns:** each column takes an equal share of the Grid's width, as \`grid-template-columns: ${equalColumns(after as number)}\` does (Tailwind's \`grid-cols-${after}\`). ` +
@@ -407,6 +407,16 @@ function arrangementLine(before: Arrangement, after: Arrangement, style: Record<
     "Keep its padding, its layers in the order they are written, and their own classes as they are."
   );
 }
+
+/**
+ * Of a Grid made a Stack that placed its layers itself (ticket 109's
+ * follow-up): how they are placed stays in the code. Where it is still a
+ * Grid (made a Stack in a narrower view) it places them; in the Stack it does
+ * nothing, but `order`, which orders its layers there too.
+ */
+const PLACED_IN_GRID =
+  "**Placed in the Grid:** its layers are placed in it by more than the order they are written (`grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`). " +
+  "Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too.";
 
 /** An arrangement as Tailwind's classes write it, its gaps on the default spacing scale (4px a step), else as arbitrary values: `grid grid-cols-3 gap-6`, `flex flex-col gap-4`. */
 function tailwindArrangement(arrangement: Arrangement): string {
