@@ -7,6 +7,7 @@
  * them without reaching back into `edits.ts`.
  */
 import type { OffCanvasOrigin, SavedOffCanvasLayer } from "../service-protocol";
+import type { ArrangeAs } from "./arrangement";
 import type { Breakpoint } from "./breakpoints";
 import type { Bindings, Change, Created, Picked } from "./changeset";
 import type { Layer, LayerTree } from "./layers";
@@ -82,6 +83,12 @@ export interface Editor {
   can<P extends Property>(layer: Layer, property: P, value?: PropertyValues[P]): boolean;
   /** The layer's current value, as the view worked in shows it. */
   read<P extends Property>(layer: Layer, property: P): PropertyValues[P];
+  /**
+   * The arrangement a Stack or a Grid takes made `as` (a Grid, a horizontal or
+   * vertical Stack), worked out from how the view worked in lays its layers out
+   * now, so nothing jumps where it can stay (ticket 109): to `set` as its `arrangement`.
+   */
+  arrangedAs(layer: Layer, as: ArrangeAs): PropertyValues["arrangement"];
   /**
    * Changes the layer, across the instances of its usage, at the breakpoint
    * worked in, and records the change. It can be undone. Its width or height

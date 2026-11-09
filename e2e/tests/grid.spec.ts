@@ -211,3 +211,69 @@ test("in a Grid one of whose cards is placed by order, a card dragged or nudged 
   await expect.poll(children).toEqual([...ORDER, "button"]);
   await expect(await changeRows(page)).toHaveText([/Move.*Button.*Stack → Grid/]);
 });
+
+/** How a view lays the header out: a Grid, by its columns; else its display and direction. */
+const headerIn = (view: Locator) =>
+  view
+    .contentFrame()
+    .locator("header")
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      return style.display === "grid" ? `grid ${style.gridTemplateColumns.split(" ").length}` : `${style.display} ${style.flexDirection}`;
+    });
+
+test("a Stack made a Grid from beside its direction, as in Figma: the Grid section shows, one change, one ⌘Z; and back to a Stack from the Grid section (ticket 109)", async ({ page }) => {
+  await enterEditMode(page);
+  await layers(page).getByRole("treeitem", { name: "Header", exact: true }).click();
+  const stack = design(page).getByRole("region", { name: "Stack" });
+  const direction = stack.getByRole("radiogroup", { name: "Direction" });
+  await expect(direction.getByRole("radio")).toHaveCount(3);
+  await expect(direction.getByRole("radio", { name: "Horizontal" })).toHaveAttribute("aria-checked", "true");
+
+  await direction.getByRole("radio", { name: "Grid" }).click();
+  // The title and the badge, a column each: a Grid of two, its gap the Stack's.
+  await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["grid 2", "grid 2", "grid 2"]);
+  const grid = design(page).getByRole("region", { name: "Grid" });
+  await expect(grid).toBeVisible();
+  await expect(design(page).getByRole("region", { name: "Stack" })).toHaveCount(0);
+  await expect(field(page, "Columns")).toHaveValue("2");
+  await expect(field(page, "Column gap")).toHaveValue("12");
+  await expect(grid.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
+  // Its columns changed now are of the same change.
+  await setField(page, "Columns", "3");
+  await expect(await changeRows(page)).toHaveText([/Arrangement.*Header.*horizontal Stack.*→ a Grid of 3 equal columns/]);
+  await page.keyboard.press("Escape");
+
+  await grid.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: "Vertical" }).click();
+  await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["flex column", "flex column", "flex column"]);
+  await expect(stack.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: "Vertical" })).toHaveAttribute("aria-checked", "true");
+  await expect(await changeRows(page)).toHaveText([/Arrangement.*Header.*→ a vertical Stack with a gap of 12px/]);
+  await page.keyboard.press("Escape");
+
+  // Each a step: back to the Grid of three, then the Stack it was, and no change.
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["grid 3", "grid 3", "grid 3"]);
+  await page.keyboard.press("Meta+z");
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["flex row", "flex row", "flex row"]);
+  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+});
+
+test("in the phone view, the Grid made a vertical Stack at its breakpoint only, marked there and reset there (ticket 109)", async ({ page }) => {
+  await enterEditMode(page);
+  await pickGrid(page, phone(page));
+  const direction = design(page).getByRole("region", { name: "Grid" }).getByRole("radiogroup", { name: "Direction" });
+
+  await direction.getByRole("radio", { name: "Vertical" }).click();
+  const layouts = () => Promise.all(views(page).map((view) => view.contentFrame().locator(GRID).evaluate((el) => `${getComputedStyle(el).display} ${getComputedStyle(el).flexDirection}`)));
+  await expect.poll(layouts).toEqual(["grid row", "grid row", "flex column"]);
+  const stack = design(page).getByRole("region", { name: "Stack" });
+  await expect(stack).toBeVisible();
+  await expect(await changeRows(page)).toHaveText([/Arrangement.*Grid.*below 768px/]);
+  await page.keyboard.press("Escape");
+
+  // Marked on the direction, as made a Stack here; its reset takes it back to the Grid there.
+  await stack.getByRole("button", { name: "Reset direction" }).click();
+  await expect.poll(layouts).toEqual(["grid row", "grid row", "grid row"]);
+  await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
+});

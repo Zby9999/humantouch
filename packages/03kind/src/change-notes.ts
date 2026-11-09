@@ -26,7 +26,7 @@ import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_MAX, AXIS_SIZE, AXIS_WAY, CENTER
 import { equalColumns } from "./client/grid-tracks";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER, LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./client/style-marks";
 import type { StyleSource } from "./client/style-source";
-import type { Size } from "./client/property-table";
+import type { Arrangement, Size } from "./client/property-table";
 import type { Axis } from "./client/snap";
 import type { UsageLevel } from "./client/usage-chain";
 import { variablesLine } from "./variable-notes";
@@ -92,7 +92,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Design intent:** ${intent(change, list, look)}`,
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
-    ...(change.asStack ? [AS_STACK] : []),
+    ...(change.asStack && !madeGridAfter(change, list) ? [AS_STACK] : []),
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
@@ -367,7 +367,8 @@ function placedFreely({ after, style }: Change): string {
  * What a change to a Grid's columns or gaps asks besides its value: columns
  * of equal shares, and the gap between rows and the one between columns set apart.
  */
-function gridNotes({ property, after }: Change): string[] {
+function gridNotes({ property, before, after, style }: Change): string[] {
+  if (property === "arrangement") return [arrangementLine(before as Arrangement, after as Arrangement, style)];
   if (property === "columns") {
     return [
       `**Equal columns:** each column takes an equal share of the Grid's width, as \`grid-template-columns: ${equalColumns(after as number)}\` does (Tailwind's \`grid-cols-${after}\`). ` +
@@ -380,6 +381,44 @@ function gridNotes({ property, after }: Change): string[] {
     `**Gap apart:** only the space between the Grid's ${these} changes, not the space between its ${those}. ` +
       "Where one value sets both now (Tailwind's `gap-*`, CSS `gap`), set them apart: `gap-y-*` and `gap-x-*` in Tailwind, `row-gap` and `column-gap` in CSS.",
   ];
+}
+
+/**
+ * What a change to a Stack's or a Grid's arrangement asks (ticket 109): the
+ * same element laid out another way, as CSS and Tailwind write it, what lays
+ * it out now taken off when a Stack becomes a Grid or a Grid a Stack, and its
+ * padding, its layers and their order kept.
+ */
+function arrangementLine(before: Arrangement, after: Arrangement, style: Record<string, string>): string {
+  const css = Object.entries(style)
+    .map(([name, value]) => `${name}: ${value}`)
+    .join("; ");
+  const label = before.type === after.type ? "Arrangement" : after.type === "grid" ? "Stack to Grid" : "Grid to Stack";
+  const off =
+    before.type === after.type
+      ? ""
+      : after.type === "grid"
+        ? " Take off what lays it out as a Stack now (its flex display, direction and wrap: Tailwind's `flex`, `flex-col`, `flex-wrap`), and give it this in its place."
+        : " Take off what lays it out as a Grid now (its grid display and columns: Tailwind's `grid`, `grid-cols-*`), and give it this in its place.";
+  return (
+    `**${label}:** lay its layers out as ${value("arrangement", after)}, as \`${css}\` does (Tailwind's \`${tailwindArrangement(after)}\`).${off} ` +
+    "Keep its padding, its layers in the order they are written, and their own classes as they are."
+  );
+}
+
+/** An arrangement as Tailwind's classes write it, its gaps on the default spacing scale (4px a step), else as arbitrary values: `grid grid-cols-3 gap-6`, `flex flex-col gap-4`. */
+function tailwindArrangement(arrangement: Arrangement): string {
+  const gaps = (row: number, column: number) => (row === column ? `gap-${spacing(row)}` : `gap-x-${spacing(column)} gap-y-${spacing(row)}`);
+  if (arrangement.type === "grid") return `grid grid-cols-${arrangement.columns} ${gaps(arrangement.rowGap, arrangement.columnGap)}`;
+  const { direction, wrap, gap, crossGap = gap } = arrangement;
+  const [row, column] = direction === "horizontal" ? [wrap ? crossGap : gap, gap] : [gap, wrap ? crossGap : gap];
+  return ["flex", ...(direction === "vertical" ? ["flex-col"] : []), ...(wrap ? ["flex-wrap"] : []), gaps(row, column)].join(" ");
+}
+
+/** A length in px as a step of Tailwind's default spacing scale, 4px each, by quarters as far as 3.5; else an arbitrary value: `6`, `0.5`, `[13px]`. */
+function spacing(px: number): string {
+  const step = px / 4;
+  return Number.isInteger(step) || (step < 4 && Number.isInteger(step * 2)) ? String(step) : `[${px}px]`;
 }
 
 /** The reference style of a change that declares none, by kind. */
@@ -750,6 +789,20 @@ function fragments({ property, keeps }: Change): string {
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
 /** Loose text placed freely at a breakpoint: it needs an element to place. */
 const WRAP_TO_PLACE = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>`, at every width, and place that.";
+
+/** Whether a later change of the round makes the layer of `change` a Grid where it applies (ticket 109): its arrangement's notes say what to write, a flex column it is not to be. */
+function madeGridAfter(change: Change, list: Change[]): boolean {
+  const range = (of: Change) => JSON.stringify(of.breakpoint ?? null);
+  return list.some(
+    (other) =>
+      other.kind === "style" &&
+      other.property === "arrangement" &&
+      other.layer === change.layer &&
+      other.id > change.id &&
+      (other.after as Arrangement).type === "grid" &&
+      (!other.breakpoint || range(other) === range(change)),
+  );
+}
 
 const AS_STACK =
   "**Make it a Stack:** the layer lays its children out as plain blocks, top to bottom, which the editor shows as a vertical Stack. Make it a real Stack, a flex column (as the reference style shows), so the change applies.";

@@ -5015,6 +5015,26 @@ describe("Variables", () => {
     expect(change("opacity")!.variables).toBeUndefined();
   });
 
+  test("made a Grid this round, a Variable picked for a gap is of the arrangement, as its part, even at the value it has (ticket 109)", () => {
+    const { editor, changes, doc } = openWithVariables();
+    // Found in the layers as they are now: made a Grid, they are built anew.
+    const layer = (selector: string) => find(editor.tree().root, (l) => l.el === doc.querySelector(selector) && !l.text)!;
+    const variables = () => changes.list().map((change) => [change.property, change.after, change.variables]);
+    editor.set(layer("#row"), "arrangement", editor.arrangedAs(layer("#row"), "grid"));
+    expect(variables()).toEqual([["arrangement", { type: "grid", columns: 2, rowGap: 10, columnGap: 10 }, { rowGap: null, columnGap: null }]]);
+
+    editor.set(layer("#row"), "rowGap", 22, { variables: { "": GUTTER } });
+    // Typed, a gap is the Variable with its value, as any is.
+    editor.set(layer("#row"), "columnGap", 22);
+    expect(variables()).toEqual([["arrangement", { type: "grid", columns: 2, rowGap: 22, columnGap: 22 }, { rowGap: { ...GUTTER, picked: true }, columnGap: GUTTER }]]);
+    expect(editor.variables(layer("#row"), "rowGap")).toEqual({ "": { ...GUTTER, picked: true } });
+    // Picked at the value it has: picked all the same, one step.
+    editor.set(layer("#row"), "columnGap", 22, { variables: { "": GUTTER } });
+    expect(editor.variables(layer("#row"), "columnGap")).toEqual({ "": { ...GUTTER, picked: true } });
+    expect(changes.list()).toHaveLength(1);
+  });
+
+
   test("a button's text takes a Variable for its font size, and the button one for its padding, each its own", () => {
     const canvas = openCanvas(`<!DOCTYPE html><body style="margin: 0"><button id="go" data-tk-loc="src/App.tsx:4:5" style="padding: 4px 8px">Go</button></body>`);
     const catalog = resolveVariables(ALL, canvas.doc);
@@ -6514,6 +6534,241 @@ describe("Grid", () => {
     expect(findDrop(editor, desktop, layer("a"), { x: r.left + r.width / 4, y: r.top + r.height / 2 }, rectOf(layer("a")), rectOf)).toMatchObject({
       to: { parent: layer("grid"), index: 2 },
     });
+  });
+});
+
+/** A row of three cards, a wrapping row of five, a column, and a Grid of four in two columns with a cell that fills it, sized `w-full`. */
+const ARRANGEMENTS = `<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="row" ${loc("5:5")} style="display: flex; gap: 24px; width: 600px; padding: 8px">
+    ${[1, 2, 3].map((n) => `<div id="r${n}" ${loc(`${5 + n}:7`)} style="flex: 1 1 0%; height: 40px">R${n}</div>`).join("")}
+  </div>
+  <div id="wrapped" ${loc("10:5")} style="display: flex; flex-wrap: wrap; column-gap: 20px; row-gap: 10px; width: 400px">
+    ${[1, 2, 3, 4, 5].map((n) => `<div id="w${n}" ${loc(`${10 + n}:7`)} style="width: 120px; height: 30px">W${n}</div>`).join("")}
+  </div>
+  <div id="column" ${loc("17:5")} style="display: flex; flex-direction: column; gap: 12px; width: 300px">
+    <div id="c1" ${loc("18:7")} style="height: 20px">C1</div>
+    <div id="c2" ${loc("19:7")} style="height: 20px">C2</div>
+  </div>
+  <div id="grid" ${loc("21:5")} style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 16px; column-gap: 8px; width: 400px">
+    ${[1, 2, 3, 4].map((n) => `<div id="g${n}" ${loc(`${21 + n}:7`)} style="height: 30px">G${n}</div>`).join("")}
+  </div>
+  <div id="cells" ${loc("27:5")} style="display: grid; grid-template-columns: repeat(2, 100px); justify-items: start">
+    <div id="full" ${loc("28:7")} style="width: 100%; height: 20px">Full</div>
+    <div id="hug" ${loc("29:7")} style="height: 20px">Hug</div>
+  </div>
+</body>`;
+
+describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
+  const open = () => {
+    const canvas = openCanvas(ARRANGEMENTS);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    /** Where each layer of a container is drawn, rounded to the px. */
+    const boxes = (id: string) => [...canvas.doc.getElementById(id)!.children].map((el) => ((r) => [r.left, r.top, r.width, r.height].map(Math.round))(el.getBoundingClientRect()));
+    return { ...canvas, layer, boxes };
+  };
+
+  test("a Stack offers to become a Grid, and a Grid a Stack; a Grid that places its layers in cells of their own does not", () => {
+    const { editor, layer } = open();
+    expect(["row", "column", "grid"].map((id) => editor.can(layer(id), "arrangement"))).toEqual([true, true, true]);
+    expect(editor.read(layer("row"), "arrangement")).toEqual({ type: "stack", direction: "horizontal", wrap: false, gap: 24 });
+    expect(editor.read(layer("wrapped"), "arrangement")).toEqual({ type: "stack", direction: "horizontal", wrap: true, gap: 20, crossGap: 10 });
+    expect(editor.read(layer("grid"), "arrangement")).toEqual({ type: "grid", columns: 2, rowGap: 16, columnGap: 8 });
+    expect(editor.can(layer("r1"), "arrangement")).toBe(false);
+    const placed = openCanvas(ARRANGEMENTS.replace('id="g2" data-tk-loc', 'style="grid-column: 2; grid-row: 2" id="g2" data-tk-loc'));
+    const grid = find(placed.editor.tree().root, (l) => l.el === placed.doc.getElementById("grid"))!;
+    expect(placed.editor.can(grid, "arrangement")).toBe(false);
+  });
+
+  test("a horizontal Stack becomes a Grid of a column for each of its layers, one row, its gap both gaps: nothing moves; one change, undone in one step", () => {
+    const { editor, changes, layer, boxes, doc } = open();
+    const before = boxes("row");
+
+    const grid = editor.arrangedAs(layer("row"), "grid");
+    expect(grid).toEqual({ type: "grid", columns: 3, rowGap: 24, columnGap: 24 });
+    editor.set(layer("row"), "arrangement", grid);
+
+    expect(style(doc.getElementById("row")!).display).toBe("grid");
+    expect(boxes("row")).toEqual(before);
+    expect(layer("row").kind).toBe("grid");
+    expect(editor.can(layer("row"), "columns")).toBe(true);
+    expect(editor.can(layer("row"), "direction")).toBe(false);
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "style",
+      property: "arrangement",
+      before: { type: "stack", direction: "horizontal", wrap: false, gap: 24 },
+      after: grid,
+      style: { display: "grid", "grid-template-columns": "repeat(3, minmax(0, 1fr))", "row-gap": "24px", "column-gap": "24px" },
+    });
+    // What lays it out as a Stack now: its style attribute, and nothing for its direction and wrap.
+    expect(changes.list()[0].sources.map((source) => [source.kind, source.properties])).toEqual([
+      ["inline", ["display", "row-gap", "column-gap"]],
+      ["none", ["flex-direction", "flex-wrap"]],
+    ]);
+
+    editor.undo();
+    expect(style(doc.getElementById("row")!).display).toBe("flex");
+    expect(layer("row").kind).toBe("stack");
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("a wrapping Stack becomes a Grid of as many columns as its widest line, its gap between lines the row gap; a vertical one, one column", () => {
+    const { editor, layer, boxes } = open();
+    const [wrapped, column] = [boxes("wrapped"), boxes("column")];
+
+    expect(editor.arrangedAs(layer("wrapped"), "grid")).toEqual({ type: "grid", columns: 3, rowGap: 10, columnGap: 20 });
+    expect(editor.arrangedAs(layer("column"), "grid")).toEqual({ type: "grid", columns: 1, rowGap: 12, columnGap: 12 });
+    editor.set(layer("column"), "arrangement", editor.arrangedAs(layer("column"), "grid"));
+    expect(boxes("column")).toEqual(column);
+    // Three columns of 400px less two gaps of 20px: 120px each, as wide as its layers were.
+    editor.set(layer("wrapped"), "arrangement", editor.arrangedAs(layer("wrapped"), "grid"));
+    expect(boxes("wrapped")).toEqual(wrapped);
+  });
+
+  test("a Grid becomes a Stack: horizontal, wrapping when it has rows and columns, its gaps kept; vertical, its row gap the gap", () => {
+    const { editor, layer } = open();
+
+    expect(editor.arrangedAs(layer("grid"), "horizontal")).toEqual({ type: "stack", direction: "horizontal", wrap: true, gap: 8, crossGap: 16 });
+    expect(editor.arrangedAs(layer("grid"), "vertical")).toEqual({ type: "stack", direction: "vertical", wrap: false, gap: 16 });
+    editor.set(layer("grid"), "arrangement", editor.arrangedAs(layer("grid"), "vertical"));
+    expect(layer("grid").kind).toBe("stack");
+    expect(editor.read(layer("grid"), "direction")).toBe("vertical");
+    expect(editor.read(layer("grid"), "gap")).toBe(16);
+  });
+
+  test("its columns, gaps, direction or wrap changed once made a Grid or a Stack are of the same change: one for how it is laid out", () => {
+    const { editor, changes, layer } = open();
+
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    editor.set(layer("row"), "columns", 2);
+    editor.set(layer("row"), "rowGap", 4);
+    editor.set(layer("grid"), "arrangement", editor.arrangedAs(layer("grid"), "horizontal"));
+    editor.set(layer("grid"), "direction", "vertical");
+
+    expect(changes.list().map((change) => [change.property, change.after])).toEqual([
+      ["arrangement", { type: "grid", columns: 2, rowGap: 4, columnGap: 24 }],
+      ["arrangement", { type: "stack", direction: "vertical", wrap: true, gap: 8, crossGap: 16 }],
+    ]);
+    // Back as it was: no change.
+    editor.set(layer("row"), "arrangement", { type: "stack", direction: "horizontal", wrap: false, gap: 24 });
+    expect(changes.list().map((change) => change.layer)).toEqual([layer("grid").el.getAttribute("data-tk-layer")]);
+  });
+
+  test("in a narrower view it is made a Grid at its breakpoint only, the panel offering a Grid's properties there; inherit takes it back", async () => {
+    const { doc, views, editor, changes, layer } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    const displays = () => [doc, phone.document].map((d) => style(d.getElementById("row")!).display);
+
+    editor.at(phone);
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    editor.set(layer("row"), "columns", 1);
+
+    expect(displays()).toEqual(["flex", "grid"]);
+    expect(changes.list().map((change) => [change.property, change.breakpoint, (change.after as { columns: number }).columns])).toEqual([["arrangement", { min: null, max: 800 }, 1]]);
+    expect([editor.can(layer("row"), "columns"), editor.can(layer("row"), "direction")]).toEqual([true, false]);
+    editor.at(null);
+    expect([editor.can(layer("row"), "columns"), editor.can(layer("row"), "direction")]).toEqual([false, true]);
+    editor.at(phone);
+    editor.inherit(layer("row"), "arrangement");
+    expect(displays()).toEqual(["flex", "flex"]);
+    expect(changes.list()).toEqual([]);
+  });
+
+  test("checked on the live page by its display, columns and gaps, however the code writes them; an earlier change to its direction is that change's to check", () => {
+    const { editor, changes, layer } = open();
+    editor.set(layer("column"), "gap", 20);
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    editor.set(layer("column"), "arrangement", editor.arrangedAs(layer("column"), "grid"));
+    const [gap, row, column] = changes.list();
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(
+      ARRANGEMENTS.replace("display: flex; gap: 24px; width: 600px", "display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; width: 600px")
+        .replace("display: flex; flex-direction: column; gap: 12px", "display: grid; gap: 20px"),
+    );
+    page.close();
+    const round = onCanvas(changes.list());
+
+    expect(checkChange(page, row, round)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, column, round)).toEqual({ outcome: "shown" });
+    expect(checkChange(page, gap, round)).toEqual({ outcome: "unchecked", reason: `change ${column.id} lays the layer out anew, as a Grid: the page checks how it is laid out by that change` });
+    page.getElementById("row")!.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+    expect(checkChange(page, row, round)).toMatchObject({ outcome: "not shown", actual: { type: "grid", columns: 2 } });
+  });
+
+  test("made a Grid at every width, its columns changed in a narrower view are a change of their own there, which the check of the Grid leaves to it", async () => {
+    const { views, editor, changes, layer } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    editor.at(phone);
+    editor.set(layer("row"), "columns", 1);
+
+    const [grid, columns] = changes.list();
+    expect([grid.property, grid.breakpoint, columns.property, columns.breakpoint]).toEqual(["arrangement", undefined, "columns", { min: null, max: 800 }]);
+    expect(widthsOf(grid, changes.list(), 1440, [390, 1440])).toEqual({ own: true, others: [] });
+  });
+
+  test("its direction and gap changed in a narrower view, then made a Grid at every width: the Grid is checked there too, its gaps as that view's change has them", async () => {
+    const { views, editor, changes, layer } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+
+    editor.at(phone);
+    editor.set(layer("row"), "direction", "vertical");
+    editor.set(layer("row"), "gap", 8);
+    editor.at(null);
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    const [direction, gap, grid] = changes.list();
+    expect([direction.property, gap.property, grid.property, grid.breakpoint]).toEqual(["direction", "gap", "arrangement", undefined]);
+    expect(widthsOf(grid, changes.list(), 1440, [390, 1440])).toEqual({ own: true, others: [390] });
+
+    // The page as wide as its window, and as the phone view: a Grid of three columns, its gaps 24px, and 8px there.
+    const pageOf = (frame: HTMLIFrameElement, gap: number) => {
+      frame.style.width = "1000px";
+      document.body.append(frame);
+      const page = frame.contentDocument!;
+      page.open();
+      page.write(ARRANGEMENTS.replace("display: flex; gap: 24px; width: 600px", `display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: ${gap}px; width: 600px`));
+      page.close();
+      return page;
+    };
+    live = document.createElement("iframe");
+    const page = pageOf(live, 24);
+    const narrow = document.createElement("iframe");
+    const there = pageOf(narrow, 8);
+    const at = (width: number): PageWidth => ({ width, doc: there, own: false, of: (el) => there.getElementById(el.id) });
+    const round = onCanvas(changes.list());
+    try {
+      expect(checkAcross(page, grid, round, [390], at)).toEqual({ outcome: "shown" });
+      // Its columns are the Grid's to show there all the same.
+      there.getElementById("row")!.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      expect(checkAcross(page, grid, round, [390], at)).toMatchObject({ outcome: "not shown", actual: { type: "grid", columns: 2 }, width: 390 });
+      // The narrower view's changes before it: the Grid's to check.
+      expect([direction, gap].map((change) => checkAcross(page, change, round, [390], at).outcome)).toEqual(["unchecked", "unchecked"]);
+    } finally {
+      narrow.remove();
+    }
+  });
+
+  test("a cell's Fill, Hug and `width: 100%` in a Grid: `100%` reads as Fill, and a size changed there is recorded as a cell's", () => {
+    const { editor, changes, layer } = open();
+    expect(editor.read(layer("full"), "width")).toEqual({ type: "fill" });
+    expect(editor.read(layer("hug"), "width")).toEqual({ type: "hug" });
+    editor.set(layer("hug"), "width", { type: "fill" });
+    editor.set(layer("r1"), "height", { type: "fixed", value: 50 });
+    expect(changes.list().map((change) => [change.property, change.cell])).toEqual([
+      ["width", true],
+      ["height", undefined],
+    ]);
   });
 });
 

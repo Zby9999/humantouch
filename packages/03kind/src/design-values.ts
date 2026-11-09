@@ -1,6 +1,6 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
 import type { Change, Composed, Created, Place, PutBack, StackSettings } from "./client/changeset";
-import type { Align, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/property-table";
+import type { Align, Arrangement, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/property-table";
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
 import type { UsageLevel } from "./client/usage-chain";
@@ -35,6 +35,7 @@ const PROPERTIES: Record<string, string> = {
   columns: "Columns",
   rowGap: "Row gap",
   columnGap: "Column gap",
+  arrangement: "Arrangement",
   opacity: "Opacity",
   visible: "Visibility",
   clip: "Clip content",
@@ -368,6 +369,8 @@ export function value(property: string, v: unknown): string {
     }
     case "wrap":
       return v ? "wrapping" : "not wrapping";
+    case "arrangement":
+      return arrangementValue(v as Arrangement);
     case "opacity":
       return `${Math.round((v as number) * 100)}%`;
     case "visible":
@@ -377,4 +380,19 @@ export function value(property: string, v: unknown): string {
     default:
       return JSON.stringify(v);
   }
+}
+
+/**
+ * A Stack's or a Grid's arrangement (ticket 109), in a sentence: "a
+ * horizontal Stack with a gap of 24px", "a horizontal Stack that wraps, with a
+ * gap of 24px and 16px between its lines", "a Grid of 3 equal columns, with a
+ * row gap of 16px and a column gap of 24px".
+ */
+function arrangementValue(arrangement: Arrangement): string {
+  if (arrangement.type === "grid") {
+    const { columns, rowGap, columnGap } = arrangement;
+    return `a Grid of ${columns} equal ${columns === 1 ? "column" : "columns"}, with a row gap of ${rowGap}px and a column gap of ${columnGap}px`;
+  }
+  const { direction, wrap, gap, crossGap } = arrangement;
+  return wrap ? `a ${direction} Stack that wraps, with a gap of ${gap}px and ${crossGap ?? gap}px between its lines` : `a ${direction} Stack with a gap of ${gap}px`;
 }

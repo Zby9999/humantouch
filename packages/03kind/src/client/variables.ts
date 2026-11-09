@@ -9,7 +9,7 @@ import type { Variable, VariableGroup } from "../service-protocol";
 import type { Bindings, ChangeSet, Picked } from "./changeset";
 import { readShadows, type Shadow } from "./effects";
 import { colorReader, type Color, type Fill, type Stroke } from "./paint";
-import type { Radius, Size } from "./property-table";
+import type { Arrangement, Radius, Size } from "./property-table";
 
 /** What a Variable comes to on the canvas: px for a length, a color, or shadows. */
 export type Drawn = number | Color | Shadow[];
@@ -207,7 +207,8 @@ const colorOf = ({ color, opacity }: Color): Color => ({ color, opacity });
 /**
  * The parts of a property's value that can each be a Variable, by name: ""
  * for the whole value, else a side ("top"), a corner, "color", a gradient
- * stop ("stop 1"), a shadow's color ("shadow 1"). None for a property no
+ * stop ("stop 1"), a shadow's color ("shadow 1"), a gap of an arrangement
+ * ("rowGap", "crossGap", ticket 109). None for a property no
  * Variable is offered for.
  */
 export function slotsOf(property: string, value: unknown): Record<string, Slot> {
@@ -219,6 +220,12 @@ export function slotsOf(property: string, value: unknown): Record<string, Slot> 
       return one("spacing", value as number);
     case "padding":
       return Object.fromEntries((value as number[]).map((p, i) => [SIDES[i], { group: "spacing", drawn: p }]));
+    case "arrangement": {
+      // Its gaps, each a part: a Grid's two, a Stack's gap and, wrapping, the gap between its lines.
+      const arrangement = value as Arrangement;
+      const gaps = arrangement.type === "grid" ? { rowGap: arrangement.rowGap, columnGap: arrangement.columnGap } : { gap: arrangement.gap, ...(arrangement.crossGap !== undefined && { crossGap: arrangement.crossGap }) };
+      return Object.fromEntries(Object.entries(gaps).map(([slot, px]) => [slot, { group: "spacing", drawn: px }]));
+    }
     case "width":
     case "height":
       return (value as Size).type === "fixed" ? one("spacing", (value as { value: number }).value) : {};

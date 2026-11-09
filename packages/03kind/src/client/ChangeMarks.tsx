@@ -73,7 +73,7 @@ export const NO_MARKS: ChangeMarks = { changed: () => false, reset: () => {}, be
 const wasOf = (part: ValuePart, before: unknown, after: unknown) => (part.was ? part.was(before, after) : part.of(before));
 
 /** What a Stack sets of its layout: taken back with a Stack made in this round. */
-export const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding"];
+export const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding", "arrangement"];
 
 /**
  * The marks of `layers`, from the round's changes: those to a property of

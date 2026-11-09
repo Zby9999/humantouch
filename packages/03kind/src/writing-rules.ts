@@ -147,6 +147,13 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "Where one value sets both gaps now, split it: `gap-4` with a row gap of 24px becomes `gap-x-4 gap-y-6`.",
   },
   {
+    name: "Stacks and Grids",
+    calledFor: (change) => change.kind === "style" && change.property === "arrangement",
+    text:
+      "a Stack made a Grid, or a Grid made a Stack, is the same element laid out another way: change the classes or the rule that lay it out (its display, direction, wrap, columns and gaps), its gaps from the project's spacing scale (an arbitrary value only when none fits). " +
+      "Keep the element, its padding, its layers in their order and their own classes as they are: no wrapper, no `grid-row`, `grid-column` or `order`.",
+  },
+  {
     name: "Making a Stack",
     calledFor: (change) => change.kind === "stack",
     text:
@@ -172,6 +179,14 @@ const HOW_TO_WRITE: HowToWrite[] = [
     calledFor: (change) =>
       (change.kind === "style" && ["width", "height", "absolute"].includes(change.property)) || change.kind === "unstack" || (change.kind === "create" && (change.after as Created).type === "frame"),
     text: "Fixed is a set size, border and padding included; Hug fits its content; Fill takes the room its Stack gives it: it grows along the Stack, and stretches across it.",
+  },
+  {
+    // Said only for a layer in a Grid (ticket 109): the notes of a size anywhere else stay as they were.
+    name: "Sizes in a Grid",
+    calledFor: (change) => change.kind === "style" && !!change.cell,
+    text:
+      "in a Grid's cell, Fill takes the cell's area, its column's width or its row's height: `width: 100%` (`height`), Tailwind's `w-full` (`h-full`), or the size left `auto` and stretched (`justify-self: stretch`, `align-self: stretch`; Tailwind's `justify-self-stretch`, `self-stretch`); " +
+      "Hug fits its content in the cell: `fit-content`, Tailwind's `w-fit` (`h-fit`), not stretched.",
   },
   {
     name: "New Frame with a brief",

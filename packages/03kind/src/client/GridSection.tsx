@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
+import type { ArrangeAs } from "./arrangement";
 import type { Editor } from "./edit-commands";
 import type { Layer } from "./layers";
-import { NumberField, SectionReset, stepOptions, type SlotOf } from "./Properties";
+import { arrangements, NumberField, SectionReset, Segmented, stepOptions, type SlotOf } from "./Properties";
 import { VariableSlot } from "./VariablePicker";
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
   onEdit(): void;
   /** A gap as a field that can be a spacing Variable; undefined when the project has none. */
   variable: SlotOf;
+  /** Makes the Grids Stacks (ticket 109); null when they cannot be (one places its layers in cells of their own). */
+  arrange: ((as: ArrangeAs) => void) | null;
 }
 
 /** What the section edits. */
@@ -22,9 +25,10 @@ type GridProperty = "columns" | "rowGap" | "columnGap";
  * space between its rows and between its columns, as the view worked in shows
  * them; each gap can be a spacing Variable. Columns are set as that many equal
  * columns. With several Grids selected, a value they do not share shows as
- * Mixed, and a change goes to each.
+ * Mixed, and a change goes to each. As in Figma's auto layout, it is made a
+ * horizontal or vertical Stack where the Stack section makes a Stack a Grid (ticket 109).
  */
-export function GridSection({ editor, layers, onEdit, variable }: Props) {
+export function GridSection({ editor, layers, onEdit, variable, arrange }: Props) {
   if (!layers.every((layer) => editor.can(layer, "columns"))) return null;
   /** The value the Grids share; null when they do not: Mixed. */
   const shown = (property: GridProperty) => {
@@ -46,8 +50,13 @@ export function GridSection({ editor, layers, onEdit, variable }: Props) {
           Grid
         </h3>
         {/* As every section's: shown for two changes or more (designer, 2026-11-08). */}
-        <SectionReset title="Grid" properties={["columns", "rowGap", "columnGap"]} />
+        <SectionReset title="Grid" properties={["columns", "rowGap", "columnGap", "arrangement"]} />
       </div>
+      {arrange && (
+        <div class="tk-row">
+          <Segmented<ArrangeAs> label="Direction" property="arrangement" value="grid" options={arrangements(true)} onChange={(as) => as !== "grid" && arrange(as)} />
+        </div>
+      )}
       <div class="tk-grid-2">
         <NumberField label="Columns" icon="grid" property="columns" value={shown("columns")} min={1} onChange={set("columns")} />
       </div>

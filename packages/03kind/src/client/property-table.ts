@@ -36,6 +36,16 @@ export type Padding = [number, number, number, number];
 export type Alignment = "start" | "center" | "end";
 
 /**
+ * How a Stack or a Grid lays its layers out, as one value (ticket 109): what a
+ * Stack becomes a Grid by, and a Grid a Stack. A Stack: its direction,
+ * whether it wraps, the gap along it, and, wrapped, the gap between its lines
+ * (`crossGap`). A Grid: its columns, as many equal ones, and its gaps.
+ */
+export type Arrangement =
+  | { type: "stack"; direction: "horizontal" | "vertical"; wrap: boolean; gap: number; crossGap?: number }
+  | { type: "grid"; columns: number; rowGap: number; columnGap: number };
+
+/**
  * Where a Stack puts its children, on the nine-point grid: `x` left to right,
  * `y` top to bottom. `distribute`: spread evenly along the Stack's direction,
  * first and last at the ends.
@@ -95,6 +105,8 @@ export interface PropertyValues extends TypographyValues {
   rowGap: number;
   /** Space between a Grid's columns, in px. */
   columnGap: number;
+  /** A Stack's or a Grid's arrangement as a whole: what changes as one becomes the other (ticket 109). */
+  arrangement: Arrangement;
   /** From 0 to 1. */
   opacity: number;
   visible: boolean;
@@ -243,7 +255,9 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   padding: {
     // And a Frame around its text alone, as a button is, its words given an element of their own to edit or not.
     kinds: ["stack", "frame"],
-    applies: (_, layer) => layer.kind === "stack" || layer.framesText,
+    // A Stack's, as the view shows it: a Grid made one at a breakpoint has its padding there, a Stack made a Grid none (ticket 109).
+    // Its kind there is the editor's to read (`arrangedKind`): a Stack laid out as a Grid in the view worked in is taken for none.
+    applies: (el, layer) => layer.framesText || layer.kind === "stack" || (layer.kind === "grid" && !isGrid(el)),
     read: (el) => SIDES.map((side) => px(getComputedStyle(el).getPropertyValue(`padding-${side}`))) as Padding,
     write: (padding) => ({ padding: padding.map((p) => `${p}px`).join(" ") }),
     writes: ["padding"],
@@ -276,6 +290,19 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   },
   rowGap: gridGap("row-gap"),
   columnGap: gridGap("column-gap"),
+  arrangement: {
+    kinds: ["stack", "grid"],
+    // A Grid that places its layers in cells or areas of their own lays them out by more than its columns: it is not made a Stack.
+    // Told by the layer's kind, so a Stack's panel reads no style for it as a value changes.
+    applies: (el, layer) => layer.kind !== "grid" || !placesItself(el),
+    accepts: (_, value) => (value.type === "grid" ? Number.isInteger(value.columns) && value.columns >= 1 && value.rowGap >= 0 && value.columnGap >= 0 : value.gap >= 0),
+    read: readArrangement,
+    write: writeArrangement,
+    writes: ["display", "flex-direction", "flex-wrap", "grid-template-columns", "row-gap", "column-gap"],
+    sets: ["display", "flex-direction", "flex-wrap", "grid-template-columns", "row-gap", "column-gap"],
+    // What lays it out as it is now: a Grid's columns, or a Stack's direction and wrap; the gaps either way.
+    setsOn: (el) => ["display", ...(isGrid(el) ? ["grid-template-columns"] : ["flex-direction", "flex-wrap"]), "row-gap", "column-gap"],
+  },
   opacity: {
     kinds: UNLOCKED,
     read: (el) => round(parseFloat(getComputedStyle(el).opacity)),
@@ -397,6 +424,49 @@ export function placesItself(el: Element): boolean {
   });
 }
 
+/**
+ * A Stack's own layout properties and a Grid's, which a change to the
+ * arrangement as a whole (a Stack made a Grid, a Grid a Stack) lays out anew
+ * (ticket 109): made one in a view, its own of these there are of that change.
+ * Not its alignment, which a Stack keeps as it was and a Grid reads none of.
+ */
+export const ARRANGED = new Set<string>(["direction", "gap", "wrap", "columns", "rowGap", "columnGap"]);
+
+/** Whether `el` lays its children out as a grid. */
+const isGrid = (el: Element) => /grid$/.test(getComputedStyle(el).display);
+
+/**
+ * A Stack's or a Grid's arrangement as `el` lays it out (ticket 109): a Grid
+ * by its columns and gaps; a Stack by its direction, whether it wraps, its gap
+ * along it and, wrapped, between its lines. A plain flow is a vertical Stack with no gap.
+ */
+function readArrangement(el: Element): Arrangement {
+  const style = getComputedStyle(el);
+  if (isGrid(el)) return { type: "grid", columns: trackCount(style.gridTemplateColumns), rowGap: px(style.rowGap), columnGap: px(style.columnGap) };
+  const { direction, flex } = stackOf(el);
+  if (!flex) return { type: "stack", direction, wrap: false, gap: 0 };
+  const [along, across] = direction === "horizontal" ? [style.columnGap, style.rowGap] : [style.rowGap, style.columnGap];
+  const wrap = style.flexWrap !== "nowrap";
+  return { type: "stack", direction, wrap, gap: px(along), ...(wrap && { crossGap: px(across) }) };
+}
+
+/**
+ * The CSS that lays `el` out as `arrangement`, inline or not as it is: a Grid
+ * of equal columns, as Tailwind's `grid-cols-*` writes them; a Stack as a flex
+ * row or column, its gap along it and, wrapped, between its lines. Unwrapped,
+ * both gaps are its gap, as one value (`gap`) sets them.
+ */
+function writeArrangement(arrangement: Arrangement, el: Element): Record<string, string> {
+  const inline = getComputedStyle(el).display.startsWith("inline") ? "inline-" : "";
+  if (arrangement.type === "grid") {
+    return { display: `${inline}grid`, "grid-template-columns": equalColumns(arrangement.columns), "row-gap": `${arrangement.rowGap}px`, "column-gap": `${arrangement.columnGap}px` };
+  }
+  const { direction, wrap, gap } = arrangement;
+  const across = wrap ? (arrangement.crossGap ?? gap) : gap;
+  const [row, column] = direction === "horizontal" ? [across, gap] : [gap, across];
+  return { display: `${inline}flex`, "flex-direction": direction === "horizontal" ? "row" : "column", "flex-wrap": wrap ? "wrap" : "nowrap", "row-gap": `${row}px`, "column-gap": `${column}px` };
+}
+
 /** A Grid's space between its rows or its columns: one of the two, apart from the other. */
 function gridGap(name: "row-gap" | "column-gap"): Definition<number> {
   return {
@@ -426,7 +496,7 @@ function stackAround(el: Element): StackLayout | null {
 }
 
 /** Whether `el` is a cell of a Grid, laid out in its parent's grid. Absolute layers are not. */
-function inGrid(el: Element): boolean {
+export function inGrid(el: Element): boolean {
   if (absolute(el)) return false;
   let parent = el.parentElement;
   while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
@@ -475,7 +545,8 @@ function size(axis: "width" | "height"): Definition<Size> {
         const stretched = declared === "auto" && (inGrid(el) ? stretchesInGrid(el, axis) : !!stack && !main && (stack.flex ? stretches(el) : axis === "width"));
         return { type: stretched ? "fill" : "hug" };
       }
-      if (stack && declared === "100%") return { type: "fill" };
+      // As large as its Stack gives it room, or its cell's area in a Grid (`w-full`, ticket 109): it fills it.
+      if ((stack || inGrid(el)) && declared === "100%") return { type: "fill" };
       // Laid out, a size is cut to the browser's 1/64 px: 139.74px comes to 139.734. Set in px within that of how it is drawn, it reads as set, so a size typed in stays as typed.
       const used = parseFloat(style.getPropertyValue(axis));
       const set = /^-?[\d.]+px$/.test(declared) ? parseFloat(declared) : NaN;

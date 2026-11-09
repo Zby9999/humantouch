@@ -5,6 +5,7 @@
  * goes in, never one close to it.
  */
 import type { Bound, Change } from "./client/changeset";
+import type { Arrangement } from "./client/property-table";
 import { slotsOf } from "./client/variables";
 import { propertyName } from "./design-values";
 
@@ -60,6 +61,8 @@ function unnamed(change: Change, slot: string): string {
 
 /** The part of the value, in a sentence: "the gap", "the top padding", "the fill color", "stop 1 of the fill", "the color of shadow 1". */
 function partOf({ property }: Change, slot: string): string {
+  // A gap of a Stack's or a Grid's arrangement (ticket 109).
+  if (property === "arrangement") return slot === "crossGap" ? "the gap between its lines" : `the ${propertyName(slot)}`;
   const name = propertyName(property);
   if (!slot) return `the ${name}`;
   if (slot === "color") return `the ${name} color`;
@@ -75,5 +78,14 @@ function prefixOf({ property, after }: Change, slot: string): string {
     const n = Number(slot.slice(5));
     return n === 1 ? "from" : n === stops ? "to" : "via";
   }
+  if (property === "arrangement") return arrangedGapPrefix(after as Arrangement, slot);
   return SIDE_PREFIXES[slot] ?? CORNER_PREFIXES[slot] ?? PREFIXES[property] ?? property;
+}
+
+/** A gap of an arrangement's class: a Grid's row and column gaps, a Stack's gap both unless it wraps, then the gap along it and that between its lines. */
+function arrangedGapPrefix(arrangement: Arrangement, slot: string): string {
+  if (arrangement.type === "grid") return slot === "rowGap" ? "gap-y" : "gap-x";
+  if (!arrangement.wrap) return "gap";
+  const along = arrangement.direction === "horizontal" ? "gap-x" : "gap-y";
+  return slot === "gap" ? along : along === "gap-x" ? "gap-y" : "gap-x";
 }
