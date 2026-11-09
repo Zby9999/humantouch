@@ -16,7 +16,7 @@ import type { Picked } from "./changeset";
 import { textCanDraw, type Shadow } from "./effects";
 import type { Layer } from "./layers";
 import { same, type Fill, type Property, type PropertyValues } from "./property-table";
-import { pickedIn } from "./variables";
+import { pickedIn, sameVariable } from "./variables";
 
 /** What is copied, in the order it is pasted: the Design panel's order. */
 export const STYLE_PROPERTIES = [
@@ -108,21 +108,33 @@ export function styleFor(editor: Editor, layer: Layer, style: CopiedStyle): Mapp
 /**
  * Sets the style copied on each layer, as one step: each value as the Design
  * panel sets it (`Editor.set`), the Variables picked for it picked again.
- * Returns the layers that took any of it.
+ * Returns the layers it changed: none when each already had all it takes.
  */
 export function pasteStyle(editor: Editor, layers: Layer[], style: CopiedStyle): Layer[] {
   const pasted: Layer[] = [];
   editor.batch(() => {
     for (const layer of layers) {
-      const values = styleFor(editor, layer, style);
       // Read all before any is set: a value set restyles the page, and each read after it would lay it out again.
-      // A value the layer has already is no change (as `set` finds it), unless a Variable is picked for it.
-      const changed = values.filter(({ property, value, picked }) => picked || !same(editor.read(layer, property), value));
+      const changed = styleFor(editor, layer, style).filter(({ property, value, picked }) => changes(editor, layer, property, value, picked));
       for (const { property, value, picked } of changed) editor.set(layer, property, value as never, picked && { variables: picked });
-      if (values.length) pasted.push(layer);
+      if (changed.length) pasted.push(layer);
     }
   });
   return pasted;
+}
+
+/**
+ * Whether setting `value` on the layer's `property`, with the Variables
+ * `picked`, changes anything, as `Editor.set` finds it: another value; or the
+ * same value as changed this round, with a Variable picked for a part that
+ * it does not have picked now. The same value with the same Variables is no
+ * change, nor is a Variable picked for a value the layer has of its own.
+ */
+function changes(editor: Editor, layer: Layer, property: Property, value: unknown, picked: Picked | undefined): boolean {
+  if (!same(editor.read(layer, property), value)) return true;
+  const now = picked && editor.variables(layer, property);
+  if (!now) return false;
+  return Object.entries(picked!).some(([part, variable]) => !(now[part]?.picked && sameVariable(now[part], variable)));
 }
 
 /** The Variable picked for part `from`, as part `to` of another property. */

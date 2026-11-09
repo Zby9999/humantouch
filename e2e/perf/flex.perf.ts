@@ -886,13 +886,15 @@ test("⌘Z and ⇧⌘Z right after steps of a value show in every view in the ne
 
 /**
  * Ticket 117: ⌥⌘V on a card of the 96 of one usage, against one panel edit
- * of it, its corner radius typed in the panel and applied with Enter. The
- * card's style is copied with ⌥⌘C first; each run, the radius is typed
- * (measured as a value changed), the field left, and the style pasted back
- * (measured as ⌘Z is: the editor layer takes ⌥⌘V at the window): the radius
- * comes back, and every other value copied is read and found the same. A
- * paste is a value set once, not a step of a run: the views beside show it a
- * frame later (ADR 0011).
+ * of it, its corner radius typed in the panel and applied with Enter. Like
+ * for like: each changes the round's change to the radius, neither makes it
+ * nor takes it away (a value back to the page's own takes the change out of
+ * the round, which redraws more). So the radius is made 5px more first, and
+ * the card's style copied with ⌥⌘C; each run, 1px more is typed (measured as
+ * a value changed), the field left, and the style pasted back (measured as
+ * ⌘Z is: the editor layer takes ⌥⌘V at the window): 5px more again, every
+ * other value copied read and found the same. A paste is a value set once,
+ * not a step of a run: the views beside show it a frame later (ADR 0011).
  */
 test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, its work no more than a value changed in the panel", async ({ page }) => {
   await page.addInitScript(hearKeysFirst);
@@ -901,12 +903,17 @@ test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, 
   await selectCard(page, 6, { parent: true });
   const selector = card(6);
   const property = "border-top-left-radius";
-  const copied = await valueOnCanvas(page, selector, property);
-  await page.keyboard.press("Alt+ControlOrMeta+KeyC");
   const field = design(page).getByRole("textbox", { name: "Corner radius", exact: true });
+  const own = parseFloat(await valueOnCanvas(page, selector, property));
+  const copied = `${own + 5}px`;
+  await field.fill(String(own + 5));
+  await field.press("Enter");
+  await field.blur();
+  await everyViewShows(page, selector, property, copied);
+  await page.keyboard.press("Alt+ControlOrMeta+KeyC");
   const edits: ValueSample[] = [];
   const pastes: UndoRedoSample[] = [];
-  const typed = `${parseFloat(copied) + 1}px`;
+  const typed = `${own + 1}px`;
   for (let i = 0; i < UNDO_RUNS; i++) {
     await field.focus();
     await field.fill(String(parseFloat(typed)));

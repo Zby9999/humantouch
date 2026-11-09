@@ -250,4 +250,27 @@ describe("Variables pasted", () => {
     pasteStyle(editor, [layer("#row")], copyStyle(editor, layer("#title"))!);
     expect(changes.list().find((change) => change.property === "fill" && change.target.loc === "src/App.tsx:9:5")!.variables).toEqual({ color: { ...TWIN, picked: true } });
   });
+
+  test("pasted again where it has the same values and the same Variables picked, nothing changes: no layer, no step to undo", () => {
+    const { editor, layer, changes } = openCanvas([BRAND, TWIN, CARD]);
+    editor.set(layer("#styled"), "fill", { type: "solid", color: "#3D63F5", opacity: 1 }, { variables: { color: TWIN } });
+    const copied = copyStyle(editor, layer("#styled"))!;
+    expect(pasteStyle(editor, [layer("article", 0)], copied)).toHaveLength(1);
+    const listed = changes.list();
+    expect(pasteStyle(editor, [layer("article", 0)], copied)).toEqual([]);
+    expect(changes.list()).toEqual(listed);
+    // The one undo takes the first paste back.
+    editor.undo();
+    expect(changes.list().filter((change) => change.target.loc === "src/Card.tsx:3:5")).toEqual([]);
+    // Pasted on itself: nothing.
+    expect(pasteStyle(editor, [layer("#styled")], copied)).toEqual([]);
+  });
+
+  test("the same value with another Variable picked is a change: the Variable", () => {
+    const { editor, layer, changes } = openCanvas([BRAND, TWIN, CARD]);
+    editor.set(layer("article", 0), "fill", { type: "solid", color: "#3D63F5", opacity: 1 }, { variables: { color: BRAND } });
+    editor.set(layer("#styled"), "fill", { type: "solid", color: "#3D63F5", opacity: 1 }, { variables: { color: TWIN } });
+    expect(pasteStyle(editor, [layer("article", 0)], { fill: copyStyle(editor, layer("#styled"))!.fill })).toHaveLength(1);
+    expect(changes.list().find((change) => change.target.loc === "src/Card.tsx:3:5")!.variables).toEqual({ color: { ...TWIN, picked: true } });
+  });
 });

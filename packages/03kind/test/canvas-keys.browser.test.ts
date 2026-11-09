@@ -252,6 +252,11 @@ describe("the editor's commands with ⌘ (Ctrl on other systems; either, on any)
     expect(command({ key: "√", code: "KeyV", metaKey: true, altKey: true })).toBe("paste style");
     expect(command({ key: "c", code: "KeyC", ctrlKey: true, altKey: true })).toBe("copy style");
     expect(command({ key: "v", code: "KeyV", ctrlKey: true, altKey: true })).toBe("paste style");
+    // By the character typed, not the key: Dvorak's ⌥⌘J, on the key C is on in QWERTY, is the browser's console;
+    // AltGr (Ctrl+Alt) typing ć (Polish) or @ (Hungarian) on C or V types text.
+    expect(command({ key: "∆", code: "KeyC", metaKey: true, altKey: true })).toBeNull();
+    expect(command({ key: "ć", code: "KeyC", ctrlKey: true, altKey: true })).toBeNull();
+    expect(command({ key: "@", code: "KeyV", ctrlKey: true, altKey: true })).toBeNull();
     // ⌥ alone, or with ⇧ too, is not.
     expect(command({ key: "ç", code: "KeyC", altKey: true })).toBeNull();
     expect(command({ key: "Ç", code: "KeyC", metaKey: true, altKey: true, shiftKey: true })).toBeNull();

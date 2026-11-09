@@ -107,14 +107,14 @@ export type EditorCommand = "copy" | "cut" | "paste" | "duplicate" | "ungroup" |
  * Ctrl+Y; ⌥⌘C and ⌥⌘V copy and paste a layer's style (ticket 117, Figma's
  * Copy properties and Paste properties). ⌘ or Ctrl alike, on any system; with
  * ⌥, those two alone. By the letter typed, wherever the keyboard has it; with
- * ⌥, a Mac types another one (ç, √), so by the key. The same letter with other
+ * ⌥, a Mac types ç and √ for C and V (`ALT_TYPED`). The same letter with other
  * modifiers (⌘Y, ⌘G, ⌘⇧C, ⌘⇧V, ⌥⌘Z, ⌥⇧⌘C) is none of them: the browser's, if anything. Null: none.
  */
 export function editorCommand(event: KeyboardEvent): EditorCommand | null {
   if (!(event.metaKey || event.ctrlKey)) return null;
   if (event.altKey) {
     if (event.shiftKey) return null;
-    const letter = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() : event.code === "KeyC" ? "c" : event.code === "KeyV" ? "v" : "";
+    const letter = ALT_TYPED[event.key] ?? event.key.toLowerCase();
     return letter === "c" ? "copy style" : letter === "v" ? "paste style" : null;
   }
   const key = event.key.toLowerCase();
@@ -123,6 +123,15 @@ export function editorCommand(event: KeyboardEvent): EditorCommand | null {
   if (key === "g") return event.shiftKey ? "ungroup" : null;
   return (!event.shiftKey && SHORTCUTS[key]) || null;
 }
+
+/**
+ * The letters a Mac types as ç and √ with ⌥: ⌥⌘C and ⌥⌘V come so, by the
+ * character typed, not the key, so a layout that has another letter on that
+ * key (Dvorak's ⌥⌘J there opens the browser's console) is not the editor's.
+ * Any other character typed with ⌥ is none of them: what AltGr (Ctrl+Alt)
+ * types on Windows, as ć or @ on C or V in some layouts, is typed text.
+ */
+const ALT_TYPED: Record<string, string | undefined> = { "ç": "c", "√": "v" };
 
 /** The editor's commands made with ⌘ and a letter alone, but undo, redo and ungroup. */
 const SHORTCUTS: Record<string, EditorCommand | undefined> = { c: "copy", x: "cut", v: "paste", d: "duplicate" };

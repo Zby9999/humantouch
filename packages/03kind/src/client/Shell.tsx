@@ -609,8 +609,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const styleHeld = useRef<CopiedStyle | null>(null);
   /** ⌥⌘C: the style of the one layer selected held. With several selected, nothing is copied, and what was held stays. */
   const copyStyleOf = (layers: Layer[]) => {
-    if (layers.length !== 1) return;
-    const style = copyStyle(editorOf(layers[0])!, layers[0]);
+    const editor = editorOf(layers[0]);
+    if (layers.length !== 1 || !editor) return;
+    const style = copyStyle(editor, layers[0]);
     if (style) styleHeld.current = style;
   };
   /** ⌥⌘V: the style held set on each layer selected that takes any of it, one step; they stay selected. */
