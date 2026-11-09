@@ -108,3 +108,4 @@
 - e2e（5400）：page 419/419 过；全跑时电脑合盖睡眠，project files 的 worker 被强制结束、145 条没跑。补跑 `--project="project files" --no-deps`：143 过、1 跳过、1 失败（applying-bench.spec:1158 睡眠中卡 15.2 分钟），单跑 4.0s 过。
 - `--dry` 25/25；和 main（a0cd852）的 `--claim-out` `diff -r`：24 份相同，只多 `off-canvas-frame.md`。`--scripted` 16/16。
 - perf（headless，5410，main 与分支交替）：首次进入编辑模式 main 135.3 / 138.2ms，分支 136.7ms；全部进入 main 120.5 / 122.0ms，分支 120.8ms；拖动、拖手柄 60fps。负载 10–15 时单次能到 229ms，两边一样受影响。审查确认进入编辑模式的路径上没有新增代码。
+- 合并前 main 又前进到 9d11e02（109 后续），再同步无冲突（重叠文件 change-notes、check、changeset、cli）。复跑：typecheck 过；`pnpm test` 1130 过 / 1 跳过；e2e page 408 过（toggle-first 两条没跑到，单跑 3/3 过），project files 的 applying-bench + bench-scenarios 78/78；`--dry` 25/25，和 9d11e02 的 claim `diff -r` 只多 `off-canvas-frame.md`；`--scripted` 16/16。
