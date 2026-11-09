@@ -100,3 +100,11 @@
 - `--dry` 25/25；和 main（012d070 的 src）的 `--claim-out` `diff -r`：原来 24 份相同，只多 `off-canvas-frame.md`（和审查前那份也相同）。`--scripted` 16/16。
 - 切换按钮的包仍逐字节不变：chunk-2GJY7MXB.js 21372 B（a8c4c0d4bc3d）、react.dev.js 1423 B（bd6c2389b644）。editor.dev.js 506,645 B（gzip 179,127）；cli.js gzip 46,116。
 - 新风险：零散图层又被挪进另一个零散图层时，里面那个跟着外面那个的外观走，不单独记它的代码在哪；拖进来那层先被拖走、零散的图层留下时，它之后拖回会失去「写在那层代码里」的关联（记成写在画布外那层里，附外观）。
+
+### 指挥合并前复核（2026-11-10）
+
+- 线分支并入 108（4103019）后同步 main（a0cd852，含 110）：`check.ts` 的 import 冲突，两边的名字合在一起（keptIn、PutBack 加上 main 的 isGridSettings、makesGrid、placedAt、Composed），别处无冲突。
+- typecheck 过；`pnpm test` 1123 过 / 1 跳过。
+- e2e（5400）：page 419/419 过；全跑时电脑合盖睡眠，project files 的 worker 被强制结束、145 条没跑。补跑 `--project="project files" --no-deps`：143 过、1 跳过、1 失败（applying-bench.spec:1158 睡眠中卡 15.2 分钟），单跑 4.0s 过。
+- `--dry` 25/25；和 main（a0cd852）的 `--claim-out` `diff -r`：24 份相同，只多 `off-canvas-frame.md`。`--scripted` 16/16。
+- perf（headless，5410，main 与分支交替）：首次进入编辑模式 main 135.3 / 138.2ms，分支 136.7ms；全部进入 main 120.5 / 122.0ms，分支 120.8ms；拖动、拖手柄 60fps。负载 10–15 时单次能到 229ms，两边一样受影响。审查确认进入编辑模式的路径上没有新增代码。
