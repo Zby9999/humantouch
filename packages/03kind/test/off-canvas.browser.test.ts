@@ -778,6 +778,22 @@ describe("resizing a layer off the canvas (ticket 107)", () => {
     expect(off.editor.redo()).toEqual([]);
   });
 
+  test("a step that moves it but changes no size is one with the resize still: one undo, or Esc, takes all of it back", async () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+
+    resizeWhole(off, outside, { width: 240 }, { x: -340, y: 40 }, false);
+    resizeWhole(off, outside, { width: 240 }, { x: -350, y: 40 }, true);
+    await expect.poll(() => shape(outside)).toEqual([-350, 40, 240, 120]);
+    off.editor.undo();
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+
+    resizeWhole(off, outside, { width: 240 }, { x: -340, y: 40 }, false);
+    resizeWhole(off, outside, { width: 240 }, { x: -350, y: 40 }, true);
+    outside.editor.takeBack();
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+  });
+
   test("a layer moved off the canvas and resized there is edited there: put back, it is an insertion, its new size among its edits", () => {
     const off = canvas();
     const title = off.doc.querySelector("h3")!;

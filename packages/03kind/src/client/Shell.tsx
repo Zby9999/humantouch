@@ -466,6 +466,18 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     select([made]);
     return { layer: made, view: outside.view };
   };
+  /**
+   * The whole of a layer off the canvas resized from its left or top, its top
+   * left to `at` (ticket 107): it goes there with the resize, one step with
+   * it. Nothing, when it is there already.
+   */
+  const movedWith = (layer: Layer, at: { x: number; y: number }) => {
+    const outside = outsideOf(layer);
+    if (!offCanvas || !outside) return undefined;
+    const [x, y] = [outside.x, outside.y];
+    if (Math.round(at.x) === x && Math.round(at.y) === y) return undefined;
+    return { make: () => offCanvas.place(outside, at.x, at.y), unmake: () => offCanvas.place(outside, x, y) };
+  };
   /** A layer off the canvas dragged elsewhere off it, its top left to `x` and `y`. */
   const placeOff = (outside: OffCanvasLayer, x: number, y: number) => {
     if (!editor || !offCanvas) return;
@@ -816,11 +828,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           select([moved]);
         }}
         onResize={(layer, to, continues, at) => {
-          // The whole of a layer off the canvas, resized from its left or top: its top left goes with it, one step (ticket 107).
-          const outside = at && offCanvas ? outsideOf(layer) : null;
-          const [x, y] = outside ? [outside.x, outside.y] : [0, 0];
-          const along = outside && at && (Math.round(at.x) !== x || Math.round(at.y) !== y) ? { make: () => offCanvas!.place(outside, at.x, at.y), unmake: () => offCanvas!.place(outside, x, y) } : undefined;
-          editorOf(layer)!.resize(layer, to, { continues, along });
+          editorOf(layer)!.resize(layer, to, { continues, along: at && movedWith(layer, at) });
           onEdit(false);
         }}
         onCancelResize={(layer) => {

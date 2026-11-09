@@ -69,12 +69,21 @@
 3. 选中的画布外图层，按在它四边往里 4px 内、四角附近是改尺寸，不再是拖动（和画布上一样）；缩得很小时要按中间才能拖走它。旧测试的按法因此改了（见上）。
 4. 画布外没有断点：在画布外改的尺寸拖回时，挪出的写进 putBack 的编辑，空白处新建的在所有宽度上再做一遍（同 106 代定 5）。
 5. 位置取整到 1px（`place` 本来就取整）：图层原来的宽度有小数时，从左边拉松手后右边可能差不到 1px。
+6. 在画布上是 Fill 的图层挪出画布后读作 Hug（画布外 body 是 `max-content`，它有多宽就多宽），所以拖回时「Edited off the canvas」那一行写的是画布外的值，例如「Change the width from Hug to Fixed 320px」，不是画布上的 Fill。照现有行为不改（画布外的编辑本来就按画布外读，和别的属性一样）；要写成画布上的值需另做。
 
 **风险和没做到的**
 
 - 图层宽度变化时，iframe 宽度在同一帧的 ResizeObserver 里跟上，高度在下一帧（视图每帧 fit 一次），所以变高的那一帧下面可能被裁掉一帧，肉眼难见。
 - 挪出的图层若原来是 Fill（在画布外 body 是 `max-content`），拖控制点后变成 Fixed，拖回时也是 Fixed（和画布上拖一样，ticket 69）。
-- 改动说明的「Edited off the canvas」里尺寸那条用现有写法，没在 CLI 测试里单独对过字（单元测试对了 `kept.edits`，`--claim-out` 和 main 逐字相同，但测量台场景里没有画布外的图层）。
+- 改动说明的「Edited off the canvas」里尺寸那条用现有写法；审查后在 `cli.test.ts` 加了一条逐字核对（Hug → Fixed 320px），测量台场景里仍没有画布外的图层。前面一行写的是画布外的值（代定 6）。
 - 窗口模式性能没跑（会抢焦点）。
 - 没调 code-review 技能（审查由指挥另派）。
+
+**审查后补修（2026-11-09）**
+
+- 一步没改尺寸、只挪了左上角时（例如宽度停在最小值上，或取整后同一个值），原来这一步只有 `along`，它的键是「resize 」（没有图层 id），并不进前面的改尺寸 run：Esc 只撤这一步，⌘Z 要按两次。现在 `Editor.resize` 的 `along` 直接按这个图层的 id 记（`push`，layers 是它的 id），键和 run 一样，并进同一步。单元测试加一条：第二步宽度不变只挪位置，一次 ⌘Z、一次 Esc 都整个回去（修之前会停在 -340）。
+- `Shell` 里挪位置的条件抽成 `movedWith(layer, at)`，去掉没用的 `[0, 0]` 分支；`{x, y}` 项目里没有现成的点类型（`At` 是 clientX / clientY），照旧内联。
+- `cli.test.ts` 加一条：挪出的图层在画布外改了宽度、拖回，「Edited off the canvas」逐字是「Width of Title (…): Change the width from Hug to Fixed 320px.」。
+- e2e：按着控制点时也按 ⇧⌘Z（不起作用）；新加一条：拖左边松手、刷新后位置和尺寸都还在。指针被取消没加（Playwright 发不出 pointercancel，代码和画布上同一条路径）。
+- 只跑了：`pnpm typecheck` 过；`pnpm test` vitest 1070 过、1 跳过，node 125 过；`off-canvas-resize.spec.ts`、`off-canvas.spec.ts`、`resize.spec.ts`（`-c e2e/playwright.config.ts --project=page`，5400）42 个全过。全量 e2e、性能、测量台由指挥合并后跑。
 

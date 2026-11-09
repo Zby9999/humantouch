@@ -648,7 +648,12 @@ export function createEditor(
             if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
             if (y !== undefined) setValue(layer, "y", y);
             if (bottom !== undefined) setValue(layer, "bottom", bottom);
-            if (along) editor.along(along.make, along.unmake);
+            // Made to the layer resized: a step that moves it but changes no size is one with the run's others all the same.
+            if (along) {
+              along.make();
+              const id = layer.el.getAttribute(LAYER_ID_ATTR);
+              push({ layers: id ? [id] : [], key: "along", undo: along.unmake, redo: along.make }, false);
+            }
           },
           continues,
           // Each step may set more or less than the one before: a run, apart from any of nudges.

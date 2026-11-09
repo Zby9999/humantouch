@@ -127,7 +127,7 @@ test("a Frame off the canvas has handles; a corner dragged resizes it, and the r
   await expect(badge(page)).toHaveCount(0);
 });
 
-test("dragged from its left and top, a layer off the canvas grows that way, its top left with the pointer, its right and bottom where they were; ⌘Z and Delete do nothing meanwhile; Esc takes it back", async ({ page }) => {
+test("dragged from its left and top, a layer off the canvas grows that way, its top left with the pointer, its right and bottom where they were; ⌘Z, ⇧⌘Z and Delete do nothing meanwhile; Esc takes it back", async ({ page }) => {
   await frameOffCanvas(page);
   const before = await room(page);
   const right = (await steadyBox(offCanvas(page))).x + (await steadyBox(offCanvas(page))).width;
@@ -137,6 +137,7 @@ test("dragged from its left and top, a layer off the canvas grows that way, its 
   const box = await steadyBox(offCanvas(page));
   expect(Math.abs(box.x + box.width - right)).toBeLessThan(2);
   await page.keyboard.press(`${mod}+z`);
+  await page.keyboard.press(`${mod}+Shift+z`);
   await page.keyboard.press("Delete");
   await expect(offCanvas(page)).toHaveCount(1);
   await expect.poll(() => room(page)).toEqual({ x: before.x - 50, y: before.y - 30, width: before.width + 50, height: before.height + 30 });
@@ -149,6 +150,22 @@ test("dragged from its left and top, a layer off the canvas grows that way, its 
   await expect.poll(() => room(page)).toEqual({ ...before, x: before.x + 40, width: before.width - 40 });
   await page.keyboard.press(`${mod}+z`);
   await expect.poll(() => room(page)).toEqual(before);
+  await expect(badge(page)).toHaveCount(0);
+});
+
+test("dragged from its left and let go, a layer off the canvas is kept where it went, as big as it is, after a reload", async ({ page }) => {
+  await frameOffCanvas(page);
+  const before = await room(page);
+
+  await dragHandle(page, handle(page, "w"), { x: -60, y: 0 });
+  const after = { ...before, x: before.x - 60, width: before.width + 60 };
+  await expect.poll(() => room(page)).toEqual(after);
+
+  await page.waitForTimeout(800);
+  await page.reload();
+  await enterEditMode(page);
+  await pan(page, 500);
+  await expect.poll(() => room(page)).toEqual(after);
   await expect(badge(page)).toHaveCount(0);
 });
 
