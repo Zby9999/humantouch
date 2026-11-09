@@ -256,7 +256,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
     // And a Frame around its text alone, as a button is, its words given an element of their own to edit or not.
     kinds: ["stack", "frame"],
     // A Stack's, as the view shows it: a Grid made one at a breakpoint has its padding there, a Stack made a Grid none (ticket 109).
-    applies: (el, layer) => layer.framesText || ((layer.kind === "stack" || layer.kind === "grid") && !isGrid(el)),
+    // Its kind there is the editor's to read (`arrangedKind`): a Stack laid out as a Grid in the view worked in is taken for none.
+    applies: (el, layer) => layer.framesText || layer.kind === "stack" || (layer.kind === "grid" && !isGrid(el)),
     read: (el) => SIDES.map((side) => px(getComputedStyle(el).getPropertyValue(`padding-${side}`))) as Padding,
     write: (padding) => ({ padding: padding.map((p) => `${p}px`).join(" ") }),
     writes: ["padding"],
@@ -292,7 +293,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   arrangement: {
     kinds: ["stack", "grid"],
     // A Grid that places its layers in cells or areas of their own lays them out by more than its columns: it is not made a Stack.
-    applies: (el) => !isGrid(el) || !placesItself(el),
+    // Told by the layer's kind, so a Stack's panel reads no style for it as a value changes.
+    applies: (el, layer) => layer.kind !== "grid" || !placesItself(el),
     accepts: (_, value) => (value.type === "grid" ? Number.isInteger(value.columns) && value.columns >= 1 && value.rowGap >= 0 && value.columnGap >= 0 : value.gap >= 0),
     read: readArrangement,
     write: writeArrangement,

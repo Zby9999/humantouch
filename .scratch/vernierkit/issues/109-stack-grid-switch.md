@@ -8,18 +8,18 @@
 
 **Blocked by:** 无（开线时间见「设计师决定」：调前端第 1 轮合进 main 之后）
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Stack 一节的方向里有 Grid，选了就转成 Grid，面板换成 Grid 一节；Grid 一节里能改回横排、竖排的 Stack；样子照 Figma，细节可作为代定
-- [ ] 转换画面不跳：子图层的位置、尺寸和转之前一样（1px 以内，和 ⇧A 合成一样的标准）；做不到的情况（例如子图层宽度各不相同、转成等宽列会变）怎么取舍作为代定
-- [ ] 子图层的 Hug / Fill / Fixed、对齐、均匀分布、`auto` 外边距在两种排列之间怎么对应作为代定；页面原有的、按 `grid-template-areas` 或按行列号放子图层的 Grid 改回 Stack 时怎么办，也作为代定
-- [ ] Grid 格子上的 Hug / Fill 改动（调前端第 1 轮已能改）Agent 那边跟上：写法规则只在 Grid 里出现，核对认 `w-full`，`apply` 走一遍是 ✓（见「背景」最后一条）
-- [ ] 平板、手机视图里转只在那个断点生效，有断点标记、可重置；桌面视图里转作用于所有断点；旁边的视图照 ADR 0011 跟上
-- [ ] 一次转换是改动列表里的一条，⌘Z 一步撤回；改动说明写成这个图层排列方式的样式改动，照项目的写法（Tailwind 的 `grid grid-cols-3 gap-6`、CSS 的 `display: grid`）；`done` 核对 `display`、列数、行列间距，断点改动照 ticket 104 也看范围外的宽度
-- [ ] 脚本扮演 Agent（`apply`）走一遍「Stack 转 Grid、落地、`done`」和「手机视图里 Grid 改回竖排、落地、`done`」，核对是 ✓
-- [ ] 原来的改动说明逐字不变：`--dry` 24/24、`--scripted` 全过；切换按钮的包逐字节不变
-- [ ] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：进入编辑模式（余量只有几毫秒，见 ticket 105）、改数值、拖动不变差
-- [ ] e2e 全过；新测试照 ticket 93 的写法；spec 的 Out of Scope 里去掉这一条，相应章节补上
+- [x] Stack 一节的方向里有 Grid，选了就转成 Grid，面板换成 Grid 一节；Grid 一节里能改回横排、竖排的 Stack；样子照 Figma，细节可作为代定
+- [x] 转换画面不跳：子图层的位置、尺寸和转之前一样（1px 以内，和 ⇧A 合成一样的标准）；做不到的情况（例如子图层宽度各不相同、转成等宽列会变）怎么取舍作为代定
+- [x] 子图层的 Hug / Fill / Fixed、对齐、均匀分布、`auto` 外边距在两种排列之间怎么对应作为代定；页面原有的、按 `grid-template-areas` 或按行列号放子图层的 Grid 改回 Stack 时怎么办，也作为代定
+- [x] Grid 格子上的 Hug / Fill 改动（调前端第 1 轮已能改）Agent 那边跟上：写法规则只在 Grid 里出现，核对认 `w-full`，`apply` 走一遍是 ✓（见「背景」最后一条）
+- [x] 平板、手机视图里转只在那个断点生效，有断点标记、可重置；桌面视图里转作用于所有断点；旁边的视图照 ADR 0011 跟上
+- [x] 一次转换是改动列表里的一条，⌘Z 一步撤回；改动说明写成这个图层排列方式的样式改动，照项目的写法（Tailwind 的 `grid grid-cols-3 gap-6`、CSS 的 `display: grid`）；`done` 核对 `display`、列数、行列间距，断点改动照 ticket 104 也看范围外的宽度
+- [x] 脚本扮演 Agent（`apply`）走一遍「Stack 转 Grid、落地、`done`」和「手机视图里 Grid 改回竖排、落地、`done`」，核对是 ✓
+- [x] 原来的改动说明逐字不变：`--dry` 24/24、`--scripted` 全过；切换按钮的包逐字节不变
+- [x] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：进入编辑模式（余量只有几毫秒，见 ticket 105）、改数值、拖动不变差
+- [x] e2e 全过；新测试照 ticket 93 的写法；spec 的 Out of Scope 里去掉这一条，相应章节补上
 
 ## 背景
 
