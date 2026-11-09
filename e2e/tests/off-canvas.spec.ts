@@ -209,9 +209,9 @@ test("while a layer off the canvas is dragged, Delete, ⌘D and the arrows do no
   const off = (await offCanvas(page).boundingBox())!;
   const moved = offCanvas(page).contentFrame().locator("body > *").first();
   const box = (await moved.boundingBox())!;
-  await page.mouse.move(box.x + 3, box.y + 3);
+  await page.mouse.move(box.x + grabIn(box).x, box.y + grabIn(box).y);
   await page.mouse.down();
-  await page.mouse.move(box.x + 3 - 80, box.y + 3 + 60, { steps: 10 });
+  await page.mouse.move(box.x + grabIn(box).x - 80, box.y + grabIn(box).y + 60, { steps: 10 });
   for (const key of ["Delete", "Backspace", `${mod}+d`, "ArrowRight", `${mod}+x`, "Shift+A", `${mod}+Shift+g`]) {
     await page.keyboard.press(key);
     await expect(offCanvas(page), key).toHaveCount(1);
@@ -230,6 +230,14 @@ test("while a layer off the canvas is dragged, Delete, ⌘D and the arrows do no
   await expect(desktop(page).contentFrame().locator("h1")).toBeVisible();
 });
 
+/**
+ * Where to press a layer selected off the canvas to drag it, from its top left on
+ * screen: just inside, clear of its handles (ticket 107), so 3 px in at the least.
+ */
+function grabIn(box: { width: number; height: number }) {
+  return { x: Math.max(3, Math.min(12, box.width / 2)), y: Math.max(3, box.height / 2) };
+}
+
 /** Moves the title off the canvas, to the left of the views, as the designer drags it out of the desktop view. */
 async function moveTitleOff(page: Page) {
   await enterEditMode(page);
@@ -240,13 +248,20 @@ async function moveTitleOff(page: Page) {
   await expect(offCanvas(page)).toHaveCount(1);
 }
 
-/** Drags the layer off the canvas by a point just inside its top left, which is let go at `to` on the page: where it goes is where the pointer is. */
-async function dragOffTo(page: Page, to: { x: number; y: number }) {
+/**
+ * Drags the layer off the canvas by a point just inside its top left, let go
+ * with the pointer 3 px inside `to` on the page: where it goes is where the
+ * pointer is. Pressed clear of its handles (ticket 107), as it is selected:
+ * `topLeft`, let go with its top left at `to`, wherever the pointer is then.
+ */
+async function dragOffTo(page: Page, to: { x: number; y: number }, { topLeft = false } = {}) {
   const moved = offCanvas(page).contentFrame().locator("body > *").first();
   const box = (await moved.boundingBox())!;
-  await page.mouse.move(box.x + 3, box.y + 3);
+  const grab = grabIn(box);
+  const by = topLeft ? grab : { x: 3, y: 3 };
+  await page.mouse.move(box.x + grab.x, box.y + grab.y);
   await page.mouse.down();
-  await page.mouse.move(to.x + 3, to.y + 3, { steps: 10 });
+  await page.mouse.move(to.x + by.x, to.y + by.y, { steps: 10 });
   await page.mouse.up();
 }
 
@@ -346,9 +361,9 @@ test("while a layer off the canvas is dragged, ⌘Z and ⇧⌘Z do nothing; Esc 
   const moved = offCanvas(page).contentFrame().locator("body > *").first();
   const grab = async () => {
     const box = (await moved.boundingBox())!;
-    await page.mouse.move(box.x + 3, box.y + 3);
+    await page.mouse.move(box.x + grabIn(box).x, box.y + grabIn(box).y);
     await page.mouse.down();
-    await page.mouse.move(box.x + 3 - 80, box.y + 3 + 60, { steps: 10 });
+    await page.mouse.move(box.x + grabIn(box).x - 80, box.y + grabIn(box).y + 60, { steps: 10 });
   };
 
   await grab();
@@ -495,8 +510,8 @@ test("edited off the canvas, dragged back into a Frame's empty space, it is put 
   const area = (await board.boundingBox())!;
   const zoom = await desktop(page).evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
 
-  // Its top left 40 × 30 canvas px into the board (pressed 3 screen px inside it).
-  await dragOffTo(page, { x: area.x + 40 * zoom, y: area.y + 30 * zoom });
+  // Its top left 40 × 30 canvas px into the board.
+  await dragOffTo(page, { x: area.x + 40 * zoom, y: area.y + 30 * zoom }, { topLeft: true });
 
   await expect(offCanvas(page)).toHaveCount(0);
   for (const shown of [desktop(page), tablet(page), phone(page)]) {

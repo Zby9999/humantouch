@@ -16,6 +16,7 @@ import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
 import type { History } from "./undo-steps";
 import { NEW_TAGS } from "./checkable";
+import { NEW_FILL } from "./paint";
 import { editable, fitHeight } from "./freezer";
 import type { Layer } from "./layers";
 import { blankLook, freezeLook, serializeLook } from "./look";
@@ -79,8 +80,6 @@ export interface OffCanvas {
 
 /** On the iframe that shows a layer off the canvas: its id. */
 export const OFF_CANVAS_ATTR = "data-tk-off-canvas";
-/** On the iframe that shows a layer made in the blank space (ticket 106): what it was made, `frame` or `text`. */
-export const MADE_OFF_CANVAS_ATTR = "data-tk-made-off-canvas";
 
 /** The layers off the canvas, shown in `host`, an element of the workspace, starting with those `saved`. */
 export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[], history: History): OffCanvas {
@@ -96,7 +95,6 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
     iframe.className = "tk-off-canvas";
     iframe.title = "Off canvas";
     iframe.setAttribute(OFF_CANVAS_ATTR, id);
-    if (origin.made) iframe.setAttribute(MADE_OFF_CANVAS_ATTR, origin.made);
     iframe.setAttribute("sandbox", "allow-same-origin");
     // Laid out, to be measured, but out of sight until it is put there.
     iframe.style.visibility = "hidden";
@@ -201,7 +199,9 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
           () => take(outside),
           itself,
         );
-        editor.create(type, { parent: editor.tree().root, index: 0 }, size);
+        const made = editor.create(type, { parent: editor.tree().root, index: 0 }, size);
+        // A Frame white, as one drawn on an empty Figma canvas (designer, 2026-11-09): a fill of its own, put back with it.
+        if (type === "frame") editor.set(made, "fill", NEW_FILL);
         editor.along(
           () => fit(outside),
           () => {},
