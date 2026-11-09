@@ -278,6 +278,54 @@ test("in the phone view, the Grid made a vertical Stack at its breakpoint only, 
   await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
 });
 
+test("in the phone view, a Grid laying its cards out by areas made a vertical Stack there: the cards in the order of the layers, there alone; ⌘Z and reset take it back (ticket 109's follow-up)", async ({ page }) => {
+  // The page lays the cards out by areas, the other way round from their order: the last first.
+  await page.locator(GRID).evaluate((el) => {
+    Object.assign((el as HTMLElement).style, { gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridTemplateAreas: '"d c" "b a"' });
+    [...el.children].forEach((card, n) => ((card as HTMLElement).style.gridArea = "abcd"[n]));
+  });
+  await enterEditMode(page);
+  /** The cards' titles in each view, as drawn: row by row, left to right. */
+  const drawn = () =>
+    Promise.all(
+      views(page).map((view) =>
+        view
+          .contentFrame()
+          .locator(GRID)
+          .evaluate((el) =>
+            [...el.children]
+              .map((card) => ({ title: card.querySelector("h3")!.textContent, box: card.getBoundingClientRect() }))
+              .sort((a, b) => Math.round(a.box.top) - Math.round(b.box.top) || a.box.left - b.box.left)
+              .map(({ title }) => title),
+          ),
+      ),
+    );
+  const placed = [...ORDER].reverse();
+  await expect.poll(drawn).toEqual([placed, placed, placed]);
+  await pickGrid(page, phone(page));
+  const direction = design(page).getByRole("region", { name: "Grid" }).getByRole("radiogroup", { name: "Direction" });
+  // Offered, though the Grid places its cards itself.
+  await expect(direction.getByRole("radio")).toHaveCount(3);
+
+  await direction.getByRole("radio", { name: "Vertical" }).click();
+  await expect.poll(drawn).toEqual([placed, placed, ORDER]);
+  const stack = design(page).getByRole("region", { name: "Stack" });
+  await expect(stack).toBeVisible();
+  await expect(await changeRows(page)).toHaveText([/Arrangement.*Grid.*below 768px/]);
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("Meta+z");
+  await expect.poll(drawn).toEqual([placed, placed, placed]);
+  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await page.keyboard.press("Meta+Shift+z");
+  await expect.poll(drawn).toEqual([placed, placed, ORDER]);
+
+  await stack.getByRole("button", { name: "Reset direction" }).click();
+  await expect.poll(drawn).toEqual([placed, placed, placed]);
+  await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
+  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+});
+
 test("⇧A on free layers in two rows of two makes a Grid where they are, its columns and gaps theirs; ⌥⇧A dissolves it in place; each one ⌘Z (ticket 110)", async ({ page }) => {
   // A Frame of four absolute boxes, 100 × 40, 24px apart across and 16px down.
   await page.evaluate(() => {

@@ -13,7 +13,7 @@ interface Props {
   onEdit(): void;
   /** A gap as a field that can be a spacing Variable; undefined when the project has none. */
   variable: SlotOf;
-  /** Makes the Grids Stacks (ticket 109); null when they cannot be (one places its layers in cells of their own). */
+  /** Makes the Grids Stacks (ticket 109), one that places its layers itself too, its layers then in the order they are written (its follow-up); null when they cannot be. */
   arrange: ((as: ArrangeAs) => void) | null;
 }
 

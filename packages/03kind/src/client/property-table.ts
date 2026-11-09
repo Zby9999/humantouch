@@ -291,10 +291,9 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   rowGap: gridGap("row-gap"),
   columnGap: gridGap("column-gap"),
   arrangement: {
+    // Any Stack or Grid, one that places its layers in cells or areas of their own too: made a Stack, its
+    // layers go in the order they are written, as in Figma (designer, 2026-11-09, ticket 109's follow-up).
     kinds: ["stack", "grid"],
-    // A Grid that places its layers in cells or areas of their own lays them out by more than its columns: it is not made a Stack.
-    // Told by the layer's kind, so a Stack's panel reads no style for it as a value changes.
-    applies: (el, layer) => layer.kind !== "grid" || !placesItself(el),
     accepts: (_, value) => (value.type === "grid" ? Number.isInteger(value.columns) && value.columns >= 1 && value.rowGap >= 0 && value.columnGap >= 0 : value.gap >= 0),
     read: readArrangement,
     write: writeArrangement,
@@ -415,14 +414,36 @@ export function stackOf(el: Element): StackLayout {
  */
 export function placesItself(el: Element): boolean {
   if (/dense/.test(getComputedStyle(el).gridAutoFlow)) return true;
-  return [...el.children].some((child) => {
-    const style = getComputedStyle(child);
-    if (/^(absolute|fixed)$/.test(style.position) || style.display === "none") return false;
+  return placedLayers(el).some((style) => {
     // Spanning tracks (`span 2`) it is still placed in order: only a line of its own places it.
     const lines = [style.gridColumnStart, style.gridColumnEnd, style.gridRowStart, style.gridRowEnd];
     return lines.some((line) => line !== "auto" && !/^span\b/.test(line)) || style.order !== "0";
   });
 }
+
+/** The styles of `el`'s layers laid out in it, as computed: not those placed absolute or not shown. */
+function placedLayers(el: Element): CSSStyleDeclaration[] {
+  return [...el.children].map((child) => getComputedStyle(child)).filter((style) => !/^(absolute|fixed)$/.test(style.position) && style.display !== "none");
+}
+
+/**
+ * How a Grid places its layers, as `placesItself` reads it (ticket 109's
+ * follow-up): its areas and how it fills its cells, and each layer's lines
+ * and `order`, as computed, in one string to compare.
+ */
+export function placementOf(el: Element): string {
+  const style = getComputedStyle(el);
+  const layers = placedLayers(el).map((one) => [one.gridRowStart, one.gridRowEnd, one.gridColumnStart, one.gridColumnEnd, one.order].join(" / "));
+  return [style.gridTemplateAreas, style.gridAutoFlow, ...layers].join("; ");
+}
+
+/** The `order` of each of `el`'s layers laid out in it, in the order they are written. */
+export function ordersOf(el: Element): number[] {
+  return placedLayers(el).map((style) => Number(style.order) || 0);
+}
+
+/** Whether `el` lays its children out as a grid. */
+export const isGrid = (el: Element) => /grid$/.test(getComputedStyle(el).display);
 
 /**
  * A Stack's own layout properties and a Grid's, which a change to the
@@ -432,8 +453,6 @@ export function placesItself(el: Element): boolean {
  */
 export const ARRANGED = new Set<string>(["direction", "gap", "wrap", "columns", "rowGap", "columnGap"]);
 
-/** Whether `el` lays its children out as a grid. */
-const isGrid = (el: Element) => /grid$/.test(getComputedStyle(el).display);
 
 /**
  * A Stack's or a Grid's arrangement as `el` lays it out (ticket 109): a Grid

@@ -17,7 +17,7 @@ import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
-import { absolute, ARRANGED, readValue, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
+import { absolute, ARRANGED, ordersOf, placementOf, readValue, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { MADE_ATTR } from "./canvas-style";
@@ -215,6 +215,20 @@ function arrangedOver(change: Change, round: Change[], width: number): Set<strin
   return new Set(over.flatMap((other) => ARRANGED_FIELDS[type][other.property] ?? []));
 }
 
+/**
+ * Of a Grid made a Stack whose layers have an `order` of their own
+ * (`Change.layerOrders`, ticket 109's follow-up), the `order` of each, as the
+ * canvas laid them out at `width`: as the view that wide, or one in the same
+ * part of the change's range. Null where no view open stood for that width.
+ */
+function ordersAt(change: Change, width: number): number[] | null {
+  const views = change.layerOrders;
+  if (!views || (change.after as Arrangement).type !== "stack") return null;
+  const parts = change.breakpoint ? (change.parts?.map((part) => part.breakpoint) ?? [change.breakpoint]) : [];
+  const view = views.find((one) => one.width === width) ?? views.find((one) => parts.some((part) => within(part, width) && within(part, one.width)));
+  return view?.orders ?? null;
+}
+
 /** `lookStyle` for an arrangement, but the fields of it `over` names, which other changes set: those it takes as the page has them. */
 function lookArranged(els: Element[], after: Arrangement, over: Set<string>): [CheckResult, Element | null] {
   const shows = (el: Element) => {
@@ -259,7 +273,10 @@ export function valuesAt(doc: Document, change: Change, round: RoundOnCanvas, at
   const { loc } = change.target;
   const apart = change.scope === "component" ? round.filter((other) => other.scope === "usage" && other.kind === "style" && other.target.loc === loc && changesTheSame(change, other)).map((other) => usageKey(loc!, other.target.chain)) : [];
   const els = styledBy(doc, change, apart, at, round);
-  return els.length ? els.map((el) => readValue(el, change.property as Property)) : undefined;
+  if (!els.length) return undefined;
+  // A Grid that placed its layers itself made a Stack at a breakpoint: outside its range, how it places them is to stay as it was too (ticket 109's follow-up).
+  if (change.property === "arrangement" && change.placedInGrid) return els.map((el) => ({ ...(readValue(el, "arrangement") as Arrangement), placement: placementOf(el) }));
+  return els.map((el) => readValue(el, change.property as Property));
 }
 
 /**
@@ -505,6 +522,10 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
   } else els = styledBy(doc, change, apart, at, round);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   if (property === "arrangement" && change.after) {
+    // Laid out as a Stack by its layers' `order`, as on the canvas there (ticket 109's follow-up).
+    const orders = ordersAt(change, at.width);
+    const reordered = orders && els.find((el) => JSON.stringify(ordersOf(el)) !== JSON.stringify(orders));
+    if (reordered) return { outcome: "not shown", actual: { ...(readValue(reordered, "arrangement") as Arrangement), orders: ordersOf(reordered) } };
     const over = arrangedOver(change, round, at.width);
     if (over.size) {
       const [result, wrong] = lookArranged(els, change.after as Arrangement, over);

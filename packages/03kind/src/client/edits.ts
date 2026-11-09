@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer, type LayerK
 import { colorReader } from "./paint";
 import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { arrangedAs } from "./arrangement";
-import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, ofText, readAsShown, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
+import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, isGrid, ofText, ordersOf, placesItself, readAsShown, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -224,6 +224,24 @@ export function createEditor(
     return ranges;
   };
 
+  /**
+   * Of a Grid `layer` about to be made a Stack at `breakpoint` (ticket 109's
+   * follow-up): whether it is a Grid that places its layers otherwise than in
+   * the order they are written (`placesItself`) in any view open, by areas,
+   * say, at the widths of one view and not another's; and, so placed, the
+   * `order` of its layers in each view the change holds at, when one of them
+   * has one of its own (`Change.layerOrders`). Null when it places them in order.
+   */
+  const placementBefore = (layer: Layer, breakpoint: Breakpoint | null) => {
+    const shown = views.list().flatMap((view) => {
+      const el = view.elementOf(layer.el);
+      return el ? [{ view, el }] : [];
+    });
+    if (!shown.some(({ el }) => isGrid(el) && placesItself(el))) return null;
+    const layerOrders = shown.filter(({ view }) => !breakpoint || within(working.breakpointAt(view.width), breakpoint)).map(({ view, el }) => ({ width: view.width, orders: ordersOf(el) }));
+    return { placedInGrid: true as const, ...(layerOrders.some(({ orders }) => orders.some(Boolean)) && { layerOrders }) };
+  };
+
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
   const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
     const definition = definitionOf(property);
@@ -268,6 +286,8 @@ export function createEditor(
     const els = instances.map((instance) => instance.el);
     if (asStack && !breakpoint) for (const el of els) el.setAttribute(AS_STACK_ATTR, "");
     // The instances share their edit styles from the first edit on, their id stamped on them after, as it always was.
+    // A Grid made a Stack, read before it is one: how it placed its layers stays in the code (ticket 109's follow-up).
+    const placement = !earlier && property === "arrangement" && (before as Arrangement).type === "grid" && (value as Arrangement).type === "stack" ? placementBefore(layer, breakpoint) : null;
     declare(els, declarations, breakpoint, idFor(layer));
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
@@ -295,6 +315,8 @@ export function createEditor(
       ...(asStack && { asStack: true }),
       // A size of a Grid's cell: its Fill and Hug are of its cell (ticket 109), as when first changed.
       ...(!earlier && (property === "width" || property === "height") && asShown(el, () => inGrid(el)) && { cell: true }),
+      // A Grid that placed its layers itself, in a view, made a Stack: how they are placed stays in the code, as when first changed (ticket 109's follow-up).
+      ...placement,
       ...(keeps?.length ? { keeps } : {}),
       ...(variables && { variables }),
       ...(within && { within }),
