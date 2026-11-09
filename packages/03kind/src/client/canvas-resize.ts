@@ -43,6 +43,13 @@ export interface ResizeSession {
   handle: Handle;
   /** Where the pointer was pressed, in the window. */
   from: At;
+  /**
+   * The whole of a layer off the canvas, alone in the blank space (ticket
+   * 107): where its top left was on the stage as pressed. Its edges snap to
+   * nothing there; its top left goes as far as the box's does, so the edges
+   * not dragged stay where they are.
+   */
+  whole?: { x: number; y: number };
   begun: Begun | null;
   /** Its first step has gone to the editor, though it may have changed nothing: Esc takes back what the resize has changed. */
   stepped: boolean;
@@ -59,6 +66,8 @@ export interface ResizeStep {
   to: ResizeTo;
   box: Box;
   marks: Mark[];
+  /** The whole of a layer off the canvas resized: where its top left goes on the stage. */
+  at?: { x: number; y: number };
 }
 
 /**
@@ -109,7 +118,8 @@ export function resizeStep(session: ResizeSession, editor: Editor, pointer: Resi
   if (by("y", "end") && bottom) session.set.add("bottom");
   // Once set, each is set as the handle has it now: dragged back, or with ⌥ or ⇧ let go, it goes back too.
   const to: ResizeTo = Object.fromEntries([...session.set].map((key) => [key, now[key]]));
-  return { to, box, marks: resized.marks };
+  const { whole } = session;
+  return { to, box, marks: resized.marks, ...(whole && { at: { x: whole.x + box.x - was.x, y: whole.y + box.y - was.y } }) };
 }
 
 /**
@@ -131,7 +141,7 @@ function centeredOf({ place }: Begun): Middles {
 }
 
 /** What the resize begins from: the layer as the view dragged in lays it out now, and what the editor reads of it there. */
-function begin({ layer, in: { view } }: ResizeSession, editor: Editor): Begun {
+function begin({ layer, in: { view }, whole }: ResizeSession, editor: Editor): Begun {
   const box = view.boxOf(layer) ?? new DOMRect();
   const free = editor.can(layer, "x");
   const el = view.elementOf(layer.el) ?? layer.el;
@@ -151,7 +161,8 @@ function begin({ layer, in: { view } }: ResizeSession, editor: Editor): Begun {
   const targets: Box[] = [];
   const parent = layer.parent;
   const around = parent && view.boxOf(parent);
-  if (parent && around) {
+  // Alone in the blank space, there is nothing to line up with.
+  if (parent && around && !whole) {
     targets.push(insideBorder(view.elementOf(parent.el) ?? parent.el, around));
     // In a layout, the layers beside it move as it is resized: only those placed freely stay to line up with.
     if (free) {

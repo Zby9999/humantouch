@@ -706,3 +706,106 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     expect(off.doc.querySelector("main")!.firstElementChild!.textContent).toBe("Launch");
   });
 });
+
+describe("resizing a layer off the canvas (ticket 107)", () => {
+  const ROOM = `<!DOCTYPE html>
+<style>body { margin: 0; font-family: Georgia, serif; font-size: 18px }</style>
+<body><main data-tk-loc="src/App.tsx:3:5"><h3 data-tk-loc="src/App.tsx:4:7">Freeze it</h3></main></body>`;
+  const hosts: HTMLElement[] = [];
+  afterEach(() => {
+    for (const host of hosts.splice(0)) host.remove();
+  });
+  function canvas() {
+    const doc = page(ROOM);
+    const history = createHistory();
+    const changes = createChangeSet();
+    const editor = createEditor(createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changes, null, { history });
+    const host = document.createElement("div");
+    document.body.append(host);
+    hosts.push(host);
+    const offCanvas = createOffCanvas(host, [], history);
+    return { doc, changes, editor, offCanvas };
+  }
+  /** Resizes the whole of `outside` as its handles do, its top left going to `at` with it, one step with those before when `continues`. */
+  function resizeWhole(off: ReturnType<typeof canvas>, outside: OffCanvasLayer, to: { width?: number; height?: number }, at: { x: number; y: number }, continues: boolean) {
+    const [x, y] = [outside.x, outside.y];
+    outside.editor.resize(outside.layer()!, to, {
+      continues,
+      along: { make: () => off.offCanvas.place(outside, at.x, at.y), unmake: () => off.offCanvas.place(outside, x, y) },
+    });
+  }
+  const shape = (outside: OffCanvasLayer) => [outside.x, outside.y, outside.width, outside.height];
+
+  test("resized whole, its room in the blank space grows and shrinks with it; from its left and top, its top left goes along, one step with the size; no change of the round's", async () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+
+    resizeWhole(off, outside, { width: 230, height: 130 }, { x: -330, y: 30 }, false);
+    resizeWhole(off, outside, { width: 260, height: 150 }, { x: -360, y: 10 }, true);
+
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
+    expect(outside.changes.list()).toMatchObject([
+      { kind: "create" },
+      { kind: "style", property: "width", after: { type: "fixed", value: 260 } },
+      { kind: "style", property: "height", after: { type: "fixed", value: 150 } },
+    ]);
+    expect(off.changes.list()).toEqual([]);
+
+    // Smaller again, from its bottom right: its top left stays.
+    resizeWhole(off, outside, { width: 90, height: 60 }, { x: -360, y: 10 }, false);
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 90, 60]);
+
+    off.editor.undo();
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
+    off.editor.undo();
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+    off.editor.redo();
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
+    // Kept as it is now, where it is now.
+    expect(off.offCanvas.save()).toMatchObject([{ x: -360, y: 10, edits: { changes: [{ kind: "create" }, { property: "width" }, { property: "height" }] } }]);
+  });
+
+  test("Esc takes the resize back, its top left too, with nothing to redo", async () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+
+    resizeWhole(off, outside, { width: 240 }, { x: -340, y: 40 }, false);
+    resizeWhole(off, outside, { width: 280 }, { x: -380, y: 40 }, true);
+    outside.editor.takeBack();
+
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+    expect(outside.changes.list()).toMatchObject([{ kind: "create" }]);
+    expect(off.editor.redo()).toEqual([]);
+  });
+
+  test("a layer moved off the canvas and resized there is edited there: put back, it is an insertion, its new size among its edits", () => {
+    const off = canvas();
+    const title = off.doc.querySelector("h3")!;
+    const layer = find(off.editor.tree().root, (l) => l.el === title && !l.text)!;
+    const outside = off.offCanvas.moveOut(title, { x: -400, y: 0 }, { ...off.editor.originOf(layer), at: "2026-11-09T00:00:00.000Z" });
+    off.editor.batch(() => {
+      off.editor.remove(layer, { offCanvas: outside.id });
+      off.editor.along(
+        () => off.offCanvas.put(outside),
+        () => off.offCanvas.take(outside),
+      );
+    });
+
+    outside.editor.resize(outside.layer()!, { width: 320 });
+    const main = find(off.editor.tree().root, (l) => l.el === off.doc.querySelector("main"))!;
+    let back: Layer | null = null;
+    off.editor.batch(() => {
+      back = off.editor.putBack({ el: outside.layer()!.el, kept: outside.keep() }, { parent: main, index: 0 });
+      off.editor.along(
+        () => off.offCanvas.take(outside),
+        () => off.offCanvas.put(outside),
+      );
+    });
+
+    expect(off.changes.list()).toMatchObject([
+      { kind: "delete", offCanvas: outside.id },
+      { kind: "putBack", after: { layer: { edits: { changes: [{ kind: "style", property: "width", after: { type: "fixed", value: 320 } }] } } } },
+    ]);
+    expect(back!.el.getBoundingClientRect().width).toBe(320);
+  });
+});

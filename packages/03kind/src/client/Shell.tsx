@@ -815,8 +815,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           onEdit();
           select([moved]);
         }}
-        onResize={(layer, to, continues) => {
-          editorOf(layer)!.resize(layer, to, { continues });
+        onResize={(layer, to, continues, at) => {
+          // The whole of a layer off the canvas, resized from its left or top: its top left goes with it, one step (ticket 107).
+          const outside = at && offCanvas ? outsideOf(layer) : null;
+          const [x, y] = outside ? [outside.x, outside.y] : [0, 0];
+          const along = outside && at && (Math.round(at.x) !== x || Math.round(at.y) !== y) ? { make: () => offCanvas!.place(outside, at.x, at.y), unmake: () => offCanvas!.place(outside, x, y) } : undefined;
+          editorOf(layer)!.resize(layer, to, { continues, along });
           onEdit(false);
         }}
         onCancelResize={(layer) => {

@@ -109,9 +109,12 @@ export interface Editor {
    * or less than they did. A step that changes nothing (the layer already that
    * size) makes none: the next that does is the resize's first, apart from any
    * resize before it. Each is a step of a run: the views beside the one
-   * worked in show it once the steps pause (ADR 0011).
+   * worked in show it once the steps pause (ADR 0011). `along`: a change
+   * besides the layer made one step with this one, as `along` makes one: a
+   * layer off the canvas resized whole from its left or top moves as far
+   * (ticket 107).
    */
-  resize(layer: Layer, to: ResizeTo, options?: Pick<SetOptions, "continues">): void;
+  resize(layer: Layer, to: ResizeTo, options?: Pick<SetOptions, "continues"> & { along?: { make(): void; unmake(): void } }): void;
   /** Takes back the latest edit not yet undone. Returns the layers it was made to; none when there is nothing to undo. */
   undo(): Layer[];
   /**

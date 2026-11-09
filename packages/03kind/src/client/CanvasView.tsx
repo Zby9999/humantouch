@@ -70,8 +70,12 @@ interface Props {
   editor: Editor | null;
   /** A dragged layer let go where it can go. */
   onMove(layer: Layer, to: Destination): void;
-  /** A handle of the layer selected dragged: one step of the resize, `to` as `Editor.resize` has it; `continues`, after the first. */
-  onResize(layer: Layer, to: ResizeStep["to"], continues: boolean): void;
+  /**
+   * A handle of the layer selected dragged: one step of the resize, `to` as
+   * `Editor.resize` has it; `continues`, after the first. `at`: the whole of a
+   * layer off the canvas resized, where its top left goes on the stage with it (ticket 107).
+   */
+  onResize(layer: Layer, to: ResizeStep["to"], continues: boolean, at?: { x: number; y: number }): void;
   /** Esc, while a handle is dragged: the resize taken back, as if never made. */
   onCancelResize(layer: Layer): void;
   /** The fill's picker is open on a gradient: its handles show on the layer selected, in every view, and change it. */
@@ -206,6 +210,10 @@ export function CanvasView(props: Props) {
   const editorIn = (shown: Placed): Editor | null => (shown.offCanvasLayer ? shown.offCanvasLayer.editor : editor);
   /** The layers `layer` is one of: the canvas's, or those of a layer off it. */
   const treeOf = (layer: Layer): LayerTree | null => offCanvas?.of(layer.el)?.editor.tree() ?? tree;
+  /** What edits `layer`: the canvas's editor, or that of the layer off it it is in. */
+  const editorOf = (layer: Layer): Editor | null => offCanvas?.of(layer.el)?.editor ?? editor;
+  /** Where `shown` is now: a layer off the canvas moves as it is resized from its left or top. */
+  const shownNow = (shown: Shown): Shown => (shown.offCanvasLayer && outside.find((o) => o.offCanvasLayer === shown.offCanvasLayer)) || shown;
   /**
    * While playing, how wide the canvas is shown: as wide as the viewport, as a
    * window that wide shows the page (ADR 0010), so what the page's CSS and
@@ -932,15 +940,20 @@ export function CanvasView(props: Props) {
    * anywhere on the canvas, though it is on the edge of the one selected.
    */
   const pressHandle = (layer: Layer, shown: Shown, handle: Handle, event: TargetedPointerEvent<HTMLDivElement>): boolean => {
-    if (playing || tool || spaceHeld || event.button !== 0 || event.metaKey || event.ctrlKey || !editor) return false;
-    // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on.
-    views?.sync(shown.view);
-    setActive(shown.view);
+    if (playing || tool || spaceHeld || event.button !== 0 || event.metaKey || event.ctrlKey || !editorIn(shown)) return false;
+    const off = shown.offCanvasLayer;
+    // Read as the view pressed in shows it now (ADR 0011), the one worked in from now on. A layer off the canvas has but its own.
+    if (!off) {
+      views?.sync(shown.view);
+      setActive(shown.view);
+    }
     // Pressed twice, a handle resizes twice: a click before it makes no double click with the press after.
     lastClick.current = null;
     viewport.current!.setPointerCapture(event.pointerId);
     const { pointerId, clientX, clientY } = event;
-    resizing.current = { pointerId, layer, in: shown, handle, from: { clientX, clientY }, begun: null, stepped: false, set: new Set(), release: holdPointer(pointerId) };
+    // The whole of a layer off the canvas: its top left goes with its left and top edges (ticket 107).
+    const whole = off && layer === off.layer() ? { x: off.x, y: off.y } : undefined;
+    resizing.current = { pointerId, layer, in: shown, handle, from: { clientX, clientY }, whole, begun: null, stepped: false, set: new Set(), release: holdPointer(pointerId) };
     setResize({ layer, in: shown, handle, showsSize: false, marks: [] });
     setHover(null);
     return true;
@@ -952,10 +965,10 @@ export function CanvasView(props: Props) {
    * `SNAP_PX`, at any zoom, unless ⌘ (Ctrl) is held.
    */
   function moveResize(session: ResizeSession, pointer: ResizePointer) {
-    const step = resizeStep(session, editor!, pointer, camera.zoom, SNAP_PX);
+    const step = resizeStep(session, editorIn(session.in)!, pointer, camera.zoom, SNAP_PX);
     if (!step) return;
     if (Object.keys(step.to).length) {
-      onResize(session.layer, step.to, session.stepped);
+      onResize(session.layer, step.to, session.stepped, step.at);
       session.stepped = true;
     }
     // Drawn where its edges are now, as laid out: its container may place it otherwise than where it was dragged to.
@@ -1134,8 +1147,9 @@ export function CanvasView(props: Props) {
       ? { layer: primary, in: briefIn, promote: editor.canPromote(primary) }
       : null;
   /**
-   * The layer of the canvas selected alone that can be resized, with handles in every view: not the page,
-   * not text with no element of its own, nor a layer shown inline. While it is resized, the handles stay.
+   * The layer selected alone that can be resized, with handles in every view that shows it: not the page,
+   * not text with no element of its own, nor a layer shown inline. Off the canvas too, the whole of a layer
+   * there or one in it (ticket 107). While it is resized, the handles stay.
    */
   /**
    * The layer selected alone whose fill's picker is open on a gradient: its gradient's handles in every view, in place of
@@ -1147,7 +1161,7 @@ export function CanvasView(props: Props) {
       : null;
   const withHandles =
     withGradient ? null : resize?.layer ??
-    (editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && primary !== tree?.root && !travelling && !playing && !drag && !hideSelection && !typingLayer && !tool && (editor.can(primary, "width") || editor.can(primary, "height"))
+    (primary && selected.length === 1 && primary !== treeOf(primary)?.root && !travelling && !playing && !drag && !hideSelection && !typingLayer && !tool && (editorOf(primary)?.can(primary, "width") || editorOf(primary)?.can(primary, "height"))
       ? primary
       : null);
   /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
@@ -1238,7 +1252,7 @@ export function CanvasView(props: Props) {
               {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
-              {withHandles && !shown.offCanvasLayer && (!spaceHeld || resize) && (
+              {withHandles && shows(shown, withHandles) && (!spaceHeld || resize) && (
                 <Handles layer={withHandles} view={view} name={name} camera={at} away={away} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
               )}
               {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
@@ -1315,8 +1329,8 @@ export function CanvasView(props: Props) {
       {bounds && !travelling && !playing && (
         <AddView left={camera.x + bounds.width * camera.zoom + 8} top={camera.y - LABEL_OFFSET} onAdd={(width) => setViewWidths(withWidth(widths, width))} />
       )}
-      {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, resize.in)} />}
-      {resize && resize.marks.length > 0 && <Marks marks={resize.marks} view={resize.in.name} camera={cameraIn(camera, resize.in)} />}
+      {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} />}
+      {resize && resize.marks.length > 0 && <Marks marks={resize.marks} view={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={drag.in.view} name={drag.in.name} camera={cameraIn(camera, drag.in)} hover />}
       {drag?.drop?.line && <div class="tk-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
       {drag?.drop && drag.drop.marks.length > 0 && <Marks marks={drag.drop.marks} view={drag.in.name} camera={cameraIn(camera, drag.in)} />}
