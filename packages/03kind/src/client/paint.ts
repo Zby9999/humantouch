@@ -76,6 +76,9 @@ export interface ConicGradient {
 export type Gradient = LinearGradient | RadialGradient | KeptRadialGradient;
 export type Fill = Solid | Gradient | ConicGradient;
 
+/** A fill added to a layer that has none, as in Figma; and what a Frame made in the blank space has (ticket 106). */
+export const NEW_FILL: Fill = { type: "solid", color: "#FFFFFF", opacity: 1 };
+
 /**
  * A stroke: one color and line for the layer, drawn `weight` px wide on every
  * side, or on each side as it says (top, right, bottom, left; 0 for none).
