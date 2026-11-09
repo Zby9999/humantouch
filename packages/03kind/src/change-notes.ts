@@ -18,6 +18,8 @@ import {
   type CopiedBreakpoint,
   type Created,
   type Dissolved,
+  type GridSettings,
+  isGridSettings,
   type Place,
   type PutBack,
   type StackSettings,
@@ -101,7 +103,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "style" && target.onlyText ? [onlyTextLine(target)] : []),
     ...(change.placedFrom ? [placementLine(change)] : []),
     ...(change.keeps ? [fragments(change)] : []),
-    ...(change.kind === "stack" ? [...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
+    ...(change.kind === "stack" ? [...gridLine(change.after as Composed), ...joinLayout(change.after as Composed), ...dropMargins(change)] : []),
     ...(change.kind === "create" ? sketch(change, list) : []),
     ...(change.kind === "brief" ? [briefLine(change, list)] : []),
     ...(change.kind === "duplicate" && change.brief ? [`**Brief:** ${quoted(change.brief)}, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.`] : []),
@@ -203,7 +205,7 @@ function intent(change: Change, list: Change[], look?: WhereToLook): string {
     case "stack":
       return stackIntent(change.after as Composed);
     case "unstack":
-      return unstackIntent(change.before as StackSettings, change.after as Dissolved);
+      return unstackIntent(change.before as StackSettings | GridSettings, change.after as Dissolved);
     case "create": {
       const { type, place, width, height, text } = change.after as Created;
       if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, placeOnceApplied(change, list))}.`;
@@ -538,7 +540,7 @@ function newLayerIn(change: Change): string | null {
     const { context } = layer.origin.target;
     return `${context.path.at(-1)}, \`${context.element}\`, moved off the canvas, put back in ${container(place)}`;
   }
-  if (change.kind === "stack" && (change.after as Composed).place) return `a new Stack, in ${container((change.after as Composed).place!)}`;
+  if (change.kind === "stack" && (change.after as Composed).place) return `a new ${madeAs(change.after as Composed)}, in ${container((change.after as Composed).place!)}`;
   if (change.kind !== "create") return null;
   const { type, place } = change.after as Created;
   return `a new ${type === "text" ? "text layer" : "Frame"}, in ${container(place)}`;
@@ -719,39 +721,67 @@ function sketch(change: Change, list: Change[]): string[] {
 function stackIntent(composed: Composed): string {
   const { place, layers } = composed;
   const items = layers.map(({ target }, i) => `\n  ${i + 1}. ${member(target)}`).join("");
+  const [kind, settings] = isGridSettings(composed) ? ["Grid", gridSettings(composed)] : ["Stack", stackSettings(composed)];
   if (!place) {
     const count = layers.length === 1 ? "1 layer goes" : `${layers.length} layers go`;
-    return `Make this Frame a Stack: ${stackSettings(composed)}. Its ${count} in its layout, in this order:${items}`;
+    return `Make this Frame a ${kind}: ${settings}. Its ${count} in its layout, in this order:${items}`;
   }
   const these = layers.length === 1 ? "this layer" : `these ${layers.length} layers, in this order,`;
   const where = place.absolute
     ? `Place it absolute in ${container(place)}, at X ${place.absolute.x}px and Y ${place.absolute.y}px from the Frame's top left (CSS \`left\` and \`top\`).`
     : `Put it in the layout of ${container(place)}, as its ${ordinal(place.nth)} layer, where the first of them was.`;
-  return `Wrap ${these} in a new Stack: ${stackSettings(composed)}. ${where}${items}`;
+  return `Wrap ${these} in a new ${kind}: ${settings}. ${where}${items}`;
+}
+
+/** What layers are made: a Stack, or, free ones in rows and columns, a Grid (ticket 110). */
+function madeAs(composed: Composed): "Stack" | "Grid" {
+  return isGridSettings(composed) ? "Grid" : "Stack";
+}
+
+/** How a Grid lays its layers out, in a sentence (ticket 110): "a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px, no padding"; of columns not all as wide, "a Grid of 2 columns, …". */
+function gridSettings({ grid, padding, unequal }: GridSettings): string {
+  const arranged = value("arrangement", grid);
+  return `${unequal ? arranged.replace(" equal column", " column") : arranged}, ${padding.some((p) => p) ? `padding ${value("padding", padding)}` : "no padding"}`;
+}
+
+/** A Grid made of layers (ticket 110): its CSS and Tailwind's classes, as a Stack made a Grid has them, and how it fills its cells. */
+function gridLine(composed: Composed): string[] {
+  if (!isGridSettings(composed)) return [];
+  const { columns, rowGap, columnGap } = composed.grid;
+  const css = `display: grid; grid-template-columns: ${equalColumns(columns)}; row-gap: ${rowGap}px; column-gap: ${columnGap}px`;
+  return [
+    `**Grid:** lay its layers out as \`${css}\` does (Tailwind's \`${tailwindArrangement(composed.grid)}\`). ` +
+      "It fills its cells row by row, in the order its layers are written: no `grid-row`, `grid-column` or `order`.",
+  ];
 }
 
 /** The layers of a new Stack that are absolute now, and lose it. */
-function joinLayout({ layers }: Composed): string[] {
+function joinLayout(composed: Composed): string[] {
+  const { layers } = composed;
   const absolute = layers.filter(({ from }) => from.absolute).length;
   if (!absolute) return [];
   const which = absolute === layers.length ? "the layers are" : `${absolute} of the layers are`;
-  return [`**Join the layout:** ${which} placed absolute now. In the Stack, they are laid out by it: take their absolute positioning off.`];
+  return [`**Join the layout:** ${which} placed absolute now. In the ${madeAs(composed)}, they are laid out by it: take their absolute positioning off.`];
 }
 
 /** The layers of a Stack that have margins now, and lose them: its gap and padding hold that room, the Stack none. */
 function dropMargins(change: Change): string[] {
-  const { layers, place } = change.after as Composed;
+  const composed = change.after as Composed;
+  const { layers, place } = composed;
   const margined = layers.filter((member) => member.unmargined).map(({ target }) => target.context.path.at(-1));
   if (!margined.length) return [];
-  const room = place ? "the room between them is its gap, and the Stack has no margin" : "the room between them is its gap, and the room around them its padding";
-  return [`**Drop the margins:** ${margined.join(", ")} ${margined.length === 1 ? "has" : "have"} margins now. In the Stack, ${room}: take their margins off.`];
+  const kind = madeAs(composed);
+  const gap = kind === "Grid" ? "its gaps" : "its gap";
+  const room = place ? `the room between them is ${gap}, and the ${kind} has no margin` : `the room between them is ${gap}, and the room around them its padding`;
+  return [`**Drop the margins:** ${margined.join(", ")} ${margined.length === 1 ? "has" : "have"} margins now. In the ${kind}, ${room}: take their margins off.`];
 }
 
-/** The Stack as it was, the Frame it becomes, and where each of its layers is placed. */
-function unstackIntent(before: StackSettings, { width, height, layers }: Dissolved): string {
+/** The Stack as it was, the Frame it becomes, and where each of its layers is placed. A Grid's, as a Stack's (ticket 110). */
+function unstackIntent(before: StackSettings | GridSettings, { width, height, layers }: Dissolved): string {
   const items = layers.map(({ target, x, y, width, height }, i) => `\n  ${i + 1}. ${member(target)}: X ${x}px, Y ${y}px, ${width} × ${height}px`).join("");
+  const was = isGridSettings(before) ? `Grid (${gridSettings(before)})` : `Stack (${stackSettings(before)})`;
   return (
-    `Dissolve this Stack (${stackSettings(before)}): make it a Frame, Fixed ${width} × ${height}px, that is the positioning reference of its layers (\`position: relative\`), ` +
+    `Dissolve this ${was}: make it a Frame, Fixed ${width} × ${height}px, that is the positioning reference of its layers (\`position: relative\`), ` +
     `and place each of its layers absolute where it is, at its size (CSS \`left\` and \`top\` from the Frame's top left):${items}`
   );
 }

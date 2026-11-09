@@ -6,7 +6,7 @@
 import { breakpointKey, type Breakpoint } from "./breakpoints";
 import type { SavedOffCanvasLayer, Variable } from "../service-protocol";
 import type { InLayout, PlacedAlong, PlacedFrom, Share } from "./checkable";
-import type { Align, Padding } from "./property-table";
+import type { Align, Arrangement, Padding } from "./property-table";
 import type { Axis } from "./snap";
 import type { StyleSource } from "./style-source";
 import type { UsageLevel } from "./usage-chain";
@@ -78,8 +78,28 @@ export interface Member {
   target: Target;
 }
 
-/** A Stack made of layers (the `after` of a `stack` change): how it lays them out, and which. */
-export interface Composed extends StackSettings {
+/** A Grid's arrangement: its columns, as many equal ones, and its gaps. */
+export type GridArrangement = Extract<Arrangement, { type: "grid" }>;
+
+/** How a Grid lays its layers out, in design language (ticket 110): its columns and gaps (`grid`), and its padding. */
+export interface GridSettings {
+  grid: GridArrangement;
+  padding: Padding;
+  /** A Grid of the page dissolved whose columns are not all as wide (`200px 1fr`): its notes do not call them equal. */
+  unequal?: true;
+}
+
+/** Whether settings are a Grid's (ticket 110), not a Stack's. */
+export function isGridSettings(settings: StackSettings | GridSettings): settings is GridSettings {
+  return "grid" in settings;
+}
+
+/**
+ * Layers made a Stack (the `after` of a `stack` change): how it lays them
+ * out, and which. Free layers in rows and columns are made a Grid instead
+ * (ticket 110), its settings a Grid's (`GridSettings`).
+ */
+export type Composed = (StackSettings | GridSettings) & {
   /** Where the new Stack is. Null: the Frame the change is made to became the Stack. */
   place: Place | null;
   /**
@@ -88,6 +108,16 @@ export interface Composed extends StackSettings {
    * gap, the room around them its own margin.
    */
   layers: (Member & { from: Place; unmargined?: true })[];
+};
+
+/** Whether a change makes a Grid of layers (ticket 110): a `stack` change whose settings are a Grid's. */
+export function makesGrid(change: Pick<Change, "kind" | "after">): boolean {
+  return change.kind === "stack" && isGridSettings(change.after as Composed);
+}
+
+/** Whether a change dissolves a Grid (ticket 110): an `unstack` change whose settings before are a Grid's. */
+export function dissolvesGrid(change: Pick<Change, "kind" | "before">): boolean {
+  return change.kind === "unstack" && isGridSettings(change.before as StackSettings | GridSettings);
 }
 
 /** A Stack dissolved (the `after` of an `unstack` change): a Frame of its size, its layers absolute in it. */
@@ -179,7 +209,7 @@ export interface Change {
    * `style`: a property of the layer changes. `move`: the layer goes to
    * another place; `before` and `after` are `Place`s. `stack`: layers are made
    * a Stack, the layer; `after` is `Composed`. `unstack`: the Stack, the
-   * layer, is dissolved; `before` is its `StackSettings`, `after` is `Dissolved`.
+   * layer, is dissolved; `before` is its `StackSettings` (a Grid's `GridSettings`, ticket 110), `after` is `Dissolved`.
    * `create`: the layer is new; `after` is `Created`. `text`: the layer's
    * words change; `before` and `after` are strings. `delete`: the layer goes;
    * `before` is its `Place`. `duplicate`: the layer is a copy of the layer

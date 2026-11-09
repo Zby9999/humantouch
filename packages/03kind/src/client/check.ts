@@ -12,14 +12,16 @@
  */
 import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
-import { changeKey, isReorder, keptIn, type Change, type Created, type Margins, type Place, type PutBack } from "./changeset";
+import { changeKey, isGridSettings, isReorder, keptIn, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place, type PutBack } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
 import { absolute, ARRANGED, readValue, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
-import { componentElementsOf, elementsOf, mayBeOf, usageKeyOf } from "./page-elements";
+import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
+import { MADE_ATTR } from "./canvas-style";
+import { LOC_ATTR } from "../markers";
 import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
@@ -55,6 +57,8 @@ export function uncheckable(change: Change, round: Change[]): string | null {
   if (change.kind === "style") return "the layer's container cannot be found on the page";
   // Found by its marker, one of a loop's instances alone: its new words (ticket 90), or it deleted, copied or moved (ticket 95).
   if (change.data) return change.kind === "text" ? "the words come from the data the loop goes through, and the page cannot tell the loop's instances apart" : LOOP_DATA;
+  // A Grid made of layers (ticket 110), its container found by its marker, one of its layers not.
+  if (makesGrid(change)) return "the page cannot find every layer the Grid is made of by its source marker";
   // Text with no element of its own, moved in its container: the page cannot find it, as it cannot a run of text (ticket 95).
   if (textMovedInPlace(change)) return "the text has no element of its own on the page";
   // A placement absolute in the same container, or a reorder there the page can tell the order of: what the page checks, but in a container it cannot find (ticket 95).
@@ -488,6 +492,7 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
   if (change.kind === "delete") return lookDeleted(doc, change, round, at);
   if (change.kind === "move") return (change.after as Place).absolute ? lookPlaced(doc, change, round, at) : lookOrder(doc, change, round);
   if (change.kind === "create") return lookMade(doc, change, round, at);
+  if (change.kind === "stack") return lookGrid(doc, change, round, at);
   if (change.kind === "text") return lookWords(doc, change, round);
   const property = change.property as Property;
   let els: Element[];
@@ -687,6 +692,124 @@ function lookMade(doc: Document, change: Change, round: RoundOnCanvas, at: PageW
   const els = found.els.map((el) => at.of(el)).filter((el): el is Element => !!el);
   const latest = (axis: "x" | "y") => round.filter((other) => other.kind === "style" && other.layer === change.layer && other.property === axis && !other.breakpoint).at(-1)?.after as number | undefined;
   return placedThere(els, { x: latest("x") ?? placed.x, y: latest("y") ?? placed.y }, null);
+}
+
+/**
+ * Whether the page shows a Grid made of layers (ticket 110): the layers still
+ * in it by the end of the round, each found by its source marker, all in one
+ * element (past any not drawn, `display: contents`), a new one in the
+ * container named, or, made of a Frame, that Frame's own; laid out as a Grid
+ * with the columns and gaps given, but those a later change of the round to
+ * it sets, as the page has them there. Dissolved, or laid out anew, by a later
+ * change, it is not looked at: what it shows is that change's.
+ */
+function lookGrid(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): CheckResult {
+  const composed = change.after as Composed;
+  if (!isGridSettings(composed)) return { outcome: "unchecked", reason: "the page does not check a Stack made" };
+  const later = round.filter((other) => other.id > change.id && (!other.breakpoint || within(other.breakpoint, at.width)));
+  // Dissolved, laid out anew, moved elsewhere or deleted as a whole, later: what the page shows of it is that change's.
+  const anew = later.find(
+    (other) => other.layer === change.layer && (other.kind === "unstack" || other.kind === "move" || other.kind === "delete" || (other.kind === "style" && other.property === "arrangement")),
+  );
+  if (anew) {
+    const what = { unstack: "dissolves the Grid", move: "moves the Grid", delete: "deletes the Grid" }[anew.kind as "unstack" | "move" | "delete"] ?? "lays the Grid out anew";
+    return { outcome: "unchecked", reason: `change ${anew.id} ${what}: what the page shows of it is that change's` };
+  }
+  // Its layers taken out of it later: deleted, moved elsewhere, or made a Stack (or a Grid) of their own in it.
+  const stackedAgain = later.filter((other) => other.kind === "stack").flatMap((other) => (other.after as Composed).layers.map((member) => member.layer));
+  const gone = new Set([
+    ...later.filter((other) => other.kind === "delete" || (other.kind === "move" && (other.after as Place).container.layer !== change.layer)).map((other) => other.layer),
+    ...stackedAgain,
+  ]);
+  const members = composed.layers.filter((member) => !gone.has(member.layer));
+  if (!members.length) return { outcome: "unchecked", reason: "none of the layers it is made of is in it by the end of the round" };
+  // Layers put in it later, by a move (which may reorder them too), a new layer, a copy or one put back: the cells it has besides its own layers.
+  const putIn = later.filter((other) => other.layer !== change.layer && placedAt(other)?.container.layer === change.layer);
+  const reordered = putIn.some((other) => other.kind === "move" || other.kind === "stack");
+  const addedCells = new Set(putIn.filter((other) => !composed.layers.some((member) => member.layer === other.layer)).map((other) => other.layer)).size;
+  const found = (canvas: () => SavedCanvas | null) => {
+    const shown = (target: Change["target"]) => elementsOf(doc, target, canvas).map((el) => at.of(el)).filter((el): el is Element => !!el);
+    return { containers: shown(change.target), els: members.map((member) => shown(member.target)) };
+  };
+  // The new element the Agent writes round them moves the markers after it, of its tag too: followed as on the canvas written so, where they are not found as it is.
+  let { containers, els } = found(savedCanvas(round));
+  if ((!containers.length || els.some((one) => !one.length)) && composed.place) ({ containers, els } = found(writtenAround(round, change)));
+  if (!containers.length) return { outcome: "unchecked", reason: "its container is not on the page now" };
+  if (els.some((one) => !one.length)) return { outcome: "unchecked", reason: "a layer it is made of is not on the page now" };
+  const over = new Set(later.filter((other) => other.kind === "style" && other.layer === change.layer).flatMap((other) => ARRANGED_FIELDS.grid[other.property] ?? []));
+  for (const holder of new Set(els.flat().map(holderOf))) {
+    // A new element right in the container's layout (past any not drawn), or the Frame made a Grid itself.
+    const inPlace = !!holder && (composed.place ? !containers.includes(holder) && containers.includes(holderOf(holder)!) : containers.includes(holder));
+    if (!inPlace || !els.every((found) => found.some((el) => holderOf(el) === holder))) return { outcome: "not shown", actual: null };
+    // Left placed absolute, a layer is not laid out by the Grid, but placed against it: not in its cells.
+    if (els.flat().some((el) => holderOf(el) === holder && /^(absolute|fixed)$/.test(getComputedStyle(el).position))) return { outcome: "not shown", actual: "absolute" };
+    // Its cells: these layers alone, but those put in it later, in their order but where a later change reorders them; as many of them as there are layers, of a loop's instances too.
+    const cells = laidOutIn(holder);
+    const of = cells.map((cell) => els.findIndex((found) => found.includes(cell)));
+    const own = of.filter((i) => i >= 0);
+    const firsts = own.filter((i, n) => own.indexOf(i) === n);
+    if (own.length < members.length || cells.length - own.length > addedCells || (!reordered && firsts.some((i, n) => i !== n))) return { outcome: "not shown", actual: "cells" };
+    const actual = readValue(holder, "arrangement") as Arrangement;
+    const fields = (["columns", "rowGap", "columnGap"] as const).filter((field) => !over.has(field));
+    // Its gaps were measured off where the layers were drawn: within half a px is the gap given.
+    if (actual.type !== "grid") return { outcome: "not shown", actual };
+    const off = (field: (typeof fields)[number]) => (field === "columns" ? actual[field] !== composed.grid[field] : Math.abs(actual[field] - composed.grid[field]) > 0.5);
+    if (fields.some(off)) return { outcome: "not shown", actual };
+  }
+  return { outcome: "shown" };
+}
+
+/** Each round's canvas as the Agent writes a new Grid of it (`writtenAround`), by the change that makes it. */
+const written = new WeakMap<RoundOnCanvas, Map<number, SavedCanvas | null>>();
+
+/**
+ * The round's canvas as saved, the new Grid `change` makes written in the
+ * source as asked (ticket 110): its element marked as one written where the
+ * first of its layers was, just before it, in that layer's file. An Agent
+ * writes it so, of the same tag as its layers often (a `<div>` round
+ * `<div>`s): the page's markers of that tag, paired with the canvas's
+ * (`elementsOf`), then pair one for one, as they could not with one more
+ * on the page than on the canvas. Null with no canvas.
+ */
+function writtenAround(round: RoundOnCanvas, change: Change): () => SavedCanvas | null {
+  let byChange = written.get(round);
+  if (!byChange) written.set(round, (byChange = new Map()));
+  if (!byChange.has(change.id)) {
+    const saved = canvasOf(round);
+    // The first of its layers in the source: the lowest line, in the file of its first.
+    const locs = (change.after as Composed).layers.flatMap(({ target }) => {
+      const m = /^(.*):(\d+):\d+$/.exec(target.loc ?? "");
+      return m ? [{ file: m[1], line: Number(m[2]) }] : [];
+    });
+    const file = locs[0]?.file;
+    const line = Math.min(...locs.filter((loc) => loc.file === file).map((loc) => loc.line));
+    const doc = saved && file ? (new DOMParser().parseFromString(saved.doc().documentElement.outerHTML, "text/html") as Document) : null;
+    const el = doc?.querySelector(`[${MADE_ATTR}="${CSS.escape(change.layer)}"]`);
+    // Marked as written in the source, not as made on the canvas, which the markers followed leave out.
+    if (doc && el) {
+      el.setAttribute(LOC_ATTR, `${file}:${line}:0`);
+      el.removeAttribute(MADE_ATTR);
+    }
+    byChange.set(change.id, doc && el ? savedCanvasOf(doc.documentElement.outerHTML, () => doc) : null);
+  }
+  const canvas = byChange.get(change.id)!;
+  return () => canvas;
+}
+
+/** The elements laid out in `el`, in order: its children, those of any not drawn (`display: contents`) in their place, none not shown. */
+function laidOutIn(el: Element): Element[] {
+  return [...el.children].flatMap((child) => {
+    const { display } = getComputedStyle(child);
+    if (display === "contents") return laidOutIn(child);
+    return display === "none" || NOT_DRAWN.has(child.localName) ? [] : [child];
+  });
+}
+
+/** The element an element is laid out in: its parent, past any not drawn (`display: contents`). */
+function holderOf(el: Element): Element | null {
+  let parent = el.parentElement;
+  while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+  return parent;
 }
 
 /**
