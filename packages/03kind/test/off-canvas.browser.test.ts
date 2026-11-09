@@ -764,6 +764,7 @@ describe("resizing a layer off the canvas (ticket 107)", () => {
     await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
     expect(outside.changes.list()).toMatchObject([
       { kind: "create" },
+      { kind: "style", property: "fill" },
       { kind: "style", property: "width", after: { type: "fixed", value: 260 } },
       { kind: "style", property: "height", after: { type: "fixed", value: 150 } },
     ]);
@@ -780,7 +781,7 @@ describe("resizing a layer off the canvas (ticket 107)", () => {
     off.editor.redo();
     await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
     // Kept as it is now, where it is now.
-    expect(off.offCanvas.save()).toMatchObject([{ x: -360, y: 10, edits: { changes: [{ kind: "create" }, { property: "width" }, { property: "height" }] } }]);
+    expect(off.offCanvas.save()).toMatchObject([{ x: -360, y: 10, edits: { changes: [{ kind: "create" }, { property: "fill" }, { property: "width" }, { property: "height" }] } }]);
   });
 
   test("Esc takes the resize back, its top left too, with nothing to redo", async () => {
@@ -792,7 +793,7 @@ describe("resizing a layer off the canvas (ticket 107)", () => {
     outside.editor.takeBack();
 
     await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
-    expect(outside.changes.list()).toMatchObject([{ kind: "create" }]);
+    expect(outside.changes.list()).toMatchObject([{ kind: "create" }, { kind: "style", property: "fill" }]);
     expect(off.editor.redo()).toEqual([]);
   });
 
