@@ -77,9 +77,9 @@ test("F and a drag in the blank space make a Frame there, a layer off the canvas
   expect(Math.abs(box.x - at.x)).toBeLessThan(2);
   expect(Math.abs(box.width - 200)).toBeLessThan(2);
   expect(Math.abs((await offCanvas(page).evaluate((frame: HTMLIFrameElement) => frame.offsetWidth)) - 200 / zoom)).toBeLessThan(2);
-  // Seen there on white, as Figma draws a Frame on an empty canvas; none of its own fill, as one drawn on the canvas.
-  await expect(offCanvas(page)).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(offCanvas(page).contentFrame().locator("body > *")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // White, as Figma draws a Frame on an empty canvas: a fill of its own, the Design panel says so (designer, 2026-11-09).
+  await expect(offCanvas(page).contentFrame().locator("body > *")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" })).toHaveCount(0);
   // Beside the canvas in the layers, selected; the tool put down.
   const first = layerTree(page).getByRole("treeitem").first();
   await expect(first).toHaveText("Frame");
@@ -109,7 +109,8 @@ test("T clicked in the blank space makes text there, typed in at once, in the pa
   await expect(text).toHaveText("Hello there");
   const body = await desktop(page).contentFrame().locator("body").evaluate((el) => getComputedStyle(el).fontFamily);
   await expect(text).toHaveCSS("font-family", body);
-  await expect(offCanvas(page)).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // Text has no fill.
+  await expect(text).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(layerTree(page).getByRole("treeitem").first()).toHaveText("Hello there");
   await expect(badge(page)).toHaveCount(0);
   const where = await steadyBox(offCanvas(page));
@@ -160,6 +161,8 @@ async function frameWithText(page: Page, offTheCanvas: boolean): Promise<string[
   await page.keyboard.press("f");
   await drawFrom(page, start, { x: start.x + 40, y: start.y + 30 });
   const frame = offTheCanvas ? offCanvas(page) : null;
+  // On the canvas, filled white in the Design panel, as one made in the blank space is at once.
+  if (!frame) await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
   await page.getByRole("button", { name: "Add brief" }).click();
   await page.getByRole("textbox", { name: "Brief" }).fill("A hero for the launch");
   await page.getByRole("textbox", { name: "Brief" }).press("Enter");
@@ -186,7 +189,7 @@ async function frameWithText(page: Page, offTheCanvas: boolean): Promise<string[
 
 test("put back in a view, a Frame made in the blank space is new there, its text and brief with it, as one drawn there is; ⌘Z, and it is off the canvas again", async ({ page }) => {
   const drawn = await frameWithText(page, false);
-  expect(drawn).toHaveLength(2);
+  expect(drawn).toHaveLength(3);
   // Gone, round and canvas, to make it again the other way.
   await badge(page).click();
   await page.getByRole("dialog", { name: "Changes" }).getByRole("button", { name: "Discard all" }).click();
