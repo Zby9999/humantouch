@@ -1393,6 +1393,121 @@ describe("claim, Stacks made and dissolved", () => {
     expect(notes).not.toContain("not in the source yet");
     expect(notes).toContain("- **Currently set by:** unknown: the layer was made in a round before\n");
   });
+
+  describe("a Grid made and dissolved (ticket 110)", () => {
+    const grid = { grid: { type: "grid", columns: 2, rowGap: 16, columnGap: 24 }, padding: [0, 0, 0, 0] };
+    const tiles = ["A", "B", "C", "D"].map((name, i) => layer(name, `src/App.tsx:${31 + i}:9`, '<div class="absolute">'));
+    const members = tiles.map((target, i) => ({ layer: String(5 + i), target, from: place(i + 1, { x: (i % 2) * 124, y: Math.floor(i / 2) * 56 }) }));
+    const gridStyle = { display: "grid", "grid-template-columns": "repeat(2, minmax(0, 1fr))", "row-gap": "16px", "column-gap": "24px", position: "absolute", left: "20px", top: "30px" };
+    const madeGrid = (more: object = {}) => stack({ layer: "9", after: { ...grid, place: place(1, { x: 20, y: 30 }), layers: members }, style: gridStyle, ...more });
+    const rulesOf = (notes: string) => [...notes.split(/^## How to write them\n/m)[1].matchAll(/^- \*\*(.+?):\*\* /gm)].map((m) => m[1]);
+    const ruleOf = (notes: string, name: string) => new RegExp(`^- \\*\\*${name}:\\*\\* (.*)$`, "m").exec(notes.split(/^## How to write them\n/m)[1])?.[1] ?? "";
+
+    test("a new Grid: written as a new Stack is, its columns and gaps, its CSS and Tailwind's classes, and the page checks it", async () => {
+      saveRound(madeGrid());
+
+      const output = (await cli("claim")).output;
+      const notes = section(output, 1);
+
+      expect(notes).toMatch(/^1\. Make Grid\n/);
+      expect(notes).toContain("- **Layer:** a new Grid, in Frame (`<div class=\"relative h-64\">`, at `src/App.tsx:30:7`)\n");
+      expect(notes).toContain(
+        "- **Design intent:** Wrap these 4 layers, in this order, in a new Grid: a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px, no padding. " +
+          "Place it absolute in Frame (`<div class=\"relative h-64\">`, at `src/App.tsx:30:7`), at X 20px and Y 30px from the Frame's top left (CSS `left` and `top`).\n" +
+          "  1. A (`<div class=\"absolute\">`, at `src/App.tsx:31:9`)\n",
+      );
+      expect(notes).toContain(
+        "- **Grid:** lay its layers out as `display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 16px; column-gap: 24px` does (Tailwind's `grid grid-cols-2 gap-x-6 gap-y-4`). " +
+          "It fills its cells row by row, in the order its layers are written: no `grid-row`, `grid-column` or `order`.\n",
+      );
+      expect(notes).toContain("- **Join the layout:** the layers are placed absolute now. In the Grid, they are laid out by it: take their absolute positioning off.\n");
+      expect(rulesOf(output)).toContain("Making a Grid");
+      expect(rulesOf(output)).not.toContain("Making a Stack");
+      const checks = ruleOf(output, "How the page checks");
+      expect(checks).toContain("a new Grid by the element its layers are in on the page: one element holds them all, laid out as a grid (`display: grid`)");
+      expect(checks).not.toContain("not at all");
+    });
+
+    test("made of a Frame, the Frame is made a Grid; a layer with no source marker, the page does not check it", async () => {
+      const unmarked = { ...tiles[3], loc: null };
+      saveRound(stack({ layer: "4", after: { ...grid, padding: [8, 8, 8, 8], place: null, layers: [...members.slice(0, 3), { ...members[3], target: unmarked }] } }));
+
+      const output = (await cli("claim")).output;
+
+      expect(section(output, 1)).toContain("- **Design intent:** Make this Frame a Grid: a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px, padding 8px. Its 4 layers go in its layout, in this order:\n");
+      expect(ruleOf(output, "How the page checks")).toContain("a new Grid whose layers the page cannot all find, not at all");
+    });
+
+    test("a dissolved Grid: what it was, as a dissolved Stack says it", async () => {
+      saveRound({
+        ...redFill,
+        kind: "unstack",
+        property: "unstack",
+        layer: "4",
+        target: board,
+        before: { grid: { type: "grid", columns: 3, rowGap: 16, columnGap: 16 }, padding: [0, 0, 0, 0] },
+        after: { width: 200, height: 80, layers: [{ layer: "5", target: title, x: 0, y: 0, width: 60, height: 20, style: {} }] },
+        style: { display: "block", width: "200px", height: "80px", position: "relative" },
+        sources: [],
+      });
+
+      const output = (await cli("claim")).output;
+
+      expect(section(output, 1)).toMatch(/^1\. Dissolve Grid\n/);
+      expect(section(output, 1)).toContain("- **Design intent:** Dissolve this Grid (a Grid of 3 equal columns, with a row gap of 16px and a column gap of 16px, no padding): make it a Frame, Fixed 200 × 80px, ");
+      expect(rulesOf(output)).toContain("Dissolving a Grid");
+      expect(rulesOf(output)).not.toContain("Dissolving a Stack");
+      expect(ruleOf(output, "How the page checks")).toContain("a Grid dissolved, not at all");
+    });
+
+    test("a dissolved Grid whose columns are not all as wide is not called one of equal columns", async () => {
+      saveRound({
+        ...redFill,
+        kind: "unstack",
+        property: "unstack",
+        layer: "4",
+        target: board,
+        before: { grid: { type: "grid", columns: 2, rowGap: 16, columnGap: 16 }, padding: [0, 0, 0, 0], unequal: true },
+        after: { width: 200, height: 80, layers: [{ layer: "5", target: title, x: 0, y: 0, width: 60, height: 20, style: {} }] },
+        style: { display: "block" },
+        sources: [],
+      });
+
+      expect(section((await cli("claim")).output, 1)).toContain("Dissolve this Grid (a Grid of 2 columns, with a row gap of 16px and a column gap of 16px, no padding)");
+    });
+
+    test("a new Grid in a container made this round is listed as a change to a layer made this round, not as one whose layers the page cannot find", async () => {
+      const made = { ...board, loc: null, made: "3", context: { path: ["Page", "App", "Frame"], element: "<div>" } };
+      saveRound({ ...redFill, id: 1, kind: "create", property: "create", layer: "3", before: null, after: { type: "frame", place: place(1), width: 300, height: 200 }, style: {} }, madeGrid({ id: 2, target: made }));
+
+      const checks = ruleOf((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toContain("a change to a layer made this round");
+      expect(checks).not.toContain("a new Grid whose layers the page cannot all find");
+    });
+
+    test("done: the layers not in one new element, or it laid out otherwise, says what the page shows", async () => {
+      saveRound(madeGrid());
+      await cli("claim");
+      let actual: object | string | null = null;
+      const closePage = openPage(() => ({ outcome: "not shown", actual }));
+      try {
+        expect((await cli("done", "1")).output).toContain(
+          "it does not show the change. The layers are not all in one new element in their container, as the notes have the new Grid: wrap them in it, in the order listed, and run `npx 03kind done 1` again.\n",
+        );
+        actual = "absolute";
+        expect((await cli("done", "1")).output).toContain("The layers are still placed absolute, so the new Grid does not lay them out: take their absolute positioning off (Join the layout)");
+        actual = "cells";
+        expect((await cli("done", "1")).output).toContain("The new Grid's element does not hold these layers alone, in the order listed: put them in it in that order, and nothing else");
+        actual = { type: "grid", columns: 3, rowGap: 16, columnGap: 24 };
+        expect((await cli("done", "1")).output).toContain(
+          "The new Grid's element lays its layers out as a Grid of 3 equal columns, with a row gap of 16px and a column gap of 24px, not a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px",
+        );
+      } finally {
+        closePage();
+      }
+    });
+  });
 });
 
 describe("claim, new layers, words, deleting and copying", () => {

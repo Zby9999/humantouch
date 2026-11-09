@@ -39,6 +39,7 @@ import {
   type Dissolved,
   type Place,
   type PutBack,
+  type GridSettings,
   type StackSettings,
 } from "./changeset";
 import type { Destination, Editor } from "./edit-commands";
@@ -50,7 +51,8 @@ import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
-import { borderBox, compose, decompose, dissolve, inferStack, marginsAside, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve } from "./stacks";
+import { equalTracks } from "./grid-tracks";
+import { borderBox, compose, decompose, dissolve, gridStyle, inferGrid, inferStack, marginsAside, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve, type Inferred } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
 import { heldCentered, placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
 import type { Steps } from "./undo-steps";
@@ -741,11 +743,11 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       // Measured as they show, margins left out: in the Stack, the room between them is its gap. The Stack has no
       // margin of its own either, which no one could see or set: the room the margins made around them goes.
       // Placed freely in a Frame, they are placed again, by the Stack.
-      const inferred = inferStack(
-        members.map((member) => borderBox(member.el)),
-        frame && paddingBox(frame.el),
-        !!frame && members.every((member) => member.absolute),
-      );
+      const boxes = members.map((member) => borderBox(member.el));
+      // Free layers in rows and columns make a Grid, which holds them where they are (ticket 110); others a Stack, as ever.
+      const free = members.every((member) => member.absolute);
+      const grid = free ? inferGrid(boxes, frame && paddingBox(frame.el)) : null;
+      const inferred = grid ?? inferStack(boxes, frame && paddingBox(frame.el), !!frame && free);
       const ordered = inferred.order.map((i) => members[i]);
       const margins = ordered.map((member) => marginsOf(member.el));
       const composed: Composed = {
@@ -758,7 +760,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           ...(margins[i].some((m) => m) && { unmargined: true as const }),
         })),
       };
-      let style = stackStyle(inferred.settings, inferred.stretch);
+      let style = grid ? gridStyle(grid.settings) : stackStyle((inferred as Inferred).settings, (inferred as Inferred).stretch);
       let id: string;
       if (frame) id = idOf(frame, tree().acrossInstances(frame));
       else {
@@ -786,10 +788,10 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       structural([id], kept, stackOn(id, record), stackOff(id, record));
       return layerById(id)!;
     },
-    canUnstack: (layer) => layer.kind === "stack" && !!layer.parent && layer.children.every((child) => placeable(child) && repeatsWith(child, layer)),
+    canUnstack: (layer) => (layer.kind === "stack" || layer.kind === "grid") && !!layer.parent && layer.children.every((child) => placeable(child) && repeatsWith(child, layer)),
     canUngroup: (layer) =>
       !!layer.parent &&
-      ["stack", "frame"].includes(layer.kind) &&
+      ["stack", "grid", "frame"].includes(layer.kind) &&
       !layer.isInstance &&
       layer.children.length > 0 &&
       layer.children.every((child) => placeable(child) && editor().canDrop(child, layer.parent!)),
@@ -1058,12 +1060,19 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       if (!editor().canUnstack(layer)) throw new Error(`03Kind: ${layer.name} cannot be dissolved`);
       const count = tree().acrossInstances(layer).length;
       const id = idOf(layer, tree().acrossInstances(layer));
-      const before: StackSettings = {
-        direction: readAsShown(layer.el, "direction", colors),
-        gap: readAsShown(layer.el, "gap", colors),
-        padding: readAsShown(layer.el, "padding", colors),
-        align: readAsShown(layer.el, "align", colors),
-      };
+      const own = getComputedStyle(layer.el);
+      // A Grid dissolves as a Stack does (ticket 110): what it was is its columns and gaps.
+      const isGrid = /grid$/.test(own.display);
+      const arrangement = isGrid ? readAsShown(layer.el, "arrangement", colors) : null;
+      const before: StackSettings | GridSettings =
+        arrangement?.type === "grid"
+          ? { grid: arrangement, padding: readAsShown(layer.el, "padding", colors), ...(!equalTracks(own.gridTemplateColumns) && { unequal: true as const }) }
+          : {
+              direction: readAsShown(layer.el, "direction", colors),
+              gap: readAsShown(layer.el, "gap", colors),
+              padding: readAsShown(layer.el, "padding", colors),
+              align: readAsShown(layer.el, "align", colors),
+            };
       // Each layer where it is now, from inside the Frame's border, its margins aside, but `auto` ones, which take up no room once it is placed by its left and top (ticket 97).
       const dissolved: Dissolved = {
         width: round(layer.el.getBoundingClientRect().width),
@@ -1075,9 +1084,8 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           return { layer: idOf(child, tree().acrossInstances(child)), target: targetOf(child, count), x, y, width: round(r.width), height: round(r.height), style, margins: marginsAside(child.el) };
         }),
       };
-      const own = getComputedStyle(layer.el);
       const style = {
-        ...(/flex$/.test(own.display) && { display: own.display === "inline-flex" ? "inline-block" : "block" }),
+        ...(/(flex|grid)$/.test(own.display) && { display: /^inline-/.test(own.display) ? "inline-block" : "block" }),
         ...sizeOf(layer.el),
         // The positioning reference of its layers.
         ...(own.position === "static" && { position: "relative" }),
@@ -1090,7 +1098,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         before,
         after: dissolved,
         style,
-        sources: sourcesFor(layer.el, ["display", "flex-direction"]),
+        sources: sourcesFor(layer.el, isGrid ? ["display", "grid-template-columns"] : ["display", "flex-direction"]),
       };
       structural([id], [id], stackOn(id, record), stackOff(id, record));
       return layerById(id)!;

@@ -8344,3 +8344,151 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
   });
 });
 
+describe("free layers in rows and columns made a Grid, and a Grid dissolved (ticket 110)", () => {
+  const open = (page: string) => {
+    const canvas = openCanvas(page);
+    const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
+    const rects = (...ids: string[]) => ids.map((id) => canvas.doc.getElementById(id)!.getBoundingClientRect().toJSON() as DOMRect);
+    return { ...canvas, layer, rects };
+  };
+  /** How far each layer moved or changed size, at most, in px. */
+  const drift = (before: DOMRect[], after: DOMRect[]) =>
+    Math.max(...before.flatMap((b, i) => (["x", "y", "width", "height"] as const).map((side) => Math.abs(b[side] - after[i][side]))));
+  /** Two rows of two, 100 × 40, 24px apart across and 16px down, from 20, 30; in the page's order, the last first. */
+  const TILES = [placed("d", [144, 86, 100, 40]), placed("a", [20, 30, 100, 40]), placed("b", [144, 30, 100, 40]), placed("c", [20, 86, 100, 40])].join("");
+  const IDS = ["a", "b", "c", "d"];
+
+  test("⇧A: a new Grid where they are, row by row, its columns and gaps theirs; one step back", () => {
+    const { doc, editor, changes, layer, rects } = open(board(TILES));
+    const original = styles(doc);
+    const before = rects(...IDS);
+
+    const grid = editor.stack(IDS.map(layer));
+
+    expect(grid.kind).toBe("grid");
+    expect(grid.children.map((l) => l.el.id)).toEqual(IDS);
+    expect(drift(before, rects(...IDS))).toBeLessThanOrEqual(1);
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "stack",
+      property: "stack",
+      target: { loc: "src/App.tsx:20:5" },
+      after: { grid: { type: "grid", columns: 2, rowGap: 16, columnGap: 24 }, padding: [0, 0, 0, 0], place: { nth: 1, absolute: { x: 20, y: 30 } } },
+      style: { display: "grid", "grid-template-columns": "repeat(2, minmax(0, 1fr))", "row-gap": "16px", "column-gap": "24px", position: "absolute", left: "20px", top: "30px" },
+    });
+    expect(changes.list()[0].after).not.toHaveProperty("direction");
+
+    editor.undo();
+    expect(styles(doc)).toEqual(original);
+  });
+
+  test("a Frame selected alone becomes the Grid, its padding the room round its cells; a row of them, a Stack as ever", () => {
+    const { doc, editor, changes, layer, rects } = open(board(TILES).replace("position: relative;", "position: relative; box-sizing: border-box;"));
+    const before = rects(...IDS);
+
+    const grid = editor.stack([layer("board")]);
+
+    expect(grid.el).toBe(doc.getElementById("board"));
+    expect(grid.kind).toBe("grid");
+    expect(changes.list()[0].after).toMatchObject({ place: null, grid: { columns: 2, rowGap: 16, columnGap: 24 }, padding: [30, 356, 274, 20] });
+    expect(drift(before, rects(...IDS))).toBeLessThanOrEqual(1);
+
+    const row = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40]), placed("c", [264, 30, 100, 40]), placed("d", [394, 30, 100, 40])].join("")));
+    expect(row.editor.stack(IDS.map(row.layer)).kind).toBe("stack");
+    expect(row.changes.list()[0].after).toMatchObject({ direction: "horizontal", gap: 24 });
+  });
+
+  test("⌥⇧A dissolves a Grid as a Stack: a Frame of its size, its layers absolute where they were; ⌘⇧G ungroups it", () => {
+    const page = `<!DOCTYPE html><body style="margin: 0"><section id="s" ${at("4:3")} style="display: flex; flex-direction: column">
+      <div id="g" ${at("5:5")} style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; width: 208px">
+        <div id="a" ${at("6:7")} style="height: 20px"></div><div id="b" ${at("7:7")} style="height: 20px"></div><div id="c" ${at("8:7")} style="height: 30px"></div>
+      </div></section></body>`;
+    const { editor, changes, layer, rects } = open(page);
+    const before = rects("g", "a", "b", "c");
+    expect(editor.canUnstack(layer("g"))).toBe(true);
+    expect(editor.canUngroup(layer("g"))).toBe(true);
+
+    const frame = editor.unstack(layer("g"));
+
+    expect(frame.kind).toBe("frame");
+    expect(drift(before, rects("g", "a", "b", "c"))).toBeLessThan(0.1);
+    expect(changes.list()[0]).toMatchObject({
+      kind: "unstack",
+      before: { grid: { type: "grid", columns: 2, rowGap: 12, columnGap: 8 }, padding: [0, 0, 0, 0] },
+      after: { width: 208, layers: [{ x: 0, y: 0, width: 100 }, { x: 108, y: 0 }, { x: 0, y: 32, height: 30 }] },
+      style: { display: "block", position: "relative" },
+    });
+    expect(changes.list()[0].sources.map((s) => s.properties)).toContainEqual(expect.arrayContaining(["display"]));
+    expect(changes.list()[0].before).not.toHaveProperty("unequal");
+
+    // Its columns not all as wide: recorded so, for the notes not to call them equal.
+    const uneven = open(page.replace("repeat(2, minmax(0, 1fr))", "120px 1fr"));
+    uneven.editor.unstack(uneven.layer("g"));
+    expect(uneven.changes.list()[0].before).toMatchObject({ grid: { columns: 2 }, unequal: true });
+  });
+
+  test("the page checks a new Grid: its layers in one new element, laid out as a Grid of their columns and gaps", () => {
+    // As the live page has them, and the canvas frozen from it: the usage chain read from the page, not written on each element.
+    const NO_CHAIN = / data-tk-chain='[^']*'/g;
+    const { doc, editor, changes, layer } = open(board(TILES).replaceAll(NO_CHAIN, ""));
+    editor.stack(IDS.map(layer));
+    const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
+    const [made] = changes.list();
+    expect(uncheckable(made, round)).toBeNull();
+    // As the Agent writes them: in the new Grid, no longer absolute.
+    const tiles = IDS.map((id) => placed(id, [0, 0, 100, 40]).replace("position: absolute; left: 0px; top: 0px; ", ""));
+    const pageOf = (inner: string) => {
+      live?.remove();
+      live = document.createElement("iframe");
+      live.style.width = "800px";
+      document.body.append(live);
+      const page = live.contentDocument!;
+      page.open();
+      page.write(board(inner).replaceAll(NO_CHAIN, ""));
+      page.close();
+      return page;
+    };
+    // Not yet: the layers absolute in the board, as they were.
+    expect(checkChange(pageOf(TILES), made, round)).toEqual({ outcome: "not shown", actual: null });
+    const wrapped = (style: string) => pageOf(`<div style="position: absolute; left: 20px; top: 30px; ${style}">${tiles.join("")}</div>`);
+    expect(checkChange(wrapped("display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px"), made, round)).toEqual({ outcome: "shown" });
+    // As an Agent writes it: a `<div>` round the `<div>`s, on a line of its own where the first was, every line after it one down.
+    const shifted = tiles.map((tile, i) => tile.replace(`App.tsx:2${i + 1}:7`, `App.tsx:2${i + 2}:9`));
+    const ownLine = pageOf(`<div data-tk-loc="src/App.tsx:21:7" style="position: absolute; left: 20px; top: 30px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px">${shifted.join("")}</div>`);
+    expect(checkChange(ownLine, made, round)).toEqual({ outcome: "shown" });
+    expect(checkChange(wrapped("display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px"), made, round)).toEqual({
+      outcome: "not shown",
+      actual: { type: "grid", columns: 4, rowGap: 16, columnGap: 24 },
+    });
+    expect(checkChange(wrapped("display: flex; flex-wrap: wrap; gap: 16px 24px"), made, round)).toMatchObject({ outcome: "not shown", actual: { type: "stack" } });
+
+    // Not shown, though in a Grid of their columns and gaps (review of ticket 110):
+    const GRID_CSS = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px";
+    const grid = (inner: string, outer = "position: absolute; left: 20px; top: 30px") => pageOf(`<div style="${outer}; ${GRID_CSS}">${inner}</div>`);
+    // their absolute placement left on: placed against the Grid, not in its cells;
+    const stillAbsolute = IDS.map((id, i) => placed(id, [0, 0, 100, 40]).replace("left: 0px; top: 0px", `left: ${(i % 2) * 124}px; top: ${Math.floor(i / 2) * 56}px`));
+    expect(checkChange(grid(stillAbsolute.join("")), made, round)).toEqual({ outcome: "not shown", actual: "absolute" });
+    // in another order than the canvas has them, B and C swapped;
+    expect(checkChange(grid([tiles[0], tiles[2], tiles[1], tiles[3]].join("")), made, round)).toEqual({ outcome: "not shown", actual: "cells" });
+    // with another layer in it, a cell more;
+    expect(checkChange(grid(`${tiles.join("")}<div style="height: 40px"></div>`), made, round)).toEqual({ outcome: "not shown", actual: "cells" });
+    // not right in the container's layout, but deeper.
+    expect(checkChange(pageOf(`<section><div style="${GRID_CSS}">${tiles.join("")}</div></section>`), made, round)).toEqual({ outcome: "not shown", actual: null });
+
+    // The Grid moved to another container later, or two of its layers made a Stack in it: what the page shows of it is not this change's.
+    const movedLater = placedOnCanvas([made, { ...made, id: 9, kind: "move", property: "move", before: null, after: (made.after as { place: Place }).place, style: {} }], doc.documentElement.outerHTML);
+    expect(checkChange(grid(tiles.join("")), made, movedLater)).toMatchObject({ outcome: "unchecked", reason: "change 9 moves the Grid: what the page shows of it is that change's" });
+    const [a, b] = (made.after as { layers: { layer: string }[] }).layers;
+    const place = (made.after as { place: Place }).place;
+    const inIt = { ...place, container: { ...place.container, layer: made.layer } };
+    const stackedLater = placedOnCanvas([made, { ...made, id: 9, layer: "s9", after: { ...(made.after as object), place: inIt, layers: [a, b] } }], doc.documentElement.outerHTML);
+    expect(checkChange(grid(`<div style="display: flex">${tiles[0]}${tiles[1]}</div>${tiles[2]}${tiles[3]}`), made, stackedLater)).toEqual({ outcome: "shown" });
+
+    // A change to its columns after: the page shows those, which that change is for.
+    editor.set(editor.tree().layerOf(doc.getElementById("a")!.parentElement!)!, "columns", 4);
+    const later = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
+    expect(changes.list()).toHaveLength(2);
+    expect(checkChange(wrapped("display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px"), changes.list()[0], later)).toEqual({ outcome: "shown" });
+  });
+});
+

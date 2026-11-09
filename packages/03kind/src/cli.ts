@@ -10,7 +10,7 @@ import { breakpointName, tailwindOf } from "./client/breakpoints";
 import { otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
 import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
-import type { Change, Created, Margins, Place, SavedChangeSet } from "./client/changeset";
+import type { Change, Composed, Created, GridSettings, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
 import { canvasOffset, isOffsetInLayout, movedWords, reportFor } from "./report-form";
@@ -346,6 +346,15 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     return `The layer is still on the page: take it out of the code (for a data change, its item out of the data), and ${again}.`;
   }
   if (change.kind === "create") return madeNotShown(change, actual, again, width);
+  // A Grid made of layers (ticket 110): not in one new element, or that not laid out as given.
+  if (change.kind === "stack") {
+    const at = sentenceAt(width);
+    const grid = (change.after as Composed & GridSettings).grid;
+    if (!actual) return `${at} layers are not all in one new element in their container, as the notes have the new Grid: wrap them in it, in the order listed, and ${again}.`;
+    if (actual === "absolute") return `${at} layers are still placed absolute, so the new Grid does not lay them out: take their absolute positioning off (Join the layout), and ${again}.`;
+    if (actual === "cells") return `${at} new Grid's element does not hold these layers alone, in the order listed: put them in it in that order, and nothing else, and ${again}.`;
+    return `${at} new Grid's element lays its layers out as ${value("arrangement", actual)}, not ${value("arrangement", grid)}: check its \`display\`, \`grid-template-columns\` and gaps, and ${again}.`;
+  }
   // New words (ticket 90): what the layer reads on the page, and what on the canvas.
   if (change.kind === "text") {
     return `The layer reads ${quoted(actual as string)} on the page, not ${quoted(change.after as string)} as on the canvas: change its words in the JSX, or where they are given when they come from a prop or a variable, and ${again}.`;

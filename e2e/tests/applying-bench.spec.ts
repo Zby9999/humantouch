@@ -2176,3 +2176,57 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
     expect(result.ticked).toEqual([1]);
   });
 });
+
+test.describe("free layers in two rows of two made a Grid (ticket 110)", () => {
+  const SURFACE_END = "      </Surface>\n";
+  /** Four boxes, 100 × 40, 24px apart across and 16px down, placed absolute in a Frame below the cards: a round before drew them. */
+  const TILES = [
+    [20, 30],
+    [144, 30],
+    [20, 86],
+    [144, 86],
+  ].map(([left, top]) => `        <div className="absolute left-[${left}px] top-[${top}px] h-10 w-[100px] bg-stone-300" />\n`);
+  const BOARD = `      <div className="relative h-60">\n${TILES.join("")}      </div>\n`;
+  /** As an Agent writes the Grid: a new element round them, where the first was, their absolute placement taken off. */
+  const GRID =
+    `      <div className="relative h-60">\n        <div className="absolute left-[20px] top-[30px] grid grid-cols-2 gap-x-6 gap-y-4">\n` +
+    `${TILES.map((tile) => `  ${tile.replace(/absolute left-\[\d+px\] top-\[\d+px\] /, "")}`).join("")}        </div>\n      </div>\n`;
+
+  test("playbook: ⇧A makes the four a Grid; the Agent wraps them in `grid grid-cols-2 gap-x-6 gap-y-4`: done says it shows", async ({ page }) => {
+    writeFileSync(APP, originalApp.replace(SURFACE_END, `${SURFACE_END}${BOARD}`));
+    await expect.poll(async () => (await (await fetch(`${DEV_URL}/src/App.tsx`)).text()).includes("bg-stone-300")).toBe(true);
+    await recordNotices(page);
+    await page.goto(DEV_URL);
+    await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+    await expect(page.locator('iframe[title="Phone 390"]').contentFrame().locator("h1")).toBeVisible();
+    await canvasInPlace(page);
+    const tree = page.getByRole("tree", { name: "Layers" });
+    const frames = tree.getByRole("treeitem").filter({ hasText: /^Frame$/ });
+    await tree.getByRole("treeitem").last().click();
+    await expect(frames).toHaveCount(5);
+    await frames.nth(1).click();
+    for (const n of [2, 3, 4]) await frames.nth(n).click({ modifiers: ["Shift"] });
+    await page.keyboard.press("Shift+A");
+    await expect(tree.getByRole("treeitem", { name: "Grid", exact: true }).last()).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.map((c: { kind: string }) => c.kind)).toEqual(["stack"]);
+    await leaveEditMode(page);
+
+    const notes = await npx03kind("claim");
+    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    const first = checksOf([1]).outcomes[1];
+    writeFileSync(APP, readFileSync(APP, "utf8").replace(BOARD, GRID));
+    await expect.poll(() => page.locator("div:has(> .bg-stone-300)").first().evaluate((el) => getComputedStyle(el).display)).toBe("grid");
+    const done = await npx03kind("done", "1");
+    const finished = await npx03kind("finish");
+    record("grid-made-of-free-layers", { first, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) });
+
+    expect(notes).toContain("## 1. Make Grid");
+    expect(notes).toContain("Wrap these 4 layers, in this order, in a new Grid: a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px, no padding.");
+    expect(notes).toContain("(Tailwind's `grid grid-cols-2 gap-x-6 gap-y-4`)");
+    expect(notes).toContain("- **Making a Grid:** ");
+    // Before the Agent wrote it, the page did not show it: no false ✓.
+    expect(first).toBe("not shown");
+    expect(done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(tickedIn(finished)).toEqual([1]);
+  });
+});
