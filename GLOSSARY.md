@@ -79,7 +79,7 @@ _Avoid_: 元素、节点、DOM
 _Avoid_: Flex、自动布局、Auto Layout
 
 **Grid**:
-按行和列排列子图层的容器。Stack 和 Grid 可以互相转换（ticket 109，照 Figma 的自动布局：方向旁边的 Grid 选项），是同一个容器换一种排列方式，一条样式改动，不是结构性改动。Grid 的格子里，没写尺寸的图层是 Fill（撑满格子），Hug 按内容。排成至少两行两列的自由定位图层按 ⇧A 合成的是 Grid，不是 Stack；Grid 也能像 Stack 一样解散（ticket 110）。
+按行和列排列子图层的容器。Stack 和 Grid 可以互相转换（ticket 109，照 Figma 的自动布局：方向旁边的 Grid 选项），是同一个容器换一种排列方式，一条样式改动，不是结构性改动；按区域、行列号摆子图层的 Grid 也能改成 Stack，子图层按图层顺序排。Grid 的格子里，没写尺寸的图层是 Fill（撑满格子），Hug 按内容。排成至少两行两列的自由定位图层按 ⇧A 合成的是 Grid，不是 Stack；Grid 也能像 Stack 一样解散（ticket 110）。
 _Avoid_: 网格布局、表格
 
 **自由定位 (Absolute)**:

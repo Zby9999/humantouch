@@ -196,7 +196,22 @@ export function otherUsagesWords(property: string, usages: OtherUsageChanged[], 
 
 /** What a layer shows of a change's property at widths outside the change's range now, and showed as the round was claimed (ticket 104): each `at 1280px wide, its fill from … to …`. */
 export function outsideWords(property: string, widths: OutsideChanged[]): string {
-  return widths.map(({ width, was, is }) => `at ${width}px wide, its ${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`).join("; ");
+  return widths
+    .map(({ width, was, is }) =>
+      // A Grid made a Stack at a breakpoint that placed its layers itself (ticket 109's follow-up): laid out as it was, but its layers placed otherwise.
+      property === "arrangement" && placedOtherwise(was, is)
+        ? `at ${width}px wide, its layers placed otherwise than they were (their \`grid-template-areas\`, \`grid-area\`, \`grid-row\`, \`grid-column\`, \`dense\` or \`order\`)`
+        : `at ${width}px wide, its ${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`,
+    )
+    .join("; ");
+}
+
+/** Whether two arrangements read with how they place their layers (`placement`) are the same but for that. */
+function placedOtherwise(was: unknown, is: unknown): boolean {
+  if (!was || !is || typeof was !== "object" || typeof is !== "object" || !("placement" in was) || !("placement" in is)) return false;
+  const { placement: before, ...rest } = was as { placement: string };
+  const { placement: after, ...others } = is as { placement: string };
+  return before !== after && JSON.stringify(rest) === JSON.stringify(others);
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */
