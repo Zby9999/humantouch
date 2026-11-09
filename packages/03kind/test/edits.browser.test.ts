@@ -8419,6 +8419,12 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
       style: { display: "block", position: "relative" },
     });
     expect(changes.list()[0].sources.map((s) => s.properties)).toContainEqual(expect.arrayContaining(["display"]));
+    expect(changes.list()[0].before).not.toHaveProperty("unequal");
+
+    // Its columns not all as wide: recorded so, for the notes not to call them equal.
+    const uneven = open(page.replace("repeat(2, minmax(0, 1fr))", "120px 1fr"));
+    uneven.editor.unstack(uneven.layer("g"));
+    expect(uneven.changes.list()[0].before).toMatchObject({ grid: { columns: 2 }, unequal: true });
   });
 
   test("the page checks a new Grid: its layers in one new element, laid out as a Grid of their columns and gaps", () => {
@@ -8455,6 +8461,28 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
       actual: { type: "grid", columns: 4, rowGap: 16, columnGap: 24 },
     });
     expect(checkChange(wrapped("display: flex; flex-wrap: wrap; gap: 16px 24px"), made, round)).toMatchObject({ outcome: "not shown", actual: { type: "stack" } });
+
+    // Not shown, though in a Grid of their columns and gaps (review of ticket 110):
+    const GRID_CSS = "display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px";
+    const grid = (inner: string, outer = "position: absolute; left: 20px; top: 30px") => pageOf(`<div style="${outer}; ${GRID_CSS}">${inner}</div>`);
+    // their absolute placement left on: placed against the Grid, not in its cells;
+    const stillAbsolute = IDS.map((id, i) => placed(id, [0, 0, 100, 40]).replace("left: 0px; top: 0px", `left: ${(i % 2) * 124}px; top: ${Math.floor(i / 2) * 56}px`));
+    expect(checkChange(grid(stillAbsolute.join("")), made, round)).toEqual({ outcome: "not shown", actual: "absolute" });
+    // in another order than the canvas has them, B and C swapped;
+    expect(checkChange(grid([tiles[0], tiles[2], tiles[1], tiles[3]].join("")), made, round)).toEqual({ outcome: "not shown", actual: "cells" });
+    // with another layer in it, a cell more;
+    expect(checkChange(grid(`${tiles.join("")}<div style="height: 40px"></div>`), made, round)).toEqual({ outcome: "not shown", actual: "cells" });
+    // not right in the container's layout, but deeper.
+    expect(checkChange(pageOf(`<section><div style="${GRID_CSS}">${tiles.join("")}</div></section>`), made, round)).toEqual({ outcome: "not shown", actual: null });
+
+    // The Grid moved to another container later, or two of its layers made a Stack in it: what the page shows of it is not this change's.
+    const movedLater = placedOnCanvas([made, { ...made, id: 9, kind: "move", property: "move", before: null, after: (made.after as { place: Place }).place, style: {} }], doc.documentElement.outerHTML);
+    expect(checkChange(grid(tiles.join("")), made, movedLater)).toMatchObject({ outcome: "unchecked", reason: "change 9 moves the Grid: what the page shows of it is that change's" });
+    const [a, b] = (made.after as { layers: { layer: string }[] }).layers;
+    const place = (made.after as { place: Place }).place;
+    const inIt = { ...place, container: { ...place.container, layer: made.layer } };
+    const stackedLater = placedOnCanvas([made, { ...made, id: 9, layer: "s9", after: { ...(made.after as object), place: inIt, layers: [a, b] } }], doc.documentElement.outerHTML);
+    expect(checkChange(grid(`<div style="display: flex">${tiles[0]}${tiles[1]}</div>${tiles[2]}${tiles[3]}`), made, stackedLater)).toEqual({ outcome: "shown" });
 
     // A change to its columns after: the page shows those, which that change is for.
     editor.set(editor.tree().layerOf(doc.getElementById("a")!.parentElement!)!, "columns", 4);

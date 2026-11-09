@@ -5,7 +5,7 @@
  * finds them all here; one that did reads only what this round needs.
  */
 import { dissolvesGrid, drawnIn, makesGrid, type Change, type Created, type Place } from "./client/changeset";
-import { checkable, forOneUsage, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
+import { checkable, forOneUsage, foundByMarker, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
 import type { ClassHelper, WhereToLook } from "./where-to-look";
@@ -359,7 +359,8 @@ const UNCHECKED: [string, (change: Change, list: Change[]) => boolean][] = [
   ["a new layer in a container the page cannot find", (change, list) => change.kind === "create" && !checkable(change, list)],
   ["a layer put back", (change) => change.kind === "putBack"],
   ["a Stack made or dissolved", (change) => (change.kind === "stack" && !makesGrid(change)) || (change.kind === "unstack" && !dissolvesGrid(change))],
-  ["a new Grid whose layers the page cannot all find", (change, list) => makesGrid(change) && !checkable(change, list)],
+  // Its container found by its marker, not in a loop, one of its layers not found: else another name above says why.
+  ["a new Grid whose layers the page cannot all find", (change, list) => makesGrid(change) && !checkable(change, list) && foundByMarker(change.target) && !change.data],
   ["a Grid dissolved", (change) => dissolvesGrid(change)],
   ["a move into another container, or into a layout from a place of its own", (change, list) => movedUnchecked(change, list) && !inUnfoundContainer(change)],
   ["a move in a container made this round, or one the page cannot find", (change, list) => movedUnchecked(change, list) && inUnfoundContainer(change)],

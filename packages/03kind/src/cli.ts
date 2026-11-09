@@ -351,6 +351,8 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     const at = sentenceAt(width);
     const grid = (change.after as Composed & GridSettings).grid;
     if (!actual) return `${at} layers are not all in one new element in their container, as the notes have the new Grid: wrap them in it, in the order listed, and ${again}.`;
+    if (actual === "absolute") return `${at} layers are still placed absolute, so the new Grid does not lay them out: take their absolute positioning off (Join the layout), and ${again}.`;
+    if (actual === "cells") return `${at} new Grid's element does not hold these layers alone, in the order listed: put them in it in that order, and nothing else, and ${again}.`;
     return `${at} new Grid's element lays its layers out as ${value("arrangement", actual)}, not ${value("arrangement", grid)}: check its \`display\`, \`grid-template-columns\` and gaps, and ${again}.`;
   }
   // New words (ticket 90): what the layer reads on the page, and what on the canvas.

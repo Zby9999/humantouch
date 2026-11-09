@@ -51,6 +51,7 @@ import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
 import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
+import { equalTracks } from "./grid-tracks";
 import { borderBox, compose, decompose, dissolve, gridStyle, inferGrid, inferStack, marginsAside, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve, type Inferred } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
 import { heldCentered, placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
@@ -1065,7 +1066,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       const arrangement = isGrid ? readAsShown(layer.el, "arrangement", colors) : null;
       const before: StackSettings | GridSettings =
         arrangement?.type === "grid"
-          ? { grid: arrangement, padding: readAsShown(layer.el, "padding", colors) }
+          ? { grid: arrangement, padding: readAsShown(layer.el, "padding", colors), ...(!equalTracks(own.gridTemplateColumns) && { unequal: true as const }) }
           : {
               direction: readAsShown(layer.el, "direction", colors),
               gap: readAsShown(layer.el, "gap", colors),

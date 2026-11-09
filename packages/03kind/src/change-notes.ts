@@ -688,9 +688,10 @@ function madeAs(composed: Composed): "Stack" | "Grid" {
   return isGridSettings(composed) ? "Grid" : "Stack";
 }
 
-/** How a Grid lays its layers out, in a sentence (ticket 110): "a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px, no padding". */
-function gridSettings({ grid, padding }: GridSettings): string {
-  return `${value("arrangement", grid)}, ${padding.some((p) => p) ? `padding ${value("padding", padding)}` : "no padding"}`;
+/** How a Grid lays its layers out, in a sentence (ticket 110): "a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px, no padding"; of columns not all as wide, "a Grid of 2 columns, …". */
+function gridSettings({ grid, padding, unequal }: GridSettings): string {
+  const arranged = value("arrangement", grid);
+  return `${unequal ? arranged.replace(" equal column", " column") : arranged}, ${padding.some((p) => p) ? `padding ${value("padding", padding)}` : "no padding"}`;
 }
 
 /** A Grid made of layers (ticket 110): its CSS and Tailwind's classes, as a Stack made a Grid has them, and how it fills its cells. */

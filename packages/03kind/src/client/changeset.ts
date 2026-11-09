@@ -85,6 +85,8 @@ export type GridArrangement = Extract<Arrangement, { type: "grid" }>;
 export interface GridSettings {
   grid: GridArrangement;
   padding: Padding;
+  /** A Grid of the page dissolved whose columns are not all as wide (`200px 1fr`): its notes do not call them equal. */
+  unequal?: true;
 }
 
 /** Whether settings are a Grid's (ticket 110), not a Stack's. */

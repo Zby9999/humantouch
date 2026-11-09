@@ -1460,15 +1460,45 @@ describe("claim, Stacks made and dissolved", () => {
       expect(ruleOf(output, "How the page checks")).toContain("a Grid dissolved, not at all");
     });
 
+    test("a dissolved Grid whose columns are not all as wide is not called one of equal columns", async () => {
+      saveRound({
+        ...redFill,
+        kind: "unstack",
+        property: "unstack",
+        layer: "4",
+        target: board,
+        before: { grid: { type: "grid", columns: 2, rowGap: 16, columnGap: 16 }, padding: [0, 0, 0, 0], unequal: true },
+        after: { width: 200, height: 80, layers: [{ layer: "5", target: title, x: 0, y: 0, width: 60, height: 20, style: {} }] },
+        style: { display: "block" },
+        sources: [],
+      });
+
+      expect(section((await cli("claim")).output, 1)).toContain("Dissolve this Grid (a Grid of 2 columns, with a row gap of 16px and a column gap of 16px, no padding)");
+    });
+
+    test("a new Grid in a container made this round is listed as a change to a layer made this round, not as one whose layers the page cannot find", async () => {
+      const made = { ...board, loc: null, made: "3", context: { path: ["Page", "App", "Frame"], element: "<div>" } };
+      saveRound({ ...redFill, id: 1, kind: "create", property: "create", layer: "3", before: null, after: { type: "frame", place: place(1), width: 300, height: 200 }, style: {} }, madeGrid({ id: 2, target: made }));
+
+      const checks = ruleOf((await cli("claim")).output, "How the page checks");
+
+      expect(checks).toContain("a change to a layer made this round");
+      expect(checks).not.toContain("a new Grid whose layers the page cannot all find");
+    });
+
     test("done: the layers not in one new element, or it laid out otherwise, says what the page shows", async () => {
       saveRound(madeGrid());
       await cli("claim");
-      let actual: object | null = null;
+      let actual: object | string | null = null;
       const closePage = openPage(() => ({ outcome: "not shown", actual }));
       try {
         expect((await cli("done", "1")).output).toContain(
           "it does not show the change. The layers are not all in one new element in their container, as the notes have the new Grid: wrap them in it, in the order listed, and run `npx 03kind done 1` again.\n",
         );
+        actual = "absolute";
+        expect((await cli("done", "1")).output).toContain("The layers are still placed absolute, so the new Grid does not lay them out: take their absolute positioning off (Join the layout)");
+        actual = "cells";
+        expect((await cli("done", "1")).output).toContain("The new Grid's element does not hold these layers alone, in the order listed: put them in it in that order, and nothing else");
         actual = { type: "grid", columns: 3, rowGap: 16, columnGap: 24 };
         expect((await cli("done", "1")).output).toContain(
           "The new Grid's element lays its layers out as a Grid of 3 equal columns, with a row gap of 16px and a column gap of 24px, not a Grid of 2 equal columns, with a row gap of 16px and a column gap of 24px",
