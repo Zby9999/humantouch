@@ -1842,6 +1842,37 @@ describe("claim, layers off the canvas put back", () => {
     expect(section(output, 3)).not.toContain("Edited off the canvas");
   });
 
+  test("a layer dragged out of one moved off this round (ticket 108): its code is moved out of that layer's, which is deleted once it is", async () => {
+    const card = { ...list, loc: "src/Card.tsx:3:5", context: { path: ["Page", "App", "Card"], element: "<article>" } };
+    saveRound(
+      { ...redFill, id: 1, kind: "delete", layer: "9", target: card, property: "delete", before: place(1), after: null, style: { display: "none" }, offCanvas: "a1" },
+      putBack(2, { place: place(2), layer: kept({ id: "b2", origin: { target: title, place: null, written: "src/App.tsx:21:9", inside: "a1", at: "2026-11-09T00:00:00.000Z" }, edits: { lastId: 0, changes: [] } }) }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Put back:** a layer in it, Title (`<h1 class=\"text-4xl font-bold\">`), is put back in change 2. Move that layer's code there before deleting this layer's.\n");
+    expect(section(output, 2)).toContain(
+      "- **Design intent:** Put this layer back: it was in the layer moved off the canvas this round (change 1), and its code is still there, in that layer's code. Move that code here rather than deleting it and writing it again, in the layout of Stack",
+    );
+  });
+
+  test("a layer put back with one moved into it off the canvas (ticket 108): the one moved in is written by moving its code in, still there this round", async () => {
+    const moved = { place: place(1), layer: kept({ id: "c3", edits: { lastId: 0, changes: [] } }) };
+    const cameIn = { ...opacity, id: 2, kind: "putBack", property: "put back", before: null, after: moved, style: {} };
+    saveRound(
+      { ...redFill, id: 1, kind: "delete", layer: "9", target: title, property: "delete", before: place(1), after: null, style: { display: "none" }, offCanvas: "c3" },
+      putBack(2, { place: place(3), layer: kept({ edits: { lastId: 2, changes: [cameIn] } }) }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Put back:** the layer was moved off the canvas, into a layer off it, and is put back with that layer in change 2. Do not delete its code: move it to where it is in that layer.\n");
+    expect(section(output, 2)).toContain(
+      "  - Moved into it, in the layout of Stack (`<ul class=\"flex flex-col\">`, at `src/App.tsx:20:7`), as its 1st layer: Title (`<h1 class=\"text-4xl font-bold\">`), moved off the canvas this round (change 1): its code is still where it was. Move that code in here rather than deleting it and writing it again.\n",
+    );
+  });
+
   test("an off-canvas layer moved off as a copy, put back, is written as a copy: the layer it copies stays", async () => {
     saveRound(putBack(1, { place: place(2), layer: kept({ origin: { target: title, place: place(1), written: "src/App.tsx:21:9", snippet, copy: true, at: "2026-10-29T00:00:00.000Z" } }) }));
 

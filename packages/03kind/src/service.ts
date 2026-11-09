@@ -158,7 +158,7 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         // A layer put back goes with the JSX that wrote it, as kept off the canvas, when the editor layer has not heard it yet.
         const unheard = round.changeSet.changes.filter((change) => change.kind === "putBack" && (change.after as PutBack).layer.origin.snippet === undefined);
         if (unheard.length) {
-          const kept = new Map((await readOffCanvas(files)).map((layer) => [layer.id, layer.origin.snippet]));
+          const kept = new Map((await readOffCanvas(files)).flatMap(carriedIn).map((layer) => [layer.id, layer.origin.snippet]));
           for (const change of unheard) {
             const { origin, id } = (change.after as PutBack).layer;
             origin.snippet = kept.get(id) ?? (origin.written ? await snippetAt(root, origin.written) : null);
@@ -226,8 +226,10 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         // No round's: saved whether or not one is claimed.
         const { layers } = JSON.parse(body) as { layers: SavedOffCanvasLayer[] };
         if (!Array.isArray(layers) || !layers.every((layer) => typeof layer?.id === "string" && typeof layer.look === "string" && typeof layer.origin === "object")) return send(res, 400);
-        const kept = new Map((await readOffCanvas(files)).map((layer) => [layer.id, layer]));
-        for (const layer of layers) {
+        // Each, and each that came into one from elsewhere (ticket 108), kept with the change that brought it in.
+        const kept = new Map((await readOffCanvas(files)).flatMap(carriedIn).map((layer) => [layer.id, layer]));
+        const all = layers.flatMap(carriedIn);
+        for (const layer of all) {
           // The JSX as the source had it when the layer first came: the Agent may delete it since.
           const snippet = kept.get(layer.id)?.origin.snippet;
           if (snippet !== undefined) layer.origin.snippet = snippet;
@@ -235,7 +237,7 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         }
         await writeOffCanvas(files, layers);
         // The editor layer keeps each with its layer: it goes with it when put back, and comes back with it when that is undone.
-        return send(res, 200, JSON.stringify({ snippets: Object.fromEntries(layers.map((layer) => [layer.id, layer.origin.snippet ?? null])) } satisfies OffCanvasSaveAnswer));
+        return send(res, 200, JSON.stringify({ snippets: Object.fromEntries(all.map((layer) => [layer.id, layer.origin.snippet ?? null])) } satisfies OffCanvasSaveAnswer));
       }
       case `POST ${CLAIM_PATH}`: {
         // A page saw a change of the round show, the Agent applying it with no claim (ticket 78). Claimed already, it stays as it is.
@@ -364,4 +366,10 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+/** `layer`, and each layer that came into it from elsewhere (ticket 108), all the way down, as kept with the change that brought it in. */
+function carriedIn(layer: SavedOffCanvasLayer): SavedOffCanvasLayer[] {
+  const edits = [...(layer.origin.edits ?? []), ...(layer.edits?.changes ?? [])];
+  return [layer, ...edits.flatMap((change) => (change.kind === "putBack" ? carriedIn((change.after as PutBack).layer) : []))];
 }
