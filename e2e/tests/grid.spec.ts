@@ -277,3 +277,59 @@ test("in the phone view, the Grid made a vertical Stack at its breakpoint only, 
   await expect.poll(layouts).toEqual(["grid row", "grid row", "grid row"]);
   await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
 });
+
+test("⇧A on free layers in two rows of two makes a Grid where they are, its columns and gaps theirs; ⌥⇧A dissolves it in place; each one ⌘Z (ticket 110)", async ({ page }) => {
+  // A Frame of four absolute boxes, 100 × 40, 24px apart across and 16px down.
+  await page.evaluate(() => {
+    const board = Object.assign(document.createElement("div"), { id: "board" });
+    board.style.cssText = "position: relative; height: 240px";
+    for (const [id, left, top] of [["one", 20, 30], ["two", 144, 30], ["three", 20, 86], ["four", 144, 86]] as const) {
+      const box = Object.assign(document.createElement("div"), { id });
+      box.style.cssText = `position: absolute; left: ${left}px; top: ${top}px; width: 100px; height: 40px; background: #ccc`;
+      board.append(box);
+    }
+    document.querySelector("main")!.append(board);
+  });
+  await enterEditMode(page);
+  const boxes = () =>
+    desktop(page)
+      .contentFrame()
+      .locator("#one, #two, #three, #four")
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
+  const before = await boxes();
+  const near = async () => {
+    const now = await boxes();
+    return now.every((box, i) => (["x", "y", "width", "height"] as const).every((side) => Math.abs(box[side] - before[i][side]) <= 1));
+  };
+  const boxRows = layers(page).getByRole("treeitem").filter({ hasText: /^Frame$/ });
+  await layers(page).getByRole("treeitem").last().click();
+  await expect(boxRows).toHaveCount(5);
+  await boxRows.nth(1).click();
+  for (const n of [2, 3, 4]) await boxRows.nth(n).click({ modifiers: ["Shift"] });
+
+  await page.keyboard.press("Shift+A");
+
+  const made = layers(page).getByRole("treeitem", { name: "Grid", exact: true }).last();
+  await expect(made).toHaveAttribute("aria-selected", "true");
+  await expect.poll(near).toBe(true);
+  await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
+  await expect(field(page, "Columns")).toHaveValue("2");
+  await expect(field(page, "Row gap")).toHaveValue("16");
+  await expect(field(page, "Column gap")).toHaveValue("24");
+  await expect(await changeRows(page)).toHaveText([/Make Grid.*4 layers, 2 columns, row gap 16px, column gap 24px/]);
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("Alt+Shift+A");
+  await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(1);
+  await expect.poll(near).toBe(true);
+  await expect(await changeRows(page)).toHaveText([/Make Grid/, /Dissolve Grid.*Grid → Frame/]);
+  await page.keyboard.press("Escape");
+
+  // A step each: the Grid back, then the boxes as they were, and no change.
+  await page.keyboard.press("Meta+z");
+  await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(2);
+  await page.keyboard.press("Meta+z");
+  await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(1);
+  await expect.poll(near).toBe(true);
+  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+});

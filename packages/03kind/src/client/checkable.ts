@@ -9,7 +9,7 @@
  * found (ticket 76). It imports types only, so the bench, run by Node itself,
  * imports it too.
  */
-import type { Change, Created, Place, Target } from "./changeset";
+import type { Change, Composed, Created, Place, Target } from "./changeset";
 import type { Property } from "./property-table";
 import type { Axis } from "./snap";
 
@@ -175,6 +175,7 @@ export function checkable(change: Change, round: Change[]): boolean {
   if (target.made) return change.kind === "style" && !!madeLayer(target.made, round);
   if (!foundByMarker(target)) return false;
   if (change.kind === "style") return true;
+  if (change.kind === "stack") return gridOfFound(change);
   if (change.data) return false;
   if (change.kind === "delete" || change.kind === "text") return true;
   if (change.kind !== "move" || change.wrap) return false;
@@ -182,6 +183,17 @@ export function checkable(change: Change, round: Change[]): boolean {
   const container = after.container.target;
   if (before.container.layer !== after.container.layer || !container.loc || container.made) return false;
   return after.absolute ? true : !before.absolute && !!change.order;
+}
+
+/**
+ * Whether a `stack` change makes a Grid (ticket 110) the page can find: by its
+ * layers, each found by its source marker, in its container, or the Frame
+ * made a Grid, found so too (`checkable` has found the change's target, the
+ * one or the other, by its marker). A Stack made is not checked.
+ */
+function gridOfFound(change: Change): boolean {
+  const composed = change.after as Composed;
+  return "grid" in composed && !change.data && composed.layers.every((member) => foundByMarker(member.target));
 }
 
 /**

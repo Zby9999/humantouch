@@ -4,7 +4,7 @@
  * of change the round has, each once. An Agent that never loaded the Skill
  * finds them all here; one that did reads only what this round needs.
  */
-import { drawnIn, type Change, type Created, type Place } from "./client/changeset";
+import { dissolvesGrid, drawnIn, makesGrid, type Change, type Created, type Place } from "./client/changeset";
 import { checkable, forOneUsage, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
@@ -155,10 +155,18 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "Making a Stack",
-    calledFor: (change) => change.kind === "stack",
+    calledFor: (change) => change.kind === "stack" && !makesGrid(change),
     text:
       "for a new Stack, wrap the layers listed, in the order listed, in one new element (a `<div>`, unless the project has a Stack component it uses for this), placed where the design intent says, laid out as a flex row or column with the gap, padding and alignment given. " +
       "To make a Frame a Stack, make its element the flex container, its layers in the order listed. Keep each layer's own JSX as it is: only its place changes.",
+  },
+  {
+    // Free layers in rows and columns (ticket 110).
+    name: "Making a Grid",
+    calledFor: (change) => makesGrid(change),
+    text:
+      "for a new Grid, wrap the layers listed, in the order listed, in one new element (a `<div>`, unless the project has a Grid component it uses for this), placed where the design intent says, laid out as a grid of equal columns with the columns, gaps and padding given, its gaps from the project's spacing scale (an arbitrary value only when none fits). " +
+      "To make a Frame a Grid, make its element the grid container, its layers in the order listed. Keep each layer's own JSX as it is: only its place changes.",
   },
   {
     name: "Make it a Stack",
@@ -168,9 +176,17 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     name: "Dissolving a Stack",
     // Said here, not only in how the page checks (ticket 100): it does not check a dissolve, and an Agent took a margin off.
-    calledFor: (change) => change.kind === "unstack",
+    calledFor: (change) => change.kind === "unstack" && !dissolvesGrid(change),
     text:
       "take the flex layout off the element and give it the fixed size given, as the positioning reference (`position: relative`) of its layers; give each layer `position: absolute`, its `left` and `top` the X and Y given, and its size; " +
+      "keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much. " +
+      "The page should look the same afterwards.",
+  },
+  {
+    name: "Dissolving a Grid",
+    calledFor: (change) => dissolvesGrid(change),
+    text:
+      "take the grid layout off the element (its grid display and columns) and give it the fixed size given, as the positioning reference (`position: relative`) of its layers; give each layer `position: absolute`, its `left` and `top` the X and Y given, and its size; " +
       "keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much. " +
       "The page should look the same afterwards.",
   },
@@ -317,6 +333,11 @@ const HOW_CHECKED: HowChecked[] = [
     calledFor: (change, list) => checkable(change, list) && change.kind === "text" && forOneUsage(change),
     text: "new words for this usage only by the component's other usages too, which are to read as they did",
   },
+  {
+    calledFor: (change, list) => checkable(change, list) && makesGrid(change),
+    text:
+      "a new Grid by the element its layers are in on the page: one element holds them all, laid out as a grid (`display: grid`) with the number of columns and the gaps given, in a new element in the container named, or, made of a Frame, that Frame's own",
+  },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
 ];
@@ -337,7 +358,9 @@ const UNCHECKED: [string, (change: Change, list: Change[]) => boolean][] = [
   ["a change to a layer the page cannot find", (change) => !change.data && !change.target.made && (!change.target.loc || change.target.run !== undefined || textMovedInPlace(change)) && change.kind !== "brief"],
   ["a new layer in a container the page cannot find", (change, list) => change.kind === "create" && !checkable(change, list)],
   ["a layer put back", (change) => change.kind === "putBack"],
-  ["a Stack made or dissolved", (change) => change.kind === "stack" || change.kind === "unstack"],
+  ["a Stack made or dissolved", (change) => (change.kind === "stack" && !makesGrid(change)) || (change.kind === "unstack" && !dissolvesGrid(change))],
+  ["a new Grid whose layers the page cannot all find", (change, list) => makesGrid(change) && !checkable(change, list)],
+  ["a Grid dissolved", (change) => dissolvesGrid(change)],
   ["a move into another container, or into a layout from a place of its own", (change, list) => movedUnchecked(change, list) && !inUnfoundContainer(change)],
   ["a move in a container made this round, or one the page cannot find", (change, list) => movedUnchecked(change, list) && inUnfoundContainer(change)],
   ["a copy", (change) => change.kind === "duplicate" && !change.data],

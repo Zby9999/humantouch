@@ -5,14 +5,15 @@
  * being edited and on a saved one.
  */
 import { changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, memberStyle, relayOut, restoreStyle } from "./canvas-style";
-import type { Change, Composed, Dissolved, Margins, StackSettings } from "./changeset";
+import type { Change, Composed, Dissolved, GridSettings, Margins, StackSettings } from "./changeset";
+import { equalColumns } from "./grid-tracks";
 import type { Edge } from "./checkable";
-import type { Alignment } from "./property-table";
+import type { Alignment, Padding } from "./property-table";
 import { MOVE_CSS, slotsOf } from "./moves";
 import { CHAIN_ATTR } from "./usage-chain";
 
 /** Every CSS property making a Stack may declare on it: what taking it apart takes off. */
-export const STACK_CSS = ["display", "flex-direction", "gap", "padding", "margin-top", "margin-right", "margin-bottom", "margin-left", "justify-content", "align-items", "position", "left", "top", "right", "bottom"];
+export const STACK_CSS = ["display", "flex-direction", "gap", "padding", "margin-top", "margin-right", "margin-bottom", "margin-left", "justify-content", "align-items", "position", "left", "top", "right", "bottom", "grid-template-columns", "row-gap", "column-gap"];
 /** Every CSS property dissolving a Stack may declare on it. */
 export const DISSOLVED_CSS = ["display", "position", "width", "height"];
 
@@ -100,6 +101,78 @@ export function inferStack(boxes: Box[], frame: Box | null, free = false): Infer
     },
     order,
     stretch,
+  };
+}
+
+/** How far a layer may be from where a Grid made of it puts it, and still be in its row and column, in px (ticket 110): the 1px a Stack is made within. */
+const IN_GRID = 1;
+
+/** The Grid that holds layers where they are (ticket 110), and the order they go in it. */
+export interface InferredGrid {
+  settings: GridSettings;
+  /** Indexes of the boxes, in their order in the Grid: row by row. */
+  order: number[];
+}
+
+/**
+ * The Grid that holds layers, at `boxes`, where they are and at their sizes
+ * (ticket 110), if one does: at least two rows and two columns, its rows by
+ * their tops, its columns by their lefts, every row full but the last, which
+ * is filled from the left, as a Grid fills its cells; its columns equal, as
+ * wide as the layers, which are all as wide; each row as tall as its layers,
+ * which are all as tall; one gap between all its rows, one between all its
+ * columns (the median of the spaces); and every layer within `IN_GRID` of
+ * where the Grid puts it. `frame`: the box inside the border of a Frame that
+ * becomes the Grid, whose padding is then the room between its edges and the
+ * Grid's cells, so its columns and rows fill it as they are; a new Grid fits
+ * round them, with none. Null where none holds them so: they are made a Stack.
+ */
+export function inferGrid(boxes: Box[], frame: Box | null): InferredGrid | null {
+  if (boxes.length < 3) return null;
+  const rows: number[][] = [];
+  for (const i of boxes.map((_, i) => i).sort((a, b) => boxes[a].top - boxes[b].top)) {
+    const row = rows.at(-1);
+    if (row && Math.abs(boxes[i].top - boxes[row[0]].top) <= IN_GRID) row.push(i);
+    else rows.push([i]);
+  }
+  for (const row of rows) row.sort((a, b) => boxes[a].left - boxes[b].left);
+  const columns = rows[0].length;
+  if (rows.length < 2 || columns < 2 || rows.some((row, r) => row.length > columns || (r < rows.length - 1 && row.length < columns))) return null;
+  const width = (i: number) => boxes[i].right - boxes[i].left;
+  const height = (i: number) => boxes[i].bottom - boxes[i].top;
+  const columnWidth = Math.max(...boxes.map((_, i) => width(i)));
+  const heights = rows.map((row) => Math.max(...row.map(height)));
+  const tops = rows.map((row) => Math.min(...row.map((i) => boxes[i].top)));
+  const first = rows[0];
+  const columnGap = round(median(first.slice(1).map((i, c) => boxes[i].left - boxes[first[c]].left - columnWidth)));
+  const rowGap = round(median(tops.slice(1).map((top, r) => top - tops[r] - heights[r])));
+  if (columnGap < 0 || rowGap < 0) return null;
+  const left = Math.min(...boxes.map((b) => b.left));
+  const top = tops[0];
+  // Where the Grid puts each, and at what size: a layer not as wide as its column, or as tall as its row, would be stretched to it.
+  let y = top;
+  for (const [r, row] of rows.entries()) {
+    for (const [c, i] of row.entries()) {
+      const off = [boxes[i].left - (left + c * (columnWidth + columnGap)), boxes[i].top - y, width(i) - columnWidth, height(i) - heights[r]];
+      if (off.some((d) => Math.abs(d) > IN_GRID)) return null;
+    }
+    y += heights[r] + rowGap;
+  }
+  const right = left + columns * columnWidth + (columns - 1) * columnGap;
+  const bottom = y - rowGap;
+  const padding: Padding = frame ? [top - frame.top, frame.right - right, frame.bottom - bottom, left - frame.left].map(round) as Padding : [0, 0, 0, 0];
+  if (padding.some((p) => p < 0)) return null;
+  return { settings: { grid: { type: "grid", columns, rowGap, columnGap }, padding }, order: rows.flat() };
+}
+
+/** The CSS that lays a Grid's layers out as `settings` say (ticket 110): equal columns, as `grid-cols-*` writes them, and its gaps. */
+export function gridStyle({ grid: { columns, rowGap, columnGap }, padding }: GridSettings): Record<string, string> {
+  return {
+    display: "grid",
+    "grid-template-columns": equalColumns(columns),
+    "row-gap": `${rowGap}px`,
+    "column-gap": `${columnGap}px`,
+    ...(padding.some((p) => p) && { padding: padding.map((p) => `${p}px`).join(" ") }),
   };
 }
 

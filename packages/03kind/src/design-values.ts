@@ -1,5 +1,5 @@
 /** How properties and their values read in design language: in the change notes, and in the editor's change list. */
-import type { Change, Composed, Created, Place, PutBack, StackSettings } from "./client/changeset";
+import { dissolvesGrid, isGridSettings, makesGrid, type Change, type Composed, type Created, type Place, type PutBack, type StackSettings } from "./client/changeset";
 import type { Align, Arrangement, ColorStop, Fill, Padding, Radius, Shadow, Size, Stroke } from "./client/property-table";
 import { isCircle, isMiddle, lengthCss, type Color, type RadialGradient } from "./client/paint";
 import type { LineHeight, TextCase, TextLength } from "./client/typography";
@@ -75,9 +75,9 @@ export function kindTitle(change: Change): string {
     case "move":
       return moveKind(change);
     case "stack":
-      return "Make Stack";
+      return makesGrid(change) ? "Make Grid" : "Make Stack";
     case "unstack":
-      return "Dissolve Stack";
+      return dissolvesGrid(change) ? "Dissolve Grid" : "Dissolve Stack";
     case "create":
       return (change.after as Created).type === "text" ? "New text" : "New Frame";
     case "text":
@@ -107,10 +107,15 @@ export function stackSettings({ direction, gap, padding, align }: StackSettings)
 /** A change's values, from the first to the latest: "#FFFFFF → #FF0000", "3rd → 1st". */
 export function changeValues(change: Change): string {
   if (change.kind === "stack") {
-    const { layers, direction, gap } = change.after as Composed;
-    return `${layers.length === 1 ? "1 layer" : `${layers.length} layers`}, ${direction}, gap ${gap}px`;
+    const composed = change.after as Composed;
+    const count = composed.layers.length === 1 ? "1 layer" : `${composed.layers.length} layers`;
+    if (isGridSettings(composed)) {
+      const { columns, rowGap, columnGap } = composed.grid;
+      return `${count}, ${columns} columns, row gap ${rowGap}px, column gap ${columnGap}px`;
+    }
+    return `${count}, ${composed.direction}, gap ${composed.gap}px`;
   }
-  if (change.kind === "unstack") return `${(change.before as StackSettings).direction} Stack → Frame`;
+  if (change.kind === "unstack") return dissolvesGrid(change) ? "Grid → Frame" : `${(change.before as StackSettings).direction} Stack → Frame`;
   if (change.kind === "create") {
     const { type, text, width, height, brief } = change.after as Created;
     if (type === "text") return quoted(text ?? "");
