@@ -1,3 +1,4 @@
+import { OFF_CANVAS_PATH, ROUND_PATH, SERVICE_GLOBAL, TOKEN_HEADER } from "../../packages/03kind/src/service-protocol";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
@@ -53,6 +54,22 @@ async function pressAndMove(page: Page, from: Locator, to: { x: number; y: numbe
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 12 });
+}
+
+/** What the local service has saved now: the round's changes (none with no round), and the looks of the layers off the canvas. */
+async function saved(page: Page): Promise<{ changes: number; offCanvas: string[] }> {
+  return page.evaluate(
+    async ({ global, header, paths }) => {
+      const config = (window as unknown as Record<string, { url: string; token: string }>)[global];
+      const read = async (path: string) => {
+        const response = await fetch(`${config.url}${path}`, { headers: { [header]: config.token } });
+        return response.status === 204 ? null : await response.json();
+      };
+      const [round, outside] = [await read(paths.round), await read(paths.offCanvas)];
+      return { changes: round?.changeSet.changes.length ?? 0, offCanvas: (outside?.layers ?? []).map((layer: { look: string }) => layer.look) };
+    },
+    { global: SERVICE_GLOBAL, header: TOKEN_HEADER, paths: { round: ROUND_PATH, offCanvas: OFF_CANVAS_PATH } },
+  );
 }
 
 /** The middle of what `locator` finds, on screen. */
@@ -155,7 +172,8 @@ test("the Frame put back onto a view is made there, the layer dragged into it mo
   expect(names.some((name) => /Delete|Put back/.test(name))).toBe(false);
   expect(names.filter((name) => name.endsWith("· Third Kind"))).toHaveLength(1);
 
-  await page.waitForTimeout(800);
+  // Saved, the Frame on the canvas and none off it, before the reload.
+  await expect.poll(() => saved(page)).toEqual({ changes: names.length, offCanvas: [] });
   await page.reload();
   await enterEditMode(page);
   await expect(desktop(page).contentFrame().locator("h1").locator("xpath=..")).toHaveAttribute("data-tk-new", "frame");
@@ -195,7 +213,13 @@ test("a Frame off the canvas with a layer dragged into it is there still after a
   await expect(frame.contentFrame().locator("h1")).toHaveText("Third Kind");
   const where = await steadyBox(frame);
 
-  await page.waitForTimeout(800);
+  // Saved, the title's deletion and the Frame with the title in it, before the reload.
+  await expect
+    .poll(async () => {
+      const now = await saved(page);
+      return { changes: now.changes, offCanvas: now.offCanvas.map((look) => look.includes("Third Kind")) };
+    })
+    .toEqual({ changes: 1, offCanvas: [true] });
   await page.reload();
   await enterEditMode(page);
   const area = (await viewportArea(page).boundingBox())!;

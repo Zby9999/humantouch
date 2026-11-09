@@ -4,9 +4,9 @@ import type { Destination } from "../src/client/edit-commands";
 import { createEditor } from "../src/client/edits";
 import type { Layer } from "../src/client/layers";
 import { cameInto, createOffCanvas, type OffCanvasLayer } from "../src/client/off-canvas";
-import { carry, moveInto, partOff, type Desk } from "../src/client/off-canvas-moves";
+import { carry, moveInto, partOff, takenBackOff, type Desk } from "../src/client/off-canvas-moves";
 import { createChangeSet } from "../src/client/changeset";
-import { createHistory } from "../src/client/undo-steps";
+import { createHistory, together } from "../src/client/undo-steps";
 import { createViews } from "../src/client/views";
 
 /** A page with room to draw in: a card of a title and words, and a heading, each where the source writes it. */
@@ -292,5 +292,120 @@ describe("a layer in a layer off the canvas dragged out of it (ticket 108)", () 
     carry(desk, outside, outside.layer()!, { parent: main(), x: 0, y: 0 }, null);
     expect(kinds(changes.list())).toEqual(["create", "style", "create", "style"]);
     expect(putBackBy(changes.list())).toHaveLength(1);
+  });
+});
+
+describe("review of ticket 108", () => {
+  /** A Frame drawn in the blank space, the card moved into it, and the card's title moved out of the card, into the Frame. */
+  function titleMovedOut() {
+    const setup = canvas();
+    const { doc, desk, layerOf, layerIn, frame, view } = setup;
+    const outside = frame();
+    moveInto(desk, layerOf(doc.querySelector("article")!), view, outside, { parent: outside.layer()!, x: 10, y: 10 }, false);
+    outside.editor.move(layerIn(outside, outside.document.querySelector("h3")!), { parent: outside.layer()!, x: 20, y: 150 });
+    return { ...setup, outside };
+  }
+
+  test("a layer moved out of one that came in goes too, written in that one's code: the Frame put back has all of it", () => {
+    const { doc, changes, desk, outside, main } = titleMovedOut();
+
+    const { moved, missed } = carry(desk, outside, outside.layer()!, { parent: main(), x: 300, y: 40 }, null);
+
+    expect(missed).toEqual([]);
+    expect(moved).not.toBeNull();
+    expect(kinds(changes.list())).toEqual(["delete", "create", "style", "putBack", "putBack"]);
+    const [deletion, , , card, title] = changes.list();
+    // The card, a title moved out of it, is edited: it goes as it looks, its deletion staying.
+    expect((card.after as PutBack).layer).toMatchObject({ id: deletion.offCanvas, origin: { edits: [{ kind: "move" }] } });
+    expect((title.after as PutBack).layer.origin).toMatchObject({ inside: deletion.offCanvas, written: "src/Card.tsx:4:7", target: { context: { path: [...(card.after as PutBack).layer.origin.target.context.path, "Title"] } } });
+    expect(moved!.el.querySelectorAll("h3")).toHaveLength(1);
+    expect(moved!.el.querySelectorAll("article h3")).toHaveLength(0);
+    expect(doc.querySelectorAll("h3")).toHaveLength(2);
+  });
+
+  test("so too into another layer off the canvas: no change of the round's, the title there", () => {
+    const { changes, offCanvas, desk, outside, frame } = titleMovedOut();
+    const other = frame();
+
+    const { missed } = carry(desk, outside, outside.layer()!, { parent: other.layer()!, x: 0, y: 0 }, other);
+
+    expect(missed).toEqual([]);
+    expect(kinds(changes.list())).toEqual(["delete"]);
+    expect(offCanvas.list()).toEqual([other]);
+    expect(other.document.querySelectorAll("h3")).toHaveLength(1);
+  });
+
+  test("not to be made there: all of it stays where it was, the deletion taken back for it there again, and nothing to redo", () => {
+    const { doc, changes, editor, desk, layerOf, frame, view, main, history, offCanvas } = canvas();
+    const outside = frame();
+    const heading = doc.querySelector("h2")!;
+    moveInto(desk, layerOf(heading), view, outside, { parent: outside.layer()!, x: 10, y: 20 }, false);
+    const steps = history.past.length;
+    // As a bug would have it: no Frame to be made on the canvas, after the heading's deletion is taken back for it.
+    editor.canHold = () => false;
+
+    const { moved } = carry(desk, outside, outside.layer()!, { parent: main(), x: 300, y: 40 }, null);
+
+    expect(moved).toBeNull();
+    expect(kinds(changes.list())).toEqual(["delete"]);
+    expect(getComputedStyle(heading).display).toBe("none");
+    expect(offCanvas.list()).toEqual([outside]);
+    expect(outside.document.querySelector("h2")).not.toBeNull();
+    expect(history.past).toHaveLength(steps);
+    expect(history.future).toEqual([]);
+    editor.redo();
+    expect(kinds(changes.list())).toEqual(["delete"]);
+    expect(offCanvas.list()).toEqual([outside]);
+  });
+
+  test("the made Frame's change taken back from the change list: the layer that went back with it as it was is in its place, and not in the Frame too", () => {
+    const { doc, changes, editor, offCanvas, desk, layerOf, frame, view, main, history } = canvas();
+    const outside = frame();
+    const heading = doc.querySelector("h2")!;
+    moveInto(desk, layerOf(heading), view, outside, { parent: outside.layer()!, x: 10, y: 20 }, false);
+    carry(desk, outside, outside.layer()!, { parent: main(), x: 300, y: 40 }, null);
+    const create = changes.list()[0];
+
+    // As the Shell takes it back.
+    const going = withDependents(changes.list(), create.id);
+    const { parts, brought } = takenBackOff(offCanvas, going);
+    together(history, () => {
+      editor.batch(() => {
+        editor.revert(create.id);
+        for (const found of brought)
+          editor.along(
+            () => offCanvas.put(found),
+            () => offCanvas.take(found),
+          );
+      });
+      for (const { holder, layer } of parts) holder.editor.batch(() => holder.editor.remove(layer));
+    });
+
+    expect(changes.list()).toEqual([]);
+    expect(heading.parentElement).toBe(main().el);
+    expect(getComputedStyle(heading).display).toBe("block");
+    expect(offCanvas.list()).toEqual([outside]);
+    expect(outside.document.querySelector("h2")).toBeNull();
+    expect(cameIn(outside)).toEqual([]);
+  });
+
+  test("a layer that goes into another and is drawn out again has its id; undone, the one there is found by it, whichever has it", () => {
+    const { doc, editor, offCanvas, desk, moveOff, layerIn, frame } = canvas();
+    const heading = moveOff(doc.querySelector("h2")!);
+    const holder = frame();
+    carry(desk, heading, heading.layer()!, { parent: holder.layer()!, x: 5, y: 5 }, holder);
+    const { moved: again } = partOff(desk, holder, layerIn(holder, holder.document.querySelector("h2")!), { x: -400, y: 500 }, false);
+    expect(again!.id).toBe(heading.id);
+    expect(offCanvas.find(heading.id)).toBe(again);
+
+    editor.undo();
+    expect(offCanvas.list()).toEqual([holder]);
+    expect(holder.document.querySelector("h2")).not.toBeNull();
+    editor.undo();
+    expect(offCanvas.list()).toEqual([heading, holder]);
+    expect(offCanvas.find(heading.id)).toBe(heading);
+    editor.redo();
+    editor.redo();
+    expect(offCanvas.find(heading.id)).toBe(again);
   });
 });

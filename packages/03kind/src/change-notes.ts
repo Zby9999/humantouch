@@ -451,7 +451,7 @@ const NO_STYLE: Record<Change["kind"], string> = {
 function putBackFrom({ layer }: PutBack, list: Change[]): string[] {
   const { snippet } = layer.origin;
   const source = snippet
-    ? `**Source**, as written at \`${snippet.loc}\` when it was moved off the canvas:\n\n${fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx")}`
+    ? `**Source**, as written at \`${snippet.loc}\` when it was moved off the canvas:\n\n${snippetBlock(snippet)}`
     : layer.origin.written
       ? `**Source:** not kept: it could not be read at \`${layer.origin.written}\` when the layer was moved off the canvas. Write it from its look, below, as the project writes markup and styles.`
       : "**Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.";
@@ -479,7 +479,7 @@ function movedIn({ place, layer }: PutBack, list: Change[]): string {
   if (around) return `${what}, out of the layer moved off the canvas this round (change ${around.id}): its code is still in that layer's code. Move that code in here rather than deleting it and writing it again.`;
   const { snippet } = layer.origin;
   return snippet
-    ? `${what}, its code deleted in a round before; as written at \`${snippet.loc}\` then:\n\n${fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx")
+    ? `${what}, its code deleted in a round before; as written at \`${snippet.loc}\` then:\n\n${snippetBlock(snippet)
         .split("\n")
         .map((line) => `  ${line}`)
         .join("\n")}`
@@ -519,6 +519,11 @@ function lookOf(look: string): string {
       .replace(/@font-face\s*\{[^}]*\}/g, "")
       .trim()
   );
+}
+
+/** A layer's source as kept, as a fenced block in the language of its file, inside a list item. */
+function snippetBlock(snippet: { loc: string; code: string }): string {
+  return fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx");
 }
 
 /** `code` as a fenced block, inside a list item. */

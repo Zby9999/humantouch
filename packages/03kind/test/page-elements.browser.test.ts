@@ -324,3 +324,38 @@ describe("what the page reads off itself, kept (review)", () => {
     expect(elementsOf(page, changes[0].target, () => canvasOf(changes))).toEqual([page.querySelectorAll("li")[1]]);
   });
 });
+
+describe("a layer moved into one off the canvas that is put back (ticket 108 review)", () => {
+  /** A section with its title (line 5), and a note after it (line 8); `inside`: the note written in the section instead, at line 7. */
+  const PAGE = ({ inside = false } = {}) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <main data-tk-loc="src/App.tsx:4:5" ${chain(APP)}><section data-tk-loc="src/App.tsx:5:7" ${chain(APP)}><h2 data-tk-loc="src/App.tsx:6:9" ${chain(APP)}>Title</h2>${inside ? `<p data-tk-loc="src/App.tsx:7:9" ${chain(APP)}>Note</p>` : ""}</section>${inside ? "" : `<p data-tk-loc="src/App.tsx:8:7" ${chain(APP)}>Note</p>`}</main>
+</body>`;
+  /** The section moved off the canvas, the note moved into it there, and the section put back, edited: an insertion; both deletions stay. */
+  function movedIn() {
+    const { doc, editor, layerOf, round } = openCanvas(PAGE());
+    const [section, note] = [doc.querySelector("section")!, doc.querySelector("p")!];
+    const look = section.cloneNode(true) as Element;
+    look.append(note.cloneNode(true));
+    const origin = { target: editor.originOf(layerOf(section)).target, place: null, written: null, snippet: null, at: "2026-11-10T00:00:00.000Z" };
+    const noteKept = { id: "note-off", x: 0, y: 0, look: "", origin: { ...origin, target: editor.originOf(layerOf(note)).target }, edits: { lastId: 0, changes: [] } };
+    editor.remove(layerOf(note), { offCanvas: "note-off" });
+    editor.remove(layerOf(section), { offCanvas: "section-off" });
+    const place = { container: { layer: "s1", target: origin.target }, nth: 2 };
+    const cameIn = { id: 1, kind: "putBack", layer: "n1", target: noteKept.origin.target, scope: "usage", property: "put back", before: null, after: { place, layer: noteKept }, style: {}, sources: [] };
+    const kept = { id: "section-off", x: 0, y: 0, look: "", origin, edits: { lastId: 1, changes: [cameIn as never] } };
+    editor.putBack({ el: look, kept }, { parent: editor.tree().root.children[0], index: 0 });
+    return round();
+  }
+  const noteDeleted = (round: ReturnType<typeof movedIn>) => round.find((change) => change.kind === "delete" && change.offCanvas === "note-off")!;
+
+  test("its code moved into the section's, as the notes ask: its deletion is shown, though the page finds it by its markers", () => {
+    const round = movedIn();
+    expect(checkChange(livePage(PAGE({ inside: true })), noteDeleted(round), round)).toEqual({ outcome: "shown" });
+  });
+
+  test("left where it was: not shown, there", () => {
+    const round = movedIn();
+    expect(checkChange(livePage(PAGE()), noteDeleted(round), round)).toEqual({ outcome: "not shown", actual: "there" });
+  });
+});

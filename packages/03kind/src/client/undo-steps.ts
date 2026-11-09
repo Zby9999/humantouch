@@ -72,6 +72,18 @@ export function together(history: History, edits: () => void): void {
 }
 
 /**
+ * Takes back what editors sharing `history` have put into it since it held
+ * `from` steps, as if none of it was made: undone, the latest first, with
+ * nothing to redo (a drag between them that could not be made, ticket 108).
+ */
+export function takeBackSince(history: History, from: number): void {
+  for (const entry of history.past.splice(from).reverse()) {
+    entry.step.undo();
+    entry.showNow();
+  }
+}
+
+/**
  * One edit, as undo and redo replay it: the layers it was made to, by id, so
  * they are found again however the layer tree changes meanwhile.
  */

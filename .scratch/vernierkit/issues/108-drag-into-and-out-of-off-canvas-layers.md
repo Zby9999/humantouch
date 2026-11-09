@@ -69,12 +69,34 @@
 
 **风险**
 
-- 画布外图层里拖出的一部分，若又从其中的 Frame 里挪出图层：拖回会被拒（记成 missed、console.error），这部分被拿掉时零散的图层会丢。
-- 在改动列表里撤回空白处新建的 Frame 的「新建」，挪进去的图层可能出现两次（画布上一份、带回的 Frame 里一份）。
+- ~~画布外图层里拖出的一部分，若又从其中的 Frame 里挪出图层：拖回会被拒，零散的图层会丢。~~ 审查后已修（见下）。
+- ~~在改动列表里撤回空白处新建的 Frame 的「新建」，挪进去的图层可能出现两次。~~ 审查后已修（见下）。
 - 在列表里撤回一部分的拖回，它回来时是自己一个图层，不回到原来那层里。
-- 同一 id 重复用到时靠 `find` 先找「there」。
+- 同一 id 重复用到时靠 `find` 先找「there」（审查后加了注释和测试）。
 - 一部分的片段只从它自己的位置取。
 - 场景数变成 25（`bench-scenarios.spec` 会跑新场景）。
 - 重建的改动编号接在撤回的那次删除之后。
 - 性能是在另一条线高负载下测的。
 - 没跑 code-review skill（交给指挥审查）。后续若要开 ticket/ADR，编号在 main 上给。
+
+**审查后的修改（第 1 轮审查，1–7 和规范）**
+
+1. 【高】拖回被拒时画布上的图层出现两次：`remake` 现在先定 missed，有 missed 就什么都不做、也不撤删除；`carry` 失败时用新的 `takeBackSince(history, since)` 把这一步里所有记录（包括撤删除那条）一起撤掉。
+2. 【高】被拒的拖回进了重做栈：`carry` 和 `partOff`（makeFrom）失败时都改用 `takeBackSince`，不进 `future`，⇧⌘Z 不会重放。
+3. 【高】拖进来的图层里又挪出图层（零散的图层）后，整个 Frame 拖不回、拖不出：现在能做。零散的图层跟外面那层一起走，在目标那边记成一次 `putBack`；`keptOf` 认出它是从拖进来的那层里挪出来的，`origin.inside` 指向那层（它的代码还在那层的代码里），路径是那层的路径加上它原来在里面的位置。拖进来那层算编辑过（插入，删除留着），改动说明里那层的删除会写「里面的某层在改动 M 拖回，先把那段代码挪过去再删」。
+4. 【中】在改动列表里撤回空白处新建的 Frame 的新建：拖回时跟着撤掉删除、回到原处的图层，记在新建那条改动的 `madeOffCanvas.back` 里（新加的可选字段）；撤回时（`takenBackOff`，从 Shell 挪到 `off-canvas-moves.ts`）把它们从回到画布外的 Frame 里拿掉，像撤回删除时的 `parts` 一样。
+5. 【中】可能的假「not shown」：写了 vitest，确认会报 `not shown: "there"`。修法：`lookDeleted` 里，这次删除的图层若被拖进了这一轮插回的画布外图层（`keptIn` 里有它的 id），只看它在原来的容器里是不是还在；代码挪进新代码里算删了。留在原处照旧是 `not shown`。
+6. 【低】`find` 加了注释，加了测试（A 拖进 H、再拖出成为 id 还是 A 的图层、撤销两次、重做两次）。
+7. 【低，可选】上一轮挪出的图层里拖出的一部分 `snippet: null`：要从外面那层存下的片段里按行列切出这一段 JSX，不便宜，这次没做，留作风险。
+- 规范：`off-canvas-drag.spec.ts` 两处 `waitForTimeout(800)` 改成 `expect.poll` 读本地服务存下的一轮和画布外图层；`off-canvas-moves.ts` 的 `drawnIn` 改名 `isDrawnIn`；`change-notes.ts` 的片段代码块抽成 `snippetBlock`；`itself` 只留 `off-canvas.ts` 导出的一个。
+- 确认：没有 `origin.edits` 的图层，`editsOf(layer)` 就是 `layer.edits.changes`（`[...(origin.edits ?? []), ...edits.changes]`），原来拖回的改动说明不变；`e2e/bench/scenarios.ts` 对 012d070 的 diff 只有末尾一段新增，没有删改的行。
+- ADR 0009 加了零散图层、页面核对删除、撤回新建这三句。
+- 新测试：`off-canvas-moves.browser.test.ts` +5（零散图层拖回视图、拖进别的画布外图层、被拒时全部原样且无可重做、从列表撤回新建、同一 id），`page-elements.browser.test.ts` +2（挪进插回图层里的删除：shown / 留在原处 not shown）。
+
+**审查后的数字**
+
+- typecheck 过；vitest 1109 过 / 1 跳过；node 125 过。
+- e2e（5400）：第一次全跑我自己 `saved()` 里引用错（page.evaluate 里用了外面的常量），改好后 `off-canvas-drag.spec.ts` 单跑 5/5；再全跑 558 过、1 跳过、3 失败（中间电脑睡了一阵，round.spec:405 卡了 15.6 分钟；另两条是 applying-bench.spec:2028、bench-scenarios.spec 的 promote-and-grid），这 3 条用 `--project="project files" --no-deps` 单跑全过（27/27）。properties.spec:1193（动效）第一次失败一次，单跑过。
+- `--dry` 25/25；和 main（012d070 的 src）的 `--claim-out` `diff -r`：原来 24 份相同，只多 `off-canvas-frame.md`（和审查前那份也相同）。`--scripted` 16/16。
+- 切换按钮的包仍逐字节不变：chunk-2GJY7MXB.js 21372 B（a8c4c0d4bc3d）、react.dev.js 1423 B（bd6c2389b644）。editor.dev.js 506,645 B（gzip 179,127）；cli.js gzip 46,116。
+- 新风险：零散图层又被挪进另一个零散图层时，里面那个跟着外面那个的外观走，不单独记它的代码在哪；拖进来那层先被拖走、零散的图层留下时，它之后拖回会失去「写在那层代码里」的关联（记成写在画布外那层里，附外观）。

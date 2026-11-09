@@ -222,6 +222,14 @@ export interface SavedOffCanvasLayer {
   origin: OffCanvasOrigin;
   /** The edits made to it off the canvas: no changes of the round's, but kept, to go with it when it is put back. */
   edits: SavedChangeSet;
+  /**
+   * Made in the blank space and put back (a `create` change's `madeOffCanvas`,
+   * ticket 108): the layers in it, by its own ids, that came into it from the
+   * canvas this round and went back with it as they were, their deletions
+   * taken back. That change taken back, they are on the canvas again, in their
+   * places, so no longer in it.
+   */
+  back?: string[];
 }
 
 /** The answer to saving the layers off the canvas: the JSX that writes each, by its id, as kept. */

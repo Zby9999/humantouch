@@ -5,18 +5,17 @@ import type { SavedOffCanvasLayer, OffCanvasSaveAnswer, SavedRound, Variable, Va
 import type { Property, PropertyValues } from "./property-table";
 import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
-import { LAYER_ID_ATTR } from "./canvas-style";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
 import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
-import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type Created, type PutBack, type RangePart } from "./changeset";
+import { createChangeSet, withDependents, type Change, type ChangeSet, type Created, type PutBack, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
 import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
 import { createHistory, together } from "./undo-steps";
 import { cameInto, createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
-import { carry as carryOff, moveInto as moveIntoOff, partOff as partOffCanvas, type Desk } from "./off-canvas-moves";
+import { carry as carryOff, moveInto as moveIntoOff, partOff as partOffCanvas, takenBackOff, type Desk } from "./off-canvas-moves";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -787,24 +786,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
            * Taking `changes` back: the layers they moved off the canvas are back on it, and so no longer off it;
            * those they put back onto it are off it again, as they were, unless moved off by them too.
            */
-          const offAgain = (changes: Change[]) => {
-            const out = new Set(changes.map((change) => change.offCanvas).filter((id) => id !== undefined));
-            return {
-              taken: [...out].map((id) => outside.find(id)).filter((found) => found !== null),
-              // Moved into another layer off the canvas (ticket 108): out of it, where it is now.
-              parts: [...out].flatMap((id) =>
-                outside.list().flatMap((holder) => {
-                  const came = holder.changes.list().find((change) => change.kind === "putBack" && (change.after as PutBack).layer.id === id);
-                  const el = came && holder.document.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(came.layer)}"]`);
-                  const layer = el && holder.editor.tree().layerOf(el);
-                  return layer ? [{ holder, layer }] : [];
-                }),
-              ),
-              brought: putBackBy(changes)
-                .filter((kept) => !out.has(kept.id))
-                .map((kept) => outside.find(kept.id) ?? outside.bring(kept)),
-            };
-          };
+          const offAgain = (changes: Change[]) => takenBackOff(outside, changes);
           control.current = {
             partsRead(id, parts) {
               const change = changeSet.list().find((change) => change.id === id);

@@ -98,6 +98,9 @@ export interface OffCanvas {
 /** On the iframe that shows a layer off the canvas: its id. */
 export const OFF_CANVAS_ATTR = "data-tk-off-canvas";
 
+/** The layer off the canvas itself, while it is there: what an edit that puts it there or takes it away is made to. */
+export const itself = (outside: OffCanvasLayer) => () => [outside.layer()].filter((layer) => layer !== null);
+
 /** The layers off the canvas, shown in `host`, an element of the workspace, starting with those `saved`. */
 export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[], history: History): OffCanvas {
   const all: Shown[] = [];
@@ -211,7 +214,8 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
   return {
     list: () => all.filter((outside) => outside.there),
     of: (node) => all.find((outside) => outside.there && outside.document === (node.ownerDocument ?? node)) ?? null,
-    // One there now first: a layer that goes into another off the canvas and out again has the id it had (ticket 108).
+    // One there now first: a layer that goes into another off the canvas and out again has the id it had (ticket 108), so two may have it, the first taken away, the second there.
+    // Undone, the second is taken away too and the layer is in the other again: then the latest, which a redo puts there again; the first is there again only once its going in is undone, and found then.
     find: (id) => all.find((outside) => outside.id === id && outside.there) ?? [...all].reverse().find((outside) => outside.id === id) ?? null,
     moveOut(el, at, origin, id = crypto.randomUUID()) {
       return show(id, at.x, at.y, origin, null, (iframe) => freezeLook(el, iframe));
@@ -220,19 +224,18 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       const type = (from.changes.list().find((change) => change.kind === "create" && change.layer === part.el.getAttribute(LAYER_ID_ATTR))!.after as Created).type;
       const outside = show(crypto.randomUUID(), at.x, at.y, madeOrigin(type), null, (iframe) => blankLook(page, iframe));
       const { editor } = outside;
-      const itself = () => [outside.layer()].filter((layer) => layer !== null);
       let missed: Change[] = [];
       editor.batch(() => {
         editor.along(
           () => put(outside),
           () => take(outside),
-          itself,
+          itself(outside),
         );
         ({ missed } = remake(editor, from, { parent: editor.tree().root, index: 0 }, { root: part, keptOf }));
         editor.along(
           () => fit(outside),
           () => {},
-          itself,
+          itself(outside),
         );
       });
       return { outside, missed };
@@ -249,6 +252,18 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       // The layer it came into this one as, from elsewhere: itself, or the one it is in; none, when in it from the start.
       let came: Change | null = null;
       for (let el: Element | null = part.el; el && el !== root?.el && !came; el = el.parentElement) if (makerOf(el)?.kind === "putBack") came = makerOf(el);
+      // Else moved out of one that came in, it or a layer it is in: still written in that one's code, where it was in it.
+      let movedOut: { layer: Layer; from: Layer } | null = null;
+      for (let layer: Layer | null = part; layer && layer.el !== root?.el && !came; layer = layer.parent) {
+        const id = layer.el.getAttribute(LAYER_ID_ATTR);
+        const move = changes.find((change) => change.kind === "move" && change.layer === id);
+        const was = move && from.document.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape((move.before as Place).container.layer)}"]`);
+        for (let el = was || null; el && el !== root?.el && !came; el = el.parentElement) {
+          if (makerOf(el)?.kind !== "putBack") continue;
+          came = makerOf(el);
+          movedOut = { layer, from: from.editor.tree().layerOf(was!)! };
+        }
+      }
       const edits = editedWithin(from, part);
       const look = lookOf(part.el);
       // Where it is in the workspace now: there, off the canvas again, once its putting back is taken back.
@@ -265,13 +280,18 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       // Written in the code of the layer it came in with, or of this one: found by the way down from there.
       const within = came ? (came.after as PutBack).layer : { id: from.id, origin: from.origin };
       const top = came ? from.document.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(came.layer)}"]`) : root?.el;
-      const way: string[] = [];
       let copied = copy || !!within.origin.copy;
-      for (let layer: Layer | null = part; layer && layer.el !== top; layer = layer.parent) {
-        way.unshift(layer.name);
-        // In a copy made here, its code stays where it is, the layer it copies with it.
-        if (makerOf(layer.el)?.kind === "duplicate") copied = true;
-      }
+      /** The names of the layers from `start` up to `stop`, not it, the outermost first. */
+      const wayUp = (start: Layer | null, stop: Element | null | undefined) => {
+        const names: string[] = [];
+        for (let layer = start; layer && layer.el !== stop; layer = layer.parent) {
+          names.unshift(layer.name);
+          // In a copy made here, its code stays where it is, the layer it copies with it.
+          if (makerOf(layer.el)?.kind === "duplicate") copied = true;
+        }
+        return names;
+      };
+      const way = movedOut ? [...wayUp(movedOut.from, top), ...wayUp(part, movedOut.layer.el.parentElement)] : wayUp(part, top);
       const own = from.editor.originOf(part);
       const { made: _, ...target } = own.target;
       // Its code is in that layer's code, unless that is new, or a copy of a layer that stayed.
@@ -298,13 +318,12 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
     make(type, at, size, page) {
       const outside = show(crypto.randomUUID(), at.x, at.y, madeOrigin(type), null, (iframe) => blankLook(page, iframe));
       const { editor } = outside;
-      const itself = () => [outside.layer()].filter((layer) => layer !== null);
       editor.batch(() => {
         // There first, to be laid out as it is made; then as big as it is made.
         editor.along(
           () => put(outside),
           () => take(outside),
-          itself,
+          itself(outside),
         );
         const made = editor.create(type, { parent: editor.tree().root, index: 0 }, size);
         // A Frame white, as one drawn on an empty Figma canvas (designer, 2026-11-09): a fill of its own, put back with it.
@@ -312,7 +331,7 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
         editor.along(
           () => fit(outside),
           () => {},
-          itself,
+          itself(outside),
         );
       });
       return outside;
@@ -424,8 +443,13 @@ export function remake(
   // What came in from elsewhere takes what was edited in it along, in its look.
   const parts = all.filter((change) => change.kind === "putBack").map((change) => outside.editor.tree().layerOf(elementOf(change.layer)!)!);
   const carried = new Set(parts.flatMap((part) => editedWithin(outside, part)));
-  // A layer moved out of one of them, but for what came in with it, is left behind: none of its edits.
-  const strays = [...carried].filter((change) => change.kind === "move" && !parts.some((part) => part.el.contains(elementOf(change.layer))));
+  // A layer moved out of one of them, into none, goes as one that came in does, where it is now, what was edited in it with it: written in the code of the one it came in with (`keptOf`).
+  const strays = new Set([...carried].filter((change) => change.kind === "move" && !parts.some((part) => part.el.contains(elementOf(change.layer)))));
+  for (const stray of strays) {
+    carried.delete(stray);
+    const el = elementOf(stray.layer);
+    if (el) for (const change of editedWithin(outside, outside.editor.tree().layerOf(el)!)) carried.add(change);
+  }
   const changes = all.filter((change) => !carried.has(change));
   /** The layers off the canvas that its own changes make: on the canvas once those are made again. */
   const made = new Set(changes.map(madeBy).filter((id) => id !== null));
@@ -492,8 +516,14 @@ export function remake(
         return true;
       }
       case "move": {
-        const layer = layerOf(change.layer);
         const at = destination(change.after as Place);
+        if (strays.has(change)) {
+          const el = elementOf(change.layer);
+          if (!keptOf || !el || !at || !editor.canHold(at.parent)) return false;
+          keep(change.layer, editor.putBack({ el, kept: keptOf(outside.editor.tree().layerOf(el)!) }, at));
+          return true;
+        }
+        const layer = layerOf(change.layer);
         if (!layer || !at || !editor.canDrop(layer, at.parent)) return false;
         editor.move(layer, at);
         return true;
@@ -542,7 +572,9 @@ export function remake(
   };
   let left = changes.filter((change) => !change.breakpoint && change.scope !== "component");
   // Off the canvas there is one view, and no component to promote to: a change at a breakpoint or to a component is none of its.
-  const missed = [...changes.filter((change) => !left.includes(change)), ...strays];
+  const missed = changes.filter((change) => !left.includes(change));
+  // Known before anything is made: then nothing is, and no deletion is taken back for it.
+  if (missed.length) return { layer: null, missed };
   /** Its layers that came from the canvas this round, their deletions taken back first: each back in its place, as it was when the designer drew around it. */
   const back = new Map<string, Element>();
   let into = to;
@@ -554,6 +586,8 @@ export function remake(
         const layer = el && undelete(keptOf(outside.editor.tree().layerOf(el)!));
         if (layer) back.set(change.layer, layer.el);
       }
+      // The change that makes it keeps which went back as they were: that change taken back, they are on the canvas again, and no longer in it.
+      if (kept && back.size) kept.back = [...back.keys()];
       // Where it goes, among the layers there now.
       const parent = back.size ? editor.tree().layerOf(to.parent.el) : null;
       if (parent && "index" in to) {
