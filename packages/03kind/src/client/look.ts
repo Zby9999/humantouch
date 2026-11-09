@@ -111,6 +111,28 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
   editable(doc);
 }
 
+/** What of the page's body text new text takes, on the canvas and in a document made in the blank space beside it. */
+export const BODY_TEXT = ["font-family", "font-size", "font-weight", "line-height", "letter-spacing", "color"];
+
+/**
+ * Writes `into`, an iframe in the document, anew as a document for a layer
+ * made in the blank space beside the views (ticket 106): laid out as a frozen
+ * look is, with nothing in it yet, its body's text that of `page`, the
+ * canvas, the page's fonts with it, so new text there looks as on the page.
+ */
+export function blankLook(page: Document, into: HTMLIFrameElement) {
+  const doc = into.contentDocument;
+  if (!doc) throw new Error("03Kind: the iframe to make a layer in is not in the document");
+  const body = getComputedStyle(page.body);
+  const { faces, imports } = fontsOf(page);
+  const text = rule("body", Object.fromEntries(BODY_TEXT.map((name) => [name, body.getPropertyValue(name)])));
+  const styles = imports.map((href) => `@import url("${href}") layer(page);`).join("") + faces.join("") + text;
+  doc.open();
+  doc.write(`${doctypeOf(page)}<html><head><style ${LOOK_STYLES_ATTR}="${LOOK_STYLES_BASE}">${BASE}</style><style ${LOOK_STYLES_ATTR}="">${styles}</style></head><body></body></html>`);
+  doc.close();
+  editable(doc);
+}
+
 /** On the layer itself, put back onto the canvas, what places it is its place's, not its look's. */
 const PLACING = new Set(["position", "top", "right", "bottom", "left", "float", "z-index"]);
 

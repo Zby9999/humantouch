@@ -52,6 +52,13 @@ interface Props {
   onPlaceOff(offCanvasLayer: OffCanvasLayer, x: number, y: number): void;
   /** A layer off the canvas dragged over a view and let go where it can go there: back onto the canvas (ADR 0009). */
   onPutBack(offCanvasLayer: OffCanvasLayer, to: Destination): void;
+  /**
+   * A Frame or text drawn with the tool in the blank space beside the views
+   * and the layers off the canvas, its top left at `at` on the stage; `size`
+   * when drawn rather than clicked (ticket 106). Returns it, a layer off the
+   * canvas now, and the view it is in; null when none can be made.
+   */
+  onMakeOff(type: Created["type"], at: { x: number; y: number }, size?: { width: number; height: number }): { layer: Layer; view: View } | null;
   /** The canvas's layers, once there is a canvas. */
   tree: LayerTree | null;
   /** The selected layers, the one selected last at the end: clicks go on from its depth. */
@@ -107,7 +114,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMakeOff, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -167,9 +174,12 @@ export function CanvasView(props: Props) {
   const [, caughtUp] = useReducer((n: number) => n + 1, 0);
   const catchingUp = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(catchingUp.current), []);
-  /** A layer being drawn: the view it is drawn in, where the drawing started, and where the pointer is, in its px. Held until let go (ADR 0012). */
-  const drawing = useRef<{ pointerId: number; in: Shown; start: { x: number; y: number }; release(): void } | null>(null);
-  const [drawn, setDrawn] = useState<{ in: Shown; box: DOMRect } | null>(null);
+  /**
+   * A layer being drawn: the view it is drawn in (null: the blank space beside them, ticket 106), where the
+   * drawing started, and where the pointer is, in its px (on the stage). Held until let go (ADR 0012).
+   */
+  const drawing = useRef<{ pointerId: number; in: Shown | null; start: { x: number; y: number }; release(): void } | null>(null);
+  const [drawn, setDrawn] = useState<{ in: Shown | null; box: DOMRect } | null>(null);
   /** The text being typed in, and what was in it; the view it is typed in, and its element there. */
   const typing = useRef<{ layer: Layer; html: string; view: View; el: HTMLElement } | null>(null);
   /**
@@ -697,12 +707,11 @@ export function CanvasView(props: Props) {
     }
     if (over && !over.at.offCanvasLayer) views?.sync(over.at.view);
     if (event.button === 0 && !spaceHeld && tool && editor) {
-      // Drawn in the view pressed in, or in a layer off the canvas; outside them all, nothing is.
-      if (!over) return;
+      // Drawn in the view pressed in, or in a layer off the canvas; outside them all, in the blank space, a layer off the canvas of its own (ticket 106).
       event.currentTarget.setPointerCapture(event.pointerId);
-      const start = { x: over.x, y: over.y };
-      drawing.current = { pointerId: event.pointerId, in: over.at, start, release: holdPointer(event.pointerId) };
-      setDrawn({ in: over.at, box: new DOMRect(start.x, start.y, 0, 0) });
+      const start = over ? { x: over.x, y: over.y } : toCanvas(event);
+      drawing.current = { pointerId: event.pointerId, in: over?.at ?? null, start, release: holdPointer(event.pointerId) };
+      setDrawn({ in: over?.at ?? null, box: new DOMRect(start.x, start.y, 0, 0) });
       return;
     }
     if (event.button === 0 && !spaceHeld) {
@@ -769,7 +778,7 @@ export function CanvasView(props: Props) {
       return;
     }
     if (drawing.current?.pointerId === event.pointerId) {
-      setDrawn({ in: drawing.current.in, box: boxFrom(drawing.current.start, toView(event, drawing.current.in)) });
+      setDrawn({ in: drawing.current.in, box: boxFrom(drawing.current.start, toIn(event, drawing.current.in)) });
       return;
     }
     const pressed = press.current;
@@ -822,7 +831,7 @@ export function CanvasView(props: Props) {
       drawing.current = null;
       release();
       setDrawn(null);
-      if (event.type === "pointerup" && tool && editor) draw(tool, shown, start, boxFrom(start, toView(event, shown)));
+      if (event.type === "pointerup" && tool && editor) draw(tool, shown, start, boxFrom(start, toIn(event, shown)));
       return;
     }
     if (press.current?.pointerId === event.pointerId) {
@@ -845,6 +854,8 @@ export function CanvasView(props: Props) {
     const { x, y } = toCanvas(event);
     return { x: x - shown.x, y: y - shown.y };
   };
+  /** Where the pointer is in a view, or, with none, on the stage. */
+  const toIn = (event: At, shown: Shown | null) => (shown ? toView(event, shown) : toCanvas(event));
 
   /**
    * Starts dragging in a view: the layer stops taking the pointer, and where its
@@ -988,12 +999,18 @@ export function CanvasView(props: Props) {
   }
 
   /** Makes the layer drawn over `box`, where it goes; new text is typed in at once. A click rather than a drag makes one of the size it takes. */
-  const draw = (type: Created["type"], shown: Shown, start: { x: number; y: number }, box: DOMRect) => {
+  const draw = (type: Created["type"], shown: Shown | null, start: { x: number; y: number }, box: DOMRect) => {
     onTool(null);
+    const clicked = box.width < DRAG_THRESHOLD && box.height < DRAG_THRESHOLD;
+    if (!shown) {
+      // In the blank space: a layer off the canvas of its own, there where it was drawn.
+      const made = onMakeOff(type, { x: box.x, y: box.y }, clicked ? undefined : { width: box.width, height: box.height });
+      if (made && type === "text") beginTyping(made.layer, made.view);
+      return;
+    }
     const view = shown.view;
     const to = findPlace(editorIn(shown)!, view, start, box);
     if (!to) return;
-    const clicked = box.width < DRAG_THRESHOLD && box.height < DRAG_THRESHOLD;
     const layer = onCreate(type, to, clicked ? undefined : { width: box.width, height: box.height });
     if (type === "text") beginTyping(layer, view);
   };
@@ -1099,14 +1116,17 @@ export function CanvasView(props: Props) {
 
   /** The views laid out so far. */
   const shownViews = placed.filter((p): p is Shown => p.view !== null);
-  /** A new Frame's brief shows beside it in the view last pressed in, or else the desktop view. */
-  const briefIn = shownViews.find((p) => p.view === active) ?? shownViews[0];
+  /** A new Frame's brief shows beside it in the view last pressed in, or else the desktop view; in a layer made in the blank space, there (ticket 106). */
+  const madeOff = primary ? outside.find((shown) => shown.offCanvasLayer?.origin.made && shown.offCanvasLayer.document === primary.el.ownerDocument) : undefined;
+  const briefIn = madeOff ?? shownViews.find((p) => p.view === active) ?? shownViews[0];
+  /** What edits the layer a new Frame's brief is written on. */
+  const briefEditor = madeOff ? madeOff.offCanvasLayer!.editor : editor;
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
   /** The new Frame selected alone, which has the button that writes its brief beside it, in `briefIn`. */
   const newFrame =
-    briefIn && editor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !resize && !hideSelection && editor.isNewFrame(primary)
-      ? { layer: primary, in: briefIn, brief: editor.brief(primary) }
+    briefIn && briefEditor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !resize && !hideSelection && briefEditor.isNewFrame(primary)
+      ? { layer: primary, in: briefIn, brief: briefEditor.brief(primary) }
       : null;
   /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `briefIn`. */
   const toolbar =
@@ -1131,7 +1151,11 @@ export function CanvasView(props: Props) {
       ? primary
       : null);
   /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
-  const briefed = canvas && tree ? briefedLayers(canvas.document, tree) : [];
+  const briefed = [
+    ...(canvas && tree ? briefedLayers(canvas.document, tree) : []),
+    // Those in the layers made in the blank space too, which take briefs (ticket 106).
+    ...outside.flatMap(({ offCanvasLayer }) => (offCanvasLayer?.origin.made ? briefedLayers(offCanvasLayer.document, offCanvasLayer.editor.tree()) : [])),
+  ];
   /**
    * ⌥ held: the distances from the layers selected, all of them as one box,
    * to the layer pointed at, in the view pointed in; pointed at one of them or
@@ -1303,7 +1327,7 @@ export function CanvasView(props: Props) {
         </>
       )}
       {(drag?.layer.text || drag?.out) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
-      {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, cameraIn(camera, drawn.in))} />}
+      {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
       {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>
   );

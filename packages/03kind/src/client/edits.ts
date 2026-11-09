@@ -594,6 +594,7 @@ export function createEditor(
     // The arrow keys nudge, held down or pressed again and again: each nudge is one step of a run.
     nudge: (layers, dx, dy, options) => steppedWhile(true, () => structure.nudge(layers, dx, dy, options)),
     at: working.at,
+    inDesktop: working.inDesktop,
     breakpoint: working.breakpoint,
     breakpointAt: working.breakpointAt,
     changedHere: (layer, property) => editor.changesHere(layer).includes(property),
