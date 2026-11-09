@@ -52,6 +52,14 @@ export interface DragSession {
   whole?: true;
   /** A layer off the canvas dragged over a view: where it would go back onto the canvas there; null where it cannot. */
   back: Drop | null;
+  /** A layer off the canvas dragged whole over another (ticket 108): that one, which `back` is in. */
+  holder?: Shown | null;
+  /**
+   * The layer dragged over another document than its own (ticket 108): a
+   * layer off the canvas, from the canvas or another off it, or a view, from
+   * off it; and where it would go there. Null over its own, or where it cannot go.
+   */
+  into?: { shown: Shown; drop: Drop } | null;
   /** Lets the views grow and shrink again, which they do not while the drag shifts layers. */
   release: () => void;
   /** Where the pointer was last, to drag again there as ⌘ is pressed or let go. */

@@ -65,6 +65,21 @@ describe("layers off the canvas, in the local service", () => {
     expect(layers).toMatchObject([{ id: "a", x: 50, origin: { snippet: { code: '<h1 className="text-4xl">Hello</h1>' } } }]);
   });
 
+  test("a layer moved into another off the canvas (ticket 108) is kept with its JSX too, read as it is first saved, and kept as it was", async () => {
+    const into = (id: string) => ({ id: 1, kind: "putBack", layer: "1", property: "put back", before: null, after: { place: null, layer: layer(id, "src/App.tsx:4:7") } });
+    const frame = { ...layer("f", null), edits: { lastId: 1, changes: [into("in")] } } as unknown as SavedOffCanvasLayer;
+
+    const answer = await call("PUT", OFF_CANVAS_PATH, { layers: [frame] });
+
+    const code = '<h1 className="text-4xl">Hello</h1>';
+    expect(await answer.json()).toEqual({ snippets: { f: null, in: { loc: "src/App.tsx:4:7", code } } });
+    expect((saved()[0].edits.changes[0].after as { layer: SavedOffCanvasLayer }).layer.origin.snippet).toEqual({ loc: "src/App.tsx:4:7", code });
+    // Its code deleted since, and the layer gone on into another, it keeps it.
+    writeFileSync(join(root, "src/App.tsx"), APP.replace(/ *<h1.*\n/, ""));
+    const again = { ...layer("g", null), origin: { ...layer("g", null).origin, edits: [into("in")] } } as unknown as SavedOffCanvasLayer;
+    expect(await (await call("PUT", OFF_CANVAS_PATH, { layers: [again] })).json()).toEqual({ snippets: { g: null, in: { loc: "src/App.tsx:4:7", code } } });
+  });
+
   test("a layer new this round has no snippet; none left, nothing is kept", async () => {
     await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", null)] });
     expect(saved()[0].origin.snippet).toBeNull();

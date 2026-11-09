@@ -52,6 +52,16 @@ interface Props {
   onPlaceOff(offCanvasLayer: OffCanvasLayer, x: number, y: number): void;
   /** A layer off the canvas dragged over a view and let go where it can go there: back onto the canvas (ADR 0009). */
   onPutBack(offCanvasLayer: OffCanvasLayer, to: Destination): void;
+  /** A layer of the canvas, dragged from `view`, let go at `to` in `into`, a layer off the canvas (ticket 108); with ⌥ held, a copy of it. */
+  onMoveInto(layer: Layer, view: View, into: OffCanvasLayer, to: Destination, copy: boolean): void;
+  /**
+   * `part`, a layer off the canvas or one in it (`from`), let go at `to` in
+   * `into`, another layer off the canvas, or over a view (null) (ticket 108);
+   * with ⌥ held, a copy of it.
+   */
+  onCarry(from: OffCanvasLayer, part: Layer, to: Destination, into: OffCanvasLayer | null, copy: boolean): void;
+  /** A layer in `from`, a layer off the canvas, let go in the blank space with its top left at `at` on the stage (ticket 108); with ⌥ held, a copy of it. */
+  onPartOff(from: OffCanvasLayer, part: Layer, at: { x: number; y: number }, copy: boolean): void;
   /**
    * A Frame or text drawn with the tool in the blank space beside the views
    * and the layers off the canvas, its top left at `at` on the stage; `size`
@@ -118,7 +128,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMakeOff, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -166,7 +176,7 @@ export function CanvasView(props: Props) {
   /** The last plain press let go as a click, which the next press may make a double click of. */
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null);
   /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
-  const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean } | null>(null);
+  const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean; away?: boolean } | null>(null);
   /**
    * A handle of the layer selected pressed, and dragged: held from the moment it is pressed till it is let
    * go, or the resize cancelled with Esc (ADR 0012). `resize` has what it shows: the view, the handle (its
@@ -874,6 +884,9 @@ export function CanvasView(props: Props) {
    */
   const startDrag = (layer: Layer, shown: Shown): DragSession => startDragSession(layer, shown, views!);
 
+  /** `drop`, unless in a layer off the canvas but beside the layer itself, in its document: there is one layer to each (ticket 108). */
+  const inLayer = (drop: Drop | null, into: Shown): Drop | null => (drop && into.offCanvasLayer && drop.to.parent === treeIn(into)?.root ? null : drop);
+
   /**
    * The layer dragged to where the pointer is, from where it was pressed.
    * Placed freely, it snaps, unless ⌘ (Ctrl) is held: as near on screen
@@ -888,11 +901,13 @@ export function CanvasView(props: Props) {
     const box = new DOMRect(start.x + dx, start.y + dy, start.width, start.height);
     const offCanvasLayer = shown.offCanvasLayer;
     if (session.whole && offCanvasLayer) {
-      // Let go over a view, it goes back onto the canvas, where it can go there, as any layer dragged in it does (ADR 0009).
-      const into = viewAt(event, placed)?.at ?? null;
+      // Let go over another layer off the canvas, it goes into it, where it can go there (ticket 108); over a view, back onto the canvas, as any layer dragged in it does (ADR 0009).
+      const holder = viewAt(event, outside.filter((o) => o.offCanvasLayer !== offCanvasLayer).reverse())?.at ?? null;
+      session.holder = holder;
+      const into = holder ?? viewAt(event, placed)?.at ?? null;
       const rectOf = (l: Layer) => into?.view.boxOf(l) ?? new DOMRect();
       const there = into && new DOMRect(offCanvasLayer.x + box.x - into.x, offCanvasLayer.y + box.y - into.y, box.width, box.height);
-      const drop = into && there && editor ? findDrop(editor, into.view, null, toView(event, into), there, rectOf, snapWithin) : null;
+      const drop = into && there && editorIn(into) ? inLayer(findDrop(editorIn(into)!, into.view, null, toView(event, into), there, rectOf, snapWithin), into) : null;
       // Snapped, it is shown where it snaps to.
       if (drop && there) [dx, dy] = [dx + drop.box.x - there.x, dy + drop.box.y - there.y];
       moveWhole(session, dx, dy);
@@ -902,8 +917,23 @@ export function CanvasView(props: Props) {
       setDrag({ layer, in: into ?? shown, box: drop?.box ?? there ?? box, drop, out: false });
       return;
     }
-    // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it.
-    session.out = !offCanvasLayer && !viewAt(event) && !!editor?.canRemove(layer);
+    // Over another document than its own (ticket 108): a layer off the canvas, from the canvas or another off it, or a view, from off it.
+    const over = layer.text ? null : (viewAt(event)?.at ?? null);
+    const across = over && over.offCanvasLayer !== offCanvasLayer && editorIn(over) ? over : null;
+    if (across) {
+      const there = new DOMRect(shown.x + box.x - across.x, shown.y + box.y - across.y, box.width, box.height);
+      const drop = inLayer(findDrop(editorIn(across)!, across.view, null, toView(event, across), there, (l) => across.view.boxOf(l) ?? new DOMRect(), snapWithin), across);
+      session.out = false;
+      session.drop = null;
+      session.into = drop && { shown: across, drop };
+      // It goes along with the pointer where it is; nothing makes room for it, there or where it came from.
+      shift(session, { x: dx + (drop ? drop.box.x - there.x : 0), y: dy + (drop ? drop.box.y - there.y : 0) }, null);
+      setDrag({ layer, in: across, box: drop?.box ?? there, drop, out: false, away: true });
+      return;
+    }
+    session.into = null;
+    // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it; one in a layer off the canvas, a layer off it of its own (ticket 108).
+    session.out = !viewAt(event) && !!(offCanvasLayer ? !layer.text && editorIn(shown)?.canRemove(layer) : editor?.canRemove(layer));
     const rectOf = (l: Layer) => laidOut(session, l);
     const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin, session.marginsAside));
     session.drop = drop;
@@ -1101,15 +1131,25 @@ export function CanvasView(props: Props) {
     restoreDragStyles(session);
     setDrag(null);
     if (!commit) return;
-    const { layer, in: shown, box, to, out, drop, back } = session;
+    const { layer, in: shown, box, to, out, drop, back, holder, into } = session;
     if (shown.offCanvasLayer && session.whole) {
       if (to && (to.x !== shown.offCanvasLayer.x || to.y !== shown.offCanvasLayer.y)) onPlaceOff(shown.offCanvasLayer, to.x, to.y);
+      // Into another layer off the canvas (ticket 108).
+      else if (back && holder?.offCanvasLayer) onCarry(shown.offCanvasLayer, layer, back.to, holder.offCanvasLayer, copy);
       // Over a view where it cannot go, it stays off the canvas, where it was.
       else if (back) onPutBack(shown.offCanvasLayer, back.to);
       return;
     }
+    // Into another document than its own (ticket 108): where it cannot go there, it stays where it was.
+    if (into) {
+      if (shown.offCanvasLayer) onCarry(shown.offCanvasLayer, layer, into.drop.to, into.shown.offCanvasLayer ?? null, copy);
+      else if (into.shown.offCanvasLayer) onMoveInto(layer, shown.view, into.shown.offCanvasLayer, into.drop.to, copy);
+      return;
+    }
     if (out && box) {
-      onMoveOff(layer, shown.view, { x: shown.x + box.x, y: shown.y + box.y }, copy);
+      const at = { x: shown.x + box.x, y: shown.y + box.y };
+      if (shown.offCanvasLayer) onPartOff(shown.offCanvasLayer, layer, at, copy);
+      else onMoveOff(layer, shown.view, at, copy);
       return;
     }
     if (!drop) return;
@@ -1340,7 +1380,7 @@ export function CanvasView(props: Props) {
           <Marks marks={measured.marks} view={measured.in.name} camera={cameraIn(camera, measured.in)} />
         </>
       )}
-      {(drag?.layer.text || drag?.out) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
+      {(drag?.layer.text || drag?.out || drag?.away) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
       {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
       {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
     </div>

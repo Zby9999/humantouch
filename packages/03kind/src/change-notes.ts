@@ -6,7 +6,9 @@
  */
 import { isAbsolute, relative } from "node:path";
 import {
+  carriedIn,
   drawnIn,
+  editsOf,
   madeBy,
   movedOffBy,
   placedAt,
@@ -103,7 +105,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "create" ? sketch(change, list) : []),
     ...(change.kind === "brief" ? [briefLine(change, list)] : []),
     ...(change.kind === "duplicate" && change.brief ? [`**Brief:** ${quoted(change.brief)}, as the Frame it copies has it. Make what it asks for in the copy too, as in that Frame.`] : []),
-    ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack) : []),
+    ...(change.kind === "putBack" ? putBackFrom(change.after as PutBack, list) : []),
     ...(change.kind === "delete" ? putBackIn(change, list) : []),
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${madeBefore(target, list) ? "unknown: the layer was made in a round before" : target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
@@ -240,6 +242,13 @@ function intent(change: Change, list: Change[], look?: WhereToLook): string {
       if (deletion) {
         return (
           `Put this layer back, moved off the canvas this round (change ${deletion.id}): its code is still where it was. ` +
+          `Move that code here rather than deleting it and writing it again, ${placement(place)}.`
+        );
+      }
+      const around = layer.origin.inside ? movedOffBy(list, layer.origin.inside) : null;
+      if (around) {
+        return (
+          `Put this layer back: it was in the layer moved off the canvas this round (change ${around.id}), and its code is still there, in that layer's code. ` +
           `Move that code here rather than deleting it and writing it again, ${placement(place)}.`
         );
       }
@@ -439,10 +448,10 @@ const NO_STYLE: Record<Change["kind"], string> = {
  * Where a layer put back comes from (ADR 0009): its source as it was written
  * when moved off the canvas, its look there, and what was edited there.
  */
-function putBackFrom({ layer }: PutBack): string[] {
+function putBackFrom({ layer }: PutBack, list: Change[]): string[] {
   const { snippet } = layer.origin;
   const source = snippet
-    ? `**Source**, as written at \`${snippet.loc}\` when it was moved off the canvas:\n\n${fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx")}`
+    ? `**Source**, as written at \`${snippet.loc}\` when it was moved off the canvas:\n\n${snippetBlock(snippet)}`
     : layer.origin.written
       ? `**Source:** not kept: it could not be read at \`${layer.origin.written}\` when the layer was moved off the canvas. Write it from its look, below, as the project writes markup and styles.`
       : "**Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.";
@@ -450,14 +459,50 @@ function putBackFrom({ layer }: PutBack): string[] {
     "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-tk-class`). " +
     "Where its classes no longer give it this look, their rules gone with its code, give it the styles that do, as the project writes styles:\n\n" +
     fenced(lookOf(layer.look), "html");
-  const edits = layer.edits.changes.map((edit) => `\n  - ${changeTitle(edit)} of ${layerName(edit)} (\`${edit.target.context.element}\`): ${intent(edit, layer.edits.changes)}`);
+  const edited = editsOf(layer);
+  const edits = edited.map((edit) => (edit.kind === "putBack" ? `\n  - ${movedIn(edit.after as PutBack, list)}` : `\n  - ${changeTitle(edit)} of ${layerName(edit)} (\`${edit.target.context.element}\`): ${intent(edit, edited)}`));
   return [source, look, ...(edits.length ? [`**Edited off the canvas:** give it these too, as the designer made them there:${edits.join("")}`] : [])];
+}
+
+/**
+ * A layer moved into a layer off the canvas (ticket 108), as the notes of
+ * putting that one back list it among its edits: where it came from, and
+ * whether its code is still there, to move in.
+ */
+function movedIn({ place, layer }: PutBack, list: Change[]): string {
+  const { context } = layer.origin.target;
+  const what = `Moved into it, ${placement(place)}: ${context.path.at(-1)} (\`${context.element}\`)`;
+  const deletion = movedOffBy(list, layer.id);
+  const around = layer.origin.inside ? movedOffBy(list, layer.origin.inside) : null;
+  if (layer.origin.copy) return `${what}, a copy of a layer that stays where it is. Write the copy as the look above shows it.`;
+  if (deletion) return `${what}, moved off the canvas this round (change ${deletion.id}): its code is still where it was. Move that code in here rather than deleting it and writing it again.`;
+  if (around) return `${what}, out of the layer moved off the canvas this round (change ${around.id}): its code is still in that layer's code. Move that code in here rather than deleting it and writing it again.`;
+  const { snippet } = layer.origin;
+  return snippet
+    ? `${what}, its code deleted in a round before; as written at \`${snippet.loc}\` then:\n\n${snippetBlock(snippet)
+        .split("\n")
+        .map((line) => `  ${line}`)
+        .join("\n")}`
+    : `${what}, with no code kept for it. Write it as the look above shows it.`;
 }
 
 /** A deletion that moved a layer off the canvas this round, and put it back this round too: the code moves, rather than going. */
 function putBackIn(change: Change, list: Change[]): string[] {
   const back = change.offCanvas && putBackOf(list, change.offCanvas);
-  return back ? [`**Put back:** the layer was moved off the canvas and is put back in change ${back.id}. Do not delete its code: move it to where change ${back.id} puts it.`] : [];
+  if (back) return [`**Put back:** the layer was moved off the canvas and is put back in change ${back.id}. Do not delete its code: move it to where change ${back.id} puts it.`];
+  if (!change.offCanvas) return [];
+  // Moved into a layer off the canvas, or a layer of it out of it, and put back so (ticket 108).
+  const id = change.offCanvas;
+  const lines: string[] = [];
+  for (const other of list) {
+    if (other.kind !== "putBack") continue;
+    const [kept, ...within] = carriedIn((other.after as PutBack).layer);
+    if (within.some((carried) => carried.id === id)) lines.push(`**Put back:** the layer was moved off the canvas, into a layer off it, and is put back with that layer in change ${other.id}. Do not delete its code: move it to where it is in that layer.`);
+    for (const carried of [kept, ...within].filter((carried) => carried.origin.inside === id)) {
+      lines.push(`**Put back:** a layer in it, ${carried.origin.target.context.path.at(-1)} (\`${carried.origin.target.context.element}\`), is put back in change ${other.id}. Move that layer's code there before deleting this layer's.`);
+    }
+  }
+  return lines;
 }
 
 /**
@@ -474,6 +519,11 @@ function lookOf(look: string): string {
       .replace(/@font-face\s*\{[^}]*\}/g, "")
       .trim()
   );
+}
+
+/** A layer's source as kept, as a fenced block in the language of its file, inside a list item. */
+function snippetBlock(snippet: { loc: string; code: string }): string {
+  return fenced(snippet.code, /\.([cm]?[jt]sx?)$/.exec(snippet.loc.replace(/:\d+:\d+$/, ""))?.[1] ?? "tsx");
 }
 
 /** `code` as a fenced block, inside a list item. */

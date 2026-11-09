@@ -1,5 +1,5 @@
 /** How the editor layer and the local service talk. Shared by both sides. */
-import type { Place, SavedChangeSet, Target } from "./client/changeset";
+import type { Change, Place, SavedChangeSet, Target } from "./client/changeset";
 import type { Snippet } from "./source-snippet";
 import type { StyleSource } from "./client/style-source";
 import type { UsageLevel } from "./client/usage-chain";
@@ -222,6 +222,14 @@ export interface SavedOffCanvasLayer {
   origin: OffCanvasOrigin;
   /** The edits made to it off the canvas: no changes of the round's, but kept, to go with it when it is put back. */
   edits: SavedChangeSet;
+  /**
+   * Made in the blank space and put back (a `create` change's `madeOffCanvas`,
+   * ticket 108): the layers in it, by its own ids, that came into it from the
+   * canvas this round and went back with it as they were, their deletions
+   * taken back. That change taken back, they are on the canvas again, in their
+   * places, so no longer in it.
+   */
+  back?: string[];
 }
 
 /** The answer to saving the layers off the canvas: the JSX that writes each, by its id, as kept. */
@@ -251,6 +259,19 @@ export interface OffCanvasOrigin {
    * put back, it is made anew there, as one drawn there is.
    */
   made?: "frame" | "text";
+  /**
+   * A layer that was in another layer off the canvas and was dragged out of
+   * it (ticket 108): the id of the layer whose code it was written in, as the
+   * deletion that moved that one off the canvas names it. Its code is in that
+   * layer's code: still in the source while that deletion is this round's.
+   */
+  inside?: string;
+  /**
+   * Edits made to it off the canvas before it came where it is now (in
+   * another layer off the canvas, ticket 108): its look has them; with its
+   * own edits, they go with it when it is put back. Never a ChangeSet's.
+   */
+  edits?: Change[];
   /** When it was moved out, as an ISO date. */
   at: string;
 }
