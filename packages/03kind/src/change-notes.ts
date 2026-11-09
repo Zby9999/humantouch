@@ -92,7 +92,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Design intent:** ${intent(change, list, look)}`,
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
-    ...(change.asStack ? [AS_STACK] : []),
+    ...(change.asStack && !madeGridAfter(change, list) ? [AS_STACK] : []),
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
@@ -789,6 +789,20 @@ function fragments({ property, keeps }: Change): string {
 const WRAP = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>` and move that.";
 /** Loose text placed freely at a breakpoint: it needs an element to place. */
 const WRAP_TO_PLACE = "**Wrap it:** the text has no element of its own: it runs on beside other layers in its container. Wrap it in a `<span>`, at every width, and place that.";
+
+/** Whether a later change of the round makes the layer of `change` a Grid where it applies (ticket 109): its arrangement's notes say what to write, a flex column it is not to be. */
+function madeGridAfter(change: Change, list: Change[]): boolean {
+  const range = (of: Change) => JSON.stringify(of.breakpoint ?? null);
+  return list.some(
+    (other) =>
+      other.kind === "style" &&
+      other.property === "arrangement" &&
+      other.layer === change.layer &&
+      other.id > change.id &&
+      (other.after as Arrangement).type === "grid" &&
+      (!other.breakpoint || range(other) === range(change)),
+  );
+}
 
 const AS_STACK =
   "**Make it a Stack:** the layer lays its children out as plain blocks, top to bottom, which the editor shows as a vertical Stack. Make it a real Stack, a flex column (as the reference style shows), so the change applies.";

@@ -73,6 +73,8 @@
 
 **包**：切换按钮 `react.dev.js` 1423 B（sha256 前 16 位 `bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 52d7ff0 逐字节相同。编辑层 `editor.dev.js` 485949 → 490761 B（+4812 B），gzip -9 172015 → 173608 B（+1593 B）。
 
+**Review 后的修正（2026-11-09）**：转换后选的间距 Variable 记到转换那条上（代定 7）；手机先改方向 / 间距、桌面再转 Grid 时手机宽度核对转换那条（代定 11）；只在桌面换了种类时重建图层树；`align` 移出 `ARRANGED`（代定 8）；之后被转成 Grid 的不再写「Make it a Stack」（代定 12）；`can()` 对非 Stack / Grid 图层先按种类返回、不再调 `shown`。重跑：typecheck、`pnpm test`（1072 passed、1 skipped；node 125）、`grid.spec.ts` + `stack.spec.ts` 13 passed、`variables*.spec.ts` 31 passed、109 的 3 个剧本、`--dry` 24/24、认领说明和 52d7ff0 逐字相同、`--scripted`。没碰进入编辑模式的路径，性能没重跑。
+
 ### 代定的事（待设计师确认）
 
 1. 样子：Grid 是方向 Segmented 的第三个选项（图标用 Columns 字段已有的 `grid`）；Grid 一节顶上放同一组三个选项，单独一行在列数上面。外观交给调前端。
@@ -81,8 +83,10 @@
 4. 子图层的样式不动（不加改动）：Stack 里 Hug 的子图层在 Grid 里变成撑满格子（Grid 默认 stretch），Fill（flex-grow）在 Grid 里没有意义、照样撑满；`auto` 外边距照原样留着。对齐（`justify-content`、`align-items`）不转换：横排 Stack 的 `items-center` 在 Grid 里意思一样，竖排的交叉轴对齐在 Grid 里变成了竖直方向（会跳），见风险 2。
 5. 竖排换行的 Stack 转 Grid 当一列（顺序按列流，Grid 按行流，没法不跳）。
 6. 按行列号、区域、`order`、`dense` 放子图层的 Grid 不提供变回 Stack（Grid 一节不出现那三个选项）。
-7. 转换后同一视图里改列数、间距、方向、换行并进转换那一条（一条改动、Agent 只看到最终的排法）；但 Grid 一节的列数、间距字段不再单独标记（标记在方向那组上），重置也是整条。桌面转换后在手机视图改列数是手机上单独一条 `columns` 改动。
-8. 更早的方向 / 间距 / 列数等改动被之后的转换重新排过时，核对答没能核对、说由转换那条核对；改动说明里那几条照旧列出。
+7. 转换后同一视图里改列数、间距、方向、换行并进转换那一条（一条改动、Agent 只看到最终的排法）；但 Grid 一节的列数、间距字段不再单独标记（标记在方向那组上），重置也是整条。桌面转换后在手机视图改列数是手机上单独一条 `columns` 改动。间距选了间距 Variable 也并进这一条：Variable 记在转换那条上、按字段分（`rowGap`、`columnGap`，Stack 是 `gap`、换行时 `crossGap`），说明的 Variables 一行写「the row gap is the Variable `gutter` … `gap-y-gutter`」；输入的间距和别的间距一样按值自动对上 Variable，所以有 Variable 目录时转换那条也会多一行 Variables（review 后，2026-11-09）。
+8. 更早的方向 / 间距 / 列数等改动被之后的转换重新排过时，核对答没能核对、说由转换那条核对；改动说明里那几条照旧列出。对齐（`align`）不算在被重新排的里面：转回 Stack 时照常核对，只有之后转成 Grid 时才交给转换那条（Grid 上读不出 Stack 的对齐）。
+11. 按 ADR 0008：先在手机视图改方向或间距、再在桌面转 Grid 时，手机宽度上核对转换那条（之前那里什么都没核对）；手机那条改动留下的 CSS 页面上还在，所以那几个字段（间距；Stack 的方向、换行）在那里不比，比其余的（Grid 的类型、列数等）。手机那几条本身仍答没能核对、由转换那条核对；手机上的间距因此在那个宽度谁都不核对（review 后，2026-11-09）。
+12. 改动说明里，之后又被转成 Grid（同一范围）的「做成真正的 Stack」那一行不写了（`**Make it a Stack:**`），免得叫 Agent 写 flex 竖排；写法规则那条「Make it a Stack」仍按改动上的标记出现。
 9. `apply` 走一遍用的是 `applying-bench.spec.ts` 里的剧本（脚本扮演 Agent），没有加到 `STANDARD_SCENARIOS`：加了会让 `--dry` 不再是 24 个、改动 88 的验收基数。要进标准场景另开票。
 10. 说明里的 Tailwind 写法按默认 4px 一级算（24px → `gap-6`，对不上写 `gap-[13px]`），规则里另说用项目的间距刻度。
 
@@ -93,3 +97,6 @@
 3. 推算按画布上子图层的上边分行（1px 内同一行）；子图层高低不齐的换行 Stack 可能多数出一行，列数取最宽一行仍然对。
 4. 页面原有的 `display: contents` 包裹层里的子图层按它里面的数。
 5. 断点视图里 `arrangedKind` 只按元素的 `display` 判断 Stack / Grid；桌面是 Grid、手机由页面自己的 CSS 变成 block 的情况照旧当 Grid。
+6. 转换那条的说明里 Tailwind 写法（`grid grid-cols-3 gap-6`）按 4px 刻度算，Variables 一行另写项目 Variable 的类（`gap-y-gutter`）；两者不一致时靠规则「用项目的间距刻度」让 Agent 取 Variable，没有专门合并。
+7. 撤销一次多字段的 Variable 选择时，其他字段之前选的 Variable 按「仍是那个值就保留 picked」恢复（和 padding 的各边一样的现有行为），不一定回到选之前的未选状态。
+8. 代定 11 的掩码按字段写死（`ARRANGED_FIELDS`）：Stack 的方向会连带不比间距（主轴间距随方向读）。断点范围部分重叠的情况没有单独测。

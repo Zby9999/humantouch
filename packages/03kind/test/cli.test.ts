@@ -1181,6 +1181,23 @@ describe("claim, Grids", () => {
     expect(output).toContain("- **Stacks and Grids:** a Stack made a Grid, or a Grid made a Stack, is the same element laid out another way");
   });
 
+  test("an arrangement's gaps are its Variables' parts; a plain flow made a real Stack, then a Grid, is not told to be a flex column (ticket 109)", async () => {
+    const flow = { type: "stack", direction: "vertical", wrap: false, gap: 0 };
+    const grid1 = { type: "grid", columns: 1, rowGap: 22, columnGap: 16 };
+    const gutter = { name: "gutter", group: "spacing", value: "1.375rem", from: "tailwind", own: true, picked: true };
+    saveRound(
+      { ...style(1, "gap", 0, 16, { "row-gap": "16px", "column-gap": "16px" }), asStack: true },
+      { ...style(2, "arrangement", { ...flow, gap: 16 }, grid1, { display: "grid", "grid-template-columns": "repeat(1, minmax(0, 1fr))", "row-gap": "22px", "column-gap": "16px" }), variables: { rowGap: gutter, columnGap: null } },
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).not.toContain("**Make it a Stack:**");
+    expect(section(output, 2)).toContain(
+      "- **Variables:** the row gap is the Variable `gutter`, from the Tailwind theme: use its class, `gap-y-gutter`. No Variable has the column gap's value: use the exact value (with Tailwind, an arbitrary value: `gap-x-[16px]`), not a class or Variable whose value is close.\n",
+    );
+  });
+
   test("a layer reordered in a Grid takes another cell; one moved into a Grid, a cell of it", async () => {
     saveRound(move(1, place(grid, "4", 1, true), place(grid, "4", 3, true)), move(2, place(list, "5", 2, false), place(grid, "4", 2, true)));
 

@@ -321,7 +321,9 @@ export function createEditor(
     }
     referenceAt(within, breakpoint);
     // A Stack now laid out the other way, or made a Grid, a Grid a Stack: the layers are built anew, so a drag into it reads the way it runs now.
-    if (property === "arrangement" || (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction)) tree = buildLayerTree(doc);
+    // Made a Grid or a Stack at a breakpoint, the layers stay as the desktop view has them; their kind there is `arrangedKind`'s.
+    const kindChanged = property === "arrangement" && !breakpoint && (before as Arrangement).type !== (value as Arrangement).type;
+    if (kindChanged || (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction)) tree = buildLayerTree(doc);
     return id;
   };
 
@@ -544,8 +546,9 @@ export function createEditor(
     // A value changed: the views beside the one worked in show it after the next frame, or, for the steps of a run, once they pause.
     views.lagBeside(working.beside, step || stepping, () => {
       // Made a Grid or a Stack here this round (ticket 109): its columns, gaps, direction or wrap are of that change, the one change.
+      // A spacing Variable picked for a gap: the arrangement's, as the part of it that gap is.
       const arranged = arrangedAnew(layer, property, value);
-      if (arranged) return editHere(layer, "arrangement", arranged, continues);
+      if (arranged) return editHere(layer, "arrangement", arranged, continues, variables && ARRANGED_GAPS.has(property) ? { [property]: variables[""] ?? null } : undefined);
       // Placed freely at the breakpoint worked in, its X and Y there are where it is placed: the one change.
       if ((property === "x" || property === "y") && editor.changedHere(layer, "absolute")) {
         const place = { ...editor.read(layer, "absolute")!, [property]: value };
@@ -583,6 +586,16 @@ export function createEditor(
     return asShown(el, () => heldCentered(el, axis)) ? (axis === "x" ? "maxWidth" : "maxHeight") : null;
   };
 
+  /** The change that made the layer a Grid or a Stack in the view worked in this round (at every width in the desktop view, at a breakpoint that holds there in another); null when none did. */
+  const arrangementHere = (layer: Layer): Change | null => {
+    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    if (!id) return null;
+    return (working.beside() ? changesHereOf(layer, "arrangement").at(-1) : changes.find(id, "arrangement", null)) ?? null;
+  };
+
+  /** A gap's Variables, by its part of the arrangement it is folded into (`arrangedAnew`): the arrangement's Variables are by field. */
+  const ARRANGED_GAPS = new Set<string>(["gap", "rowGap", "columnGap"]);
+
   /**
    * Of a change to a Grid's columns or gaps, or a Stack's direction, gap or
    * wrap, when the layer was made a Grid or a Stack in the view worked in this
@@ -592,9 +605,7 @@ export function createEditor(
    * how it is laid out (ticket 109). Null for any other.
    */
   const arrangedAnew = (layer: Layer, property: Property, value: unknown): Arrangement | null => {
-    if (!ARRANGED.has(property)) return null;
-    const id = layer.el.getAttribute(LAYER_ID_ATTR);
-    if (!id || !(working.beside() ? editor.changedHere(layer, "arrangement") : changes.has(id, "arrangement", null))) return null;
+    if (!ARRANGED.has(property) || !arrangementHere(layer)) return null;
     const now = editor.read(layer, "arrangement");
     if (now.type === "grid") return property === "columns" || property === "rowGap" || property === "columnGap" ? { ...now, [property]: value as number } : null;
     if (property === "direction") return { ...now, direction: value as PropertyValues["direction"] };
@@ -653,9 +664,12 @@ export function createEditor(
     can(layer, property, value) {
       const { kinds, applies, accepts }: Definition<PropertyValues[typeof property]> = definitionOf(property);
       // Text with no element of its own has no styles, but a Frame's only text: the text styles of the Frame's element.
+      // A Stack or a Grid is of the kind the view worked in lays it out as (ticket 109); any other layer, of its own.
+      const arrangeable = layer.kind === "stack" || layer.kind === "grid";
+      if ((layer.text && !(isOnlyText(layer) && isTextProperty(property))) || (!arrangeable && !kinds.includes(layer.kind))) return false;
       // A hidden layer offers what it does when shown, so the panel stays as it was.
       const el = working.shown(layer.el);
-      if ((layer.text && !(isOnlyText(layer) && isTextProperty(property))) || !kinds.includes(arrangedKind(layer, el))) return false;
+      if (arrangeable && !kinds.includes(arrangedKind(layer, el))) return false;
       return asShown(el, () => (!applies || applies(el, layer)) && (value === undefined || !accepts || accepts(el, value)));
     },
     read: (layer, property) => readAsShown(working.shown(layer.el), property, colors),
@@ -670,6 +684,12 @@ export function createEditor(
     },
     variables(layer, property) {
       // As the view worked in shows it: the layer's own value at a breakpoint that holds there, the narrowest, else that at every width; on its own element before its Frame's.
+      // A gap folded into the layer's arrangement (ticket 109): its part of the arrangement's.
+      const anew = ARRANGED_GAPS.has(property) && arrangementHere(layer);
+      if (anew) {
+        const bound = anew.variables?.[property];
+        return bound === undefined ? undefined : { "": bound };
+      }
       const own = (change: Change) => !layer.text && change.layer === layer.el.getAttribute(LAYER_ID_ATTR);
       const [here] = changesHereOf(layer, property).sort((a, b) => widestFirst(b.breakpoint!, a.breakpoint!) || Number(own(b)) - Number(own(a)));
       const everywhere = changes.list().filter((change) => change.kind === "style" && change.property === property && !change.breakpoint && ofLayer(layer, change));

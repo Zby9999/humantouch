@@ -146,8 +146,9 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
   const { loc, chain, made: madeAs } = change.target;
   const sameLayer = (other: Change) => (madeAs ? other.layer === change.layer : other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain));
   // A Stack made a Grid at a breakpoint, or its columns changed there once made one at every width (ticket 109), lays out its own too.
-  const ownRanges =
-    loc || madeAs ? round.filter((other) => other.breakpoint && (other.property === change.property || arrangedTogether(change.property, other.property)) && sameLayer(other)).map((other) => other.breakpoint!) : [];
+  // Its direction or gaps changed there before, made a Grid at every width after: the page checks the Grid there, but for what that change sets (`arrangedOver`).
+  const laysOutOwn = (other: Change) => other.property === change.property || (arrangedTogether(change.property, other.property) && (change.property !== "arrangement" || other.id > change.id));
+  const ownRanges = loc || madeAs ? round.filter((other) => other.breakpoint && laysOutOwn(other) && sameLayer(other)).map((other) => other.breakpoint!) : [];
   const placesNothing = change.placedOtherwiseAt ?? [];
   const covered = (width: number) => [...ownRanges, ...placesNothing].some((range) => within(range, width));
   return { own: !covered(pageWidth), others: [...new Set(viewWidths)].filter((width) => width !== pageWidth && !covered(width)) };
@@ -184,16 +185,56 @@ function arrangedTogether(one: string, other: string): boolean {
   return (one === "arrangement" && ARRANGED.has(other)) || (other === "arrangement" && ARRANGED.has(one));
 }
 
+/** Which fields of an arrangement of `type` a change to `property`, one of `ARRANGED`, sets the page's value of: the page shows what that change sets there. */
+const ARRANGED_FIELDS: Record<Arrangement["type"], Record<string, string[]>> = {
+  grid: { columns: ["columns"], rowGap: ["rowGap"], columnGap: ["columnGap"], gap: ["rowGap", "columnGap"] },
+  stack: { direction: ["direction", "gap", "crossGap"], wrap: ["wrap", "crossGap"], gap: ["gap", "crossGap"], rowGap: ["gap", "crossGap"], columnGap: ["gap", "crossGap"] },
+};
+
 /**
- * Of a change to a Stack's direction, gap, alignment or wrap, or a Grid's
- * columns or gaps, a later change of the round that makes the layer a Grid or
- * a Stack (its arrangement, ticket 109) at all its widths: it lays it out
- * anew, so what it showed of the property is that change's to check. Null for any other.
+ * Of an arrangement change, the fields of it other changes of the round to
+ * the layer set the page's value of at `width` (ticket 109): later ones, each
+ * checked itself, and, made a Grid or a Stack at every width, earlier ones at
+ * a breakpoint that holds there, whose CSS the page keeps (a phone view's gap
+ * stays the Grid's gap there). The page checks the rest.
+ */
+function arrangedOver(change: Change, round: Change[], width: number): Set<string> {
+  const type = (change.after as Arrangement).type;
+  const over = round.filter(
+    (other) =>
+      other.kind === "style" &&
+      ARRANGED.has(other.property) &&
+      other.layer === change.layer &&
+      (!other.breakpoint || within(other.breakpoint, width)) &&
+      (other.id > change.id || (!!other.breakpoint && !change.breakpoint)),
+  );
+  return new Set(over.flatMap((other) => ARRANGED_FIELDS[type][other.property] ?? []));
+}
+
+/** `lookStyle` for an arrangement, but the fields of it `over` names, which other changes set: those it takes as the page has them. */
+function lookArranged(els: Element[], after: Arrangement, over: Set<string>): [CheckResult, Element | null] {
+  const shows = (el: Element) => {
+    const actual = readValue(el, "arrangement") as Arrangement;
+    if (actual.type !== after.type) return false;
+    const fields = new Set([...Object.keys(after), ...Object.keys(actual)].filter((field) => !over.has(field)));
+    return [...fields].every((field) => sameValue((actual as Record<string, unknown>)[field], (after as Record<string, unknown>)[field]));
+  };
+  const wrong = els.find((el) => !shows(el));
+  return wrong === undefined ? [{ outcome: "shown" }, null] : [{ outcome: "not shown", actual: readValue(wrong, "arrangement") }, wrong];
+}
+
+/**
+ * Of a change to a Stack's direction, gap or wrap, or a Grid's columns or
+ * gaps, a later change of the round that makes the layer a Grid or a Stack
+ * (its arrangement, ticket 109) at all its widths: it lays it out anew, so
+ * what it showed of the property is that change's to check. Of a Stack's
+ * alignment, one that makes it a Grid, which reads none. Null for any other.
  */
 function arrangedAnewBy(change: Change, round: Change[]): Change | null {
-  if (change.kind !== "style" || !ARRANGED.has(change.property)) return null;
+  if (change.kind !== "style" || !(ARRANGED.has(change.property) || change.property === "align")) return null;
   const covers = (other: Change) => !other.breakpoint || (!!change.breakpoint && breakpointKey(other.breakpoint) === breakpointKey(change.breakpoint));
-  return round.find((other) => other.kind === "style" && other.property === "arrangement" && other.layer === change.layer && other.id > change.id && covers(other)) ?? null;
+  const anew = round.find((other) => other.kind === "style" && other.property === "arrangement" && other.layer === change.layer && other.id > change.id && covers(other));
+  return anew && (change.property !== "align" || (anew.after as Arrangement).type === "grid") ? anew : null;
 }
 
 /** Why the page does not check a change (`uncheckable`), or, laid out anew by a later one (`arrangedAnewBy`), checks that one instead. */
@@ -458,6 +499,13 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
     els = found.els.map((el) => at.of(el)).filter((el): el is Element => !!el);
   } else els = styledBy(doc, change, apart, at, round);
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
+  if (property === "arrangement" && change.after) {
+    const over = arrangedOver(change, round, at.width);
+    if (over.size) {
+      const [result, wrong] = lookArranged(els, change.after as Arrangement, over);
+      return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
+    }
+  }
   const margins = marginsFor(change, at);
   const placing = change.after !== null && PLACING.includes(property);
   // Where the canvas moves it in its container's layout still, relative or sticky: by the value itself (ticket 84).

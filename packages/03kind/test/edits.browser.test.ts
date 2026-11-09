@@ -5015,6 +5015,26 @@ describe("Variables", () => {
     expect(change("opacity")!.variables).toBeUndefined();
   });
 
+  test("made a Grid this round, a Variable picked for a gap is of the arrangement, as its part, even at the value it has (ticket 109)", () => {
+    const { editor, changes, doc } = openWithVariables();
+    // Found in the layers as they are now: made a Grid, they are built anew.
+    const layer = (selector: string) => find(editor.tree().root, (l) => l.el === doc.querySelector(selector) && !l.text)!;
+    const variables = () => changes.list().map((change) => [change.property, change.after, change.variables]);
+    editor.set(layer("#row"), "arrangement", editor.arrangedAs(layer("#row"), "grid"));
+    expect(variables()).toEqual([["arrangement", { type: "grid", columns: 2, rowGap: 10, columnGap: 10 }, { rowGap: null, columnGap: null }]]);
+
+    editor.set(layer("#row"), "rowGap", 22, { variables: { "": GUTTER } });
+    // Typed, a gap is the Variable with its value, as any is.
+    editor.set(layer("#row"), "columnGap", 22);
+    expect(variables()).toEqual([["arrangement", { type: "grid", columns: 2, rowGap: 22, columnGap: 22 }, { rowGap: { ...GUTTER, picked: true }, columnGap: GUTTER }]]);
+    expect(editor.variables(layer("#row"), "rowGap")).toEqual({ "": { ...GUTTER, picked: true } });
+    // Picked at the value it has: picked all the same, one step.
+    editor.set(layer("#row"), "columnGap", 22, { variables: { "": GUTTER } });
+    expect(editor.variables(layer("#row"), "columnGap")).toEqual({ "": { ...GUTTER, picked: true } });
+    expect(changes.list()).toHaveLength(1);
+  });
+
+
   test("a button's text takes a Variable for its font size, and the button one for its padding, each its own", () => {
     const canvas = openCanvas(`<!DOCTYPE html><body style="margin: 0"><button id="go" data-tk-loc="src/App.tsx:4:5" style="padding: 4px 8px">Go</button></body>`);
     const catalog = resolveVariables(ALL, canvas.doc);
@@ -6694,6 +6714,49 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
     const [grid, columns] = changes.list();
     expect([grid.property, grid.breakpoint, columns.property, columns.breakpoint]).toEqual(["arrangement", undefined, "columns", { min: null, max: 800 }]);
     expect(widthsOf(grid, changes.list(), 1440, [390, 1440])).toEqual({ own: true, others: [] });
+  });
+
+  test("its direction and gap changed in a narrower view, then made a Grid at every width: the Grid is checked there too, its gaps as that view's change has them", async () => {
+    const { views, editor, changes, layer } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+
+    editor.at(phone);
+    editor.set(layer("row"), "direction", "vertical");
+    editor.set(layer("row"), "gap", 8);
+    editor.at(null);
+    editor.set(layer("row"), "arrangement", editor.arrangedAs(layer("row"), "grid"));
+    const [direction, gap, grid] = changes.list();
+    expect([direction.property, gap.property, grid.property, grid.breakpoint]).toEqual(["direction", "gap", "arrangement", undefined]);
+    expect(widthsOf(grid, changes.list(), 1440, [390, 1440])).toEqual({ own: true, others: [390] });
+
+    // The page as wide as its window, and as the phone view: a Grid of three columns, its gaps 24px, and 8px there.
+    const pageOf = (frame: HTMLIFrameElement, gap: number) => {
+      frame.style.width = "1000px";
+      document.body.append(frame);
+      const page = frame.contentDocument!;
+      page.open();
+      page.write(ARRANGEMENTS.replace("display: flex; gap: 24px; width: 600px", `display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: ${gap}px; width: 600px`));
+      page.close();
+      return page;
+    };
+    live = document.createElement("iframe");
+    const page = pageOf(live, 24);
+    const narrow = document.createElement("iframe");
+    const there = pageOf(narrow, 8);
+    const at = (width: number): PageWidth => ({ width, doc: there, own: false, of: (el) => there.getElementById(el.id) });
+    const round = onCanvas(changes.list());
+    try {
+      expect(checkAcross(page, grid, round, [390], at)).toEqual({ outcome: "shown" });
+      // Its columns are the Grid's to show there all the same.
+      there.getElementById("row")!.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      expect(checkAcross(page, grid, round, [390], at)).toMatchObject({ outcome: "not shown", actual: { type: "grid", columns: 2 }, width: 390 });
+      // The narrower view's changes before it: the Grid's to check.
+      expect([direction, gap].map((change) => checkAcross(page, change, round, [390], at).outcome)).toEqual(["unchecked", "unchecked"]);
+    } finally {
+      narrow.remove();
+    }
   });
 
   test("a cell's Fill, Hug and `width: 100%` in a Grid: `100%` reads as Fill, and a size changed there is recorded as a cell's", () => {

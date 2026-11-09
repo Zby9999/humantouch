@@ -428,8 +428,9 @@ export function placesItself(el: Element): boolean {
  * A Stack's own layout properties and a Grid's, which a change to the
  * arrangement as a whole (a Stack made a Grid, a Grid a Stack) lays out anew
  * (ticket 109): made one in a view, its own of these there are of that change.
+ * Not its alignment, which a Stack keeps as it was and a Grid reads none of.
  */
-export const ARRANGED = new Set<string>(["direction", "gap", "align", "wrap", "columns", "rowGap", "columnGap"]);
+export const ARRANGED = new Set<string>(["direction", "gap", "wrap", "columns", "rowGap", "columnGap"]);
 
 /** Whether `el` lays its children out as a grid. */
 const isGrid = (el: Element) => /grid$/.test(getComputedStyle(el).display);
