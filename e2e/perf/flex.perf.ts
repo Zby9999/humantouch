@@ -728,14 +728,15 @@ interface UndoRedoSample {
  * handled by a listener at the window added now, after the editor layer's.
  * Waits for the frame under way to be drawn before listening.
  */
-function armUndoRedo({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
+function armUndoRedo({ views, selector, property, expected, code }: { views: string[]; selector: string; property: string; expected: string; code?: string }) {
   const w = window as unknown as WithKeysFirst & { tkUndoRedo: Promise<UndoRedoSample> };
   const { scheduler } = window as unknown as WithScheduler;
   const root = document.querySelector("third-kind")!.shadowRoot!;
   const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
   const valueIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property);
-  /** ⌘Z or ⇧⌘Z (Ctrl on other systems): the keys pressed here. */
-  const isUndoOrRedo = (event: KeyboardEvent) => event.key.toLowerCase() === "z" && (event.metaKey || event.ctrlKey);
+  /** ⌘Z or ⇧⌘Z (Ctrl on other systems): the keys pressed here; with `code`, ⌥⌘ and that key, as ⌥⌘V (ticket 117). */
+  const isUndoOrRedo = (event: KeyboardEvent) =>
+    (code ? event.code === code && event.altKey : event.key.toLowerCase() === "z") && (event.metaKey || event.ctrlKey);
   return new Promise<void>((armed) =>
     requestAnimationFrame(() =>
       scheduler.postTask(
@@ -881,6 +882,67 @@ test("⌘Z and ⇧⌘Z right after steps of a value show in every view in the ne
   keep("undoRedo", summaries);
   print(report(`⌘Z and ⇧⌘Z right after two steps of a value, ${UNDO_RUNS} each, ${elements} elements, ${VIEWS.length} views — ${mode}`, rows, notes));
   verdict(met, "⌘Z and ⇧⌘Z right after steps of a value show in every view in the next frame, their work within two frames");
+});
+
+/**
+ * Ticket 117: ⌥⌘V on a card of the 96 of one usage, against one panel edit
+ * of it, its corner radius typed in the panel and applied with Enter. The
+ * card's style is copied with ⌥⌘C first; each run, the radius is typed
+ * (measured as a value changed), the field left, and the style pasted back
+ * (measured as ⌘Z is: the editor layer takes ⌥⌘V at the window): the radius
+ * comes back, and every other value copied is read and found the same. A
+ * paste is a value set once, not a step of a run: the views beside show it a
+ * frame later (ADR 0011).
+ */
+test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, its work no more than a value changed in the panel", async ({ page }) => {
+  await page.addInitScript(hearKeysFirst);
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await selectCard(page, 6, { parent: true });
+  const selector = card(6);
+  const property = "border-top-left-radius";
+  const copied = await valueOnCanvas(page, selector, property);
+  await page.keyboard.press("Alt+ControlOrMeta+KeyC");
+  const field = design(page).getByRole("textbox", { name: "Corner radius", exact: true });
+  const edits: ValueSample[] = [];
+  const pastes: UndoRedoSample[] = [];
+  const typed = `${parseFloat(copied) + 1}px`;
+  for (let i = 0; i < UNDO_RUNS; i++) {
+    await field.focus();
+    await field.fill(String(parseFloat(typed)));
+    await page.evaluate(armValue, { views: VIEWS.slice(0, 1), selector, property, expected: typed });
+    await page.keyboard.press("Enter");
+    edits.push(await page.evaluate(() => (window as unknown as { tkValue: Promise<ValueSample> }).tkValue));
+    await field.blur();
+    await settle(page, 150);
+    await page.evaluate(armUndoRedo, { views: VIEWS, selector, property, expected: copied, code: "KeyV" });
+    await page.keyboard.press("Alt+ControlOrMeta+KeyV");
+    pastes.push(await page.evaluate(() => (window as unknown as { tkUndoRedo: Promise<UndoRedoSample> }).tkUndoRedo));
+    await settle(page, 150);
+  }
+  await everyViewShows(page, selector, property, copied);
+
+  const edit = summarize(edits.map((s) => s.work));
+  const paste = summarize(pastes.map((s) => s.work));
+  const handling = summarize(pastes.map((s) => s.handling));
+  const latency = summarize(pastes.map((s) => s.latency));
+  const inFirstFrame = pastes.filter((s) => s.firstFrame).length;
+  // Not slower to be seen: in the first frame, within two frames, and within a frame of the panel edit's.
+  const met = inFirstFrame === pastes.length && paste.median <= edit.median + FRAME_MS && paste.p95 <= VALUE_TARGET_MS;
+  keep("pasteStyle", { edit, paste, handling, latency, inFirstFrame, samples: { edits, pastes } });
+  print(
+    report(
+      `⌥⌘V against one panel edit, a card of ${PRODUCTS}, ${UNDO_RUNS} each, ${elements} elements, ${VIEWS.length} views — ${mode}`,
+      [
+        { name: "panel edit (radius typed): work", summary: edit },
+        { name: "⌥⌘V: work", summary: paste, target: `median ≤ edit's + 1 frame, p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms`, met },
+        { name: "⌥⌘V: (handling the key)", summary: handling },
+        { name: "⌥⌘V: key to frame drawn", summary: latency },
+      ],
+      [`⌥⌘V: ${inFirstFrame} of ${pastes.length} shown in the desktop view, worked in, in the first frame; in every view then: ${pastes.filter((s) => s.everyViewFirstFrame).length}`],
+    ),
+  );
+  verdict(met, "⌥⌘V shows in the next frame, its work within a frame of a panel edit's");
 });
 
 /** How many rows the Layers panel lists. */

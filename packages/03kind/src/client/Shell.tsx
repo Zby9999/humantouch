@@ -11,6 +11,7 @@ import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, putBackBy, withDependents, type Change, type ChangeSet, type Created, type RangePart } from "./changeset";
 import { createClipboard } from "./clipboard";
+import { copyStyle, pasteStyle, type CopiedStyle } from "./style-copy";
 import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
 import { createHistory } from "./undo-steps";
@@ -584,6 +585,23 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     return true;
   };
 
+  /** ⌥⌘C: the style of the one layer selected, as the view worked in shows it, held inside the editor (ticket 117). */
+  const styleHeld = useRef<CopiedStyle | null>(null);
+  /** ⌥⌘C: the style of the one layer selected held. With several selected, nothing is copied, and what was held stays. */
+  const copyStyleOf = (layers: Layer[]) => {
+    if (layers.length !== 1) return;
+    const style = copyStyle(editorOf(layers[0])!, layers[0]);
+    if (style) styleHeld.current = style;
+  };
+  /** ⌥⌘V: the style held set on each layer selected that takes any of it, one step; they stay selected. */
+  const pasteStyleOn = (layers: Layer[]) => {
+    const style = styleHeld.current;
+    const editor = editorOf(layers[0]);
+    if (!style || !editor) return;
+    // One step, of one editor's: the layers of the first one's, the canvas's or a layer's off it.
+    if (pasteStyle(editor, layers.filter((layer) => editorOf(layer) === editor), style).length) onEdit();
+  };
+
   /** ⌘⇧G: each Stack or Frame taken away, its layers left where they are and selected. */
   const ungroup = (layers: Layer[]) => {
     const editor = editorOf(layers[0]);
@@ -617,8 +635,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`); held down, nothing.
-  const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing });
-  latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing };
+  const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing });
+  latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -644,11 +662,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   // As in Figma: ⇧A makes the selected layers a Stack, ⌥⇧A dissolves the selected Stacks, ⌘⇧G ungroups them,
-  // Delete deletes and ⌘D copies them, the arrow keys nudge them 1px (10px with ⇧); ⌘C, ⌘X and ⌘V copy, cut and paste.
+  // Delete deletes and ⌘D copies them, the arrow keys nudge them 1px (10px with ⇧); ⌘C, ⌘X and ⌘V copy, cut and paste;
+  // ⌥⌘C and ⌥⌘V copy and paste a layer's style.
   // Fields and dialogs keep their keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, playing } = latest.current;
+      const { selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing } = latest.current;
       const target = event.composedPath()[0];
       if (playing || pointerHeld() || isEditable(target) || (target instanceof Element && target.closest('[role="dialog"]'))) return;
       const command = event.metaKey || event.ctrlKey;
@@ -663,6 +682,13 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         return;
       }
       if (!selected.length) return;
+      // ⌥⌘C and ⌥⌘V: a layer's style, held inside the editor too (ticket 117). Taken, the browser does nothing with them.
+      if (shortcut === "copy style" || shortcut === "paste style") {
+        event.preventDefault();
+        event.stopPropagation();
+        (shortcut === "copy style" ? copyStyleOf : pasteStyleOn)(selected);
+        return;
+      }
       // By the letter typed; with ⌥, a Mac types another one, so by the key.
       const a = event.key.toLowerCase() === "a" || (event.altKey && event.code === "KeyA");
       let act: (() => void) | null = null;

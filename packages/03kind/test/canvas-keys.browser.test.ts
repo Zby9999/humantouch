@@ -184,7 +184,7 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
     expect(heldPress({ key: "G", metaKey: true, shiftKey: true })).toBe("ignored");
   });
 
-  test("a letter the editor takes with ⌘, with modifiers it does not take it with, is the browser's and goes on: ⌘G, ⌘Y, ⌘⇧C, ⌘⇧V, ⌘⇧D, ⌥⌘C, ⌥⌘Z", () => {
+  test("a letter the editor takes with ⌘, with modifiers it does not take it with, is the browser's and goes on: ⌘G, ⌘Y, ⌘⇧C, ⌘⇧V, ⌘⇧D, ⌥⇧⌘C, ⌥⌘Z", () => {
     for (const init of [
       { key: "g", metaKey: true },
       { key: "y", metaKey: true },
@@ -194,11 +194,17 @@ describe("the keys while the pointer is held down on a layer, a value's icon, a 
       { key: "V", metaKey: true, shiftKey: true },
       { key: "D", metaKey: true, shiftKey: true },
       { key: "X", ctrlKey: true, shiftKey: true },
-      { key: "ç", code: "KeyC", metaKey: true, altKey: true },
+      { key: "Ç", code: "KeyC", metaKey: true, altKey: true, shiftKey: true },
       { key: "Ω", code: "KeyZ", metaKey: true, altKey: true },
     ]) {
       expect(heldPress(init), JSON.stringify(init)).toBe("passes");
     }
+  });
+
+  test("⌥⌘C and ⌥⌘V, the editor's since ticket 117, do nothing, nor the browser with them", () => {
+    expect(heldPress({ key: "ç", code: "KeyC", metaKey: true, altKey: true })).toBe("ignored");
+    expect(heldPress({ key: "√", code: "KeyV", metaKey: true, altKey: true })).toBe("ignored");
+    expect(heldPress({ key: "c", ctrlKey: true, altKey: true })).toBe("ignored");
   });
 
   test("Esc, Space, ⇧1 and the modifier keys themselves go on as ever, and so does a key let go", () => {
@@ -241,13 +247,23 @@ describe("the editor's commands with ⌘ (Ctrl on other systems; either, on any)
     expect(command({ key: "y", ctrlKey: true })).toBe("redo");
   });
 
-  test("the same letters with other modifiers, or none, are none of them: ⌘Y, ⌘G, ⌘⇧C, ⌥⌘Z, D alone", () => {
+  test("⌥⌘C and ⌥⌘V copy and paste a layer's style (ticket 117): by the key, as a Mac types ç and √ with ⌥; Ctrl+Alt alike", () => {
+    expect(command({ key: "ç", code: "KeyC", metaKey: true, altKey: true })).toBe("copy style");
+    expect(command({ key: "√", code: "KeyV", metaKey: true, altKey: true })).toBe("paste style");
+    expect(command({ key: "c", code: "KeyC", ctrlKey: true, altKey: true })).toBe("copy style");
+    expect(command({ key: "v", code: "KeyV", ctrlKey: true, altKey: true })).toBe("paste style");
+    // ⌥ alone, or with ⇧ too, is not.
+    expect(command({ key: "ç", code: "KeyC", altKey: true })).toBeNull();
+    expect(command({ key: "Ç", code: "KeyC", metaKey: true, altKey: true, shiftKey: true })).toBeNull();
+  });
+
+  test("the same letters with other modifiers, or none, are none of them: ⌘Y, ⌘G, ⌘⇧C, ⌥⌘Z, ⌥⌘X, D alone", () => {
     for (const init of [
       { key: "y", metaKey: true },
       { key: "Y", ctrlKey: true, shiftKey: true },
       { key: "g", metaKey: true },
       { key: "C", metaKey: true, shiftKey: true },
-      { key: "ç", code: "KeyC", metaKey: true, altKey: true },
+      { key: "≈", code: "KeyX", metaKey: true, altKey: true },
       { key: "Ω", code: "KeyZ", metaKey: true, altKey: true },
       { key: "d" },
       { key: "r", metaKey: true },
