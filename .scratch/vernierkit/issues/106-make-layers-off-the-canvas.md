@@ -93,3 +93,9 @@
 - `remove` 的输出仍写「the designer had moved off the canvas」，空白处新建的也算在里面，没改措辞（CLI 输出逐字不变）。
 - 进入编辑模式 headless 两次都慢约 2ms（中位数 122 → 124ms，目标 ≤150ms）：路径上没有新代码，疑为包大了的解析时间或噪声；ticket 105 的余量要留意，窗口模式没跑（会抢焦点）。
 - 没调 code-review 技能（审查由指挥另派）。审查意见（delete 不重做、并进的移动、自由定位的复制被跳过、穷尽 switch、几处小整理）已补。
+
+### 指挥合并前复核（2026-11-09，claude/nifty-borg-823e6d，合入审查修正 c288c62，main 52d7ff0）
+
+- `pnpm typecheck` 过；`pnpm test`：vitest 1065 过、1 跳过，node 125 过；`TK_E2E_PORT=5400 pnpm test:e2e`：545 过、1 跳过，无失败。
+- `--dry` 24/24；`--scripted` 全过；main 与本分支 `--dry --claim-out` 的 24 个目录 `diff -r` 相同。
+- 性能 headless，同一时段先后跑本分支和 main：进入编辑模式中位数 125.4 ms 对 121.4 ms（第一次进入 143.3 对 135.1，再次进入 108.1 对 107.1）；改数值、拖动、拖控制点都在原范围内（60fps）。进入的路径上没有加代码（新代码只在空白处按 F/T、拖回时运行），多出的几毫秒落在第一次进入，即加载变大约 1.4 KB（gzip）的 editor 包那一次。ticket 105 的余量本来就只有几毫秒：窗口模式（会抢焦点，这条线不跑）的复测留给 105，列为风险。
