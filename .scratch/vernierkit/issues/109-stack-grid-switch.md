@@ -110,3 +110,51 @@
   - ⌘Z、重置照别的转换。手机视图里把桌面按 areas 摆的 Grid 改成竖排，是要照顾到的常见用法。
   - 由这条线在 110 合进 main 之后、117 之前，派一个新的子 agent 做，提交写「Ticket 109 follow-up」。
 - 9：另开 ticket 118，给测量台加 Stack 和 Grid 互转的标准场景，等下一次真 Agent 复验时一起跑。
+
+### 109 follow-up（代定 6 改了之后，2026-11-10；起点 a0cd852，分支 worktree-agent-ae3afe5e9411e0803）
+
+**做了什么**
+
+- 面板：`arrangement` 去掉了 `placesItself` 的限制（`property-table.ts`），按区域、行列号、`dense`、`order` 摆子图层的 Grid，Grid 一节顶上也有横排、竖排、Grid 三个选项。改成 Stack 就是 flex：子图层按代码里写的顺序（Layers 面板的顺序）排，`order` 照样起作用；推算和别的 Grid 一样（竖排用行间距；横排按画布上的行数决定换不换行）。⌘Z、重置、断点、之后改间距并进这一条，都走原来的路，没有另写。
+- 改动上的新标记 `placedInGrid`（`changeset.ts`，`edits.ts` 第一次记下时定）：转之前是 Grid、转成 Stack，并且在任何一个视图里 `placesItself`（例如手机上一列按顺序，640px 起按区域摆，在手机视图里转也算）。只有这一种改动的说明多一行：「**Placed in the Grid:** its layers are placed in it by more than the order they are written (`grid-template-areas`, `grid-area`, `grid-row`, `grid-column`, `dense` or `order`). Leave those classes and rules as they are, on it and on its layers: at widths where it stays a Grid they still place its layers, and in the Stack they do nothing, but `order`, which orders its layers there too.」写法规则「Stacks and Grids」一字没改。
+- 核对：没改代码。Stack 的 `arrangement` 只读 display、方向、换行、间距，页面上留着的 `grid-template-areas` / `grid-area` 不影响；范围外的宽度照 104 记下认领时的值（仍是 Grid）再比。
+- 文档：spec「Stack 与 Grid 互相转换」去掉「不提供变回 Stack」，写上按图层顺序排；GLOSSARY 的 Grid 补一句。
+
+**测试**
+
+- 单测 `edits.browser.test.ts`（109 那个 describe）：原来「不提供」那条改成提供；新 3 条：按区域摆的 Grid 转竖排后画面按写的顺序、记 `placedInGrid`、之后改间距仍是一条、⌘Z 回到按区域；按顺序摆的 Grid 转 Stack、Stack 转 Grid 都不记；手机视图里转只在手机、页面上留着 areas 的 flex 竖排核对是 ✓、仍是 Grid 时是没显示、重置回去。`cli.test.ts` 1 条：新行只在 `placedInGrid` 的 Grid → Stack 出现。
+- e2e `grid.spec.ts` 1 条（照 93 的写法）：页面按区域倒着摆四张卡片，手机视图里选 Grid 改竖排，手机按图层顺序、桌面和平板不变，⌘Z、⇧⌘Z、重置。
+- 剧本 `applying-bench.spec.ts`「the cards' Grid, laid out by areas from 640px, made a vertical Stack in the phone view」：上一轮把 Surface 写成 640px 起按区域摆（Tailwind 任意值），手机视图改竖排（范围 2 段），Agent 只加 `max-md:flex max-md:flex-col`、areas 留着：认领后第一次是没显示（不误报 ✓），`done`「Checked on the page: it shows the change.」，finish ✓ [1]，说明里有新行。
+
+**验证**：`pnpm typecheck` 过；`pnpm test` 1105 过 1 跳过，node 125 过；`TK_E2E_PORT=6100 pnpm test:e2e` 页面组 414 过、1 个已知 flake（popover-exit.spec.ts:34，单独重跑过），"project files" 组用 `--no-deps` 补跑 144 过；`--dry` 24/24；`--scripted` 15/15；`--dry --claim-out` 在 a0cd852 和分支上各 24 份，`diff -r` 逐字相同。
+
+**性能**（`TK_PERF_HEADLESS=1 TK_PERF_PORT=6110`，headless 只作前后比较）
+
+整套前后各跑一次（改前 a0cd852，改后 544d60f）；改后那次机器负载高（load 6–10，同时有别的会话），进入编辑模式和拉控制点差得多，所以又在负载降到 3–4 时把 a0cd852（临时 worktree）和分支背靠背各跑一遍这几条：
+
+| | 改前整套 | 改后整套（负载高） | 背靠背 a0cd852 | 背靠背分支 |
+|---|---|---|---|---|
+| 进入编辑模式 全部 中位数 / p95 | 123.4 / 144.9ms | 183.8 / 328.8ms | 137.0 / 161.3ms | 138.6 / 171.1ms |
+| 再进入 中位数 | 109.5ms | 153.7ms | 117.4ms | 118.4ms |
+| 改数值 圆角 work 中位数 / p95 | 13.5 / 16.7ms | 14.0 / 21.8ms | 17.0 / 18.6ms | 9.9 / 14.8ms |
+| 改数值 Stack 间距 work 中位数 / p95 | 15.7 / 17.7ms | 15.3 / 19.7ms | 17.1 / 18.0ms | 12.8 / 17.0ms |
+| 按住方向键 间距 work 中位数 / p95 | 10.2 / 13.7ms | 11.9 / 13.3ms | 15.9 / 18.0ms | 13.8 / 16.4ms |
+| 拖动卡片 / 拖控制点 fps | 60 / 60 | 60 / 56.8 | — / 57.6 | — / 58.0 |
+| 认领后热更新核对 最长一段 中位数 | 30.3ms | 15.8ms | — | — |
+
+- 背靠背的数前后一样（在噪声里），整套改后那次的差是机器状态。进入编辑模式的路径没加东西：去掉 `applies` 只让 `can()` 少读一次样式；`placedInAView` 只在第一次记下 Grid 改 Stack 时跑。
+
+**包**：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 a0cd852 逐字节相同。编辑层 `editor.dev.js` 503134 → 503266 B（+132 B），gzip -9 177815 → 177852 B（+37 B）。
+
+#### 代定的事（待设计师确认）
+
+1. 新的一行只在「Grid 改成 Stack、而且转之前在某个视图里按位置摆」时出现，看所有视图（不只是正在工作的那个）：手机上本来按顺序、宽一点才按区域摆的 Grid 在手机视图里转，也提醒 Agent 别动那些写法。Stack 转 Grid、按顺序摆的 Grid 转 Stack 的说明逐字不变。
+2. 转换的推算不因按位置摆而改：竖排用行间距；横排按画布上数出的行数决定换不换行（区域摆成几行就算几行）。转过去画面按图层顺序变，不做「照现在的视觉顺序重排图层」。
+3. 转成 Stack 后同一改动里再转回 Grid：写的是等宽列，页面原有的 `grid-template-areas` 和子图层的 `grid-area` 还在，会又按区域摆；和原样一样时整条消失（109 的「改回原样就不算改动」）。没有专门处理。
+
+#### 遗留风险
+
+1. 核对不看子图层的摆放：Agent 如果在转换时删了 `grid-area` 之类的写法，范围外的宽度上画面会变，但那里 Grid 的列数、间距没变，`done` 仍是 ✓（104 只比这条改动的属性）。说明里那一行是唯一的防线。
+2. 桌面视图里转、`order` 不是 0 的子图层：Stack 里仍按 `order` 排，所以画布上和 Layers 面板的顺序不一样（设计师确认过 `order` 照样起作用）；之后在这个 Stack 里拖动换序仍照 Stack 的规则改写的顺序，`order` 会让结果和拖到的位置不一致。
+3. 代定 3 的情况（转 Stack 再转回 Grid）画布上的 Grid 是等宽列加原来的区域，推算不一定和画面一致。
+4. 「Placed in the Grid」是英文说明，没有真 Agent 跑过（ticket 118 的标准场景里可以带上这一种）。
