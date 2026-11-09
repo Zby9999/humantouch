@@ -111,8 +111,8 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
   editable(doc);
 }
 
-/** What of the page's body text a document made in the blank space has: what new text there takes, as on the page (spec 66). */
-const BODY_TEXT = ["font-family", "font-size", "font-weight", "line-height", "letter-spacing", "color"];
+/** What of the page's body text new text takes, on the canvas and in a document made in the blank space beside it. */
+export const BODY_TEXT = ["font-family", "font-size", "font-weight", "line-height", "letter-spacing", "color"];
 
 /**
  * Writes `into`, an iframe in the document, anew as a document for a layer

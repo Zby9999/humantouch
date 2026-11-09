@@ -11,10 +11,11 @@
  */
 import type { SavedOffCanvasLayer, OffCanvasOrigin } from "../service-protocol";
 import { keepEditStylesApart, LAYER_ID_ATTR } from "./canvas-style";
-import { createChangeSet, type ChangeSet, type Composed, type Created, type Place } from "./changeset";
+import { createChangeSet, madeBy, type Target, type Change, type ChangeSet, type Composed, type Created, type Place } from "./changeset";
 import type { Destination, Editor } from "./edit-commands";
 import { createEditor } from "./edits";
 import type { History } from "./undo-steps";
+import { NEW_TAGS } from "./checkable";
 import { editable, fitHeight } from "./freezer";
 import type { Layer } from "./layers";
 import { blankLook, freezeLook, serializeLook } from "./look";
@@ -187,7 +188,9 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       return show(crypto.randomUUID(), at.x, at.y, origin, null, (iframe) => freezeLook(el, iframe));
     },
     make(type, at, size, page) {
-      const origin = { place: null, written: null, snippet: null, made: type, at: new Date().toISOString() } as Omit<OffCanvasOrigin, "target"> as OffCanvasOrigin;
+      // How the Agent would find it, were it asked to: a new layer, in no source, on no page.
+      const target: Target = { loc: null, chain: [], component: null, instances: 1, locked: false, unlocated: true, context: { path: [type === "frame" ? "Frame" : "Text"], element: `<${NEW_TAGS[type]}>` } };
+      const origin: OffCanvasOrigin = { target, place: null, written: null, snippet: null, made: type, at: new Date().toISOString() };
       const outside = show(crypto.randomUUID(), at.x, at.y, origin, null, (iframe) => blankLook(page, iframe));
       const { editor } = outside;
       const itself = () => [outside.layer()].filter((layer) => layer !== null);
@@ -205,8 +208,6 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
           itself,
         );
       });
-      // How the Agent would find it, were it asked to: a new layer, in no source.
-      origin.target = editor.originOf(outside.layer()!).target;
       return outside;
     },
     bring,
@@ -242,17 +243,23 @@ interface Shown extends OffCanvasLayer {
 
 /**
  * Puts `outside`, a layer made in the blank space (ticket 106), onto the
- * canvas `editor` edits, at `to`, as an edit of its batch: it is made anew
+ * canvas `editor` edits, at `to`, as edits of its batch: it is made anew
  * there, with what was drawn and edited in it off the canvas, by the same
  * edits, in the order they were first made, each as it is now, at every
  * width. So the round has what drawing it there would have given it; but
  * the change that makes it keeps it as it was off the canvas, to be there
- * again once that is taken back. Returns it, on the canvas.
+ * again once that is taken back. An edit whose layer or place is not made
+ * yet (one recorded first before what it went into was drawn, as the
+ * ChangeSet keeps a change at its first place) is made once it is.
+ * Returns the layer on the canvas, and the edits that could not be made
+ * there at all: none, but for a bug, for which the caller takes it back.
  */
-export function remake(editor: Editor, outside: OffCanvasLayer, to: Destination): Layer {
-  const root = outside.layer()!;
-  const rootId = root.el.getAttribute(LAYER_ID_ATTR)!;
+export function remake(editor: Editor, outside: OffCanvasLayer, to: Destination): { layer: Layer | null; missed: Change[] } {
+  const rootId = outside.layer()!.el.getAttribute(LAYER_ID_ATTR)!;
   const kept = outside.keep();
+  const changes = [...outside.changes.list()].sort((a, b) => a.id - b.id);
+  /** The layers off the canvas that its own changes make: on the canvas once those are made again. */
+  const made = new Set(changes.map(madeBy).filter((id) => id !== null));
   /** The ids of its layers off the canvas, each with that of the layer it is made on the canvas. */
   const ids = new Map<string, string>();
   const keep = (from: string, layer: Layer) => ids.set(from, layer.el.getAttribute(LAYER_ID_ATTR)!);
@@ -260,14 +267,20 @@ export function remake(editor: Editor, outside: OffCanvasLayer, to: Destination)
     const el = editor.tree().root.el.ownerDocument.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]`);
     return el && editor.tree().layerOf(el);
   };
-  /** The layer on the canvas that the layer `id` off it is: one made there, else one in it, by its way down from there (a layer of a copy, say). */
+  /**
+   * The layer on the canvas that the layer `id` off it is: one made there,
+   * else one in it, by its way down from there (a layer of a copy, say).
+   * Null while it, or what it is in, is not made there yet.
+   */
   const layerOf = (id: string): Layer | null => {
     if (ids.has(id)) return byId(ids.get(id)!);
+    if (made.has(id)) return null;
     let el = outside.document.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]`);
     const way: number[] = [];
     while (el?.parentElement && !ids.has(el.getAttribute(LAYER_ID_ATTR) ?? "")) {
       way.unshift([...el.parentElement.children].indexOf(el));
       el = el.parentElement;
+      if (made.has(el.getAttribute(LAYER_ID_ATTR) ?? "") && !ids.has(el.getAttribute(LAYER_ID_ATTR)!)) return null;
     }
     let there = el && ids.has(el.getAttribute(LAYER_ID_ATTR) ?? "") ? byId(ids.get(el.getAttribute(LAYER_ID_ATTR)!)!)?.el : undefined;
     for (const i of way) there = there?.children[i];
@@ -279,43 +292,80 @@ export function remake(editor: Editor, outside: OffCanvasLayer, to: Destination)
     if (!parent) return null;
     return place.absolute ? { parent, x: place.absolute.x, y: place.absolute.y } : { parent, index: place.nth - 1 };
   };
-  editor.inDesktop(() => {
-    for (const change of [...outside.changes.list()].sort((a, b) => a.id - b.id)) {
-      // Off the canvas there is one view, and no component to promote to: none of either.
-      if (change.breakpoint || change.scope === "component") continue;
-      if (change.kind === "create") {
+  /** Makes `change` again on the canvas; false, and nothing made, when what it needs is not there yet. */
+  const makeAgain = (change: Change): boolean => {
+    switch (change.kind) {
+      case "create": {
         const created = change.after as Created;
         const at = change.layer === rootId ? to : destination(created.place);
-        if (!at) continue;
+        if (!at || !editor.canHold(at.parent)) return false;
         const size = created.type === "frame" ? { width: created.width!, height: created.height! } : created.width !== null ? { width: created.width, height: 0 } : undefined;
         keep(change.layer, editor.create(created.type, at, size, change.layer === rootId ? kept : undefined));
         if (created.text !== undefined) editor.setText(layerOf(change.layer)!, created.text);
         if (created.brief) editor.setBrief(layerOf(change.layer)!, created.brief);
-        continue;
+        return true;
       }
-      if (change.kind === "duplicate") {
-        const [from, at] = [destination(change.before as Place), destination(change.after as Place)];
-        const original = from && "index" in from ? from.parent.children[from.index] : undefined;
-        if (original && at) keep(change.layer, editor.duplicate(original, at));
-        continue;
+      case "duplicate": {
+        // The layer copied, where it was then, placed freely or not; the copy right after it (⌘D), or where it was let go (⌥ and a drag).
+        const [from, after] = [change.before as Place, change.after as Place];
+        const original = layerOf(from.container.layer)?.children[from.nth - 1];
+        const rightAfter = after.container.layer === from.container.layer && (after.absolute ? JSON.stringify(after.absolute) === JSON.stringify(from.absolute) : after.nth === from.nth + 1);
+        const at = rightAfter ? undefined : destination(after);
+        if (!original || at === null || !editor.canDuplicate(original)) return false;
+        keep(change.layer, editor.duplicate(original, at));
+        return true;
       }
-      if (change.kind === "stack") {
+      case "stack": {
         const { place, layers } = change.after as Composed;
-        const stacked = (place ? layers.map((member) => layerOf(member.layer)) : [layerOf(change.layer)]).filter((layer) => layer !== null);
-        if (stacked.length && editor.canStack(stacked)) keep(change.layer, editor.stack(stacked));
-        continue;
+        const stacked = place ? layers.map((member) => layerOf(member.layer)) : [layerOf(change.layer)];
+        if (!stacked.every((layer) => layer !== null) || !editor.canStack(stacked as Layer[])) return false;
+        keep(change.layer, editor.stack(stacked as Layer[]));
+        return true;
       }
-      const layer = layerOf(change.layer);
-      if (!layer) continue;
-      if (change.kind === "style") editor.set(layer, change.property as Property, change.after as PropertyValues[Property], { variables: pickedIn(change.variables) });
-      else if (change.kind === "text") editor.setText(layer, change.after as string);
-      else if (change.kind === "brief") editor.setBrief(layer, change.after as string);
-      else if (change.kind === "unstack" && editor.canUnstack(layer)) editor.unstack(layer);
-      else if (change.kind === "move") {
+      case "move": {
+        const layer = layerOf(change.layer);
         const at = destination(change.after as Place);
-        if (at && editor.canDrop(layer, at.parent)) editor.move(layer, at);
+        if (!layer || !at || !editor.canDrop(layer, at.parent)) return false;
+        editor.move(layer, at);
+        return true;
+      }
+      case "delete": {
+        const layer = layerOf(change.layer);
+        if (!layer || !editor.canRemove(layer)) return false;
+        editor.remove(layer);
+        return true;
+      }
+      case "style":
+      case "text":
+      case "brief":
+      case "unstack": {
+        const layer = layerOf(change.layer);
+        if (!layer) return false;
+        if (change.kind === "style") editor.set(layer, change.property as Property, change.after as PropertyValues[Property], { variables: pickedIn(change.variables) });
+        else if (change.kind === "text") editor.setText(layer, change.after as string);
+        else if (change.kind === "brief") editor.setBrief(layer, change.after as string);
+        else if (editor.canUnstack(layer)) editor.unstack(layer);
+        else return false;
+        return true;
+      }
+      // Never off the canvas: only the canvas puts back.
+      case "putBack":
+        return false;
+      default: {
+        const unknown: never = change.kind;
+        throw new Error(`03Kind: no way to make a ${String(unknown)} change again`);
       }
     }
+  };
+  let left = changes.filter((change) => !change.breakpoint && change.scope !== "component");
+  // Off the canvas there is one view, and no component to promote to: a change at a breakpoint or to a component is none of its.
+  const missed = changes.filter((change) => !left.includes(change));
+  editor.inDesktop(() => {
+    // Round after round, each in its order, until a round makes none.
+    for (let before = -1; left.length && left.length !== before; ) {
+      before = left.length;
+      left = left.filter((change) => !makeAgain(change));
+    }
   });
-  return byId(ids.get(rootId)!)!;
+  return { layer: ids.has(rootId) ? byId(ids.get(rootId)!) : null, missed: [...missed, ...left] };
 }

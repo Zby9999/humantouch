@@ -484,14 +484,22 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     // Moved off this round and not edited off it, it is the layer that was deleted, back as it was; any other is new.
     // Made in the blank space, it is made anew there, as one drawn there is (ticket 106).
     bringBack(undefined);
+    let missed: Change[] = [];
     editor.batch(() => {
-      back = outside.origin.made ? remake(editor, outside, to) : editor.putBack({ el: layer.el, kept: outside.keep() }, to);
+      if (outside.origin.made) ({ layer: back, missed } = remake(editor, outside, to));
+      else back = editor.putBack({ el: layer.el, kept: outside.keep() }, to);
       editor.along(
         () => offCanvas.take(outside),
         () => offCanvas.put(outside),
         itself(outside),
       );
     });
+    if (missed.length || (outside.origin.made && !back)) {
+      // Not all of it could be made on the canvas: it stays off it, whole, and the bug is told.
+      editor.undo();
+      back = null;
+      console.error("03Kind: a layer made off the canvas could not be put back; these of its edits could not be made on the canvas:", missed);
+    }
     onEdit();
     select(back ? [back] : []);
   };

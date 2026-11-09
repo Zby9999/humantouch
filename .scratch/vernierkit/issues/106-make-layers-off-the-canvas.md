@@ -38,8 +38,8 @@
 
 - 空白处按下去：`CanvasView.onPointerDown` 拿着 F/T 按在三个视图和画布外的图层之外，不再什么都不做，照常开始画（`drawing.in` 为 null，坐标在舞台上，也就是桌面视图的 px）；拉的过程、Esc、按着时键不起作用都走原来那一套（ADR 0012）。松手调 `onMakeOff(type, 左上角, 尺寸?)`，文字随即开始打字。
 - `OffCanvas.make(type, at, size, page)`（`off-canvas.ts`）：新开一个 iframe，文档由 `look.ts` 的 `blankLook` 写出：和冻结外观一样的底（无边距、`width: max-content`），body 带页面正文的字体、字号、字重、行高、字距、颜色和页面的字体文件。然后在它自己的编辑器里一个 batch：`along(put, take)` → `create(type, {parent: 根, index: 0}, size)` → `along(fit)`。所以它自己的改动从一条 `create` 开始，新 Frame 就是「新建的 Frame」（旁边有写生成说明的按钮），文字就是新建文字；画布的改动单、角标不动；⌘Z 一步撤掉（先拿掉图层再让它离开空白处）。
-- 保存：`OffCanvasOrigin.made?: "frame" | "text"`，`written`、`place`、`snippet` 都是 null，`target` 是它在自己文档里的（Agent 用不到）。旧的 `off-canvas.json` 没有这个字段，照旧读。本地服务不用改（`written` 为 null 就不读源码片段）。
-- 拖回：`Shell.putBack` 遇到 `origin.made` 时改用 `remake(editor, outside, to)`（`off-canvas.ts`），和原来一样包在画布编辑器的 batch 里、`along(take, put)`，一步 ⌘Z 回到画布外。`remake` 在 `editor.inDesktop`（新加的 Editor 命令，所有宽度）里，把它自己的改动按 id（第一次做的顺序）、用现在的值在画布上再做一遍：根的 `create` 落在拖到的地方（Stack 里是 index，空白处是 x/y，就是 findDrop 给的 `to`），其他 `create`、`duplicate`、`move` 按记下的 Place 换成画布上的容器，`style` 用 `set`，`text`、`brief` 用 `setText`、`setBrief`，`stack`、`unstack` 照做。画布外的 id 对到画布上新建出来的 id；中途才拿到 id 的（复制里的图层）按从已知祖先往下的路径找。所以改动单就是直接在画布上画会记下的那些（create、style……），改动说明没有新写法、不出 `putBack`。
+- 保存：`OffCanvasOrigin.made?: "frame" | "text"`，`written`、`place`、`snippet` 都是 null，`target` 是一个不在源码里的新图层（`loc` null，路径只有 Frame / Text；Agent 用不到）。旧的 `off-canvas.json` 没有这个字段，照旧读。本地服务不用改（`written` 为 null 就不读源码片段）。
+- 拖回：`Shell.putBack` 遇到 `origin.made` 时改用 `remake(editor, outside, to)`（`off-canvas.ts`），和原来一样包在画布编辑器的 batch 里、`along(take, put)`，一步 ⌘Z 回到画布外。`remake` 在 `editor.inDesktop`（新加的 Editor 命令，所有宽度）里，把它自己的改动按 id（第一次做的顺序）、用现在的值在画布上再做一遍：根的 `create` 落在拖到的地方（Stack 里是 index，空白处是 x/y，就是 findDrop 给的 `to`），其他 `create`、`duplicate`、`move` 按记下的 Place 换成画布上的容器，`style` 用 `set`，`text`、`brief` 用 `setText`、`setBrief`，`stack`、`unstack`、`delete` 照做（按 `change.kind` 穷尽的 switch，以后加的种类不会悄悄漏掉）。复制按原图层在容器里的第几个找（自由定位的也算），复制在原图层紧后面（⌘D）的不带目的地。画布外的 id 对到画布上新建出来的 id；中途才拿到 id 的（复制里的图层）按从已知祖先往下的路径找，路上有还没新建的就算还没到。某条要的图层或容器还没新建（ChangeSet 把后来的移动并进最早那条，所以它可能排在目标容器之前）就先跳过，一轮一轮重做剩下的，直到一轮什么都做不了；最后还剩的交回 `missed`，`Shell.putBack` 这时整步撤回（它留在画布外）并 `console.error`，不悄悄丢。所以改动单就是直接在画布上画会记下的那些（create、style……），改动说明没有新写法、不出 `putBack`。
 - 根的那条 `create` 多记一个 `madeOffCanvas`（它在画布外的样子，`keep()` 的结果；改动说明不读）。`putBackBy` 把它也算上，所以从改动列表撤掉这条新建（连同依赖它的）、或放弃一轮、或预览模式里撤（`offCanvasWithout`），它都回到画布外原来的地方，和拖回的挪出图层一样。
 - 生成说明：`writeBrief` 改用 `editorOf(layer)`；空白处新建的图层里，新 Frame 旁边的「Add brief」按钮、其他图层在 Design 面板最后的 BriefSection、画布上的生成说明标记都有（挪出的图层仍然没有，见代定 3）。
 - 显示：空白处新建的 Frame 的 iframe 加 `data-tk-made-off-canvas="frame"`，CSS 给 iframe 白底；图层自己的样式里没有填色。
@@ -47,9 +47,9 @@
 
 **测试**
 
-- 单元（`test/off-canvas.browser.test.ts` 新 describe，5 个）：F 新建 Frame（在空白处、尺寸、是新 Frame、改动只在自己那里、⌘Z/⇧⌘Z 一步）；T 新建文字用正文样式、保存再带回一样；拖回后画布改动和直接在画布上画同一个 Frame（填色、生成说明、里面的文字和小 Frame、透明度）**逐项相等**（除 `madeOffCanvas`），DOM `outerHTML` 也相等，⌘Z 回到画布外、自己的改动不变，撤掉新建时 `putBackBy` 给回它；合成 Stack、改 gap、复制、复制后改透明度、把文字挪进别的 Frame，拖回后同样逐项相等；文字拖进容器的排版（index）也相等。
+- 单元（`test/off-canvas.browser.test.ts` 新 describe，9 个，每个拖回都断言 `missed` 为空）：F 新建 Frame（在空白处、尺寸、是新 Frame、改动只在自己那里、⌘Z/⇧⌘Z 一步）；T 新建文字用正文样式、保存再带回一样；拖回后画布改动和直接在画布上画同一个 Frame（填色、生成说明、里面的文字和小 Frame、透明度）**逐项相等**（除 `madeOffCanvas`），DOM `outerHTML` 也相等，⌘Z 回到画布外、自己的改动不变，撤掉新建时 `putBackBy` 给回它；合成 Stack、改 gap、复制、复制后改透明度、把文字挪进别的 Frame，拖回后同样逐项相等；文字拖进容器的排版（index）也相等；审查补修加的：复制里的文字在副本里删掉（`delete`）、自由定位的 Frame ⌘D、文字先挪进 A 再画 B 再挪进 B（移动并进最早那条），拖回后都和在画布上画一样（最后一个按种类比，编号、新建时的第几个不同，见风险）；⇧⌘Z 重做后 DOM 也一样、空白处没有它；拖回后刷新（只剩这一轮的改动）再撤或放弃一轮，`putBackBy` 给出的就是它，带回来在原处、改动和外观都一样。
 - e2e 新文件 `e2e/tests/made-off-canvas.spec.ts`（5 个，`canvasInPlace`、`steadyBox`、web-first 断言）：F 拉出 Frame（位置、大小、白底且自己无填色、图层树、选中、工具放下、无角标、⌘Z/⇧⌘Z）；T 点出文字、马上打字、正文字体、刷新后还在原处；拉的过程中 ⌘Z、Delete 无效，Esc 放下工具、什么都不出；空白处新建 Frame + 生成说明 + 里面打字，拖回板子里，改动列表和直接在板子里画一样，⌘Z 回到画布外；从改动列表撤掉新建后回到画布外。连跑 3 次都过。
-- `pnpm typecheck` 通过；`pnpm test`：vitest 1061 个通过、1 个跳过，node 测试 125 个通过。
+- `pnpm typecheck` 通过；`pnpm test`：vitest 1061 个通过、1 个跳过，node 测试 125 个通过。审查补修后：vitest 1065 个通过、1 个跳过，node 125 个通过；只跑相关 e2e（made-off-canvas、off-canvas、off-canvas-round、create，`-c e2e/playwright.config.ts`，5400）408 个通过；全量、性能、测量台没重跑（指挥合并后跑）。
 - `TK_E2E_PORT=5400 pnpm test:e2e`：page 405 通过、1 失败（`layers.spec.ts:316`，已知偶发，单跑通过），project files 补跑（`--project="project files" --no-deps`）139 通过、1 跳过。
 - `TK_BENCH_PORT=5440 pnpm bench:agents --dry` 24/24；`--scripted` 15/15 全过；main（52d7ff0）和本分支各跑 `--dry --claim-out`，24 份 `diff -r` 逐字相同。
 
@@ -69,7 +69,7 @@
 **体积**
 
 - 切换按钮逐字节不变：`chunk-2GJY7MXB.js` 21372 B（sha256 a8c4c0d4bc3d…）、`react.dev.js` 1423 B（bd6c2389b644…），和改前一样（`service-protocol.ts` 只加了一个可选字段，chunk 没变）。toggle-first.spec、install.spec 在全量 e2e 里都过。
-- `editor.dev.js` 485,949 → 489,622 B，gzip 172,603 → 173,734 B（+1,131）；`cli.js` 不变（44,269 B gzip）。
+- `editor.dev.js` 485,949 → 489,622 B，gzip 172,603 → 173,734 B（+1,131）；审查补修后 490,564 B，gzip 174,054 B（共 +1,451）；`cli.js` 不变（44,269 B gzip）。切换按钮补修后仍逐字节不变。
 
 **代定的事（待设计师确认）**
 
@@ -77,16 +77,19 @@
 2. 空白处的 Frame 显示：照 Figma，画在白底上（iframe 的底，不写进图层样式），属性面板里它没有填色，拖回后和画布上新建的一样没有填色、没有描边。文字没有底。点一下（不拉）是 100 × 100，和画布上一样；文字点一下按字宽。
 3. 生成说明只在空白处新建的图层里能写（新 Frame 旁的按钮、其他图层在 Design 面板），挪出的图层仍然不能：挪出的拖回时编辑逐条写在 putBack 里，生成说明在那里没有写法，ticket 不许出新写法。
 4. 从改动列表撤掉拖回后的那条新建、或放弃一轮：它回到画布外原来的地方（和拖回的挪出图层一样），为此新建那条改动带着 `madeOffCanvas`（改动说明不读，changeset.json 里有它的外观 HTML）。
-5. 拖回在任何视图里都按所有宽度新建（在平板视图里拖回，里面改的样式也不是平板断点上的），因为在画布外改的本来就不分宽度。
-6. `origin` 用 `made: "frame" | "text"` 标出空白处新建的，不另起字段；`target` 填它在自己文档里的（Agent 用不到），`place`、`written`、`snippet` 为 null。
+5. 拖回在任何视图里都按所有宽度新建（在平板视图里拖回，里面改的样式也不是平板断点上的），因为在画布外改的本来就不分宽度。这和在画布上的平板视图里直接画不同：那里新建是所有宽度，但之后改的样式记在平板的断点上。
+6. `origin` 用 `made: "frame" | "text"` 标出空白处新建的，不另起字段；`target` 是不在源码里的新图层（Agent 用不到），`place`、`written`、`snippet` 为 null。
+8. 拖回时有改动在画布上做不出来（bug）：整步撤回，它留在画布外，控制台报错；不做一半。
 7. 拉框按下时盖在视图标签、加视图按钮上的，照旧不画（它们自己拦下按下）；视图之间的缝也算空白处。
 
 **风险和没做到的**
 
-- 再做一遍时，同一属性改了几次只按第一次的顺序、最后的值做：先改某值、再合成 Stack、又改同一值这种交错，个别情况可能和在画布上一步步做出的不完全一样（单元测试里覆盖的组合都逐项相等）。中途才拿到 id 的图层按路径找，之后被挪动过的可能对不上，对不上的那条跳过。
+- 再做一遍时，同一属性改了几次只按第一次的顺序、最后的值做：先改某值、再合成 Stack、又改同一值这种交错，个别情况可能和在画布上一步步做出的不完全一样（单元测试里覆盖的组合都逐项相等）。
+- 移动并进了更早那条、目标容器后画的：移动要等容器新建了才做，所以改动的编号顺序和在画布上画不同，容器新建时记的「第几个」也不同（被挪走的图层那时还在）；改动说明里自由定位的新图层不受影响，排版里的「第几个」按全部落地之后写（ticket 81），一般也一样，但没逐字比过。
+- 中途才拿到 id 的图层（复制里的）按路径找，之后在画布外被挪动过的可能找错或找不到；找不到的会让拖回整步撤回（代定 8），找错的不会报。
 - 拖回后再把它挪出画布：它变成普通的挪出图层（冻结外观，不再是空白处新建的），再拖回写成 putBack（和画布上新建的图层挪出再拖回一样，是现有行为；108 做拖进拖出时可以一起看）。
 - 在空白处新建的 Frame 改了圆角后，白底仍是方角（白底在 iframe 上）；Frame 里的图层超出 Frame 时白底也跟着延伸。
 - 根 Frame 里解组（⌘⇧G）会让 body 有多个图层，只有第一个算这个图层（和挪出的图层现有的行为一样）。
 - `remove` 的输出仍写「the designer had moved off the canvas」，空白处新建的也算在里面，没改措辞（CLI 输出逐字不变）。
 - 进入编辑模式 headless 两次都慢约 2ms（中位数 122 → 124ms，目标 ≤150ms）：路径上没有新代码，疑为包大了的解析时间或噪声；ticket 105 的余量要留意，窗口模式没跑（会抢焦点）。
-- 没调 code-review 技能（审查由指挥另派）。
+- 没调 code-review 技能（审查由指挥另派）。审查意见（delete 不重做、并进的移动、自由定位的复制被跳过、穷尽 switch、几处小整理）已补。
