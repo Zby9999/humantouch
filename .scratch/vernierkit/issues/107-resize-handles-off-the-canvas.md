@@ -87,3 +87,10 @@
 - e2e：按着控制点时也按 ⇧⌘Z（不起作用）；新加一条：拖左边松手、刷新后位置和尺寸都还在。指针被取消没加（Playwright 发不出 pointercancel，代码和画布上同一条路径）。
 - 只跑了：`pnpm typecheck` 过；`pnpm test` vitest 1070 过、1 跳过，node 125 过；`off-canvas-resize.spec.ts`、`off-canvas.spec.ts`、`resize.spec.ts`（`-c e2e/playwright.config.ts --project=page`，5400）42 个全过。全量 e2e、性能、测量台由指挥合并后跑。
 
+
+### 指挥合并前复核（2026-11-09，claude/nifty-borg-823e6d，b6786ac 起，main eb84bad）
+
+- 一同合进的：106 的白色填充补修（设计师确认 106 代定时把第 2 条改成默认白色填充）；107 新加的两个单元测试没算上这条改填色，指挥补上（b6786ac）。
+- `pnpm typecheck` 过；`pnpm test`：vitest 1087 过、1 跳过，node 125 过；e2e 页面组 412 过、1 个失败（`popover-exit.spec.ts:34`，菜单退出动画，单独重跑 7/7 过，main 上也偶发），project files 组（`--no-deps`）142 过、1 跳过。
+- `--dry` 24/24；`--scripted` 15/15；main（0e966d1）与本分支 `--dry --claim-out` 的 24 个目录 `diff -r` 相同。
+- 性能 headless（另一条线同时在跑测试，机器有负载）：先 main 后本分支，进入编辑模式中位数 133.2 对 158.8 ms；倒过来先本分支（负载 3.4）后 main（负载 10.8），133.3 对 226.8 ms。同样负载下本分支与 main 一样（133.3 对 133.2），差别来自负载，不是 107。改数值都在 33.3 ms 以内，拖动、拖控制点 60fps。
