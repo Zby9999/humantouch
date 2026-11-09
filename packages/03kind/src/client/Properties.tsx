@@ -30,6 +30,7 @@ import {
   type PaintArea,
   type Color,
   type RadialGradient,
+  NEW_FILL,
 } from "./paint";
 import { holdPointer } from "./pointer-held";
 import { MenuButton, Select, type MenuItem } from "./Select";
@@ -56,8 +57,6 @@ interface Props {
   onGradientPicker?(open: boolean): void;
 }
 
-/** A fill added to a layer that has none, as in Figma. */
-const NEW_FILL: Fill = { type: "solid", color: "#FFFFFF", opacity: 1 };
 /** A stroke added to a layer that has none, as in Figma. Fields in the order the editor reads them back in. */
 const NEW_STROKE: Stroke = { color: "#000000", opacity: 1, weight: 1, style: "solid" };
 

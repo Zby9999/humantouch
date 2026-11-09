@@ -117,7 +117,8 @@ test("a layer the Agent deleted in an earlier round, put back in the next, is wr
     const beta = (await desktop(page).contentFrame().locator("header").getByText("Beta").boundingBox())!;
     const moved = offCanvas(page).contentFrame().locator("h1");
     const off = (await moved.boundingBox())!;
-    await page.mouse.move(off.x + 3, off.y + 3);
+    // Pressed clear of its handles, the layer selected (ticket 107).
+    await page.mouse.move(off.x + Math.min(12, off.width / 2), off.y + off.height / 2);
     await page.mouse.down();
     await page.mouse.move(beta.x + 3, beta.y + beta.height / 2, { steps: 10 });
     await page.mouse.up();

@@ -478,6 +478,8 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
 </style>
 <body><main data-tk-loc="src/App.tsx:3:5"><p data-tk-loc="src/App.tsx:4:7">Words</p></main></body>`;
   const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
+  /** As the Fill field adds one. */
+  const WHITE = { type: "solid", color: "#FFFFFF", opacity: 1 } as const;
   const hosts: HTMLElement[] = [];
   afterEach(() => {
     for (const host of hosts.splice(0)) host.remove();
@@ -521,13 +523,19 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     build(outside.editor, outside.layer()!);
     putBack(off, outside, { parent: off.main(), x: 40, y: 30 });
     const drawn = canvas();
-    build(drawn.editor, drawn.editor.create("frame", { parent: drawn.main(), x: 40, y: 30 }, { width: 200, height: 160 }));
+    build(drawn.editor, drawWhite(drawn.editor, { parent: drawn.main(), x: 40, y: 30 }, { width: 200, height: 160 }));
     const unplaced = ({ id: _, ...change }: Change) =>
       change.kind === "create" ? { ...change, after: { ...(change.after as Created), place: { ...(change.after as Created).place, nth: 0, slot: 0 } } } : change;
     const read = (list: Change[]) => (inOrder ? asRead(list) : asRead(list).map(unplaced).sort((a, b) => `${a.layer} ${a.property}`.localeCompare(`${b.layer} ${b.property}`)));
     expect(read(off.changes.list())).toEqual(read(drawn.changes.list()));
     expect(off.doc.querySelector("main > [data-tk-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
     return { off, drawn, outside };
+  }
+  /** A Frame drawn on the canvas and its fill set white in the Design panel, as one made in the blank space is (designer, 2026-11-09). */
+  function drawWhite(editor: ReturnType<typeof createEditor>, to: Destination, size: { width: number; height: number }) {
+    const frame = editor.create("frame", to, size);
+    editor.set(frame, "fill", WHITE);
+    return editor.tree().layerOf(frame.el)!;
   }
   /** Changes as the Agent reads them: but where one made off the canvas came from, which the notes leave out. */
   const asRead = (list: Change[]) => list.map(({ madeOffCanvas: _, ...change }) => change);
@@ -552,10 +560,14 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     expect(outside.editor.isNewFrame(frame)).toBe(true);
     expect([outside.x, outside.y, outside.width, outside.height]).toEqual([-300, 40, 200, 120]);
     expect(outside.view.layerAt(outside.editor.tree(), 100, 60)).toBe(frame);
-    expect(outside.changes.list()).toMatchObject([{ kind: "create", after: { type: "frame", width: 200, height: 120 } }]);
+    // White, as one drawn on an empty Figma canvas: a fill of its own (designer, 2026-11-09), one step with its making.
+    expect(outside.changes.list()).toMatchObject([
+      { kind: "create", after: { type: "frame", width: 200, height: 120 } },
+      { kind: "style", property: "fill", before: null, after: WHITE },
+    ]);
+    expect(getComputedStyle(frame.el).backgroundColor).toBe("rgb(255, 255, 255)");
     expect(changes.list()).toEqual([]);
     expect(outside.origin).toMatchObject({ made: "frame", place: null, written: null, snippet: null, target: { loc: null, context: { path: ["Frame"], element: "<div>" } } });
-    expect((outside.document.defaultView!.frameElement as HTMLElement).getAttribute("data-tk-made-off-canvas")).toBe("frame");
 
     editor.undo();
     expect(offCanvas.list()).toEqual([]);
@@ -585,7 +597,8 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     expect(back.layer()!.el.textContent).toBe("Hello there");
     expect(css(back.layer()!.el, "font-family", "font-size", "line-height", "color")).toEqual(shown);
     expect(back.changes.list()).toEqual(outside.changes.list());
-    expect((back.document.defaultView!.frameElement as HTMLElement).getAttribute("data-tk-made-off-canvas")).toBe("text");
+    // Text has no fill.
+    expect(back.changes.list().map((change) => change.kind)).toEqual(["create"]);
   });
 
   test("put back, it is made anew where it goes, all drawn in it too: the round has what drawing it there gives it; one undo, and it is off the canvas again, as it was", () => {
@@ -597,7 +610,7 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     const back = putBack(off, outside, { parent: off.main(), x: 40, y: 30 });
 
     const drawn = canvas();
-    sketch(drawn.editor, drawn.editor.create("frame", { parent: drawn.main(), x: 40, y: 30 }, { width: 200, height: 120 }));
+    sketch(drawn.editor, drawWhite(drawn.editor, { parent: drawn.main(), x: 40, y: 30 }, { width: 200, height: 120 }));
     expect(asRead(off.changes.list())).toEqual(asRead(drawn.changes.list()));
     expect(off.changes.list().map((change) => change.kind)).toEqual(["create", "style", "create", "create", "style"]);
     expect(off.changes.list()[0].madeOffCanvas).toMatchObject({ id: outside.id, edits: { changes: edits } });
@@ -621,6 +634,11 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     // Taken back from the change list, or the round discarded, it is off the canvas again too, as moved-out layers put back are.
     const [made] = off.changes.list();
     expect(putBackBy(withDependents(off.changes.list(), made.id))).toEqual([made.madeOffCanvas]);
+  });
+
+  test("a Frame made in the blank space and put back as it is: new there, white, as one drawn there and filled white", () => {
+    const { off } = sameAsDrawn(() => {});
+    expect(off.changes.list()).toMatchObject([{ kind: "create" }, { kind: "style", property: "fill", after: WHITE }]);
   });
 
   test("what was made a Stack, copied and moved in it off the canvas is so on the canvas too, as if done there", () => {
@@ -704,5 +722,125 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     drawn.editor.setText(text, "Launch");
     expect(asRead(off.changes.list())).toEqual(asRead(drawn.changes.list()));
     expect(off.doc.querySelector("main")!.firstElementChild!.textContent).toBe("Launch");
+  });
+});
+
+describe("resizing a layer off the canvas (ticket 107)", () => {
+  const ROOM = `<!DOCTYPE html>
+<style>body { margin: 0; font-family: Georgia, serif; font-size: 18px }</style>
+<body><main data-tk-loc="src/App.tsx:3:5"><h3 data-tk-loc="src/App.tsx:4:7">Freeze it</h3></main></body>`;
+  const hosts: HTMLElement[] = [];
+  afterEach(() => {
+    for (const host of hosts.splice(0)) host.remove();
+  });
+  function canvas() {
+    const doc = page(ROOM);
+    const history = createHistory();
+    const changes = createChangeSet();
+    const editor = createEditor(createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changes, null, { history });
+    const host = document.createElement("div");
+    document.body.append(host);
+    hosts.push(host);
+    const offCanvas = createOffCanvas(host, [], history);
+    return { doc, changes, editor, offCanvas };
+  }
+  /** Resizes the whole of `outside` as its handles do, its top left going to `at` with it, one step with those before when `continues`. */
+  function resizeWhole(off: ReturnType<typeof canvas>, outside: OffCanvasLayer, to: { width?: number; height?: number }, at: { x: number; y: number }, continues: boolean) {
+    const [x, y] = [outside.x, outside.y];
+    outside.editor.resize(outside.layer()!, to, {
+      continues,
+      along: { make: () => off.offCanvas.place(outside, at.x, at.y), unmake: () => off.offCanvas.place(outside, x, y) },
+    });
+  }
+  const shape = (outside: OffCanvasLayer) => [outside.x, outside.y, outside.width, outside.height];
+
+  test("resized whole, its room in the blank space grows and shrinks with it; from its left and top, its top left goes along, one step with the size; no change of the round's", async () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+
+    resizeWhole(off, outside, { width: 230, height: 130 }, { x: -330, y: 30 }, false);
+    resizeWhole(off, outside, { width: 260, height: 150 }, { x: -360, y: 10 }, true);
+
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
+    expect(outside.changes.list()).toMatchObject([
+      { kind: "create" },
+      { kind: "style", property: "fill" },
+      { kind: "style", property: "width", after: { type: "fixed", value: 260 } },
+      { kind: "style", property: "height", after: { type: "fixed", value: 150 } },
+    ]);
+    expect(off.changes.list()).toEqual([]);
+
+    // Smaller again, from its bottom right: its top left stays.
+    resizeWhole(off, outside, { width: 90, height: 60 }, { x: -360, y: 10 }, false);
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 90, 60]);
+
+    off.editor.undo();
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
+    off.editor.undo();
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+    off.editor.redo();
+    await expect.poll(() => shape(outside)).toEqual([-360, 10, 260, 150]);
+    // Kept as it is now, where it is now.
+    expect(off.offCanvas.save()).toMatchObject([{ x: -360, y: 10, edits: { changes: [{ kind: "create" }, { property: "fill" }, { property: "width" }, { property: "height" }] } }]);
+  });
+
+  test("Esc takes the resize back, its top left too, with nothing to redo", async () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+
+    resizeWhole(off, outside, { width: 240 }, { x: -340, y: 40 }, false);
+    resizeWhole(off, outside, { width: 280 }, { x: -380, y: 40 }, true);
+    outside.editor.takeBack();
+
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+    expect(outside.changes.list()).toMatchObject([{ kind: "create" }, { kind: "style", property: "fill" }]);
+    expect(off.editor.redo()).toEqual([]);
+  });
+
+  test("a step that moves it but changes no size is one with the resize still: one undo, or Esc, takes all of it back", async () => {
+    const off = canvas();
+    const outside = off.offCanvas.make("frame", { x: -300, y: 40 }, { width: 200, height: 120 }, off.doc);
+
+    resizeWhole(off, outside, { width: 240 }, { x: -340, y: 40 }, false);
+    resizeWhole(off, outside, { width: 240 }, { x: -350, y: 40 }, true);
+    await expect.poll(() => shape(outside)).toEqual([-350, 40, 240, 120]);
+    off.editor.undo();
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+
+    resizeWhole(off, outside, { width: 240 }, { x: -340, y: 40 }, false);
+    resizeWhole(off, outside, { width: 240 }, { x: -350, y: 40 }, true);
+    outside.editor.takeBack();
+    await expect.poll(() => shape(outside)).toEqual([-300, 40, 200, 120]);
+  });
+
+  test("a layer moved off the canvas and resized there is edited there: put back, it is an insertion, its new size among its edits", () => {
+    const off = canvas();
+    const title = off.doc.querySelector("h3")!;
+    const layer = find(off.editor.tree().root, (l) => l.el === title && !l.text)!;
+    const outside = off.offCanvas.moveOut(title, { x: -400, y: 0 }, { ...off.editor.originOf(layer), at: "2026-11-09T00:00:00.000Z" });
+    off.editor.batch(() => {
+      off.editor.remove(layer, { offCanvas: outside.id });
+      off.editor.along(
+        () => off.offCanvas.put(outside),
+        () => off.offCanvas.take(outside),
+      );
+    });
+
+    outside.editor.resize(outside.layer()!, { width: 320 });
+    const main = find(off.editor.tree().root, (l) => l.el === off.doc.querySelector("main"))!;
+    let back: Layer | null = null;
+    off.editor.batch(() => {
+      back = off.editor.putBack({ el: outside.layer()!.el, kept: outside.keep() }, { parent: main, index: 0 });
+      off.editor.along(
+        () => off.offCanvas.take(outside),
+        () => off.offCanvas.put(outside),
+      );
+    });
+
+    expect(off.changes.list()).toMatchObject([
+      { kind: "delete", offCanvas: outside.id },
+      { kind: "putBack", after: { layer: { edits: { changes: [{ kind: "style", property: "width", after: { type: "fixed", value: 320 } }] } } } },
+    ]);
+    expect(back!.el.getBoundingClientRect().width).toBe(320);
   });
 });

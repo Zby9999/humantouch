@@ -700,7 +700,7 @@ export function createEditor(
     batch(edits, { continues = false, step = false } = {}) {
       steppedWhile(step, () => group(edits, continues));
     },
-    resize(layer, { width, height, x, y, right, bottom }, { continues = false } = {}) {
+    resize(layer, { width, height, x, y, right, bottom }, { continues = false, along } = {}) {
       steppedWhile(true, () =>
         group(
           () => {
@@ -711,6 +711,12 @@ export function createEditor(
             if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
             if (y !== undefined) setValue(layer, "y", y);
             if (bottom !== undefined) setValue(layer, "bottom", bottom);
+            // Made to the layer resized: a step that moves it but changes no size is one with the run's others all the same.
+            if (along) {
+              along.make();
+              const id = layer.el.getAttribute(LAYER_ID_ATTR);
+              push({ layers: id ? [id] : [], key: "along", undo: along.unmake, redo: along.make }, false);
+            }
           },
           continues,
           // Each step may set more or less than the one before: a run, apart from any of nudges.

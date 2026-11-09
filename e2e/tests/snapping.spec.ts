@@ -159,13 +159,14 @@ test("a layer off the canvas dragged back into a Frame's empty space snaps as an
   const outside = page.locator('iframe[title="Off canvas"]:visible');
   await expect(outside).toHaveCount(1);
 
-  // Pressed 3 screen px inside its top left, let go with its left 3 screen px right of the mark's.
+  // Pressed inside its top left, clear of its handles as it is selected (ticket 107), let go with its left 3 screen px right of the mark's.
   const zoom = await zoomOf(desktop(page));
   const start = (await outside.contentFrame().locator("body > *").first().boundingBox())!;
   const board = (await desktop(page).contentFrame().locator("#board").boundingBox())!;
-  await page.mouse.move(start.x + 3, start.y + 3);
+  const grab = { x: Math.min(12, start.width / 2), y: start.height / 2 };
+  await page.mouse.move(start.x + grab.x, start.y + grab.y);
   await page.mouse.down();
-  await page.mouse.move(board.x + 100 * zoom + 3 + 3, board.y + 30 * zoom + 3, { steps: 10 });
+  await page.mouse.move(board.x + 100 * zoom + 3 + grab.x, board.y + 30 * zoom + grab.y, { steps: 10 });
   await expect(marks(page, "line").first()).toBeVisible();
   await page.mouse.up();
 
