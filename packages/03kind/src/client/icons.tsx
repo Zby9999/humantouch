@@ -152,7 +152,7 @@ const ICONS: Record<string, string> = {
   // Note
   brief: '<path d="M3 2.5 L13 2.5 C13.276 2.5 13.5 2.724 13.5 3 L13.5 9.5 L9.5 13.5 L3 13.5 C2.724 13.5 2.5 13.276 2.5 13 L2.5 3 C2.5 2.724 2.724 2.5 3 2.5 Z"/><path d="M13.5 9.5 L9.7 9.5 C9.59 9.5 9.5 9.59 9.5 9.7 L9.5 13.5"/>',
   /** The Brief tool: a note to add, the brief's note with a plus in it (designer, 2026-11-10). */
-  "brief-add": '<path d="M3 2.5 L13 2.5 C13.276 2.5 13.5 2.724 13.5 3 L13.5 9.5 L9.5 13.5 L3 13.5 C2.724 13.5 2.5 13.276 2.5 13 L2.5 3 C2.5 2.724 2.724 2.5 3 2.5 Z"/><path d="M13.5 9.5 L9.7 9.5 C9.59 9.5 9.5 9.59 9.5 9.7 L9.5 13.5"/><line x1="7.5" y1="5" x2="7.5" y2="10"/><line x1="5" y1="7.5" x2="10" y2="7.5"/>',
+  "brief-add": '<path d="M3 2.5 L13 2.5 C13.276 2.5 13.5 2.724 13.5 3 L13.5 9.5 L9.5 13.5 L3 13.5 C2.724 13.5 2.5 13.276 2.5 13 L2.5 3 C2.5 2.724 2.724 2.5 3 2.5 Z"/><line x1="7.5" y1="5" x2="7.5" y2="10"/><line x1="5" y1="7.5" x2="10" y2="7.5"/>',
   // From the designer's panels in Figma (2026-11-07), drawn on 14px there: scaled to this square.
   "chevron-down": '<g transform="scale(1.142857)"><path d="M10.7188 5.14063L7 8.85938L3.28125 5.14063"/></g>',
   reset:
