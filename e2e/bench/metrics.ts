@@ -525,6 +525,22 @@ export function usesVariable(diff: string, variables: VariableNames): boolean {
 }
 
 /**
+ * Whether the Agent's diff keeps `variables` (see `VariableNames`), a Variable
+ * the code wrote already for the value (a scenario change's `variableKept`):
+ * each part kept when no name of it is taken out more often than written in
+ * (a line left as it is, or rewritten with it), or one is written in more
+ * often than taken out (`gap-3` made `gap-x-3 gap-y-3`).
+ */
+export function keepsVariable(diff: string, variables: VariableNames): boolean {
+  const lines = diff.split("\n").filter((line) => !line.startsWith("+++") && !line.startsWith("---"));
+  const net = (name: string) => {
+    const word = new RegExp(`(^|[^\\w-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\w-])`, "g");
+    return lines.reduce((total, line) => total + (line.startsWith("+") ? 1 : line.startsWith("-") ? -1 : 0) * (line.slice(1).match(word)?.length ?? 0), 0);
+  };
+  return variableParts(variables).every((names) => names.some((name) => net(name) > 0) || names.every((name) => net(name) >= 0));
+}
+
+/**
  * Of a scenario's own expectations (ticket 86: an earlier round's changes kept, a
  * round undone), the share that hold at the end; null with none.
  */
