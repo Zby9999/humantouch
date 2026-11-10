@@ -33,7 +33,7 @@
 - [x] 不改 Skill。和 100 的结论一样：问题在 `claim`。
 - [x] `--dry --claim-out` 前后对比：只有挪成 Absolute、而且图层带 margin 的场景，说明变了，至少有 `off-canvas-frame`。
 - [x] `--scripted` 全过；整套 e2e 过。（规划会话合并前在分支 9bd73417 上跑整套：typecheck 过；vitest 1208 过 1 跳过；node 126 过；e2e 606 过 1 跳过，一次过；`--scripted` 20/20。没派审查子 agent：改动十几行，规划会话自己逐行看过，省一次 Claude 额度）
-- [ ] 改完以后，`off-canvas-frame` 用真实 Agent 跑几次看效果。跑不跑、跑几次，由设计师定，会用到额度。
+- [x] 改完以后，`off-canvas-frame` 用真实 Agent 跑几次看效果。跑不跑、跑几次，由设计师定，会用到额度。（设计师定：合并后跑 pi 3 次，Claude 放到发布后。结果见下面「合并后的真实运行」）
 
 ## 背景
 
@@ -99,3 +99,16 @@
 - 挪进新 Frame 仍然不核对，去掉 margin 照样不会被 `done` 拦下。
 - margin 是在设计师做改动的那个视图记下的；断点下 margin 不同的情况，这句没有细说（核对那句也一样）。
 - 复制成 Absolute（`duplicate`）如果带 margin，Agent 看不到这句（见代定 4）。
+
+### 合并后的真实运行（2026-11-11，main a6390906）
+
+- 设计师同意用 pi 的额度跑 3 次。Claude 的测试放到发布后（额度不多）。
+- 原始记录：`bench-results/agents/2026-11-10T18-48-00-494Z/pi/off-canvas-frame/run-1` 到 `run-3`。
+- 结果：3 次里 2 次留着 `mt-4`，1:1 100%；改前是 3 次里 0 次。
+  - run-1 的报告写着：「its `mt-4` margin kept so it still draws at 51px as on the canvas」。
+  - run-2 的报告写着：「`mt-4` margin kept」。
+  - run-3 还是去掉了 `mt-4`，报告写「its `mt-4` was dropped so the text draws exactly at 35px」，列在 ✓ 下面。1:1 67%，虚假的 ✓ 1 条。
+- 规划会话的看法：
+  - 这句说明有用，但拦不住每一次。
+  - pi 看到这一条改动本身写着「at X 24px and Y 35px」，就想让文字正好落在 35px。
+  - 再进一步，可以在这条改动本身写明它留着的 margin，以及画在哪里（例如「keeps its `margin-top: 16px`: drawn at Y 51px」）。要不要做、什么时候做，由设计师定。
