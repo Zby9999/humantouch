@@ -127,7 +127,7 @@ test("no Promote with more than one layer selected, nor on a layer with no compo
   await expect(promote(page)).toHaveCount(0);
 });
 
-test("promoted, a layer's changes that stay with its usage are told in a toast: free placement at a breakpoint depends on this usage's container", async ({ page }) => {
+test("promoted, a layer's changes that stay with its usage stay in the change list as its own, told by no toast (designer, 2026-11-10)", async ({ page }) => {
   await inlineTitles(page);
   await enterEditMode(page);
   await expect(tablet(page).contentFrame().locator("article h3").first()).toBeVisible();
@@ -142,8 +142,8 @@ test("promoted, a layer's changes that stay with its usage are told in a toast: 
 
   await promote(page).click();
 
-  await expect(toast(page)).toHaveText("Promoted 1 change to Card. 1 stays with this usage: free placement at Tablet depends on this usage's container.");
-  // The placement is still this usage's, in the change notes too.
+  await expect(toast(page)).toHaveCount(0);
+  // The placement is still this usage's: the change list tells which went to the component and which stays.
   await expect(promote(page)).toHaveCount(0);
   await badge(page).click();
   const items = page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");

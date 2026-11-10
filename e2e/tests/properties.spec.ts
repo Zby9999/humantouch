@@ -542,9 +542,9 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await weight.fill("1.25");
   await weight.press("Enter");
   await expect(weight).toHaveValue("1");
-  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 1.25px is now 1px.");
+  await expect(toast(page)).toHaveText("Stroke must be a multiple of 0.5px.");
   // Not in the Design panel any more.
-  await expect(stroke.getByText("0.5px steps")).toHaveCount(0);
+  await expect(stroke.getByText("multiple of 0.5px")).toHaveCount(0);
   await page.clock.runFor(5000);
   await expect(toast(page)).toHaveText("");
 
@@ -561,7 +561,7 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await weight.fill("0.3");
   await weight.press("Enter");
   await expect(weight).toHaveValue("0.5");
-  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
+  await expect(toast(page)).toHaveText("Stroke must be a multiple of 0.5px.");
 
   // Each side its own, each rounded.
   await stroke.getByRole("combobox", { name: "Stroke sides" }).selectOption("Custom");
@@ -569,14 +569,14 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await left.fill("1.75");
   await left.press("Enter");
   await expect(left).toHaveValue("1.5");
-  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 1.75px is now 1.5px.");
+  await expect(toast(page)).toHaveText("Stroke must be a multiple of 0.5px.");
 });
 
 test("a toast rises at the bottom middle of the canvas and fades after about 3 seconds, but not while the pointer is on it; a new one takes its place", async ({ page }) => {
   await page.clock.install();
   await selectRow(page, "Card");
   const weight = design(page).getByRole("group", { name: "Stroke", exact: true }).getByRole("textbox", { name: "Stroke weight" });
-  const message = toast(page).getByText("Stroke weights go in 0.5px steps", { exact: false });
+  const message = toast(page).getByText("Stroke must be a multiple of 0.5px.");
 
   await weight.fill("1.25");
   await weight.press("Enter");
@@ -593,7 +593,7 @@ test("a toast rises at the bottom middle of the canvas and fades after about 3 s
   await weight.fill("0.3");
   await weight.press("Enter");
   await expect(message).toHaveCount(1);
-  await expect(message).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
+  await expect(message).toHaveText("Stroke must be a multiple of 0.5px.");
   await page.clock.runFor(2000);
   await expect(message).toBeVisible();
   await page.clock.runFor(2000);

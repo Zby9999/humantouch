@@ -97,34 +97,3 @@ export function showComponent(doc: Document, loc: string, changes: Change[]) {
     else el.removeAttribute(BRIEF_ATTR);
   }
 }
-
-
-/**
- * What the designer is told once a layer's changes are promoted to
- * `component`, when some stay with its usage: how many went, how many stay,
- * and why, in one sentence each kind. A free placement at a breakpoint
- * (`within`) and text wrapped in a `<span>` (`wrap`) depend on this usage's
- * container and element; changes to the structure and to data are made where
- * the usage is. `nameOf`: what the view at a breakpoint is called. Null when
- * every change went.
- */
-export function promotedNote(promoted: number, component: string, stays: Change[], nameOf: (breakpoint: Breakpoint) => string): string | null {
-  if (!stays.length) return null;
-  const placedAt = [...new Set(stays.filter((change) => change.kind === "style" && change.within && change.breakpoint).map((change) => nameOf(change.breakpoint!)))];
-  const wrapped = stays.some((change) => change.kind === "style" && !change.within && change.wrap);
-  const data = stays.some((change) => change.kind !== "style" && change.kind !== "brief" && (change.data || change.kind === "text"));
-  const structure = stays.some((change) => change.kind !== "style" && change.kind !== "brief" && !change.data && change.kind !== "text");
-  const reasons = [
-    placedAt.length && `free placement at ${and(placedAt)} depends on this usage's container`,
-    wrapped && "the <span> its text is wrapped in is this usage's",
-    structure && "changes to structure are this usage's",
-    data && "changes to words and data are this usage's",
-  ].filter((reason): reason is string => !!reason);
-  const changes = (n: number) => `${n} ${n === 1 ? "change" : "changes"}`;
-  return `Promoted ${changes(promoted)} to ${component}. ${stays.length} ${stays.length === 1 ? "stays" : "stay"} with this usage: ${reasons.join("; ")}.`;
-}
-
-/** "Tablet", "Tablet and Phone", "Tablet, Phone and Custom". */
-function and(names: string[]): string {
-  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-}

@@ -1353,7 +1353,7 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
             <span class="tk-gradient-swatch" style={{ backgroundImage: fill.css }} aria-hidden="true" />
             <span class="tk-field tk-read-only">Conic gradient</span>
           </div>
-          <p class="tk-layer-note">A conic gradient is shown here, not edited.</p>
+          <p class="tk-layer-note">Conic gradients can't be edited.</p>
         </>
       ) : gradient ? (
         // In the place a solid fill's is, the same row and field: its picker stays open as the type changes.
@@ -1787,11 +1787,11 @@ function StrokeSection({ stroke, onChange, update, variable }: {
   /** Custom chosen with every side alike: the four sides stay out until another choice. */
   const [custom, setCustom] = useState(false);
   const showToast = useToast();
-  /** A weight typed in, in 0.5px steps, and the stroke `make` makes with it: a toast says so when it is rounded. */
+  /** A weight typed in, in 0.5px steps, and the stroke `make` makes with it: a toast says it must be a multiple of 0.5px when it is rounded (designer, 2026-11-10). */
   const changeWeight = (typed: number, make: (weight: number) => Stroke | null, continues?: boolean) => {
     const weight = stepped(typed);
     const next = make(weight);
-    if (weight !== typed && next) showToast(`Stroke weights go in 0.5px steps: ${typed}px is now ${weight}px.`);
+    if (weight !== typed && next) showToast("Stroke must be a multiple of 0.5px.");
     onChange(next, continues);
   };
   /**

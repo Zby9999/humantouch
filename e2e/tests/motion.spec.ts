@@ -40,7 +40,7 @@ function toastStyle(page: Page) {
   return page
     .getByRole("status")
     .getByRole("paragraph")
-    .filter({ hasText: "Stroke weights go in 0.5px steps" })
+    .filter({ hasText: "Stroke must be a multiple of 0.5px." })
     .evaluate((el) => ({ opacity: Number(getComputedStyle(el).opacity), translate: getComputedStyle(el).translate }));
 }
 
