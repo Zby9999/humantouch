@@ -326,6 +326,30 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule(output, "Sizes in a Grid")).toContain("Hug fits its content in the cell: `fit-content`, Tailwind's `w-fit` (`h-fit`)");
   });
 
+  test("a change to a layer a third-party component draws says not to reach into its elements from the usage; one to a layer of the project's own, nothing more (ticket 120)", async () => {
+    saveRound({ ...redFill, id: 1 });
+    const own = await cli("claim");
+    expect(names(own.output)).not.toContain("Third-party components");
+
+    const badge = {
+      ...cards,
+      loc: null,
+      chain: [{ component: "Badge", usage: "src/App.tsx:21:11", thirdParty: true }, APP],
+      component: "Badge",
+      instances: 1,
+      locked: true,
+      context: { path: ["Page", "App", "Badge"], element: '<span class="inline-flex rounded-full">' },
+    };
+    saveRound({ ...redFill, id: 1, target: badge });
+    const output = (await cli("claim")).output;
+
+    expect(names(output).slice(0, 2)).toEqual(["Every change", "Third-party components"]);
+    expect(rule(output, "Every change")).toBe(rule(own.output, "Every change"));
+    expect(rule(output, "Third-party components")).toContain("Do not reach into its elements from the usage either");
+    expect(rule(output, "Third-party components")).toContain("`[&>span]:w-[90px]`");
+    expect(rule(output, "Third-party components")).toContain("a change that cannot be made without them is left out and reported");
+  });
+
   test("a rule is said once, however many changes call for it; none a change of the round does not call for", async () => {
     saveRound({ ...change("move"), id: 1 }, { ...change("move", { before: place(2), after: place(1) }), id: 2 }, { ...change("text", { before: "A", after: "B" }), id: 3 });
 

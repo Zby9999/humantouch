@@ -30,6 +30,15 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "Never change third-party code (`node_modules`, vendored packages): a change that can only be made there is left out and reported.",
   },
   {
+    // Said only for a layer a third-party component draws (ticket 120): an Agent reached into one from its usage, and the notes of every other round stay as they were.
+    name: "Third-party components",
+    calledFor: (change) => !!change.target.chain[0]?.thirdParty,
+    text:
+      "a layer a third-party component draws is changed only by what the component takes from its usage (a prop, a `className` or `style` it passes on). " +
+      "Do not reach into its elements from the usage either: no wrapper with descendant selectors (`[&>span]:w-[90px]`), no global rule on its class names. " +
+      "Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.",
+  },
+  {
     name: "What sets the value now",
     calledFor: (change) => change.kind === "style" || change.kind === "unstack" || (change.kind === "stack" && !!change.sources?.length),
     text:
