@@ -28,7 +28,7 @@
 - [x] `page-checks.ts` 的两处等待都加上「超过 `UPDATE_LOST_MS` 就不再等」，常量从 `code-changes.ts` 共用。正常热更新的等待、`CHECK_SETTLE_MS`、`CHECK_ARRIVE_MS` 都不变。
 - [x] 单元测试或 e2e 复现：页面收到一次 `vite:beforeUpdate`，没有 `vite:afterUpdate`。之后的 `done` 在 `UPDATE_LOST_MS` 加正常的稳定时间内回答，不再等满 20 秒，答案和不丢时一样。
 - [x] `--dry` 全过（29 个场景），`--dry --claim-out` 和改前逐字相同，`--scripted` 全过；切换按钮的包逐字节不变。
-- [ ] e2e 全过；`round.spec.ts:867` 照 102 的做法 `--repeat-each` 跑够 20 次不挂。
+- [x] e2e 全过；`round.spec.ts:867` 照 102 的做法 `--repeat-each` 跑够 20 次不挂。（指挥合并前在同步了 main d2c6f1d 的分支上跑整套：589 过 1 跳过，一次过；`--dry` 第一次 `r18-style-variables` 设计那一轮存下 0 条（不是 5 条）没起来，重跑 29/29，和 main 逐字相同；`--scripted` 20/20）
 
 ## 背景
 
