@@ -195,8 +195,8 @@ interface CardProps {
 }
 
 /**
- * A card as the Design panel's fields are, on the canvas: the brief in a field, and, written in, the
- * accent's arrow inside its end that sets it, as the count of changes is drawn, in the editor's small type (designer, 2026-11-10). Left empty, the
+ * A card as the Design panel's fields look, larger, on the canvas: the brief in a field, and, written in, the
+ * accent's arrow beside it that sets it, as the count of changes is drawn (designer, 2026-11-10). Left empty, the
  * brief is taken off.
  */
 function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {

@@ -47,7 +47,7 @@ export interface PlacedCard extends Box {
 }
 
 /** How wide a card is, in canvas px: it scales with the canvas, as a note on it does. */
-export const CARD_WIDTH = 240;
+export const CARD_WIDTH = 320;
 /** Between a card and its host, in canvas px: as far again as the gap between views (`VIEW_GAP`). */
 export const CARD_OFFSET = 160;
 /** Between one card and the next, and between a card and anything else, in canvas px. */
