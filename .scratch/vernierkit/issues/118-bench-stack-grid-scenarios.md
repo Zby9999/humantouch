@@ -19,7 +19,7 @@
 - [x] 每个新场景都有脚本扮演 Agent 的写法（`apply`）：`--scripted` 全过，`done` 是 ✓
 - [x] 原来 24 个场景的认领说明和 `done` 逐字不变（`--claim-out` 和改前 diff）；`--dry` 的个数变了，在 `docs/agents/` 或测量台说明里写上新的个数，88 的结果表注明「24 个场景时」
 - [ ] 不跑真 Agent。真 Agent 跑这几个场景（Claude、pi 各 3 次）和下一次复验一起跑，例如 ticket 88 末尾第三方那条规则定下以后那次；开跑前问设计师额度
-- [ ] e2e 全过
+- [x] e2e 全过（指挥合并前在同步了 main f3b7c74 的分支上跑：整套 572 过 1 跳过，一次过；`--dry` 28/28，原 25 个认领说明和 main 逐字相同；`--scripted` 19/19）
 
 ## 背景
 
@@ -62,7 +62,7 @@
 - `--dry --claim-out`：main bbb03a6 上 25 份、分支上 28 份；原来 25 个场景逐个 `cmp`，逐字相同。`done` 的说法来自包里的代码，包没改。
 - `pnpm typecheck` 过；`pnpm test` vitest 1145 过 1 跳过，node 125 过；`TK_E2E_PORT=6100` 跑 `bench-scenarios.spec.ts`（`--project="project files" --no-deps`）28 过，跑完 `git status` 里没有留下示例的改动。整套 e2e 没跑（指挥 review 后跑）。端口：`TK_BENCH_PORT=5540`。
 - Review 后重跑（同样的端口）：`pnpm typecheck` 过（含 `tsc -p e2e`）；`pnpm test` vitest 1145 过 1 跳过，node 126 过（多了 `keepsVariable` 那条）；`--dry` 28/28；`--scripted` 19/19；`--dry --claim-out` 原来 25 份和 bbb03a6 逐个 `cmp` 相同；`bench-scenarios.spec.ts` 28 过，`git status` 干净。
-- 没跑真 Agent。验收框里真 Agent 那一框没打勾，等下一次复验；「e2e 全过」那一框等指挥跑完整套再打。
+- 没跑真 Agent。验收框里真 Agent 那一框没打勾，等下一次复验；「e2e 全过」那一框指挥跑完整套后已打勾。
 
 **Review 后的修正（2026-11-10）**
 
